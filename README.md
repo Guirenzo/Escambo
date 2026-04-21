@@ -1,28 +1,50 @@
 # Escambo
 
-Plataforma digital que conecta freelancers, clientes e empresas de forma prática, rápida e confiável — o iFood dos serviços.
+Plataforma digital de serviços freelance, o “iFood dos serviços”.
 
-## Documentação do Projeto
+## Visão Geral
+O Escambo conecta clientes, freelancers/autônomos e, futuramente, empresas, permitindo contratação de serviços com mais rapidez, transparência e confiança.
 
-| Pasta | Conteúdo |
-|---|---|
-| `01-escopo/` | Plano de Ação completo — missão, visão, roadmap e estratégia |
-| `02-escambo-dev/` | Documentação de desenvolvimento |
-| `03-arquitetura-tecnica/` | Stack, infraestrutura, segurança e deploy |
-| `04-database/` | Schema MySQL completo com 45+ tabelas |
-| `05-requisitos/` | 72 Requisitos Funcionais + 36 Não Funcionais |
-| `06-o-que-falta/` | Pendências e próximos passos para o MVP |
+## Problema
+Hoje a contratação de serviços ainda é muito pulverizada em canais como WhatsApp, Facebook, OLX e plataformas genéricas, com baixa padronização, pouca confiança e fraca gestão operacional.
 
-## Stack Principal
+## Objetivo do MVP
+Validar um fluxo ponta a ponta de contratação:
+busca -> solicitação -> proposta -> aceite -> pagamento -> conclusão -> avaliação.
 
-- **Frontend Web:** REACT
-- **Mobile:** React Native + Expo
-- **Backend:** Node.js + Express + TypeScript
-- **Banco:** MYSQL / SQLSERVER
-- **Pagamentos:** MercadoPago 
-- **Infra:** DigitalOcean + Cloudflare
+## Público-Alvo
+- Cliente pessoa física
+- Freelancer / autônomo
+- Empresa / PJ (futuro)
+
+## Stack
+- Web: React
+- Mobile: React Native + Expo
+- Backend: Node.js + Express + TypeScript
+- Banco: MySQL
+- Infra: DigitalOcean + Cloudflare
+- Pagamentos: MercadoPago
 
 ## Status
+Em planejamento / estruturação inicial.
 
-🚧 Em planejamento — MVP previsto para 2026
-```
+## Documentação
+- RFC / Documento de Projeto
+- Roadmap técnico
+- Arquitetura inicial
+- Modelagem de domínio
+- Decisões arquiteturais (ADRs)
+
+## Estrutura do Repositório
+...árvore resumida...
+
+## Roadmap resumido
+- Fundação
+- Autenticação e perfis
+- Catálogo e descoberta
+- Contratação
+- Pagamentos
+- Avaliações e operação
+
+## Autor
+Guilherme Renzo
