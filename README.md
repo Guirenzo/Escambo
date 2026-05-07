@@ -200,7 +200,7 @@ Por ser um projeto voltado à comunidade, o repositório é e permanecerá **pú
 
 ## 👤 Autor
 
-Desenvolvido por **[Seu Nome]** como projeto de TCC — PAC Extensionista VII  
+Desenvolvido por **Guilherme Renzo** como projeto de TCC — PAC Extensionista VII  
 Curso de Engenharia de Software · Católica SC · 2026
 
 <div align="center">
