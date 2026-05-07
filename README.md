@@ -205,8 +205,8 @@ Curso de Engenharia de Software · Católica SC · 2026
 
 <div align="center">
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-seu--perfil-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/seu-perfil)
-[![GitHub](https://img.shields.io/badge/GitHub-seu--usuario-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/seu-usuario)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-seu--perfil-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/https://www.linkedin.com/in/guilherme-renzo-284779271/)
+[![GitHub](https://img.shields.io/badge/GitHub-seu--usuario-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Guirenzo)
 
 <br />
 
