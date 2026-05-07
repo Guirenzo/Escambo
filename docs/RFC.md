@@ -1,3 +1,4 @@
+[RFC.md](https://github.com/user-attachments/files/27484269/RFC.md)
 # RFC-001 — Escambo: Plataforma Digital de Serviços Freelance
 
 > **RFC — Request for Comments**  
@@ -5,7 +6,7 @@
 > **Status:** 🟡 Em Revisão  
 > **Disciplina:** PAC Extensionista VII — Católica SC  
 > **Data:** Abril de 2026  
-> **Autor:** [Seu Nome]  
+> **Autor:** Guilherme Renzo 
 > **Repositório:** [github.com/seu-usuario/escambo](https://github.com/Guirenzo/escambo)
 
 ---
@@ -14,9 +15,9 @@
 
 | Versão | Data | Autor | Descrição |
 |---|---|---|---|
-| 0.1.0 | Mar/2026 | [Seu Nome] | Rascunho inicial — contexto e problema |
-| 0.2.0 | Abr/2026 | [Seu Nome] | Adição de objetivos, diferenciais e público-alvo |
-| 1.0.0 | Abr/2026 | [Seu Nome] | Versão completa para entrega NP1 |
+| 0.1.0 | Mar/2026 | Guilherme Renzo | Rascunho inicial — contexto e problema |
+| 0.2.0 | Abr/2026 | Guilherme Renzo | Adição de objetivos, diferenciais e público-alvo |
+| 1.0.0 | Abr/2026 | Guilherme Renzo | Versão completa para entrega NP1 |
 
 ---
 
