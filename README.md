@@ -1,165 +1,215 @@
-# Guia de Contribuição — Escambo
+<div align="center">
 
-Obrigado por fazer parte do squad! Este documento define os padrões de colaboração para garantir qualidade, rastreabilidade e um histórico de commits profissional.
+<img src="https://img.shields.io/badge/status-em%20planejamento-yellow?style=for-the-badge&labelColor=0d1117" />
+<img src="https://img.shields.io/badge/MVP-2026-blue?style=for-the-badge&labelColor=0d1117" />
+<img src="https://img.shields.io/badge/licença-MIT-green?style=for-the-badge&labelColor=0d1117" />
+<img src="https://img.shields.io/badge/TCC-PAC%20Extensionista%20VII-orange?style=for-the-badge&labelColor=0d1117" />
+
+<br />
+<br />
+
+```
+███████╗███████╗ ██████╗ █████╗ ███╗   ███╗██████╗  ██████╗
+██╔════╝██╔════╝██╔════╝██╔══██╗████╗ ████║██╔══██╗██╔═══██╗
+█████╗  ███████╗██║     ███████║██╔████╔██║██████╔╝██║   ██║
+██╔══╝  ╚════██║██║     ██╔══██║██║╚██╔╝██║██╔══██╗██║   ██║
+███████╗███████║╚██████╗██║  ██║██║ ╚═╝ ██║██████╔╝╚██████╔╝
+╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝  ╚═════╝
+```
+
+### **Plataforma Digital de Serviços Freelance**
+*O iFood dos serviços — conectando quem precisa com quem sabe fazer*
+
+<br />
+
+[📄 RFC Completa](#-documentação) · [🗂️ Módulos](#️-módulos-do-mvp) · [🛠️ Stack](#️-stack-técnica) · [🗺️ Roadmap](#️-roadmap) · [🤝 Contribuindo](#-contribuindo)
+
+<br />
 
 ---
 
-## 📋 Índice
+</div>
 
-- [Fluxo de Trabalho](#fluxo-de-trabalho)
-- [Padrão de Branches](#padrão-de-branches)
-- [Conventional Commits](#conventional-commits)
-- [Pull Requests](#pull-requests)
-- [Code Review (QA Cruzado)](#code-review-qa-cruzado)
-- [Padrões de Código](#padrões-de-código)
+## 📌 Sobre o Projeto
 
----
+O **Escambo** é uma plataforma digital de marketplace de serviços que conecta **clientes** a **freelancers** de qualquer nicho — do mecânico ao desenvolvedor — com a mesma simplicidade e confiança que apps como o iFood trouxeram para o delivery.
 
-## Fluxo de Trabalho
+> **Contexto acadêmico:** Este projeto é desenvolvido como Trabalho de Conclusão de Curso (TCC) na disciplina **PAC Extensionista VII**, da [Católica SC](https://www.catolicasc.org.br), com foco em extensão universitária e impacto social real.
 
-Este projeto adota o **GitHub Flow** — simples, linear e adequado para squads ágeis:
-
-```
-main  ←── pull request aprovado
-  │
-  └── feat/nome-da-feature   (sua branch de trabalho)
-```
-
-**Regras:**
-- `main` é sempre estável. Nunca commitar diretamente.
-- Todo trabalho acontece em branches.
-- Todo merge passa por Pull Request com ao menos **1 aprovação** do squad.
+O Brasil possui **mais de 24 milhões de trabalhadores autônomos** (IBGE), mas ainda carece de uma plataforma que combine simplicidade de uso, transparência e ferramentas de gestão em um único produto. O Escambo nasce para preencher essa lacuna.
 
 ---
 
-## Padrão de Branches
+## 🎯 O Problema
 
-```
-feat/nome-curto-da-feature     # nova funcionalidade
-fix/descricao-do-bug           # correção de bug
-docs/secao-atualizada          # apenas documentação
-refactor/nome-do-modulo        # refatoração sem nova feature
-test/cobertura-do-modulo       # adição ou correção de testes
-chore/nome-da-tarefa           # configs, dependências, CI
-```
-
-**Exemplos:**
-```bash
-git checkout -b feat/modulo-chat
-git checkout -b fix/autenticacao-jwt-expirado
-git checkout -b docs/atualiza-modelagem-banco
-```
-
----
-
-## Conventional Commits
-
-Todo commit deve seguir o padrão [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-<tipo>(escopo opcional): descrição curta em minúsculas
-```
-
-| Tipo | Quando usar |
+| Perspectiva | Dor |
 |---|---|
-| `feat` | Nova funcionalidade |
-| `fix` | Correção de bug |
-| `docs` | Alterações na documentação |
-| `style` | Formatação (sem mudança de lógica) |
-| `refactor` | Refatoração de código |
-| `test` | Adição ou correção de testes |
-| `chore` | Tarefas de manutenção (deps, configs) |
-| `perf` | Melhoria de performance |
+| 🔍 **Cliente** | Processos lentos, desconfiança, dificuldade de encontrar profissionais qualificados localmente |
+| 💼 **Freelancer** | Sem ferramentas centralizadas para agenda, finanças, reputação e aquisição de clientes |
+| 🏗️ **Mercado** | Plataformas existentes (GetNinjas, Workana, OLX) têm UX ruim, sem gamificação e sem foco local |
 
-**Exemplos:**
+---
+
+## 💡 A Solução
+
+Uma plataforma **Web + Mobile** que oferece:
+
+- 🔎 **Descoberta local** — profissionais ranqueados por proximidade e relevância
+- ⭐ **Reputação verificada** — avaliações reais, comentários e histórico de serviços
+- 💬 **Chat integrado** — comunicação direta dentro do app, sem sair para WhatsApp
+- 🎮 **Gamificação** — XP, níveis, badges e missões para engajamento contínuo
+- 💳 **Pagamento seguro** — via MercadoPago com carteira digital e saques programados
+- 📊 **Dashboard do Freelancer** — ganhos, nota média, serviços concluídos e ranking
+
+---
+
+## 🛠️ Stack Técnica
+
+<div align="center">
+
+| Camada | Tecnologia |
+|---|---|
+| **Frontend Web** | React + Vite + TypeScript |
+| **Mobile** | React Native + Expo |
+| **Backend** | Node.js + Express + TypeScript |
+| **Banco de Dados** | MySQL (45+ tabelas) |
+| **Pagamentos** | MercadoPago API |
+| **Hospedagem** | DigitalOcean |
+| **CDN / DNS** | Cloudflare |
+| **Autenticação** | JWT + OAuth2 (Login Social) |
+| **Real-time** | WebSockets (Chat) |
+| **Conformidade** | LGPD desde o lançamento |
+
+</div>
+
+---
+
+## 🗂️ Módulos do MVP
+
+O MVP é composto por **14 módulos funcionais**, cobrindo **72 Requisitos Funcionais** e **36 Não Funcionais**:
+
+| # | Módulo | Responsabilidade |
+|---|---|---|
+| 01 | 🔐 Autenticação | Contas, login social, tokens JWT |
+| 02 | 👤 Perfis | Clientes, freelancers, empresas, portfólio |
+| 03 | 🗃️ Categorias e Serviços | Catálogo, taxonomia, tags |
+| 04 | 🤝 Contratações | Proposta → aceite → entrega → avaliação |
+| 05 | 💳 Pagamentos | Gateway MercadoPago, carteira, saques |
+| 06 | ⭐ Avaliações | Sistema de reputação e comentários |
+| 07 | 💬 Chat | Mensagens em tempo real |
+| 08 | 🎮 Gamificação | XP, níveis, badges, missões, rankings |
+| 09 | 🔔 Notificações | Push, e-mail, SMS, in-app |
+| 10 | 🛡️ Suporte e Mediação | Tickets e resolução de conflitos |
+| 11 | 📣 Impulsionamento | Planos pagos de destaque |
+| 12 | ⚙️ Administração | Painel administrativo da plataforma |
+| 13 | ⚖️ Compliance / LGPD | Consentimento, anonimização, privacidade |
+| 14 | 📈 Relatórios | Analytics, métricas de uso e performance |
+
+---
+
+## 🗺️ Roadmap
+
+```
+2026 Q1 — Planejamento e Fundamentação (NP1) ✅
+  └─ RFC completa, modelagem de banco de dados, requisitos levantados
+
+2026 Q2 — Estado da Arte (NP2)
+  └─ Benchmarking, trabalhos relacionados, wireframes de alta fidelidade
+
+2026 Q3/Q4 — Desenvolvimento e Entrega Final (NP3)
+  └─ MVP funcional, validação com usuários reais, apresentação para banca
+```
+
+---
+
+## 📐 Indicadores de Sucesso do MVP
+
+- [ ] Cadastro e autenticação para os 3 perfis (cliente, freelancer, empresa)
+- [ ] Fluxo completo: proposta → aceite → entrega → avaliação
+- [ ] Chat funcional entre cliente e freelancer
+- [ ] Pagamento via MercadoPago processado com saldo creditado na carteira
+- [ ] 72 RFs e 36 RNFs cobertos na especificação
+- [ ] Banco de dados com 45+ tabelas implementado e validado
+
+---
+
+## 📁 Estrutura do Repositório
+
+```
+escambo/
+├── 📁 docs/
+│   ├── RFC.md                  # Request for Comments — documento principal
+│   ├── requisitos-funcionais.md
+│   ├── requisitos-nao-funcionais.md
+│   ├── modelagem-banco.md
+│   └── diagramas/              # DER, fluxos, arquitetura
+├── 📁 apps/
+│   ├── web/                    # React + Vite (Frontend Web)
+│   ├── mobile/                 # React Native + Expo
+│   └── api/                    # Node.js + Express + TypeScript
+├── 📁 infra/
+│   └── docker-compose.yml
+├── CONTRIBUTING.md
+├── LICENSE
+└── README.md
+```
+
+---
+
+## 📄 Documentação
+
+| Documento | Descrição |
+|---|---|
+| [📋 RFC Completa](./docs/RFC.md) | Request for Comments — proposta técnica completa |
+| [✅ Requisitos Funcionais](./docs/requisitos-funcionais.md) | 72 RFs especificados |
+| [🔒 Requisitos Não Funcionais](./docs/requisitos-nao-funcionais.md) | 36 RNFs especificados |
+| [🗄️ Modelagem do Banco](./docs/modelagem-banco.md) | 45+ tabelas MySQL |
+
+---
+
+## 🤝 Contribuindo
+
+Este projeto segue um fluxo de trabalho em squads, simulando o ambiente de uma equipe ágil.
+
+**Fluxo de contribuição:**
+
 ```bash
-git commit -m "feat(chat): implementa envio de mensagens em tempo real"
-git commit -m "fix(auth): corrige expiração incorreta do token JWT"
-git commit -m "docs(rfc): atualiza seção de requisitos não funcionais"
-git commit -m "chore: adiciona eslint e prettier ao projeto"
+# 1. Fork do repositório
+# 2. Crie uma branch com o padrão:
+git checkout -b feat/nome-da-feature
+# ou
+git checkout -b fix/descricao-do-bug
+
+# 3. Commit seguindo Conventional Commits:
+git commit -m "feat: adiciona módulo de gamificação"
+
+# 4. Abra um Pull Request para revisão do squad (QA cruzado)
 ```
+
+Consulte o [CONTRIBUTING.md](./CONTRIBUTING.md) para diretrizes completas de revisão e padrões de código.
 
 ---
 
-## Pull Requests
+## 📜 Licença
 
-Ao abrir um PR, use o template abaixo:
+Distribuído sob a licença **MIT**. Consulte o arquivo [LICENSE](./LICENSE) para mais informações.
 
-```markdown
-## O que este PR faz?
-Descrição clara e objetiva da mudança.
-
-## Módulo relacionado
-[ ] Autenticação  [ ] Perfis  [ ] Chat  [ ] Pagamentos  [ ] Gamificação  [ ] Outro: ___
-
-## Tipo de mudança
-[ ] feat — nova funcionalidade
-[ ] fix — correção de bug
-[ ] docs — documentação
-[ ] refactor — refatoração
-
-## Como testar?
-1. Passo 1
-2. Passo 2
-3. Resultado esperado: ...
-
-## Checklist
-- [ ] Código segue os padrões do projeto (ESLint/Prettier)
-- [ ] Nenhum `console.log` esquecido
-- [ ] Variáveis de ambiente sensíveis não foram commitadas
-- [ ] Documentação atualizada se necessário
-```
+Por ser um projeto voltado à comunidade, o repositório é e permanecerá **público e de acesso aberto**, em conformidade com as diretrizes do PAC Extensionista VII.
 
 ---
 
-## Code Review (QA Cruzado)
+## 👤 Autor
 
-O squad atua como equipe de **Quality Assurance**. Ao revisar um PR:
+Desenvolvido por **[Seu Nome]** como projeto de TCC — PAC Extensionista VII  
+Curso de Engenharia de Software · Católica SC · 2026
 
-**O que verificar:**
-- ✅ O código faz o que o PR descreve?
-- ✅ Existe algum edge case não tratado?
-- ✅ A lógica está clara e legível?
-- ✅ Há algum risco de segurança (ex.: SQL injection, dados expostos)?
-- ✅ O código segue os padrões do projeto?
+<div align="center">
 
-**Como comentar:**
-- Use prefixos para deixar claro o tipo de feedback:
-  - `[blocker]` — deve ser resolvido antes do merge
-  - `[suggestion]` — melhoria opcional
-  - `[question]` — dúvida, não necessariamente um problema
-  - `[nitpick]` — detalhe estético, sem impacto funcional
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-seu--perfil-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/seu-perfil)
+[![GitHub](https://img.shields.io/badge/GitHub-seu--usuario-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/seu-usuario)
 
----
+<br />
 
-## Padrões de Código
+*"Tornar a contratação de serviços mais acessível, rápida e confiável — conectando freelancers e clientes com poucos toques, sem burocracia e com total transparência."*
 
-### TypeScript
-- Tipagem explícita sempre que possível — evite `any`
-- Prefira `interface` a `type` para objetos
-- Use `async/await` em vez de `.then().catch()`
-
-### Nomenclatura
-- **Variáveis e funções:** `camelCase`
-- **Classes e interfaces:** `PascalCase`
-- **Constantes globais:** `UPPER_SNAKE_CASE`
-- **Arquivos:** `kebab-case.ts`
-
-### Estrutura de pastas (API)
-```
-src/
-├── modules/
-│   └── nome-do-modulo/
-│       ├── nome-do-modulo.controller.ts
-│       ├── nome-do-modulo.service.ts
-│       ├── nome-do-modulo.repository.ts
-│       └── nome-do-modulo.routes.ts
-├── shared/
-│   ├── middlewares/
-│   └── utils/
-└── app.ts
-```
-
----
-
-*Dúvidas? Abra uma [Discussion](../../discussions) no repositório.*
+</div>
