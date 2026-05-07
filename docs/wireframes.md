@@ -2,7 +2,7 @@
 
 > **Versão:** 1.0.0  
 > **Disciplina:** PAC Extensionista VII — Católica SC  
-> **Autor:** [Seu Nome]  
+> **Autor:** Guilherme Renzo 
 > **Data:** 2026  
 > **Ferramenta sugerida para protótipo navegável:** Figma
 
