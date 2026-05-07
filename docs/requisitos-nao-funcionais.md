@@ -3,8 +3,7 @@
 > **Versão:** 1.0.0  
 > **Total de Requisitos:** 40  
 > **Atualizado em:** Abril de 2026  
-> **Autor:** [Seu Nome]
-
+> **Autor:** Guilherme Renzo
 ---
 
 ## Legenda
