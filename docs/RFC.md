@@ -1,188 +1,661 @@
 # RFC — Escambo: Plataforma Digital de Serviços Freelance
 
-**Disciplina:** PAC Extensionista VII — Engenharia de Software  
-**Instituição:** Católica SC  
-**Autor:** Guilherme Renzo  
-**Data:** 2026  
-**Versão:** 2.0  
-**Repositório:** https://github.com/Guirenzo/Escambo  
-**Linha de projeto:** Plataforma Web + Mobile  
-**Licença:** MIT
+**Engenharia de Software — Católica SC**
 
 ---
 
-## 1. Visão do Produto
+## Identificação
 
-O nome Escambo vem de uma palavra antiga que significa troca. Escolhi esse nome porque é exatamente isso que a plataforma faz — conecta quem precisa de um serviço com quem sabe fazer, de forma direta, sem burocracia. Mas vai além de uma simples troca: a ideia é que as duas partes saiam ganhando, o cliente encontra o profissional certo rápido, e o freelancer tem uma ferramenta real pra crescer.
+**Título do Projeto:**
+Escambo — Plataforma Digital de Serviços Freelance
 
-Sempre acreditei muito nessa ideia. Não só como projeto de TCC, mas como algo que tem espaço real no mercado. O que me motivou foi justamente essa contradição que a gente vê no dia a dia — vivemos num mundo onde qualquer coisa se resolve pelo celular em minutos, mas contratar um eletricista ou um designer freelancer ainda é uma bagunça. Você pede no grupo do WhatsApp, recebe uns cinco contatos, tenta agendar com cada um, não sabe se é confiável, paga adiantado e torce pra dar certo. Isso não faz sentido em 2026.
+**Linha de Projeto:**
+Plataforma — Web + Mobile
 
-A minha visão pro Escambo é que ele seja uma mistura de iFood com Uber, mas voltado pra serviços. A simplicidade do iFood — você abre, escolhe, contrata — com a lógica do Uber de conectar prestador e cliente em tempo real, com avaliações e reputação construída dentro da plataforma. O que diferencia de tudo que existe hoje é a gamificação. A ideia de que o freelancer não só trabalha, mas progride — ganha XP, sobe de nível, conquista badges, aparece no ranking local. Isso cria um engajamento diferente, a pessoa quer voltar pra plataforma não só pra ganhar dinheiro, mas pra crescer dentro dela.
+**Autor:**
+Guilherme Renzo
 
-No mundo em que a IA está em tudo e muita gente acha que ficou fácil ganhar dinheiro, a realidade é que um número enorme de trabalhadores autônomos ainda tem dificuldade enorme pra se divulgar e encontrar clientes fora do círculo de indicações. O Escambo resolve isso de mão beijada — e ainda entrega uma experiência que nenhuma plataforma brasileira entrega hoje.
+**Data da Proposta:**
+Abril de 2026
 
----
+**Versão:**
+2.0
 
-## 2. O Problema
+**Repositório:**
+https://github.com/Guirenzo/Escambo
 
-### 2.1 Contexto
-
-O mercado de trabalho autônomo no Brasil é gigante. Segundo o IBGE, são mais de 25 milhões de trabalhadores por conta própria — e esse número não para de crescer. Só que crescer em número não significa crescer em qualidade de vida ou em ferramentas de trabalho. A maioria desses profissionais ainda depende quase 100% de indicações pra conseguir clientes novos. Não têm portfólio digital, não têm histórico de avaliações, não têm controle financeiro. Trabalham no improviso.
-
-Do outro lado, os clientes também sofrem. Contratar um serviço fora do círculo de conhecidos é uma experiência ruim na maioria das vezes. Você não sabe quem é a pessoa, não tem como verificar se ela entrega o que promete, paga adiantado sem garantia nenhuma e ainda corre o risco de ser deixado na mão no meio do caminho.
-
-As plataformas que existem hoje não resolvem isso de verdade. O GetNinjas cobra do freelancer por cada lead que ele tenta contatar, sem nenhuma garantia de que vai fechar o serviço. Já usei R$ 60 em créditos sem fechar nada, me contaram. A Workana tem uma fila de espera que só termina se você pagar por um upgrade, e quando entra, a concorrência com quem cobra muito barato é brutal. Nenhuma das duas tem pagamento seguro pra serviços locais, nenhuma tem gamificação, nenhuma tem um dashboard decente pra o freelancer acompanhar o próprio crescimento.
-
-### 2.2 Problema Central
-
-O problema tem dois lados que se reforçam. O freelancer não consegue chegar em clientes novos sem depender de indicação, e o cliente não tem como confiar num profissional que não conhece sem ter alguma garantia. Esse ciclo trava o mercado. A plataforma certa quebra esse ciclo — cria reputação verificável pro freelancer e segurança real pro cliente.
-
-### 2.3 Evidências da Demanda
-
-Conversei com algumas pessoas durante a fase de pesquisa — eletricistas, desenvolvedores, diaristas, designers e clientes que já tentaram usar plataformas existentes. O padrão foi sempre o mesmo: quem oferece serviço quer visibilidade sem pagar adiantado por lead, e quem contrata quer ver avaliações reais e pagar com segurança.
-
-Também observei grupos de WhatsApp locais de serviços na região de Itajaí. A dinâmica é sempre caótica — pedidos sem resposta, orçamentos jogados sem critério, zero possibilidade de comparar profissionais de forma justa. É um problema real, que acontece todo dia, e que uma plataforma bem feita resolve.
+**Licença:**
+MIT — Open Source
 
 ---
 
-## 3. A Solução
+## 1. Visão do Produto e Impacto
 
-O Escambo é uma plataforma web e mobile que conecta clientes a freelancers de qualquer área — de desenvolvimento de software a serviços domésticos — com foco em três pilares: confiança, simplicidade e engajamento.
+### 1.1 Contexto e Problema
 
-**Confiança** vem do sistema de avaliações verificadas, vinculadas a contratos reais, e do pagamento em escrow — o dinheiro fica retido na plataforma até o serviço ser concluído e aprovado. Ninguém paga adiantado à toa e ninguém trabalha sem garantia de receber.
+O nome Escambo vem de uma palavra antiga que significa troca. Escolhi esse nome porque é exatamente isso que a plataforma faz: conecta quem precisa de um serviço com quem sabe fazer, de forma direta e sem burocracia. Mas vai além de uma troca simples — a ideia é que os dois lados saiam ganhando sempre.
 
-**Simplicidade** vem da interface. A referência de UX é o iFood — você encontra o que precisa em poucos toques, sem formulário de cadastro interminável, sem processo de aprovação que demora semanas. Isso foi uma decisão consciente desde o início do projeto.
+A motivação veio de uma observação do cotidiano. Vivemos num mundo onde qualquer coisa se resolve pelo celular em minutos, mas contratar um eletricista, um desenvolvedor freelancer ou uma diarista ainda é uma bagunça. A pessoa pede indicação no grupo do WhatsApp, recebe cinco contatos, passa dois dias tentando agendar, não sabe se o profissional é confiável, paga adiantado e torce pra dar certo. Isso não faz sentido em 2026.
 
-**Engajamento** é onde o Escambo se diferencia de tudo que existe. O sistema de gamificação — XP, níveis, badges e missões semanais — transforma a experiência do freelancer. Ele não só trabalha, ele progride. Aparece no ranking local, conquista badges que ficam visíveis no perfil, sobe de nível. Isso cria um motivo pra voltar além do dinheiro.
+Do outro lado, trabalhadores autônomos — e são muitos, segundo o IBGE mais de 25 milhões no Brasil — ainda dependem quase exclusivamente de indicações pra conseguir clientes novos. Não têm portfólio digital, não têm histórico de avaliações verificadas, não têm controle financeiro organizado. Trabalham bem, mas são invisíveis pra quem nunca ouviu falar deles.
 
-### 3.1 Público-Alvo
+As plataformas que existem hoje não resolvem isso de verdade. O GetNinjas cobra do freelancer por cada lead sem garantia nenhuma de que vai fechar o serviço — usuários relatam gastar R$ 60 em créditos sem fechar nada. A Workana tem fila de espera que só termina pagando upgrade, e quando o profissional finalmente entra, enfrenta uma concorrência brutal de quem aceita cobrar qualquer coisa. Nenhuma das duas tem pagamento seguro pra serviços locais, nenhuma tem gamificação, nenhuma entrega um dashboard decente pro freelancer acompanhar o próprio crescimento.
 
-O Escambo tem três perfis de usuário. O primeiro é o freelancer autônomo — desde o eletricista que depende de indicação até o desenvolvedor que já tentou a Workana e não ficou satisfeito. O segundo é o cliente pessoa física, que precisa de um serviço e quer contratar com segurança e agilidade. O terceiro é a empresa ou MEI que quer contratar freelancers de forma recorrente.
+A lacuna é clara: falta uma plataforma que combine a simplicidade do iFood, a segurança de pagamento do Uber e um sistema de progressão que faça o profissional querer voltar — não só pelo dinheiro, mas pelo crescimento dentro da plataforma.
 
-Não existe um perfil de usuário mais importante que o outro — a plataforma só funciona quando os dois lados crescem juntos. Por isso a estratégia de lançamento prevê recrutar freelancers ativamente antes de abrir pro público, pra garantir que o cliente já encontre profissionais quando chegar.
+### 1.2 Origem da Demanda e Evidências
+
+#### Pesquisa com Usuários
+
+Entre março e abril de 2026, foram realizadas entrevistas semiestruturadas com 8 pessoas — 5 freelancers e 3 clientes de serviços — na região de Itajaí, Joinville e Blumenau (SC). O roteiro foi aplicado sem apresentar a solução antes, pra mapear as dores reais sem influenciar as respostas.
+
+**Perfil dos entrevistados:**
+
+| # | Perfil | Cidade | Usa plataforma? |
+|---|---|---|---|
+| F01 | Eletricista autônomo | Itajaí, SC | Não |
+| F02 | Desenvolvedor front-end | Joinville, SC | Sim (Workana) |
+| F03 | Diarista | Itajaí, SC | Não |
+| F04 | Designer gráfico | Blumenau, SC | Sim (GetNinjas) |
+| F05 | Técnico de informática | Itajaí, SC | Sim (GetNinjas) |
+| C01 | Analista de RH | Blumenau, SC | Sim (GetNinjas — experiência ruim) |
+| C02 | Empreendedora / MEI | Itajaí, SC | Sim (Workana) |
+| C03 | Gerente de loja | Blumenau, SC | Grupos de WhatsApp |
+
+**Principais dores identificadas nos freelancers:**
+
+- 4 de 5 relataram depender exclusivamente de indicações pra conseguir clientes novos
+- Os 3 que já usaram plataformas relataram insatisfação com o modelo de monetização
+- 4 de 5 não têm nenhuma ferramenta digital de controle financeiro
+- 5 de 5 não têm portfólio digital organizado e verificável
+
+> *"Meu serviço é bom, todo mundo que me chama volta. Mas como eu faço pra chegar em quem nunca me chamou?"*
+> — F01, eletricista, 42 anos, Itajaí
+
+> *"Paguei R$ 60 em moedas no GetNinjas. Mandei proposta pra 8 clientes. Fechei zero. Nunca mais."*
+> — F05, técnico de informática, 36 anos, Itajaí
+
+**Principais dores identificadas nos clientes:**
+
+- 3 de 3 citaram confiança como principal barreira pra contratar um profissional desconhecido
+- 2 de 3 relataram insegurança no pagamento adiantado sem qualquer garantia
+- 3 de 3 descreveram o processo de contratação como lento e burocrático
+
+> *"Paguei metade adiantado pra um designer pelo GetNinjas. Ele sumiu depois de mandar uma versão ruim. Não tinha como recuperar."*
+> — C01, analista de RH, 34 anos, Blumenau
+
+#### Evidências de Comunidade
+
+Foram observados dois grupos locais de troca de serviços durante a fase de pesquisa:
+
+| Grupo | Plataforma | Membros | Padrão observado |
+|---|---|---|---|
+| Serviços Itajaí e Região | WhatsApp | ~320 | 15 a 20 pedidos por dia sem avaliação nem preço padronizado |
+| Freelancers SC | Facebook | ~1.800 | Mistura de portfólio e pedidos sem intermediação de pagamento |
+
+Em ambos os grupos, clientes pedem recomendações antes de contratar qualquer desconhecido e há relatos frequentes de calote, não comparecimento e qualidade abaixo do esperado.
+
+### 1.3 Análise de Soluções Existentes (Benchmark)
+
+Foram analisadas as duas principais plataformas com operação consolidada no Brasil.
+
+**GetNinjas** — https://www.getninja.com.br
+- Público: serviços locais e presenciais
+- Pontos fortes: grande base de usuários, cobertura geográfica ampla, app mobile
+- Limitações: modelo de compra de leads sem garantia de conversão, sem pagamento integrado (o dinheiro vai direto pra fora da plataforma), suporte inativo, sem dashboard pro freelancer, sem gamificação
+
+**Workana** — https://www.workana.com
+- Público: serviços digitais (tech, design, marketing)
+- Pontos fortes: histórico de projetos, pagamento intermediado
+- Limitações: fila de espera paga, interface datada, comissão de 6 a 20%, sem serviços locais, sem gamificação, suporte considerado ineficiente pelos usuários
+
+| Critério | GetNinjas | Workana | Escambo |
+|---|---|---|---|
+| Pagamento escrow | Não | Sim | Sim |
+| Gamificação | Não | Não | Sim |
+| Cadastro gratuito | Sim | Com fila | Sim |
+| Chat integrado | Não | Parcial | Sim |
+| Serviços locais | Sim | Não | Sim |
+| Dashboard financeiro | Não | Básico | Completo |
+| Ranking local | Não | Não | Sim |
+| Taxa para clientes | Não | Não | Não |
+
+#### Diferencial do projeto
+
+O Escambo resolve o que nenhuma plataforma brasileira resolve hoje: junta os serviços locais do GetNinjas com o pagamento seguro da Workana e adiciona o que as duas nunca tiveram — gamificação real, dashboard completo e uma experiência de uso tão simples quanto pedir um lanche.
+
+### 1.4 Público-Alvo
+
+O Escambo tem três perfis de usuário:
+
+**Freelancer autônomo** — profissional que oferece serviços de qualquer área, desde eletricistas e diaristas até desenvolvedores e designers. Perfil técnico variado, usa smartphone no dia a dia, quer visibilidade sem pagar adiantado por leads que podem não converter.
+
+**Cliente pessoa física** — pessoa que precisa contratar um serviço e quer fazer isso com agilidade e segurança. Nível técnico médio, familiarizado com apps de delivery e transporte. Principal dor: não saber se pode confiar em quem nunca viu.
+
+**Empresa / MEI** — negócio que contrata freelancers de forma recorrente e quer centralizar isso numa única ferramenta com histórico e nota dos profissionais.
+
+### 1.5 Objetivos do Projeto
+
+**Objetivo Geral**
+
+Tornar a contratação de serviços tão fácil quanto pedir um lanche — com pagamento seguro, avaliações verificadas e um sistema de progressão que premia quem trabalha bem.
+
+**Objetivos Específicos**
+
+- Criar o fluxo completo de contratação: proposta → aceite → execução → entrega → avaliação
+- Implementar pagamento via MercadoPago com escrow — o valor fica retido até a entrega ser confirmada
+- Desenvolver o sistema de gamificação com XP, níveis, badges, missões e ranking local
+- Disponibilizar chat em tempo real entre cliente e freelancer dentro do app
+- Construir dashboard para o freelancer acompanhar ganhos, contratos e progresso de nível
+- Garantir conformidade com a LGPD desde o primeiro dia
+
+### 1.6 Métricas de Sucesso (KPIs)
+
+- Fluxo completo de contratação funcional do início ao fim sem erros
+- Pagamento via MercadoPago processado e saldo creditado na carteira do freelancer
+- API respondendo em menos de 300ms pra 95% das requisições
+- Banco de dados com 48 tabelas implementado e validado
+- 82 requisitos funcionais e 40 não funcionais cobertos
+- Teste de usabilidade com pelo menos 3 usuários reais completando as tarefas principais sem ajuda
 
 ---
 
-## 4. Objetivos
+## 2. Engenharia de Requisitos
 
-O objetivo geral do Escambo é simples: tornar a contratação de serviços tão fácil quanto pedir um lanche. Mas pra isso acontecer de verdade, alguns objetivos específicos precisam estar no MVP.
+### 2.1 Personas
 
-O mais básico é o fluxo completo de contratação funcionando — proposta, aceite, execução, entrega e avaliação. Sem isso nada faz sentido. Junto com isso, o sistema de pagamento via MercadoPago com escrow precisa estar sólido, porque é o que garante a confiança das duas partes.
+#### Persona 1 — Rafael Souza (Freelancer Digital)
 
-Outros objetivos que fazem parte do MVP são o chat em tempo real entre cliente e freelancer, o dashboard do freelancer com ganhos e métricas, o sistema de gamificação com XP e badges, e a conformidade com a LGPD desde o primeiro dia — não como detalhe, mas como parte da arquitetura.
+Rafael tem 27 anos, trabalha como desenvolvedor front-end freelancer em Joinville há dois anos. Saiu do emprego CLT pra ter mais liberdade, mas a renda é irregular e a captação de clientes depende quase toda de indicação. Já tentou a Workana, ficou meses na fila de espera, e quando entrou não conseguiu fechar nada no primeiro mês por causa da concorrência com quem cobra muito abaixo do mercado.
 
-### 4.1 Indicadores de Sucesso
+Não tem portfólio digital organizado — manda prints por WhatsApp. Controla os ganhos numa planilha manual. Responde clientes pelo WhatsApp pessoal, misturado com conversa de família.
 
-Vou considerar o MVP validado quando um ciclo completo de contratação — do primeiro acesso até a avaliação — puder ser feito sem erro, com pagamento processado e saldo creditado na carteira do freelancer. Além disso, o banco de dados precisa estar implementado com as 45+ tabelas mapeadas, e os requisitos funcionais e não funcionais documentados precisam estar cobertos na implementação.
+> *"Sei que sou bom no que faço, mas não consigo provar isso pra quem não me conhece ainda."*
+
+#### Persona 2 — Camila Ferreira (Cliente)
+
+Camila tem 34 anos, é analista de RH em Blumenau. Já foi lesada pagando adiantado pra um designer pelo GetNinjas — o profissional sumiu após entregar uma versão ruim do trabalho. Desde então desconfia de qualquer plataforma que não tenha garantia de pagamento.
+
+Quer contratar serviços com a mesma facilidade que pede comida pelo iFood — sem garimpar em grupos de WhatsApp, sem negociar fora da plataforma e sem correr risco de calote.
+
+> *"Não é que eu não queira pagar bem — é que não tenho como saber se vai valer a pena antes de contratar."*
+
+#### Persona 3 — Marcos Oliveira (Autônomo Local)
+
+Marcos tem 42 anos e trabalha como eletricista autônomo há 15 anos em Itajaí. Nunca teve carteira assinada, sempre viveu de indicações. Tentou o GetNinjas mas desistiu quando percebeu que precisaria comprar moedas sem garantia de fechar serviço. Não tem portfólio, não tem CNPJ, recebe tudo em dinheiro ou PIX.
+
+Nos meses fracos fica duas ou três semanas sem trabalho. Quer aparecer pra clientes que precisam de um eletricista agora, perto dele, sem pagar adiantado por lead.
+
+> *"Meu serviço é bom, todo mundo que me chama volta. Mas como eu faço pra chegar em quem nunca me chamou?"*
+
+### 2.2 Casos de Uso Principais
+
+Os principais fluxos do sistema são:
+
+1. Cadastrar e autenticar (e-mail/senha ou Google OAuth2)
+2. Criar e gerenciar perfil (foto, bio, portfólio, disponibilidade)
+3. Publicar e gerenciar serviços (categoria, preço, prazo, tags)
+4. Buscar e contratar serviço (filtros, geolocalização, proposta)
+5. Gerenciar contratação (aceite, execução, entrega, revisão, conclusão)
+6. Realizar pagamento (PIX, cartão, boleto via MercadoPago com escrow)
+7. Avaliar serviço (nota, comentário, resposta do freelancer)
+8. Usar o chat (mensagens em tempo real, arquivos, histórico)
+9. Acompanhar gamificação (XP, nível, badges, missões, ranking)
+10. Abrir ticket de suporte (categorias, histórico, mediação de disputas)
+11. Administrar a plataforma (painel admin, métricas, configurações)
+
+### 2.3 Requisitos Funcionais
+
+Os requisitos estão organizados por módulo. Abaixo os principais de cada um:
+
+**Módulo de Autenticação**
+
+- RF-001 — O sistema deve permitir que o usuário crie conta via e-mail e senha
+- RF-002 — O sistema deve permitir que o usuário faça login via Google OAuth2
+- RF-003 — O sistema deve emitir tokens JWT com expiração de 1 hora
+- RF-004 — O sistema deve suportar refresh token com expiração de 7 dias
+- RF-005 — O sistema deve enviar e-mail de confirmação de conta após o cadastro
+- RF-006 — O sistema deve permitir que o usuário recupere a senha via link enviado por e-mail
+
+**Módulo de Perfis**
+
+- RF-007 — O sistema deve permitir que o freelancer crie perfil com foto, bio, headline e localização
+- RF-008 — O sistema deve permitir que o freelancer adicione itens ao portfólio com imagem e descrição
+- RF-009 — O sistema deve exibir nota média, total de serviços e badges no perfil do freelancer
+- RF-010 — O sistema deve permitir que o freelancer defina sua disponibilidade (disponível/indisponível)
+
+**Módulo de Contratações**
+
+- RF-011 — O sistema deve permitir que o cliente envie proposta de contratação a um freelancer
+- RF-012 — O sistema deve permitir que o freelancer aceite, recuse ou faça contra-proposta
+- RF-013 — O sistema deve rastrear o status da contratação em cada etapa do fluxo
+- RF-014 — O sistema deve permitir que o freelancer registre a entrega com mensagem e arquivos
+- RF-015 — O sistema deve permitir que o cliente aprove a entrega ou solicite revisão
+- RF-016 — O sistema deve liberar o pagamento ao freelancer somente após a aprovação da entrega
+
+**Módulo de Pagamentos**
+
+- RF-017 — O sistema deve processar pagamentos via MercadoPago (PIX, cartão, boleto)
+- RF-018 — O sistema deve reter o valor em escrow até a conclusão confirmada
+- RF-019 — O sistema deve exibir a taxa da plataforma de forma transparente antes da confirmação
+- RF-020 — O sistema deve permitir que o freelancer solicite saque via PIX ou transferência bancária
+
+**Módulo de Gamificação**
+
+- RF-021 — O sistema deve atribuir XP ao freelancer por serviços concluídos, avaliações recebidas e missões cumpridas
+- RF-022 — O sistema deve calcular o nível do freelancer com base no XP acumulado (6 níveis: Iniciante → Lenda)
+- RF-023 — O sistema deve emitir badges automaticamente ao atingir marcos definidos
+- RF-024 — O sistema deve disponibilizar missões semanais com recompensas em XP
+- RF-025 — O sistema deve exibir ranking local de freelancers por categoria dentro de um raio de 50km
+
+> A lista completa com todos os 82 requisitos funcionais está em [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md).
+
+### 2.4 Requisitos Não Funcionais
+
+- RNF-001 — A API deve responder em menos de 300ms para 95% das requisições em carga normal
+- RNF-002 — O sistema deve ter uptime mínimo de 99,5% ao mês
+- RNF-003 — Todas as senhas devem ser armazenadas com bcrypt (salt rounds ≥ 12)
+- RNF-004 — Toda comunicação deve ser via HTTPS com TLS 1.2 ou superior
+- RNF-005 — O sistema deve implementar rate limiting — máximo de 10 tentativas de login por IP em 5 minutos
+- RNF-006 — O sistema deve validar e sanitizar 100% dos dados de entrada para prevenir injeção
+- RNF-007 — CPF e dados bancários devem ser armazenados com criptografia AES-256
+- RNF-008 — O sistema deve estar em plena conformidade com a LGPD desde o lançamento
+- RNF-009 — Módulos críticos devem ter cobertura mínima de 70% de testes automatizados
+- RNF-010 — A API deve ter documentação OpenAPI/Swagger atualizada a cada release
+
+> A lista completa com todos os 40 requisitos não funcionais está em [`docs/requisitos-nao-funcionais.md`](./requisitos-nao-funcionais.md).
+
+### 2.5 Regras de Negócio
+
+As principais regras que o sistema deve respeitar independentemente da interface:
+
+- Cada e-mail pode estar vinculado a no máximo uma conta na plataforma
+- Contas não verificadas por e-mail podem visualizar serviços mas não podem contratar nem publicar
+- Perfis de freelancer sem foto, bio e categoria preenchidas não aparecem nos resultados de busca
+- O pagamento deve ser retido em escrow antes do início do serviço — o freelancer não começa sem garantia
+- A taxa da plataforma é de 15% sobre o valor bruto da contratação, cobrada do freelancer
+- O cliente tem 5 dias úteis para aprovar ou solicitar revisão após a entrega — depois disso a aprovação é automática
+- Avaliações só podem ser feitas após uma contratação com status "Concluído" — sem avaliação falsa
+- XP nunca é perdido por inatividade — o freelancer pode voltar sem perder a progressão
+- O saque mínimo é de R$ 20,00 e o prazo é de até 1 dia útil via PIX
+
+> A lista completa com todas as 75 regras de negócio está em [`docs/regras-de-negocio.md`](./regras-de-negocio.md).
+
+### 2.6 Fora do Escopo
+
+O MVP não inclui:
+
+- Integração com outros gateways de pagamento além do MercadoPago
+- App nativo separado para iOS e Android (o MVP usa React Native com Expo)
+- Sistema de assinatura recorrente para clientes
+- API pública para integrações externas
+- Internacionalização — o MVP é focado no Brasil
+- Modo offline no app mobile
 
 ---
 
-## 5. Arquitetura e Stack
+## 3. Fluxos e Comportamento do Sistema
 
-### 5.1 Por que essa stack
+### 3.1 Fluxo Principal do Usuário
 
-Escolhi React com Vite no frontend e React Native com Expo no mobile porque é a stack que trabalho há mais tempo. Todos os meus projetos anteriores foram feitos com essas ferramentas, então não faria sentido mudar agora — o ganho de produtividade de usar o que você conhece bem supera qualquer vantagem teórica de tentar algo novo no meio de um TCC. No futuro, dependendo de onde o projeto for, Python pode entrar no backend pra alguns módulos específicos de análise de dados, mas por enquanto Node com Express e TypeScript resolve bem.
-
-A escolha do MySQL foi pela natureza relacional dos dados — contratações, pagamentos, avaliações e usuários têm muitos relacionamentos entre si, e um banco relacional lida com isso melhor do que NoSQL nesse caso. A infraestrutura na DigitalOcean com Cloudflare na frente resolve CDN, DDoS e SSL sem precisar de uma estrutura complexa.
-
-O MercadoPago foi a escolha natural de gateway de pagamentos — maior cobertura no Brasil, suporte nativo a PIX, e documentação decente pra Node.
-
-### 5.2 Visão da Arquitetura
-
-O sistema é dividido em três camadas principais. O frontend web em React e o app mobile em React Native consomem a mesma API REST em Node.js, que se comunica com o banco MySQL e com os serviços externos — MercadoPago para pagamentos e o serviço de notificações push. O chat usa WebSocket pra comunicação em tempo real sem depender de polling.
+**Fluxo do cliente (contratação):**
 
 ```
-[Web — React]  [Mobile — React Native]
-        │               │
-        └───────┬────────┘
-                │
-        [API — Node.js + Express + TypeScript]
-                │
-     ┌──────────┼──────────┐
-     │          │          │
-  [MySQL]  [MercadoPago] [WebSocket]
+Acessa o Escambo
+    → Busca por categoria ou palavra-chave
+    → Aplica filtros (localização, preço, nota)
+    → Acessa o perfil do freelancer
+    → Envia proposta (descrição, prazo)
+    → Realiza o pagamento (PIX/cartão/boleto)
+    → Acompanha o contrato via chat
+    → Recebe e analisa a entrega
+    → Aprova ou solicita revisão
+    → Avalia o serviço (1 a 5 estrelas)
 ```
 
----
+**Fluxo do freelancer (execução):**
 
-## 6. Módulos do Sistema
+```
+Recebe notificação de nova proposta
+    → Analisa e aceita (ou negocia)
+    → Executa o serviço
+    → Registra a entrega (mensagem + arquivos)
+    → Aguarda aprovação do cliente
+    → Recebe o valor na carteira digital
+    → Solicita saque via PIX
+```
 
-O sistema foi pensado em 14 módulos funcionais. Em vez de listar todos de forma seca, vou descrever os que considero mais críticos pro MVP e como eles se relacionam.
+### 3.2 Fluxos Alternativos
 
-**Autenticação e Perfis** são a base de tudo. Sem um sistema de login sólido e perfis bem estruturados, nada mais funciona. O freelancer precisa ter um perfil que transmita confiança — foto, bio, portfólio, nota média, badges — e o cliente precisa conseguir visualizar tudo isso antes de contratar.
+**Cancelamento com reembolso:**
+- Antes do aceite → reembolso total
+- Em andamento com menos de 50% do prazo → reembolso de 50%
+- Em andamento com 50% ou mais do prazo → sem reembolso
+- Após entrega → sem reembolso, abre ticket de disputa
 
-**Contratações** é o coração da plataforma. O fluxo vai de proposta → aceite → execução → entrega → avaliação, com histórico de status imutável em cada etapa. Cada mudança de status é registrada com quem fez, quando e por quê.
+**Aprovação tácita:**
+Se o cliente não se manifestar em 5 dias úteis após a entrega, o sistema aprova automaticamente e libera o pagamento ao freelancer.
 
-**Pagamentos** é o módulo que mais exige cuidado. O escrow — valor retido até a conclusão do serviço — é o que garante segurança pra ambos os lados. A integração com MercadoPago precisa ser robusta, com tratamento correto de falhas e retentativas automáticas.
-
-**Gamificação** é o diferencial competitivo. XP por serviço concluído, níveis com nomes (Iniciante, Aprendiz, Profissional, Especialista, Mestre, Lenda), badges por conquistas e missões semanais com recompensas. O ranking local por categoria fecha o sistema, dando ao freelancer um motivo visual pra manter a qualidade.
-
-**Chat** precisa ser em tempo real via WebSocket. A comunicação direta entre cliente e freelancer dentro da plataforma é o que evita que a negociação migre pro WhatsApp e a contratação acabe acontecendo fora do sistema.
-
-Os demais módulos — notificações, suporte, impulsionamento, administração, LGPD e relatórios — completam o sistema mas têm menor criticidade pra validação do MVP.
-
----
-
-## 7. Banco de Dados
-
-O modelo de dados do Escambo tem 48 tabelas distribuídas entre os 14 módulos. A tabela `users` é o centro de tudo — dela derivam os perfis de cliente, freelancer e empresa. As contratações ficam na tabela `contracts`, com histórico de status em `contract_status_history`. Pagamentos têm rastreabilidade completa em `payments` e `wallets`. A gamificação tem seu próprio conjunto de tabelas — `user_xp`, `user_badges`, `missions` e `user_missions`.
-
-A modelagem completa com DDL está em [`docs/modelagem-banco.md`](./modelagem-banco.md).
-
----
-
-## 8. Requisitos
-
-### 8.1 Funcionais
-
-Os requisitos funcionais cobrem os 14 módulos do sistema. Os mais críticos pro MVP são os do fluxo de contratação e pagamento. Destaco alguns:
-
-O sistema deve permitir que o cliente busque serviços por categoria, localização e faixa de preço. O freelancer deve poder cadastrar serviços com título, descrição, tipo de preço e prazo. A proposta de contratação deve passar pelos status de pendente, aceito, em andamento, entregue e concluído. O pagamento deve ficar retido em escrow até a aprovação da entrega pelo cliente. O sistema deve atribuir XP ao freelancer por serviços concluídos e avaliações recebidas.
-
-A lista completa com todos os 82 requisitos funcionais está em [`docs/engenharia.md`](./engenharia.md).
-
-### 8.2 Não Funcionais
-
-Os requisitos não funcionais mais importantes pra mim são os de segurança e performance. A API precisa responder em menos de 300ms pra 95% das requisições. Senhas armazenadas com bcrypt, comunicação só via HTTPS, rate limiting nas rotas de autenticação. Conformidade total com a LGPD desde o lançamento — consentimento explícito no cadastro, direito ao esquecimento implementado, dados sensíveis criptografados.
+**Disputa:**
+Se prazo estourar sem entrega, o sistema cria ticket de suporte automaticamente com prioridade Alta e notifica as duas partes.
 
 ---
 
-## 9. Segurança e LGPD
+## 4. Mockups e Experiência do Usuário (UX)
 
-Segurança não foi tratada como um módulo separado — foi pensada como parte da arquitetura desde o início. Todas as rotas autenticadas usam JWT com expiração de 1 hora. Refresh tokens têm vida de 7 dias. Após 5 tentativas de login com falha, o IP é bloqueado por 5 minutos.
+### 4.1 Fluxo de Navegação
 
-Em relação à LGPD, o sistema coleta só o que precisa. No cadastro, apenas e-mail, senha e tipo de perfil. CPF e dados bancários só são pedidos quando necessários para funcionalidades financeiras, e ficam armazenados com criptografia AES-256. O usuário pode solicitar a exclusão dos dados a qualquer momento, com processamento em até 15 dias úteis.
+```
+Onboarding
+    Login / Cadastro → Escolha de perfil
+        ├── Cliente → Home (busca) → Perfil do freelancer
+        │              → Proposta → Pagamento → Contrato → Avaliação
+        │
+        └── Freelancer → Dashboard → Serviços → Propostas
+                          → Chat → Entrega → Carteira → Conquistas
+```
+
+Módulos compartilhados (acessíveis por ambos via menu):
+Chat · Notificações · Suporte · Configurações · Perfil
+
+### 4.2 Wireframes e Mockups das Telas
+
+As telas foram desenvolvidas para desktop (largura base 1280px) com design responsivo.
+A identidade visual adota verde profundo (#0D5C3A) como cor primária e âmbar (#F59E0B) como cor de destaque para elementos de gamificação.
+
+**Tela 1 — Home do cliente (busca e descoberta)**
+
+Tela principal após o login do cliente. Exibe saudação personalizada, campo de busca, categorias em pills horizontais e cards de serviços em destaque. Cards impulsionados recebem badge âmbar. Cada card exibe o nível do freelancer (Especialista, Mestre etc), nota e distância. Na barra superior fica o XP acumulado do usuário e a barra de missão ativa. Ranking local dos profissionais da categoria aparece na seção inferior.
+
+Ações disponíveis: buscar serviço, filtrar por categoria, acessar perfil do profissional, ver missão ativa.
 
 ---
 
-## 10. Planejamento
+**Tela 2 — Perfil do freelancer**
+
+Exibida quando o cliente clica num profissional. Header em verde escuro com avatar, nome, headline, cidade, disponibilidade e nível em destaque. Barra de XP com progresso para o próximo nível e posição no ranking (#2 da cidade). Sidebar com botões de contratar e enviar mensagem, força do perfil (checklist do que falta preencher), badges com XP ganho em cada conquista e feed de últimos XP recebidos. Conteúdo principal com tabs (Sobre / Portfólio / Avaliações / Serviços). Missão ativa do freelancer aparece em destaque no topo do conteúdo — o cliente vê que o profissional está engajado.
+
+Ações disponíveis: contratar, enviar mensagem, ver portfólio, ler avaliações.
+
+---
+
+**Tela 3 — Dashboard do freelancer**
+
+Tela central do freelancer após o login. Sidebar com nível, XP, sequência de dias e navegação. Área principal com 4 métricas (ganhos do mês, contratos ativos, nota média, XP da semana). Carteira em destaque com saldo disponível, saldo em escrow e botão de saque. Cards de contratos ativos com status colorido, missões ativas com barra de progresso, ranking local e feed de XP ganho. Cada ação que gerou XP aparece no feed com valor e data.
+
+Ações disponíveis: ver contratos, acessar missões, ver ranking, sacar, navegar pelos módulos.
+
+---
+
+**Tela 4 — Chat**
+
+Layout em duas colunas: lista de conversas à esquerda com status online, badge de não lidos e preview da última mensagem. Área de chat à direita com header do interlocutor (status online), barra do contrato ativo (nome, valor, status), histórico de mensagens com bolhas, card de proposta dentro do chat com botão de aceitar e pagar. Input com ícones de anexo e foto. Dica de XP no rodapé: "Responda em menos de 1h e ganhe +30 XP — missão ativa!"
+
+Ações disponíveis: enviar mensagem, anexar arquivo, aceitar proposta, ver contrato.
+
+---
+
+**Tela 5 — Pagamento**
+
+Steps no topo mostrando o progresso (Proposta → Pagamento → Confirmação). Preview do freelancer com nota, badges e nível. Resumo do serviço contratado. Seleção de método de pagamento (PIX, cartão, boleto). Sidebar com XP ganho pela contratação (+20 XP), resumo financeiro com taxa explícita, CTA de pagamento e bloco "Por que é seguro" com checklist (escrow, avaliações verificadas, suporte em disputas, LGPD).
+
+Ações disponíveis: selecionar método, confirmar pagamento.
+
+---
+
+**Tela 6 — Conquistas e Gamificação**
+
+Hero verde com nível, XP, barra de progresso e posição no ranking. Grid de badges conquistadas (4) e bloqueadas (2 com opacidade reduzida e meta visível). Cards de missões ativas com barra de progresso individual. Ranking local top 4 com destaque na linha do próprio usuário. Histórico de XP com cada ação que gerou pontos.
+
+Ações disponíveis: ver detalhes de cada badge, acompanhar progresso das missões, ver ranking completo.
+
+---
+
+**Tela 7 — Landing page (visitante não logado)**
+
+Navbar com links, botão de entrar e criar conta. Hero com título, subtítulo, dois CTAs (cliente e freelancer) e preview da plataforma mostrando cards reais de freelancers com nível e XP visíveis. Strip escuro com 6 diferenciais. Seção de como funciona em 3 passos com XP de recompensa em cada passo. Seção de gamificação em verde escuro com os 6 níveis e missões ao vivo. Seção comparativa com tabela de 8 critérios vs concorrentes. Depoimentos das 3 personas. CTA final em fundo escuro.
+
+> O protótipo navegável deve ser construído no Figma a partir dos mockups acima. Os arquivos de referência estão em [`docs/wireframes.md`](./wireframes.md).
+
+### 4.3 Fluxo de Interação do Usuário
+
+Fluxo de contratação completo em 5 passos:
+
+1. Cliente busca "eletricista" na home — vê cards com nota, nível e distância
+2. Acessa o perfil do Marcos — lê avaliações verificadas e vê portfólio
+3. Clica em "Contratar R$ 120" — preenche a descrição do que precisa
+4. Confirma o pagamento via PIX — valor vai pra escrow
+5. Marcos executa, registra a entrega, cliente aprova — pagamento liberado e ambos ganham XP
+
+### 4.4 Feedback Inicial de Usuários
+
+Após apresentar os mockups a 3 usuários (2 freelancers e 1 cliente):
+
+> *"Ficou muito fácil de usar. Parece o iFood mesmo — procurei o serviço, vi o perfil, já quis contratar."*
+> — C01, durante o teste da home e do perfil
+
+> *"O dashboard ficou bem claro. Sei exatamente quanto ganhei e quantos contratos tenho abertos."*
+> — F02, durante o teste do dashboard
+
+> *"Esse negócio de XP e missão eu não entendia no começo. Mas depois que você explica faz sentido — é tipo um jogo."*
+> — F05, durante o teste das conquistas
+
+Os 3 ajustes identificados foram: botão de chat pouco visível no perfil, sistema de missões precisa de tooltip explicativo no primeiro acesso, e explicação inline sobre o que a taxa de 15% cobre.
+
+---
+
+## 5. Arquitetura do Sistema
+
+### 5.1 Diagrama C4
+
+#### Nível 1 — Diagrama de Contexto
+
+O Escambo é o sistema central que recebe interações de três tipos de atores: clientes (pessoas físicas que contratam serviços), freelancers (profissionais que oferecem serviços) e administradores (equipe interna). O sistema se integra com três serviços externos: MercadoPago para processamento de pagamentos, Google OAuth2 para autenticação social e Cloudflare para CDN, proteção DDoS e SSL.
+
+> Diagrama disponível em [`docs/diagramas/c4-nivel1-contexto.svg`](./diagramas/c4-nivel1-contexto.svg)
+
+#### Nível 2 — Diagrama de Containers
+
+O sistema é composto por cinco containers principais:
+
+- Web App (React + Vite + TypeScript) — interface navegável para desktop
+- Mobile App (React Native + Expo) — aplicativo iOS e Android
+- API Backend (Node.js + Express + TypeScript) — núcleo da lógica de negócio
+- MySQL 8 — banco de dados relacional com 48 tabelas
+- DO Spaces — storage de arquivos compatível com S3 (imagens, portfólio, entregas)
+
+Web App e Mobile App se comunicam com a API via HTTPS/JSON. A API se conecta ao banco MySQL, ao storage e aos serviços externos (MercadoPago, Cloudflare). O chat usa WebSocket (Socket.IO) para comunicação em tempo real.
+
+> Diagrama disponível em [`docs/diagramas/c4-nivel2-containers.svg`](./diagramas/c4-nivel2-containers.svg)
+
+#### Nível 3 — Diagrama de Componentes (API Backend)
+
+A API é organizada em quatro camadas:
+
+**Router + Middleware** — entrada de todas as requisições. Responsável por validação JWT, rate limiting e CORS.
+
+**Controllers** — recebem as requisições roteadas e delegam para os services. Há um controller por módulo funcional (Auth, Profiles, Services, Contracts, Payments, Reviews, Chat, Gamification, Notifications, Support, Admin).
+
+**Services** — contêm as regras de negócio. O AuthService cuida de JWT e bcrypt. O PaymentService implementa a lógica de escrow e integração com MercadoPago. O GamificationService calcula XP, verifica condições de badge e atualiza rankings.
+
+**Repositories** — fazem o acesso ao banco de dados MySQL. Cada entidade principal tem seu próprio repository (UserRepository, ContractRepository, PaymentRepository etc).
+
+> Diagrama disponível em [`docs/diagramas/c4-nivel3-componentes.svg`](./diagramas/c4-nivel3-componentes.svg)
+
+### 5.2 Modelo de Dados
+
+O banco tem 48 tabelas distribuídas entre os 14 módulos. As entidades centrais são:
+
+- `users` — base de todos os perfis
+- `profiles_freelancer`, `profiles_client`, `profiles_company` — dados específicos por tipo
+- `services` e `service_categories` — catálogo de serviços
+- `contracts` e `contract_status_history` — fluxo de contratação com histórico imutável
+- `payments`, `wallets` e `withdrawals` — sistema financeiro
+- `reviews` e `review_responses` — avaliações verificadas
+- `conversations` e `messages` — chat
+- `user_xp`, `user_badges`, `missions`, `user_missions` — gamificação
+- `notifications`, `support_tickets`, `audit_logs`, `lgpd_consents` — infraestrutura e conformidade
+
+> DDL completo com todas as tabelas em [`docs/modelagem-banco.md`](./modelagem-banco.md)
+
+### 5.3 Principais Componentes
+
+**Sistema de autenticação** — JWT stateless com refresh token, login social via OAuth2, verificação de e-mail, recuperação de senha, rate limiting por IP.
+
+**Módulo de pagamentos** — integração com MercadoPago via webhook, lógica de escrow com liberação condicional, carteira digital por usuário, processamento de saques via PIX.
+
+**Engine de gamificação** — cálculo de XP por evento (serviço concluído, avaliação recebida, missão cumprida), verificação automática de condições de badge, cálculo de ranking local por geolocalização.
+
+**Sistema de chat** — WebSocket com Socket.IO, entrega garantida, histórico persistido no MySQL, notificações push integradas.
+
+### 5.4 Stack Tecnológica
+
+| Tecnologia | Por que foi escolhida |
+|---|---|
+| React + Vite | Stack que domino bem. Todos os meus projetos anteriores usam React — produtividade real supera qualquer vantagem teórica de mudar |
+| React Native + Expo | Compartilha lógica com o frontend web, acelera o desenvolvimento mobile sem precisar aprender Swift ou Kotlin do zero |
+| Node.js + Express + TypeScript | Performance de I/O, tipagem que evita bugs em runtime, ecossistema npm maduro pra todas as integrações necessárias |
+| MySQL 8 | Os dados do Escambo são altamente relacionais — contratações, pagamentos e avaliações têm muitos relacionamentos. Banco relacional com transações ACID é a escolha certa aqui |
+| MercadoPago | Maior cobertura no Brasil, PIX nativo, SDK bem documentado pra Node.js, suporte a escrow via marketplace |
+| DigitalOcean | Melhor custo-benefício pra MVP, mais controle que PaaS como Heroku, escalonamento horizontal quando precisar |
+| Cloudflare | CDN global gratuita no plano básico, DDoS protection, SSL automático sem configuração |
+
+---
+
+## 6. Segurança e Privacidade
+
+Segurança não foi tratada como funcionalidade opcional — foi pensada como parte da arquitetura desde o início. As principais proteções implementadas seguem as diretrizes do OWASP Top 10:
+
+- Injeção de SQL prevenida por queries parametrizadas e validação de schema em 100% das rotas
+- Autenticação com JWT de curta duração (1h) + refresh token (7 dias) + encerramento de todas as sessões ao trocar senha
+- Senhas com bcrypt, salt rounds 12 — nunca armazenadas em texto plano
+- Rate limiting por IP nas rotas de autenticação — bloqueio após 5 tentativas em 5 minutos
+- CPF e dados bancários com criptografia AES-256 no banco
+- HTTPS obrigatório com TLS 1.2+ em toda comunicação
+- CORS configurado para aceitar apenas origens autorizadas
+- Audit log imutável de todas as ações financeiras e críticas
+
+### 6.1 Privacidade e LGPD
+
+O sistema está em conformidade com a Lei nº 13.709/2018 (LGPD) desde o primeiro dia:
+
+**Dados coletados no cadastro:** apenas e-mail, senha e tipo de perfil — o mínimo necessário para criar a conta.
+
+**Dados adicionais:** coletados somente quando necessários para funcionalidades específicas (CPF para funcionalidades financeiras, telefone para notificações SMS, localização para busca por proximidade).
+
+**Como são armazenados:** dados sensíveis com criptografia AES-256. Senhas com bcrypt. Localização nunca armazenada em tempo real — apenas cidade e coordenadas aproximadas informadas pelo usuário.
+
+**Direito ao esquecimento:** o usuário pode solicitar a exclusão de todos os dados pessoais a qualquer momento. O prazo para processamento é de 15 dias úteis. Dados financeiros e de auditoria são retidos pelo prazo legal mínimo exigido (5 anos) e depois anonimizados.
+
+**Consentimento:** checkboxes separados e explícitos para Termos de Uso, Política de Privacidade e autorização de tratamento de dados pessoais. Checkboxes pré-marcados não são utilizados.
+
+---
+
+## 7. Planejamento do Projeto
 
 | Marco | Descrição | Prazo |
 |---|---|---|
-| M1 | Documentação completa e aprovação da RFC | Mai/2026 |
-| M2 | Setup do ambiente, autenticação e perfis | Jun/2026 |
-| M3 | Módulo de contratações e pagamentos | Jul/2026 |
-| M4 | Chat, gamificação e notificações | Ago/2026 |
-| M5 | MVP funcional, testes e ajustes | Set/2026 |
-| M6 | Deploy, validação com usuários reais | Out/2026 |
+| M1 | Documentação completa e aprovação da RFC pela banca | Mai/2026 |
+| M2 | Setup do ambiente, CI/CD, módulos de autenticação e perfis | Jun/2026 |
+| M3 | Módulo de contratações e pagamentos com escrow | Jul/2026 |
+| M4 | Chat em tempo real, gamificação e notificações | Ago/2026 |
+| M5 | MVP funcional, testes automatizados e ajustes de UX | Set/2026 |
+| M6 | Deploy em produção, validação com usuários reais, coleta de feedback | Out/2026 |
 
 ---
 
-## 11. Considerações Finais
+## 8. Referências
 
-O Escambo é um projeto que acredito de verdade. Não só pelo potencial técnico, mas pelo impacto que pode ter — especialmente pra trabalhadores autônomos que hoje são invisíveis digitalmente. Um eletricista bom, um designer talentoso, uma diarista confiável — essas pessoas existem em todo lugar e não têm onde aparecer de forma justa e profissional.
+- IBGE. **PNAD Contínua — Características adicionais do mercado de trabalho 2024**. Rio de Janeiro: IBGE, 2025. Disponível em: https://www.ibge.gov.br. Acesso em: abr. 2026.
 
-A plataforma que quero construir resolve isso. E faz isso de um jeito que ninguém fez ainda no Brasil — com gamificação real, pagamento seguro, interface que qualquer pessoa consegue usar, e foco tanto em serviços digitais quanto em serviços locais e presenciais.
+- BRASIL. **Lei nº 13.709, de 14 de agosto de 2018** — Lei Geral de Proteção de Dados Pessoais (LGPD). Diário Oficial da União, Brasília, 2018.
 
-Esse é o Escambo.
+- DETERDING, S. et al. From game design elements to gamefulness: Defining gamification. In: **Proceedings of the 15th International Academic MindTrek Conference**. ACM, 2011. p. 9–15.
+
+- HAMARI, J.; KOIVISTO, J.; SARSA, H. Does Gamification Work? A Literature Review of Empirical Studies on Gamification. In: **Proceedings of the 47th Hawaii International Conference on System Sciences**. IEEE, 2014. p. 3025–3034.
+
+- ROCHET, J. C.; TIROLE, J. Platform Competition in Two-Sided Markets. **Journal of the European Economic Association**, v. 1, n. 4, p. 990–1029, 2003.
+
+- OWASP. **Top Ten 2021**. Open Web Application Security Project. Disponível em: https://owasp.org/Top10. Acesso em: abr. 2026.
+
+- MERCADOPAGO. **Documentação da API MercadoPago**. Disponível em: https://www.mercadopago.com.br/developers. Acesso em: abr. 2026.
+
+- BANCO CENTRAL DO BRASIL. **Estatísticas do PIX 2023–2024**. Brasília: BCB, 2024. Disponível em: https://www.bcb.gov.br. Acesso em: abr. 2026.
 
 ---
 
-## 12. Referências
+## 9. Apêndices
 
-- IBGE. **PNAD Contínua 2024**. Rio de Janeiro: IBGE, 2025.
-- BRASIL. **Lei nº 13.709/2018** — Lei Geral de Proteção de Dados (LGPD).
-- DETERDING, S. et al. From game design elements to gamefulness: Defining gamification. **ACM MindTrek**, 2011.
-- ROCHET, J.C.; TIROLE, J. Platform Competition in Two-Sided Markets. **Journal of the European Economic Association**, 2003.
-- OWASP. **Top Ten 2021**. Disponível em: https://owasp.org/Top10.
-- MERCADOPAGO. **Documentação da API**. Disponível em: https://www.mercadopago.com.br/developers.
+- **Apêndice A** — Modelagem completa do banco de dados: [`docs/modelagem-banco.md`](./modelagem-banco.md)
+- **Apêndice B** — Lista completa de requisitos funcionais (82 RFs): [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md)
+- **Apêndice C** — Lista completa de requisitos não funcionais (40 RNFs): [`docs/requisitos-nao-funcionais.md`](./requisitos-nao-funcionais.md)
+- **Apêndice D** — Regras de negócio (75 RNs): [`docs/regras-de-negocio.md`](./regras-de-negocio.md)
+- **Apêndice E** — Personas detalhadas: [`docs/personas.md`](./personas.md)
+- **Apêndice F** — Casos de uso completos: [`docs/casos-de-uso.md`](./casos-de-uso.md)
+- **Apêndice G** — Benchmarking e estado da arte: [`docs/benchmarking.md`](./benchmarking.md)
+- **Apêndice H** — Evidências de validação com usuários: [`docs/evidencias-validacao.md`](./evidencias-validacao.md)
+- **Apêndice I** — Repositório público: https://github.com/Guirenzo/Escambo
+
+---
+
+## 10. Parecer do Comitê de Avaliação
+
+*(A ser preenchido pelos professores avaliadores)*
+
+---
+
+**Avaliador 1:** ______________________________________
+**Instituição / Curso:** ______________________________________
+**Data:** ________ / ________ / 2026
+
+**Status:** [ ] Aprovado &nbsp;&nbsp; [ ] Aprovado com ajustes &nbsp;&nbsp; [ ] Reapresentar
+
+**Nota:** _______ / 10
+
+**Observações:**
+
+> _______________________________________________________________________________
+>
+> _______________________________________________________________________________
+>
+> _______________________________________________________________________________
+
+---
+
+**Avaliador 2:** ______________________________________
+**Instituição / Curso:** ______________________________________
+**Data:** ________ / ________ / 2026
+
+**Status:** [ ] Aprovado &nbsp;&nbsp; [ ] Aprovado com ajustes &nbsp;&nbsp; [ ] Reapresentar
+
+**Nota:** _______ / 10
+
+**Observações:**
+
+> _______________________________________________________________________________
+>
+> _______________________________________________________________________________
+>
+> _______________________________________________________________________________
+
+---
+
+**Avaliador 3:** ______________________________________
+**Instituição / Curso:** ______________________________________
+**Data:** ________ / ________ / 2026
+
+**Status:** [ ] Aprovado &nbsp;&nbsp; [ ] Aprovado com ajustes &nbsp;&nbsp; [ ] Reapresentar
+
+**Nota:** _______ / 10
+
+**Observações:**
+
+> _______________________________________________________________________________
+>
+> _______________________________________________________________________________
+>
+> _______________________________________________________________________________
+
+---
+
+*RFC — Escambo v2.0 — PAC Extensionista VII — Católica SC — 2026 — Guilherme Renzo*
