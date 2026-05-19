@@ -367,7 +367,8 @@ A identidade visual adota verde profundo (#0D5C3A) como cor primária e âmbar (
 
 Tela principal após o login do cliente. Exibe saudação personalizada, campo de busca, categorias em pills horizontais e cards de serviços em destaque. Cards impulsionados recebem badge âmbar. Cada card exibe o nível do freelancer (Especialista, Mestre etc), nota e distância. Na barra superior fica o XP acumulado do usuário e a barra de missão ativa. Ranking local dos profissionais da categoria aparece na seção inferior.
 
-<img width="1897" height="913" alt="image" src="https://github.com/user-attachments/assets/2594e8af-6681-412a-a6dd-569524751f59" />
+<img width="1903" height="914" alt="image" src="https://github.com/user-attachments/assets/e5f904da-1c4a-4ced-9886-424faf3fda70" />
+
 
 
 Ações disponíveis: buscar serviço, filtrar por categoria, acessar perfil do profissional, ver missão ativa.
@@ -378,6 +379,9 @@ Ações disponíveis: buscar serviço, filtrar por categoria, acessar perfil do 
 
 Exibida quando o cliente clica num profissional. Header em verde escuro com avatar, nome, headline, cidade, disponibilidade e nível em destaque. Barra de XP com progresso para o próximo nível e posição no ranking (#2 da cidade). Sidebar com botões de contratar e enviar mensagem, força do perfil (checklist do que falta preencher), badges com XP ganho em cada conquista e feed de últimos XP recebidos. Conteúdo principal com tabs (Sobre / Portfólio / Avaliações / Serviços). Missão ativa do freelancer aparece em destaque no topo do conteúdo — o cliente vê que o profissional está engajado.
 
+<img width="1905" height="913" alt="image" src="https://github.com/user-attachments/assets/495008e3-42f4-44a8-b904-da680ad58a50" />
+
+
 Ações disponíveis: contratar, enviar mensagem, ver portfólio, ler avaliações.
 
 ---
@@ -385,6 +389,9 @@ Ações disponíveis: contratar, enviar mensagem, ver portfólio, ler avaliaçõ
 **Tela 3 — Dashboard do freelancer**
 
 Tela central do freelancer após o login. Sidebar com nível, XP, sequência de dias e navegação. Área principal com 4 métricas (ganhos do mês, contratos ativos, nota média, XP da semana). Carteira em destaque com saldo disponível, saldo em escrow e botão de saque. Cards de contratos ativos com status colorido, missões ativas com barra de progresso, ranking local e feed de XP ganho. Cada ação que gerou XP aparece no feed com valor e data.
+
+<img width="1903" height="913" alt="image" src="https://github.com/user-attachments/assets/4deb3e3e-fc5f-4f92-b802-ff3f3b183882" />
+
 
 Ações disponíveis: ver contratos, acessar missões, ver ranking, sacar, navegar pelos módulos.
 
@@ -394,6 +401,9 @@ Ações disponíveis: ver contratos, acessar missões, ver ranking, sacar, naveg
 
 Layout em duas colunas: lista de conversas à esquerda com status online, badge de não lidos e preview da última mensagem. Área de chat à direita com header do interlocutor (status online), barra do contrato ativo (nome, valor, status), histórico de mensagens com bolhas, card de proposta dentro do chat com botão de aceitar e pagar. Input com ícones de anexo e foto. Dica de XP no rodapé: "Responda em menos de 1h e ganhe +30 XP — missão ativa!"
 
+<img width="1895" height="914" alt="image" src="https://github.com/user-attachments/assets/ef9326b1-4657-48d0-a359-9ab373741ad6" />
+
+
 Ações disponíveis: enviar mensagem, anexar arquivo, aceitar proposta, ver contrato.
 
 ---
@@ -401,6 +411,9 @@ Ações disponíveis: enviar mensagem, anexar arquivo, aceitar proposta, ver con
 **Tela 5 — Pagamento**
 
 Steps no topo mostrando o progresso (Proposta → Pagamento → Confirmação). Preview do freelancer com nota, badges e nível. Resumo do serviço contratado. Seleção de método de pagamento (PIX, cartão, boleto). Sidebar com XP ganho pela contratação (+20 XP), resumo financeiro com taxa explícita, CTA de pagamento e bloco "Por que é seguro" com checklist (escrow, avaliações verificadas, suporte em disputas, LGPD).
+
+<img width="1914" height="904" alt="image" src="https://github.com/user-attachments/assets/77b46b66-66a2-4097-bd49-c5beb57d3524" />
+
 
 Ações disponíveis: selecionar método, confirmar pagamento.
 
@@ -410,6 +423,9 @@ Ações disponíveis: selecionar método, confirmar pagamento.
 
 Hero verde com nível, XP, barra de progresso e posição no ranking. Grid de badges conquistadas (4) e bloqueadas (2 com opacidade reduzida e meta visível). Cards de missões ativas com barra de progresso individual. Ranking local top 4 com destaque na linha do próprio usuário. Histórico de XP com cada ação que gerou pontos.
 
+<img width="1913" height="909" alt="image" src="https://github.com/user-attachments/assets/8bbbf905-28e3-4631-86d8-c811ce79f21c" />
+
+
 Ações disponíveis: ver detalhes de cada badge, acompanhar progresso das missões, ver ranking completo.
 
 ---
@@ -417,6 +433,9 @@ Ações disponíveis: ver detalhes de cada badge, acompanhar progresso das miss�
 **Tela 7 — Landing page (visitante não logado)**
 
 Navbar com links, botão de entrar e criar conta. Hero com título, subtítulo, dois CTAs (cliente e freelancer) e preview da plataforma mostrando cards reais de freelancers com nível e XP visíveis. Strip escuro com 6 diferenciais. Seção de como funciona em 3 passos com XP de recompensa em cada passo. Seção de gamificação em verde escuro com os 6 níveis e missões ao vivo. Seção comparativa com tabela de 8 critérios vs concorrentes. Depoimentos das 3 personas. CTA final em fundo escuro.
+
+<img width="1897" height="913" alt="image" src="https://github.com/user-attachments/assets/efd4cfb4-7e0d-48d6-92f4-4266147f2caf" />
+
 
 > O protótipo navegável deve ser construído no Figma a partir dos mockups acima. Os arquivos de referência estão em [`docs/wireframes.md`](./wireframes.md).
 
@@ -455,7 +474,8 @@ Os 3 ajustes identificados foram: botão de chat pouco visível no perfil, siste
 
 O Escambo é o sistema central que recebe interações de três tipos de atores: clientes (pessoas físicas que contratam serviços), freelancers (profissionais que oferecem serviços) e administradores (equipe interna). O sistema se integra com três serviços externos: MercadoPago para processamento de pagamentos, Google OAuth2 para autenticação social e Cloudflare para CDN, proteção DDoS e SSL.
 
-> Diagrama disponível em [`docs/diagramas/c4-nivel1-contexto.svg`](./diagramas/c4-nivel1-contexto.svg)
+> <img width="738" height="567" alt="image" src="https://github.com/user-attachments/assets/cef76c90-5255-4a08-b1e4-01c2ceb5ac86" />
+
 
 #### Nível 2 — Diagrama de Containers
 
@@ -469,7 +489,7 @@ O sistema é composto por cinco containers principais:
 
 Web App e Mobile App se comunicam com a API via HTTPS/JSON. A API se conecta ao banco MySQL, ao storage e aos serviços externos (MercadoPago, Cloudflare). O chat usa WebSocket (Socket.IO) para comunicação em tempo real.
 
-> Diagrama disponível em [`docs/diagramas/c4-nivel2-containers.svg`](./diagramas/c4-nivel2-containers.svg)
+> <img width="780" height="598" alt="image" src="https://github.com/user-attachments/assets/17074a4f-e888-4086-b669-5d05aa6f274e" />
 
 #### Nível 3 — Diagrama de Componentes (API Backend)
 
@@ -483,7 +503,7 @@ A API é organizada em quatro camadas:
 
 **Repositories** — fazem o acesso ao banco de dados MySQL. Cada entidade principal tem seu próprio repository (UserRepository, ContractRepository, PaymentRepository etc).
 
-> Diagrama disponível em [`docs/diagramas/c4-nivel3-componentes.svg`](./diagramas/c4-nivel3-componentes.svg)
+> <img width="690" height="581" alt="image" src="https://github.com/user-attachments/assets/f02dee6f-726d-4b66-8549-84652a688674" />
 
 ### 5.2 Modelo de Dados
 
