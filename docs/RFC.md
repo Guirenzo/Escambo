@@ -367,6 +367,9 @@ A identidade visual adota verde profundo (#0D5C3A) como cor primária e âmbar (
 
 Tela principal após o login do cliente. Exibe saudação personalizada, campo de busca, categorias em pills horizontais e cards de serviços em destaque. Cards impulsionados recebem badge âmbar. Cada card exibe o nível do freelancer (Especialista, Mestre etc), nota e distância. Na barra superior fica o XP acumulado do usuário e a barra de missão ativa. Ranking local dos profissionais da categoria aparece na seção inferior.
 
+<img width="1897" height="913" alt="image" src="https://github.com/user-attachments/assets/2594e8af-6681-412a-a6dd-569524751f59" />
+
+
 Ações disponíveis: buscar serviço, filtrar por categoria, acessar perfil do profissional, ver missão ativa.
 
 ---
