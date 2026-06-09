@@ -1,4 +1,4 @@
-<img width="925" height="455" alt="Captura de tela 2026-06-09 104344" src="https://github.com/user-attachments/assets/b3d72bea-6f72-462b-b435-de9c0d4025b5" /># RFC — Escambo: Plataforma Digital de Serviços Freelance
+RFC — Escambo: Plataforma Digital de Serviços Freelance
 
 **Engenharia de Software — Católica SC**
 
@@ -514,7 +514,7 @@ Os 3 ajustes identificados foram: o botão de chat estava pouco visível no perf
 
 O Escambo é o sistema central que recebe interações de três tipos de atores: clientes (pessoas físicas que contratam serviços), freelancers (profissionais que oferecem serviços) e administradores (equipe interna). O sistema se integra a três serviços externos: MercadoPago, para processamento de pagamentos; Google OAuth2, para autenticação social; e Cloudflare, para CDN, proteção DDoS e SSL.
 
-> <img width="925" height="455" alt="Captura de tela 2026-06-09 104344" src="https://github.com/user-attachments/assets/5849fd4f-c5d7-4433-9aff-c8e1edb87f19" />
+> <img width="925" height="455" alt="Captura de tela 2026-06-09 104344" src="https://github.com/user-attachments/assets/b3d72bea-6f72-462b-b435-de9c0d4025b5" />#
 
 " />
 
