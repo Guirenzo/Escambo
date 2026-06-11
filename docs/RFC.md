@@ -686,22 +686,255 @@ A API é organizada em quatro camadas:
 
 ### 5.2 Modelo de Dados
 
-O banco tem 48 tabelas distribuídas entre os 14 módulos. As entidades centrais são:
+O Escambo adota uma arquitetura de persistência **poliglota**: o núcleo transacional
+roda em um banco relacional (MySQL 8) — pela necessidade de consistência forte,
+integridade referencial e transações ACID no fluxo financeiro (escrow, pagamentos,
+saques) — enquanto módulos de alto volume de escrita e leitura denormalizada (chat e
+notificações) podem ser modelados como documentos. Esta seção apresenta as três visões
+do modelo: o **DER**, o **esquema relacional** e o **modelo de documentos (NoSQL)**.
 
-- `users` — base de todos os perfis
-- `profiles_freelancer`, `profiles_client`, `profiles_company` — dados específicos por tipo
-- `services` e `service_categories` — catálogo de serviços
-- `contracts` e `contract_status_history` — fluxo de contratação com histórico imutável
-- `payments`, `wallets` e `withdrawals` — sistema financeiro
-- `reviews` e `review_responses` — avaliações verificadas
-- `conversations` e `messages` — chat
-- `user_xp`, `user_badges`, `missions`, `user_missions` — gamificação
-- `notifications`, `support_tickets`, `audit_logs`, `lgpd_consents` — infraestrutura e conformidade
+O banco relacional tem 48 tabelas distribuídas entre os 14 módulos. As entidades centrais
+do marketplace são apresentadas abaixo; o DDL completo das 48 tabelas está em
+[`docs/modelagem-banco.md`](./modelagem-banco.md).
 
-  <img width="1195" height="820" alt="image" src="https://github.com/user-attachments/assets/617a3e9b-ca23-41c2-9aac-1b444a53f733" />
+---
 
+#### 5.2.1 DER — Diagrama Entidade-Relacionamento
 
-> DDL completo com todas as tabelas em [`docs/modelagem-banco.md`](./modelagem-banco.md).
+O diagrama abaixo representa o núcleo do domínio (identidade → catálogo → contratação →
+resultados). As cardinalidades derivam diretamente das chaves estrangeiras do esquema:
+`contracts` referencia `users` duas vezes (cliente e freelancer) e `services`; de
+`contracts` derivam, em 1:N, os `payments`, e em 1:1 a `reviews`.
+
+```mermaid
+erDiagram
+    users ||--o| profiles_client       : "tem"
+    users ||--o| profiles_freelancer   : "tem"
+    users ||--o| profiles_company      : "tem"
+    users ||--o| wallets               : "possui"
+    users ||--o| user_xp               : "acumula"
+    profiles_freelancer ||--o{ freelancer_portfolio_items : "exibe"
+
+    service_categories ||--o{ service_categories : "subcategoria"
+    service_categories ||--o{ services           : "classifica"
+    users              ||--o{ services           : "oferece"
+
+    users     ||--o{ contracts : "contrata (client_id)"
+    users     ||--o{ contracts : "executa (freelancer_id)"
+    services  ||--o{ contracts : "origina"
+    contracts ||--o{ contract_status_history : "registra"
+
+    contracts ||--o{ payments    : "gera"
+    wallets   ||--o{ withdrawals : "origina"
+
+    contracts ||--o| reviews          : "recebe"
+    reviews   ||--o| review_responses : "tem resposta"
+
+    contracts     ||--o| conversations : "vincula"
+    users         ||--o{ conversations : "participa"
+    conversations ||--o{ messages      : "contém"
+
+    users    ||--o{ user_badges   : "conquista"
+    badges   ||--o{ user_badges   : "concedido em"
+    users    ||--o{ user_missions : "progride"
+    missions ||--o{ user_missions : "instancia"
+
+    users {
+        bigint id PK
+        varchar ulid UK
+        varchar email UK
+        enum role
+        enum status
+    }
+    services {
+        bigint id PK
+        bigint user_id FK
+        bigint category_id FK
+        enum price_type
+        decimal price
+    }
+    contracts {
+        bigint id PK
+        bigint client_id FK
+        bigint freelancer_id FK
+        bigint service_id FK
+        decimal price
+        decimal platform_fee
+        enum status
+    }
+    payments {
+        bigint id PK
+        bigint contract_id FK
+        bigint payer_id FK
+        bigint payee_id FK
+        decimal amount
+        enum method
+        enum status
+    }
+    reviews {
+        bigint id PK
+        bigint contract_id FK
+        bigint reviewer_id FK
+        bigint reviewee_id FK
+        tinyint rating
+    }
+    conversations {
+        bigint id PK
+        bigint contract_id FK
+        bigint participant_a FK
+        bigint participant_b FK
+    }
+    messages {
+        bigint id PK
+        bigint conversation_id FK
+        bigint sender_id FK
+        enum type
+        boolean is_read
+    }
+```
+
+> O DER completo (todas as tabelas, com tipos e índices) pode ser gerado a partir do
+> arquivo [`docs/escambo.dbml`](./escambo.dbml) em [dbdiagram.io](https://dbdiagram.io),
+> que também exporta o script SQL.
+
+---
+
+#### 5.2.2 Esquema Relacional
+
+Notação: <ins>chave primária sublinhada</ins>; *FK → tabela(coluna)* indica chave
+estrangeira. Tipos e colunas auxiliares omitidos por brevidade (ver DDL completo).
+
+**Identidade**
+
+- users(<ins>id</ins>, ulid, email, phone, password_hash, role, status, created_at, deleted_at)
+- profiles_client(<ins>id</ins>, *user_id → users(id)*, full_name, city, state, latitude, longitude)
+- profiles_freelancer(<ins>id</ins>, *user_id → users(id)*, full_name, headline, avg_rating, total_reviews, is_available, cpf_verified)
+- profiles_company(<ins>id</ins>, *user_id → users(id)*, company_name, cnpj, website)
+- freelancer_portfolio_items(<ins>id</ins>, *freelancer_id → profiles_freelancer(id)*, title, image_url, sort_order)
+
+**Catálogo**
+
+- service_categories(<ins>id</ins>, *parent_id → service_categories(id)*, name, slug, is_active)
+- services(<ins>id</ins>, *user_id → users(id)*, *category_id → service_categories(id)*, title, description, price_type, price, delivery_days, is_active)
+
+**Contratação**
+
+- contracts(<ins>id</ins>, ulid, *client_id → users(id)*, *freelancer_id → users(id)*, *service_id → services(id)*, price, platform_fee, freelancer_net, status, deadline_at)
+- contract_status_history(<ins>id</ins>, *contract_id → contracts(id)*, *changed_by → users(id)*, old_status, new_status, note, created_at)
+
+**Financeiro**
+
+- wallets(<ins>id</ins>, *user_id → users(id)*, balance, balance_pending, currency)
+- payments(<ins>id</ins>, *contract_id → contracts(id)*, *payer_id → users(id)*, *payee_id → users(id)*, amount, platform_fee, net_amount, method, status, gateway_payment_id)
+- withdrawals(<ins>id</ins>, *user_id → users(id)*, *wallet_id → wallets(id)*, amount, pix_key, status)
+
+**Avaliações**
+
+- reviews(<ins>id</ins>, *contract_id → contracts(id)* [único], *reviewer_id → users(id)*, *reviewee_id → users(id)*, rating, comment, is_public)
+- review_responses(<ins>id</ins>, *review_id → reviews(id)* [único], *user_id → users(id)*, response)
+
+**Chat**
+
+- conversations(<ins>id</ins>, *contract_id → contracts(id)*, *participant_a → users(id)*, *participant_b → users(id)*, last_message_at)
+- messages(<ins>id</ins>, *conversation_id → conversations(id)*, *sender_id → users(id)*, type, content, file_url, is_read)
+
+**Gamificação**
+
+- user_xp(<ins>id</ins>, *user_id → users(id)*, total_xp, level, level_name)
+- badges(<ins>id</ins>, name, slug, xp_reward, condition)
+- user_badges(<ins>id</ins>, *user_id → users(id)*, *badge_id → badges(id)*, awarded_at)
+- missions(<ins>id</ins>, title, xp_reward, type, condition)
+- user_missions(<ins>id</ins>, *user_id → users(id)*, *mission_id → missions(id)*, progress, is_completed, expires_at)
+
+As tabelas de infraestrutura e conformidade (`notifications`, `support_tickets`,
+`audit_logs`, `lgpd_consents`) seguem o mesmo padrão, todas com FK para `users(id)`.
+
+---
+
+#### 5.2.3 Modelo de Documentos (NoSQL)
+
+Embora o núcleo seja relacional, parte do domínio se beneficia de uma modelagem
+orientada a documentos. A regra de modelagem aplicada é a clássica de agregados:
+**embute o que é lido junto e tem cardinalidade limitada; referencia o que é
+compartilhado ou cresce de forma ilimitada.**
+
+**Documento `user`** — agrega o perfil, a carteira (resumo) e a gamificação, que são
+sempre lidos junto com o usuário e têm cardinalidade 1:1.
+
+```json
+{
+  "_id": "01HXY...ULID",
+  "email": "ana@exemplo.com",
+  "role": "freelancer",
+  "status": "active",
+  "profile": {
+    "full_name": "Ana Souza",
+    "headline": "Designer | 6 anos de exp.",
+    "avg_rating": 4.87,
+    "total_reviews": 132,
+    "is_available": true,
+    "portfolio": [
+      { "title": "Identidade visual — Café X", "image_url": "https://cdn/.../1.jpg" }
+    ]
+  },
+  "wallet": { "balance": 1840.50, "balance_pending": 320.00, "currency": "BRL" },
+  "gamification": { "total_xp": 5400, "level": 7, "badges": ["top_rated", "fast_delivery"] }
+}
+```
+
+**Documento `conversation`** — embute os participantes e uma janela das últimas
+mensagens (otimização de leitura para a tela do chat); o histórico completo fica em uma
+coleção `messages` separada, referenciada por `conversation_id`, porque cresce de forma
+ilimitada.
+
+```json
+{
+  "_id": "conv_8842",
+  "contract_id": "ctr_5521",
+  "participants": ["usr_1029", "usr_3310"],
+  "last_message_at": "2026-06-10T18:42:00Z",
+  "recent_messages": [
+    { "sender_id": "usr_1029", "type": "text", "content": "Pode entregar sexta?", "created_at": "2026-06-10T18:40:00Z" },
+    { "sender_id": "usr_3310", "type": "text", "content": "Consigo sim!", "created_at": "2026-06-10T18:42:00Z" }
+  ]
+}
+```
+
+**Documento `contract`** — embute o histórico de status (cardinalidade pequena e
+imutável) e um resumo do pagamento; o usuário e o serviço são **referenciados**, pois
+são entidades compartilhadas por muitos contratos.
+
+```json
+{
+  "_id": "ctr_5521",
+  "client_id": "usr_1029",
+  "freelancer_id": "usr_3310",
+  "service_id": "svc_771",
+  "price": 800.00,
+  "platform_fee": 80.00,
+  "status": "completed",
+  "status_history": [
+    { "new_status": "accepted",  "at": "2026-06-01T10:00:00Z" },
+    { "new_status": "completed", "at": "2026-06-08T15:30:00Z" }
+  ],
+  "payment": { "status": "paid", "method": "pix", "amount": 800.00, "paid_at": "2026-06-01T10:05:00Z" }
+}
+```
+
+**Quadro de decisões de modelagem**
+
+| Relação relacional | Decisão no documento | Motivo |
+|---|---|---|
+| users 1:1 profile / wallet / xp | embutir | lido junto, cardinalidade fixa |
+| freelancer 1:N portfólio | embutir | conjunto pequeno e limitado |
+| conversation 1:N messages | referenciar (coleção à parte) | crescimento ilimitado |
+| contract 1:N status_history | embutir | histórico curto e imutável |
+| contract → user / service | referenciar | entidade compartilhada |
+| payments / withdrawals | **manter relacional** | exige consistência ACID e auditoria |
+
+> Conclusão: o modelo de documentos é adequado para leitura denormalizada (perfil, chat),
+> mas o fluxo financeiro permanece no relacional, onde transações e integridade
+> referencial são requisitos não-funcionais inegociáveis.
 
 ### 5.3 Principais Componentes
 
