@@ -360,7 +360,7 @@ Depois da entrega, o cliente pode aprovar o serviço ou solicitar uma revisão. 
 
 **Figura 1 — Fluxo principal do cliente na contratação de um serviço.**
 
-<img width="264" height="747" alt="image" src="https://github.com/user-attachments/assets/303f260d-2f46-42bf-9d4f-9ab41abe69b7" />
+<img width="700" alt="Fluxo principal do cliente na contratação de um serviço" src="https://github.com/user-attachments/assets/303f260d-2f46-42bf-9d4f-9ab41abe69b7" />
 
 
 O fluxo do cliente segue as seguintes etapas:
@@ -388,7 +388,7 @@ Com a aprovação da entrega, o valor é liberado para a carteira digital do fre
 
 **Figura 2 — Fluxo principal do freelancer na execução de um serviço.**
 
-<img width="322" height="747" alt="image" src="https://github.com/user-attachments/assets/46e58d81-5b7e-41b2-8f11-a15e88a7ef4f" />
+<img width="700" alt="Fluxo principal do freelancer na execução de um serviço" src="https://github.com/user-attachments/assets/46e58d81-5b7e-41b2-8f11-a15e88a7ef4f" />
 
 O fluxo do freelancer segue as seguintes etapas:
 
@@ -416,7 +416,7 @@ Se o cancelamento ocorrer antes do aceite do freelancer, o cliente recebe reembo
 
 **Figura 3 — Fluxo alternativo de cancelamento com reembolso.**
 
-<img width="935" height="749" alt="image" src="https://github.com/user-attachments/assets/2cf5548a-c852-4865-9549-68ef74da2084" />
+<img width="935" alt="Fluxo alternativo de cancelamento com reembolso" src="https://github.com/user-attachments/assets/2cf5548a-c852-4865-9549-68ef74da2084" />
 
 
 As regras de cancelamento são:
@@ -446,7 +446,7 @@ Com isso, o pagamento é liberado ao freelancer e o contrato é encerrado como c
 
 **Figura 4 — Fluxo alternativo de aprovação tácita após 5 dias úteis.**
 
-<img width="382" height="751" alt="image" src="https://github.com/user-attachments/assets/71b5f315-4090-4e12-9289-f0a5147edd75" />
+<img width="700" alt="Fluxo alternativo de aprovação tácita após 5 dias úteis" src="https://github.com/user-attachments/assets/71b5f315-4090-4e12-9289-f0a5147edd75" />
 
 
 O comportamento da aprovação tácita é:
@@ -470,7 +470,7 @@ Esse fluxo é importante para garantir mais segurança e transparência para os 
 
 **Figura 5 — Fluxo alternativo de disputa por prazo estourado sem entrega.**
 
-<img width="463" height="749" alt="image" src="https://github.com/user-attachments/assets/6dcc2b67-05e0-4887-8ebc-b61668e2e0cb" />
+<img width="700" alt="Fluxo alternativo de disputa por prazo estourado sem entrega" src="https://github.com/user-attachments/assets/6dcc2b67-05e0-4887-8ebc-b61668e2e0cb" />
 
 
 O comportamento do fluxo de disputa é:
@@ -498,7 +498,7 @@ Além desses caminhos específicos, alguns módulos são compartilhados pelos do
 
 **Figura 6 — Fluxo de navegação geral da plataforma Escambo.**
 
-<img width="1143" height="746" alt="image" src="https://github.com/user-attachments/assets/a240ed2d-1624-4b68-8c7e-c1232f6e060a" />
+<img width="1143" height="746" alt="Fluxo de navegação geral da plataforma Escambo" src="https://github.com/user-attachments/assets/a240ed2d-1624-4b68-8c7e-c1232f6e060a" />
 
 O fluxo geral de navegação é representado da seguinte forma:
 
@@ -531,10 +531,6 @@ Módulos compartilhados:
 
 ```
 
-Módulos compartilhados (acessíveis por ambos via menu):
-Chat · Notificações · Suporte · Configurações · Perfil
-
-
 ### 4.2 Wireframes e Mockups das Telas
 
 As telas foram desenvolvidas para desktop (largura base de 1280px), com design responsivo.
@@ -544,7 +540,7 @@ A identidade visual adota o verde profundo (#0D5C3A) como cor primária e o âmb
 
 Tela principal após o login do cliente. Exibe saudação personalizada, campo de busca, categorias em pills horizontais e cards de serviços em destaque. Cards impulsionados recebem badge âmbar. Cada card exibe o nível do freelancer (Especialista, Mestre etc.), a nota e a distância. Na barra superior ficam o XP acumulado do usuário e a barra de missão ativa. O ranking local dos profissionais da categoria aparece na seção inferior.
 
-<img width="1903" height="914" alt="image" src="https://github.com/user-attachments/assets/e5f904da-1c4a-4ced-9886-424faf3fda70" />
+<img width="1903" height="914" alt="Tela Home do cliente (busca e descoberta)" src="https://github.com/user-attachments/assets/e5f904da-1c4a-4ced-9886-424faf3fda70" />
 
 Ações disponíveis: buscar serviço, filtrar por categoria, acessar perfil do profissional, ver missão ativa.
 
@@ -554,7 +550,7 @@ Ações disponíveis: buscar serviço, filtrar por categoria, acessar perfil do 
 
 Exibida quando o cliente clica num profissional. Header em verde escuro com avatar, nome, headline, cidade, disponibilidade e nível em destaque. Barra de XP com progresso para o próximo nível e posição no ranking (#2 da cidade). Sidebar com botões de contratar e enviar mensagem, força do perfil (checklist do que falta preencher), badges com XP ganho em cada conquista e feed dos últimos XP recebidos. Conteúdo principal com abas (Sobre / Portfólio / Avaliações / Serviços). A missão ativa do freelancer aparece em destaque no topo do conteúdo, sinalizando ao cliente que o profissional está engajado.
 
-<img width="1905" height="913" alt="image" src="https://github.com/user-attachments/assets/495008e3-42f4-44a8-b904-da680ad58a50" />
+<img width="1905" height="913" alt="Tela de perfil do freelancer" src="https://github.com/user-attachments/assets/495008e3-42f4-44a8-b904-da680ad58a50" />
 
 Ações disponíveis: contratar, enviar mensagem, ver portfólio, ler avaliações.
 
@@ -564,7 +560,7 @@ Ações disponíveis: contratar, enviar mensagem, ver portfólio, ler avaliaçõ
 
 Tela central do freelancer após o login. Sidebar com nível, XP, sequência de dias e navegação. Área principal com 4 métricas (ganhos do mês, contratos ativos, nota média, XP da semana). Carteira em destaque com saldo disponível, saldo em escrow e botão de saque. Cards de contratos ativos com status colorido, missões ativas com barra de progresso, ranking local e feed de XP ganho. Cada ação que gerou XP aparece no feed com valor e data.
 
-<img width="1903" height="913" alt="image" src="https://github.com/user-attachments/assets/4deb3e3e-fc5f-4f92-b802-ff3f3b183882" />
+<img width="1903" height="913" alt="Tela do dashboard do freelancer" src="https://github.com/user-attachments/assets/4deb3e3e-fc5f-4f92-b802-ff3f3b183882" />
 
 Ações disponíveis: ver contratos, acessar missões, ver ranking, sacar, navegar pelos módulos.
 
@@ -574,7 +570,7 @@ Ações disponíveis: ver contratos, acessar missões, ver ranking, sacar, naveg
 
 Layout em duas colunas: lista de conversas à esquerda com status online, badge de não lidos e preview da última mensagem. Área de chat à direita com header do interlocutor (status online), barra do contrato ativo (nome, valor, status), histórico de mensagens em bolhas e card de proposta dentro do chat com botão de aceitar e pagar. Input com ícones de anexo e foto. Dica de XP no rodapé: "Responda em menos de 1h e ganhe +30 XP — missão ativa!".
 
-<img width="1895" height="914" alt="image" src="https://github.com/user-attachments/assets/ef9326b1-4657-48d0-a359-9ab373741ad6" />
+<img width="1895" height="914" alt="Tela de chat" src="https://github.com/user-attachments/assets/ef9326b1-4657-48d0-a359-9ab373741ad6" />
 
 Ações disponíveis: enviar mensagem, anexar arquivo, aceitar proposta, ver contrato.
 
@@ -584,7 +580,7 @@ Ações disponíveis: enviar mensagem, anexar arquivo, aceitar proposta, ver con
 
 Steps no topo mostrando o progresso (Proposta → Pagamento → Confirmação). Preview do freelancer com nota, badges e nível. Resumo do serviço contratado. Seleção de método de pagamento (PIX, cartão, boleto). Sidebar com XP ganho pela contratação (+20 XP), resumo financeiro com taxa explícita, botão de pagamento e bloco "Por que é seguro", com checklist (escrow, avaliações verificadas, suporte em disputas, LGPD).
 
-<img width="1914" height="904" alt="image" src="https://github.com/user-attachments/assets/77b46b66-66a2-4097-bd49-c5beb57d3524" />
+<img width="1914" height="904" alt="Tela de pagamento" src="https://github.com/user-attachments/assets/77b46b66-66a2-4097-bd49-c5beb57d3524" />
 
 Ações disponíveis: selecionar método, confirmar pagamento.
 
@@ -594,7 +590,7 @@ Ações disponíveis: selecionar método, confirmar pagamento.
 
 Hero verde com nível, XP, barra de progresso e posição no ranking. Grid de badges conquistadas (4) e bloqueadas (2 com opacidade reduzida e meta visível). Cards de missões ativas com barra de progresso individual. Ranking local top 4 com destaque na linha do próprio usuário. Histórico de XP com cada ação que gerou pontos.
 
-<img width="1913" height="909" alt="image" src="https://github.com/user-attachments/assets/8bbbf905-28e3-4631-86d8-c811ce79f21c" />
+<img width="1913" height="909" alt="Tela de conquistas e gamificação" src="https://github.com/user-attachments/assets/8bbbf905-28e3-4631-86d8-c811ce79f21c" />
 
 Ações disponíveis: ver detalhes de cada badge, acompanhar progresso das missões, ver ranking completo.
 
@@ -604,7 +600,7 @@ Ações disponíveis: ver detalhes de cada badge, acompanhar progresso das miss�
 
 Navbar com links, botão de entrar e criar conta. Hero com título, subtítulo, dois CTAs (cliente e freelancer) e preview da plataforma mostrando cards reais de freelancers com nível e XP visíveis. Strip escuro com 6 diferenciais. Seção de como funciona em 3 passos, com XP de recompensa em cada passo. Seção de gamificação em verde escuro com os 6 níveis e missões ao vivo. Seção comparativa com tabela de critérios versus concorrentes. Depoimentos das 3 personas. CTA final em fundo escuro.
 
-<img width="1897" height="913" alt="image" src="https://github.com/user-attachments/assets/efd4cfb4-7e0d-48d6-92f4-4266147f2caf" />
+<img width="1897" height="913" alt="Tela da landing page (visitante não logado)" src="https://github.com/user-attachments/assets/efd4cfb4-7e0d-48d6-92f4-4266147f2caf" />
 
 > O protótipo navegável deve ser construído no Figma a partir dos mockups acima. Os arquivos de referência estão em [`docs/wireframes.md`](./wireframes.md).
 
@@ -643,7 +639,9 @@ Os 3 ajustes identificados foram: o botão de chat estava pouco visível no perf
 
 O Escambo é o sistema central que recebe interações de três tipos de atores: clientes (pessoas físicas que contratam serviços), freelancers (profissionais que oferecem serviços) e administradores (equipe interna). O sistema se integra a três serviços externos: MercadoPago, para processamento de pagamentos; Google OAuth2, para autenticação social; e Cloudflare, para CDN, proteção DDoS e SSL.
 
-<img width="930" height="733" alt="image" src="https://github.com/user-attachments/assets/6bc0524e-1dcf-4251-b350-16b21e00c4f2" />
+**Figura 7 — Diagrama de contexto (C4 Nível 1).**
+
+<img width="930" alt="Diagrama de contexto do Escambo (C4 Nível 1)" src="https://github.com/user-attachments/assets/6bc0524e-1dcf-4251-b350-16b21e00c4f2" />
 
 
 #### Nível 2 — Diagrama de Containers
@@ -653,7 +651,9 @@ O diagrama de containers apresenta a arquitetura-alvo do Escambo, separando os p
 Para a entrega web deste TCC, o escopo principal contempla o **Web App**, a **API Backend**, o **banco de dados MySQL** e o **storage de arquivos DO Spaces**. O **Mobile App** aparece no diagrama apenas como visão evolutiva do produto, planejada para a Fase 2, conforme detalhado na seção 5.6.
 
 
-<img width="1102" height="766" alt="image" src="https://github.com/user-attachments/assets/31c009d7-1836-4bdc-9906-11f7dd069d41" />
+**Figura 8 — Diagrama de containers (C4 Nível 2).**
+
+<img width="1102" alt="Diagrama de containers do Escambo (C4 Nível 2)" src="https://github.com/user-attachments/assets/31c009d7-1836-4bdc-9906-11f7dd069d41" />
 
 Os containers principais da arquitetura são:
 
@@ -681,30 +681,26 @@ A API é organizada em quatro camadas:
 
 **Repositories** — fazem o acesso ao banco MySQL. Cada entidade principal tem o seu próprio repository (UserRepository, ContractRepository, PaymentRepository etc.).
 
-<img width="788" height="789" alt="image" src="https://github.com/user-attachments/assets/f4284fe9-3e64-4d33-8dc1-22aaf6c4f289" />
+**Figura 9 — Diagrama de componentes da API Backend (C4 Nível 3).**
+
+<img width="788" alt="Diagrama de componentes da API Backend do Escambo (C4 Nível 3)" src="https://github.com/user-attachments/assets/f4284fe9-3e64-4d33-8dc1-22aaf6c4f289" />
 
 
 ### 5.2 Modelo de Dados
 
-O Escambo adota uma arquitetura de persistência **poliglota**: o núcleo transacional
-roda em um banco relacional (MySQL 8) — pela necessidade de consistência forte,
-integridade referencial e transações ACID no fluxo financeiro (escrow, pagamentos,
-saques) — enquanto módulos de alto volume de escrita e leitura denormalizada (chat e
-notificações) podem ser modelados como documentos. Esta seção apresenta as três visões
-do modelo: o **DER**, o **esquema relacional** e o **modelo de documentos (NoSQL)**.
+O banco de dados principal do Escambo é o MySQL 8. A escolha por um banco relacional vem da necessidade de consistência forte e integridade referencial, principalmente no fluxo financeiro (carteira, escrow, pagamentos e saques), onde as transações precisam ser atômicas. Toda a modelagem oficial desta entrega é relacional.
 
-O banco relacional tem 48 tabelas distribuídas entre os 14 módulos. As entidades centrais
-do marketplace são apresentadas abaixo; o DDL completo das 48 tabelas está em
-[`docs/modelagem-banco.md`](./modelagem-banco.md).
+A seção apresenta o modelo de dados em três partes: o DER, o esquema relacional e, no final, uma visão conceitual em documentos (NoSQL). Essa última parte não altera a stack nem o escopo da entrega, que continua baseada em MySQL 8. Ela serve apenas para mostrar como alguns módulos de leitura intensa, como o chat e as notificações, poderiam ser otimizados no futuro com uma modelagem denormalizada.
+
+O banco tem 48 tabelas divididas entre os 14 módulos. As entidades centrais do marketplace estão representadas a seguir, e o DDL completo de todas as tabelas fica em [`docs/modelagem-banco.md`](./modelagem-banco.md).
 
 ---
 
 #### 5.2.1 DER — Diagrama Entidade-Relacionamento
 
-O diagrama abaixo representa o núcleo do domínio (identidade → catálogo → contratação →
-resultados). As cardinalidades derivam diretamente das chaves estrangeiras do esquema:
-`contracts` referencia `users` duas vezes (cliente e freelancer) e `services`; de
-`contracts` derivam, em 1:N, os `payments`, e em 1:1 a `reviews`.
+O diagrama a seguir mostra o núcleo do domínio na ordem em que o usuário percorre a plataforma: identidade, catálogo, contratação e resultados. As cardinalidades foram tiradas direto das chaves estrangeiras do banco. Um ponto que vale destacar é que a tabela `contracts` referencia `users` duas vezes, uma vez para o cliente e outra para o freelancer, além de referenciar `services`. A partir de cada contrato saem os pagamentos, numa relação 1:N, e no máximo uma avaliação, numa relação 1:1.
+
+**Figura 10 — Diagrama Entidade-Relacionamento do núcleo do Escambo.**
 
 ```mermaid
 erDiagram
@@ -853,13 +849,11 @@ As tabelas de infraestrutura e conformidade (`notifications`, `support_tickets`,
 
 #### 5.2.3 Modelo de Documentos (NoSQL)
 
-Embora o núcleo seja relacional, parte do domínio se beneficia de uma modelagem
-orientada a documentos. A regra de modelagem aplicada é a clássica de agregados:
-**embute o que é lido junto e tem cardinalidade limitada; referencia o que é
-compartilhado ou cresce de forma ilimitada.**
+Como já dito no início da seção, essa é uma visão conceitual e não faz parte da entrega, que continua inteira em MySQL 8. A intenção aqui é só mostrar como ficaria o domínio se alguns módulos fossem modelados em documentos, no estilo de um banco como o MongoDB.
 
-**Documento `user`** — agrega o perfil, a carteira (resumo) e a gamificação, que são
-sempre lidos junto com o usuário e têm cardinalidade 1:1.
+A regra que usei é a de agregados: embutir o que é sempre lido junto e tem tamanho limitado, e referenciar o que é compartilhado ou cresce sem limite. Abaixo seguem três exemplos.
+
+No documento `user`, ficam embutidos o perfil, o resumo da carteira e a gamificação, porque são informações sempre carregadas junto com o usuário e têm relação 1:1 com ele.
 
 ```json
 {
@@ -882,10 +876,7 @@ sempre lidos junto com o usuário e têm cardinalidade 1:1.
 }
 ```
 
-**Documento `conversation`** — embute os participantes e uma janela das últimas
-mensagens (otimização de leitura para a tela do chat); o histórico completo fica em uma
-coleção `messages` separada, referenciada por `conversation_id`, porque cresce de forma
-ilimitada.
+No documento `conversation`, ficam embutidos os participantes e uma janela com as últimas mensagens, o que deixa a tela do chat mais rápida. O histórico completo fica em uma coleção `messages` separada e referenciada por `conversation_id`, já que ele cresce sem limite.
 
 ```json
 {
@@ -900,9 +891,7 @@ ilimitada.
 }
 ```
 
-**Documento `contract`** — embute o histórico de status (cardinalidade pequena e
-imutável) e um resumo do pagamento; o usuário e o serviço são **referenciados**, pois
-são entidades compartilhadas por muitos contratos.
+No documento `contract`, ficam embutidos o histórico de status (que é curto e não muda depois) e um resumo do pagamento. O usuário e o serviço, por outro lado, são apenas referenciados, porque são compartilhados por vários contratos.
 
 ```json
 {
@@ -932,9 +921,7 @@ são entidades compartilhadas por muitos contratos.
 | contract → user / service | referenciar | entidade compartilhada |
 | payments / withdrawals | **manter relacional** | exige consistência ACID e auditoria |
 
-> Conclusão: o modelo de documentos é adequado para leitura denormalizada (perfil, chat),
-> mas o fluxo financeiro permanece no relacional, onde transações e integridade
-> referencial são requisitos não-funcionais inegociáveis.
+Na prática, esse modelo de documentos faria sentido só para a parte de leitura denormalizada, como perfil e chat. O fluxo financeiro continuaria no relacional de qualquer forma, porque ali a consistência das transações e a integridade dos dados são obrigatórias.
 
 ### 5.3 Principais Componentes
 
