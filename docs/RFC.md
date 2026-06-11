@@ -652,7 +652,6 @@ O diagrama de containers apresenta a arquitetura-alvo do Escambo, separando os p
 
 Para a entrega web deste TCC, o escopo principal contempla o **Web App**, a **API Backend**, o **banco de dados MySQL** e o **storage de arquivos DO Spaces**. O **Mobile App** aparece no diagrama apenas como visão evolutiva do produto, planejada para a Fase 2, conforme detalhado na seção 5.6.
 
-**Figura X — Diagrama de Containers da arquitetura do Escambo.**
 
 <img width="1012" height="871" alt="image" src="https://github.com/user-attachments/assets/f56d9561-c440-459d-b6f7-cdcb8f1fcea4" />
 
@@ -697,6 +696,9 @@ O banco tem 48 tabelas distribuídas entre os 14 módulos. As entidades centrais
 - `conversations` e `messages` — chat
 - `user_xp`, `user_badges`, `missions`, `user_missions` — gamificação
 - `notifications`, `support_tickets`, `audit_logs`, `lgpd_consents` — infraestrutura e conformidade
+
+  <img width="1195" height="820" alt="image" src="https://github.com/user-attachments/assets/617a3e9b-ca23-41c2-9aac-1b444a53f733" />
+
 
 > DDL completo com todas as tabelas em [`docs/modelagem-banco.md`](./modelagem-banco.md).
 
