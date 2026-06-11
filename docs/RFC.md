@@ -643,23 +643,32 @@ Os 3 ajustes identificados foram: o botão de chat estava pouco visível no perf
 
 O Escambo é o sistema central que recebe interações de três tipos de atores: clientes (pessoas físicas que contratam serviços), freelancers (profissionais que oferecem serviços) e administradores (equipe interna). O sistema se integra a três serviços externos: MercadoPago, para processamento de pagamentos; Google OAuth2, para autenticação social; e Cloudflare, para CDN, proteção DDoS e SSL.
 
-> <img width="925" height="455" alt="Captura de tela 2026-06-09 104344" src="https://github.com/user-attachments/assets/b3d72bea-6f72-462b-b435-de9c0d4025b5" />#
+<img width="1255" height="892" alt="image" src="https://github.com/user-attachments/assets/bbdb7f8a-df46-47af-a024-0a1123686988" />
 
-" />
 
 #### Nível 2 — Diagrama de Containers
 
-A arquitetura-alvo é composta pelos seguintes containers. Para a entrega web (este TCC), o escopo cobre o Web App, a API Backend, o banco MySQL e o storage. O Mobile App está representado no diagrama como parte da visão completa do produto, mas pertence à Fase 2 (seção 5.6).
+O diagrama de containers apresenta a arquitetura-alvo do Escambo, separando os principais blocos responsáveis pela interface, pela lógica de negócio, pela persistência dos dados, pelo armazenamento de arquivos e pelas integrações externas.
 
-- Web App (React + Vite + TypeScript) — interface navegável para desktop *(escopo desta entrega)*
-- Mobile App (React Native + Expo) — aplicativo iOS e Android *(Fase 2)*
-- API Backend (Node.js + Express + TypeScript) — núcleo da lógica de negócio *(escopo desta entrega)*
-- MySQL 8 — banco de dados relacional com 48 tabelas *(escopo desta entrega)*
-- DO Spaces — storage de arquivos compatível com S3 (imagens, portfólio, entregas) *(escopo desta entrega)*
+Para a entrega web deste TCC, o escopo principal contempla o **Web App**, a **API Backend**, o **banco de dados MySQL** e o **storage de arquivos DO Spaces**. O **Mobile App** aparece no diagrama apenas como visão evolutiva do produto, planejada para a Fase 2, conforme detalhado na seção 5.6.
 
-O Web App se comunica com a API via HTTPS/JSON. A API se conecta ao banco MySQL, ao storage e aos serviços externos (MercadoPago, Cloudflare). O chat usa WebSocket (Socket.IO) para comunicação em tempo real. Na Fase 2, o Mobile App consumirá exatamente a mesma API, sem necessidade de um backend separado.
+**Figura X — Diagrama de Containers da arquitetura do Escambo.**
 
-> <img width="1793" height="886" alt="image" src="https://github.com/user-attachments/assets/77d11680-211b-44e4-921f-b3b5b6761249" />
+<img width="1012" height="871" alt="image" src="https://github.com/user-attachments/assets/f56d9561-c440-459d-b6f7-cdcb8f1fcea4" />
+
+Os containers principais da arquitetura são:
+
+- **Web App (React + Vite + TypeScript)** — interface web responsiva utilizada por clientes e freelancers na entrega principal do projeto.
+- **Mobile App (React Native + Expo)** — aplicativo iOS e Android previsto para a Fase 2, consumindo a mesma API da versão web.
+- **API Backend (Node.js + Express + TypeScript)** — núcleo da lógica de negócio, responsável por autenticação, contratos, pagamentos, chat, gamificação e integrações externas.
+- **MySQL 8** — banco de dados relacional utilizado para armazenar usuários, perfis, serviços, contratos, pagamentos, mensagens, avaliações, regras de negócio e registros de auditoria.
+- **DO Spaces** — storage compatível com S3 utilizado para armazenar imagens, arquivos de portfólio e arquivos enviados nas entregas dos serviços.
+
+O acesso dos usuários acontece por meio do **Cloudflare**, que atua como camada externa de CDN, SSL, DNS e proteção contra DDoS. A partir dele, clientes e freelancers acessam o Web App por HTTPS. O Web App se comunica com a API Backend usando HTTPS/JSON, e o chat utiliza WebSocket por meio do Socket.IO para permitir comunicação em tempo real.
+
+A API Backend centraliza a regra de negócio da plataforma. Ela se conecta ao MySQL para persistência dos dados, ao DO Spaces para armazenamento de arquivos, ao MercadoPago para pagamentos, ao Google OAuth2 para autenticação social e a um serviço de e-mail para confirmação de conta e recuperação de senha.
+
+Na Fase 2, o Mobile App consumirá a mesma API Backend da versão web, sem necessidade de criação de um backend separado.
 
 #### Nível 3 — Diagrama de Componentes (API Backend)
 
@@ -673,7 +682,7 @@ A API é organizada em quatro camadas:
 
 **Repositories** — fazem o acesso ao banco MySQL. Cada entidade principal tem o seu próprio repository (UserRepository, ContractRepository, PaymentRepository etc.).
 
-> <img width="1629" height="890" alt="image" src="https://github.com/user-attachments/assets/23bfffe5-3e24-4146-bd6f-79343d1b2434" />
+<img width="1009" height="873" alt="image" src="https://github.com/user-attachments/assets/c38ce48f-4afe-4158-a533-92f928b83c9d" />
 
 ### 5.2 Modelo de Dados
 
