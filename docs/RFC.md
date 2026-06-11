@@ -531,6 +531,7 @@ Módulos compartilhados:
 
 Módulos compartilhados (acessíveis por ambos via menu):
 Chat · Notificações · Suporte · Configurações · Perfil
+```
 
 ### 4.2 Wireframes e Mockups das Telas
 
