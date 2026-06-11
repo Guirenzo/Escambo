@@ -490,15 +490,44 @@ Prazo do serviço é ultrapassado
 
 ### 4.1 Fluxo de Navegação
 
-```
+O fluxo de navegação do Escambo foi organizado para separar claramente os caminhos principais de cada tipo de usuário. Após o onboarding e o login ou cadastro, o usuário acessa a plataforma e segue pelo perfil mais adequado ao seu uso: cliente ou freelancer.
+
+No caminho do cliente, a navegação é voltada para encontrar profissionais, analisar perfis, enviar propostas, realizar pagamentos, acompanhar contratos e avaliar serviços concluídos. Já no caminho do freelancer, a navegação prioriza o dashboard, a gestão dos serviços oferecidos, o acompanhamento de propostas, a comunicação com clientes, o registro de entregas, a carteira digital e o progresso nas conquistas.
+
+Além desses caminhos específicos, alguns módulos são compartilhados pelos dois perfis, como chat, notificações, suporte, configurações e perfil.
+
+**Figura 6 — Fluxo de navegação geral da plataforma Escambo.**
+
+<img width="1143" height="746" alt="image" src="https://github.com/user-attachments/assets/a240ed2d-1624-4b68-8c7e-c1232f6e060a" />
+
+O fluxo geral de navegação é representado da seguinte forma:
+
+```text
 Onboarding
-    Login / Cadastro → Escolha de perfil
-        ├── Cliente → Home (busca) → Perfil do freelancer
-        │              → Proposta → Pagamento → Contrato → Avaliação
-        │
-        └── Freelancer → Dashboard → Serviços → Propostas
-                          → Chat → Entrega → Carteira → Conquistas
-```
+    → Login / Cadastro
+        → Escolha de perfil
+            ├── Cliente
+            │       → Home (busca)
+            │       → Perfil do freelancer
+            │       → Proposta
+            │       → Pagamento
+            │       → Contrato
+            │       → Avaliação
+            │
+            └── Freelancer
+                    → Dashboard
+                    → Serviços
+                    → Propostas
+                    → Chat / Entrega
+                    → Carteira
+                    → Conquistas
+
+Módulos compartilhados:
+    → Chat
+    → Notificações
+    → Suporte
+    → Configurações
+    → Perfil
 
 Módulos compartilhados (acessíveis por ambos via menu):
 Chat · Notificações · Suporte · Configurações · Perfil
