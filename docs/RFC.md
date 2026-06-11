@@ -643,7 +643,7 @@ Os 3 ajustes identificados foram: o botão de chat estava pouco visível no perf
 
 O Escambo é o sistema central que recebe interações de três tipos de atores: clientes (pessoas físicas que contratam serviços), freelancers (profissionais que oferecem serviços) e administradores (equipe interna). O sistema se integra a três serviços externos: MercadoPago, para processamento de pagamentos; Google OAuth2, para autenticação social; e Cloudflare, para CDN, proteção DDoS e SSL.
 
-<img width="1255" height="892" alt="image" src="https://github.com/user-attachments/assets/bbdb7f8a-df46-47af-a024-0a1123686988" />
+<img width="930" height="733" alt="image" src="https://github.com/user-attachments/assets/6bc0524e-1dcf-4251-b350-16b21e00c4f2" />
 
 
 #### Nível 2 — Diagrama de Containers
@@ -653,7 +653,7 @@ O diagrama de containers apresenta a arquitetura-alvo do Escambo, separando os p
 Para a entrega web deste TCC, o escopo principal contempla o **Web App**, a **API Backend**, o **banco de dados MySQL** e o **storage de arquivos DO Spaces**. O **Mobile App** aparece no diagrama apenas como visão evolutiva do produto, planejada para a Fase 2, conforme detalhado na seção 5.6.
 
 
-<img width="1012" height="871" alt="image" src="https://github.com/user-attachments/assets/f56d9561-c440-459d-b6f7-cdcb8f1fcea4" />
+<img width="1102" height="766" alt="image" src="https://github.com/user-attachments/assets/31c009d7-1836-4bdc-9906-11f7dd069d41" />
 
 Os containers principais da arquitetura são:
 
@@ -681,7 +681,8 @@ A API é organizada em quatro camadas:
 
 **Repositories** — fazem o acesso ao banco MySQL. Cada entidade principal tem o seu próprio repository (UserRepository, ContractRepository, PaymentRepository etc.).
 
-<img width="1009" height="873" alt="image" src="https://github.com/user-attachments/assets/c38ce48f-4afe-4158-a533-92f928b83c9d" />
+<img width="788" height="789" alt="image" src="https://github.com/user-attachments/assets/f4284fe9-3e64-4d33-8dc1-22aaf6c4f289" />
+
 
 ### 5.2 Modelo de Dados
 
