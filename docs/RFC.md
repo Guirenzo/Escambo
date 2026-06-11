@@ -344,11 +344,28 @@ A entrega web (este TCC) não inclui:
 
 ## 3. Fluxos e Comportamento do Sistema
 
+Esta seção apresenta os principais fluxos de uso do Escambo, considerando tanto o caminho esperado da contratação quanto os cenários alternativos que podem acontecer durante o uso da plataforma.
+
+Os fluxos foram separados em duas partes. Primeiro, são apresentados os fluxos principais do cliente e do freelancer, que representam o funcionamento padrão do sistema. Depois, são descritos os fluxos alternativos de cancelamento, aprovação tácita e disputa, que tratam situações em que a contratação não segue o caminho ideal.
+
 ### 3.1 Fluxo Principal do Usuário
 
-**Fluxo do cliente (contratação):**
+#### Fluxo do cliente — contratação
 
-```
+O fluxo principal do cliente representa o caminho mais comum dentro da plataforma. Ele começa quando o usuário acessa o Escambo para buscar um serviço e termina quando a contratação é concluída e avaliada.
+
+Nesse processo, o cliente pesquisa por categoria ou palavra-chave, aplica filtros para encontrar profissionais mais adequados, acessa o perfil do freelancer, envia uma proposta e realiza o pagamento. O valor pago fica protegido pelo sistema de escrow até que o serviço seja entregue e aprovado.
+
+Depois da entrega, o cliente pode aprovar o serviço ou solicitar uma revisão. Quando a entrega é aprovada, o pagamento é liberado ao freelancer e o cliente registra uma avaliação de 1 a 5 estrelas.
+
+**Figura 1 — Fluxo principal do cliente na contratação de um serviço.**
+
+<img width="264" height="747" alt="image" src="https://github.com/user-attachments/assets/303f260d-2f46-42bf-9d4f-9ab41abe69b7" />
+
+
+O fluxo do cliente segue as seguintes etapas:
+
+```text
 Acessa o Escambo
     → Busca por categoria ou palavra-chave
     → Aplica filtros (localização, preço, nota)
@@ -361,9 +378,21 @@ Acessa o Escambo
     → Avalia o serviço (1 a 5 estrelas)
 ```
 
-**Fluxo do freelancer (execução):**
+#### Fluxo do freelancer — execução
 
-```
+O fluxo principal do freelancer mostra como o profissional participa da contratação após receber uma proposta. A partir da notificação, ele analisa a solicitação do cliente e pode aceitar, recusar ou negociar os termos da proposta.
+
+Quando aceita a contratação, o freelancer executa o serviço combinado e registra a entrega diretamente na plataforma, incluindo uma mensagem e, quando necessário, arquivos anexos. Após isso, ele aguarda a aprovação do cliente.
+
+Com a aprovação da entrega, o valor é liberado para a carteira digital do freelancer. Em seguida, ele pode solicitar o saque via PIX, respeitando as regras de saque definidas pelo sistema.
+
+**Figura 2 — Fluxo principal do freelancer na execução de um serviço.**
+
+<img width="322" height="747" alt="image" src="https://github.com/user-attachments/assets/46e58d81-5b7e-41b2-8f11-a15e88a7ef4f" />
+
+O fluxo do freelancer segue as seguintes etapas:
+
+```text
 Recebe notificação de nova proposta
     → Analisa e aceita (ou negocia)
     → Executa o serviço
@@ -375,17 +404,85 @@ Recebe notificação de nova proposta
 
 ### 3.2 Fluxos Alternativos
 
-**Cancelamento com reembolso:**
-- Antes do aceite: reembolso total
-- Em andamento, com menos de 50% do prazo decorrido: reembolso de 50%
-- Em andamento, com 50% ou mais do prazo decorrido: sem reembolso
-- Após a entrega: sem reembolso, abre ticket de disputa
+Além dos fluxos principais, o sistema precisa lidar com situações que podem ocorrer durante uma contratação, como cancelamento, ausência de resposta do cliente ou problemas na entrega do serviço.
 
-**Aprovação tácita:**
-Se o cliente não se manifestar em 5 dias úteis após a entrega, o sistema aprova automaticamente e libera o pagamento ao freelancer.
+Esses cenários são importantes porque definem como a plataforma deve agir quando a contratação foge do caminho ideal, mantendo segurança e previsibilidade para cliente e freelancer.
 
-**Disputa:**
-Se o prazo estourar sem entrega, o sistema cria um ticket de suporte automaticamente, com prioridade Alta, e notifica as duas partes.
+#### Cancelamento com reembolso
+
+O fluxo de cancelamento define como o sistema deve se comportar quando uma contratação é interrompida antes da conclusão. A regra de reembolso varia de acordo com o momento em que o cancelamento acontece.
+
+Se o cancelamento ocorrer antes do aceite do freelancer, o cliente recebe reembolso total. Caso o serviço já esteja em andamento, o percentual de reembolso depende do prazo já decorrido. Após a entrega, o cancelamento não gera reembolso automático e o sistema encaminha a situação para disputa.
+
+**Figura 3 — Fluxo alternativo de cancelamento com reembolso.**
+
+<img width="935" height="749" alt="image" src="https://github.com/user-attachments/assets/2cf5548a-c852-4865-9549-68ef74da2084" />
+
+
+As regras de cancelamento são:
+
+```text
+Antes do aceite:
+    → Reembolso total
+
+Em andamento, com menos de 50% do prazo decorrido:
+    → Reembolso de 50%
+
+Em andamento, com 50% ou mais do prazo decorrido:
+    → Sem reembolso
+
+Após a entrega:
+    → Sem reembolso automático
+    → Abre ticket de disputa
+```
+
+#### Aprovação tácita
+
+A aprovação tácita existe para evitar que uma contratação fique parada indefinidamente quando o freelancer já realizou a entrega e o cliente não responde dentro do prazo estabelecido.
+
+Após o freelancer registrar a entrega, o cliente tem 5 dias úteis para aprovar o serviço ou solicitar uma revisão. Se não houver manifestação dentro desse período, o sistema entende que a entrega foi aceita e aprova automaticamente a contratação.
+
+Com isso, o pagamento é liberado ao freelancer e o contrato é encerrado como concluído.
+
+**Figura 4 — Fluxo alternativo de aprovação tácita após 5 dias úteis.**
+
+<img width="382" height="751" alt="image" src="https://github.com/user-attachments/assets/71b5f315-4090-4e12-9289-f0a5147edd75" />
+
+
+O comportamento da aprovação tácita é:
+
+```text
+Freelancer registra a entrega
+    → Sistema inicia contagem de 5 dias úteis
+    → Cliente pode aprovar ou solicitar revisão
+    → Se o cliente não se manifestar no prazo
+    → Sistema aprova automaticamente
+    → Pagamento é liberado ao freelancer
+```
+
+#### Disputa
+
+O fluxo de disputa ocorre quando existe algum problema na execução do serviço, especialmente quando o prazo é ultrapassado sem que o freelancer registre a entrega. Nesse caso, o sistema cria automaticamente um ticket de suporte com prioridade alta.
+
+A abertura da disputa permite que a situação seja analisada com base no histórico da contratação, nas mensagens trocadas no chat, nos prazos combinados e nos registros da plataforma. Tanto o cliente quanto o freelancer são notificados para acompanhar o processo.
+
+Esse fluxo é importante para garantir mais segurança e transparência para os dois lados da contratação.
+
+**Figura 5 — Fluxo alternativo de disputa por prazo estourado sem entrega.**
+
+<img width="463" height="749" alt="image" src="https://github.com/user-attachments/assets/6dcc2b67-05e0-4887-8ebc-b61668e2e0cb" />
+
+
+O comportamento do fluxo de disputa é:
+
+```text
+Prazo do serviço é ultrapassado
+    → Sistema verifica que não houve entrega registrada
+    → Sistema cria ticket de suporte automaticamente
+    → Ticket recebe prioridade Alta
+    → Cliente e freelancer são notificados
+    → Suporte analisa o histórico da contratação
+```
 
 ---
 
