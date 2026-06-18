@@ -1,8 +1,8 @@
 # Requisitos Funcionais — Escambo
 
-> **Versão:** 1.0.0  
-> **Total de Requisitos:** 72  
-> **Atualizado em:** Abril de 2026  
+> **Versão:** 1.1.0  
+> **Total de Requisitos:** 90  
+> **Atualizado em:** Junho de 2026  
 > **Autor:** Guilherme Renzo
 ---
 
@@ -163,6 +163,33 @@
 
 ---
 
+## Módulo 15 — Troca de Serviços (Escambo)
+
+O diferencial central da plataforma: pagar serviço com serviço. Funciona em modo **híbrido** — a diferença
+de valor entre os dois lados (a *torna*) é paga em dinheiro via escrow.
+
+| ID | Descrição | Prioridade | Status |
+|---|---|---|---|
+| RF-083 | O sistema deve permitir que um usuário proponha uma troca de serviços (serviço por serviço), com ou sem diferença em dinheiro | Alta | Pendente |
+| RF-084 | O sistema deve estimar o valor de cada lado da troca e calcular a diferença (torna) a ser paga em dinheiro | Alta | Pendente |
+| RF-085 | Ao aceitar uma troca, o sistema deve gerar dois contratos recíprocos vinculados e reter a torna em escrow | Alta | Pendente |
+
+---
+
+## Recursos Avançados, Confiança e Segurança (RF-086 a RF-090)
+
+Requisitos distribuídos por módulos existentes (Serviços, Contratações, Suporte, Autenticação e LGPD).
+
+| ID | Módulo | Descrição | Prioridade | Status |
+|---|---|---|---|---|
+| RF-086 | Categorias e Serviços | O freelancer deve poder oferecer pacotes (Basic / Standard / Premium) por serviço, cada um com preço, prazo e nº de revisões próprios | Média | Pendente |
+| RF-087 | Categorias e Serviços | O cliente deve poder favoritar serviços/freelancers e salvar buscas com alerta de novos resultados | Média | Pendente |
+| RF-088 | Contratações | O sistema deve permitir dividir um contrato em marcos (milestones), com pagamento e liberação por etapa | Média | Pendente |
+| RF-089 | Suporte e Mediação | O usuário deve poder denunciar conteúdo ou usuário; o sistema registra a denúncia e a encaminha à moderação | Alta | Pendente |
+| RF-090 | Autenticação / LGPD | O usuário deve poder ativar verificação em duas etapas (2FA) e solicitar a exportação dos seus dados pessoais (portabilidade LGPD) | Alta | Pendente |
+
+---
+
 ## Resumo por Módulo
 
 | Módulo | Total de RFs | Alta | Média | Baixa |
@@ -173,17 +200,19 @@
 | 04 — Contratações | 10 | 9 | 1 | 0 |
 | 05 — Pagamentos | 10 | 9 | 1 | 0 |
 | 06 — Avaliações | 6 | 5 | 1 | 0 |
-| 07 — Chat | 6 | 4 | 2 | 1 |
+| 07 — Chat | 6 | 3 | 2 | 1 |
 | 08 — Gamificação | 6 | 4 | 2 | 0 |
 | 09 a 14 — Demais módulos | 14 | 10 | 4 | 0 |
-| **Total** | **82** | **62** | **19** | **2** |
+| 15 — Troca de Serviços (Escambo) | 3 | 3 | 0 | 0 |
+| Recursos avançados (RF-086–090) | 5 | 2 | 3 | 0 |
+| **Total** | **90** | **66** | **22** | **2** |
 
-> ℹ️ O total final ficou em **82 requisitos funcionais**, superando os 72 planejados inicialmente — resultado do detalhamento mais granular durante a especificação.
+> ℹ️ O total final ficou em **90 requisitos funcionais**, superando os 72 planejados inicialmente — resultado do detalhamento granular e da inclusão da **troca de serviços (escambo)** e de recursos avançados de confiança e segurança (v1.1.0).
 
 ---
 
 <div align="center">
 
-*requisitos-funcionais.md — Escambo v1.0.0 — PAC Extensionista VII — Católica SC — 2026*
+*requisitos-funcionais.md — Escambo v1.1.0 — PAC Extensionista VII — Católica SC — 2026*
 
 </div>

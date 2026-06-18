@@ -1,0 +1,36 @@
+# Escambo — infraestrutura local de banco de dados
+# Sobe um MySQL 8 e carrega automaticamente o schema + seed na primeira inicialização.
+#
+#   cd infra && docker compose up -d
+#   # conecta em localhost:3306 (db: escambo / user: escambo / senha: escambo)
+#
+# Os scripts em /docker-entrypoint-initdb.d só rodam quando o volume está vazio.
+# Para recarregar do zero:  docker compose down -v && docker compose up -d
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: escambo-mysql
+    restart: unless-stopped
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-escambo_root}
+      MYSQL_DATABASE: ${DB_NAME:-escambo}
+      MYSQL_USER: ${DB_USER:-escambo}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-escambo}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - escambo_db_data:/var/lib/mysql
+      - ../apps/api/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ../apps/api/db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${DB_ROOT_PASSWORD:-escambo_root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  escambo_db_data:

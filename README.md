@@ -54,6 +54,7 @@ O Brasil possui **mais de 24 milhões de trabalhadores autônomos** (IBGE), mas 
 
 Uma plataforma **Web + Mobile** que oferece:
 
+- 🔄 **Troca de serviços (escambo)** — pague um serviço com outro serviço, com diferença em dinheiro (*torna*) quando os valores não batem. Exclusivo no Brasil e fiel ao nome da plataforma.
 - 🔎 **Descoberta local** — profissionais ranqueados por proximidade e relevância
 - ⭐ **Reputação verificada** — avaliações reais, comentários e histórico de serviços
 - 💬 **Chat integrado** — comunicação direta dentro do app, sem sair para WhatsApp
@@ -72,7 +73,7 @@ Uma plataforma **Web + Mobile** que oferece:
 | **Frontend Web** | React + Vite + TypeScript |
 | **Mobile** | React Native + Expo |
 | **Backend** | Node.js + Express + TypeScript |
-| **Banco de Dados** | MySQL (45+ tabelas) |
+| **Banco de Dados** | MySQL 8 (50 tabelas) |
 | **Pagamentos** | MercadoPago API |
 | **Hospedagem** | DigitalOcean |
 | **CDN / DNS** | Cloudflare |
@@ -86,7 +87,7 @@ Uma plataforma **Web + Mobile** que oferece:
 
 ## 🗂️ Módulos do MVP
 
-O MVP é composto por **14 módulos funcionais**, cobrindo **72 Requisitos Funcionais** e **36 Não Funcionais**:
+O MVP é composto por **15 módulos funcionais**, cobrindo **90 Requisitos Funcionais** e **42 Não Funcionais**:
 
 | # | Módulo | Responsabilidade |
 |---|---|---|
@@ -104,6 +105,7 @@ O MVP é composto por **14 módulos funcionais**, cobrindo **72 Requisitos Funci
 | 12 | ⚙️ Administração | Painel administrativo da plataforma |
 | 13 | ⚖️ Compliance / LGPD | Consentimento, anonimização, privacidade |
 | 14 | 📈 Relatórios | Analytics, métricas de uso e performance |
+| 15 | 🔄 Troca de Serviços | Escambo: troca de serviço por serviço + *torna* em dinheiro |
 
 ---
 
@@ -128,8 +130,8 @@ O MVP é composto por **14 módulos funcionais**, cobrindo **72 Requisitos Funci
 - [ ] Fluxo completo: proposta → aceite → entrega → avaliação
 - [ ] Chat funcional entre cliente e freelancer
 - [ ] Pagamento via MercadoPago processado com saldo creditado na carteira
-- [ ] 72 RFs e 36 RNFs cobertos na especificação
-- [ ] Banco de dados com 45+ tabelas implementado e validado
+- [ ] 90 RFs e 42 RNFs cobertos na especificação
+- [ ] Banco de dados com 50 tabelas implementado e validado
 
 ---
 
@@ -147,8 +149,9 @@ escambo/
 │   ├── web/                    # React + Vite (Frontend Web)
 │   ├── mobile/                 # React Native + Expo
 │   └── api/                    # Node.js + Express + TypeScript
+│       └── db/                 # schema.sql + seed.sql (MySQL 8)
 ├── 📁 infra/
-│   └── docker-compose.yml
+│   └── docker-compose.yml      # MySQL 8 local (schema + seed automáticos)
 ├── CONTRIBUTING.md
 ├── LICENSE
 └── README.md
@@ -161,9 +164,10 @@ escambo/
 | Documento | Descrição |
 |---|---|
 | [📋 RFC Completa](./docs/RFC.md) | Request for Comments — proposta técnica completa |
-| [✅ Requisitos Funcionais](./docs/requisitos-funcionais.md) | 72 RFs especificados |
-| [🔒 Requisitos Não Funcionais](./docs/requisitos-nao-funcionais.md) | 36 RNFs especificados |
-| [🗄️ Modelagem do Banco](./docs/modelagem-banco.md) | 45+ tabelas MySQL |
+| [✅ Requisitos Funcionais](./docs/requisitos-funcionais.md) | 90 RFs especificados |
+| [🔒 Requisitos Não Funcionais](./docs/requisitos-nao-funcionais.md) | 42 RNFs especificados |
+| [🗄️ Modelagem do Banco](./docs/modelagem-banco.md) | 50 tabelas MySQL |
+| [⚖️ Regras de Negócio](./docs/regras-de-negocio.md) | 75 RNs especificadas |
 
 ---
 
