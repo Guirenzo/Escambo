@@ -34,7 +34,8 @@ src/
 └── modules/
     ├── health/            # GET /api/health (ping no banco)
     ├── auth/              # register/login/refresh/logout/me (molde)
-    └── services/          # CRUD de serviços (RF-021..030)
+    ├── services/          # CRUD de serviços (RF-021..030)
+    └── contracts/         # máquina de estados + escrow/histórico (RF-031..040)
         ├── auth.routes.ts
         ├── auth.controller.ts
         ├── auth.service.ts      # bcrypt + JWT (RF-001, RF-003)
@@ -58,6 +59,14 @@ src/
 | POST | `/api/services` | **(protegida)** cria serviço (dono = token) |
 | PATCH | `/api/services/:id` | **(protegida, dono)** atualiza |
 | DELETE | `/api/services/:id` | **(protegida, dono)** soft delete |
+| POST | `/api/contracts` | **(auth)** cliente cria proposta (calcula taxa 15%) |
+| GET | `/api/contracts` | **(auth)** minhas contratações |
+| GET | `/api/contracts/:id` | **(auth, parte)** detalhe + histórico de status |
+| POST | `/api/contracts/:id/accept` · `/reject` | **(freelancer)** aceita / recusa |
+| POST | `/api/contracts/:id/deliver` | **(freelancer)** registra entrega |
+| POST | `/api/contracts/:id/approve` | **(cliente)** aprova → concluído |
+| POST | `/api/contracts/:id/request-revision` | **(cliente)** solicita revisão |
+| POST | `/api/contracts/:id/cancel` | **(parte)** cancela — reembolso RN-025 |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo
 > formato de pastas e camadas.

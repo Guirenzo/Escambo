@@ -76,6 +76,60 @@ export interface Paginated<T> {
   limit: number;
 }
 
+// --- Contratações ---
+
+export type ContractStatus =
+  | 'pending'
+  | 'accepted'
+  | 'rejected'
+  | 'in_progress'
+  | 'delivered'
+  | 'revision_requested'
+  | 'completed'
+  | 'cancelled'
+  | 'disputed';
+
+export interface Contract {
+  id: number;
+  ulid: string;
+  clientId: number;
+  freelancerId: number;
+  serviceId: number | null;
+  title: string;
+  description: string;
+  price: number;
+  platformFee: number;
+  freelancerNet: number;
+  status: ContractStatus;
+  deadlineAt: string | null;
+  createdAt: string;
+}
+
+export interface ContractStatusHistoryEntry {
+  previousStatus: ContractStatus | null;
+  status: ContractStatus;
+  note: string | null;
+  at: string;
+}
+
+export interface ContractWithHistory extends Contract {
+  history: ContractStatusHistoryEntry[];
+}
+
+export interface CreateContractRequest {
+  freelancerId: number;
+  serviceId?: number | null;
+  title: string;
+  description: string;
+  price: number;
+  deadlineAt?: string | null;
+}
+
+export interface CancelResult {
+  status: ContractStatus;
+  refundPercentage: number;
+}
+
 /** Formato padronizado de erro da API (ver error-handler / RNF-039). */
 export interface ApiError {
   error: string;
