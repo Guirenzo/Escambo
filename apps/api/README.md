@@ -47,7 +47,10 @@ src/
 |---|---|---|
 | GET | `/api/health` | Status da API + ping no MySQL |
 | POST | `/api/auth/register` | Cria usuário (`email`, `password`, `role`) |
-| POST | `/api/auth/login` | Autentica e devolve JWT |
+| POST | `/api/auth/login` | Autentica → `accessToken` (1h) + `refreshToken` (7d) + sessão |
+| POST | `/api/auth/refresh` | Rotaciona o refresh token → novo par de tokens |
+| POST | `/api/auth/logout` | Revoga a sessão do `refreshToken` enviado |
+| POST | `/api/auth/logout-all` | **(protegida)** encerra todas as sessões (RN-008) |
 | GET | `/api/auth/me` | **(protegida)** dados do usuário do token — exige `Authorization: Bearer <jwt>` |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo

@@ -19,7 +19,7 @@ export function LoginForm() {
           <strong>{auth.user.email}</strong>
           <span className="role">{auth.user.role}</span>
         </p>
-        <p className="token">token: {auth.token.slice(0, 28)}…</p>
+        <p className="token">access: {auth.accessToken.slice(0, 28)}…</p>
         <button className="ghost" onClick={logout}>
           Sair
         </button>
