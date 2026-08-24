@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { ulid } from 'ulid';
+import type { AuthResponse, PublicUser, UserRole } from '@escambo/types';
 import { env } from '../../config/env';
 import { HttpError } from '../../utils/http-error';
 import { authRepository } from './auth.repository';
@@ -14,7 +15,7 @@ function signToken(payload: { sub: string; role: string }): string {
 
 /** Regras de negócio de autenticação (RF-001 cadastro, RF-003 JWT). */
 export const authService = {
-  async register(input: RegisterInput) {
+  async register(input: RegisterInput): Promise<PublicUser> {
     const existing = await authRepository.findByEmail(input.email);
     if (existing) {
       // RN-001: e-mail único por conta
@@ -35,7 +36,7 @@ export const authService = {
     return { ulid: userUlid, email: input.email, role: input.role };
   },
 
-  async login(input: LoginInput) {
+  async login(input: LoginInput): Promise<AuthResponse> {
     const user = await authRepository.findByEmail(input.email);
     if (!user || !user.password_hash) {
       throw new HttpError(401, 'Credenciais inválidas', 'invalid_credentials');
@@ -49,7 +50,7 @@ export const authService = {
     const token = signToken({ sub: user.ulid, role: user.role });
     return {
       token,
-      user: { ulid: user.ulid, email: user.email, role: user.role },
+      user: { ulid: user.ulid, email: user.email, role: user.role as UserRole },
     };
   },
 };

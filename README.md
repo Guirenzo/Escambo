@@ -135,6 +135,22 @@ O MVP é composto por **15 módulos funcionais**, cobrindo **90 Requisitos Funci
 
 ---
 
+## 🚀 Começando (desenvolvimento)
+
+Monorepo com **npm workspaces** — um `npm install` na raiz instala tudo.
+
+```bash
+npm install                 # instala api + web + packages
+npm run db:up               # sobe o MySQL 8 (Docker) com schema + seed
+npm run dev                 # sobe API (:3333) e Web (:5173) juntos
+```
+
+Scripts úteis na raiz: `npm run typecheck` (todos os pacotes), `npm run lint`, `npm run format`,
+`npm run db:down`. O front usa proxy `/api → :3333` (sem CORS no dev) e os tipos de `@escambo/types`
+são compartilhados entre back e front (sem duplicação).
+
+---
+
 ## 📁 Estrutura do Repositório
 
 ```
@@ -146,12 +162,17 @@ escambo/
 │   ├── modelagem-banco.md
 │   └── diagramas/              # DER, fluxos, arquitetura
 ├── 📁 apps/
-│   ├── web/                    # React + Vite (Frontend Web)
-│   ├── mobile/                 # React Native + Expo
-│   └── api/                    # Node.js + Express + TypeScript
+│   ├── web/                    # ✅ React + Vite + TS (frontend)
+│   ├── mobile/                 # React Native + Expo (Fase 2)
+│   └── api/                    # ✅ Node + Express + TS (backend em camadas)
 │       └── db/                 # schema.sql + seed.sql (MySQL 8)
+├── 📁 packages/
+│   └── types/                  # ✅ @escambo/types — contratos compartilhados back/front
 ├── 📁 infra/
 │   └── docker-compose.yml      # MySQL 8 local (schema + seed automáticos)
+├── package.json                # raiz — npm workspaces + scripts
+├── tsconfig.base.json          # TS compartilhado
+├── eslint.config.mjs           # ESLint (flat) + Prettier
 ├── CONTRIBUTING.md
 ├── LICENSE
 └── README.md
