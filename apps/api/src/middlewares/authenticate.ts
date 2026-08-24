@@ -5,6 +5,7 @@ import { HttpError } from '../utils/http-error';
 
 export interface AuthPayload {
   sub: string; // ulid do usuário
+  uid: number; // id numérico (users.id)
   role: string;
 }
 
@@ -27,7 +28,7 @@ export const authenticate: RequestHandler = (req, _res, next) => {
 
   try {
     const payload = jwt.verify(header.slice(7), env.JWT_SECRET) as AuthPayload;
-    req.user = { sub: payload.sub, role: payload.role };
+    req.user = { sub: payload.sub, uid: payload.uid, role: payload.role };
     next();
   } catch {
     throw new HttpError(401, 'Token inválido ou expirado', 'invalid_token');

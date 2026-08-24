@@ -14,8 +14,8 @@ export interface SessionContext {
   userAgent?: string | null;
 }
 
-function signAccessToken(user: { ulid: string; role: string }): string {
-  return jwt.sign({ sub: user.ulid, role: user.role }, env.JWT_SECRET, {
+function signAccessToken(user: { id: number; ulid: string; role: string }): string {
+  return jwt.sign({ sub: user.ulid, uid: user.id, role: user.role }, env.JWT_SECRET, {
     expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
   });
 }

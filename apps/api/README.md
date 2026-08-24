@@ -33,7 +33,8 @@ src/
 │   └── async-handler.ts   # try/catch automático nos controllers
 └── modules/
     ├── health/            # GET /api/health (ping no banco)
-    └── auth/              # register + login (molde dos demais módulos)
+    ├── auth/              # register/login/refresh/logout/me (molde)
+    └── services/          # CRUD de serviços (RF-021..030)
         ├── auth.routes.ts
         ├── auth.controller.ts
         ├── auth.service.ts      # bcrypt + JWT (RF-001, RF-003)
@@ -52,6 +53,11 @@ src/
 | POST | `/api/auth/logout` | Revoga a sessão do `refreshToken` enviado |
 | POST | `/api/auth/logout-all` | **(protegida)** encerra todas as sessões (RN-008) |
 | GET | `/api/auth/me` | **(protegida)** dados do usuário do token — exige `Authorization: Bearer <jwt>` |
+| GET | `/api/services` | Lista/busca serviços (`categoryId`, `q`, `isRemote`, `page`, `limit`) |
+| GET | `/api/services/:id` | Detalhe de um serviço |
+| POST | `/api/services` | **(protegida)** cria serviço (dono = token) |
+| PATCH | `/api/services/:id` | **(protegida, dono)** atualiza |
+| DELETE | `/api/services/:id` | **(protegida, dono)** soft delete |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo
 > formato de pastas e camadas.

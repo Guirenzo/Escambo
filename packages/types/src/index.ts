@@ -40,6 +40,42 @@ export interface RefreshResponse {
   refreshToken: string;
 }
 
+// --- Serviços ---
+
+export type ServicePriceType = 'fixed' | 'hourly' | 'negotiable';
+
+export interface Service {
+  id: number;
+  categoryId: number;
+  ownerId: number;
+  title: string;
+  description: string;
+  priceType: ServicePriceType;
+  price: number | null;
+  deliveryDays: number | null;
+  isRemote: boolean;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreateServiceRequest {
+  categoryId: number;
+  title: string;
+  description: string;
+  priceType?: ServicePriceType;
+  price?: number | null;
+  deliveryDays?: number | null;
+  isRemote?: boolean;
+}
+
+export type UpdateServiceRequest = Partial<CreateServiceRequest> & { isActive?: boolean };
+
+export interface Paginated<T> {
+  items: T[];
+  page: number;
+  limit: number;
+}
+
 /** Formato padronizado de erro da API (ver error-handler / RNF-039). */
 export interface ApiError {
   error: string;
