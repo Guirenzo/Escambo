@@ -48,6 +48,7 @@ src/
 | GET | `/api/health` | Status da API + ping no MySQL |
 | POST | `/api/auth/register` | Cria usuário (`email`, `password`, `role`) |
 | POST | `/api/auth/login` | Autentica e devolve JWT |
+| GET | `/api/auth/me` | **(protegida)** dados do usuário do token — exige `Authorization: Bearer <jwt>` |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo
 > formato de pastas e camadas.
@@ -60,3 +61,4 @@ src/
 | `npm run build` | Compila para `dist/` (tsc) |
 | `npm start` | Roda o build |
 | `npm run typecheck` | Checagem de tipos sem emitir |
+| `npm test` | Testes unitários (Vitest) — services com repository mockado, sem banco |

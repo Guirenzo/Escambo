@@ -13,3 +13,9 @@ export async function login(req: Request, res: Response): Promise<void> {
   const result = await authService.login(input);
   res.json(result);
 }
+
+/** Rota protegida — req.user é preenchido pelo middleware authenticate. */
+export async function me(req: Request, res: Response): Promise<void> {
+  const user = await authService.getByUlid(req.user!.sub);
+  res.json(user);
+}

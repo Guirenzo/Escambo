@@ -20,6 +20,14 @@ export const authRepository = {
     return rows[0];
   },
 
+  async findByUlid(ulid: string): Promise<UserRow | undefined> {
+    const [rows] = await pool.query<UserRow[]>(
+      'SELECT id, ulid, email, password_hash, role, status FROM users WHERE ulid = :ulid LIMIT 1',
+      { ulid },
+    );
+    return rows[0];
+  },
+
   async create(data: {
     ulid: string;
     email: string;

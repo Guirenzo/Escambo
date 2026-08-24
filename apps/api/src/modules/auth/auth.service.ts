@@ -53,4 +53,13 @@ export const authService = {
       user: { ulid: user.ulid, email: user.email, role: user.role as UserRole },
     };
   },
+
+  /** Usado por GET /me — retorna o usuário do token. */
+  async getByUlid(userUlid: string): Promise<PublicUser> {
+    const user = await authRepository.findByUlid(userUlid);
+    if (!user) {
+      throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
+    }
+    return { ulid: user.ulid, email: user.email, role: user.role as UserRole };
+  },
 };
