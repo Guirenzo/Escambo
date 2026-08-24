@@ -23,7 +23,6 @@ async function main(): Promise<void> {
   const app = createApp();
 
   app.listen(env.PORT, () => {
-    // eslint-disable-next-line no-console
     console.log(`🚀 API Escambo em http://localhost:${env.PORT}/api  (env: ${env.NODE_ENV})`);
   });
 }

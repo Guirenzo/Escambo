@@ -17,6 +17,7 @@
     "dev:web": "npm run dev --workspace @escambo/web",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
     "format": "prettier --write .",
     "db:up": "docker compose -f infra/docker-compose.yml up -d",

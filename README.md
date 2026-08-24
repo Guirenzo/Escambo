@@ -1,5 +1,6 @@
 <div align="center">
 
+<img src="https://github.com/Guirenzo/Escambo/actions/workflows/ci.yml/badge.svg" alt="CI" />
 <img src="https://img.shields.io/badge/status-em%20planejamento-yellow?style=for-the-badge&labelColor=0d1117" />
 <img src="https://img.shields.io/badge/MVP-2026-blue?style=for-the-badge&labelColor=0d1117" />
 <img src="https://img.shields.io/badge/licença-MIT-green?style=for-the-badge&labelColor=0d1117" />
