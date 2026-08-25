@@ -138,6 +138,25 @@ export interface Wallet {
   currency: string;
 }
 
+// --- Avaliações ---
+
+export interface Review {
+  id: number;
+  contractId: number;
+  reviewerId: number;
+  revieweeId: number;
+  rating: number; // 1 a 5
+  comment: string | null;
+  response: string | null; // resposta do freelancer (RN-046)
+  createdAt: string;
+}
+
+export interface CreateReviewRequest {
+  contractId: number;
+  rating: number;
+  comment?: string | null;
+}
+
 /** Formato padronizado de erro da API (ver error-handler / RNF-039). */
 export interface ApiError {
   error: string;

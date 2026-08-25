@@ -36,7 +36,8 @@ src/
     ├── auth/              # register/login/refresh/logout/me (molde)
     ├── services/          # CRUD de serviços (RF-021..030)
     ├── contracts/         # máquina de estados + histórico (RF-031..040)
-    └── wallet/            # carteira + escrow atômico (RF-044, RN-032)
+    ├── wallet/            # carteira + escrow atômico (RF-044, RN-032)
+    └── reviews/           # avaliações + nota média (RF-051..056, RN-041..046)
         ├── auth.routes.ts
         ├── auth.controller.ts
         ├── auth.service.ts      # bcrypt + JWT (RF-001, RF-003)
@@ -69,6 +70,9 @@ src/
 | POST | `/api/contracts/:id/request-revision` | **(cliente)** solicita revisão |
 | POST | `/api/contracts/:id/cancel` | **(parte)** cancela — reembolso RN-025 |
 | GET | `/api/wallet` | **(auth)** saldo disponível + retido em escrow |
+| POST | `/api/reviews` | **(auth, cliente)** avalia contratação concluída (1–5) |
+| GET | `/api/reviews?freelancerId=` | avaliações de um freelancer (pública) |
+| POST | `/api/reviews/:id/response` | **(auth, avaliado)** responde uma avaliação |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo
 > formato de pastas e camadas.
