@@ -241,6 +241,30 @@ export interface CreateBarterRequest {
   estimatedValueRequested: number;
 }
 
+// --- Saques ---
+
+export type WithdrawalMethod = 'pix' | 'bank';
+export type WithdrawalStatus = 'requested' | 'processing' | 'completed' | 'failed' | 'cancelled';
+
+export interface Withdrawal {
+  id: number;
+  amount: number;
+  status: WithdrawalStatus;
+  method: WithdrawalMethod;
+  maskedDestination: string; // chave PIX / conta mascarada
+  createdAt: string;
+  processedAt: string | null;
+}
+
+export interface CreateWithdrawalRequest {
+  amount: number;
+  method: WithdrawalMethod;
+  pixKey?: string | null;
+  bankName?: string | null;
+  bankAgency?: string | null;
+  bankAccount?: string | null;
+}
+
 /** Formato padronizado de erro da API (ver error-handler / RNF-039). */
 export interface ApiError {
   error: string;

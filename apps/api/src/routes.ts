@@ -7,6 +7,7 @@ import { healthRoutes } from './modules/health/health.routes';
 import { reviewsRoutes } from './modules/reviews/reviews.routes';
 import { servicesRoutes } from './modules/services/services.routes';
 import { walletRoutes } from './modules/wallet/wallet.routes';
+import { withdrawalRoutes } from './modules/withdrawal/withdrawal.routes';
 
 /** Monta as rotas de cada módulo sob /api. */
 export const router = Router();
@@ -19,3 +20,4 @@ router.use('/wallet', walletRoutes);
 router.use('/reviews', reviewsRoutes);
 router.use('/gamification', gamificationRoutes);
 router.use('/barters', barterRoutes);
+router.use('/withdrawals', withdrawalRoutes);
