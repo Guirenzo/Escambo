@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authRoutes } from './modules/auth/auth.routes';
 import { contractsRoutes } from './modules/contracts/contracts.routes';
+import { gamificationRoutes } from './modules/gamification/gamification.routes';
 import { healthRoutes } from './modules/health/health.routes';
 import { reviewsRoutes } from './modules/reviews/reviews.routes';
 import { servicesRoutes } from './modules/services/services.routes';
@@ -15,3 +16,4 @@ router.use('/services', servicesRoutes);
 router.use('/contracts', contractsRoutes);
 router.use('/wallet', walletRoutes);
 router.use('/reviews', reviewsRoutes);
+router.use('/gamification', gamificationRoutes);

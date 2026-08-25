@@ -8,6 +8,7 @@ import type {
   Paginated,
 } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
+import { gamificationService } from '../gamification/gamification.service';
 import { walletService } from '../wallet/wallet.service';
 import { contractsRepository, type ContractRow } from './contracts.repository';
 import type { CreateContractInput, DeliverInput, ListContractsInput } from './contracts.schema';
@@ -185,6 +186,12 @@ export const contractsService = {
       timestampColumn: 'completed_at',
       walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: net },
     });
+    // Gamificação é efeito secundário: nunca deve derrubar a aprovação/liberação do dinheiro.
+    try {
+      await gamificationService.onContractCompleted(row.freelancer_id, id);
+    } catch (err) {
+      console.error('gamificação (onContractCompleted) falhou:', err);
+    }
     return toContract(await loadOr404(id));
   },
 

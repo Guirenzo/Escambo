@@ -1,6 +1,7 @@
 import type { Paginated, Review } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
 import { contractsRepository } from '../contracts/contracts.repository';
+import { gamificationService } from '../gamification/gamification.service';
 import { reviewsRepository, type ReviewListRow, type ReviewRow } from './reviews.repository';
 import type { CreateReviewInput, ListReviewsInput } from './reviews.schema';
 
@@ -53,6 +54,13 @@ export const reviewsService = {
       rating: input.rating,
       comment: input.comment ?? null,
     });
+
+    // XP ao freelancer pela avaliação — efeito secundário, não derruba a criação.
+    try {
+      await gamificationService.onReviewReceived(contract.freelancer_id, input.rating, id);
+    } catch (err) {
+      console.error('gamificação (onReviewReceived) falhou:', err);
+    }
 
     const row = await reviewsRepository.findById(id);
     return toReview(row!, null);

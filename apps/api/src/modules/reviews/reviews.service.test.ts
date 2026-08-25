@@ -13,6 +13,9 @@ vi.mock('./reviews.repository', () => ({
 vi.mock('../contracts/contracts.repository', () => ({
   contractsRepository: { findById: vi.fn() },
 }));
+vi.mock('../gamification/gamification.service', () => ({
+  gamificationService: { onContractCompleted: vi.fn(), onReviewReceived: vi.fn() },
+}));
 
 import { reviewsService } from './reviews.service';
 import { reviewsRepository, type ReviewRow } from './reviews.repository';

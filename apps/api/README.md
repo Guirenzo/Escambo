@@ -37,7 +37,8 @@ src/
     ├── services/          # CRUD de serviços (RF-021..030)
     ├── contracts/         # máquina de estados + histórico (RF-031..040)
     ├── wallet/            # carteira + escrow atômico (RF-044, RN-032)
-    └── reviews/           # avaliações + nota média (RF-051..056, RN-041..046)
+    ├── reviews/           # avaliações + nota média (RF-051..056, RN-041..046)
+    └── gamification/      # XP/níveis/badges/ranking/streak (RF-063..068, RN-051..060)
         ├── auth.routes.ts
         ├── auth.controller.ts
         ├── auth.service.ts      # bcrypt + JWT (RF-001, RF-003)
@@ -73,6 +74,9 @@ src/
 | POST | `/api/reviews` | **(auth, cliente)** avalia contratação concluída (1–5) |
 | GET | `/api/reviews?freelancerId=` | avaliações de um freelancer (pública) |
 | POST | `/api/reviews/:id/response` | **(auth, avaliado)** responde uma avaliação |
+| GET | `/api/gamification/me` | **(auth)** XP, nível, progresso, streak, ranking, badges |
+| GET | `/api/gamification/me/history` | **(auth)** feed dos ganhos de XP |
+| GET | `/api/gamification/leaderboard` | **(auth)** ranking por XP |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo
 > formato de pastas e camadas.

@@ -14,6 +14,9 @@ vi.mock('./contracts.repository', () => ({
 vi.mock('../wallet/wallet.service', () => ({
   walletService: { ensure: vi.fn(), getBalance: vi.fn() },
 }));
+vi.mock('../gamification/gamification.service', () => ({
+  gamificationService: { onContractCompleted: vi.fn(), onReviewReceived: vi.fn() },
+}));
 
 import { contractsService } from './contracts.service';
 import { contractsRepository, type ContractRow, type HistoryRow } from './contracts.repository';

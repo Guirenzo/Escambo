@@ -157,6 +157,49 @@ export interface CreateReviewRequest {
   comment?: string | null;
 }
 
+// --- Gamificação ---
+
+export interface Badge {
+  slug: string;
+  name: string;
+  awardedAt: string;
+}
+
+export interface LevelProgress {
+  level: number;
+  levelName: string;
+  currentLevelMin: number;
+  nextLevelMin: number | null; // null = nível máximo
+  xpIntoLevel: number; // XP acumulado dentro do nível atual
+  xpToNextLevel: number | null; // XP faltando para o próximo nível
+  percent: number; // 0–100 (barra de progresso)
+}
+
+export interface GamificationProfile {
+  totalXp: number;
+  level: number;
+  levelName: string;
+  progress: LevelProgress;
+  streakDays: number; // sequência de dias ativos
+  rank: number | null; // posição no ranking global por XP
+  badges: Badge[];
+}
+
+export interface XpEvent {
+  amount: number;
+  reason: string;
+  at: string;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  userUlid: string;
+  name: string | null;
+  totalXp: number;
+  level: number;
+  levelName: string;
+}
+
 /** Formato padronizado de erro da API (ver error-handler / RNF-039). */
 export interface ApiError {
   error: string;
