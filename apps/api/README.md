@@ -35,7 +35,8 @@ src/
     ├── health/            # GET /api/health (ping no banco)
     ├── auth/              # register/login/refresh/logout/me (molde)
     ├── services/          # CRUD de serviços (RF-021..030)
-    └── contracts/         # máquina de estados + escrow/histórico (RF-031..040)
+    ├── contracts/         # máquina de estados + histórico (RF-031..040)
+    └── wallet/            # carteira + escrow atômico (RF-044, RN-032)
         ├── auth.routes.ts
         ├── auth.controller.ts
         ├── auth.service.ts      # bcrypt + JWT (RF-001, RF-003)
@@ -67,6 +68,7 @@ src/
 | POST | `/api/contracts/:id/approve` | **(cliente)** aprova → concluído |
 | POST | `/api/contracts/:id/request-revision` | **(cliente)** solicita revisão |
 | POST | `/api/contracts/:id/cancel` | **(parte)** cancela — reembolso RN-025 |
+| GET | `/api/wallet` | **(auth)** saldo disponível + retido em escrow |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo
 > formato de pastas e camadas.

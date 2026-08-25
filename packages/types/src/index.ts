@@ -130,6 +130,14 @@ export interface CancelResult {
   refundPercentage: number;
 }
 
+// --- Carteira ---
+
+export interface Wallet {
+  balance: number; // saldo disponível para saque
+  balancePending: number; // retido em escrow
+  currency: string;
+}
+
 /** Formato padronizado de erro da API (ver error-handler / RNF-039). */
 export interface ApiError {
   error: string;

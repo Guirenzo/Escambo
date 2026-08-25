@@ -11,6 +11,10 @@ vi.mock('./contracts.repository', () => ({
   },
 }));
 
+vi.mock('../wallet/wallet.service', () => ({
+  walletService: { ensure: vi.fn(), getBalance: vi.fn() },
+}));
+
 import { contractsService } from './contracts.service';
 import { contractsRepository, type ContractRow, type HistoryRow } from './contracts.repository';
 
@@ -104,7 +108,14 @@ describe('accept', () => {
     repo.transition.mockResolvedValue(true);
     const c = await contractsService.accept(1, 2);
     expect(repo.transition).toHaveBeenCalledWith(
-      expect.objectContaining({ from: 'pending', to: 'accepted', timestampColumn: 'accepted_at', changedBy: 2 }),
+      expect.objectContaining({
+        from: 'pending',
+        to: 'accepted',
+        timestampColumn: 'accepted_at',
+        changedBy: 2,
+        // escrow financiado: líquido (850) entra no pendente do freelancer
+        walletEffect: { userId: 2, pendingDelta: 850, balanceDelta: 0 },
+      }),
     );
     expect(c.status).toBe('accepted');
   });
@@ -129,7 +140,12 @@ describe('approve', () => {
     repo.transition.mockResolvedValue(true);
     const c = await contractsService.approve(1, 1);
     expect(repo.transition).toHaveBeenCalledWith(
-      expect.objectContaining({ to: 'completed', timestampColumn: 'completed_at' }),
+      expect.objectContaining({
+        to: 'completed',
+        timestampColumn: 'completed_at',
+        // escrow liberado: pendente -> disponível
+        walletEffect: { userId: 2, pendingDelta: -850, balanceDelta: 850 },
+      }),
     );
     expect(c.status).toBe('completed');
   });

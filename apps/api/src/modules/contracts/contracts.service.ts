@@ -8,6 +8,7 @@ import type {
   Paginated,
 } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
+import { walletService } from '../wallet/wallet.service';
 import { contractsRepository, type ContractRow } from './contracts.repository';
 import type { CreateContractInput, DeliverInput, ListContractsInput } from './contracts.schema';
 
@@ -74,6 +75,7 @@ async function applyTransition(params: {
   to: string;
   note: string | null;
   timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at';
+  walletEffect?: { userId: number; pendingDelta: number; balanceDelta: number };
 }): Promise<void> {
   const ok = await contractsRepository.transition(params);
   if (!ok) {
@@ -131,6 +133,8 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertFreelancer(row, uid); // RF-032
     assertStatus(row, ['pending']);
+    // Ao aceitar, o valor líquido entra em escrow (balance_pending do freelancer) — RN-032.
+    await walletService.ensure(row.freelancer_id);
     await applyTransition({
       id,
       changedBy: uid,
@@ -138,6 +142,7 @@ export const contractsService = {
       to: 'accepted',
       note: null,
       timestampColumn: 'accepted_at',
+      walletEffect: { userId: row.freelancer_id, pendingDelta: Number(row.freelancer_net), balanceDelta: 0 },
     });
     return toContract(await loadOr404(id));
   },
@@ -169,6 +174,8 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertClient(row, uid); // RF-036/037: só o cliente aprova
     assertStatus(row, ['delivered']);
+    // Aprovação LIBERA o escrow: move o líquido de pendente -> disponível (RF-037).
+    const net = Number(row.freelancer_net);
     await applyTransition({
       id,
       changedBy: uid,
@@ -176,8 +183,8 @@ export const contractsService = {
       to: 'completed',
       note: null,
       timestampColumn: 'completed_at',
+      walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: net },
     });
-    // (liberação do escrow ao freelancer entra aqui quando o módulo de pagamentos existir)
     return toContract(await loadOr404(id));
   },
 
@@ -194,6 +201,9 @@ export const contractsService = {
     assertParty(row, uid);
     assertStatus(row, ['pending', 'accepted', 'in_progress']); // RN-025; após entrega vira disputa
     const refund = refundPercentage(row);
+    // Se o escrow já estava financiado (accepted/in_progress), estorna o pendente do freelancer.
+    const escrowFunded = row.status === 'accepted' || row.status === 'in_progress';
+    const net = Number(row.freelancer_net);
     await applyTransition({
       id,
       changedBy: uid,
@@ -201,6 +211,9 @@ export const contractsService = {
       to: 'cancelled',
       note: `Reembolso: ${refund}%`,
       timestampColumn: 'cancelled_at',
+      ...(escrowFunded
+        ? { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: 0 } }
+        : {}),
     });
     return { status: 'cancelled', refundPercentage: refund };
   },

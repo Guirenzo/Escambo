@@ -110,6 +110,8 @@ export const contractsRepository = {
     to: string;
     note: string | null;
     timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at';
+    /** Movimento de carteira aplicado na MESMA transação do status (escrow). */
+    walletEffect?: { userId: number; pendingDelta: number; balanceDelta: number };
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -131,6 +133,27 @@ export const contractsRepository = {
          VALUES (:id, :changedBy, :from, :to, :note)`,
         { id: params.id, changedBy: params.changedBy, from: params.from, to: params.to, note: params.note },
       );
+
+      if (params.walletEffect) {
+        // Guarda contra saldo negativo; se a carteira não existe ou ficaria negativa, aborta tudo.
+        const [w] = await conn.query<ResultSetHeader>(
+          `UPDATE wallets
+              SET balance_pending = balance_pending + :pending,
+                  balance         = balance + :balance
+            WHERE user_id = :userId
+              AND balance_pending + :pending >= 0
+              AND balance + :balance >= 0`,
+          {
+            pending: params.walletEffect.pendingDelta,
+            balance: params.walletEffect.balanceDelta,
+            userId: params.walletEffect.userId,
+          },
+        );
+        if (w.affectedRows === 0) {
+          await conn.rollback();
+          return false;
+        }
+      }
 
       await conn.commit();
       return true;
