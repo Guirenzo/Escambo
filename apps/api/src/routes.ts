@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authRoutes } from './modules/auth/auth.routes';
+import { barterRoutes } from './modules/barter/barter.routes';
 import { contractsRoutes } from './modules/contracts/contracts.routes';
 import { gamificationRoutes } from './modules/gamification/gamification.routes';
 import { healthRoutes } from './modules/health/health.routes';
@@ -17,3 +18,4 @@ router.use('/contracts', contractsRoutes);
 router.use('/wallet', walletRoutes);
 router.use('/reviews', reviewsRoutes);
 router.use('/gamification', gamificationRoutes);
+router.use('/barters', barterRoutes);

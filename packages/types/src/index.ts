@@ -200,6 +200,47 @@ export interface LeaderboardEntry {
   levelName: string;
 }
 
+// --- Troca de Serviços (Escambo) ---
+
+export type BarterStatus =
+  | 'proposed'
+  | 'accepted'
+  | 'rejected'
+  | 'active'
+  | 'completed'
+  | 'cancelled'
+  | 'disputed';
+
+export interface BarterAgreement {
+  id: number;
+  ulid: string;
+  proposerId: number;
+  receiverId: number;
+  offeredServiceId: number | null;
+  requestedServiceId: number | null;
+  offeredDescription: string | null;
+  requestedDescription: string | null;
+  estimatedValueOffered: number;
+  estimatedValueRequested: number;
+  cashDifference: number; // torna
+  cashPayerId: number | null;
+  platformFee: number;
+  status: BarterStatus;
+  contractOfferedId: number | null;
+  contractRequestedId: number | null;
+  createdAt: string;
+}
+
+export interface CreateBarterRequest {
+  receiverId: number;
+  offeredServiceId?: number | null;
+  offeredDescription?: string | null;
+  requestedServiceId?: number | null;
+  requestedDescription?: string | null;
+  estimatedValueOffered: number;
+  estimatedValueRequested: number;
+}
+
 /** Formato padronizado de erro da API (ver error-handler / RNF-039). */
 export interface ApiError {
   error: string;

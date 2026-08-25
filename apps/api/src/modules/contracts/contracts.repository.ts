@@ -13,6 +13,8 @@ export interface ContractRow extends RowDataPacket {
   platform_fee: string;
   freelancer_net: string;
   status: string;
+  payment_mode: string;
+  barter_agreement_id: number | null;
   deadline_at: Date | null;
   accepted_at: Date | null;
   completed_at: Date | null;

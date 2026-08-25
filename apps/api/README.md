@@ -38,7 +38,8 @@ src/
     ├── contracts/         # máquina de estados + histórico (RF-031..040)
     ├── wallet/            # carteira + escrow atômico (RF-044, RN-032)
     ├── reviews/           # avaliações + nota média (RF-051..056, RN-041..046)
-    └── gamification/      # XP/níveis/badges/ranking/streak (RF-063..068, RN-051..060)
+    ├── gamification/      # XP/níveis/badges/ranking/streak (RF-063..068, RN-051..060)
+    └── barter/            # troca de serviços / escambo (RF-083..085, RN-066..067)
         ├── auth.routes.ts
         ├── auth.controller.ts
         ├── auth.service.ts      # bcrypt + JWT (RF-001, RF-003)
@@ -77,6 +78,11 @@ src/
 | GET | `/api/gamification/me` | **(auth)** XP, nível, progresso, streak, ranking, badges |
 | GET | `/api/gamification/me/history` | **(auth)** feed dos ganhos de XP |
 | GET | `/api/gamification/leaderboard` | **(auth)** ranking por XP |
+| POST | `/api/barters` | **(auth)** propõe troca de serviços (calcula torna + taxa) |
+| GET | `/api/barters` | **(auth)** minhas trocas |
+| GET | `/api/barters/:id` | **(auth, parte)** detalhe da troca |
+| POST | `/api/barters/:id/accept` | **(receptor)** aceita → gera 2 contratos + torna em escrow |
+| POST | `/api/barters/:id/reject` · `/cancel` | **(receptor/parte)** recusa / cancela |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo
 > formato de pastas e camadas.

@@ -8,6 +8,7 @@ import type {
   Paginated,
 } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
+import { barterService } from '../barter/barter.service';
 import { gamificationService } from '../gamification/gamification.service';
 import { walletService } from '../wallet/wallet.service';
 import { contractsRepository, type ContractRow } from './contracts.repository';
@@ -175,7 +176,8 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertClient(row, uid); // RF-036/037: só o cliente aprova
     assertStatus(row, ['delivered']);
-    // Aprovação LIBERA o escrow: move o líquido de pendente -> disponível (RF-037).
+    // Contrato de troca não move dinheiro do serviço (é pago com serviço); só o fluxo cash libera escrow.
+    const isBarter = row.payment_mode === 'barter';
     const net = Number(row.freelancer_net);
     await applyTransition({
       id,
@@ -184,13 +186,22 @@ export const contractsService = {
       to: 'completed',
       note: null,
       timestampColumn: 'completed_at',
-      walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: net },
+      ...(isBarter
+        ? {}
+        : { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: net } }),
     });
-    // Gamificação é efeito secundário: nunca deve derrubar a aprovação/liberação do dinheiro.
+    // Efeitos secundários: nunca derrubam a aprovação/liberação do dinheiro.
     try {
       await gamificationService.onContractCompleted(row.freelancer_id, id);
     } catch (err) {
       console.error('gamificação (onContractCompleted) falhou:', err);
+    }
+    if (row.barter_agreement_id) {
+      try {
+        await barterService.onLinkedContractCompleted(row.barter_agreement_id);
+      } catch (err) {
+        console.error('troca (onLinkedContractCompleted) falhou:', err);
+      }
     }
     return toContract(await loadOr404(id));
   },
@@ -208,8 +219,9 @@ export const contractsService = {
     assertParty(row, uid);
     assertStatus(row, ['pending', 'accepted', 'in_progress']); // RN-025; após entrega vira disputa
     const refund = refundPercentage(row);
-    // Se o escrow já estava financiado (accepted/in_progress), estorna o pendente do freelancer.
-    const escrowFunded = row.status === 'accepted' || row.status === 'in_progress';
+    // Troca não tem escrow por-contrato; o estorno da torna é tratado no nível da troca.
+    const isBarter = row.payment_mode === 'barter';
+    const escrowFunded = !isBarter && (row.status === 'accepted' || row.status === 'in_progress');
     const net = Number(row.freelancer_net);
     await applyTransition({
       id,
@@ -222,6 +234,13 @@ export const contractsService = {
         ? { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: 0 } }
         : {}),
     });
+    if (row.barter_agreement_id) {
+      try {
+        await barterService.onLinkedContractCancelled(row.barter_agreement_id);
+      } catch (err) {
+        console.error('troca (onLinkedContractCancelled) falhou:', err);
+      }
+    }
     return { status: 'cancelled', refundPercentage: refund };
   },
 };
