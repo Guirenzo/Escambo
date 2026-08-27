@@ -40,6 +40,37 @@ export interface RefreshResponse {
   refreshToken: string;
 }
 
+// --- LGPD ---
+
+export type ConsentType = 'terms_of_use' | 'privacy_policy' | 'marketing' | 'data_processing';
+
+export interface Consent {
+  type: ConsentType;
+  version: string;
+  accepted: boolean;
+  at: string;
+}
+
+export interface DataDeletionRequest {
+  id: number;
+  reason: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface DataExportRequest {
+  id: number;
+  status: string;
+  fileUrl: string | null;
+  createdAt: string;
+}
+
+export interface RecordConsentRequest {
+  type: ConsentType;
+  version: string;
+  accepted: boolean;
+}
+
 // --- Notificações ---
 
 export interface Notification {
