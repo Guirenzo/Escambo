@@ -1,10 +1,17 @@
 import type { Request, Response } from 'express';
+import { notificationsService } from '../notifications/notifications.service';
 import { createReviewSchema, listReviewsSchema, respondReviewSchema, reviewIdSchema } from './reviews.schema';
 import { reviewsService } from './reviews.service';
 
 export async function createReview(req: Request, res: Response): Promise<void> {
   const input = createReviewSchema.parse(req.body);
-  res.status(201).json(await reviewsService.create(req.user!.uid, input));
+  const review = await reviewsService.create(req.user!.uid, input);
+  void notificationsService.notify(review.revieweeId, {
+    type: 'review_received',
+    title: 'Você recebeu uma avaliação',
+    data: { reviewId: review.id, rating: review.rating },
+  });
+  res.status(201).json(review);
 }
 
 export async function listReviews(req: Request, res: Response): Promise<void> {

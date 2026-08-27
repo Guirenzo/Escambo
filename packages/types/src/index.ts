@@ -40,6 +40,25 @@ export interface RefreshResponse {
   refreshToken: string;
 }
 
+// --- Notificações ---
+
+export interface Notification {
+  id: number;
+  type: string;
+  title: string;
+  body: string | null;
+  data: Record<string, unknown> | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface NotificationList {
+  items: Notification[];
+  unreadCount: number;
+  page: number;
+  limit: number;
+}
+
 // --- Perfis ---
 
 export interface FreelancerProfile {

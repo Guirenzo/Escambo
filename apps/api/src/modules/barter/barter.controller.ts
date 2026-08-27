@@ -1,10 +1,17 @@
 import type { Request, Response } from 'express';
+import { notificationsService } from '../notifications/notifications.service';
 import { barterIdSchema, createBarterSchema, listBartersSchema } from './barter.schema';
 import { barterService } from './barter.service';
 
 export async function proposeBarter(req: Request, res: Response): Promise<void> {
   const input = createBarterSchema.parse(req.body);
-  res.status(201).json(await barterService.propose(req.user!.uid, input));
+  const barter = await barterService.propose(req.user!.uid, input);
+  void notificationsService.notify(barter.receiverId, {
+    type: 'barter_proposed',
+    title: 'Nova proposta de troca de serviços',
+    data: { barterId: barter.id },
+  });
+  res.status(201).json(barter);
 }
 
 export async function listBarters(req: Request, res: Response): Promise<void> {
@@ -19,7 +26,13 @@ export async function getBarter(req: Request, res: Response): Promise<void> {
 
 export async function acceptBarter(req: Request, res: Response): Promise<void> {
   const { id } = barterIdSchema.parse(req.params);
-  res.json(await barterService.accept(id, req.user!.uid));
+  const barter = await barterService.accept(id, req.user!.uid);
+  void notificationsService.notify(barter.proposerId, {
+    type: 'barter_accepted',
+    title: 'Sua troca foi aceita',
+    data: { barterId: barter.id },
+  });
+  res.json(barter);
 }
 
 export async function rejectBarter(req: Request, res: Response): Promise<void> {

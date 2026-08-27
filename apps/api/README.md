@@ -45,7 +45,9 @@ src/
     ├── reviews/           # avaliações + nota média (RF-051..056, RN-041..046)
     ├── gamification/      # XP/níveis/badges/ranking/streak (RF-063..068, RN-051..060)
     ├── barter/            # troca de serviços / escambo (RF-083..085, RN-066..067)
-    └── withdrawal/        # saques (RF-045, RN-034)
+    ├── withdrawal/        # saques (RF-045, RN-034)
+    ├── notifications/     # avisos in-app disparados nos eventos (RF-069)
+    └── audit/             # trilha de auditoria de ações críticas (RN-010)
         ├── auth.routes.ts
         ├── auth.controller.ts
         ├── auth.service.ts      # bcrypt + JWT (RF-001, RF-003)
@@ -95,6 +97,8 @@ src/
 | POST | `/api/barters/:id/reject` · `/cancel` | **(receptor/parte)** recusa / cancela |
 | POST | `/api/withdrawals` | **(auth)** solicita saque (débito atômico, mín. R$20) |
 | GET | `/api/withdrawals` | **(auth)** meus saques |
+| GET | `/api/notifications` | **(auth)** minhas notificações + total não lidas |
+| POST | `/api/notifications/:id/read` · `/read-all` | **(auth)** marca como lida(s) |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo
 > formato de pastas e camadas.
