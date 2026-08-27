@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
+import { logger } from '../config/logger';
 import { HttpError } from '../utils/http-error';
 
 /**
@@ -23,6 +24,6 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
-  console.error('[erro não tratado]', err);
+  logger.error({ err }, 'erro não tratado');
   res.status(500).json({ error: 'internal_error', message: 'Erro interno do servidor' });
 };

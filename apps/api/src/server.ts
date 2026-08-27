@@ -1,6 +1,7 @@
 import { createApp } from './app';
 import { env } from './config/env';
 import { pingDb } from './config/db';
+import { logger } from './config/logger';
 
 /** Espera o banco ficar disponível antes de subir (resiliência a boot fora de ordem). */
 async function waitForDb(retries = 10, delayMs = 1500): Promise<void> {
@@ -10,9 +11,7 @@ async function waitForDb(retries = 10, delayMs = 1500): Promise<void> {
       return;
     } catch (err) {
       if (attempt === retries) throw err;
-      console.warn(
-        `Banco indisponível (tentativa ${attempt}/${retries}); nova tentativa em ${delayMs}ms…`,
-      );
+      logger.warn(`Banco indisponível (tentativa ${attempt}/${retries}); nova tentativa em ${delayMs}ms`);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
@@ -23,11 +22,11 @@ async function main(): Promise<void> {
   const app = createApp();
 
   app.listen(env.PORT, () => {
-    console.log(`🚀 API Escambo em http://localhost:${env.PORT}/api  (env: ${env.NODE_ENV})`);
+    logger.info(`API Escambo em http://localhost:${env.PORT}/api (env: ${env.NODE_ENV})`);
   });
 }
 
 main().catch((err) => {
-  console.error('Falha ao iniciar a API:', err);
+  logger.error({ err }, 'Falha ao iniciar a API');
   process.exit(1);
 });

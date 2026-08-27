@@ -7,6 +7,7 @@ import type {
   ContractWithHistory,
   Paginated,
 } from '@escambo/types';
+import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { barterService } from '../barter/barter.service';
 import { gamificationService } from '../gamification/gamification.service';
@@ -194,13 +195,13 @@ export const contractsService = {
     try {
       await gamificationService.onContractCompleted(row.freelancer_id, id);
     } catch (err) {
-      console.error('gamificação (onContractCompleted) falhou:', err);
+      logger.warn({ err }, 'gamificação (onContractCompleted) falhou');
     }
     if (row.barter_agreement_id) {
       try {
         await barterService.onLinkedContractCompleted(row.barter_agreement_id);
       } catch (err) {
-        console.error('troca (onLinkedContractCompleted) falhou:', err);
+        logger.warn({ err }, 'troca (onLinkedContractCompleted) falhou');
       }
     }
     return toContract(await loadOr404(id));
@@ -238,7 +239,7 @@ export const contractsService = {
       try {
         await barterService.onLinkedContractCancelled(row.barter_agreement_id);
       } catch (err) {
-        console.error('troca (onLinkedContractCancelled) falhou:', err);
+        logger.warn({ err }, 'troca (onLinkedContractCancelled) falhou');
       }
     }
     return { status: 'cancelled', refundPercentage: refund };

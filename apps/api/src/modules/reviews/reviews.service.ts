@@ -1,4 +1,5 @@
 import type { Paginated, Review } from '@escambo/types';
+import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { contractsRepository } from '../contracts/contracts.repository';
 import { gamificationService } from '../gamification/gamification.service';
@@ -59,7 +60,7 @@ export const reviewsService = {
     try {
       await gamificationService.onReviewReceived(contract.freelancer_id, input.rating, id);
     } catch (err) {
-      console.error('gamificação (onReviewReceived) falhou:', err);
+      logger.warn({ err }, 'gamificação (onReviewReceived) falhou');
     }
 
     const row = await reviewsRepository.findById(id);

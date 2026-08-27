@@ -25,15 +25,20 @@ src/
 ├── routes.ts              # agrega as rotas dos módulos sob /api
 ├── config/
 │   ├── env.ts             # validação das envs com Zod
-│   └── db.ts              # pool MySQL (mysql2) + pingDb()
+│   ├── db.ts              # pool MySQL (mysql2) + pingDb()
+│   └── logger.ts          # Pino (log estruturado, RFC §7.5)
 ├── middlewares/
-│   └── error-handler.ts   # resposta de erro padronizada (RNF-039)
+│   ├── error-handler.ts   # resposta de erro padronizada (RNF-039)
+│   ├── authenticate.ts    # JWT Bearer (req.user)
+│   └── rate-limit.ts      # anti brute-force (RNF-005 / RN-002)
 ├── utils/
 │   ├── http-error.ts      # erro de domínio com status HTTP
 │   └── async-handler.ts   # try/catch automático nos controllers
 └── modules/
     ├── health/            # GET /api/health (ping no banco)
     ├── auth/              # register/login/refresh/logout/me (molde)
+    ├── categories/        # árvore de categorias (RF-021)
+    ├── profiles/          # perfis freelancer/cliente (RF-011..020)
     ├── services/          # CRUD de serviços (RF-021..030)
     ├── contracts/         # máquina de estados + histórico (RF-031..040)
     ├── wallet/            # carteira + escrow atômico (RF-044, RN-032)
@@ -59,6 +64,10 @@ src/
 | POST | `/api/auth/logout` | Revoga a sessão do `refreshToken` enviado |
 | POST | `/api/auth/logout-all` | **(protegida)** encerra todas as sessões (RN-008) |
 | GET | `/api/auth/me` | **(protegida)** dados do usuário do token — exige `Authorization: Bearer <jwt>` |
+| GET | `/api/categories` | árvore de categorias (pública) |
+| GET | `/api/profiles/freelancer/:ulid` | perfil público do freelancer (nota + nível) |
+| GET | `/api/profiles/me` | **(auth)** meus perfis (freelancer/cliente) |
+| PUT | `/api/profiles/freelancer` · `/client` | **(auth)** cria/edita meu perfil |
 | GET | `/api/services` | Lista/busca serviços (`categoryId`, `q`, `isRemote`, `page`, `limit`) |
 | GET | `/api/services/:id` | Detalhe de um serviço |
 | POST | `/api/services` | **(protegida)** cria serviço (dono = token) |

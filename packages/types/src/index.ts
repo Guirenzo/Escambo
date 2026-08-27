@@ -40,6 +40,69 @@ export interface RefreshResponse {
   refreshToken: string;
 }
 
+// --- Perfis ---
+
+export interface FreelancerProfile {
+  fullName: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  headline: string | null;
+  city: string | null;
+  state: string | null;
+  isAvailable: boolean;
+  avgRating: number;
+  totalReviews: number;
+  totalContracts: number;
+}
+
+export interface ClientProfile {
+  fullName: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  city: string | null;
+  state: string | null;
+}
+
+export interface MyProfiles {
+  freelancer: FreelancerProfile | null;
+  client: ClientProfile | null;
+}
+
+export interface PublicFreelancerProfile extends FreelancerProfile {
+  userUlid: string;
+  level: number;
+  levelName: string;
+}
+
+export interface UpsertFreelancerProfileRequest {
+  fullName: string;
+  avatarUrl?: string | null;
+  bio?: string | null;
+  headline?: string | null;
+  city?: string | null;
+  state?: string | null;
+  isAvailable?: boolean;
+}
+
+export interface UpsertClientProfileRequest {
+  fullName: string;
+  avatarUrl?: string | null;
+  bio?: string | null;
+  city?: string | null;
+  state?: string | null;
+}
+
+// --- Categorias ---
+
+export interface Category {
+  id: number;
+  parentId: number | null;
+  name: string;
+  slug: string;
+  iconUrl: string | null;
+  children: Category[];
+}
+
 // --- Serviços ---
 
 export type ServicePriceType = 'fixed' | 'hourly' | 'negotiable';
