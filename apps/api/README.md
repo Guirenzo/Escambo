@@ -48,7 +48,10 @@ src/
     ├── withdrawal/        # saques (RF-045, RN-034)
     ├── notifications/     # avisos in-app disparados nos eventos (RF-069)
     ├── audit/             # trilha de auditoria de ações críticas (RN-010)
-    └── lgpd/              # consentimento + exclusão/exportação (RF-079/080, RN-071/072)
+    ├── lgpd/              # consentimento + exclusão/exportação (RF-079/080, RN-071/072)
+    ├── favorites/         # favoritos de serviços/freelancers
+    ├── saved-searches/    # buscas salvas + alerta
+    └── reports/           # denúncias / trust & safety (RF-089)
         ├── auth.routes.ts
         ├── auth.controller.ts
         ├── auth.service.ts      # bcrypt + JWT (RF-001, RF-003)
@@ -103,6 +106,9 @@ src/
 | POST · GET | `/api/lgpd/consents` | **(auth)** registra/lista consentimentos (RN-071) |
 | POST · GET | `/api/lgpd/deletion-requests` | **(auth)** direito ao esquecimento (RN-072) |
 | POST · GET | `/api/lgpd/export-requests` | **(auth)** portabilidade dos dados (Art. 18, V) |
+| POST · GET · DELETE | `/api/favorites` | **(auth)** favoritar serviços/freelancers |
+| POST · GET · DELETE | `/api/saved-searches` | **(auth)** buscas salvas (filtros + alerta) |
+| POST · GET | `/api/reports` | **(auth)** denúncias (trust & safety) |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo
 > formato de pastas e camadas.

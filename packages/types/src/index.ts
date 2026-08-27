@@ -40,6 +40,61 @@ export interface RefreshResponse {
   refreshToken: string;
 }
 
+// --- Favoritos ---
+
+export type FavoriteTargetType = 'service' | 'freelancer';
+
+export interface Favorite {
+  id: number;
+  targetType: FavoriteTargetType;
+  targetId: number;
+  createdAt: string;
+}
+
+export interface CreateFavoriteRequest {
+  targetType: FavoriteTargetType;
+  targetId: number;
+}
+
+// --- Buscas salvas ---
+
+export interface SavedSearch {
+  id: number;
+  name: string | null;
+  query: string | null;
+  filters: Record<string, unknown> | null;
+  alertEnabled: boolean;
+  createdAt: string;
+}
+
+export interface CreateSavedSearchRequest {
+  name?: string | null;
+  query?: string | null;
+  filters?: Record<string, unknown> | null;
+  alertEnabled?: boolean;
+}
+
+// --- Denúncias (trust & safety) ---
+
+export type ReportTargetType = 'user' | 'service' | 'review' | 'message';
+export type ReportReason = 'spam' | 'fraud' | 'offensive' | 'off_platform' | 'illegal' | 'other';
+
+export interface ContentReport {
+  id: number;
+  targetType: ReportTargetType;
+  targetId: number;
+  reason: ReportReason;
+  status: string;
+  createdAt: string;
+}
+
+export interface CreateContentReportRequest {
+  targetType: ReportTargetType;
+  targetId: number;
+  reason: ReportReason;
+  description?: string | null;
+}
+
 // --- LGPD ---
 
 export type ConsentType = 'terms_of_use' | 'privacy_policy' | 'marketing' | 'data_processing';
