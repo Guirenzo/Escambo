@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import { adminRoutes } from './modules/admin/admin.routes';
 import { authRoutes } from './modules/auth/auth.routes';
 import { barterRoutes } from './modules/barter/barter.routes';
 import { categoriesRoutes } from './modules/categories/categories.routes';
 import { contractsRoutes } from './modules/contracts/contracts.routes';
+import { disputesRoutes } from './modules/disputes/disputes.routes';
 import { favoritesRoutes } from './modules/favorites/favorites.routes';
 import { gamificationRoutes } from './modules/gamification/gamification.routes';
 import { healthRoutes } from './modules/health/health.routes';
@@ -35,3 +37,5 @@ router.use('/lgpd', lgpdRoutes);
 router.use('/favorites', favoritesRoutes);
 router.use('/saved-searches', savedSearchesRoutes);
 router.use('/reports', reportsRoutes);
+router.use('/disputes', disputesRoutes);
+router.use('/admin', adminRoutes);

@@ -30,6 +30,7 @@ src/
 ├── middlewares/
 │   ├── error-handler.ts   # resposta de erro padronizada (RNF-039)
 │   ├── authenticate.ts    # JWT Bearer (req.user)
+│   ├── require-admin.ts   # exige role admin (RN-007)
 │   └── rate-limit.ts      # anti brute-force (RNF-005 / RN-002)
 ├── utils/
 │   ├── http-error.ts      # erro de domínio com status HTTP
@@ -51,7 +52,9 @@ src/
     ├── lgpd/              # consentimento + exclusão/exportação (RF-079/080, RN-071/072)
     ├── favorites/         # favoritos de serviços/freelancers
     ├── saved-searches/    # buscas salvas + alerta
-    └── reports/           # denúncias / trust & safety (RF-089)
+    ├── reports/           # denúncias / trust & safety (RF-089)
+    ├── disputes/          # abertura de disputa de contrato (RF-071..073, RN-062)
+    └── admin/             # resolução de escrow + moderação + métricas (RF-076..078, RN-063)
         ├── auth.routes.ts
         ├── auth.controller.ts
         ├── auth.service.ts      # bcrypt + JWT (RF-001, RF-003)
@@ -109,6 +112,11 @@ src/
 | POST · GET · DELETE | `/api/favorites` | **(auth)** favoritar serviços/freelancers |
 | POST · GET · DELETE | `/api/saved-searches` | **(auth)** buscas salvas (filtros + alerta) |
 | POST · GET | `/api/reports` | **(auth)** denúncias (trust & safety) |
+| POST · GET | `/api/disputes` | **(auth, parte)** abre/lista disputas de contrato |
+| GET | `/api/disputes/:id` | **(auth, parte)** detalhe da disputa |
+| POST | `/api/admin/disputes/:id/resolve` | **(admin)** resolve com decisão de escrow |
+| GET | `/api/admin/disputes` · `/api/admin/metrics` | **(admin)** disputas abertas / métricas |
+| POST | `/api/admin/users/:ulid/suspend`·`/ban`·`/reactivate` | **(admin)** moderação (RN-007) |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo
 > formato de pastas e camadas.

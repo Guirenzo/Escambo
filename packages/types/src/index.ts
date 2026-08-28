@@ -95,6 +95,48 @@ export interface CreateContentReportRequest {
   description?: string | null;
 }
 
+// --- Disputas ---
+
+export type DisputeReason = 'not_delivered' | 'quality' | 'deadline' | 'scope' | 'payment' | 'other';
+export type DisputeStatus = 'open' | 'under_review' | 'awaiting_parties' | 'resolved' | 'closed';
+export type DisputeResolution = 'refund_client' | 'release_freelancer' | 'partial_split' | 'none';
+
+export interface Dispute {
+  id: number;
+  ulid: string;
+  contractId: number;
+  openedBy: number;
+  reason: DisputeReason;
+  description: string;
+  status: DisputeStatus;
+  resolution: DisputeResolution | null;
+  refundPercentage: number | null;
+  createdAt: string;
+}
+
+export interface OpenDisputeRequest {
+  contractId: number;
+  reason: DisputeReason;
+  description: string;
+}
+
+export interface ResolveDisputeRequest {
+  resolution: DisputeResolution;
+  refundPercentage?: number | null; // obrigatório em partial_split
+  note?: string | null;
+}
+
+// --- Admin ---
+
+export interface AdminMetrics {
+  users: number;
+  freelancers: number;
+  contracts: number;
+  completedContracts: number;
+  openDisputes: number;
+  platformFees: number;
+}
+
 // --- LGPD ---
 
 export type ConsentType = 'terms_of_use' | 'privacy_policy' | 'marketing' | 'data_processing';
