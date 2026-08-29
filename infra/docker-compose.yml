@@ -32,5 +32,26 @@ services:
       timeout: 5s
       retries: 10
 
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    container_name: escambo-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3333
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-escambo}
+      DB_PASSWORD: ${DB_PASSWORD:-escambo}
+      DB_NAME: ${DB_NAME:-escambo}
+      JWT_SECRET: ${JWT_SECRET:-troque-isto-em-producao-com-no-minimo-32-caracteres}
+    ports:
+      - "${API_PORT:-3333}:3333"
+
 volumes:
   escambo_db_data:

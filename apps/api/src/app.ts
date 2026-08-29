@@ -3,6 +3,7 @@ import express from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { logger } from './config/logger';
+import { openapiDocument, swaggerHtml } from './config/openapi';
 import { errorHandler } from './middlewares/error-handler';
 import { apiRateLimiter } from './middlewares/rate-limit';
 import { router } from './routes';
@@ -15,6 +16,14 @@ export function createApp() {
   app.use(cors());
   app.use(pinoHttp({ logger })); // log estruturado por requisição
   app.use(express.json());
+
+  // Documentação da API (RNF-010) — não passa pelo rate limiter.
+  app.get('/api/openapi.json', (_req, res) => {
+    res.json(openapiDocument);
+  });
+  app.get('/api/docs', (_req, res) => {
+    res.type('html').send(swaggerHtml);
+  });
 
   app.use('/api', apiRateLimiter, router);
 

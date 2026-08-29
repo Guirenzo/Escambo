@@ -26,7 +26,8 @@ src/
 ├── config/
 │   ├── env.ts             # validação das envs com Zod
 │   ├── db.ts              # pool MySQL (mysql2) + pingDb()
-│   └── logger.ts          # Pino (log estruturado, RFC §7.5)
+│   ├── logger.ts          # Pino (log estruturado, RFC §7.5)
+│   └── openapi.ts         # documento OpenAPI + Swagger UI (RNF-010)
 ├── middlewares/
 │   ├── error-handler.ts   # resposta de erro padronizada (RNF-039)
 │   ├── authenticate.ts    # JWT Bearer (req.user)
@@ -67,6 +68,7 @@ src/
 | Método | Rota | Descrição |
 |---|---|---|
 | GET | `/api/health` | Status da API + ping no MySQL |
+| GET | `/api/docs` · `/api/openapi.json` | **Swagger UI** + spec OpenAPI (RNF-010) |
 | POST | `/api/auth/register` | Cria usuário (`email`, `password`, `role`) |
 | POST | `/api/auth/login` | Autentica → `accessToken` (1h) + `refreshToken` (7d) + sessão |
 | POST | `/api/auth/refresh` | Rotaciona o refresh token → novo par de tokens |
