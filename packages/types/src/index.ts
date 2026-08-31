@@ -9,6 +9,7 @@ export type UserStatus = 'active' | 'suspended' | 'banned' | 'pending_verificati
 
 /** Usuário como exposto publicamente (sem hash de senha, sem id interno). */
 export interface PublicUser {
+  id: number;
   ulid: string;
   email: string;
   role: UserRole;

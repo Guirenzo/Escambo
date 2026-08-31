@@ -1,8 +1,10 @@
 import type {
   AuthResponse,
+  BarterAgreement,
   Category,
   ClientProfile,
   Contract,
+  CreateBarterRequest,
   CreateServiceRequest,
   FreelancerProfile,
   GamificationProfile,
@@ -102,6 +104,13 @@ export const api = {
     request<void>(`/notifications/${id}/read`, { method: 'POST' }),
   markAllNotificationsRead: () =>
     request<{ read: number }>('/notifications/read-all', { method: 'POST' }),
+
+  // trocas (escambo)
+  barters: () => request<Paginated<BarterAgreement>>('/barters'),
+  proposeBarter: (body: CreateBarterRequest) =>
+    request<BarterAgreement>('/barters', { method: 'POST', body: JSON.stringify(body) }),
+  barterAction: (id: number, action: 'accept' | 'reject' | 'cancel') =>
+    request<BarterAgreement | void>(`/barters/${id}/${action}`, { method: 'POST' }),
 
   // perfis
   profilesMe: () => request<MyProfiles>('/profiles/me'),

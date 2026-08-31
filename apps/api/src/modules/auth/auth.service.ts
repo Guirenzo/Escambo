@@ -21,7 +21,7 @@ function signAccessToken(user: { id: number; ulid: string; role: string }): stri
 }
 
 function toPublic(user: UserRow): PublicUser {
-  return { ulid: user.ulid, email: user.email, role: user.role as UserRole };
+  return { id: user.id, ulid: user.ulid, email: user.email, role: user.role as UserRole };
 }
 
 /** Emite um novo par (access token JWT + refresh token opaco) e persiste a sessão. */
@@ -51,14 +51,14 @@ export const authService = {
     const passwordHash = await bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS); // RNF-011
     const userUlid = ulid();
 
-    await authRepository.create({
+    const id = await authRepository.create({
       ulid: userUlid,
       email: input.email,
       passwordHash,
       role: input.role,
     });
 
-    return { ulid: userUlid, email: input.email, role: input.role };
+    return { id, ulid: userUlid, email: input.email, role: input.role };
   },
 
   async login(input: LoginInput, ctx: SessionContext = {}): Promise<AuthResponse> {

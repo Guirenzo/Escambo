@@ -3,6 +3,16 @@ export const brl = (v: number): string =>
 
 export const dt = (iso: string): string => new Date(iso).toLocaleDateString('pt-BR');
 
+export const BARTER_STATUS_LABEL: Record<string, string> = {
+  proposed: 'Proposta',
+  accepted: 'Aceita',
+  rejected: 'Recusada',
+  active: 'Em andamento',
+  completed: 'Concluída',
+  cancelled: 'Cancelada',
+  disputed: 'Em disputa',
+};
+
 export const STATUS_LABEL: Record<string, string> = {
   pending: 'Pendente',
   accepted: 'Aceito',

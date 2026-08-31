@@ -178,6 +178,7 @@ describe('authService.getByUlid', () => {
     repo.findByUlid.mockResolvedValue(fakeUser());
     const user = await authService.getByUlid('01HZXULIDEXAMPLE0000000000');
     expect(user).toEqual({
+      id: 1,
       ulid: '01HZXULIDEXAMPLE0000000000',
       email: 'rafael@exemplo.com',
       role: 'freelancer',

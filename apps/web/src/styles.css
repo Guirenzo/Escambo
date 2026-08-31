@@ -440,3 +440,31 @@ button.dark {
 .tiny {
   font-size: 0.72rem;
 }
+
+/* ---------- Trocas (barter) ---------- */
+.swap {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  background: #f6faf8;
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  padding: 12px;
+}
+.swap-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.swap-side strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.arrow {
+  font-size: 1.3rem;
+  color: var(--verde-2);
+  font-weight: 700;
+}
