@@ -30,14 +30,6 @@ function toBarter(row: BarterRow): BarterAgreement {
   };
 }
 
-/** Quem recebe a torna = a parte que ofertou MAIS valor (a que não paga a diferença). */
-function tornaOf(row: BarterRow): { recipientId: number; amount: number } | null {
-  const amount = Number(row.cash_difference);
-  if (amount <= 0 || !row.cash_payer_id) return null;
-  const recipientId = row.cash_payer_id === row.proposer_id ? row.receiver_id : row.proposer_id;
-  return { recipientId, amount };
-}
-
 async function loadOr404(id: number): Promise<BarterRow> {
   const row = await barterRepository.findById(id);
   if (!row) throw new HttpError(404, 'Troca não encontrada', 'barter_not_found');
@@ -120,12 +112,15 @@ export const barterService = {
       price: Number(row.estimated_value_requested),
     };
 
+    // A torna (cash_difference/cash_payer_id/platform_fee) fica REGISTRADA no acordo,
+    // mas não movimenta carteira aqui: sem gateway/depósito ainda não há como cobrar o
+    // pagador, então evitamos crédito "fantasma". A liquidação real será feita na
+    // conclusão, quando houver um meio de pagamento. (RN-066/RN-067 — settlement TODO)
     const result = await barterRepository.accept({
       agreementId: id,
       acceptorId: uid,
       contractOffered,
       contractRequested,
-      torna: tornaOf(row),
     });
     if (!result) {
       throw new HttpError(409, 'A troca mudou de estado; recarregue', 'conflict');
@@ -161,7 +156,7 @@ export const barterService = {
       contractsRepository.findById(row.contract_requested_id),
     ]);
     if (a?.status === 'completed' && b?.status === 'completed') {
-      await barterRepository.completeAndRelease(agreementId, tornaOf(row));
+      await barterRepository.completeAndRelease(agreementId);
     }
   },
 
@@ -169,6 +164,6 @@ export const barterService = {
   async onLinkedContractCancelled(agreementId: number): Promise<void> {
     const row = await barterRepository.findById(agreementId);
     if (!row || row.status !== 'active') return;
-    await barterRepository.disputeAndRefund(agreementId, tornaOf(row));
+    await barterRepository.disputeAndRefund(agreementId);
   },
 };

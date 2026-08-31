@@ -119,7 +119,6 @@ export const barterRepository = {
     acceptorId: number;
     contractOffered: ContractSpec;
     contractRequested: ContractSpec;
-    torna: { recipientId: number; amount: number } | null;
   }): Promise<{ contractOfferedId: number; contractRequestedId: number } | null> {
     const conn = await pool.getConnection();
     try {
@@ -155,15 +154,9 @@ export const barterRepository = {
         { offeredId, requestedId, id: params.agreementId },
       );
 
-      if (params.torna && params.torna.amount > 0) {
-        await conn.query<ResultSetHeader>(`INSERT IGNORE INTO wallets (user_id) VALUES (:userId)`, {
-          userId: params.torna.recipientId,
-        });
-        await conn.query<ResultSetHeader>(
-          `UPDATE wallets SET balance_pending = balance_pending + :amount WHERE user_id = :userId`,
-          { amount: params.torna.amount, userId: params.torna.recipientId },
-        );
-      }
+      // NB: a torna (diferença em dinheiro) fica registrada no acordo, mas NÃO é
+      // movimentada em carteira no aceite — sem meio de pagamento não há como cobrar
+      // o pagador, então não criamos crédito sem lastro. Liquidação: settlement TODO.
 
       await conn.commit();
       return { contractOfferedId: offeredId, contractRequestedId: requestedId };
@@ -175,72 +168,26 @@ export const barterRepository = {
     }
   },
 
-  /** Conclui a troca e libera a torna (pendente -> disponível do recebedor). */
-  async completeAndRelease(
-    id: number,
-    torna: { recipientId: number; amount: number } | null,
-  ): Promise<boolean> {
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-      const [upd] = await conn.query<ResultSetHeader>(
-        `UPDATE barter_agreements SET status = 'completed', completed_at = NOW()
-          WHERE id = :id AND status = 'active'`,
-        { id },
-      );
-      if (upd.affectedRows === 0) {
-        await conn.rollback();
-        return false;
-      }
-      if (torna && torna.amount > 0) {
-        await conn.query<ResultSetHeader>(
-          `UPDATE wallets
-              SET balance_pending = balance_pending - :amount, balance = balance + :amount
-            WHERE user_id = :userId AND balance_pending >= :amount`,
-          { amount: torna.amount, userId: torna.recipientId },
-        );
-      }
-      await conn.commit();
-      return true;
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
-    }
+  /**
+   * Conclui a troca (ambos os contratos entregues). A liquidação da torna em dinheiro
+   * fica pendente de um meio de pagamento (settlement TODO) — aqui só transiciona o status.
+   */
+  async completeAndRelease(id: number): Promise<boolean> {
+    const [upd] = await pool.query<ResultSetHeader>(
+      `UPDATE barter_agreements SET status = 'completed', completed_at = NOW()
+        WHERE id = :id AND status = 'active'`,
+      { id },
+    );
+    return upd.affectedRows > 0;
   },
 
-  /** Marca em disputa e estorna a torna retida (removida do pendente do recebedor). */
-  async disputeAndRefund(
-    id: number,
-    torna: { recipientId: number; amount: number } | null,
-  ): Promise<boolean> {
-    const conn = await pool.getConnection();
-    try {
-      await conn.beginTransaction();
-      const [upd] = await conn.query<ResultSetHeader>(
-        `UPDATE barter_agreements SET status = 'disputed'
-          WHERE id = :id AND status = 'active'`,
-        { id },
-      );
-      if (upd.affectedRows === 0) {
-        await conn.rollback();
-        return false;
-      }
-      if (torna && torna.amount > 0) {
-        await conn.query<ResultSetHeader>(
-          `UPDATE wallets SET balance_pending = balance_pending - :amount
-            WHERE user_id = :userId AND balance_pending >= :amount`,
-          { amount: torna.amount, userId: torna.recipientId },
-        );
-      }
-      await conn.commit();
-      return true;
-    } catch (err) {
-      await conn.rollback();
-      throw err;
-    } finally {
-      conn.release();
-    }
+  /** Marca a troca em disputa quando um dos contratos é cancelado (RN-067). */
+  async disputeAndRefund(id: number): Promise<boolean> {
+    const [upd] = await pool.query<ResultSetHeader>(
+      `UPDATE barter_agreements SET status = 'disputed'
+        WHERE id = :id AND status = 'active'`,
+      { id },
+    );
+    return upd.affectedRows > 0;
   },
 };

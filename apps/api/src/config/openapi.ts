@@ -195,7 +195,7 @@ export const openapiDocument: Record<string, any> = {
       post: op('Troca (Escambo)', 'Propõe troca (torna + taxa)', { auth: true, body: { $ref: '#/components/schemas/CreateBarter' }, responses: res201 }),
     },
     '/barters/{id}': { get: op('Troca (Escambo)', 'Detalhe da troca', { auth: true }) },
-    '/barters/{id}/accept': { post: op('Troca (Escambo)', 'Aceita (gera 2 contratos + torna)', { auth: true }) },
+    '/barters/{id}/accept': { post: op('Troca (Escambo)', 'Aceita a troca (gera 2 contratos recíprocos)', { auth: true }) },
 
     '/notifications': { get: op('Notificações', 'Minhas notificações + não lidas', { auth: true }) },
     '/notifications/read-all': { post: op('Notificações', 'Marca todas como lidas', { auth: true }) },

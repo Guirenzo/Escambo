@@ -100,7 +100,7 @@ describe('accept', () => {
     await expect(barterService.accept(1, 2)).rejects.toMatchObject({ statusCode: 409 });
   });
 
-  it('gera contratos recíprocos e retém a torna', async () => {
+  it('gera os contratos recíprocos e ativa a troca (torna só registrada, sem mexer em carteira)', async () => {
     repo.findById
       .mockResolvedValueOnce(fakeBarter({ receiver_id: 2, status: 'proposed' }))
       .mockResolvedValueOnce(
@@ -113,7 +113,7 @@ describe('accept', () => {
     const arg = repo.accept.mock.calls[0]![0];
     expect(arg.contractOffered.freelancerId).toBe(1); // proponente entrega o oferecido
     expect(arg.contractRequested.freelancerId).toBe(2); // receptor entrega o solicitado
-    expect(arg.torna).toEqual({ recipientId: 1, amount: 200 }); // pagador=2 -> recebedor=1
+    expect(arg).not.toHaveProperty('torna'); // torna não é escrowada no aceite
     expect(b.status).toBe('active');
   });
 });
@@ -130,7 +130,7 @@ describe('onLinkedContractCompleted', () => {
 
     await barterService.onLinkedContractCompleted(1);
 
-    expect(repo.completeAndRelease).toHaveBeenCalledWith(1, { recipientId: 1, amount: 200 });
+    expect(repo.completeAndRelease).toHaveBeenCalledWith(1);
   });
 
   it('não conclui se apenas um lado está completo', async () => {
