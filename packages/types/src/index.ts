@@ -341,6 +341,30 @@ export interface CancelResult {
   refundPercentage: number;
 }
 
+// --- Chat em tempo real (mensagens do contrato) ---
+
+export interface ChatMessage {
+  id: number;
+  conversationId: number;
+  senderId: number;
+  content: string;
+  createdAt: string;
+}
+
+export interface ChatHistory {
+  conversationId: number;
+  contractId: number;
+  otherPartyId: number;
+  messages: ChatMessage[];
+}
+
+export interface SendMessageRequest {
+  content: string;
+}
+
+/** Payload emitido no evento realtime `message:new`. */
+export type ChatMessageEvent = ChatMessage & { contractId: number };
+
 // --- Carteira ---
 
 export interface Wallet {

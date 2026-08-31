@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useAuth } from '../../lib/auth';
+import { useContractView } from '../../lib/contract-view';
 import { CarteiraView } from '../views/CarteiraView';
 import { InicioView } from '../views/InicioView';
 import { NotificacoesView } from '../views/NotificacoesView';
 import { PerfilView } from '../views/PerfilView';
+import { SalaContratoView } from '../views/SalaContratoView';
 import { ServicosView } from '../views/ServicosView';
 import { TrocasView } from '../views/TrocasView';
 
@@ -20,6 +22,7 @@ const NAV: { key: View; label: string; icon: string }[] = [
 
 export function Shell() {
   const { user, logout } = useAuth();
+  const { openId, open } = useContractView();
   const [view, setView] = useState<View>('inicio');
 
   return (
@@ -46,12 +49,18 @@ export function Shell() {
         </div>
       </header>
       <main className="content">
-        {view === 'inicio' && <InicioView />}
-        {view === 'servicos' && <ServicosView />}
-        {view === 'trocas' && <TrocasView />}
-        {view === 'carteira' && <CarteiraView />}
-        {view === 'notificacoes' && <NotificacoesView />}
-        {view === 'perfil' && <PerfilView />}
+        {openId != null ? (
+          <SalaContratoView contractId={openId} onBack={() => open(null)} />
+        ) : (
+          <>
+            {view === 'inicio' && <InicioView />}
+            {view === 'servicos' && <ServicosView />}
+            {view === 'trocas' && <TrocasView />}
+            {view === 'carteira' && <CarteiraView />}
+            {view === 'notificacoes' && <NotificacoesView />}
+            {view === 'perfil' && <PerfilView />}
+          </>
+        )}
       </main>
     </div>
   );

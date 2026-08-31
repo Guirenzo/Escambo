@@ -468,3 +468,95 @@ button.dark {
   color: var(--verde-2);
   font-weight: 700;
 }
+
+/* ---------- Sala do contrato (timeline + chat) ---------- */
+.sala {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .sala {
+    grid-template-columns: 1fr;
+  }
+}
+.kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--borda);
+  margin-bottom: 10px;
+}
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.timeline li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.timeline .dot {
+  margin-top: 5px;
+  background: var(--verde-2);
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 420px;
+}
+.chat-log {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  max-height: 420px;
+  padding: 8px 2px;
+}
+.bubble {
+  max-width: 78%;
+  padding: 8px 12px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.92rem;
+  line-height: 1.3;
+}
+.bubble .tiny {
+  align-self: flex-end;
+}
+.bubble.mine {
+  align-self: flex-end;
+  background: var(--verde);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.bubble.mine .muted {
+  color: rgba(255, 255, 255, 0.75);
+}
+.bubble.theirs {
+  align-self: flex-start;
+  background: #eef2ef;
+  color: var(--texto);
+  border-bottom-left-radius: 4px;
+}
+.chat-input {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.chat-input input {
+  flex: 1;
+}
+.chip.rank {
+  animation: none;
+}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Contract } from '@escambo/types';
 import { api } from '../../lib/api';
+import { useContractView } from '../../lib/contract-view';
 import { STATUS_LABEL, brl } from '../../lib/format';
 
 type Action = 'accept' | 'reject' | 'approve' | 'cancel' | 'deliver';
@@ -28,6 +29,7 @@ function actionsFor(status: string): { label: string; action: Action }[] {
 }
 
 export function ContractsCard({ contracts, onChange }: { contracts: Contract[]; onChange: () => void }) {
+  const { open } = useContractView();
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +66,9 @@ export function ContractsCard({ contracts, onChange }: { contracts: Contract[]; 
                 <strong>{c.title}</strong>
                 <span className="muted"> · {brl(c.price)}</span>
                 <div className="acts">
+                  <button className="mini" onClick={() => open(c.id)}>
+                    💬 Abrir sala
+                  </button>
                   {actionsFor(c.status).map((a) => (
                     <button key={a.action} className="mini" disabled={busy === c.id} onClick={() => run(c.id, a.action)}>
                       {a.label}

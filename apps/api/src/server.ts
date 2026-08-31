@@ -1,7 +1,9 @@
+import { createServer } from 'node:http';
 import { createApp } from './app';
 import { env } from './config/env';
 import { pingDb } from './config/db';
 import { logger } from './config/logger';
+import { createSocketServer } from './config/socket';
 
 /** Espera o banco ficar disponível antes de subir (resiliência a boot fora de ordem). */
 async function waitForDb(retries = 10, delayMs = 1500): Promise<void> {
@@ -20,8 +22,10 @@ async function waitForDb(retries = 10, delayMs = 1500): Promise<void> {
 async function main(): Promise<void> {
   await waitForDb();
   const app = createApp();
+  const server = createServer(app);
+  createSocketServer(server); // chat em tempo real no mesmo servidor HTTP
 
-  app.listen(env.PORT, () => {
+  server.listen(env.PORT, () => {
     logger.info(`API Escambo em http://localhost:${env.PORT}/api (env: ${env.NODE_ENV})`);
   });
 }

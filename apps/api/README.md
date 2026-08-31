@@ -49,6 +49,7 @@ src/
     ├── barter/            # troca de serviços / escambo (RF-083..085, RN-066..067)
     ├── withdrawal/        # saques (RF-045, RN-034)
     ├── notifications/     # avisos in-app disparados nos eventos (RF-069)
+    ├── messaging/         # chat do contrato (REST + Socket.IO em tempo real)
     ├── audit/             # trilha de auditoria de ações críticas (RN-010)
     ├── lgpd/              # consentimento + exclusão/exportação (RF-079/080, RN-071/072)
     ├── favorites/         # favoritos de serviços/freelancers
@@ -108,6 +109,8 @@ src/
 | GET | `/api/withdrawals` | **(auth)** meus saques |
 | GET | `/api/notifications` | **(auth)** minhas notificações + total não lidas |
 | POST | `/api/notifications/:id/read` · `/read-all` | **(auth)** marca como lida(s) |
+| GET · POST | `/api/messaging/contracts/:id` | **(auth, parte)** histórico e envio de mensagens do contrato |
+| WS | `/socket.io` | **(auth)** chat em tempo real: `contract:join`, `message:send` → `message:new` |
 | POST · GET | `/api/lgpd/consents` | **(auth)** registra/lista consentimentos (RN-071) |
 | POST · GET | `/api/lgpd/deletion-requests` | **(auth)** direito ao esquecimento (RN-072) |
 | POST · GET | `/api/lgpd/export-requests` | **(auth)** portabilidade dos dados (Art. 18, V) |

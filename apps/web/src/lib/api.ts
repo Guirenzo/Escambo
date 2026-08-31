@@ -2,8 +2,11 @@ import type {
   AuthResponse,
   BarterAgreement,
   Category,
+  ChatHistory,
+  ChatMessage,
   ClientProfile,
   Contract,
+  ContractWithHistory,
   CreateBarterRequest,
   CreateServiceRequest,
   FreelancerProfile,
@@ -88,10 +91,19 @@ export const api = {
 
   // contratações
   contracts: () => request<Paginated<Contract>>('/contracts'),
+  contractDetail: (id: number) => request<ContractWithHistory>(`/contracts/${id}`),
   contractAction: (id: number, action: 'accept' | 'reject' | 'approve' | 'cancel') =>
     request<Contract>(`/contracts/${id}/${action}`, { method: 'POST' }),
   deliverContract: (id: number, message: string) =>
     request<Contract>(`/contracts/${id}/deliver`, { method: 'POST', body: JSON.stringify({ message }) }),
+
+  // chat do contrato
+  chatHistory: (contractId: number) => request<ChatHistory>(`/messaging/contracts/${contractId}`),
+  sendMessage: (contractId: number, content: string) =>
+    request<ChatMessage>(`/messaging/contracts/${contractId}`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
 
   // carteira / saques
   withdrawals: () => request<Paginated<Withdrawal>>('/withdrawals'),

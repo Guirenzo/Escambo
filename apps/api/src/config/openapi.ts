@@ -200,6 +200,11 @@ export const openapiDocument: Record<string, any> = {
     '/notifications': { get: op('Notificações', 'Minhas notificações + não lidas', { auth: true }) },
     '/notifications/read-all': { post: op('Notificações', 'Marca todas como lidas', { auth: true }) },
 
+    '/messaging/contracts/{id}': {
+      get: op('Chat', 'Histórico do chat do contrato (partes)', { auth: true }),
+      post: op('Chat', 'Envia mensagem (persiste + broadcast Socket.IO)', { auth: true, responses: res201 }),
+    },
+
     '/favorites': {
       get: op('Trust & Safety', 'Meus favoritos', { auth: true }),
       post: op('Trust & Safety', 'Favoritar serviço/freelancer', { auth: true, responses: res201 }),
