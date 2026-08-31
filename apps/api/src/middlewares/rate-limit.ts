@@ -1,4 +1,8 @@
 import rateLimit from 'express-rate-limit';
+import { env } from '../config/env';
+
+// Desliga o rate limiting nos testes de integração (muitas chamadas do mesmo IP).
+const skipInTest = (): boolean => env.NODE_ENV === 'test';
 
 /** Anti brute-force no login: 10 tentativas / 5 min por IP (RNF-005 / RN-002). */
 export const loginRateLimiter = rateLimit({
@@ -6,6 +10,7 @@ export const loginRateLimiter = rateLimit({
   limit: 10,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  skip: skipInTest,
   message: {
     error: 'too_many_requests',
     message: 'Muitas tentativas. Tente novamente em alguns minutos.',
@@ -18,4 +23,5 @@ export const apiRateLimiter = rateLimit({
   limit: 120,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  skip: skipInTest,
 });

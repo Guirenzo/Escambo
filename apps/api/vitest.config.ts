@@ -1,14 +1,13 @@
 import { defineConfig } from 'vitest/config';
 
+/**
+ * Testes de UNIDADE (padrão de `npm test`): rápidos, sem banco — as
+ * repositories são mockadas. Os testes de integração ficam num config à
+ * parte (vitest.integration.config.ts) e não rodam aqui.
+ */
 export default defineConfig({
   test: {
-    environment: 'node',
     include: ['src/**/*.test.ts'],
-    // Envs de teste — evita depender do .env e não toca no banco (repos são mockados).
-    env: {
-      NODE_ENV: 'test',
-      JWT_SECRET: 'test-secret-com-mais-de-16-caracteres',
-      JWT_EXPIRES_IN: '1h',
-    },
+    environment: 'node',
   },
 });

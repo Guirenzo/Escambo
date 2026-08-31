@@ -132,3 +132,22 @@ src/
 | `npm start` | Roda o build |
 | `npm run typecheck` | Checagem de tipos sem emitir |
 | `npm test` | Testes unitários (Vitest) — services com repository mockado, sem banco |
+| `npm run test:int` | Testes de integração (Supertest) — app real contra MySQL, fluxo de escrow ponta a ponta |
+
+### Testes de integração
+
+Sobem o app Express real (`createApp()`) via **Supertest** contra um MySQL de
+verdade, num database dedicado `escambo_test` recriado a cada execução (schema +
+seed carregados pelo `test/integration/global-setup.ts`). Cobrem o fluxo de
+contratação cash com escrow ponta a ponta: `create → accept → deliver → approve`
+(libera o retido e concede XP), estorno do escrow no cancelamento, autorização/
+autenticação das transições e a regra de auto-contratação.
+
+```bash
+# precisa do banco no ar (docker compose -f infra/docker-compose.yml up -d db)
+npm run -w @escambo/api test:int
+```
+
+Credenciais do banco de teste vêm de `TEST_DB_USER`/`TEST_DB_PASSWORD`/
+`TEST_DB_NAME` (default: `root` / `escambo_root` / `escambo_test`). No CI, um
+serviço MySQL é provisionado e o job **Integração** roda esta suíte.
