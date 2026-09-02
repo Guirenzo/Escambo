@@ -8,8 +8,9 @@ executáveis derivados dela.
 
 | Arquivo | O que faz |
 |---|---|
-| `schema.sql` | DDL completo: cria o banco `escambo` e as 50 tabelas (gerado a partir de `docs/modelagem-banco.md`). |
+| `schema.sql` | DDL completo: cria o banco `escambo` e as 50 tabelas (gerado a partir de `docs/modelagem-banco.md`). É o **baseline** das migrations. |
 | `seed.sql`   | Dados de referência: categorias, badges, missões, planos de impulsionamento e configurações da plataforma. |
+| `migrations/` | Mudanças incrementais de schema após o baseline, aplicadas pelo runner (`npm run db:migrate`). Ver [`migrations/README.md`](./migrations/README.md). |
 
 ## Como rodar
 

@@ -136,6 +136,7 @@ src/
 | `npm run typecheck` | Checagem de tipos sem emitir |
 | `npm test` | Testes unitários (Vitest) — services com repository mockado, sem banco |
 | `npm run test:int` | Testes de integração (Supertest) — app real contra MySQL, fluxo de escrow ponta a ponta |
+| `npm run db:migrate` | Aplica migrations pendentes (`-- --status` lista aplicadas x pendentes) |
 
 ### Testes de integração
 

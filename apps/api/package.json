@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
-    "test:int": "vitest run -c vitest.integration.config.ts"
+    "test:int": "vitest run -c vitest.integration.config.ts",
+    "db:migrate": "tsx src/scripts/migrate.ts"
   },
   "dependencies": {
     "@escambo/types": "*",
