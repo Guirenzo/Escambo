@@ -17,11 +17,27 @@ const envSchema = z.object({
   DB_USER: z.string().default('escambo'),
   DB_PASSWORD: z.string().default('escambo'),
   DB_NAME: z.string().default('escambo'),
+  DB_CONNECTION_LIMIT: z.coerce.number().int().positive().default(10),
 
   JWT_SECRET: z.string().min(16, 'JWT_SECRET deve ter ao menos 16 caracteres'),
   JWT_EXPIRES_IN: z.string().default('1h'),
   BCRYPT_SALT_ROUNDS: z.coerce.number().int().min(12).default(12),
   REFRESH_TOKEN_EXPIRES_DAYS: z.coerce.number().int().positive().default(7),
+
+  // --- Hardening HTTP / operacional ---
+  // Origens permitidas no CORS: '*' (qualquer) ou lista separada por vírgula.
+  CORS_ORIGINS: z.string().default('*'),
+  // Limite do corpo das requisições JSON (proteção básica contra payloads gigantes).
+  BODY_LIMIT: z.string().default('1mb'),
+  // Confiança em proxies reversos (X-Forwarded-For): 'false' | 'true' | 'loopback' | nº de hops.
+  TRUST_PROXY: z.string().default('loopback'),
+  // Rate limiting (por IP).
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
+  LOGIN_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(5 * 60_000),
+  LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
+  // Tempo máximo para drenar conexões no encerramento gracioso.
+  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 });
 
 const parsed = envSchema.safeParse(process.env);

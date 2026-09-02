@@ -17,8 +17,12 @@ interface SocketData {
  * `contract:<id>`, só acessível às partes daquela contratação.
  */
 export function createSocketServer(httpServer: HttpServer): Server {
+  const allowed = env.CORS_ORIGINS.trim();
   const io = new Server(httpServer, {
-    cors: { origin: true, credentials: true },
+    cors: {
+      origin: allowed === '*' ? true : allowed.split(',').map((o) => o.trim()),
+      credentials: true,
+    },
     path: '/socket.io',
   });
 

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../config/db', () => ({ pingDb: vi.fn() }));
 
-import { healthCheck } from './health.controller';
+import { healthCheck, liveness } from './health.controller';
 import { pingDb } from '../../config/db';
 
 const ping = vi.mocked(pingDb);
@@ -27,5 +27,12 @@ describe('healthCheck', () => {
       healthCheck({} as unknown as Request, { json } as unknown as Response),
     ).rejects.toThrow('db down');
     expect(json).not.toHaveBeenCalled();
+  });
+
+  it('liveness responde ok sem tocar no banco', () => {
+    const json = vi.fn();
+    liveness({} as unknown as Request, { json } as unknown as Response);
+    expect(json).toHaveBeenCalledWith(expect.objectContaining({ status: 'ok' }));
+    expect(ping).not.toHaveBeenCalled();
   });
 });

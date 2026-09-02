@@ -128,7 +128,8 @@ export const openapiDocument: Record<string, any> = {
     },
   },
   paths: {
-    '/health': { get: op('Health', 'Status da API + ping no banco') },
+    '/health': { get: op('Health', 'Readiness — status da API + ping no banco') },
+    '/health/live': { get: op('Health', 'Liveness — processo responde (sem tocar no banco)') },
 
     '/auth/register': {
       post: op('Auth', 'Cria conta', { body: { $ref: '#/components/schemas/Register' }, responses: res201 }),

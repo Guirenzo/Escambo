@@ -16,6 +16,17 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
+  // Erros do body-parser (express.json): JSON malformado ou corpo grande demais.
+  const parseErr = err as { type?: string; status?: number };
+  if (err instanceof SyntaxError && 'body' in err) {
+    res.status(400).json({ error: 'invalid_json', message: 'Corpo da requisição não é um JSON válido' });
+    return;
+  }
+  if (parseErr.type === 'entity.too.large') {
+    res.status(413).json({ error: 'payload_too_large', message: 'Corpo da requisição excede o limite' });
+    return;
+  }
+
   if (err instanceof HttpError) {
     res.status(err.statusCode).json({
       error: err.code ?? 'error',

@@ -11,8 +11,11 @@ export const pool = mysql.createPool({
   password: env.DB_PASSWORD,
   database: env.DB_NAME,
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: env.DB_CONNECTION_LIMIT,
+  queueLimit: 0,
   namedPlaceholders: true,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10_000,
 });
 
 /** Verifica conectividade com o banco (usado no /health e no boot). */

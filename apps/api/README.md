@@ -68,7 +68,7 @@ src/
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/api/health` | Status da API + ping no MySQL |
+| GET | `/api/health` · `/api/health/live` | Readiness (com banco) · Liveness (sem banco) |
 | GET | `/api/docs` · `/api/openapi.json` | **Swagger UI** + spec OpenAPI (RNF-010) |
 | POST | `/api/auth/register` | Cria usuário (`email`, `password`, `role`) |
 | POST | `/api/auth/login` | Autentica → `accessToken` (1h) + `refreshToken` (7d) + sessão |
@@ -154,3 +154,18 @@ npm run -w @escambo/api test:int
 Credenciais do banco de teste vêm de `TEST_DB_USER`/`TEST_DB_PASSWORD`/
 `TEST_DB_NAME` (default: `root` / `escambo_root` / `escambo_test`). No CI, um
 serviço MySQL é provisionado e o job **Integração** roda esta suíte.
+
+## 🔒 Produção / Hardening
+
+O backend é pensado para rodar em produção, não só em dev:
+
+- **Encerramento gracioso** — em `SIGTERM`/`SIGINT` a API para de aceitar conexões, fecha o Socket.IO e drena o pool MySQL antes de sair (timeout `SHUTDOWN_TIMEOUT_MS`).
+- **Atrás de proxy** — `TRUST_PROXY` faz o Express confiar no `X-Forwarded-For` (IP e rate-limit corretos atrás de load balancer/nginx).
+- **CORS restrito** — `CORS_ORIGINS` aceita `*` (reflete a origem) ou uma lista fixa em produção; vale para REST e Socket.IO.
+- **Limites** — corpo JSON limitado por `BODY_LIMIT` (JSON malformado → 400, corpo grande → 413) e rate limiting configurável (`RATE_LIMIT_*`, `LOGIN_RATE_LIMIT_*`).
+- **Segurança** — `helmet`, `x-powered-by` desligado, e o logger **redige** `authorization`/senha/token dos logs.
+- **Observabilidade** — log estruturado (pino) com `X-Request-Id` correlacionável em toda resposta; compressão gzip.
+- **Health** — `GET /api/health` (readiness, com banco) e `GET /api/health/live` (liveness, sem banco) para orquestradores.
+- **Container** — imagem multi-stage, roda como usuário `node` (não-root), `tini` como init e `HEALTHCHECK` no liveness.
+
+Todos os parâmetros ficam em variáveis de ambiente (ver [`.env.example`](.env.example)).
