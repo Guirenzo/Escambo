@@ -40,6 +40,7 @@ export const contractsRepository = {
     price: number;
     platformFee: number;
     freelancerNet: number;
+    paymentMode: 'cash' | 'credits';
     deadlineAt: string | null;
   }): Promise<number> {
     const conn = await pool.getConnection();
@@ -47,9 +48,9 @@ export const contractsRepository = {
       await conn.beginTransaction();
       const [res] = await conn.query<ResultSetHeader>(
         `INSERT INTO contracts
-           (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, deadline_at)
+           (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, payment_mode, deadline_at)
          VALUES
-           (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, :platformFee, :freelancerNet, :deadlineAt)`,
+           (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, :platformFee, :freelancerNet, :paymentMode, :deadlineAt)`,
         data,
       );
       const id = res.insertId;
@@ -112,8 +113,15 @@ export const contractsRepository = {
     to: string;
     note: string | null;
     timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at';
-    /** Movimento de carteira aplicado na MESMA transação do status (escrow). */
+    /** Movimento de carteira (cash) aplicado na MESMA transação do status (escrow). */
     walletEffect?: { userId: number; pendingDelta: number; balanceDelta: number };
+    /** Movimentos de CRÉDITOS (escrow time-bank) na mesma transação; `reason` gera ledger. */
+    creditsEffects?: {
+      userId: number;
+      pendingDelta: number;
+      balanceDelta: number;
+      reason?: string;
+    }[];
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -154,6 +162,41 @@ export const contractsRepository = {
         if (w.affectedRows === 0) {
           await conn.rollback();
           return false;
+        }
+      }
+
+      // Escrow em CRÉDITOS (time-bank): pode mover a carteira de mais de um usuário
+      // (débito do cliente + crédito pendente do freelancer) na mesma transação.
+      for (const eff of params.creditsEffects ?? []) {
+        const [c] = await conn.query<ResultSetHeader>(
+          `UPDATE wallets
+              SET credits_pending = credits_pending + :pending,
+                  credits_balance = credits_balance + :balance
+            WHERE user_id = :userId
+              AND credits_pending + :pending >= 0
+              AND credits_balance + :balance >= 0`,
+          { pending: eff.pendingDelta, balance: eff.balanceDelta, userId: eff.userId },
+        );
+        if (c.affectedRows === 0) {
+          await conn.rollback();
+          return false;
+        }
+        if (eff.reason) {
+          const [rows] = await conn.query<RowDataPacket[]>(
+            `SELECT credits_balance + credits_pending AS total FROM wallets WHERE user_id = :userId`,
+            { userId: eff.userId },
+          );
+          await conn.query<ResultSetHeader>(
+            `INSERT INTO credit_transactions (user_id, amount, balance_after, reason, contract_id)
+             VALUES (:userId, :amount, :after, :reason, :contractId)`,
+            {
+              userId: eff.userId,
+              amount: eff.pendingDelta + eff.balanceDelta,
+              after: Number(rows[0]!.total),
+              reason: eff.reason,
+              contractId: params.id,
+            },
+          );
         }
       }
 

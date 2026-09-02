@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import mysql from 'mysql2/promise';
+import { migrate } from '../../src/scripts/migrate-core';
 
 /**
  * Setup global dos testes de integração: recria o database `escambo_test` do
- * zero e carrega schema + seed. Roda no processo principal do vitest (antes dos
- * workers), então lê as credenciais de root direto do ambiente/defaults do
- * docker-compose — independente do `test.env` (que vale só para os workers).
+ * zero, aplica **baseline + migrations** (mesmo caminho da produção) e carrega o
+ * seed. Roda no processo principal do vitest (antes dos workers), lendo as
+ * credenciais de root direto do ambiente/defaults do docker-compose.
  */
 const cfg = {
   host: process.env.DB_HOST ?? '127.0.0.1',
@@ -16,38 +17,46 @@ const cfg = {
   database: process.env.TEST_DB_NAME ?? 'escambo_test',
 };
 
-const dbDir = join(__dirname, '..', '..', 'db');
+const seedPath = join(__dirname, '..', '..', 'db', 'seed.sql');
 
-/** Aponta o schema/seed (que embutem `escambo`) para o database de teste. */
-function retarget(sql: string): string {
-  return sql
-    .replace('CREATE DATABASE IF NOT EXISTS escambo', `CREATE DATABASE IF NOT EXISTS ${cfg.database}`)
-    .replace(/USE escambo;/g, `USE ${cfg.database};`);
-}
+/** Aponta o `USE escambo;` do seed para o database de teste. */
+const retargetSeed = (sql: string): string => sql.replace(/USE\s+escambo\s*;/gi, `USE ${cfg.database};`);
 
 export default async function setup(): Promise<() => Promise<void>> {
-  const conn = await mysql.createConnection({
+  const admin = await mysql.createConnection({
     host: cfg.host,
     port: cfg.port,
     user: cfg.user,
     password: cfg.password,
     multipleStatements: true,
   });
+  await admin.query(`DROP DATABASE IF EXISTS \`${cfg.database}\`;`);
+  await admin.query(
+    `CREATE DATABASE \`${cfg.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`,
+  );
+  await admin.end();
 
-  await conn.query(`DROP DATABASE IF EXISTS \`${cfg.database}\`;`);
-  await conn.query(retarget(readFileSync(join(dbDir, 'schema.sql'), 'utf8')));
-  await conn.query(retarget(readFileSync(join(dbDir, 'seed.sql'), 'utf8')));
-  await conn.end();
+  const db = await mysql.createConnection({
+    host: cfg.host,
+    port: cfg.port,
+    user: cfg.user,
+    password: cfg.password,
+    database: cfg.database,
+    multipleStatements: true,
+  });
+  await migrate(db); // baseline (schema.sql) + migrations em ordem
+  await db.query(retargetSeed(readFileSync(seedPath, 'utf8')));
+  await db.end();
 
   // Teardown: derruba o database de teste ao fim da suíte.
   return async () => {
-    const admin = await mysql.createConnection({
+    const closer = await mysql.createConnection({
       host: cfg.host,
       port: cfg.port,
       user: cfg.user,
       password: cfg.password,
     });
-    await admin.query(`DROP DATABASE IF EXISTS \`${cfg.database}\`;`);
-    await admin.end();
+    await closer.query(`DROP DATABASE IF EXISTS \`${cfg.database}\`;`);
+    await closer.end();
   };
 }

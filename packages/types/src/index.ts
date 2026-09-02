@@ -300,6 +300,8 @@ export type ContractStatus =
   | 'cancelled'
   | 'disputed';
 
+export type PaymentMode = 'cash' | 'barter' | 'credits';
+
 export interface Contract {
   id: number;
   ulid: string;
@@ -311,6 +313,7 @@ export interface Contract {
   price: number;
   platformFee: number;
   freelancerNet: number;
+  paymentMode: PaymentMode;
   status: ContractStatus;
   deadlineAt: string | null;
   createdAt: string;
@@ -334,6 +337,8 @@ export interface CreateContractRequest {
   description: string;
   price: number;
   deadlineAt?: string | null;
+  /** 'cash' (padrão) ou 'credits' (paga com créditos Escambo). */
+  paymentMode?: 'cash' | 'credits';
 }
 
 export interface CancelResult {
@@ -371,6 +376,26 @@ export interface Wallet {
   balance: number; // saldo disponível para saque
   balancePending: number; // retido em escrow
   currency: string;
+  credits: number; // saldo de créditos Escambo (time-bank)
+  creditsPending: number; // créditos retidos em escrow
+}
+
+export type CreditReason =
+  | 'welcome'
+  | 'escrow_hold'
+  | 'escrow_in'
+  | 'escrow_release'
+  | 'escrow_refund'
+  | 'refund'
+  | 'grant';
+
+export interface CreditTransaction {
+  id: number;
+  amount: number; // assinado: + entra, - sai
+  balanceAfter: number;
+  reason: CreditReason;
+  contractId: number | null;
+  createdAt: string;
 }
 
 // --- Avaliações ---

@@ -6,6 +6,7 @@ export const createContractSchema = z.object({
   title: z.string().min(3).max(150),
   description: z.string().min(10),
   price: z.number().positive().min(10, 'Contratação mínima é R$ 10,00 (RN-027)'),
+  paymentMode: z.enum(['cash', 'credits']).default('cash'),
   deadlineAt: z.string().datetime().nullable().optional(),
 });
 export type CreateContractInput = z.infer<typeof createContractSchema>;

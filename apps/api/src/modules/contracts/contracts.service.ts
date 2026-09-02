@@ -6,6 +6,7 @@ import type {
   ContractStatusHistoryEntry,
   ContractWithHistory,
   Paginated,
+  PaymentMode,
 } from '@escambo/types';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
@@ -31,11 +32,15 @@ function toContract(row: ContractRow): Contract {
     price: Number(row.price),
     platformFee: Number(row.platform_fee),
     freelancerNet: Number(row.freelancer_net),
+    paymentMode: (row.payment_mode as PaymentMode) ?? 'cash',
     status: row.status as ContractStatus,
     deadlineAt: row.deadline_at ? new Date(row.deadline_at).toISOString() : null,
     createdAt: new Date(row.created_at).toISOString(),
   };
 }
+
+/** Créditos (inteiros) em jogo num contrato time-bank. */
+const creditsOf = (row: ContractRow): number => Math.round(Number(row.freelancer_net));
 
 async function loadOr404(id: number): Promise<ContractRow> {
   const row = await contractsRepository.findById(id);
@@ -91,7 +96,9 @@ export const contractsService = {
     if (input.freelancerId === clientId) {
       throw new HttpError(400, 'Você não pode contratar a si mesmo', 'self_contract');
     }
-    const platformFee = money(input.price * PLATFORM_FEE_RATE); // RN-031
+    // Contratos em créditos (time-bank) são P2P e não cobram taxa da plataforma.
+    const isCredits = input.paymentMode === 'credits';
+    const platformFee = isCredits ? 0 : money(input.price * PLATFORM_FEE_RATE); // RN-031
     const freelancerNet = money(input.price - platformFee);
 
     const id = await contractsRepository.create({
@@ -104,6 +111,7 @@ export const contractsService = {
       price: input.price,
       platformFee,
       freelancerNet,
+      paymentMode: isCredits ? 'credits' : 'cash',
       deadlineAt: input.deadlineAt ?? null,
     });
 
@@ -136,7 +144,35 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertFreelancer(row, uid); // RF-032
     assertStatus(row, ['pending']);
-    // Ao aceitar, o valor líquido entra em escrow (balance_pending do freelancer) — RN-032.
+
+    // Time-bank: os créditos saem do cliente e ficam pendentes para o freelancer.
+    if (row.payment_mode === 'credits') {
+      const credits = creditsOf(row);
+      await walletService.ensure(row.client_id);
+      await walletService.ensure(row.freelancer_id);
+      const ok = await contractsRepository.transition({
+        id,
+        changedBy: uid,
+        from: row.status,
+        to: 'accepted',
+        note: null,
+        timestampColumn: 'accepted_at',
+        creditsEffects: [
+          { userId: row.client_id, pendingDelta: 0, balanceDelta: -credits, reason: 'escrow_hold' },
+          { userId: row.freelancer_id, pendingDelta: credits, balanceDelta: 0, reason: 'escrow_in' },
+        ],
+      });
+      if (!ok) {
+        throw new HttpError(
+          409,
+          'Créditos insuficientes do cliente ou a contratação mudou de estado',
+          'insufficient_credits',
+        );
+      }
+      return toContract(await loadOr404(id));
+    }
+
+    // Cash: o valor líquido entra em escrow (balance_pending do freelancer) — RN-032.
     await walletService.ensure(row.freelancer_id);
     await applyTransition({
       id,
@@ -177,9 +213,16 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertClient(row, uid); // RF-036/037: só o cliente aprova
     assertStatus(row, ['delivered']);
-    // Contrato de troca não move dinheiro do serviço (é pago com serviço); só o fluxo cash libera escrow.
+    // Troca (barter) não move dinheiro do serviço; cash libera escrow em R$; credits libera em créditos.
     const isBarter = row.payment_mode === 'barter';
+    const isCredits = row.payment_mode === 'credits';
     const net = Number(row.freelancer_net);
+    const credits = creditsOf(row);
+    const releaseEffect = isBarter
+      ? {}
+      : isCredits
+        ? { creditsEffects: [{ userId: row.freelancer_id, pendingDelta: -credits, balanceDelta: credits }] }
+        : { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: net } };
     await applyTransition({
       id,
       changedBy: uid,
@@ -187,9 +230,7 @@ export const contractsService = {
       to: 'completed',
       note: null,
       timestampColumn: 'completed_at',
-      ...(isBarter
-        ? {}
-        : { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: net } }),
+      ...releaseEffect,
     });
     // Efeitos secundários: nunca derrubam a aprovação/liberação do dinheiro.
     try {
@@ -222,8 +263,21 @@ export const contractsService = {
     const refund = refundPercentage(row);
     // Troca não tem escrow por-contrato; o estorno da torna é tratado no nível da troca.
     const isBarter = row.payment_mode === 'barter';
+    const isCredits = row.payment_mode === 'credits';
     const escrowFunded = !isBarter && (row.status === 'accepted' || row.status === 'in_progress');
     const net = Number(row.freelancer_net);
+    const credits = creditsOf(row);
+    let refundEffect = {};
+    if (escrowFunded) {
+      refundEffect = isCredits
+        ? {
+            creditsEffects: [
+              { userId: row.freelancer_id, pendingDelta: -credits, balanceDelta: 0, reason: 'escrow_refund' },
+              { userId: row.client_id, pendingDelta: 0, balanceDelta: credits, reason: 'refund' },
+            ],
+          }
+        : { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: 0 } };
+    }
     await applyTransition({
       id,
       changedBy: uid,
@@ -231,9 +285,7 @@ export const contractsService = {
       to: 'cancelled',
       note: `Reembolso: ${refund}%`,
       timestampColumn: 'cancelled_at',
-      ...(escrowFunded
-        ? { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: 0 } }
-        : {}),
+      ...refundEffect,
     });
     if (row.barter_agreement_id) {
       try {

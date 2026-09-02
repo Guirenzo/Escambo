@@ -72,6 +72,7 @@ describe('create', () => {
       title: 'Landing page',
       description: 'Preciso de uma landing page responsiva',
       price: 1000,
+      paymentMode: 'cash',
     });
     const arg = repo.create.mock.calls[0]![0];
     expect(arg.platformFee).toBe(150);
@@ -86,6 +87,7 @@ describe('create', () => {
         title: 'X qualquer',
         description: 'descrição bem longa aqui',
         price: 100,
+        paymentMode: 'cash',
       }),
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(repo.create).not.toHaveBeenCalled();

@@ -7,6 +7,8 @@ export interface WalletRow extends RowDataPacket {
   balance: string;
   balance_pending: string;
   currency: string;
+  credits_balance: string;
+  credits_pending: string;
 }
 
 export const walletRepository = {
@@ -16,7 +18,8 @@ export const walletRepository = {
       userId,
     });
     const [rows] = await pool.query<WalletRow[]>(
-      `SELECT id, user_id, balance, balance_pending, currency FROM wallets WHERE user_id = :userId LIMIT 1`,
+      `SELECT id, user_id, balance, balance_pending, currency, credits_balance, credits_pending
+         FROM wallets WHERE user_id = :userId LIMIT 1`,
       { userId },
     );
     return rows[0]!;

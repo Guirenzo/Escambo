@@ -44,6 +44,7 @@ src/
     ├── services/          # CRUD de serviços (RF-021..030)
     ├── contracts/         # máquina de estados + histórico (RF-031..040)
     ├── wallet/            # carteira + escrow atômico (RF-044, RN-032)
+    ├── credits/           # Créditos Escambo (time-bank): moeda interna + ledger
     ├── reviews/           # avaliações + nota média (RF-051..056, RN-041..046)
     ├── gamification/      # XP/níveis/badges/ranking/streak (RF-063..068, RN-051..060)
     ├── barter/            # troca de serviços / escambo (RF-083..085, RN-066..067)
@@ -93,7 +94,8 @@ src/
 | POST | `/api/contracts/:id/approve` | **(cliente)** aprova → concluído |
 | POST | `/api/contracts/:id/request-revision` | **(cliente)** solicita revisão |
 | POST | `/api/contracts/:id/cancel` | **(parte)** cancela — reembolso RN-025 |
-| GET | `/api/wallet` | **(auth)** saldo disponível + retido em escrow |
+| GET | `/api/wallet` | **(auth)** saldo R$ + **créditos Escambo** (disponível e em escrow) |
+| GET | `/api/credits/transactions` | **(auth)** extrato de créditos Escambo (time-bank) |
 | POST | `/api/reviews` | **(auth, cliente)** avalia contratação concluída (1–5) |
 | GET | `/api/reviews?freelancerId=` | avaliações de um freelancer (pública) |
 | POST | `/api/reviews/:id/response` | **(auth, avaliado)** responde uma avaliação |

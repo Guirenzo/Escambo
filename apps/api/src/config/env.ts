@@ -38,6 +38,9 @@ const envSchema = z.object({
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
   // Tempo máximo para drenar conexões no encerramento gracioso.
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+
+  // Créditos Escambo (time-bank): bônus concedido uma vez, no primeiro acesso à carteira.
+  CREDITS_WELCOME_BONUS: z.coerce.number().int().min(0).default(100),
 });
 
 const parsed = envSchema.safeParse(process.env);
