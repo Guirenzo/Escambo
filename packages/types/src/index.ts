@@ -190,6 +190,22 @@ export interface NotificationList {
 
 // --- Perfis ---
 
+export type ScoreTier = 'novato' | 'confiavel' | 'top' | 'elite';
+
+export interface ScoreBreakdown {
+  quality: number; // 0-100, a partir da nota média
+  experience: number; // 0-100, a partir do volume de contratos
+  socialProof: number; // 0-100, a partir do volume de avaliações
+  responsiveness: number; // 0-100, a partir do tempo de resposta
+}
+
+/** Reputação multifator computada (0-100) com faixa e detalhamento explicável. */
+export interface EscamboScore {
+  score: number;
+  tier: ScoreTier;
+  breakdown: ScoreBreakdown;
+}
+
 export interface FreelancerProfile {
   fullName: string;
   avatarUrl: string | null;
@@ -203,6 +219,7 @@ export interface FreelancerProfile {
   avgRating: number;
   totalReviews: number;
   totalContracts: number;
+  escamboScore: EscamboScore;
 }
 
 export interface ClientProfile {

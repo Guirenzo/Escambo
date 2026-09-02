@@ -5,6 +5,7 @@ import type {
   PublicFreelancerProfile,
 } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
+import { computeEscamboScore } from '../score/score.service';
 import {
   profilesRepository,
   type ClientRow,
@@ -27,6 +28,12 @@ function toFreelancer(r: FreelancerRow): FreelancerProfile {
     avgRating: Number(r.avg_rating),
     totalReviews: r.total_reviews,
     totalContracts: r.total_contracts,
+    escamboScore: computeEscamboScore({
+      avgRating: Number(r.avg_rating),
+      totalReviews: r.total_reviews,
+      totalContracts: r.total_contracts,
+      responseTimeHours: r.response_time_hours,
+    }),
   };
 }
 

@@ -47,6 +47,7 @@ src/
     ├── credits/           # Créditos Escambo (time-bank): moeda interna + ledger
     ├── reviews/           # avaliações + nota média (RF-051..056, RN-041..046)
     ├── gamification/      # XP/níveis/badges/ranking/streak (RF-063..068, RN-051..060)
+    ├── score/             # Escambo Score: reputação multifator (função pura, testável)
     ├── barter/            # troca de serviços / escambo (RF-083..085, RN-066..067)
     ├── withdrawal/        # saques (RF-045, RN-034)
     ├── notifications/     # avisos in-app disparados nos eventos (RF-069)
@@ -78,7 +79,7 @@ src/
 | POST | `/api/auth/logout-all` | **(protegida)** encerra todas as sessões (RN-008) |
 | GET | `/api/auth/me` | **(protegida)** dados do usuário do token — exige `Authorization: Bearer <jwt>` |
 | GET | `/api/categories` | árvore de categorias (pública) |
-| GET | `/api/profiles/freelancer/:ulid` | perfil público do freelancer (nota + nível) |
+| GET | `/api/profiles/freelancer/:ulid` | perfil público do freelancer (nota + nível + **Escambo Score**) |
 | GET | `/api/profiles/me` | **(auth)** meus perfis (freelancer/cliente) |
 | PUT | `/api/profiles/freelancer` · `/client` | **(auth)** cria/edita meu perfil |
 | GET | `/api/services` | Lista/busca serviços (`categoryId`, `q`, `isRemote`, `page`, `limit`) |

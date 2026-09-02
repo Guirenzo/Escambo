@@ -14,6 +14,7 @@ export interface FreelancerRow extends RowDataPacket {
   avg_rating: string;
   total_reviews: number;
   total_contracts: number;
+  response_time_hours: number | null;
 }
 
 export interface ClientRow extends RowDataPacket {
@@ -78,7 +79,7 @@ export const profilesRepository = {
   async findFreelancerByUserId(userId: number): Promise<FreelancerRow | undefined> {
     const [rows] = await pool.query<FreelancerRow[]>(
       `SELECT full_name, avatar_url, bio, headline, city, state, latitude, longitude,
-              is_available, avg_rating, total_reviews, total_contracts
+              is_available, avg_rating, total_reviews, total_contracts, response_time_hours
          FROM profiles_freelancer WHERE user_id = :userId LIMIT 1`,
       { userId },
     );
@@ -97,7 +98,7 @@ export const profilesRepository = {
     const [rows] = await pool.query<PublicFreelancerRow[]>(
       `SELECT pf.full_name, pf.avatar_url, pf.bio, pf.headline, pf.city, pf.state,
               pf.latitude, pf.longitude, pf.is_available,
-              pf.avg_rating, pf.total_reviews, pf.total_contracts,
+              pf.avg_rating, pf.total_reviews, pf.total_contracts, pf.response_time_hours,
               u.ulid, COALESCE(ux.level, 1) AS level, COALESCE(ux.level_name, 'Iniciante') AS level_name
          FROM users u
          JOIN profiles_freelancer pf ON pf.user_id = u.id
