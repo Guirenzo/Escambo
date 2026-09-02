@@ -11,6 +11,7 @@ import type {
   CreateServiceRequest,
   FreelancerProfile,
   GamificationProfile,
+  LeaderboardEntry,
   LoginRequest,
   MyProfiles,
   NotificationList,
@@ -81,6 +82,7 @@ export const api = {
   // dashboard
   wallet: () => request<Wallet>('/wallet'),
   gamification: () => request<GamificationProfile>('/gamification/me'),
+  leaderboard: () => request<LeaderboardEntry[]>('/gamification/leaderboard'),
 
   // categorias & serviços
   categories: () => request<Category[]>('/categories'),

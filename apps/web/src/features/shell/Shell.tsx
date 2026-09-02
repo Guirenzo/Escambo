@@ -5,16 +5,18 @@ import { CarteiraView } from '../views/CarteiraView';
 import { InicioView } from '../views/InicioView';
 import { NotificacoesView } from '../views/NotificacoesView';
 import { PerfilView } from '../views/PerfilView';
+import { RankingView } from '../views/RankingView';
 import { SalaContratoView } from '../views/SalaContratoView';
 import { ServicosView } from '../views/ServicosView';
 import { TrocasView } from '../views/TrocasView';
 
-type View = 'inicio' | 'servicos' | 'trocas' | 'carteira' | 'notificacoes' | 'perfil';
+type View = 'inicio' | 'servicos' | 'trocas' | 'ranking' | 'carteira' | 'notificacoes' | 'perfil';
 
 const NAV: { key: View; label: string; icon: string }[] = [
   { key: 'inicio', label: 'Início', icon: '🏠' },
   { key: 'servicos', label: 'Serviços', icon: '🗂️' },
   { key: 'trocas', label: 'Trocas', icon: '⇄' },
+  { key: 'ranking', label: 'Ranking', icon: '🏆' },
   { key: 'carteira', label: 'Carteira', icon: '💰' },
   { key: 'notificacoes', label: 'Notificações', icon: '🔔' },
   { key: 'perfil', label: 'Perfil', icon: '👤' },
@@ -56,6 +58,7 @@ export function Shell() {
             {view === 'inicio' && <InicioView />}
             {view === 'servicos' && <ServicosView />}
             {view === 'trocas' && <TrocasView />}
+            {view === 'ranking' && <RankingView />}
             {view === 'carteira' && <CarteiraView />}
             {view === 'notificacoes' && <NotificacoesView />}
             {view === 'perfil' && <PerfilView />}
