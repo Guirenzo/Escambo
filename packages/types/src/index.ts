@@ -290,6 +290,38 @@ export interface Service {
   createdAt: string;
   /** Distância em km até o ponto pesquisado (só na busca por proximidade). */
   distanceKm?: number | null;
+  /** Serviço com impulsionamento ativo (ranqueia no topo). */
+  boosted?: boolean;
+}
+
+// --- Impulsionamento (Boosts) ---
+
+export interface BoostPlan {
+  id: number;
+  name: string;
+  description: string | null;
+  durationDays: number;
+  price: number; // valor de referência (R$)
+  costCredits: number; // custo em créditos Escambo
+  features: Record<string, unknown> | null;
+}
+
+export type BoostStatus = 'active' | 'expired' | 'cancelled';
+
+export interface Boost {
+  id: number;
+  serviceId: number | null;
+  planId: number;
+  planName: string;
+  status: BoostStatus;
+  startsAt: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface CreateBoostRequest {
+  serviceId: number;
+  planId: number;
 }
 
 export interface CreateServiceRequest {
@@ -410,7 +442,8 @@ export type CreditReason =
   | 'escrow_release'
   | 'escrow_refund'
   | 'refund'
-  | 'grant';
+  | 'grant'
+  | 'boost';
 
 export interface CreditTransaction {
   id: number;

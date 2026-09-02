@@ -20,6 +20,7 @@ function toService(row: ServiceRow): Service {
     ...(row.distance_km != null
       ? { distanceKm: Math.round(Number(row.distance_km) * 10) / 10 }
       : {}),
+    ...(row.boosted != null ? { boosted: Boolean(Number(row.boosted)) } : {}),
   };
 }
 

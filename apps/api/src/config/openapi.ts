@@ -49,6 +49,7 @@ export const openapiDocument: Record<string, any> = {
     { name: 'Serviços' },
     { name: 'Contratações' },
     { name: 'Carteira' },
+    { name: 'Impulsionamento' },
     { name: 'Saques' },
     { name: 'Avaliações' },
     { name: 'Gamificação' },
@@ -177,6 +178,11 @@ export const openapiDocument: Record<string, any> = {
 
     '/wallet': { get: op('Carteira', 'Saldo R$ + créditos Escambo (disponível e em escrow)', { auth: true }) },
     '/credits/transactions': { get: op('Carteira', 'Extrato de créditos Escambo (time-bank)', { auth: true }) },
+    '/boosts/plans': { get: op('Impulsionamento', 'Planos de impulsionamento (custo em créditos)', { auth: true }) },
+    '/boosts': {
+      get: op('Impulsionamento', 'Meus impulsionamentos', { auth: true }),
+      post: op('Impulsionamento', 'Impulsiona um serviço meu (paga em créditos)', { auth: true, responses: res201 }),
+    },
     '/withdrawals': {
       get: op('Saques', 'Meus saques', { auth: true }),
       post: op('Saques', 'Solicita saque (mín. R$20)', { auth: true, body: { $ref: '#/components/schemas/CreateWithdrawal' }, responses: res201 }),

@@ -45,6 +45,7 @@ src/
     ├── contracts/         # máquina de estados + histórico (RF-031..040)
     ├── wallet/            # carteira + escrow atômico (RF-044, RN-032)
     ├── credits/           # Créditos Escambo (time-bank): moeda interna + ledger
+    ├── boosts/            # Impulsionamento pago em créditos (ranqueia no topo)
     ├── reviews/           # avaliações + nota média (RF-051..056, RN-041..046)
     ├── gamification/      # XP/níveis/badges/ranking/streak (RF-063..068, RN-051..060)
     ├── score/             # Escambo Score: reputação multifator (função pura, testável)
@@ -97,6 +98,7 @@ src/
 | POST | `/api/contracts/:id/cancel` | **(parte)** cancela — reembolso RN-025 |
 | GET | `/api/wallet` | **(auth)** saldo R$ + **créditos Escambo** (disponível e em escrow) |
 | GET | `/api/credits/transactions` | **(auth)** extrato de créditos Escambo (time-bank) |
+| GET · POST | `/api/boosts/plans` · `/api/boosts` | **(auth)** planos e compra de impulsionamento (paga em créditos) |
 | POST | `/api/reviews` | **(auth, cliente)** avalia contratação concluída (1–5) |
 | GET | `/api/reviews?freelancerId=` | avaliações de um freelancer (pública) |
 | POST | `/api/reviews/:id/response` | **(auth, avaliado)** responde uma avaliação |

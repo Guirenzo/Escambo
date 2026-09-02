@@ -16,6 +16,7 @@ export interface ServiceRow extends RowDataPacket {
   created_at: Date;
   deleted_at: Date | null;
   distance_km?: string | null; // presente só na busca por proximidade
+  boosted?: number; // 1 se tem impulsionamento ativo
 }
 
 export interface ServiceListFilters {
@@ -73,6 +74,10 @@ export const servicesRepository = {
       params.q = `%${filters.q}%`;
     }
 
+    // Impulsionamento ativo do serviço (ranqueia no topo).
+    const boostedExpr = `EXISTS(SELECT 1 FROM boosts bo
+        WHERE bo.service_id = s.id AND bo.status = 'active' AND bo.expires_at > NOW())`;
+
     const geo = filters.lat !== undefined && filters.lng !== undefined;
 
     // Descoberta local: distância (Haversine, km) ao ponto pesquisado, do dono do serviço.
@@ -87,14 +92,14 @@ export const servicesRepository = {
       // (evita HAVING sem GROUP BY, que é problemático no MySQL 8).
       const [rows] = await pool.query<ServiceRow[]>(
         `SELECT * FROM (
-           SELECT s.*, ${distanceExpr} AS distance_km
+           SELECT s.*, ${distanceExpr} AS distance_km, ${boostedExpr} AS boosted
              FROM services s
              JOIN profiles_freelancer pf ON pf.user_id = s.user_id
             WHERE ${where.join(' AND ')}
               AND pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL
          ) AS sub
           WHERE sub.distance_km <= :radius
-          ORDER BY sub.distance_km ASC
+          ORDER BY sub.boosted DESC, sub.distance_km ASC
           LIMIT ${filters.limit} OFFSET ${filters.offset}`,
         params,
       );
@@ -103,9 +108,9 @@ export const servicesRepository = {
 
     // limit/offset são inteiros validados (Zod) — seguros para interpolar.
     const [rows] = await pool.query<ServiceRow[]>(
-      `SELECT s.* FROM services s
+      `SELECT s.*, ${boostedExpr} AS boosted FROM services s
         WHERE ${where.join(' AND ')}
-        ORDER BY s.created_at DESC
+        ORDER BY boosted DESC, s.created_at DESC
         LIMIT ${filters.limit} OFFSET ${filters.offset}`,
       params,
     );
