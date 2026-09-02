@@ -21,6 +21,8 @@ function toFreelancer(r: FreelancerRow): FreelancerProfile {
     headline: r.headline,
     city: r.city,
     state: r.state,
+    latitude: r.latitude != null ? Number(r.latitude) : null,
+    longitude: r.longitude != null ? Number(r.longitude) : null,
     isAvailable: Boolean(r.is_available),
     avgRating: Number(r.avg_rating),
     totalReviews: r.total_reviews,
@@ -41,6 +43,8 @@ export const profilesService = {
       headline: input.headline ?? null,
       city: input.city ?? null,
       state: input.state ?? null,
+      latitude: input.latitude ?? null,
+      longitude: input.longitude ?? null,
       isAvailable: input.isAvailable ?? true,
     });
     return toFreelancer((await profilesRepository.findFreelancerByUserId(userId))!);

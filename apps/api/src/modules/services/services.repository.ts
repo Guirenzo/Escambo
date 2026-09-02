@@ -15,12 +15,16 @@ export interface ServiceRow extends RowDataPacket {
   views_count: number;
   created_at: Date;
   deleted_at: Date | null;
+  distance_km?: string | null; // presente só na busca por proximidade
 }
 
 export interface ServiceListFilters {
   categoryId?: number;
   q?: string;
   isRemote?: boolean;
+  lat?: number;
+  lng?: number;
+  radiusKm?: number;
   limit: number;
   offset: number;
 }
@@ -53,27 +57,55 @@ export const servicesRepository = {
   },
 
   async list(filters: ServiceListFilters): Promise<ServiceRow[]> {
-    const where: string[] = ['deleted_at IS NULL', 'is_active = 1'];
+    const where: string[] = ['s.deleted_at IS NULL', 's.is_active = 1'];
     const params: Record<string, string | number> = {};
 
     if (filters.categoryId !== undefined) {
-      where.push('category_id = :categoryId');
+      where.push('s.category_id = :categoryId');
       params.categoryId = filters.categoryId;
     }
     if (filters.isRemote !== undefined) {
-      where.push('is_remote = :isRemote');
+      where.push('s.is_remote = :isRemote');
       params.isRemote = filters.isRemote ? 1 : 0;
     }
     if (filters.q) {
-      where.push('(title LIKE :q OR description LIKE :q)');
+      where.push('(s.title LIKE :q OR s.description LIKE :q)');
       params.q = `%${filters.q}%`;
+    }
+
+    const geo = filters.lat !== undefined && filters.lng !== undefined;
+
+    // Descoberta local: distância (Haversine, km) ao ponto pesquisado, do dono do serviço.
+    if (geo) {
+      params.lat = filters.lat!;
+      params.lng = filters.lng!;
+      params.radius = filters.radiusKm ?? 25;
+      const distanceExpr = `(6371 * ACOS(LEAST(1.0,
+        COS(RADIANS(:lat)) * COS(RADIANS(pf.latitude)) * COS(RADIANS(pf.longitude) - RADIANS(:lng))
+        + SIN(RADIANS(:lat)) * SIN(RADIANS(pf.latitude)))))`;
+      // Tabela derivada: calcula a distância no interno e filtra pelo alias no externo
+      // (evita HAVING sem GROUP BY, que é problemático no MySQL 8).
+      const [rows] = await pool.query<ServiceRow[]>(
+        `SELECT * FROM (
+           SELECT s.*, ${distanceExpr} AS distance_km
+             FROM services s
+             JOIN profiles_freelancer pf ON pf.user_id = s.user_id
+            WHERE ${where.join(' AND ')}
+              AND pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL
+         ) AS sub
+          WHERE sub.distance_km <= :radius
+          ORDER BY sub.distance_km ASC
+          LIMIT ${filters.limit} OFFSET ${filters.offset}`,
+        params,
+      );
+      return rows;
     }
 
     // limit/offset são inteiros validados (Zod) — seguros para interpolar.
     const [rows] = await pool.query<ServiceRow[]>(
-      `SELECT * FROM services
+      `SELECT s.* FROM services s
         WHERE ${where.join(' AND ')}
-        ORDER BY created_at DESC
+        ORDER BY s.created_at DESC
         LIMIT ${filters.limit} OFFSET ${filters.offset}`,
       params,
     );

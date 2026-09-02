@@ -8,6 +8,8 @@ export interface FreelancerRow extends RowDataPacket {
   headline: string | null;
   city: string | null;
   state: string | null;
+  latitude: string | null;
+  longitude: string | null;
   is_available: number;
   avg_rating: string;
   total_reviews: number;
@@ -38,16 +40,18 @@ export const profilesRepository = {
       headline: string | null;
       city: string | null;
       state: string | null;
+      latitude: number | null;
+      longitude: number | null;
       isAvailable: boolean;
     },
   ): Promise<void> {
     await pool.query<ResultSetHeader>(
       `INSERT INTO profiles_freelancer
-         (user_id, full_name, avatar_url, bio, headline, city, state, is_available)
-       VALUES (:userId, :fullName, :avatarUrl, :bio, :headline, :city, :state, :isAvailable)
+         (user_id, full_name, avatar_url, bio, headline, city, state, latitude, longitude, is_available)
+       VALUES (:userId, :fullName, :avatarUrl, :bio, :headline, :city, :state, :latitude, :longitude, :isAvailable)
        ON DUPLICATE KEY UPDATE
          full_name = :fullName, avatar_url = :avatarUrl, bio = :bio, headline = :headline,
-         city = :city, state = :state, is_available = :isAvailable`,
+         city = :city, state = :state, latitude = :latitude, longitude = :longitude, is_available = :isAvailable`,
       { userId, ...d },
     );
   },
@@ -73,7 +77,8 @@ export const profilesRepository = {
 
   async findFreelancerByUserId(userId: number): Promise<FreelancerRow | undefined> {
     const [rows] = await pool.query<FreelancerRow[]>(
-      `SELECT full_name, avatar_url, bio, headline, city, state, is_available, avg_rating, total_reviews, total_contracts
+      `SELECT full_name, avatar_url, bio, headline, city, state, latitude, longitude,
+              is_available, avg_rating, total_reviews, total_contracts
          FROM profiles_freelancer WHERE user_id = :userId LIMIT 1`,
       { userId },
     );
@@ -90,7 +95,8 @@ export const profilesRepository = {
 
   async findPublicFreelancerByUlid(ulid: string): Promise<PublicFreelancerRow | undefined> {
     const [rows] = await pool.query<PublicFreelancerRow[]>(
-      `SELECT pf.full_name, pf.avatar_url, pf.bio, pf.headline, pf.city, pf.state, pf.is_available,
+      `SELECT pf.full_name, pf.avatar_url, pf.bio, pf.headline, pf.city, pf.state,
+              pf.latitude, pf.longitude, pf.is_available,
               pf.avg_rating, pf.total_reviews, pf.total_contracts,
               u.ulid, COALESCE(ux.level, 1) AS level, COALESCE(ux.level_name, 'Iniciante') AS level_name
          FROM users u

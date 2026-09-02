@@ -7,6 +7,8 @@ export const upsertFreelancerSchema = z.object({
   headline: z.string().max(255).nullable().optional(),
   city: z.string().max(100).nullable().optional(),
   state: z.string().length(2).nullable().optional(),
+  latitude: z.number().min(-90).max(90).nullable().optional(),
+  longitude: z.number().min(-180).max(180).nullable().optional(),
   isAvailable: z.boolean().optional(),
 });
 export type UpsertFreelancerInput = z.infer<typeof upsertFreelancerSchema>;

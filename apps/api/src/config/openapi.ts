@@ -155,7 +155,7 @@ export const openapiDocument: Record<string, any> = {
     },
 
     '/services': {
-      get: op('Serviços', 'Lista/busca serviços (categoryId, q, isRemote, page, limit)'),
+      get: op('Serviços', 'Lista/busca serviços (categoryId, q, isRemote, page, limit; lat+lng+radiusKm = descoberta local por proximidade)'),
       post: op('Serviços', 'Cria serviço', { auth: true, body: { $ref: '#/components/schemas/CreateService' }, responses: res201 }),
     },
     '/services/{id}': {

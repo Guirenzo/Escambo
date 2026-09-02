@@ -17,6 +17,9 @@ function toService(row: ServiceRow): Service {
     isActive: Boolean(row.is_active),
     createdAt:
       row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+    ...(row.distance_km != null
+      ? { distanceKm: Math.round(Number(row.distance_km) * 10) / 10 }
+      : {}),
   };
 }
 
@@ -42,6 +45,9 @@ export const servicesService = {
       categoryId: input.categoryId,
       q: input.q,
       isRemote: input.isRemote,
+      lat: input.lat,
+      lng: input.lng,
+      radiusKm: input.radiusKm,
       limit: input.limit,
       offset: (input.page - 1) * input.limit,
     });

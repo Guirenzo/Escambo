@@ -197,6 +197,8 @@ export interface FreelancerProfile {
   headline: string | null;
   city: string | null;
   state: string | null;
+  latitude: number | null;
+  longitude: number | null;
   isAvailable: boolean;
   avgRating: number;
   totalReviews: number;
@@ -229,6 +231,8 @@ export interface UpsertFreelancerProfileRequest {
   headline?: string | null;
   city?: string | null;
   state?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   isAvailable?: boolean;
 }
 
@@ -267,6 +271,8 @@ export interface Service {
   isRemote: boolean;
   isActive: boolean;
   createdAt: string;
+  /** Distância em km até o ponto pesquisado (só na busca por proximidade). */
+  distanceKm?: number | null;
 }
 
 export interface CreateServiceRequest {
