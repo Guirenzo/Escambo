@@ -129,7 +129,7 @@ O MVP é composto por **15 módulos funcionais**, cobrindo **90 Requisitos Funci
 
 - [ ] Cadastro e autenticação para os 3 perfis (cliente, freelancer, empresa)
 - [ ] Fluxo completo: proposta → aceite → entrega → avaliação
-- [ ] Chat funcional entre cliente e freelancer
+- [x] Chat funcional entre cliente e freelancer (Socket.IO em tempo real)
 - [ ] Pagamento via MercadoPago processado com saldo creditado na carteira
 - [ ] 90 RFs e 42 RNFs cobertos na especificação
 - [ ] Banco de dados com 50 tabelas implementado e validado
@@ -149,6 +149,27 @@ npm run dev                 # sobe API (:3333) e Web (:5173) juntos
 Scripts úteis na raiz: `npm run typecheck` (todos os pacotes), `npm run lint`, `npm run format`,
 `npm run db:down`. O front usa proxy `/api → :3333` (sem CORS no dev) e os tipos de `@escambo/types`
 são compartilhados entre back e front (sem duplicação).
+
+---
+
+## 🧪 Qualidade & Testes
+
+A qualidade é garantida por uma **pirâmide de testes** somada a lint e type-check, tudo executado no
+CI a cada push (badge no topo):
+
+| Camada | O quê | Onde | Comando |
+|---|---|---|---|
+| **Unidade (API)** | Regras de negócio de cada serviço, com as _repositories_ mockadas (sem banco) — 20/20 módulos cobertos | `apps/api/src/**/*.test.ts` | `npm test` |
+| **Integração (API)** | App Express **real** via Supertest contra um MySQL de verdade (`escambo_test` recriado a cada run): escrow ponta a ponta, autorização e chat | `apps/api/test/integration/**` | `npm run -w @escambo/api test:int` |
+| **Componente (Web)** | Helpers, client HTTP (mock de `fetch`) e views React (Testing Library + jsdom) | `apps/web/src/**/*.test.tsx` | `npm test` |
+
+```bash
+npm test                          # unidade (API) + componente (Web) — sem banco
+npm run -w @escambo/api test:int  # integração (precisa do MySQL no ar: npm run db:up)
+```
+
+No **CI** (`.github/workflows/ci.yml`) há dois jobs: **Lint · Typecheck · Test · Build** e
+**Integração · Supertest + MySQL** (provisiona um serviço MySQL). Ambos precisam passar no PR.
 
 ---
 
