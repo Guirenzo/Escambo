@@ -31,7 +31,14 @@ function Kpi({
       </div>
       <strong className="kpi-value">{value}</strong>
       {progress != null && (
-        <div className="bar" aria-label="Progresso de nível">
+        <div
+          className="bar"
+          role="progressbar"
+          aria-label="Progresso de nível"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(progress)}
+        >
           <div className="bar-fill" style={{ width: `${progress}%` }} />
         </div>
       )}
@@ -54,13 +61,28 @@ export function InicioView() {
       <PageHeader title={`Olá, ${handle}`} subtitle="Resumo da sua atividade no Escambo." />
 
       <div className="kpis">
-        <Kpi Icon={Wallet} label="Saldo disponível" value={w ? brl(w.balance) : '—'} hint="para saque" />
-        <Kpi Icon={Lock} label="Em escrow" value={w ? brl(w.balancePending) : '—'} hint="retido em contratações" tone="amber" />
+        <Kpi
+          Icon={Wallet}
+          label="Saldo disponível"
+          value={w ? brl(w.balance) : '—'}
+          hint="para saque"
+        />
+        <Kpi
+          Icon={Lock}
+          label="Em escrow"
+          value={w ? brl(w.balancePending) : '—'}
+          hint="retido em contratações"
+          tone="amber"
+        />
         <Kpi
           Icon={Coins}
           label="Créditos Escambo"
           value={w ? String(w.credits) : '—'}
-          hint={w && w.creditsPending > 0 ? `${w.creditsPending} em escrow` : 'para contratar ou impulsionar'}
+          hint={
+            w && w.creditsPending > 0
+              ? `${w.creditsPending} em escrow`
+              : 'para contratar ou impulsionar'
+          }
         />
         <Kpi
           Icon={TrendingUp}
@@ -82,7 +104,9 @@ export function InicioView() {
         <section className="card">
           <div className="card-head">
             <h3>Minhas contratações</h3>
-            {contracts.data && <span className="muted tiny">{contracts.data.items.length} no total</span>}
+            {contracts.data && (
+              <span className="muted tiny">{contracts.data.items.length} no total</span>
+            )}
           </div>
           <QueryState
             isLoading={contracts.isLoading}

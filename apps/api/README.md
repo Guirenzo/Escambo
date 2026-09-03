@@ -1,13 +1,13 @@
 # API — Escambo
 
 Backend do Escambo em **Node + Express + TypeScript**, em camadas **Controller → Service → Repository**
-(igual ao C4 nível 3 do RFC). Banco: o MySQL 8 de `infra/docker-compose.yml`.
+(igual ao C4 nível 3 do RFC). Banco: o MySQL 8 de `docker-compose.yml` (raiz).
 
 ## Rodando
 
 ```bash
 # 1. Suba o banco (na raiz do repo)
-cd infra && docker compose up -d && cd ..
+docker compose up -d db
 
 # 2. Configure e rode a API
 cd apps/api
@@ -153,7 +153,7 @@ contratação cash com escrow ponta a ponta: `create → accept → deliver → 
 autenticação das transições e a regra de auto-contratação.
 
 ```bash
-# precisa do banco no ar (docker compose -f infra/docker-compose.yml up -d db)
+# precisa do banco no ar (docker compose up -d db)
 npm run -w @escambo/api test:int
 ```
 

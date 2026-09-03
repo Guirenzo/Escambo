@@ -20,8 +20,12 @@
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "db:up": "docker compose -f infra/docker-compose.yml up -d",
-    "db:down": "docker compose -f infra/docker-compose.yml down"
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "stack:up": "docker compose up -d --build",
+    "stack:down": "docker compose down",
+    "stack:logs": "docker compose logs -f api web",
+    "demo:seed": "node scripts/demo-seed.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

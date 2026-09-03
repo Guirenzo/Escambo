@@ -7,3 +7,8 @@
 .github
 **/*.log
 apps/web/dist
+docs
+**/test-results
+**/playwright-report
+**/coverage
+**/.vite

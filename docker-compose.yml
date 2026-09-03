@@ -1,0 +1,128 @@
+# Escambo — stack completa: MySQL 8 + API (Node) + Web (nginx servindo o build do Vite).
+#
+#   docker compose up -d --build     # sobe tudo  →  http://localhost:8090
+#   docker compose up -d db          # só o banco (dev: API e Web rodam local com `npm run dev`)
+#   docker compose logs -f api       # logs da API
+#   docker compose down              # para tudo (mantém os dados)
+#   docker compose down -v           # para e apaga o banco (recarrega schema + seed na próxima subida)
+#
+# Ordem de subida: db (healthy) → migrate (job: aplica migrations pendentes e sai) → api (healthy) → web.
+# Variáveis opcionais (.env na raiz ou no shell): DB_PORT, API_PORT, WEB_PORT, JWT_SECRET, DB_*, CORS_ORIGINS.
+
+name: escambo
+
+x-api-image: &api-image escambo-api:local
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: escambo-mysql
+    restart: unless-stopped
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-escambo_root}
+      MYSQL_DATABASE: ${DB_NAME:-escambo}
+      MYSQL_USER: ${DB_USER:-escambo}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-escambo}
+    ports:
+      - '${DB_PORT:-3306}:3306'
+    volumes:
+      - escambo_db_data:/var/lib/mysql
+      # Só rodam com o volume vazio (primeira subida): baseline do schema + dados de referência.
+      - ./apps/api/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./apps/api/db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'mysqladmin',
+          'ping',
+          '-h',
+          '127.0.0.1',
+          '-uroot',
+          '-p${DB_ROOT_PASSWORD:-escambo_root}',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Job de migrations: aplica `apps/api/db/migrations` pendentes (idempotente) e termina.
+  # A API só sobe depois que este job conclui com sucesso — nunca serve com schema defasado.
+  migrate:
+    image: *api-image
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: escambo-migrate
+    restart: 'no'
+    command: ['node', 'dist/scripts/migrate.js']
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: &api-env
+      NODE_ENV: production
+      PORT: 3333
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-escambo}
+      DB_PASSWORD: ${DB_PASSWORD:-escambo}
+      DB_NAME: ${DB_NAME:-escambo}
+      JWT_SECRET: ${JWT_SECRET:-troque-isto-em-producao-com-no-minimo-32-caracteres}
+      # O web (nginx) fica exatamente 1 salto na frente da API: confia no X-Forwarded-For dele,
+      # para que rate limit e logs usem o IP real do usuário, não o do container do nginx.
+      TRUST_PROXY: '1'
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      # Rate limit por IP (padrões de produção). Para e2e/carga local, suba: LOGIN_RATE_LIMIT_MAX=1000
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
+      LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-10}
+
+  api:
+    image: *api-image
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: escambo-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *api-env
+    ports:
+      - '${API_PORT:-3333}:3333'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: escambo-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '${WEB_PORT:-8090}:8080'
+
+  # Dados de demonstração (opcional):  docker compose run --rm demo-seed
+  # Popula a instância pela API com contas, serviços, contratações, chat, boost e trocas.
+  demo-seed:
+    image: node:22-alpine
+    container_name: escambo-demo-seed
+    profiles: [demo]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_URL: http://api:3333/api
+    volumes:
+      - ./scripts/demo-seed.mjs:/demo-seed.mjs:ro
+    command: ['node', '/demo-seed.mjs']
+
+volumes:
+  escambo_db_data:
+    name: escambo_db_data
