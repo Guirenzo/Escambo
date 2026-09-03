@@ -1,12 +1,25 @@
 import { useState, type FormEvent } from 'react';
+import type { CreditReason } from '@escambo/types';
 import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
-import { brl } from '../../lib/format';
-import { useRequestWithdrawal, useWallet, useWithdrawals } from '../../lib/hooks';
+import { brl, dtm } from '../../lib/format';
+import { useCreditTransactions, useRequestWithdrawal, useWallet, useWithdrawals } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+
+const REASON_LABEL: Record<CreditReason, string> = {
+  welcome: 'Bônus de boas-vindas',
+  escrow_hold: 'Retido para contratação',
+  escrow_in: 'Recebido em escrow',
+  escrow_release: 'Liberado',
+  escrow_refund: 'Estorno do escrow',
+  refund: 'Reembolso',
+  grant: 'Crédito concedido',
+  boost: 'Impulsionamento',
+};
 
 export function CarteiraView() {
   const wallet = useWallet();
   const withdrawals = useWithdrawals();
+  const creditTx = useCreditTransactions();
   const request = useRequestWithdrawal();
   const toast = useToast();
   const [amount, setAmount] = useState('');
@@ -42,7 +55,7 @@ export function CarteiraView() {
         <section className="card">
           <h3>🪙 Créditos Escambo</h3>
           <p className="big">{w ? `${w.credits}` : '—'}</p>
-          <p className="muted">créditos para trocar por serviços</p>
+          <p className="muted">créditos para contratar qualquer serviço ou impulsionar os seus</p>
           {w && w.creditsPending > 0 && (
             <div className="escrow">
               🔒 {w.creditsPending} <span>créditos em escrow</span>
@@ -62,6 +75,38 @@ export function CarteiraView() {
             {request.isPending ? '…' : 'Sacar (mín. R$20)'}
           </Button>
         </form>
+
+        <section className="card wide">
+          <h3>🪙 Extrato de créditos</h3>
+          <QueryState
+            isLoading={creditTx.isLoading}
+            error={creditTx.error}
+            data={creditTx.data}
+            isEmpty={(d) => d.items.length === 0}
+            empty="Nenhuma movimentação de créditos ainda."
+            onRetry={() => void creditTx.refetch()}
+          >
+            {(d) => (
+              <ul className="list credit-tx">
+                {d.items.map((t) => (
+                  <li key={t.id}>
+                    <div>
+                      <strong>{REASON_LABEL[t.reason] ?? t.reason}</strong>
+                      <div className="muted tiny">
+                        {dtm(t.createdAt)}
+                        {t.contractId != null ? ` · contrato #${t.contractId}` : ''} · saldo após: {t.balanceAfter}
+                      </div>
+                    </div>
+                    <span className={`amt ${t.amount >= 0 ? 'pos' : 'neg'}`}>
+                      {t.amount >= 0 ? '+' : ''}
+                      {t.amount}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </QueryState>
+        </section>
 
         <section className="card wide">
           <h3>Histórico de saques</h3>

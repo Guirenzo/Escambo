@@ -1,6 +1,8 @@
 import type {
   AuthResponse,
   BarterAgreement,
+  Boost,
+  BoostPlan,
   Category,
   ChatHistory,
   ChatMessage,
@@ -8,7 +10,10 @@ import type {
   Contract,
   ContractWithHistory,
   CreateBarterRequest,
+  CreateBoostRequest,
+  CreateContractRequest,
   CreateServiceRequest,
+  CreditTransaction,
   FreelancerProfile,
   GamificationProfile,
   LeaderboardEntry,
@@ -27,6 +32,17 @@ import type {
 
 const BASE_URL = '/api';
 const TOKEN_KEY = 'escambo_token';
+
+/** Filtros da busca de serviços (lat+lng+radiusKm = descoberta local por proximidade). */
+export interface ServiceQuery {
+  q?: string;
+  categoryId?: number;
+  lat?: number;
+  lng?: number;
+  radiusKm?: number;
+  page?: number;
+  limit?: number;
+}
 
 function readToken(): string | null {
   try {
@@ -86,13 +102,21 @@ export const api = {
 
   // categorias & serviços
   categories: () => request<Category[]>('/categories'),
-  listServices: (q?: string) =>
-    request<Paginated<Service>>(`/services${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  listServices: (params: ServiceQuery = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+    }
+    const s = qs.toString();
+    return request<Paginated<Service>>(`/services${s ? `?${s}` : ''}`);
+  },
   createService: (body: CreateServiceRequest) =>
     request<Service>('/services', { method: 'POST', body: JSON.stringify(body) }),
 
   // contratações
   contracts: () => request<Paginated<Contract>>('/contracts'),
+  createContract: (body: CreateContractRequest) =>
+    request<Contract>('/contracts', { method: 'POST', body: JSON.stringify(body) }),
   contractDetail: (id: number) => request<ContractWithHistory>(`/contracts/${id}`),
   contractAction: (id: number, action: 'accept' | 'reject' | 'approve' | 'cancel') =>
     request<Contract>(`/contracts/${id}/${action}`, { method: 'POST' }),
@@ -118,6 +142,15 @@ export const api = {
     request<void>(`/notifications/${id}/read`, { method: 'POST' }),
   markAllNotificationsRead: () =>
     request<{ read: number }>('/notifications/read-all', { method: 'POST' }),
+
+  // créditos Escambo (time-bank)
+  creditTransactions: () => request<Paginated<CreditTransaction>>('/credits/transactions'),
+
+  // impulsionamento (boosts)
+  boostPlans: () => request<BoostPlan[]>('/boosts/plans'),
+  myBoosts: () => request<Boost[]>('/boosts'),
+  createBoost: (body: CreateBoostRequest) =>
+    request<Boost>('/boosts', { method: 'POST', body: JSON.stringify(body) }),
 
   // trocas (escambo)
   barters: () => request<Paginated<BarterAgreement>>('/barters'),

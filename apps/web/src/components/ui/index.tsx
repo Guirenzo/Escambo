@@ -136,3 +136,28 @@ export function QueryState<T>({
   if (isEmpty?.(data)) return <EmptyState>{empty ?? 'Nada por aqui ainda.'}</EmptyState>;
   return <>{children(data)}</>;
 }
+
+/** Diálogo modal simples (fecha no backdrop ou no ✕). */
+export function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="modal card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>{title}</h3>
+          <button type="button" className="mini" onClick={onClose} aria-label="Fechar">
+            ✕
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}

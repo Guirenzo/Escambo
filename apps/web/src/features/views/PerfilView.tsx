@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { ScoreBadge } from '../../components/ScoreBadge';
 import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
 import { useProfilesMe, usePutClientProfile, usePutFreelancerProfile } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
@@ -14,7 +15,7 @@ export function PerfilView() {
   const [bio, setBio] = useState('');
   const [city, setCity] = useState('');
 
-  // Preenche o formulário quando o perfil chega (uma vez).
+  // Preenche o formulário quando o perfil chega.
   useEffect(() => {
     const p = profiles.data;
     if (!p) return;
@@ -55,18 +56,26 @@ export function PerfilView() {
       <QueryState isLoading={profiles.isLoading} error={profiles.error} data={profiles.data} onRetry={() => void profiles.refetch()}>
         {(p) => (
           <div className="grid">
+            {/* Escambo Score (diferencial #3) — reputação multifator explicável */}
+            {p.freelancer && (
+              <section className="card wide">
+                <h3>
+                  🛡️ Escambo Score
+                  <span className="chip rank">⭐ {p.freelancer.avgRating.toFixed(1)}</span>
+                  <span className="muted tiny">
+                    {p.freelancer.totalReviews} avaliações · {p.freelancer.totalContracts} contratos
+                  </span>
+                </h3>
+                <ScoreBadge score={p.freelancer.escamboScore} detailed />
+                <p className="muted tiny">
+                  Qualidade (nota), experiência (contratos), prova social (avaliações) e responsividade (tempo de
+                  resposta), ponderadas em um índice de confiança de 0 a 100.
+                </p>
+              </section>
+            )}
+
             <form className="card" onSubmit={saveFreelancer}>
-              <h3>
-                👩‍💻 Freelancer{' '}
-                {p.freelancer && (
-                  <>
-                    <span className="chip rank">⭐ {p.freelancer.avgRating.toFixed(1)}</span>{' '}
-                    <span className="chip level" title={`Escambo Score ${p.freelancer.escamboScore.score}/100`}>
-                      🛡️ {p.freelancer.escamboScore.score} · {p.freelancer.escamboScore.tier}
-                    </span>
-                  </>
-                )}
-              </h3>
+              <h3>👩‍💻 Freelancer</h3>
               <Field label="Nome">
                 <Input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
               </Field>

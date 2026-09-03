@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   CreateBarterRequest,
+  CreateBoostRequest,
+  CreateContractRequest,
   CreateServiceRequest,
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
 } from '@escambo/types';
-import { api } from './api';
+import { api, type ServiceQuery } from './api';
 
 /** Chaves de cache — centralizadas para invalidação consistente. */
 export const qk = {
@@ -13,7 +15,10 @@ export const qk = {
   gamification: ['gamification'] as const,
   leaderboard: ['leaderboard'] as const,
   categories: ['categories'] as const,
-  services: (q?: string) => ['services', q ?? ''] as const,
+  services: (p?: ServiceQuery) => ['services', p ?? {}] as const,
+  creditTransactions: ['creditTransactions'] as const,
+  boostPlans: ['boostPlans'] as const,
+  myBoosts: ['myBoosts'] as const,
   contracts: ['contracts'] as const,
   contract: (id: number) => ['contract', id] as const,
   chat: (id: number) => ['chat', id] as const,
@@ -31,8 +36,8 @@ export const useLeaderboard = () =>
   useQuery({ queryKey: qk.leaderboard, queryFn: () => api.leaderboard() });
 export const useCategories = () =>
   useQuery({ queryKey: qk.categories, queryFn: () => api.categories(), staleTime: 5 * 60_000 });
-export const useServices = (q?: string) =>
-  useQuery({ queryKey: qk.services(q), queryFn: () => api.listServices(q) });
+export const useServices = (p?: ServiceQuery) =>
+  useQuery({ queryKey: qk.services(p), queryFn: () => api.listServices(p) });
 export const useContracts = () => useQuery({ queryKey: qk.contracts, queryFn: () => api.contracts() });
 export const useContractDetail = (id: number) =>
   useQuery({ queryKey: qk.contract(id), queryFn: () => api.contractDetail(id) });
@@ -149,5 +154,38 @@ export function usePutClientProfile() {
   return useMutation({
     mutationFn: (body: UpsertClientProfileRequest) => api.putClientProfile(body),
     onSuccess: () => void qc.invalidateQueries({ queryKey: qk.profiles }),
+  });
+}
+
+// ---------- Fase B: diferenciais ----------
+export const useCreditTransactions = () =>
+  useQuery({ queryKey: qk.creditTransactions, queryFn: () => api.creditTransactions() });
+export const useBoostPlans = () =>
+  useQuery({ queryKey: qk.boostPlans, queryFn: () => api.boostPlans(), staleTime: 5 * 60_000 });
+export const useMyBoosts = () => useQuery({ queryKey: qk.myBoosts, queryFn: () => api.myBoosts() });
+
+/** Cliente contrata um serviço (dinheiro ou créditos Escambo). */
+export function useCreateContract() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateContractRequest) => api.createContract(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: qk.wallet });
+    },
+  });
+}
+
+/** Freelancer impulsiona um serviço seu (paga em créditos). */
+export function useCreateBoost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateBoostRequest) => api.createBoost(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['services'] });
+      void qc.invalidateQueries({ queryKey: qk.myBoosts });
+      void qc.invalidateQueries({ queryKey: qk.wallet });
+      void qc.invalidateQueries({ queryKey: qk.creditTransactions });
+    },
   });
 }
