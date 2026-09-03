@@ -5,7 +5,7 @@ import type {
   SelectHTMLAttributes,
 } from 'react';
 
-/* Kit de componentes base — consistência visual em cima do tema (styles.css). */
+/* Kit de componentes base — consistência visual em cima do sistema de design (styles.css). */
 
 type Variant = 'primary' | 'dark' | 'ghost' | 'mini';
 
@@ -68,23 +68,41 @@ export function PageHeader({ title, action }: { title: ReactNode; action?: React
 
 /* Estados padronizados: toda tela usa os mesmos. */
 
+/** Pulso da marca — para telas inteiras (splash/guarda de rota). */
 export function Spinner({ label = 'Carregando…' }: { label?: string }) {
   return (
-    <p className="muted state" role="status">
-      {label}
-    </p>
+    <div className="pulse" role="status" aria-label={label}>
+      <span className="pulse-mark">⇄</span>
+      <span className="muted">{label}</span>
+    </div>
+  );
+}
+
+/** Esqueleto com shimmer — para conteúdo que está chegando (listas, cards). */
+export function Skeleton({ lines = 3 }: { lines?: number }) {
+  return (
+    <div className="skeleton-stack" role="status" aria-label="Carregando">
+      {Array.from({ length: lines }, (_, i) => (
+        <div key={i} className="skeleton" style={{ width: `${100 - i * 12}%` }} />
+      ))}
+    </div>
   );
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
-  return <p className="muted state">{children}</p>;
+  return (
+    <div className="empty">
+      <span className="empty-ico">🍃</span>
+      <p className="muted">{children}</p>
+    </div>
+  );
 }
 
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   const message = error instanceof Error ? error.message : 'Não foi possível carregar.';
   return (
     <div className="state error-state" role="alert">
-      <p className="error">{message}</p>
+      <p className="error">⚠️ {message}</p>
       {onRetry && (
         <Button variant="mini" onClick={onRetry}>
           Tentar de novo
@@ -112,7 +130,7 @@ export function QueryState<T>({
   onRetry?: () => void;
   children: (d: T) => ReactNode;
 }) {
-  if (isLoading) return <Spinner />;
+  if (isLoading) return <Skeleton lines={3} />;
   if (error) return <ErrorState error={error} onRetry={onRetry} />;
   if (data === undefined) return null;
   if (isEmpty?.(data)) return <EmptyState>{empty ?? 'Nada por aqui ainda.'}</EmptyState>;
