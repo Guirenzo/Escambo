@@ -95,7 +95,6 @@ jobs:
           --health-retries=10
 
     env:
-      NODE_ENV: production
       DB_HOST: 127.0.0.1
       DB_PORT: '3306'
       DB_USER: root
@@ -133,6 +132,7 @@ jobs:
 
       - name: Sobe API e Web (build servido pelo Vite preview) em background
         run: |
+          export NODE_ENV=production
           (cd apps/api && nohup node dist/server.js > /tmp/api.log 2>&1 &)
           (cd apps/web && nohup npx vite preview --port 5173 --strictPort > /tmp/web.log 2>&1 &)
           for i in $(seq 1 30); do
@@ -148,7 +148,7 @@ jobs:
 
       - name: Logs da API/Web (só em falha)
         if: failure()
-        run: tail -n 120 /tmp/api.log /tmp/web.log
+        run: tail -n 120 /tmp/api.log /tmp/web.log 2>/dev/null || true
 
       - name: Relatório do Playwright (só em falha)
         if: failure()
