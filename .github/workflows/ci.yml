@@ -74,3 +74,86 @@ jobs:
           TEST_DB_USER: root
           TEST_DB_PASSWORD: escambo_root
           TEST_DB_NAME: escambo_test
+
+  e2e:
+    name: E2E · Playwright (Web + API + MySQL)
+    runs-on: ubuntu-latest
+    needs: [build-and-test]
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: escambo_root
+          MYSQL_DATABASE: escambo
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pescambo_root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      NODE_ENV: production
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_USER: root
+      DB_PASSWORD: escambo_root
+      DB_NAME: escambo
+      JWT_SECRET: segredo-de-e2e-no-ci-com-mais-de-32-caracteres
+      LOG_LEVEL: warn
+      # os testes criam vários usuários por execução; sem isso o rate limit de login derruba a suíte
+      LOGIN_RATE_LIMIT_MAX: '1000'
+      RATE_LIMIT_MAX: '10000'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Build (API + Web)
+        run: npm run build
+
+      - name: Chromium do Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Schema (migrations) + seed de referência
+        run: |
+          node apps/api/dist/scripts/migrate.js
+          mysql -h127.0.0.1 -uroot -pescambo_root escambo < apps/api/db/seed.sql
+
+      - name: Sobe API e Web (build servido pelo Vite preview) em background
+        run: |
+          (cd apps/api && nohup node dist/server.js > /tmp/api.log 2>&1 &)
+          (cd apps/web && nohup npx vite preview --port 5173 --strictPort > /tmp/web.log 2>&1 &)
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:3333/api/health >/dev/null && curl -fsS http://localhost:5173 >/dev/null && break
+            sleep 2
+          done
+          curl -fsS http://localhost:3333/api/health
+
+      - name: Testes ponta a ponta (desktop + mobile + acessibilidade)
+        run: npm run -w apps/web e2e
+        env:
+          E2E_BASE_URL: http://localhost:5173
+
+      - name: Logs da API/Web (só em falha)
+        if: failure()
+        run: tail -n 120 /tmp/api.log /tmp/web.log
+
+      - name: Relatório do Playwright (só em falha)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7

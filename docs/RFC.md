@@ -1085,7 +1085,7 @@ git clone https://github.com/Guirenzo/Escambo.git
 cd Escambo
 
 # 2. Banco de dados (Docker — sobe MySQL 8 já com schema + seed)
-cd infra && docker compose up -d && cd ..
+docker compose up -d db
 # Alternativa sem Docker: mysql -u root -p < apps/api/db/schema.sql
 
 # 3. Backend (API)

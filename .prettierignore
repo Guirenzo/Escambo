@@ -4,3 +4,5 @@ build
 coverage
 package-lock.json
 apps/api/db/schema.sql
+*.conf
+Dockerfile

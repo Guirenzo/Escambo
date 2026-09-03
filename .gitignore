@@ -34,3 +34,8 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+apps/web/test-results
+apps/web/playwright-report
+apps/web/blob-report
+apps/web/playwright/.cache
+.vite/

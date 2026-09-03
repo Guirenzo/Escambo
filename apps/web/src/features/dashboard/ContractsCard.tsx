@@ -30,7 +30,11 @@ function actionsFor(status: string): { label: string; action: Action }[] {
   }
 }
 
-const MODE_LABEL: Record<string, string> = { cash: 'Dinheiro', credits: 'Créditos', barter: 'Troca' };
+const MODE_LABEL: Record<string, string> = {
+  cash: 'Dinheiro',
+  credits: 'Créditos',
+  barter: 'Troca',
+};
 
 /** Tabela de contratações com ações inline e acesso à sala (timeline + chat). */
 export function ContractsCard({ contracts }: { contracts: Contract[] }) {
@@ -64,15 +68,15 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
             <th>Modalidade</th>
             <th className="right">Valor</th>
             <th>Status</th>
-            <th>Criada</th>
             <th className="right">Ações</th>
           </tr>
         </thead>
         <tbody>
           {contracts.map((c) => (
             <tr key={c.id}>
-              <td>
+              <td className="cell-title">
                 <strong>{c.title}</strong>
+                <span className="muted tiny">criada em {dt(c.createdAt)}</span>
               </td>
               <td>
                 {c.paymentMode === 'cash' ? (
@@ -81,18 +85,24 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
                   <span className="tag">{MODE_LABEL[c.paymentMode] ?? c.paymentMode}</span>
                 )}
               </td>
-              <td className="num">{c.paymentMode === 'credits' ? `${Math.round(c.price)} cr` : brl(c.price)}</td>
+              <td className="num">
+                {c.paymentMode === 'credits' ? `${Math.round(c.price)} cr` : brl(c.price)}
+              </td>
               <td>
                 <Pill status={c.status}>{STATUS_LABEL[c.status] ?? c.status}</Pill>
               </td>
-              <td className="muted">{dt(c.createdAt)}</td>
               <td>
                 <div className="acts">
                   <Button variant="mini" onClick={() => navigate(`/contratos/${c.id}`)}>
                     <MessageSquare size={14} /> Sala
                   </Button>
                   {actionsFor(c.status).map((a) => (
-                    <Button key={a.action} variant="mini" disabled={busy} onClick={() => void run(c.id, a.action)}>
+                    <Button
+                      key={a.action}
+                      variant="mini"
+                      disabled={busy}
+                      onClick={() => void run(c.id, a.action)}
+                    >
                       {a.label}
                     </Button>
                   ))}

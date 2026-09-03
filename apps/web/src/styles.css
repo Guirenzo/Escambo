@@ -9,7 +9,7 @@
   --surface: #ffffff;
   --surface-2: #f7f9f8;
   --text: #0f1a14;
-  --muted: #667a70;
+  --muted: #566860; /* 5.5:1 sobre --bg (AA) */
   --border: #e4e9e6;
   --border-strong: #cfd8d3;
 
@@ -18,11 +18,12 @@
   --green-hover: #0b4f32;
   --green-soft: #e7f3ec;
   --green-ink: #073622;
-  --amber: #d97706;
+  --amber: #b45309; /* texto branco sobre âmbar passa de 3.2:1 para 5:1 */
   --amber-soft: #fdf3e0;
   --amber-ink: #7c4a03;
   --blue: #2563eb;
   --blue-soft: #e8efff;
+  --blue-ink: #1e40af; /* texto azul sobre --blue-soft (7.6:1) */
   --red: #c0392b;
   --red-soft: #fbecea;
 
@@ -530,7 +531,7 @@ select {
     box-shadow var(--t) var(--ease);
 }
 input::placeholder {
-  color: #9aa8a1;
+  color: var(--muted);
 }
 input:focus,
 select:focus {
@@ -834,13 +835,13 @@ button.toggle.on {
 .pill.status-in_progress,
 .pill.status-delivered {
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--blue-ink);
   border-color: transparent;
 }
 .tag {
   display: inline-block;
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--blue-ink);
   font-size: 0.68rem;
   padding: 2px 8px;
   border-radius: 999px;
@@ -1429,7 +1430,7 @@ button.toggle.on {
 }
 .score-top .score-tier {
   background: var(--blue-soft);
-  color: var(--blue);
+  color: var(--blue-ink);
 }
 .score-elite .score-tier {
   background: var(--amber-soft);
@@ -1534,10 +1535,22 @@ button.toggle.on {
 
 /* ações da tabela numa linha só (a tabela rola horizontalmente se faltar espaço) */
 .table .acts {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
-.table td:last-child {
+.table .acts .btn,
+.table .acts button {
   white-space: nowrap;
+}
+.table .cell-title {
+  min-width: 200px;
+}
+.table .cell-title strong,
+.table .cell-title .tiny {
+  display: block;
+}
+.table .cell-title .tiny {
+  margin-top: 2px;
 }
 
 /* Trocas: o par "oferece ⇄ recebe" precisa de largura pra não truncar títulos. */

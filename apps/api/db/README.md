@@ -19,8 +19,8 @@ executáveis derivados dela.
 Sobe um MySQL 8 já com schema + seed carregados:
 
 ```bash
-cd infra
-docker compose up -d
+docker compose up -d db
+# MySQL sobe com schema + seed carregados
 # MySQL em localhost:3306 — db: escambo · user: escambo · senha: escambo
 ```
 
