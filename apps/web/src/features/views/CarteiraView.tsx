@@ -1,3 +1,4 @@
+import { Coins, Landmark, Lock, Wallet } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { CreditReason } from '@escambo/types';
 import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
@@ -40,44 +41,68 @@ export function CarteiraView() {
   const w = wallet.data;
 
   return (
-    <div className="view">
-      <PageHeader title="Carteira" />
-      <div className="grid">
-        <section className="card">
-          <h3>💰 Saldo</h3>
-          <p className="big">{w ? brl(w.balance) : '—'}</p>
-          <p className="muted">disponível para saque</p>
-          <div className="escrow">
-            🔒 {w ? brl(w.balancePending) : '—'} <span>retido em escrow</span>
+    <div className="page">
+      <PageHeader title="Carteira" subtitle="Saldo em reais, créditos Escambo e movimentações." />
+
+      <div className="kpis">
+        <div className="kpi">
+          <div className="kpi-top">
+            <span className="kpi-ico">
+              <Wallet size={18} />
+            </span>
+            <span className="kpi-label">Saldo disponível</span>
           </div>
-        </section>
-
-        <section className="card">
-          <h3>🪙 Créditos Escambo</h3>
-          <p className="big">{w ? `${w.credits}` : '—'}</p>
-          <p className="muted">créditos para contratar qualquer serviço ou impulsionar os seus</p>
-          {w && w.creditsPending > 0 && (
-            <div className="escrow">
-              🔒 {w.creditsPending} <span>créditos em escrow</span>
-            </div>
-          )}
-        </section>
-
-        <form className="card" onSubmit={submit}>
-          <h3>🏧 Solicitar saque</h3>
+          <strong className="kpi-value">{w ? brl(w.balance) : '—'}</strong>
+          <span className="muted tiny">para saque via PIX</span>
+        </div>
+        <div className="kpi amber">
+          <div className="kpi-top">
+            <span className="kpi-ico">
+              <Lock size={18} />
+            </span>
+            <span className="kpi-label">Em escrow</span>
+          </div>
+          <strong className="kpi-value">{w ? brl(w.balancePending) : '—'}</strong>
+          <span className="muted tiny">liberado quando o cliente aprova</span>
+        </div>
+        <div className="kpi">
+          <div className="kpi-top">
+            <span className="kpi-ico">
+              <Coins size={18} />
+            </span>
+            <span className="kpi-label">Créditos Escambo</span>
+          </div>
+          <strong className="kpi-value">{w ? String(w.credits) : '—'}</strong>
+          <span className="muted tiny">
+            {w && w.creditsPending > 0 ? `${w.creditsPending} em escrow · ` : ''}para contratar ou impulsionar
+          </span>
+        </div>
+        <form className="kpi" onSubmit={submit}>
+          <div className="kpi-top">
+            <span className="kpi-ico">
+              <Landmark size={18} />
+            </span>
+            <span className="kpi-label">Solicitar saque</span>
+          </div>
           <Field label="Valor (R$)">
             <Input type="number" min={20} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
           </Field>
           <Field label="Chave PIX">
             <Input value={pixKey} onChange={(e) => setPixKey(e.target.value)} required placeholder="e-mail / telefone / aleatória" />
           </Field>
-          <Button type="submit" disabled={request.isPending}>
+          <Button type="submit" variant="secondary" disabled={request.isPending}>
             {request.isPending ? '…' : 'Sacar (mín. R$20)'}
           </Button>
         </form>
+      </div>
 
-        <section className="card wide">
-          <h3>🪙 Extrato de créditos</h3>
+      <div className="two-col">
+        <section className="card">
+          <div className="card-head">
+            <h3>
+              <Coins size={16} /> Extrato de créditos
+            </h3>
+          </div>
           <QueryState
             isLoading={creditTx.isLoading}
             error={creditTx.error}
@@ -108,8 +133,12 @@ export function CarteiraView() {
           </QueryState>
         </section>
 
-        <section className="card wide">
-          <h3>Histórico de saques</h3>
+        <section className="card">
+          <div className="card-head">
+            <h3>
+              <Landmark size={16} /> Saques
+            </h3>
+          </div>
           <QueryState
             isLoading={withdrawals.isLoading}
             error={withdrawals.error}
@@ -124,7 +153,9 @@ export function CarteiraView() {
                   <li key={x.id}>
                     <div>
                       <strong>{brl(x.amount)}</strong>
-                      <span className="muted"> · {x.method} · {x.maskedDestination}</span>
+                      <div className="muted tiny">
+                        {x.method} · {x.maskedDestination}
+                      </div>
                     </div>
                     <span className="pill">{x.status}</span>
                   </li>

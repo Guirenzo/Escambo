@@ -1,3 +1,4 @@
+import { ShieldCheck } from 'lucide-react';
 import type { EscamboScore, ScoreBreakdown } from '@escambo/types';
 
 const TIER_LABEL: Record<EscamboScore['tier'], string> = {
@@ -20,7 +21,7 @@ export function ScoreBadge({ score, detailed = false }: { score: EscamboScore; d
     <div className={`score score-${score.tier}`} title={`Escambo Score ${score.score}/100`}>
       <div className="score-head">
         <span className="score-shield" aria-hidden>
-          🛡️
+          <ShieldCheck size={20} />
         </span>
         <strong className="score-value">{score.score}</strong>
         <span className="score-tier">{TIER_LABEL[score.tier]}</span>

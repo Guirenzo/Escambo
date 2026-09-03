@@ -1,3 +1,4 @@
+import { ArrowLeft, ListChecks, MessageSquare, Send } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ChatMessage, ChatMessageEvent } from '@escambo/types';
 import { Button, Input, QueryState } from '../../components/ui';
@@ -6,6 +7,8 @@ import { brl, dtm, hm, STATUS_LABEL } from '../../lib/format';
 import { useChatHistory, useContractDetail, useSendMessage } from '../../lib/hooks';
 import { getSocket } from '../../lib/socket';
 import { useToast } from '../../lib/toast';
+
+const MODE_LABEL: Record<string, string> = { cash: 'Dinheiro', credits: 'Créditos Escambo', barter: 'Troca' };
 
 export function SalaContratoView({ contractId, onBack }: { contractId: number; onBack: () => void }) {
   const { user } = useAuth();
@@ -71,20 +74,27 @@ export function SalaContratoView({ contractId, onBack }: { contractId: number; o
   const c = contract.data;
 
   return (
-    <div className="view">
-      <div className="view-head">
+    <div className="page">
+      <div className="page-head">
         <div>
-          <Button variant="mini" onClick={onBack}>
-            ← Voltar
+          <Button variant="ghost" className="mini" onClick={onBack}>
+            <ArrowLeft size={14} /> Voltar
           </Button>
-          <h2 style={{ marginTop: 8 }}>{c?.title ?? `Contrato #${contractId}`}</h2>
+          <h1 style={{ marginTop: 8 }}>{c?.title ?? `Contrato #${contractId}`}</h1>
+          {c && (
+            <p className="muted">
+              {MODE_LABEL[c.paymentMode] ?? c.paymentMode} · criado em {dtm(c.createdAt)}
+            </p>
+          )}
         </div>
         {c && <span className={`pill status-${c.status}`}>{STATUS_LABEL[c.status] ?? c.status}</span>}
       </div>
 
       <div className="sala">
         <section className="card">
-          <h3>📌 Linha do tempo</h3>
+          <h3>
+            <ListChecks size={16} /> Linha do tempo
+          </h3>
           <QueryState
             isLoading={contract.isLoading}
             error={contract.error}
@@ -95,17 +105,13 @@ export function SalaContratoView({ contractId, onBack }: { contractId: number; o
               <>
                 <div className="kv">
                   <span className="muted">Valor</span>
-                  <strong>{brl(d.price)}</strong>
+                  <strong>{d.paymentMode === 'credits' ? `${Math.round(d.price)} créditos` : brl(d.price)}</strong>
                   <span className="muted">Taxa</span>
-                  <span>{brl(d.platformFee)}</span>
+                  <span>{d.paymentMode === 'credits' ? 'sem taxa' : brl(d.platformFee)}</span>
                   <span className="muted">Líquido</span>
-                  <strong className="price">{brl(d.freelancerNet)}</strong>
-                  {d.paymentMode !== 'cash' && (
-                    <>
-                      <span className="muted">Modalidade</span>
-                      <span className="tag">{d.paymentMode === 'credits' ? 'créditos' : 'troca'}</span>
-                    </>
-                  )}
+                  <strong className="price">
+                    {d.paymentMode === 'credits' ? `${Math.round(d.freelancerNet)} créditos` : brl(d.freelancerNet)}
+                  </strong>
                 </div>
                 <ol className="timeline">
                   {d.history.map((h, i) => (
@@ -128,9 +134,12 @@ export function SalaContratoView({ contractId, onBack }: { contractId: number; o
         </section>
 
         <section className="card chat">
-          <h3>
-            💬 Chat {connected ? <span className="chip rank">● ao vivo</span> : <span className="pill">offline</span>}
-          </h3>
+          <div className="card-head">
+            <h3>
+              <MessageSquare size={16} /> Chat
+            </h3>
+            {connected ? <span className="chip rank">ao vivo</span> : <span className="pill">offline</span>}
+          </div>
           <div className="chat-log">
             {history.isLoading ? (
               <p className="muted">Carregando…</p>
@@ -153,8 +162,8 @@ export function SalaContratoView({ contractId, onBack }: { contractId: number; o
               placeholder="Escreva uma mensagem…"
               maxLength={2000}
             />
-            <Button type="submit" disabled={send.isPending || !draft.trim()}>
-              Enviar
+            <Button type="submit" disabled={send.isPending || !draft.trim()} aria-label="Enviar">
+              <Send size={16} />
             </Button>
           </form>
         </section>

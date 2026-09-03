@@ -1,3 +1,4 @@
+import { AlertTriangle, ArrowLeftRight, Inbox, X } from 'lucide-react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -7,7 +8,7 @@ import type {
 
 /* Kit de componentes base — consistência visual em cima do sistema de design (styles.css). */
 
-type Variant = 'primary' | 'dark' | 'ghost' | 'mini';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'mini' | 'danger';
 
 export function Button({
   variant = 'primary',
@@ -57,11 +58,23 @@ export function Chip({ kind = 'rank', children }: { kind?: 'rank' | 'level'; chi
   return <span className={`chip ${kind}`}>{children}</span>;
 }
 
-export function PageHeader({ title, action }: { title: ReactNode; action?: ReactNode }) {
+/** Cabeçalho de página: título, subtítulo de contexto e ações à direita. */
+export function PageHeader({
+  title,
+  subtitle,
+  action,
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  action?: ReactNode;
+}) {
   return (
-    <div className="view-head">
-      <h2>{title}</h2>
-      {action}
+    <div className="page-head">
+      <div>
+        <h1>{title}</h1>
+        {subtitle && <p className="muted">{subtitle}</p>}
+      </div>
+      {action && <div className="page-actions">{action}</div>}
     </div>
   );
 }
@@ -72,7 +85,9 @@ export function PageHeader({ title, action }: { title: ReactNode; action?: React
 export function Spinner({ label = 'Carregando…' }: { label?: string }) {
   return (
     <div className="pulse" role="status" aria-label={label}>
-      <span className="pulse-mark">⇄</span>
+      <span className="pulse-mark">
+        <ArrowLeftRight size={22} strokeWidth={2.5} />
+      </span>
       <span className="muted">{label}</span>
     </div>
   );
@@ -92,7 +107,9 @@ export function Skeleton({ lines = 3 }: { lines?: number }) {
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
     <div className="empty">
-      <span className="empty-ico">🍃</span>
+      <span className="empty-ico">
+        <Inbox size={22} />
+      </span>
       <p className="muted">{children}</p>
     </div>
   );
@@ -102,7 +119,9 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
   const message = error instanceof Error ? error.message : 'Não foi possível carregar.';
   return (
     <div className="state error-state" role="alert">
-      <p className="error">⚠️ {message}</p>
+      <p className="error">
+        <AlertTriangle size={16} /> {message}
+      </p>
       {onRetry && (
         <Button variant="mini" onClick={onRetry}>
           Tentar de novo
@@ -152,8 +171,8 @@ export function Modal({
       <div className="modal card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{title}</h3>
-          <button type="button" className="mini" onClick={onClose} aria-label="Fechar">
-            ✕
+          <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar">
+            <X size={18} />
           </button>
         </div>
         {children}

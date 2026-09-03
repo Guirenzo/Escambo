@@ -1,7 +1,8 @@
+import { MessageSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { Contract } from '@escambo/types';
 import { Button, Pill } from '../../components/ui';
-import { STATUS_LABEL, brl } from '../../lib/format';
+import { STATUS_LABEL, brl, dt } from '../../lib/format';
 import { useContractAction, useDeliverContract } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 
@@ -29,6 +30,9 @@ function actionsFor(status: string): { label: string; action: Action }[] {
   }
 }
 
+const MODE_LABEL: Record<string, string> = { cash: 'Dinheiro', credits: 'Créditos', barter: 'Troca' };
+
+/** Tabela de contratações com ações inline e acesso à sala (timeline + chat). */
 export function ContractsCard({ contracts }: { contracts: Contract[] }) {
   const navigate = useNavigate();
   const toast = useToast();
@@ -52,27 +56,52 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
   }
 
   return (
-    <ul className="list">
-      {contracts.map((c) => (
-        <li key={c.id}>
-          <div className="grow">
-            <strong>{c.title}</strong>
-            <span className="muted"> · {brl(c.price)}</span>
-            {c.paymentMode === 'credits' && <span className="tag"> créditos</span>}
-            <div className="acts">
-              <Button variant="mini" onClick={() => navigate(`/contratos/${c.id}`)}>
-                💬 Abrir sala
-              </Button>
-              {actionsFor(c.status).map((a) => (
-                <Button key={a.action} variant="mini" disabled={busy} onClick={() => void run(c.id, a.action)}>
-                  {a.label}
-                </Button>
-              ))}
-            </div>
-          </div>
-          <Pill status={c.status}>{STATUS_LABEL[c.status] ?? c.status}</Pill>
-        </li>
-      ))}
-    </ul>
+    <div className="table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            <th>Contratação</th>
+            <th>Modalidade</th>
+            <th className="right">Valor</th>
+            <th>Status</th>
+            <th>Criada</th>
+            <th className="right">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {contracts.map((c) => (
+            <tr key={c.id}>
+              <td>
+                <strong>{c.title}</strong>
+              </td>
+              <td>
+                {c.paymentMode === 'cash' ? (
+                  <span className="muted">{MODE_LABEL.cash}</span>
+                ) : (
+                  <span className="tag">{MODE_LABEL[c.paymentMode] ?? c.paymentMode}</span>
+                )}
+              </td>
+              <td className="num">{c.paymentMode === 'credits' ? `${Math.round(c.price)} cr` : brl(c.price)}</td>
+              <td>
+                <Pill status={c.status}>{STATUS_LABEL[c.status] ?? c.status}</Pill>
+              </td>
+              <td className="muted">{dt(c.createdAt)}</td>
+              <td>
+                <div className="acts">
+                  <Button variant="mini" onClick={() => navigate(`/contratos/${c.id}`)}>
+                    <MessageSquare size={14} /> Sala
+                  </Button>
+                  {actionsFor(c.status).map((a) => (
+                    <Button key={a.action} variant="mini" disabled={busy} onClick={() => void run(c.id, a.action)}>
+                      {a.label}
+                    </Button>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

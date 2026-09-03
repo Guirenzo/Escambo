@@ -1,3 +1,4 @@
+import { Rocket } from 'lucide-react';
 import { useState } from 'react';
 import type { Service } from '@escambo/types';
 import { Button, Modal, QueryState } from '../../components/ui';
@@ -17,7 +18,7 @@ export function BoostModal({ service, onClose }: { service: Service; onClose: ()
     if (!planId) return;
     try {
       await boost.mutateAsync({ serviceId: service.id, planId });
-      toast.success('Serviço impulsionado! 🚀 Ele já aparece no topo da busca.');
+      toast.success('Serviço impulsionado! Ele já aparece no topo da busca.');
       onClose();
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Erro ao impulsionar');
@@ -44,7 +45,9 @@ export function BoostModal({ service, onClose }: { service: Service; onClose: ()
                     checked={planId === p.id}
                     onChange={() => ok && setPlanId(p.id)}
                   />
-                  🚀 {p.name}
+                  <span className="svc-actions">
+                    <Rocket size={14} /> {p.name}
+                  </span>
                   <small>
                     {p.durationDays} dias · <b>{p.costCredits} créditos</b>
                     {!ok ? ' · créditos insuficientes' : ''}
@@ -57,7 +60,7 @@ export function BoostModal({ service, onClose }: { service: Service; onClose: ()
         )}
       </QueryState>
       <Button onClick={() => void confirm()} disabled={!planId || boost.isPending}>
-        {boost.isPending ? 'Impulsionando…' : 'Confirmar impulsionamento'}
+        <Rocket size={16} /> {boost.isPending ? 'Impulsionando…' : 'Confirmar impulsionamento'}
       </Button>
     </Modal>
   );

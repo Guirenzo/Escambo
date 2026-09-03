@@ -1,9 +1,9 @@
+import { Trophy } from 'lucide-react';
 import type { LeaderboardEntry } from '@escambo/types';
 import { Chip, PageHeader, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { useGamification, useLeaderboard } from '../../lib/hooks';
 
-const MEDAL = ['🥇', '🥈', '🥉'];
 const initials = (name: string | null): string =>
   (name ?? '?')
     .split(' ')
@@ -19,12 +19,12 @@ export function RankingView() {
   const isMe = (e: LeaderboardEntry): boolean => e.userUlid === user?.ulid;
 
   return (
-    <div className="view">
+    <div className="page">
       <PageHeader
-        title="🏆 Ranking"
-        action={me.data?.rank != null ? <Chip kind="level">Você é #{me.data.rank}</Chip> : undefined}
+        title="Ranking"
+        subtitle="Os freelancers com mais XP na plataforma. Conclua contratos e ganhe badges para subir."
+        action={me.data?.rank != null ? <Chip kind="level"><Trophy size={12} /> Você é #{me.data.rank}</Chip> : undefined}
       />
-      <p className="muted">Os freelancers com mais XP na plataforma. Conclua contratos e ganhe badges para subir.</p>
 
       <QueryState
         isLoading={board.isLoading}
@@ -44,7 +44,7 @@ export function RankingView() {
               <div className="podium">
                 {podiumOrder.map((e) => (
                   <div key={e.userUlid} className={`podium-col p${e.rank} ${isMe(e) ? 'me' : ''}`}>
-                    <div className="medal">{MEDAL[e.rank - 1]}</div>
+                    <span className="medal">{e.rank}</span>
                     <div className="avatar">{initials(e.name)}</div>
                     <strong className="pname">{e.name ?? 'Anônimo'}</strong>
                     <Chip>{e.levelName}</Chip>
@@ -55,7 +55,7 @@ export function RankingView() {
               </div>
 
               {rest.length > 0 && (
-                <section className="card wide">
+                <section className="card">
                   <ul className="list rank-list">
                     {rest.map((e) => (
                       <li key={e.userUlid} className={isMe(e) ? 'me-row' : ''}>
@@ -64,7 +64,7 @@ export function RankingView() {
                           <div className="avatar sm">{initials(e.name)}</div>
                           <div>
                             <strong>{e.name ?? 'Anônimo'}</strong>
-                            {isMe(e) && <span className="chip level tiny"> você</span>}
+                            {isMe(e) && <span className="chip level tiny">você</span>}
                             <div className="muted tiny">
                               {e.levelName} · Nível {e.level}
                             </div>
@@ -78,7 +78,7 @@ export function RankingView() {
               )}
 
               {!meInBoard && me.data?.rank != null && (
-                <section className="card wide me-standing">
+                <section className="card me-standing">
                   <div className="rank-left">
                     <span className="pos">{me.data.rank}º</span>
                     <div>

@@ -1,3 +1,4 @@
+import { Coins, CreditCard } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Service } from '@escambo/types';
@@ -58,7 +59,9 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
         <div className="radio-row" role="radiogroup" aria-label="Forma de pagamento">
           <label className={`radio-card ${mode === 'cash' ? 'on' : ''}`}>
             <input type="radio" name="mode" checked={mode === 'cash'} onChange={() => setMode('cash')} />
-            💳 Dinheiro
+            <span className="svc-actions">
+              <CreditCard size={14} /> Dinheiro
+            </span>
             <small>Escrow em R$ · taxa da plataforma 15%</small>
           </label>
           <label className={`radio-card ${mode === 'credits' ? 'on' : ''} ${canCredits ? '' : 'off'}`}>
@@ -69,7 +72,9 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
               checked={mode === 'credits'}
               onChange={() => canCredits && setMode('credits')}
             />
-            🪙 Créditos Escambo
+            <span className="svc-actions">
+              <Coins size={14} /> Créditos Escambo
+            </span>
             <small>
               Você tem {credits} · sem taxa
               {!canCredits && priceNum > 0 ? ` · precisa de ${creditsNeeded}` : ''}

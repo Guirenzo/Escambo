@@ -1,3 +1,4 @@
+import { Briefcase, ShieldCheck, Star, User } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
@@ -51,21 +52,23 @@ export function PerfilView() {
   }
 
   return (
-    <div className="view">
-      <PageHeader title="Perfil" />
+    <div className="page">
+      <PageHeader title="Perfil" subtitle="Como você aparece para clientes e freelancers." />
       <QueryState isLoading={profiles.isLoading} error={profiles.error} data={profiles.data} onRetry={() => void profiles.refetch()}>
         {(p) => (
           <div className="grid">
             {/* Escambo Score (diferencial #3) — reputação multifator explicável */}
             {p.freelancer && (
               <section className="card wide">
-                <h3>
-                  🛡️ Escambo Score
-                  <span className="chip rank">⭐ {p.freelancer.avgRating.toFixed(1)}</span>
+                <div className="card-head">
+                  <h3>
+                    <ShieldCheck size={16} /> Escambo Score
+                  </h3>
                   <span className="muted tiny">
-                    {p.freelancer.totalReviews} avaliações · {p.freelancer.totalContracts} contratos
+                    <Star size={12} /> {p.freelancer.avgRating.toFixed(1)} · {p.freelancer.totalReviews} avaliações ·{' '}
+                    {p.freelancer.totalContracts} contratos
                   </span>
-                </h3>
+                </div>
                 <ScoreBadge score={p.freelancer.escamboScore} detailed />
                 <p className="muted tiny">
                   Qualidade (nota), experiência (contratos), prova social (avaliações) e responsividade (tempo de
@@ -75,7 +78,9 @@ export function PerfilView() {
             )}
 
             <form className="card" onSubmit={saveFreelancer}>
-              <h3>👩‍💻 Freelancer</h3>
+              <h3>
+                <Briefcase size={16} /> Freelancer
+              </h3>
               <Field label="Nome">
                 <Input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
               </Field>
@@ -94,7 +99,9 @@ export function PerfilView() {
             </form>
 
             <form className="card" onSubmit={saveClient}>
-              <h3>🙋 Cliente {p.client && <span className="chip rank">ativo</span>}</h3>
+              <h3>
+                <User size={16} /> Cliente {p.client && <span className="chip rank">ativo</span>}
+              </h3>
               <Field label="Nome">
                 <Input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
               </Field>

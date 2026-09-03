@@ -1,5 +1,6 @@
+import { Bell, CheckCheck } from 'lucide-react';
 import { Button, PageHeader, QueryState } from '../../components/ui';
-import { dt } from '../../lib/format';
+import { dtm } from '../../lib/format';
 import { useMarkAllNotificationsRead, useMarkNotificationRead, useNotifications } from '../../lib/hooks';
 
 export function NotificacoesView() {
@@ -9,22 +10,19 @@ export function NotificacoesView() {
   const unread = notifications.data?.unreadCount ?? 0;
 
   return (
-    <div className="view">
+    <div className="page">
       <PageHeader
-        title={
-          <>
-            Notificações {unread > 0 && <span className="chip rank">{unread} não lidas</span>}
-          </>
-        }
+        title="Notificações"
+        subtitle={unread > 0 ? `${unread} não lida${unread > 1 ? 's' : ''}` : 'Tudo em dia.'}
         action={
           unread > 0 ? (
-            <Button variant="dark" disabled={markAll.isPending} onClick={() => markAll.mutate()}>
-              Marcar todas
+            <Button variant="secondary" disabled={markAll.isPending} onClick={() => markAll.mutate()}>
+              <CheckCheck size={16} /> Marcar todas como lidas
             </Button>
           ) : undefined
         }
       />
-      <section className="card wide">
+      <section className="card">
         <QueryState
           isLoading={notifications.isLoading}
           error={notifications.error}
@@ -37,10 +35,15 @@ export function NotificacoesView() {
             <ul className="list">
               {d.items.map((n) => (
                 <li key={n.id} className={n.isRead ? '' : 'unread'} onClick={() => !n.isRead && markOne.mutate(n.id)}>
-                  <div>
-                    <strong>{n.title}</strong>
-                    {n.body && <div className="muted">{n.body}</div>}
-                    <div className="muted tiny">{dt(n.createdAt)}</div>
+                  <div className="rank-left">
+                    <span className="kpi-ico">
+                      <Bell size={16} />
+                    </span>
+                    <div>
+                      <strong>{n.title}</strong>
+                      {n.body && <div className="muted">{n.body}</div>}
+                      <div className="muted tiny">{dtm(n.createdAt)}</div>
+                    </div>
                   </div>
                   {!n.isRead && <span className="dot" />}
                 </li>

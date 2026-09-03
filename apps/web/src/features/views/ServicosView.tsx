@@ -1,3 +1,4 @@
+import { MapPin, Plus, Rocket, Search } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Category, Service } from '@escambo/types';
 import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
@@ -96,10 +97,15 @@ export function ServicosView() {
   }
 
   return (
-    <div className="view">
+    <div className="page">
       <PageHeader
         title="Serviços"
-        action={<Button onClick={() => setOpen((o) => !o)}>{open ? 'Fechar' : '+ Novo serviço'}</Button>}
+        subtitle="Encontre quem faz — ou publique o que você faz."
+        action={
+          <Button variant={open ? 'secondary' : 'primary'} onClick={() => setOpen((o) => !o)}>
+            <Plus size={16} /> {open ? 'Fechar' : 'Novo serviço'}
+          </Button>
+        }
       />
 
       <form
@@ -110,15 +116,15 @@ export function ServicosView() {
         }}
       >
         <Input placeholder="Buscar serviços…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Button variant="dark" type="submit">
-          Buscar
+        <Button variant="secondary" type="submit">
+          <Search size={16} /> Buscar
         </Button>
       </form>
 
       {/* Descoberta local (diferencial #2) */}
       <div className="geo-bar">
         <Button variant="ghost" className={`toggle ${geo ? 'on' : ''}`} onClick={toggleNearMe} disabled={locating}>
-          📍 {locating ? 'Localizando…' : geo ? 'Perto de mim: ativo' : 'Perto de mim'}
+          <MapPin size={16} /> {locating ? 'Localizando…' : geo ? 'Perto de mim: ativo' : 'Perto de mim'}
         </Button>
         {geo && (
           <>
@@ -178,17 +184,21 @@ export function ServicosView() {
                 <div key={s.id} className="card service">
                   <div className="svc-top">
                     <strong>{s.title}</strong>
-                    <span>
-                      {s.boosted && <span className="chip level">🚀 Destaque</span>}{' '}
+                    <span className="svc-actions">
+                      {s.boosted && (
+                        <span className="chip level">
+                          <Rocket size={12} /> Destaque
+                        </span>
+                      )}
                       {s.isRemote && <span className="tag">remoto</span>}
                     </span>
                   </div>
                   <p className="muted clamp">{s.description}</p>
                   <div className="svc-foot">
                     <span className="price">{s.price != null ? brl(s.price) : 'a combinar'}</span>
-                    <span className="muted">
+                    <span className="muted tiny">
                       {s.distanceKm != null
-                        ? `📍 ${s.distanceKm} km`
+                        ? `${s.distanceKm} km de você`
                         : s.deliveryDays != null
                           ? `${s.deliveryDays} dias`
                           : ''}
@@ -197,7 +207,7 @@ export function ServicosView() {
                   <div className="svc-actions">
                     {mine ? (
                       <Button variant="mini" onClick={() => setBoost(s)} disabled={s.boosted}>
-                        {s.boosted ? '🚀 Impulsionado' : '🚀 Impulsionar'}
+                        <Rocket size={14} /> {s.boosted ? 'Impulsionado' : 'Impulsionar'}
                       </Button>
                     ) : (
                       <Button variant="mini" onClick={() => setContratar(s)}>

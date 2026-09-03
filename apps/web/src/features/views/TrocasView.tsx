@@ -1,3 +1,4 @@
+import { ArrowLeftRight, Plus } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
 import type { BarterAgreement, Service } from '@escambo/types';
 import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
@@ -85,19 +86,21 @@ export function TrocasView() {
   }
 
   return (
-    <div className="view">
+    <div className="page">
       <PageHeader
-        title="Trocas ⇄"
+        title="Trocas"
+        subtitle={
+          <>
+            Troque serviço por serviço. Quem oferece menos paga a <b>torna</b>; a plataforma retém{' '}
+            {Math.round(PLATFORM_FEE_RATE * 100)}% do maior valor.
+          </>
+        }
         action={
-          <Button onClick={() => setOpen((o) => !o)} disabled={others.length === 0}>
-            {open ? 'Fechar' : '+ Propor troca'}
+          <Button variant={open ? 'secondary' : 'primary'} onClick={() => setOpen((o) => !o)} disabled={others.length === 0}>
+            <Plus size={16} /> {open ? 'Fechar' : 'Propor troca'}
           </Button>
         }
       />
-      <p className="muted">
-        O coração do Escambo: troque serviço por serviço. Quem oferece menos paga a <b>torna</b> (a
-        diferença), e a plataforma retém {Math.round(PLATFORM_FEE_RATE * 100)}% do maior valor.
-      </p>
 
       {open && (
         <form className="card" onSubmit={submit}>
@@ -116,18 +119,10 @@ export function TrocasView() {
           </Field>
 
           <div className="tabs">
-            <button
-              type="button"
-              className={offerMode === 'service' ? 'active' : ''}
-              onClick={() => setOfferMode('service')}
-            >
+            <button type="button" className={offerMode === 'service' ? 'active' : ''} onClick={() => setOfferMode('service')}>
               Ofereço um serviço meu
             </button>
-            <button
-              type="button"
-              className={offerMode === 'describe' ? 'active' : ''}
-              onClick={() => setOfferMode('describe')}
-            >
+            <button type="button" className={offerMode === 'describe' ? 'active' : ''} onClick={() => setOfferMode('describe')}>
               Descrever oferta
             </button>
           </div>
@@ -147,31 +142,18 @@ export function TrocasView() {
             </Field>
           ) : (
             <Field label="O que ofereço">
-              <Input
-                value={offerDesc}
-                onChange={(e) => setOfferDesc(e.target.value)}
-                placeholder="Ex.: edição de 3 vídeos curtos"
-                required
-                minLength={3}
-              />
+              <Input value={offerDesc} onChange={(e) => setOfferDesc(e.target.value)} placeholder="Ex.: edição de 3 vídeos curtos" required minLength={3} />
             </Field>
           )}
 
           <Field label="Valor estimado da minha oferta (R$)">
-            <Input
-              type="number"
-              min={1}
-              step="0.01"
-              value={offerValue}
-              onChange={(e) => setOfferValue(e.target.value)}
-              required
-            />
+            <Input type="number" min={1} step="0.01" value={offerValue} onChange={(e) => setOfferValue(e.target.value)} required />
           </Field>
 
           {target && offered > 0 && (
-            <div className="escrow">
-              {tornaHint} · taxa da plataforma {brl(fee)}
-              <span> — você recebe {brl(requested)} em serviço por {brl(offered)}</span>
+            <div className="summary">
+              <strong>{tornaHint}</strong>
+              <span className="muted tiny">taxa {brl(fee)} · você recebe {brl(requested)} em serviço por {brl(offered)}</span>
             </div>
           )}
 
@@ -205,9 +187,7 @@ export function TrocasView() {
                 <div key={b.id} className="card service">
                   <div className="svc-top">
                     <span className="chip rank">{iAmProposer ? 'Você propôs' : 'Recebida'}</span>
-                    <span className={`pill ${pillClass(b.status)}`}>
-                      {BARTER_STATUS_LABEL[b.status] ?? b.status}
-                    </span>
+                    <span className={`pill ${pillClass(b.status)}`}>{BARTER_STATUS_LABEL[b.status] ?? b.status}</span>
                   </div>
                   <div className="swap">
                     <div className="swap-side">
@@ -215,7 +195,9 @@ export function TrocasView() {
                       <strong>{svcLabel(b.offeredServiceId, b.offeredDescription)}</strong>
                       <span className="price">{brl(b.estimatedValueOffered)}</span>
                     </div>
-                    <span className="arrow">⇄</span>
+                    <span className="arrow">
+                      <ArrowLeftRight size={18} />
+                    </span>
                     <div className="swap-side">
                       <span className="muted tiny">{iAmProposer ? 'Você recebe' : 'Querem'}</span>
                       <strong>{svcLabel(b.requestedServiceId, b.requestedDescription)}</strong>
@@ -223,28 +205,20 @@ export function TrocasView() {
                     </div>
                   </div>
                   <div className="svc-foot">
-                    <span className="muted">{tornaLine}</span>
+                    <span className="muted tiny">{tornaLine}</span>
                     <span className="muted tiny">{dt(b.createdAt)}</span>
                   </div>
-                  {b.status === 'active' && (
-                    <p className="ok">✓ 2 contratos recíprocos gerados — acompanhe em Contratações</p>
-                  )}
+                  {b.status === 'active' && <p className="ok">2 contratos recíprocos gerados — acompanhe em Início</p>}
                   {b.status === 'proposed' && (
-                    <div className="acts">
+                    <div className="svc-actions">
                       {iAmReceiver && (
                         <>
-                          <Button variant="mini" disabled={act.isPending} onClick={() => void run(b.id, 'accept')}>
-                            Aceitar
-                          </Button>
-                          <Button variant="mini" disabled={act.isPending} onClick={() => void run(b.id, 'reject')}>
-                            Recusar
-                          </Button>
+                          <Button variant="mini" disabled={act.isPending} onClick={() => void run(b.id, 'accept')}>Aceitar</Button>
+                          <Button variant="mini" disabled={act.isPending} onClick={() => void run(b.id, 'reject')}>Recusar</Button>
                         </>
                       )}
                       {iAmProposer && (
-                        <Button variant="mini" disabled={act.isPending} onClick={() => void run(b.id, 'cancel')}>
-                          Cancelar
-                        </Button>
+                        <Button variant="mini" disabled={act.isPending} onClick={() => void run(b.id, 'cancel')}>Cancelar</Button>
                       )}
                     </div>
                   )}
