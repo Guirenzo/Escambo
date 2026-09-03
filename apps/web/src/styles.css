@@ -667,3 +667,57 @@ button.dark {
   padding: 1px 6px;
   font-size: 0.68rem;
 }
+
+/* ---------- Fundação: roteador, estados, toasts ---------- */
+a.navbtn {
+  text-decoration: none;
+  display: inline-block;
+}
+.state {
+  padding: 12px 0;
+  margin: 0;
+}
+.error-state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.toaster {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1000;
+  max-width: 360px;
+}
+.toast {
+  padding: 10px 14px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  animation: toast-in 0.2s ease-out;
+}
+.toast-success {
+  background: var(--verde);
+}
+.toast-error {
+  background: var(--erro);
+}
+.toast-info {
+  background: #1a56c4;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

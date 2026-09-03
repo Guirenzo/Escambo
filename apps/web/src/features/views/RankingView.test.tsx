@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { RankingView } from './RankingView';
 
@@ -18,17 +20,20 @@ vi.mock('../../lib/api', () => ({
   },
 }));
 
+/** Providers mínimos da fundação (camada de dados) para renderizar telas em teste. */
+function wrap(ui: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
+}
+
 describe('RankingView', () => {
   it('renderiza o pódio, a lista e o destaque do usuário logado', async () => {
-    render(<RankingView />);
+    render(wrap(<RankingView />));
 
-    // pódio (top 3) + lista (4º) com dados reais do endpoint
     expect(await screen.findByText('Marina Alves')).toBeInTheDocument();
     expect(screen.getByText('Bruno Costa')).toBeInTheDocument();
     expect(screen.getByText('Rafael Souza')).toBeInTheDocument();
     expect(screen.getByText('Carla Dias')).toBeInTheDocument();
-
-    // posição própria destacada (vem do perfil de gamificação)
-    expect(screen.getByText('Você é #3')).toBeInTheDocument();
+    expect(await screen.findByText('Você é #3')).toBeInTheDocument();
   });
 });

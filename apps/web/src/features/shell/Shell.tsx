@@ -1,46 +1,29 @@
-import { useState } from 'react';
+import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../../lib/auth';
-import { useContractView } from '../../lib/contract-view';
-import { CarteiraView } from '../views/CarteiraView';
-import { InicioView } from '../views/InicioView';
-import { NotificacoesView } from '../views/NotificacoesView';
-import { PerfilView } from '../views/PerfilView';
-import { RankingView } from '../views/RankingView';
-import { SalaContratoView } from '../views/SalaContratoView';
-import { ServicosView } from '../views/ServicosView';
-import { TrocasView } from '../views/TrocasView';
 
-type View = 'inicio' | 'servicos' | 'trocas' | 'ranking' | 'carteira' | 'notificacoes' | 'perfil';
-
-const NAV: { key: View; label: string; icon: string }[] = [
-  { key: 'inicio', label: 'Início', icon: '🏠' },
-  { key: 'servicos', label: 'Serviços', icon: '🗂️' },
-  { key: 'trocas', label: 'Trocas', icon: '⇄' },
-  { key: 'ranking', label: 'Ranking', icon: '🏆' },
-  { key: 'carteira', label: 'Carteira', icon: '💰' },
-  { key: 'notificacoes', label: 'Notificações', icon: '🔔' },
-  { key: 'perfil', label: 'Perfil', icon: '👤' },
+const NAV: { to: string; label: string; icon: string; end?: boolean }[] = [
+  { to: '/', label: 'Início', icon: '🏠', end: true },
+  { to: '/servicos', label: 'Serviços', icon: '🗂️' },
+  { to: '/trocas', label: 'Trocas', icon: '⇄' },
+  { to: '/ranking', label: 'Ranking', icon: '🏆' },
+  { to: '/carteira', label: 'Carteira', icon: '💰' },
+  { to: '/notificacoes', label: 'Notificações', icon: '🔔' },
+  { to: '/perfil', label: 'Perfil', icon: '👤' },
 ];
 
+/** Layout autenticado: topbar + navegação por rotas reais (URL, deep link, voltar). */
 export function Shell() {
   const { user, logout } = useAuth();
-  const { openId, open } = useContractView();
-  const [view, setView] = useState<View>('inicio');
-
   return (
     <div className="shell">
       <header className="topbar">
         <span className="logo">Escambo</span>
         <nav className="nav">
           {NAV.map((n) => (
-            <button
-              key={n.key}
-              className={`navbtn ${view === n.key ? 'active' : ''}`}
-              onClick={() => setView(n.key)}
-            >
+            <NavLink key={n.to} to={n.to} end={n.end} className="navbtn">
               <span className="ico">{n.icon}</span>
               {n.label}
-            </button>
+            </NavLink>
           ))}
         </nav>
         <div className="topbar-right">
@@ -51,19 +34,7 @@ export function Shell() {
         </div>
       </header>
       <main className="content">
-        {openId != null ? (
-          <SalaContratoView contractId={openId} onBack={() => open(null)} />
-        ) : (
-          <>
-            {view === 'inicio' && <InicioView />}
-            {view === 'servicos' && <ServicosView />}
-            {view === 'trocas' && <TrocasView />}
-            {view === 'ranking' && <RankingView />}
-            {view === 'carteira' && <CarteiraView />}
-            {view === 'notificacoes' && <NotificacoesView />}
-            {view === 'perfil' && <PerfilView />}
-          </>
-        )}
+        <Outlet />
       </main>
     </div>
   );

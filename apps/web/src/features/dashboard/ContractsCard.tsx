@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Contract } from '@escambo/types';
-import { api } from '../../lib/api';
-import { useContractView } from '../../lib/contract-view';
+import { Button, Pill } from '../../components/ui';
 import { STATUS_LABEL, brl } from '../../lib/format';
+import { useContractAction, useDeliverContract } from '../../lib/hooks';
+import { useToast } from '../../lib/toast';
 
 type Action = 'accept' | 'reject' | 'approve' | 'cancel' | 'deliver';
 
@@ -28,59 +29,50 @@ function actionsFor(status: string): { label: string; action: Action }[] {
   }
 }
 
-export function ContractsCard({ contracts, onChange }: { contracts: Contract[]; onChange: () => void }) {
-  const { open } = useContractView();
-  const [busy, setBusy] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+export function ContractsCard({ contracts }: { contracts: Contract[] }) {
+  const navigate = useNavigate();
+  const toast = useToast();
+  const act = useContractAction();
+  const deliver = useDeliverContract();
+  const busy = act.isPending || deliver.isPending;
 
-  async function run(id: number, action: Action) {
-    setBusy(id);
-    setError(null);
+  async function run(id: number, action: Action): Promise<void> {
     try {
       if (action === 'deliver') {
         const message = window.prompt('Mensagem da entrega:') ?? '';
         if (!message.trim()) return;
-        await api.deliverContract(id, message);
+        await deliver.mutateAsync({ id, message });
       } else {
-        await api.contractAction(id, action);
+        await act.mutateAsync({ id, action });
       }
-      onChange();
+      toast.success('Contratação atualizada');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erro na ação');
-    } finally {
-      setBusy(null);
+      toast.error(e instanceof Error ? e.message : 'Erro na ação');
     }
   }
 
   return (
-    <section className="card wide">
-      <h3>🤝 Minhas contratações</h3>
-      {error && <p className="error">{error}</p>}
-      {contracts.length === 0 ? (
-        <p className="muted">Nenhuma contratação ainda.</p>
-      ) : (
-        <ul className="list">
-          {contracts.map((c) => (
-            <li key={c.id}>
-              <div className="grow">
-                <strong>{c.title}</strong>
-                <span className="muted"> · {brl(c.price)}</span>
-                <div className="acts">
-                  <button className="mini" onClick={() => open(c.id)}>
-                    💬 Abrir sala
-                  </button>
-                  {actionsFor(c.status).map((a) => (
-                    <button key={a.action} className="mini" disabled={busy === c.id} onClick={() => run(c.id, a.action)}>
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <span className={`pill status-${c.status}`}>{STATUS_LABEL[c.status] ?? c.status}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <ul className="list">
+      {contracts.map((c) => (
+        <li key={c.id}>
+          <div className="grow">
+            <strong>{c.title}</strong>
+            <span className="muted"> · {brl(c.price)}</span>
+            {c.paymentMode === 'credits' && <span className="tag"> créditos</span>}
+            <div className="acts">
+              <Button variant="mini" onClick={() => navigate(`/contratos/${c.id}`)}>
+                💬 Abrir sala
+              </Button>
+              {actionsFor(c.status).map((a) => (
+                <Button key={a.action} variant="mini" disabled={busy} onClick={() => void run(c.id, a.action)}>
+                  {a.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <Pill status={c.status}>{STATUS_LABEL[c.status] ?? c.status}</Pill>
+        </li>
+      ))}
+    </ul>
   );
 }

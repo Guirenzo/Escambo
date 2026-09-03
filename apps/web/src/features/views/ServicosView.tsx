@@ -1,7 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import type { Category, Service } from '@escambo/types';
-import { api } from '../../lib/api';
+import { useState, type FormEvent } from 'react';
+import type { Category } from '@escambo/types';
+import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
 import { brl } from '../../lib/format';
+import { useCategories, useCreateService, useServices } from '../../lib/hooks';
+import { useToast } from '../../lib/toast';
 
 function flatten(
   cats: Category[],
@@ -16,125 +18,121 @@ function flatten(
 }
 
 export function ServicosView() {
-  const [services, setServices] = useState<Service[]>([]);
-  const [cats, setCats] = useState<{ id: number; label: string }[]>([]);
   const [q, setQ] = useState('');
+  const [submitted, setSubmitted] = useState<string | undefined>(undefined);
+  const services = useServices(submitted);
+  const categories = useCategories();
+  const create = useCreateService();
+  const toast = useToast();
+
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState(0);
   const [price, setPrice] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  function load(query?: string) {
-    void api
-      .listServices(query)
-      .then((r) => setServices(r.items))
-      .catch(() => undefined);
-  }
-  useEffect(() => {
-    load();
-    void api
-      .categories()
-      .then((cs) => {
-        const flat = flatten(cs);
-        setCats(flat);
-        if (flat[0]) setCategoryId(flat[0].id);
-      })
-      .catch(() => undefined);
-  }, []);
+  const flat = categories.data ? flatten(categories.data) : [];
+  const effectiveCategory = categoryId || flat[0]?.id || 0;
 
-  async function submit(e: FormEvent) {
+  async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
     try {
-      await api.createService({
-        categoryId,
+      await create.mutateAsync({
+        categoryId: effectiveCategory,
         title,
         description,
         priceType: 'fixed',
         price: Number(price),
         isRemote: true,
       });
+      toast.success('Serviço publicado!');
       setOpen(false);
       setTitle('');
       setDescription('');
       setPrice('');
-      load();
     } catch (er) {
-      setError(er instanceof Error ? er.message : 'Erro ao publicar');
-    } finally {
-      setSaving(false);
+      toast.error(er instanceof Error ? er.message : 'Erro ao publicar');
     }
   }
 
   return (
     <div className="view">
-      <div className="view-head">
-        <h2>Serviços</h2>
-        <button onClick={() => setOpen((o) => !o)}>{open ? 'Fechar' : '+ Novo serviço'}</button>
-      </div>
+      <PageHeader
+        title="Serviços"
+        action={<Button onClick={() => setOpen((o) => !o)}>{open ? 'Fechar' : '+ Novo serviço'}</Button>}
+      />
 
-      <div className="searchbar">
-        <input placeholder="Buscar serviços…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button className="dark" onClick={() => load(q || undefined)}>
+      <form
+        className="searchbar"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setSubmitted(q.trim() || undefined);
+        }}
+      >
+        <Input placeholder="Buscar serviços…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Button variant="dark" type="submit">
           Buscar
-        </button>
-      </div>
+        </Button>
+      </form>
 
       {open && (
         <form className="card" onSubmit={submit}>
           <h3>Novo serviço</h3>
-          <label>
-            Título
-            <input value={title} onChange={(e) => setTitle(e.target.value)} required minLength={3} />
-          </label>
-          <label>
-            Categoria
-            <select value={categoryId} onChange={(e) => setCategoryId(Number(e.target.value))}>
-              {cats.map((c) => (
+          <Field label="Título">
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} required minLength={3} />
+          </Field>
+          <Field label="Categoria">
+            <Select value={effectiveCategory} onChange={(e) => setCategoryId(Number(e.target.value))}>
+              {flat.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label}
                 </option>
               ))}
-            </select>
-          </label>
-          <label>
-            Descrição
-            <input value={description} onChange={(e) => setDescription(e.target.value)} required minLength={10} />
-          </label>
-          <label>
-            Preço (R$)
-            <input type="number" min={10} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required />
-          </label>
-          {error && <p className="error">{error}</p>}
-          <button type="submit" disabled={saving}>
-            {saving ? 'Salvando…' : 'Publicar'}
-          </button>
+            </Select>
+          </Field>
+          <Field label="Descrição">
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} required minLength={10} />
+          </Field>
+          <Field label="Preço (R$)">
+            <Input type="number" min={10} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required />
+          </Field>
+          <Button type="submit" disabled={create.isPending}>
+            {create.isPending ? 'Salvando…' : 'Publicar'}
+          </Button>
         </form>
       )}
 
-      <div className="cards-grid">
-        {services.length === 0 ? (
-          <p className="muted">Nenhum serviço encontrado.</p>
-        ) : (
-          services.map((s) => (
-            <div key={s.id} className="card service">
-              <div className="svc-top">
-                <strong>{s.title}</strong>
-                {s.isRemote && <span className="tag">remoto</span>}
+      <QueryState
+        isLoading={services.isLoading}
+        error={services.error}
+        data={services.data}
+        isEmpty={(d) => d.items.length === 0}
+        empty="Nenhum serviço encontrado."
+        onRetry={() => void services.refetch()}
+      >
+        {(d) => (
+          <div className="cards-grid">
+            {d.items.map((s) => (
+              <div key={s.id} className="card service">
+                <div className="svc-top">
+                  <strong>{s.title}</strong>
+                  <span>
+                    {s.boosted && <span className="chip level">🚀 Destaque</span>}{' '}
+                    {s.isRemote && <span className="tag">remoto</span>}
+                  </span>
+                </div>
+                <p className="muted clamp">{s.description}</p>
+                <div className="svc-foot">
+                  <span className="price">{s.price != null ? brl(s.price) : 'a combinar'}</span>
+                  <span className="muted">
+                    {s.distanceKm != null ? `${s.distanceKm} km` : s.deliveryDays != null ? `${s.deliveryDays} dias` : ''}
+                  </span>
+                </div>
               </div>
-              <p className="muted clamp">{s.description}</p>
-              <div className="svc-foot">
-                <span className="price">{s.price != null ? brl(s.price) : 'a combinar'}</span>
-                {s.deliveryDays != null && <span className="muted">{s.deliveryDays} dias</span>}
-              </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
-      </div>
+      </QueryState>
     </div>
   );
 }

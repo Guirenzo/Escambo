@@ -1,104 +1,104 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { ClientProfile, FreelancerProfile } from '@escambo/types';
-import { api } from '../../lib/api';
+import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
+import { useProfilesMe, usePutClientProfile, usePutFreelancerProfile } from '../../lib/hooks';
+import { useToast } from '../../lib/toast';
 
 export function PerfilView() {
-  const [freelancer, setFreelancer] = useState<FreelancerProfile | null>(null);
-  const [client, setClient] = useState<ClientProfile | null>(null);
+  const profiles = useProfilesMe();
+  const putFreelancer = usePutFreelancerProfile();
+  const putClient = usePutClientProfile();
+  const toast = useToast();
+
   const [name, setName] = useState('');
   const [headline, setHeadline] = useState('');
   const [bio, setBio] = useState('');
   const [city, setCity] = useState('');
-  const [ok, setOk] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
+  // Preenche o formulário quando o perfil chega (uma vez).
   useEffect(() => {
-    void api
-      .profilesMe()
-      .then((p) => {
-        setFreelancer(p.freelancer);
-        setClient(p.client);
-        const base = p.freelancer ?? p.client;
-        if (base) {
-          setName(base.fullName);
-          setCity(base.city ?? '');
-        }
-        if (p.freelancer) {
-          setHeadline(p.freelancer.headline ?? '');
-          setBio(p.freelancer.bio ?? '');
-        }
-      })
-      .catch(() => undefined);
-  }, []);
+    const p = profiles.data;
+    if (!p) return;
+    const base = p.freelancer ?? p.client;
+    if (base) {
+      setName(base.fullName);
+      setCity(base.city ?? '');
+    }
+    if (p.freelancer) {
+      setHeadline(p.freelancer.headline ?? '');
+      setBio(p.freelancer.bio ?? '');
+    }
+  }, [profiles.data]);
 
-  async function saveFreelancer(e: FormEvent) {
+  async function saveFreelancer(e: FormEvent): Promise<void> {
     e.preventDefault();
-    setOk(null);
-    setError(null);
     try {
-      const p = await api.putFreelancerProfile({ fullName: name, headline, bio, city });
-      setFreelancer(p);
-      setOk('Perfil de freelancer salvo!');
+      await putFreelancer.mutateAsync({ fullName: name, headline, bio, city });
+      toast.success('Perfil de freelancer salvo!');
     } catch (er) {
-      setError(er instanceof Error ? er.message : 'Erro');
+      toast.error(er instanceof Error ? er.message : 'Erro');
     }
   }
-  async function saveClient(e: FormEvent) {
+
+  async function saveClient(e: FormEvent): Promise<void> {
     e.preventDefault();
-    setOk(null);
-    setError(null);
     try {
-      const p = await api.putClientProfile({ fullName: name, city });
-      setClient(p);
-      setOk('Perfil de cliente salvo!');
+      await putClient.mutateAsync({ fullName: name, city });
+      toast.success('Perfil de cliente salvo!');
     } catch (er) {
-      setError(er instanceof Error ? er.message : 'Erro');
+      toast.error(er instanceof Error ? er.message : 'Erro');
     }
   }
 
   return (
     <div className="view">
-      <h2>Perfil</h2>
-      {ok && <p className="ok">{ok}</p>}
-      {error && <p className="error">{error}</p>}
-      <div className="grid">
-        <form className="card" onSubmit={saveFreelancer}>
-          <h3>
-            👩‍💻 Freelancer{' '}
-            {freelancer && <span className="chip rank">⭐ {freelancer.avgRating.toFixed(1)}</span>}
-          </h3>
-          <label>
-            Nome
-            <input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
-          </label>
-          <label>
-            Headline
-            <input value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="Dev Full Stack | 5 anos" />
-          </label>
-          <label>
-            Bio
-            <input value={bio} onChange={(e) => setBio(e.target.value)} />
-          </label>
-          <label>
-            Cidade
-            <input value={city} onChange={(e) => setCity(e.target.value)} />
-          </label>
-          <button type="submit">Salvar freelancer</button>
-        </form>
+      <PageHeader title="Perfil" />
+      <QueryState isLoading={profiles.isLoading} error={profiles.error} data={profiles.data} onRetry={() => void profiles.refetch()}>
+        {(p) => (
+          <div className="grid">
+            <form className="card" onSubmit={saveFreelancer}>
+              <h3>
+                👩‍💻 Freelancer{' '}
+                {p.freelancer && (
+                  <>
+                    <span className="chip rank">⭐ {p.freelancer.avgRating.toFixed(1)}</span>{' '}
+                    <span className="chip level" title={`Escambo Score ${p.freelancer.escamboScore.score}/100`}>
+                      🛡️ {p.freelancer.escamboScore.score} · {p.freelancer.escamboScore.tier}
+                    </span>
+                  </>
+                )}
+              </h3>
+              <Field label="Nome">
+                <Input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
+              </Field>
+              <Field label="Headline">
+                <Input value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="Dev Full Stack | 5 anos" />
+              </Field>
+              <Field label="Bio">
+                <Input value={bio} onChange={(e) => setBio(e.target.value)} />
+              </Field>
+              <Field label="Cidade">
+                <Input value={city} onChange={(e) => setCity(e.target.value)} />
+              </Field>
+              <Button type="submit" disabled={putFreelancer.isPending}>
+                Salvar freelancer
+              </Button>
+            </form>
 
-        <form className="card" onSubmit={saveClient}>
-          <h3>🙋 Cliente {client && <span className="chip rank">ativo</span>}</h3>
-          <label>
-            Nome
-            <input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
-          </label>
-          <label>
-            Cidade
-            <input value={city} onChange={(e) => setCity(e.target.value)} />
-          </label>
-          <button type="submit">Salvar cliente</button>
-        </form>
-      </div>
+            <form className="card" onSubmit={saveClient}>
+              <h3>🙋 Cliente {p.client && <span className="chip rank">ativo</span>}</h3>
+              <Field label="Nome">
+                <Input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
+              </Field>
+              <Field label="Cidade">
+                <Input value={city} onChange={(e) => setCity(e.target.value)} />
+              </Field>
+              <Button type="submit" disabled={putClient.isPending}>
+                Salvar cliente
+              </Button>
+            </form>
+          </div>
+        )}
+      </QueryState>
     </div>
   );
 }

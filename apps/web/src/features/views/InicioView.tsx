@@ -1,30 +1,31 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { Contract, GamificationProfile, Wallet } from '@escambo/types';
-import { api } from '../../lib/api';
+import { QueryState } from '../../components/ui';
+import { useContracts, useGamification, useWallet } from '../../lib/hooks';
 import { ContractsCard } from '../dashboard/ContractsCard';
 import { GamificationCard } from '../dashboard/GamificationCard';
 import { WalletCard } from '../dashboard/WalletCard';
 
 export function InicioView() {
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [gam, setGam] = useState<GamificationProfile | null>(null);
-  const [contracts, setContracts] = useState<Contract[]>([]);
-
-  const load = useCallback(() => {
-    void api.wallet().then(setWallet).catch(() => undefined);
-    void api.gamification().then(setGam).catch(() => undefined);
-    void api
-      .contracts()
-      .then((r) => setContracts(r.items))
-      .catch(() => undefined);
-  }, []);
-  useEffect(() => load(), [load]);
+  const wallet = useWallet();
+  const gam = useGamification();
+  const contracts = useContracts();
 
   return (
     <div className="grid">
-      <WalletCard wallet={wallet} />
-      <GamificationCard profile={gam} />
-      <ContractsCard contracts={contracts} onChange={load} />
+      <WalletCard wallet={wallet.data ?? null} />
+      <GamificationCard profile={gam.data ?? null} />
+      <section className="card wide">
+        <h3>🤝 Minhas contratações</h3>
+        <QueryState
+          isLoading={contracts.isLoading}
+          error={contracts.error}
+          data={contracts.data}
+          isEmpty={(d) => d.items.length === 0}
+          empty="Nenhuma contratação ainda."
+          onRetry={() => void contracts.refetch()}
+        >
+          {(d) => <ContractsCard contracts={d.items} />}
+        </QueryState>
+      </section>
     </div>
   );
 }

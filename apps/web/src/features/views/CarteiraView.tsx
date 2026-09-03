@@ -1,91 +1,92 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { Wallet, Withdrawal } from '@escambo/types';
-import { api } from '../../lib/api';
+import { useState, type FormEvent } from 'react';
+import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
 import { brl } from '../../lib/format';
+import { useRequestWithdrawal, useWallet, useWithdrawals } from '../../lib/hooks';
+import { useToast } from '../../lib/toast';
 
 export function CarteiraView() {
-  const [wallet, setWallet] = useState<Wallet | null>(null);
-  const [list, setList] = useState<Withdrawal[]>([]);
+  const wallet = useWallet();
+  const withdrawals = useWithdrawals();
+  const request = useRequestWithdrawal();
+  const toast = useToast();
   const [amount, setAmount] = useState('');
   const [pixKey, setPixKey] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    void api.wallet().then(setWallet).catch(() => undefined);
-    void api
-      .withdrawals()
-      .then((r) => setList(r.items))
-      .catch(() => undefined);
-  }, []);
-  useEffect(() => load(), [load]);
-
-  async function submit(e: FormEvent) {
+  async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
-    setOk(null);
     try {
-      await api.requestWithdrawal({ amount: Number(amount), method: 'pix', pixKey });
-      setOk('Saque solicitado!');
+      await request.mutateAsync({ amount: Number(amount), method: 'pix', pixKey });
+      toast.success('Saque solicitado!');
       setAmount('');
       setPixKey('');
-      load();
     } catch (er) {
-      setError(er instanceof Error ? er.message : 'Erro no saque');
-    } finally {
-      setBusy(false);
+      toast.error(er instanceof Error ? er.message : 'Erro no saque');
     }
   }
 
+  const w = wallet.data;
+
   return (
     <div className="view">
-      <h2>Carteira</h2>
+      <PageHeader title="Carteira" />
       <div className="grid">
         <section className="card">
           <h3>💰 Saldo</h3>
-          <p className="big">{wallet ? brl(wallet.balance) : '—'}</p>
+          <p className="big">{w ? brl(w.balance) : '—'}</p>
           <p className="muted">disponível para saque</p>
           <div className="escrow">
-            🔒 {wallet ? brl(wallet.balancePending) : '—'} <span>retido em escrow</span>
+            🔒 {w ? brl(w.balancePending) : '—'} <span>retido em escrow</span>
           </div>
+        </section>
+
+        <section className="card">
+          <h3>🪙 Créditos Escambo</h3>
+          <p className="big">{w ? `${w.credits}` : '—'}</p>
+          <p className="muted">créditos para trocar por serviços</p>
+          {w && w.creditsPending > 0 && (
+            <div className="escrow">
+              🔒 {w.creditsPending} <span>créditos em escrow</span>
+            </div>
+          )}
         </section>
 
         <form className="card" onSubmit={submit}>
           <h3>🏧 Solicitar saque</h3>
-          <label>
-            Valor (R$)
-            <input type="number" min={20} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
-          </label>
-          <label>
-            Chave PIX
-            <input value={pixKey} onChange={(e) => setPixKey(e.target.value)} required placeholder="e-mail / telefone / aleatória" />
-          </label>
-          {error && <p className="error">{error}</p>}
-          {ok && <p className="ok">{ok}</p>}
-          <button type="submit" disabled={busy}>
-            {busy ? '…' : 'Sacar (mín. R$20)'}
-          </button>
+          <Field label="Valor (R$)">
+            <Input type="number" min={20} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
+          </Field>
+          <Field label="Chave PIX">
+            <Input value={pixKey} onChange={(e) => setPixKey(e.target.value)} required placeholder="e-mail / telefone / aleatória" />
+          </Field>
+          <Button type="submit" disabled={request.isPending}>
+            {request.isPending ? '…' : 'Sacar (mín. R$20)'}
+          </Button>
         </form>
 
         <section className="card wide">
           <h3>Histórico de saques</h3>
-          {list.length === 0 ? (
-            <p className="muted">Nenhum saque ainda.</p>
-          ) : (
-            <ul className="list">
-              {list.map((w) => (
-                <li key={w.id}>
-                  <div>
-                    <strong>{brl(w.amount)}</strong>
-                    <span className="muted"> · {w.method} · {w.maskedDestination}</span>
-                  </div>
-                  <span className="pill">{w.status}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <QueryState
+            isLoading={withdrawals.isLoading}
+            error={withdrawals.error}
+            data={withdrawals.data}
+            isEmpty={(d) => d.items.length === 0}
+            empty="Nenhum saque ainda."
+            onRetry={() => void withdrawals.refetch()}
+          >
+            {(d) => (
+              <ul className="list">
+                {d.items.map((x) => (
+                  <li key={x.id}>
+                    <div>
+                      <strong>{brl(x.amount)}</strong>
+                      <span className="muted"> · {x.method} · {x.maskedDestination}</span>
+                    </div>
+                    <span className="pill">{x.status}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </QueryState>
         </section>
       </div>
     </div>
