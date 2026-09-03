@@ -1539,3 +1539,13 @@ button.toggle.on {
 .table td:last-child {
   white-space: nowrap;
 }
+
+/* Trocas: o par "oferece ⇄ recebe" precisa de largura pra não truncar títulos. */
+.cards-grid.swaps {
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+}
+@media (max-width: 720px) {
+  .cards-grid.swaps {
+    grid-template-columns: 1fr;
+  }
+}

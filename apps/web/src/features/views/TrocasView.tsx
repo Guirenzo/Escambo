@@ -172,7 +172,7 @@ export function TrocasView() {
         onRetry={() => void barters.refetch()}
       >
         {(d) => (
-          <div className="cards-grid">
+          <div className="cards-grid swaps">
             {d.items.map((b: BarterAgreement) => {
               const iAmProposer = b.proposerId === myId;
               const iAmReceiver = b.receiverId === myId;
