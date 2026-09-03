@@ -16,9 +16,10 @@
 5. [RN-31 a RN-40 — Pagamentos e Carteira](#5-rn-31-a-rn-40--pagamentos-e-carteira)
 6. [RN-41 a RN-50 — Avaliações e Reputação](#6-rn-41-a-rn-50--avaliações-e-reputação)
 7. [RN-51 a RN-60 — Gamificação](#7-rn-51-a-rn-60--gamificação)
-8. [RN-61 a RN-70 — Suporte e Disputas](#8-rn-61-a-rn-70--suporte-e-disputas)
-9. [RN-71 a RN-80 — Conformidade e LGPD](#9-rn-71-a-rn-80--conformidade-e-lgpd)
-10. [Tabela Consolidada](#10-tabela-consolidada)
+8. [RN-61 a RN-65 — Suporte e Disputas](#8-rn-61-a-rn-65--suporte-e-disputas)
+9. [RN-66 a RN-70 — Troca, Pacotes e Confiança](#81-rn-66-a-rn-70--troca-pacotes-e-confiança)
+10. [RN-71 a RN-80 — Conformidade e LGPD](#9-rn-71-a-rn-80--conformidade-e-lgpd)
+11. [Tabela Consolidada](#10-tabela-consolidada)
 
 ---
 
@@ -719,7 +720,7 @@ Cada regra possui:
 
 ---
 
-## 8. RN-61 a RN-70 — Suporte e Disputas
+## 8. RN-61 a RN-65 — Suporte e Disputas
 
 ---
 
@@ -775,6 +776,65 @@ Cada regra possui:
 | **Descrição** | Tickets marcados como "Resolvido" são automaticamente **encerrados após 5 dias** sem nova manifestação do usuário |
 | **Impacto** | Mantém a fila de suporte organizada |
 | **UC Relacionado** | UC-10 |
+
+---
+
+## 8.1 RN-66 a RN-70 — Troca, Pacotes e Confiança
+
+---
+
+### RN-066 — Equivalência e torna na troca
+
+| Campo | Detalhe |
+|---|---|
+| **Categoria** | Troca |
+| **Descrição** | Em uma troca de serviços, o sistema estima o valor de cada lado. Quando os valores não são equivalentes, a diferença (**torna**) é paga em dinheiro e retida em **escrow**. A comissão de **15%** incide sobre o **maior valor estimado** da troca |
+| **Impacto** | Garante remuneração justa e receita da plataforma mesmo em transações sem dinheiro integral |
+| **UC Relacionado** | UC-06 |
+
+---
+
+### RN-067 — Aceite bilateral e contratos recíprocos
+
+| Campo | Detalhe |
+|---|---|
+| **Categoria** | Troca |
+| **Descrição** | Uma troca só se efetiva com **aceite explícito das duas partes**. Ao ser aceita, o sistema gera **dois contratos recíprocos vinculados**, cada um percorrendo o fluxo normal (execução, entrega, aprovação). O cancelamento de um lado abre disputa sobre a troca inteira |
+| **Impacto** | Mantém a rastreabilidade e a segurança do escrow nas duas pontas da troca |
+| **UC Relacionado** | UC-05, UC-06 |
+
+---
+
+### RN-068 — Pacotes por serviço
+
+| Campo | Detalhe |
+|---|---|
+| **Categoria** | Serviços |
+| **Descrição** | Cada serviço pode ter **no máximo 3 pacotes** (basic, standard, premium). O preço de qualquer pacote respeita o **mínimo de R$ 10,00** (RN-016). O cliente contrata um pacote específico |
+| **Impacto** | Padroniza ofertas em níveis e dá clareza de escopo/preço ao cliente |
+| **UC Relacionado** | UC-03, UC-04 |
+
+---
+
+### RN-069 — Escrow por marco (milestones)
+
+| Campo | Detalhe |
+|---|---|
+| **Categoria** | Pagamentos |
+| **Descrição** | Contratos divididos em marcos têm **cada marco financiado e liberado individualmente**. A soma dos marcos deve ser igual ao valor total do contrato. A aprovação de um marco libera apenas o valor daquele marco |
+| **Impacto** | Reduz o risco das duas partes em projetos longos e de maior valor |
+| **UC Relacionado** | UC-06 |
+
+---
+
+### RN-070 — Denúncias e ação cautelar
+
+| Campo | Detalhe |
+|---|---|
+| **Categoria** | Moderação |
+| **Descrição** | Qualquer usuário pode denunciar conteúdo ou perfil. Denúncias por **fraude ou ilegalidade** entram em revisão prioritária; conteúdo com **múltiplas denúncias procedentes** pode ser **pausado cautelarmente** até análise da equipe |
+| **Impacto** | Protege a comunidade e a reputação da plataforma (trust & safety) |
+| **UC Relacionado** | UC-10, UC-11 |
 
 ---
 
@@ -906,6 +966,11 @@ Cada regra possui:
 | RN-063 | Disputas | Resolução administrativa vinculante | UC-10 |
 | RN-064 | Suporte | Máximo 3 tickets simultâneos | UC-10 |
 | RN-065 | Suporte | Ticket resolvido encerra em 5 dias | UC-10 |
+| RN-066 | Troca | Equivalência e torna; comissão sobre o maior valor | UC-06 |
+| RN-067 | Troca | Aceite bilateral gera contratos recíprocos | UC-05, UC-06 |
+| RN-068 | Serviços | Máximo 3 pacotes por serviço (basic/standard/premium) | UC-03, UC-04 |
+| RN-069 | Pagamentos | Escrow por marco (milestones) | UC-06 |
+| RN-070 | Moderação | Denúncias e ação cautelar | UC-10, UC-11 |
 | RN-071 | LGPD | Consentimento explícito no cadastro | UC-01 |
 | RN-072 | LGPD | Direito ao esquecimento em 15 dias úteis | UC-11 |
 | RN-073 | LGPD | Anonimização após 24 meses inativo | UC-11 |
@@ -916,6 +981,6 @@ Cada regra possui:
 
 <div align="center">
 
-*regras-de-negocio.md — Escambo v1.0.0 — NP2 — PAC Extensionista VII — Católica SC — 2026*
+*regras-de-negocio.md — Escambo v1.1.0 — NP2 — PAC Extensionista VII — Católica SC — 2026*
 
 </div>

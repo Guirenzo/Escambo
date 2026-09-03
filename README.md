@@ -1,5 +1,6 @@
 <div align="center">
 
+<img src="https://github.com/Guirenzo/Escambo/actions/workflows/ci.yml/badge.svg" alt="CI" />
 <img src="https://img.shields.io/badge/status-em%20planejamento-yellow?style=for-the-badge&labelColor=0d1117" />
 <img src="https://img.shields.io/badge/MVP-2026-blue?style=for-the-badge&labelColor=0d1117" />
 <img src="https://img.shields.io/badge/licença-MIT-green?style=for-the-badge&labelColor=0d1117" />
@@ -54,6 +55,7 @@ O Brasil possui **mais de 24 milhões de trabalhadores autônomos** (IBGE), mas 
 
 Uma plataforma **Web + Mobile** que oferece:
 
+- 🔄 **Troca de serviços (escambo)** — pague um serviço com outro serviço, com diferença em dinheiro (*torna*) quando os valores não batem. Exclusivo no Brasil e fiel ao nome da plataforma.
 - 🔎 **Descoberta local** — profissionais ranqueados por proximidade e relevância
 - ⭐ **Reputação verificada** — avaliações reais, comentários e histórico de serviços
 - 💬 **Chat integrado** — comunicação direta dentro do app, sem sair para WhatsApp
@@ -72,7 +74,7 @@ Uma plataforma **Web + Mobile** que oferece:
 | **Frontend Web** | React + Vite + TypeScript |
 | **Mobile** | React Native + Expo |
 | **Backend** | Node.js + Express + TypeScript |
-| **Banco de Dados** | MySQL (45+ tabelas) |
+| **Banco de Dados** | MySQL 8 (50 tabelas) |
 | **Pagamentos** | MercadoPago API |
 | **Hospedagem** | DigitalOcean |
 | **CDN / DNS** | Cloudflare |
@@ -86,7 +88,7 @@ Uma plataforma **Web + Mobile** que oferece:
 
 ## 🗂️ Módulos do MVP
 
-O MVP é composto por **14 módulos funcionais**, cobrindo **72 Requisitos Funcionais** e **36 Não Funcionais**:
+O MVP é composto por **15 módulos funcionais**, cobrindo **90 Requisitos Funcionais** e **42 Não Funcionais**:
 
 | # | Módulo | Responsabilidade |
 |---|---|---|
@@ -104,6 +106,7 @@ O MVP é composto por **14 módulos funcionais**, cobrindo **72 Requisitos Funci
 | 12 | ⚙️ Administração | Painel administrativo da plataforma |
 | 13 | ⚖️ Compliance / LGPD | Consentimento, anonimização, privacidade |
 | 14 | 📈 Relatórios | Analytics, métricas de uso e performance |
+| 15 | 🔄 Troca de Serviços | Escambo: troca de serviço por serviço + *torna* em dinheiro |
 
 ---
 
@@ -126,10 +129,47 @@ O MVP é composto por **14 módulos funcionais**, cobrindo **72 Requisitos Funci
 
 - [ ] Cadastro e autenticação para os 3 perfis (cliente, freelancer, empresa)
 - [ ] Fluxo completo: proposta → aceite → entrega → avaliação
-- [ ] Chat funcional entre cliente e freelancer
+- [x] Chat funcional entre cliente e freelancer (Socket.IO em tempo real)
 - [ ] Pagamento via MercadoPago processado com saldo creditado na carteira
-- [ ] 72 RFs e 36 RNFs cobertos na especificação
-- [ ] Banco de dados com 45+ tabelas implementado e validado
+- [ ] 90 RFs e 42 RNFs cobertos na especificação
+- [ ] Banco de dados com 50 tabelas implementado e validado
+
+---
+
+## 🚀 Começando (desenvolvimento)
+
+Monorepo com **npm workspaces** — um `npm install` na raiz instala tudo.
+
+```bash
+npm install                 # instala api + web + packages
+npm run db:up               # sobe o MySQL 8 (Docker) com schema + seed
+npm run dev                 # sobe API (:3333) e Web (:5173) juntos
+```
+
+Scripts úteis na raiz: `npm run typecheck` (todos os pacotes), `npm run lint`, `npm run format`,
+`npm run db:down`. O front usa proxy `/api → :3333` (sem CORS no dev) e os tipos de `@escambo/types`
+são compartilhados entre back e front (sem duplicação).
+
+---
+
+## 🧪 Qualidade & Testes
+
+A qualidade é garantida por uma **pirâmide de testes** somada a lint e type-check, tudo executado no
+CI a cada push (badge no topo):
+
+| Camada | O quê | Onde | Comando |
+|---|---|---|---|
+| **Unidade (API)** | Regras de negócio de cada serviço, com as _repositories_ mockadas (sem banco) — 20/20 módulos cobertos | `apps/api/src/**/*.test.ts` | `npm test` |
+| **Integração (API)** | App Express **real** via Supertest contra um MySQL de verdade (`escambo_test` recriado a cada run): escrow ponta a ponta, autorização e chat | `apps/api/test/integration/**` | `npm run -w @escambo/api test:int` |
+| **Componente (Web)** | Helpers, client HTTP (mock de `fetch`) e views React (Testing Library + jsdom) | `apps/web/src/**/*.test.tsx` | `npm test` |
+
+```bash
+npm test                          # unidade (API) + componente (Web) — sem banco
+npm run -w @escambo/api test:int  # integração (precisa do MySQL no ar: npm run db:up)
+```
+
+No **CI** (`.github/workflows/ci.yml`) há dois jobs: **Lint · Typecheck · Test · Build** e
+**Integração · Supertest + MySQL** (provisiona um serviço MySQL). Ambos precisam passar no PR.
 
 ---
 
@@ -144,11 +184,17 @@ escambo/
 │   ├── modelagem-banco.md
 │   └── diagramas/              # DER, fluxos, arquitetura
 ├── 📁 apps/
-│   ├── web/                    # React + Vite (Frontend Web)
-│   ├── mobile/                 # React Native + Expo
-│   └── api/                    # Node.js + Express + TypeScript
+│   ├── web/                    # ✅ React + Vite + TS (frontend)
+│   ├── mobile/                 # React Native + Expo (Fase 2)
+│   └── api/                    # ✅ Node + Express + TS (backend em camadas)
+│       └── db/                 # schema.sql + seed.sql (MySQL 8)
+├── 📁 packages/
+│   └── types/                  # ✅ @escambo/types — contratos compartilhados back/front
 ├── 📁 infra/
-│   └── docker-compose.yml
+│   └── docker-compose.yml      # MySQL 8 local (schema + seed automáticos)
+├── package.json                # raiz — npm workspaces + scripts
+├── tsconfig.base.json          # TS compartilhado
+├── eslint.config.mjs           # ESLint (flat) + Prettier
 ├── CONTRIBUTING.md
 ├── LICENSE
 └── README.md
@@ -161,9 +207,10 @@ escambo/
 | Documento | Descrição |
 |---|---|
 | [📋 RFC Completa](./docs/RFC.md) | Request for Comments — proposta técnica completa |
-| [✅ Requisitos Funcionais](./docs/requisitos-funcionais.md) | 72 RFs especificados |
-| [🔒 Requisitos Não Funcionais](./docs/requisitos-nao-funcionais.md) | 36 RNFs especificados |
-| [🗄️ Modelagem do Banco](./docs/modelagem-banco.md) | 45+ tabelas MySQL |
+| [✅ Requisitos Funcionais](./docs/requisitos-funcionais.md) | 90 RFs especificados |
+| [🔒 Requisitos Não Funcionais](./docs/requisitos-nao-funcionais.md) | 42 RNFs especificados |
+| [🗄️ Modelagem do Banco](./docs/modelagem-banco.md) | 50 tabelas MySQL |
+| [⚖️ Regras de Negócio](./docs/regras-de-negocio.md) | 75 RNs especificadas |
 
 ---
 

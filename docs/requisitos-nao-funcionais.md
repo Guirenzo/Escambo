@@ -1,8 +1,8 @@
 # Requisitos Não Funcionais — Escambo
 
-> **Versão:** 1.0.0  
-> **Total de Requisitos:** 40  
-> **Atualizado em:** Abril de 2026  
+> **Versão:** 1.1.0  
+> **Total de Requisitos:** 42  
+> **Atualizado em:** Junho de 2026  
 > **Autor:** Guilherme Renzo
 ---
 
@@ -129,21 +129,32 @@ Confiabilidade    → integridade de dados, tratamento de erros
 
 ---
 
+## Adicionais (v1.1.0)
+
+Requisitos acrescentados junto com a troca de serviços e os recursos avançados de segurança/LGPD.
+
+| ID | Categoria | Descrição | Métrica | Prioridade |
+|---|---|---|---|---|
+| RNF-041 | Conformidade | O sistema deve permitir a exportação dos dados pessoais do usuário (portabilidade) | Arquivo de dados gerado e disponibilizado em ≤ 15 dias úteis (LGPD Art. 18, V) | Alta |
+| RNF-042 | Segurança | O sistema deve oferecer verificação em duas etapas (2FA) e cifrar segredos/chaves sensíveis | MFA via TOTP; segredos de MFA e chaves PIX/bancárias cifrados em AES-256, com chave em secrets manager (nunca no banco em texto plano) | Alta |
+
+---
+
 ## Resumo por Categoria
 
 | Categoria | Total | Alta | Média | Baixa |
 |---|---|---|---|---|
 | Performance | 6 | 5 | 1 | 0 |
 | Disponibilidade | 4 | 3 | 1 | 0 |
-| Segurança | 10 | 10 | 0 | 0 |
+| Segurança | 11 | 11 | 0 | 0 |
 | Escalabilidade | 4 | 2 | 2 | 0 |
 | Usabilidade | 5 | 4 | 1 | 0 |
 | Manutenibilidade | 5 | 4 | 1 | 0 |
-| Conformidade | 4 | 3 | 1 | 0 |
+| Conformidade | 5 | 4 | 1 | 0 |
 | Confiabilidade | 2 | 1 | 1 | 0 |
-| **Total** | **40** | **32** | **8** | **0** |
+| **Total** | **42** | **34** | **8** | **0** |
 
-> ℹ️ O total final ficou em **40 requisitos não funcionais**, superando os 36 planejados inicialmente — resultado do detalhamento das categorias de segurança e confiabilidade durante a especificação.
+> ℹ️ O total final ficou em **42 requisitos não funcionais**, superando os 36 planejados inicialmente — resultado do detalhamento das categorias de segurança e conformidade (inclui portabilidade LGPD e MFA na v1.1.0).
 
 ---
 
@@ -164,6 +175,6 @@ Os RNFs se aplicam de forma transversal a todos os módulos, mas os mais crític
 
 <div align="center">
 
-*requisitos-nao-funcionais.md — Escambo v1.0.0 — PAC Extensionista VII — Católica SC — 2026*
+*requisitos-nao-funcionais.md — Escambo v1.1.0 — PAC Extensionista VII — Católica SC — 2026*
 
 </div>

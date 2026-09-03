@@ -22,7 +22,7 @@ Abril de 2026
 Junho de 2026
 
 **Versão:**
-2.1
+2.2
 
 **Repositório:**
 https://github.com/Guirenzo/Escambo
@@ -39,6 +39,7 @@ MIT — Open Source
 | 1.0 | Mar/2026 | Versão inicial da proposta |
 | 2.0 | Abr/2026 | Documentação completa: requisitos, personas, casos de uso, arquitetura C4, mockups |
 | 2.1 | Jun/2026 | Revisão após avaliação da banca: linha declarada como Web App (mobile movido para Fase 2); benchmark ampliado para três plataformas com fontes rastreáveis; correção da análise de mercado (Workana cobra do cliente); plano técnico de CI/CD, testes (TDD), análise estática e observabilidade detalhado; seção de instalação/deploy adicionada; padronização dos números entre RFC e README; ajuste de tom para registro acadêmico |
+| 2.2 | Jun/2026 | Introdução da **troca de serviços (escambo)** como diferencial central, em modo híbrido (dinheiro + troca, com *torna*); banco ampliado para **50 tabelas em 15 módulos**; +8 RFs (total **90**) e +2 RNFs (total **42**) de confiança e segurança — pacotes de serviço, marcos de escrow, disputas como entidade própria, denúncias, 2FA e portabilidade LGPD; preenchimento das regras RN-066 a RN-070 (total **75**); correção das contagens divergentes e dos caminhos de instalação (`apps/api`, `apps/web`); inclusão do texto da LICENSE MIT |
 
 ---
 
@@ -164,10 +165,11 @@ Plataforma brasileira de serviços digitais, com funcionamento parecido com o da
 | Dashboard financeiro | Não | Básico | Básico | Completo |
 | Gamificação (XP, missões) | Não | Não | Não | Sim |
 | Ranking local por proximidade | Não | Não | Não | Sim |
+| Troca de serviços (escambo) | Não | Não | Não | **Sim** |
 
 #### Diferencial do projeto
 
-O Escambo ataca uma combinação que nenhuma das plataformas analisadas oferece hoje: une o alcance de serviços locais do GetNinjas com o pagamento seguro da Workana e do 99Freelas, e acrescenta o que nenhuma das três tem — gamificação real de engajamento, dashboard financeiro completo e um chat integrado em tempo real. Dois pontos do modelo de cobrança reforçam esse diferencial. Primeiro, a comissão do profissional é fixa e transparente (15%) e só é cobrada quando o serviço é concluído, ao contrário da compra de leads sem garantia do GetNinjas. Segundo, o cliente não paga taxa nenhuma, diferente da Workana, que cobra cerca de 4,5% do contratante.
+O Escambo ataca uma combinação que nenhuma das plataformas analisadas oferece hoje: une o alcance de serviços locais do GetNinjas com o pagamento seguro da Workana e do 99Freelas, e acrescenta o que nenhuma das três tem — gamificação real de engajamento, dashboard financeiro completo e um chat integrado em tempo real. Dois pontos do modelo de cobrança reforçam esse diferencial. Primeiro, a comissão do profissional é fixa e transparente (15%) e só é cobrada quando o serviço é concluído, ao contrário da compra de leads sem garantia do GetNinjas. Segundo, o cliente não paga taxa nenhuma, diferente da Workana, que cobra cerca de 4,5% do contratante. Acima de tudo, o Escambo é a única a permitir a **troca de serviços** — pagar um serviço com outro, com a diferença (a *torna*) em dinheiro quando os valores não batem. Esse recurso dá sentido ao próprio nome da plataforma e cria liquidez para profissionais com tempo ocioso e pouco caixa, algo que nenhuma das três concorrentes oferece.
 
 ### 1.4 Público-Alvo
 
@@ -200,8 +202,8 @@ Tornar a contratação de serviços tão simples quanto o uso de um aplicativo d
 - Fluxo completo de contratação funcionando do início ao fim sem erros
 - Pagamento via MercadoPago processado e saldo creditado na carteira do freelancer
 - API respondendo em menos de 300ms em 95% das requisições
-- Banco de dados com 48 tabelas implementado e validado
-- 82 requisitos funcionais e 40 requisitos não funcionais cobertos
+- Banco de dados com 50 tabelas implementado e validado
+- 90 requisitos funcionais e 42 requisitos não funcionais cobertos
 - Cobertura de testes de ao menos 75% no backend e 25% no frontend nos módulos críticos
 - Pipeline de CI/CD ativo, com lint, testes e build executados a cada push
 - Teste de usabilidade com pelo menos 3 usuários reais concluindo as tarefas principais sem ajuda
@@ -296,7 +298,13 @@ Os requisitos estão organizados por módulo. Abaixo, os principais de cada um.
 - RF-024 — O sistema deve disponibilizar missões semanais com recompensas em XP
 - RF-025 — O sistema deve exibir ranking local de freelancers por categoria dentro de um raio de 50km
 
-> A lista completa com os 82 requisitos funcionais está em [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md).
+**Módulo de Troca de Serviços (Escambo)** *(novo na v2.2 — diferencial central)*
+
+- O sistema deve permitir que um usuário proponha uma troca de serviço por serviço, com ou sem diferença em dinheiro (a *torna*)
+- O sistema deve estimar o valor de cada lado e calcular a *torna*, retida em escrow
+- Ao aceitar a troca, o sistema deve gerar dois contratos recíprocos vinculados, cada um no fluxo normal de entrega/aprovação
+
+> A lista completa com os 90 requisitos funcionais está em [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md).
 
 ### 2.4 Requisitos Não Funcionais
 
@@ -311,7 +319,7 @@ Os requisitos estão organizados por módulo. Abaixo, os principais de cada um.
 - RNF-009 — Módulos críticos devem ter cobertura mínima de 75% de testes automatizados no backend
 - RNF-010 — A API deve ter documentação OpenAPI/Swagger atualizada a cada release
 
-> A lista completa com os 40 requisitos não funcionais está em [`docs/requisitos-nao-funcionais.md`](./requisitos-nao-funcionais.md).
+> A lista completa com os 42 requisitos não funcionais está em [`docs/requisitos-nao-funcionais.md`](./requisitos-nao-funcionais.md).
 
 ### 2.5 Regras de Negócio
 
@@ -692,7 +700,7 @@ O banco de dados principal do Escambo é o MySQL 8. A escolha por um banco relac
 
 A seção apresenta o modelo de dados em três partes: o DER, o esquema relacional e, no final, uma visão conceitual em documentos (NoSQL). Essa última parte não altera a stack nem o escopo da entrega, que continua baseada em MySQL 8. Ela serve apenas para mostrar como alguns módulos de leitura intensa, como o chat e as notificações, poderiam ser otimizados no futuro com uma modelagem denormalizada.
 
-O banco tem 48 tabelas divididas entre os 14 módulos. As entidades centrais do marketplace estão representadas a seguir, e o DDL completo de todas as tabelas fica em [`docs/modelagem-banco.md`](./modelagem-banco.md).
+O banco tem 50 tabelas divididas entre os 15 módulos. As entidades centrais do marketplace estão representadas a seguir, e o DDL completo de todas as tabelas fica em [`docs/modelagem-banco.md`](./modelagem-banco.md).
 
 ---
 
@@ -1076,16 +1084,18 @@ Esta seção descreve como rodar o projeto localmente e como ele é publicado em
 git clone https://github.com/Guirenzo/Escambo.git
 cd Escambo
 
-# 2. Backend
-cd backend
+# 2. Banco de dados (Docker — sobe MySQL 8 já com schema + seed)
+cd infra && docker compose up -d && cd ..
+# Alternativa sem Docker: mysql -u root -p < apps/api/db/schema.sql
+
+# 3. Backend (API)
+cd apps/api
 cp .env.example .env        # preencher variáveis (banco, JWT, MercadoPago)
 npm install
-npm run migrate             # cria as tabelas
-npm run seed                # dados iniciais (opcional)
 npm run dev                 # sobe a API
 
-# 3. Frontend (em outro terminal)
-cd ../frontend
+# 4. Frontend (em outro terminal)
+cd apps/web
 cp .env.example .env        # URL da API
 npm install
 npm run dev                 # sobe o app web
@@ -1151,8 +1161,8 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 ## 11. Apêndices
 
 - **Apêndice A** — Modelagem completa do banco de dados: [`docs/modelagem-banco.md`](./modelagem-banco.md)
-- **Apêndice B** — Lista completa de requisitos funcionais (82 RFs): [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md)
-- **Apêndice C** — Lista completa de requisitos não funcionais (40 RNFs): [`docs/requisitos-nao-funcionais.md`](./requisitos-nao-funcionais.md)
+- **Apêndice B** — Lista completa de requisitos funcionais (90 RFs): [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md)
+- **Apêndice C** — Lista completa de requisitos não funcionais (42 RNFs): [`docs/requisitos-nao-funcionais.md`](./requisitos-nao-funcionais.md)
 - **Apêndice D** — Regras de negócio (75 RNs): [`docs/regras-de-negocio.md`](./regras-de-negocio.md)
 - **Apêndice E** — Personas detalhadas: [`docs/personas.md`](./personas.md)
 - **Apêndice F** — Casos de uso completos: [`docs/casos-de-uso.md`](./casos-de-uso.md)
@@ -1222,4 +1232,4 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 
 ---
 
-*RFC — Escambo v2.1 — PAC Extensionista VII — Católica SC — 2026 — Guilherme Renzo*
+*RFC — Escambo v2.2 — PAC Extensionista VII — Católica SC — 2026 — Guilherme Renzo*

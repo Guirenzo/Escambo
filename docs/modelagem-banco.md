@@ -1,10 +1,16 @@
 # Modelagem do Banco de Dados — Escambo
 
-> **Versão:** 1.0.0  
+> **Versão:** 1.1.0  
 > **SGBD:** MySQL 8.0+  
 > **Encoding:** utf8mb4 / utf8mb4_unicode_ci  
-> **Total de tabelas:** 48  
-> **Atualizado em:** Abril de 2026
+> **Total de tabelas:** 50  
+> **Atualizado em:** Junho de 2026
+
+> **Changelog 1.1.0 (Jun/2026):** correção da contagem (a v1.0.0 declarava 48 tabelas mas modelava 40);
+> introdução da **troca de serviços (escambo)** como modo de pagamento — diferencial central da plataforma —
+> e de tabelas de nível sênior voltadas a confiança, descoberta, LGPD e segurança: `barter_agreements`,
+> `service_packages`, `contract_milestones`, `disputes`, `content_reports`, `favorites`, `saved_searches`,
+> `review_criteria_scores`, `data_export_requests` e `user_mfa`. Total passa a **50 tabelas** em **15 módulos**.
 
 ---
 
@@ -26,6 +32,7 @@
 14. [Módulo 12 — Administração](#14-módulo-12--administração)
 15. [Módulo 13 — Compliance / LGPD](#15-módulo-13--compliance--lgpd)
 16. [Módulo 14 — Relatórios](#16-módulo-14--relatórios)
+17. [Módulo 15 — Troca de Serviços (Escambo)](#17-módulo-15--troca-de-serviços-escambo)
 
 ---
 
@@ -51,6 +58,7 @@
 users (base)
  ├── user_social_logins      (OAuth2 providers)
  ├── user_sessions           (tokens ativos)
+ ├── user_mfa                (2FA / TOTP — segredo cifrado)
  ├── profiles_client         (1:1)
  ├── profiles_freelancer     (1:1)
  │    └── freelancer_portfolio_items
@@ -58,6 +66,8 @@ users (base)
  │
  ├── contracts               (cliente contrata freelancer)
  │    ├── contract_status_history
+ │    ├── contract_milestones (escrow por etapa)
+ │    ├── disputes           (mediação first-class)
  │    └── deliveries
  │
  ├── payments                (transações)
@@ -65,7 +75,13 @@ users (base)
  │    └── withdrawals
  │
  ├── reviews                 (avaliação pós-serviço)
- │    └── review_responses
+ │    ├── review_responses
+ │    └── review_criteria_scores (multicritério)
+ │
+ ├── favorites               (serviços/freelancers salvos)
+ ├── saved_searches          (buscas salvas + alerta)
+ ├── content_reports         (denúncias / trust & safety)
+ ├── data_export_requests    (portabilidade LGPD)
  │
  ├── conversations           (chat)
  │    └── messages
@@ -84,8 +100,14 @@ users (base)
 
 services
  ├── service_categories      (taxonomia)
+ ├── service_packages        (Basic / Standard / Premium)
  ├── service_tags
  └── service_tag_pivot
+
+barter_agreements             (TROCA de serviços — escambo)
+ ├── proposer / receiver      → users
+ ├── offered / requested      → services
+ └── contract_offered / contract_requested → contracts
 
 badges                        (catálogo)
 missions                      (catálogo)
@@ -188,6 +210,31 @@ CREATE TABLE password_reset_tokens (
   INDEX idx_prt_user    (user_id),
   INDEX idx_prt_token   (token),
   CONSTRAINT fk_prt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+---
+
+### `user_mfa`
+Verificação em duas etapas (2FA). O `secret` do TOTP é cifrado em **AES-256** na aplicação antes
+de persistir; os `recovery_codes` guardam apenas o **hash** de cada código (nunca em texto plano).
+
+```sql
+CREATE TABLE user_mfa (
+  id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id        BIGINT UNSIGNED NOT NULL,
+  method         ENUM('totp', 'sms', 'email') NOT NULL DEFAULT 'totp',
+  secret         VARBINARY(255)  NULL,                    -- segredo TOTP cifrado (AES-256)
+  is_enabled     TINYINT(1)      NOT NULL DEFAULT 0,
+  confirmed_at   DATETIME        NULL,
+  recovery_codes JSON            NULL,                     -- hashes dos códigos de recuperação
+  created_at     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_user_mfa (user_id, method),
+  INDEX idx_mfa_user (user_id),
+  CONSTRAINT fk_mfa_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
@@ -388,6 +435,77 @@ CREATE TABLE service_tag_pivot (
 
 ---
 
+### `service_packages`
+Pacotes por serviço no estilo Basic / Standard / Premium, cada um com preço, prazo e nº de revisões próprios.
+
+```sql
+CREATE TABLE service_packages (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  service_id    BIGINT UNSIGNED NOT NULL,
+  tier          ENUM('basic', 'standard', 'premium') NOT NULL,
+  name          VARCHAR(100)    NOT NULL,
+  description   TEXT            NULL,
+  price         DECIMAL(10, 2)  NOT NULL,
+  delivery_days INT UNSIGNED    NOT NULL,
+  revisions     TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  features      JSON            NULL,                    -- itens inclusos no pacote
+  is_active     TINYINT(1)      NOT NULL DEFAULT 1,
+  created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_service_tier (service_id, tier),
+  INDEX idx_pkg_service (service_id),
+  CONSTRAINT fk_pkg_service FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+---
+
+### `favorites`
+Serviços e freelancers salvos pelo usuário. `target_id` é polimórfico (não tem FK direta) — a integridade
+é validada na aplicação conforme `target_type`.
+
+```sql
+CREATE TABLE favorites (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id     BIGINT UNSIGNED NOT NULL,
+  target_type ENUM('service', 'freelancer') NOT NULL,
+  target_id   BIGINT UNSIGNED NOT NULL,
+  created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_favorite (user_id, target_type, target_id),
+  INDEX idx_fav_user (user_id),
+  CONSTRAINT fk_fav_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+---
+
+### `saved_searches`
+Buscas salvas com alerta opcional (notifica quando surgem novos serviços que casam com os filtros).
+
+```sql
+CREATE TABLE saved_searches (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id       BIGINT UNSIGNED NOT NULL,
+  name          VARCHAR(120)    NULL,
+  query         VARCHAR(255)    NULL,
+  filters       JSON            NULL,                    -- categoria, faixa de preço, nota mínima, raio
+  alert_enabled TINYINT(1)      NOT NULL DEFAULT 0,
+  last_alert_at DATETIME        NULL,
+  created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  INDEX idx_saved_user (user_id),
+  CONSTRAINT fk_saved_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+---
+
 ## 6. Módulo 04 — Contratações
 
 ### `contracts`
@@ -404,6 +522,8 @@ CREATE TABLE contracts (
   price          DECIMAL(10, 2)  NOT NULL,
   platform_fee   DECIMAL(10, 2)  NOT NULL,             -- taxa da plataforma
   freelancer_net DECIMAL(10, 2)  NOT NULL,             -- valor líquido ao freelancer
+  payment_mode   ENUM('cash', 'barter', 'hybrid') NOT NULL DEFAULT 'cash', -- dinheiro / troca / troca+torna
+  barter_agreement_id BIGINT UNSIGNED NULL,            -- preenchido quando o contrato faz parte de uma troca
   status         ENUM('pending', 'accepted', 'rejected', 'in_progress', 'delivered', 'revision_requested', 'completed', 'cancelled', 'disputed') NOT NULL DEFAULT 'pending',
   deadline_at    DATETIME        NULL,
   accepted_at    DATETIME        NULL,
@@ -417,11 +537,16 @@ CREATE TABLE contracts (
   INDEX idx_contract_freelancer (freelancer_id),
   INDEX idx_contract_service    (service_id),
   INDEX idx_contract_status     (status),
+  INDEX idx_contract_barter     (barter_agreement_id),
   CONSTRAINT fk_contract_client     FOREIGN KEY (client_id)     REFERENCES users(id),
   CONSTRAINT fk_contract_freelancer FOREIGN KEY (freelancer_id) REFERENCES users(id),
   CONSTRAINT fk_contract_service    FOREIGN KEY (service_id)    REFERENCES services(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
+
+> A FK de `contracts.barter_agreement_id → barter_agreements(id)` é adicionada por `ALTER TABLE`
+> **depois** da criação de `barter_agreements` (ver Módulo 15), porque as duas tabelas se referenciam
+> mutuamente. Em `cash` (padrão), a coluna fica `NULL`.
 
 ---
 
@@ -461,6 +586,33 @@ CREATE TABLE deliveries (
   PRIMARY KEY (id),
   INDEX idx_deliveries_contract (contract_id),
   CONSTRAINT fk_deliveries_contract FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+---
+
+### `contract_milestones`
+Liberação de pagamento por etapas (escrow por marco) para contratos maiores. Cada marco é financiado e
+liberado de forma independente, reduzindo o risco das duas partes em projetos longos.
+
+```sql
+CREATE TABLE contract_milestones (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  contract_id BIGINT UNSIGNED NOT NULL,
+  title       VARCHAR(150)    NOT NULL,
+  description TEXT            NULL,
+  amount      DECIMAL(10, 2)  NOT NULL,
+  sort_order  TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  status      ENUM('pending', 'funded', 'delivered', 'approved', 'released', 'cancelled') NOT NULL DEFAULT 'pending',
+  due_at      DATETIME        NULL,
+  released_at DATETIME        NULL,
+  created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  INDEX idx_milestone_contract (contract_id),
+  INDEX idx_milestone_status   (status),
+  CONSTRAINT fk_milestone_contract FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
@@ -601,6 +753,27 @@ CREATE TABLE review_responses (
 
 ---
 
+### `review_criteria_scores`
+Detalha a nota geral (`reviews.rating`) em critérios — dá ao cliente uma avaliação mais rica e ao freelancer
+um feedback acionável. A nota geral continua sendo a fonte para `avg_rating`.
+
+```sql
+CREATE TABLE review_criteria_scores (
+  id        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  review_id BIGINT UNSIGNED NOT NULL,
+  criterion ENUM('quality', 'communication', 'deadline', 'professionalism') NOT NULL,
+  score     TINYINT UNSIGNED NOT NULL,                 -- 1 a 5
+
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_review_criterion (review_id, criterion),
+  INDEX idx_rcs_review (review_id),
+  CONSTRAINT chk_rcs_score CHECK (score BETWEEN 1 AND 5),
+  CONSTRAINT fk_rcs_review FOREIGN KEY (review_id) REFERENCES reviews(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+---
+
 ## 9. Módulo 07 — Chat
 
 ### `conversations`
@@ -667,7 +840,7 @@ CREATE TABLE badges (
   description TEXT            NULL,
   icon_url    VARCHAR(512)    NULL,
   xp_reward   INT UNSIGNED    NOT NULL DEFAULT 0,
-  condition   JSON            NULL,                    -- regra de concessão (ex: {"contracts_completed": 10})
+  criteria    JSON            NULL,                    -- regra de concessão (ex: {"contracts_completed": 10})
   is_active   TINYINT(1)      NOT NULL DEFAULT 1,
   created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -748,7 +921,7 @@ CREATE TABLE missions (
   description TEXT            NULL,
   xp_reward   INT UNSIGNED    NOT NULL DEFAULT 0,
   type        ENUM('daily', 'weekly', 'achievement') NOT NULL DEFAULT 'weekly',
-  condition   JSON            NOT NULL,                -- ex: {"action": "complete_contracts", "count": 3}
+  criteria    JSON            NOT NULL,                -- ex: {"action": "complete_contracts", "count": 3}
   is_active   TINYINT(1)      NOT NULL DEFAULT 1,
   created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -881,6 +1054,69 @@ CREATE TABLE support_ticket_messages (
   INDEX idx_stm_ticket (ticket_id),
   CONSTRAINT fk_stm_ticket FOREIGN KEY (ticket_id) REFERENCES support_tickets(id) ON DELETE CASCADE,
   CONSTRAINT fk_stm_sender FOREIGN KEY (sender_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+---
+
+### `disputes`
+Disputa como entidade de primeira classe (antes era apenas um `support_ticket` genérico). Liga-se ao
+contrato, registra o motivo, a resolução do mediador e o percentual de reembolso — base do fluxo de escrow.
+
+```sql
+CREATE TABLE disputes (
+  id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  ulid              VARCHAR(26)     NOT NULL UNIQUE,
+  contract_id       BIGINT UNSIGNED NOT NULL,
+  ticket_id         BIGINT UNSIGNED NULL,
+  opened_by         BIGINT UNSIGNED NOT NULL,
+  reason            ENUM('not_delivered', 'quality', 'deadline', 'scope', 'payment', 'other') NOT NULL DEFAULT 'other',
+  description       TEXT            NOT NULL,
+  status            ENUM('open', 'under_review', 'awaiting_parties', 'resolved', 'closed') NOT NULL DEFAULT 'open',
+  resolution        ENUM('refund_client', 'release_freelancer', 'partial_split', 'none') NULL,
+  refund_percentage TINYINT UNSIGNED NULL,              -- % reembolsado ao cliente em partial_split
+  resolved_by       BIGINT UNSIGNED NULL,               -- admin mediador
+  resolution_note   TEXT            NULL,
+  resolved_at       DATETIME        NULL,
+  created_at        DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  INDEX idx_dispute_contract (contract_id),
+  INDEX idx_dispute_status   (status),
+  INDEX idx_dispute_opened_by (opened_by),
+  CONSTRAINT chk_dispute_refund CHECK (refund_percentage IS NULL OR refund_percentage BETWEEN 0 AND 100),
+  CONSTRAINT fk_dispute_contract    FOREIGN KEY (contract_id) REFERENCES contracts(id),
+  CONSTRAINT fk_dispute_ticket      FOREIGN KEY (ticket_id)   REFERENCES support_tickets(id) ON DELETE SET NULL,
+  CONSTRAINT fk_dispute_opened_by   FOREIGN KEY (opened_by)   REFERENCES users(id),
+  CONSTRAINT fk_dispute_resolved_by FOREIGN KEY (resolved_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+---
+
+### `content_reports`
+Denúncias de conteúdo/usuário (trust & safety). `target_id` é polimórfico conforme `target_type`.
+
+```sql
+CREATE TABLE content_reports (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  reporter_id BIGINT UNSIGNED NOT NULL,
+  target_type ENUM('user', 'service', 'review', 'message') NOT NULL,
+  target_id   BIGINT UNSIGNED NOT NULL,
+  reason      ENUM('spam', 'fraud', 'offensive', 'off_platform', 'illegal', 'other') NOT NULL,
+  description TEXT            NULL,
+  status      ENUM('pending', 'reviewing', 'actioned', 'dismissed') NOT NULL DEFAULT 'pending',
+  reviewed_by BIGINT UNSIGNED NULL,
+  reviewed_at DATETIME        NULL,
+  created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  INDEX idx_report_target   (target_type, target_id),
+  INDEX idx_report_status   (status),
+  INDEX idx_report_reporter (reporter_id),
+  CONSTRAINT fk_report_reporter    FOREIGN KEY (reporter_id) REFERENCES users(id),
+  CONSTRAINT fk_report_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
@@ -1033,6 +1269,30 @@ CREATE TABLE data_deletion_requests (
 
 ---
 
+### `data_export_requests`
+Direito à **portabilidade** dos dados (LGPD, Art. 18, V). O usuário solicita uma cópia dos seus dados;
+o sistema gera um arquivo com link temporário (`expires_at`) e registra todo o ciclo para auditoria.
+
+```sql
+CREATE TABLE data_export_requests (
+  id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id      BIGINT UNSIGNED NOT NULL,
+  status       ENUM('pending', 'processing', 'ready', 'downloaded', 'expired', 'failed') NOT NULL DEFAULT 'pending',
+  file_url     VARCHAR(512)    NULL,
+  expires_at   DATETIME        NULL,
+  processed_at DATETIME        NULL,
+  created_at   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  INDEX idx_der_user   (user_id),
+  INDEX idx_der_status (status),
+  CONSTRAINT fk_der_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+---
+
 ### `audit_logs`
 Rastreabilidade geral de ações críticas no sistema.
 
@@ -1090,30 +1350,102 @@ CREATE TABLE report_snapshots (
 
 ---
 
+## 17. Módulo 15 — Troca de Serviços (Escambo)
+
+O nome **Escambo** significa *troca*. Este módulo torna a troca de serviços um cidadão de primeira classe da
+plataforma — o diferencial que nenhum concorrente brasileiro (GetNinjas, Workana, 99Freelas) oferece.
+
+**Como funciona (modo híbrido):** um usuário propõe entregar um serviço seu em troca de outro. O sistema
+estima o valor dos dois lados; quando não são equivalentes, a diferença (a *torna*) é paga em dinheiro via
+escrow. Ao aceitar, são gerados **dois contratos recíprocos vinculados** (cada um percorre o fluxo normal de
+contratação/entrega/aprovação). A comissão de 15% incide sobre o maior valor estimado da troca.
+
+### `barter_agreements`
+
+```sql
+CREATE TABLE barter_agreements (
+  id                        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  ulid                      VARCHAR(26)     NOT NULL UNIQUE,
+  proposer_id               BIGINT UNSIGNED NOT NULL,     -- quem propõe a troca
+  receiver_id               BIGINT UNSIGNED NOT NULL,     -- quem recebe a proposta
+  offered_service_id        BIGINT UNSIGNED NULL,         -- serviço que o proponente entrega
+  requested_service_id      BIGINT UNSIGNED NULL,         -- serviço que o receptor entrega
+  offered_description       TEXT            NULL,          -- usado quando é serviço sob medida (sem catálogo)
+  requested_description     TEXT            NULL,
+  estimated_value_offered   DECIMAL(10, 2)  NOT NULL,      -- valor estimado do que é oferecido
+  estimated_value_requested DECIMAL(10, 2)  NOT NULL,      -- valor estimado do que é pedido
+  cash_difference           DECIMAL(10, 2)  NOT NULL DEFAULT 0.00, -- torna (diferença em dinheiro)
+  cash_payer_id             BIGINT UNSIGNED NULL,          -- quem paga a torna (NULL em troca par)
+  platform_fee              DECIMAL(10, 2)  NOT NULL DEFAULT 0.00, -- 15% sobre o maior valor estimado
+  status                    ENUM('proposed', 'accepted', 'rejected', 'active', 'completed', 'cancelled', 'disputed') NOT NULL DEFAULT 'proposed',
+  contract_offered_id       BIGINT UNSIGNED NULL,          -- contrato gerado (lado proponente)
+  contract_requested_id     BIGINT UNSIGNED NULL,          -- contrato gerado (lado receptor)
+  accepted_at               DATETIME        NULL,
+  completed_at              DATETIME        NULL,
+  created_at                DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at                DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  INDEX idx_barter_proposer (proposer_id),
+  INDEX idx_barter_receiver (receiver_id),
+  INDEX idx_barter_status   (status),
+  CONSTRAINT fk_barter_proposer          FOREIGN KEY (proposer_id)           REFERENCES users(id),
+  CONSTRAINT fk_barter_receiver          FOREIGN KEY (receiver_id)           REFERENCES users(id),
+  CONSTRAINT fk_barter_offered_service   FOREIGN KEY (offered_service_id)    REFERENCES services(id)  ON DELETE SET NULL,
+  CONSTRAINT fk_barter_requested_service FOREIGN KEY (requested_service_id)  REFERENCES services(id)  ON DELETE SET NULL,
+  CONSTRAINT fk_barter_cash_payer        FOREIGN KEY (cash_payer_id)         REFERENCES users(id)     ON DELETE SET NULL,
+  CONSTRAINT fk_barter_contract_offered  FOREIGN KEY (contract_offered_id)   REFERENCES contracts(id) ON DELETE SET NULL,
+  CONSTRAINT fk_barter_contract_requested FOREIGN KEY (contract_requested_id) REFERENCES contracts(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+> **FK recíproca:** após criar `barter_agreements`, adiciona-se a FK de volta em `contracts`:
+> ```sql
+> ALTER TABLE contracts
+>   ADD CONSTRAINT fk_contract_barter
+>   FOREIGN KEY (barter_agreement_id) REFERENCES barter_agreements(id) ON DELETE SET NULL;
+> ```
+
+---
+
 ## Resumo Geral
 
-| Módulo | Tabelas |
-|---|---|
-| 01 — Autenticação | `users`, `user_social_logins`, `user_sessions`, `password_reset_tokens` |
-| 02 — Perfis | `profiles_client`, `profiles_freelancer`, `freelancer_portfolio_items`, `profiles_company` |
-| 03 — Categorias e Serviços | `service_categories`, `services`, `service_tags`, `service_tag_pivot` |
-| 04 — Contratações | `contracts`, `contract_status_history`, `deliveries` |
-| 05 — Pagamentos | `wallets`, `payments`, `withdrawals` |
-| 06 — Avaliações | `reviews`, `review_responses` |
-| 07 — Chat | `conversations`, `messages` |
-| 08 — Gamificação | `badges`, `user_badges`, `user_xp`, `xp_transactions`, `missions`, `user_missions` |
-| 09 — Notificações | `notifications`, `push_tokens` |
-| 10 — Suporte | `support_tickets`, `support_ticket_messages` |
-| 11 — Impulsionamento | `boost_plans`, `boosts` |
-| 12 — Administração | `admin_actions`, `platform_settings` |
-| 13 — LGPD | `lgpd_consents`, `data_deletion_requests`, `audit_logs` |
-| 14 — Relatórios | `report_snapshots` |
-| **Total** | **48 tabelas** |
+| Módulo | Tabelas | Qtd |
+|---|---|---|
+| 01 — Autenticação | `users`, `user_social_logins`, `user_sessions`, `password_reset_tokens`, `user_mfa` | 5 |
+| 02 — Perfis | `profiles_client`, `profiles_freelancer`, `freelancer_portfolio_items`, `profiles_company` | 4 |
+| 03 — Categorias e Serviços | `service_categories`, `services`, `service_packages`, `service_tags`, `service_tag_pivot`, `favorites`, `saved_searches` | 7 |
+| 04 — Contratações | `contracts`, `contract_status_history`, `contract_milestones`, `deliveries` | 4 |
+| 05 — Pagamentos | `wallets`, `payments`, `withdrawals` | 3 |
+| 06 — Avaliações | `reviews`, `review_responses`, `review_criteria_scores` | 3 |
+| 07 — Chat | `conversations`, `messages` | 2 |
+| 08 — Gamificação | `badges`, `user_badges`, `user_xp`, `xp_transactions`, `missions`, `user_missions` | 6 |
+| 09 — Notificações | `notifications`, `push_tokens` | 2 |
+| 10 — Suporte e Mediação | `support_tickets`, `support_ticket_messages`, `disputes`, `content_reports` | 4 |
+| 11 — Impulsionamento | `boost_plans`, `boosts` | 2 |
+| 12 — Administração | `admin_actions`, `platform_settings` | 2 |
+| 13 — LGPD | `lgpd_consents`, `data_deletion_requests`, `data_export_requests`, `audit_logs` | 4 |
+| 14 — Relatórios | `report_snapshots` | 1 |
+| 15 — Troca de Serviços (Escambo) | `barter_agreements` | 1 |
+| **Total** | | **50 tabelas** |
+
+### Notas de segurança e LGPD na modelagem
+
+- **Cifragem em repouso (AES-256):** os campos sensíveis — CPF (`profiles_freelancer`), dados bancários e
+  chave PIX (`withdrawals`), token OAuth (`user_social_logins.token`) e segredo TOTP (`user_mfa.secret`) —
+  são cifrados na aplicação; a chave de cifragem fica em *secrets manager*, **nunca** no banco.
+- **Senhas:** `users.password_hash` com bcrypt (salt ≥ 12). Códigos de recuperação de MFA guardam só o hash.
+- **Direitos do titular (LGPD):** `data_deletion_requests` (esquecimento, Art. 18 VI) e `data_export_requests`
+  (portabilidade, Art. 18 V); consentimento versionado em `lgpd_consents`.
+- **Trilha de auditoria:** `audit_logs` (imutável) cobre toda ação financeira e crítica; `admin_actions`
+  registra intervenções administrativas.
+- **Integridade financeira:** valores em `DECIMAL`, escrow em `wallets.balance_pending`, e operações de
+  pagamento/saque/disputa executadas em transações MySQL (BEGIN/COMMIT/ROLLBACK).
 
 ---
 
 <div align="center">
 
-*modelagem-banco.md — Escambo v1.0.0 — PAC Extensionista VII — Católica SC — 2026*
+*modelagem-banco.md — Escambo v1.1.0 — PAC Extensionista VII — Católica SC — 2026*
 
 </div>

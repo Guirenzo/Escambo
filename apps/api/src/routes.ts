@@ -1,0 +1,47 @@
+import { Router } from 'express';
+import { adminRoutes } from './modules/admin/admin.routes';
+import { authRoutes } from './modules/auth/auth.routes';
+import { barterRoutes } from './modules/barter/barter.routes';
+import { boostsRoutes } from './modules/boosts/boosts.routes';
+import { categoriesRoutes } from './modules/categories/categories.routes';
+import { contractsRoutes } from './modules/contracts/contracts.routes';
+import { creditsRoutes } from './modules/credits/credits.routes';
+import { disputesRoutes } from './modules/disputes/disputes.routes';
+import { favoritesRoutes } from './modules/favorites/favorites.routes';
+import { gamificationRoutes } from './modules/gamification/gamification.routes';
+import { healthRoutes } from './modules/health/health.routes';
+import { lgpdRoutes } from './modules/lgpd/lgpd.routes';
+import { messagingRoutes } from './modules/messaging/messaging.routes';
+import { notificationsRoutes } from './modules/notifications/notifications.routes';
+import { profilesRoutes } from './modules/profiles/profiles.routes';
+import { reportsRoutes } from './modules/reports/reports.routes';
+import { reviewsRoutes } from './modules/reviews/reviews.routes';
+import { savedSearchesRoutes } from './modules/saved-searches/saved-searches.routes';
+import { servicesRoutes } from './modules/services/services.routes';
+import { walletRoutes } from './modules/wallet/wallet.routes';
+import { withdrawalRoutes } from './modules/withdrawal/withdrawal.routes';
+
+/** Monta as rotas de cada módulo sob /api. */
+export const router = Router();
+
+router.use('/health', healthRoutes);
+router.use('/auth', authRoutes);
+router.use('/categories', categoriesRoutes);
+router.use('/profiles', profilesRoutes);
+router.use('/services', servicesRoutes);
+router.use('/contracts', contractsRoutes);
+router.use('/wallet', walletRoutes);
+router.use('/credits', creditsRoutes);
+router.use('/boosts', boostsRoutes);
+router.use('/reviews', reviewsRoutes);
+router.use('/gamification', gamificationRoutes);
+router.use('/barters', barterRoutes);
+router.use('/withdrawals', withdrawalRoutes);
+router.use('/notifications', notificationsRoutes);
+router.use('/messaging', messagingRoutes);
+router.use('/lgpd', lgpdRoutes);
+router.use('/favorites', favoritesRoutes);
+router.use('/saved-searches', savedSearchesRoutes);
+router.use('/reports', reportsRoutes);
+router.use('/disputes', disputesRoutes);
+router.use('/admin', adminRoutes);
