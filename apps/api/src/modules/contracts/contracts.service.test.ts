@@ -21,6 +21,11 @@ vi.mock('../gamification/gamification.service', () => ({
 import { contractsService } from './contracts.service';
 import { contractsRepository, type ContractRow, type HistoryRow } from './contracts.repository';
 
+// getById anexa a avaliação do contrato; sem banco no teste unitário, vem vazia.
+vi.mock('../reviews/reviews.repository', () => ({
+  reviewsRepository: { findByContractIdWithResponse: vi.fn().mockResolvedValue(undefined) },
+}));
+
 const repo = vi.mocked(contractsRepository);
 
 type FakeFields = Partial<{
