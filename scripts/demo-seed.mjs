@@ -298,6 +298,9 @@ async function ensureContract(
     log(`contrato #${contract.id} ${title} já existe (${contract.status})`);
   }
 
+  // 'revision' = entregue e com revisão pedida pelo cliente (volta ao freelancer com o motivo)
+  const wantsRevision = to === 'revision';
+  if (wantsRevision) to = 'delivered';
   const order = ['pending', 'accepted', 'delivered', 'completed'];
   const at = (s) => order.indexOf(s);
   let status = contract.status === 'in_progress' ? 'accepted' : contract.status;
@@ -333,6 +336,13 @@ async function ensureContract(
   if (at(status) < at('completed') && at(to) >= at('completed')) {
     contract = await call('POST', `/contracts/${contract.id}/approve`, { token: client.token });
     log(`  aprovada → concluída`);
+  }
+  if (wantsRevision && (contract.status === 'delivered' || status === 'delivered')) {
+    contract = await call('POST', `/contracts/${contract.id}/request-revision`, {
+      token: client.token,
+      body: { note: 'Ficou ótimo, só ajusta as cores do rodapé e o tamanho do logo.' },
+    });
+    log(`  revisão pedida pelo cliente`);
   }
   return contract;
 }
@@ -469,6 +479,11 @@ async function main() {
     title: 'Ensaio de produto (20 fotos)',
     price: 650,
     to: 'completed',
+  });
+  await ensureContract(ana, users.carla, svc['Ensaio de produto (20 fotos)'], {
+    title: 'Fotos extras do cardápio',
+    price: 320,
+    to: 'revision',
   });
   await ensureContract(ana, users.rafael, svc['Motion graphics 15s'], {
     title: 'Motion graphics 15s',

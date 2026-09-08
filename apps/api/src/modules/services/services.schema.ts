@@ -48,6 +48,8 @@ export type UpdateServiceInput = z.infer<typeof updateServiceSchema>;
 
 export const listServicesSchema = z.object({
   categoryId: z.coerce.number().int().positive().optional(),
+  /** Serviços de um freelancer específico (perfil público). */
+  ownerId: z.coerce.number().int().positive().optional(),
   q: z.string().trim().min(1).optional(),
   isRemote: z
     .enum(['true', 'false'])

@@ -22,7 +22,9 @@ import type {
   MyProfiles,
   NotificationList,
   Paginated,
+  PublicFreelancerProfile,
   PublicUser,
+  RefreshResponse,
   RegisterRequest,
   Review,
   Service,
@@ -34,11 +36,17 @@ import type {
 
 const BASE_URL = '/api';
 const TOKEN_KEY = 'escambo_token';
+const REFRESH_KEY = 'escambo_refresh';
+
+/** Eventos de sessão (ouvidos pelo AuthProvider e pelo socket). */
+export const SESSION_TOKEN_EVENT = 'escambo:token';
+export const SESSION_EXPIRED_EVENT = 'escambo:session-expired';
 
 /** Filtros da busca de serviços (lat+lng+radiusKm = descoberta local por proximidade). */
 export interface ServiceQuery {
   q?: string;
   categoryId?: number;
+  ownerId?: number;
   lat?: number;
   lng?: number;
   radiusKm?: number;
@@ -46,15 +54,31 @@ export interface ServiceQuery {
   limit?: number;
 }
 
-function readToken(): string | null {
+function readStorage(key: string): string | null {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
 }
+function writeStorage(key: string, value: string | null): void {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {
+    /* localStorage indisponível — segue com os tokens em memória */
+  }
+}
+function emit(name: string, detail?: unknown): void {
+  try {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+  } catch {
+    /* sem window (testes/SSR) */
+  }
+}
 
-let accessToken: string | null = readToken();
+let accessToken: string | null = readStorage(TOKEN_KEY);
+let refreshToken: string | null = readStorage(REFRESH_KEY);
 
 export function getToken(): string | null {
   return accessToken;
@@ -62,15 +86,60 @@ export function getToken(): string | null {
 
 export function setToken(token: string | null): void {
   accessToken = token;
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    /* localStorage indisponível — segue com o token em memória */
-  }
+  writeStorage(TOKEN_KEY, token);
+  emit(SESSION_TOKEN_EVENT, token);
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export function getRefreshToken(): string | null {
+  return refreshToken;
+}
+
+/** Guarda (ou limpa) o par de tokens da sessão. */
+export function setSession(tokens: { accessToken: string; refreshToken: string } | null): void {
+  refreshToken = tokens?.refreshToken ?? null;
+  writeStorage(REFRESH_KEY, refreshToken);
+  setToken(tokens?.accessToken ?? null);
+}
+
+let refreshing: Promise<boolean> | null = null;
+
+/**
+ * Renova o access token (expira em 1h) com o refresh token. Várias requisições que tomam 401
+ * ao mesmo tempo compartilham UMA renovação (single-flight). Devolve false se a sessão acabou.
+ */
+async function refreshSession(): Promise<boolean> {
+  if (!refreshToken) return false;
+  if (!refreshing) {
+    refreshing = (async () => {
+      try {
+        const res = await fetch(`${BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        if (!res.ok) return false;
+        const data = (await res.json()) as RefreshResponse;
+        setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshing = null;
+      }
+    })();
+  }
+  return refreshing;
+}
+
+function expireSession(): void {
+  setSession(null);
+  emit(SESSION_EXPIRED_EVENT);
+}
+
+// Nessas rotas um 401 é resposta legítima (credenciais), não token vencido.
+const NO_REFRESH = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
+
+async function request<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -79,6 +148,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       ...(options.headers ?? {}),
     },
   });
+  // Access token vencido: renova e repete a chamada uma vez; se não der, encerra a sessão.
+  if (res.status === 401 && retry && refreshToken && !NO_REFRESH.includes(path)) {
+    if (await refreshSession()) return request<T>(path, options, false);
+    expireSession();
+  }
   if (res.status === 204) return undefined as T;
   const data: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -96,6 +170,8 @@ export const api = {
   login: (body: LoginRequest) =>
     request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   me: () => request<PublicUser>('/auth/me'),
+  logout: (refreshToken: string) =>
+    request<void>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
 
   // dashboard
   wallet: () => request<Wallet>('/wallet'),
@@ -122,6 +198,11 @@ export const api = {
   contractDetail: (id: number) => request<ContractWithHistory>(`/contracts/${id}`),
   contractAction: (id: number, action: 'accept' | 'reject' | 'approve' | 'cancel') =>
     request<Contract>(`/contracts/${id}/${action}`, { method: 'POST' }),
+  requestRevision: (id: number, note: string) =>
+    request<Contract>(`/contracts/${id}/request-revision`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
   deliverContract: (id: number, message: string) =>
     request<Contract>(`/contracts/${id}/deliver`, {
       method: 'POST',
@@ -166,6 +247,8 @@ export const api = {
 
   // perfis
   profilesMe: () => request<MyProfiles>('/profiles/me'),
+  publicFreelancer: (ulid: string) =>
+    request<PublicFreelancerProfile>(`/profiles/freelancer/${encodeURIComponent(ulid)}`),
   putFreelancerProfile: (body: UpsertFreelancerProfileRequest) =>
     request<FreelancerProfile>('/profiles/freelancer', {
       method: 'PUT',

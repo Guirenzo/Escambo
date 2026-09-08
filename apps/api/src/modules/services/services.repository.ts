@@ -17,13 +17,15 @@ export interface ServiceRow extends RowDataPacket {
   deleted_at: Date | null;
   distance_km?: string | null; // presente só na busca por proximidade
   boosted?: number; // 1 se tem impulsionamento ativo
-  owner_name?: string | null; // presentes na listagem (JOIN profiles_freelancer)
+  owner_ulid?: string | null; // presentes na listagem (JOIN users / profiles_freelancer)
+  owner_name?: string | null;
   owner_avg_rating?: string | null;
   owner_total_reviews?: number | null;
 }
 
 export interface ServiceListFilters {
   categoryId?: number;
+  ownerId?: number;
   q?: string;
   isRemote?: boolean;
   lat?: number;
@@ -34,7 +36,7 @@ export interface ServiceListFilters {
 }
 
 /** Quem presta o serviço: nome e reputação (avg_rating/total_reviews são mantidos pelo módulo de reviews). */
-const OWNER_COLS = `pf.full_name AS owner_name, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews`;
+const OWNER_COLS = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews`;
 
 export const servicesRepository = {
   async create(data: {
@@ -71,6 +73,10 @@ export const servicesRepository = {
       where.push('s.category_id = :categoryId');
       params.categoryId = filters.categoryId;
     }
+    if (filters.ownerId !== undefined) {
+      where.push('s.user_id = :ownerId');
+      params.ownerId = filters.ownerId;
+    }
     if (filters.isRemote !== undefined) {
       where.push('s.is_remote = :isRemote');
       params.isRemote = filters.isRemote ? 1 : 0;
@@ -100,6 +106,7 @@ export const servicesRepository = {
         `SELECT * FROM (
            SELECT s.*, ${distanceExpr} AS distance_km, ${boostedExpr} AS boosted, ${OWNER_COLS}
              FROM services s
+             JOIN users u ON u.id = s.user_id
              JOIN profiles_freelancer pf ON pf.user_id = s.user_id
             WHERE ${where.join(' AND ')}
               AND pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL
@@ -115,6 +122,7 @@ export const servicesRepository = {
     // limit/offset são inteiros validados (Zod) — seguros para interpolar.
     const [rows] = await pool.query<ServiceRow[]>(
       `SELECT s.*, ${boostedExpr} AS boosted, ${OWNER_COLS} FROM services s
+        JOIN users u ON u.id = s.user_id
         LEFT JOIN profiles_freelancer pf ON pf.user_id = s.user_id
         WHERE ${where.join(' AND ')}
         ORDER BY boosted DESC, s.created_at DESC

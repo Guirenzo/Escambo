@@ -4,6 +4,7 @@ import { Spinner } from './components/ui';
 import { LoginForm } from './features/auth/LoginForm';
 import { Shell } from './features/shell/Shell';
 import { CarteiraView } from './features/views/CarteiraView';
+import { FreelancerView } from './features/views/FreelancerView';
 import { InicioView } from './features/views/InicioView';
 import { NotificacoesView } from './features/views/NotificacoesView';
 import { PerfilView } from './features/views/PerfilView';
@@ -17,7 +18,12 @@ import './styles.css';
 /** /login: se já autenticado, vai para a home. */
 function LoginRoute() {
   const { user, loading } = useAuth();
-  if (loading) return <div className="splash"><Spinner /></div>;
+  if (loading)
+    return (
+      <div className="splash">
+        <Spinner />
+      </div>
+    );
   if (user) return <Navigate to="/" replace />;
   return <LoginForm />;
 }
@@ -46,6 +52,7 @@ export function App() {
             <Route path="notificacoes" element={<NotificacoesView />} />
             <Route path="perfil" element={<PerfilView />} />
             <Route path="contratos/:id" element={<SalaContratoRoute />} />
+            <Route path="freelancers/:ulid" element={<FreelancerView />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -99,7 +99,7 @@ export const profilesRepository = {
       `SELECT pf.full_name, pf.avatar_url, pf.bio, pf.headline, pf.city, pf.state,
               pf.latitude, pf.longitude, pf.is_available,
               pf.avg_rating, pf.total_reviews, pf.total_contracts, pf.response_time_hours,
-              u.ulid, COALESCE(ux.level, 1) AS level, COALESCE(ux.level_name, 'Iniciante') AS level_name
+              u.id AS user_id, u.ulid, COALESCE(ux.level, 1) AS level, COALESCE(ux.level_name, 'Iniciante') AS level_name
          FROM users u
          JOIN profiles_freelancer pf ON pf.user_id = u.id
          LEFT JOIN user_xp ux ON ux.user_id = u.id

@@ -1,14 +1,13 @@
-import { MapPin, Plus, Rocket, Search } from 'lucide-react';
+import { MapPin, Plus, Search } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Category, Service } from '@escambo/types';
-import { Stars } from '../../components/Stars';
 import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
-import { brl } from '../../lib/format';
 import { useCategories, useCreateService, useServices } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { BoostModal } from '../services/BoostModal';
 import { ContratarModal } from '../services/ContratarModal';
+import { ServiceCard } from '../services/ServiceCard';
 
 function flatten(
   cats: Category[],
@@ -216,55 +215,15 @@ export function ServicosView() {
       >
         {(d) => (
           <div className="cards-grid">
-            {d.items.map((s) => {
-              const mine = s.ownerId === myId;
-              return (
-                <div key={s.id} className="card service">
-                  <div className="svc-top">
-                    <strong>{s.title}</strong>
-                    <span className="svc-actions">
-                      {s.boosted && (
-                        <span className="chip level">
-                          <Rocket size={12} /> Destaque
-                        </span>
-                      )}
-                      {s.isRemote && <span className="tag">remoto</span>}
-                    </span>
-                  </div>
-                  {s.ownerName && (
-                    <div className="svc-owner">
-                      <span className="svc-owner-ini" aria-hidden="true">
-                        {s.ownerName[0]}
-                      </span>
-                      <span className="muted tiny">{s.ownerName}</span>
-                      <Stars value={s.ownerRating ?? 0} count={s.ownerReviews ?? 0} size={12} />
-                    </div>
-                  )}
-                  <p className="muted clamp">{s.description}</p>
-                  <div className="svc-foot">
-                    <span className="price">{s.price != null ? brl(s.price) : 'a combinar'}</span>
-                    <span className="muted tiny">
-                      {s.distanceKm != null
-                        ? `${s.distanceKm} km de você`
-                        : s.deliveryDays != null
-                          ? `${s.deliveryDays} dias`
-                          : ''}
-                    </span>
-                  </div>
-                  <div className="svc-actions">
-                    {mine ? (
-                      <Button variant="mini" onClick={() => setBoost(s)} disabled={s.boosted}>
-                        <Rocket size={14} /> {s.boosted ? 'Impulsionado' : 'Impulsionar'}
-                      </Button>
-                    ) : (
-                      <Button variant="mini" onClick={() => setContratar(s)}>
-                        Contratar
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            {d.items.map((s) => (
+              <ServiceCard
+                key={s.id}
+                service={s}
+                mine={s.ownerId === myId}
+                onContratar={setContratar}
+                onBoost={setBoost}
+              />
+            ))}
           </div>
         )}
       </QueryState>

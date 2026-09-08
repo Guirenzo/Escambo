@@ -93,6 +93,25 @@ export const contractsRepository = {
     return rows;
   },
 
+  /**
+   * Entregas sem resposta do cliente há mais de `days` dias (aprovação tácita).
+   * A data da entrega é a última entrada 'delivered' no histórico do contrato.
+   */
+  async findDeliveredOlderThan(days: number): Promise<ContractRow[]> {
+    const [rows] = await pool.query<ContractRow[]>(
+      `SELECT c.*, ${HAS_REVIEW} AS has_review
+         FROM contracts c
+        WHERE c.status = 'delivered'
+          AND (SELECT MAX(h.created_at) FROM contract_status_history h
+                WHERE h.contract_id = c.id AND h.new_status = 'delivered')
+              < DATE_SUB(NOW(), INTERVAL :days DAY)
+        ORDER BY c.id ASC
+        LIMIT 200`,
+      { days },
+    );
+    return rows;
+  },
+
   async listHistory(contractId: number): Promise<HistoryRow[]> {
     const [rows] = await pool.query<HistoryRow[]>(
       `SELECT old_status, new_status, note, created_at
