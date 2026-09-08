@@ -21,6 +21,11 @@ vi.mock('../gamification/gamification.service', () => ({
 import { contractsService } from './contracts.service';
 import { contractsRepository, type ContractRow, type HistoryRow } from './contracts.repository';
 
+// getById anexa a avaliação do contrato; sem banco no teste unitário, vem vazia.
+vi.mock('../reviews/reviews.repository', () => ({
+  reviewsRepository: { findByContractIdWithResponse: vi.fn().mockResolvedValue(undefined) },
+}));
+
 const repo = vi.mocked(contractsRepository);
 
 type FakeFields = Partial<{
@@ -224,7 +229,12 @@ describe('getById', () => {
   it('retorna contrato com histórico', async () => {
     repo.findById.mockResolvedValue(fakeRow({ client_id: 1, freelancer_id: 2, status: 'pending' }));
     repo.listHistory.mockResolvedValue([
-      { old_status: null, new_status: 'pending', note: 'Proposta enviada', created_at: new Date('2026-01-01T00:00:00Z') },
+      {
+        old_status: null,
+        new_status: 'pending',
+        note: 'Proposta enviada',
+        created_at: new Date('2026-01-01T00:00:00Z'),
+      },
     ] as unknown as HistoryRow[]);
     const c = await contractsService.getById(1, 1);
     expect(c.history).toHaveLength(1);

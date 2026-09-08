@@ -1,6 +1,7 @@
 import { MapPin, Plus, Rocket, Search } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Category, Service } from '@escambo/types';
+import { Stars } from '../../components/Stars';
 import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { brl } from '../../lib/format';
@@ -35,7 +36,10 @@ export function ServicosView() {
   const [geo, setGeo] = useState<Geo | null>(null);
   const [radiusKm, setRadiusKm] = useState(25);
   const [locating, setLocating] = useState(false);
-  const services = useServices({ q: submitted, ...(geo ? { lat: geo.lat, lng: geo.lng, radiusKm } : {}) });
+  const services = useServices({
+    q: submitted,
+    ...(geo ? { lat: geo.lat, lng: geo.lng, radiusKm } : {}),
+  });
 
   // novo serviço
   const categories = useCategories();
@@ -123,13 +127,23 @@ export function ServicosView() {
 
       {/* Descoberta local (diferencial #2) */}
       <div className="geo-bar">
-        <Button variant="ghost" className={`toggle ${geo ? 'on' : ''}`} onClick={toggleNearMe} disabled={locating}>
-          <MapPin size={16} /> {locating ? 'Localizando…' : geo ? 'Perto de mim: ativo' : 'Perto de mim'}
+        <Button
+          variant="ghost"
+          className={`toggle ${geo ? 'on' : ''}`}
+          onClick={toggleNearMe}
+          disabled={locating}
+        >
+          <MapPin size={16} />{' '}
+          {locating ? 'Localizando…' : geo ? 'Perto de mim: ativo' : 'Perto de mim'}
         </Button>
         {geo && (
           <>
             <span className="muted hint">raio</span>
-            <Select value={radiusKm} onChange={(e) => setRadiusKm(Number(e.target.value))} aria-label="Raio em km">
+            <Select
+              value={radiusKm}
+              onChange={(e) => setRadiusKm(Number(e.target.value))}
+              aria-label="Raio em km"
+            >
               {RADII.map((r) => (
                 <option key={r} value={r}>
                   {r} km
@@ -145,10 +159,18 @@ export function ServicosView() {
         <form className="card" onSubmit={submit}>
           <h3>Novo serviço</h3>
           <Field label="Título">
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} required minLength={3} />
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+              minLength={3}
+            />
           </Field>
           <Field label="Categoria">
-            <Select value={effectiveCategory} onChange={(e) => setCategoryId(Number(e.target.value))}>
+            <Select
+              value={effectiveCategory}
+              onChange={(e) => setCategoryId(Number(e.target.value))}
+            >
               {flat.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label}
@@ -157,10 +179,22 @@ export function ServicosView() {
             </Select>
           </Field>
           <Field label="Descrição">
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} required minLength={10} />
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              required
+              minLength={10}
+            />
           </Field>
           <Field label="Preço (R$)">
-            <Input type="number" min={10} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required />
+            <Input
+              type="number"
+              min={10}
+              step="0.01"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              required
+            />
           </Field>
           <Button type="submit" disabled={create.isPending}>
             {create.isPending ? 'Salvando…' : 'Publicar'}
@@ -173,7 +207,11 @@ export function ServicosView() {
         error={services.error}
         data={services.data}
         isEmpty={(d) => d.items.length === 0}
-        empty={geo ? `Nenhum serviço num raio de ${radiusKm} km — aumente o raio.` : 'Nenhum serviço encontrado.'}
+        empty={
+          geo
+            ? `Nenhum serviço num raio de ${radiusKm} km — aumente o raio.`
+            : 'Nenhum serviço encontrado.'
+        }
         onRetry={() => void services.refetch()}
       >
         {(d) => (
@@ -193,6 +231,15 @@ export function ServicosView() {
                       {s.isRemote && <span className="tag">remoto</span>}
                     </span>
                   </div>
+                  {s.ownerName && (
+                    <div className="svc-owner">
+                      <span className="svc-owner-ini" aria-hidden="true">
+                        {s.ownerName[0]}
+                      </span>
+                      <span className="muted tiny">{s.ownerName}</span>
+                      <Stars value={s.ownerRating ?? 0} count={s.ownerReviews ?? 0} size={12} />
+                    </div>
+                  )}
                   <p className="muted clamp">{s.description}</p>
                   <div className="svc-foot">
                     <span className="price">{s.price != null ? brl(s.price) : 'a combinar'}</span>

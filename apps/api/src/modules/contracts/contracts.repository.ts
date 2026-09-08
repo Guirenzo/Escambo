@@ -20,6 +20,7 @@ export interface ContractRow extends RowDataPacket {
   completed_at: Date | null;
   cancelled_at: Date | null;
   created_at: Date;
+  has_review?: number; // 1 se o cliente já avaliou (subquery nas consultas de leitura)
 }
 
 export interface HistoryRow extends RowDataPacket {
@@ -28,6 +29,9 @@ export interface HistoryRow extends RowDataPacket {
   note: string | null;
   created_at: Date;
 }
+
+/** O cliente já avaliou? Uma avaliação por contrato (RN-042). */
+const HAS_REVIEW = `EXISTS(SELECT 1 FROM reviews r WHERE r.contract_id = c.id)`;
 
 export const contractsRepository = {
   async create(data: {
@@ -72,7 +76,7 @@ export const contractsRepository = {
 
   async findById(id: number): Promise<ContractRow | undefined> {
     const [rows] = await pool.query<ContractRow[]>(
-      `SELECT * FROM contracts WHERE id = :id LIMIT 1`,
+      `SELECT c.*, ${HAS_REVIEW} AS has_review FROM contracts c WHERE c.id = :id LIMIT 1`,
       { id },
     );
     return rows[0];
@@ -80,9 +84,9 @@ export const contractsRepository = {
 
   async listForUser(userId: number, limit: number, offset: number): Promise<ContractRow[]> {
     const [rows] = await pool.query<ContractRow[]>(
-      `SELECT * FROM contracts
-        WHERE client_id = :userId OR freelancer_id = :userId
-        ORDER BY created_at DESC
+      `SELECT c.*, ${HAS_REVIEW} AS has_review FROM contracts c
+        WHERE c.client_id = :userId OR c.freelancer_id = :userId
+        ORDER BY c.created_at DESC
         LIMIT ${limit} OFFSET ${offset}`,
       { userId },
     );
@@ -141,7 +145,13 @@ export const contractsRepository = {
       await conn.query<ResultSetHeader>(
         `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
          VALUES (:id, :changedBy, :from, :to, :note)`,
-        { id: params.id, changedBy: params.changedBy, from: params.from, to: params.to, note: params.note },
+        {
+          id: params.id,
+          changedBy: params.changedBy,
+          from: params.from,
+          to: params.to,
+          note: params.note,
+        },
       );
 
       if (params.walletEffect) {
@@ -233,7 +243,11 @@ export const contractsRepository = {
 
       await conn.query<ResultSetHeader>(
         `INSERT INTO deliveries (contract_id, message, files) VALUES (:id, :message, :files)`,
-        { id: params.id, message: params.message, files: params.files ? JSON.stringify(params.files) : null },
+        {
+          id: params.id,
+          message: params.message,
+          files: params.files ? JSON.stringify(params.files) : null,
+        },
       );
       await conn.query<ResultSetHeader>(
         `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)

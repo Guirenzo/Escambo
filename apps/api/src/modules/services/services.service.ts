@@ -21,6 +21,13 @@ function toService(row: ServiceRow): Service {
       ? { distanceKm: Math.round(Number(row.distance_km) * 10) / 10 }
       : {}),
     ...(row.boosted != null ? { boosted: Boolean(Number(row.boosted)) } : {}),
+    ...(row.owner_name !== undefined
+      ? {
+          ownerName: row.owner_name,
+          ownerRating: Number(row.owner_avg_rating ?? 0),
+          ownerReviews: Number(row.owner_total_reviews ?? 0),
+        }
+      : {}),
   };
 }
 

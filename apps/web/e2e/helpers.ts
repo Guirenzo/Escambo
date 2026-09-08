@@ -50,7 +50,15 @@ export async function createUser(
       data: { email, password: PASSWORD },
     },
   );
-  return { id: auth.user.id, email, token: auth.accessToken };
+  const user = { id: auth.user.id, email, token: auth.accessToken };
+  // Freelancer de verdade tem perfil (nome, cidade): é nele que moram nota média e Score.
+  if (role === 'freelancer') {
+    await api(request, 'put', '/profiles/freelancer', {
+      token: user.token,
+      data: { fullName: `Freela ${user.id}`, city: 'Joinville', isAvailable: true },
+    });
+  }
+  return user;
 }
 
 /** Cria um serviço para o freelancer (título único para a busca achar só ele). */
@@ -74,6 +82,33 @@ export async function createService(
     },
   });
   return { id: svc.id, title };
+}
+
+/** Contratação levada até 'completed' pela API (create → accept → deliver → approve). */
+export async function completeContract(
+  request: APIRequestContext,
+  client: TestUser,
+  freelancer: TestUser,
+  service: { id: number; title: string },
+): Promise<number> {
+  const created = await api<{ id: number }>(request, 'post', '/contracts', {
+    token: client.token,
+    data: {
+      freelancerId: freelancer.id,
+      serviceId: service.id,
+      title: service.title,
+      description: 'Contratação criada pelos testes ponta a ponta e levada até a conclusão.',
+      price: 250,
+    },
+  });
+  for (const [who, action, data] of [
+    [freelancer, 'accept', undefined],
+    [freelancer, 'deliver', { message: 'Entregue.' }],
+    [client, 'approve', undefined],
+  ] as const) {
+    await api(request, 'post', `/contracts/${created.id}/${action}`, { token: who.token, data });
+  }
+  return created.id;
 }
 
 /** Abre a UI já autenticada como `user` (token no localStorage antes do primeiro script). */

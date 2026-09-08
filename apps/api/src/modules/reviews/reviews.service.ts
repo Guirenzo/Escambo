@@ -8,7 +8,7 @@ import type { CreateReviewInput, ListReviewsInput } from './reviews.schema';
 
 const REVIEW_WINDOW_DAYS = 7; // RN-043
 
-function toReview(row: ReviewRow, response: string | null): Review {
+export function toReview(row: ReviewRow, response: string | null): Review {
   return {
     id: row.id,
     contractId: row.contract_id,

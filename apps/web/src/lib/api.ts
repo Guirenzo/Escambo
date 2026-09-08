@@ -12,6 +12,7 @@ import type {
   CreateBarterRequest,
   CreateBoostRequest,
   CreateContractRequest,
+  CreateReviewRequest,
   CreateServiceRequest,
   CreditTransaction,
   FreelancerProfile,
@@ -23,6 +24,7 @@ import type {
   Paginated,
   PublicUser,
   RegisterRequest,
+  Review,
   Service,
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
@@ -121,7 +123,10 @@ export const api = {
   contractAction: (id: number, action: 'accept' | 'reject' | 'approve' | 'cancel') =>
     request<Contract>(`/contracts/${id}/${action}`, { method: 'POST' }),
   deliverContract: (id: number, message: string) =>
-    request<Contract>(`/contracts/${id}/deliver`, { method: 'POST', body: JSON.stringify({ message }) }),
+    request<Contract>(`/contracts/${id}/deliver`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }),
 
   // chat do contrato
   chatHistory: (contractId: number) => request<ChatHistory>(`/messaging/contracts/${contractId}`),
@@ -162,7 +167,21 @@ export const api = {
   // perfis
   profilesMe: () => request<MyProfiles>('/profiles/me'),
   putFreelancerProfile: (body: UpsertFreelancerProfileRequest) =>
-    request<FreelancerProfile>('/profiles/freelancer', { method: 'PUT', body: JSON.stringify(body) }),
+    request<FreelancerProfile>('/profiles/freelancer', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
   putClientProfile: (body: UpsertClientProfileRequest) =>
     request<ClientProfile>('/profiles/client', { method: 'PUT', body: JSON.stringify(body) }),
+
+  // avaliações (fecham o ciclo: aprovação → nota → Escambo Score)
+  reviews: (freelancerId: number) =>
+    request<Paginated<Review>>(`/reviews?freelancerId=${freelancerId}&limit=50`),
+  createReview: (body: CreateReviewRequest) =>
+    request<Review>('/reviews', { method: 'POST', body: JSON.stringify(body) }),
+  respondReview: (id: number, response: string) =>
+    request<{ ok: boolean }>(`/reviews/${id}/response`, {
+      method: 'POST',
+      body: JSON.stringify({ response }),
+    }),
 };

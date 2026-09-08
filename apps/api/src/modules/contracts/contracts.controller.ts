@@ -11,7 +11,10 @@ import {
 import { contractsService } from './contracts.service';
 
 const uid = (req: Request): number => req.user!.uid;
-const audit = (req: Request) => ({ ip: req.ip ?? null, userAgent: req.headers['user-agent'] ?? null });
+const audit = (req: Request) => ({
+  ip: req.ip ?? null,
+  userAgent: req.headers['user-agent'] ?? null,
+});
 
 export async function createContract(req: Request, res: Response): Promise<void> {
   const input = createContractSchema.parse(req.body);

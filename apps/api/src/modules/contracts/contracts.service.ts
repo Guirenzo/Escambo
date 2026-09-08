@@ -14,6 +14,8 @@ import { barterService } from '../barter/barter.service';
 import { gamificationService } from '../gamification/gamification.service';
 import { walletService } from '../wallet/wallet.service';
 import { contractsRepository, type ContractRow } from './contracts.repository';
+import { reviewsRepository } from '../reviews/reviews.repository';
+import { toReview } from '../reviews/reviews.service';
 import type { CreateContractInput, DeliverInput, ListContractsInput } from './contracts.schema';
 
 const PLATFORM_FEE_RATE = 0.15; // RN-031
@@ -36,6 +38,7 @@ function toContract(row: ContractRow): Contract {
     status: row.status as ContractStatus,
     deadlineAt: row.deadline_at ? new Date(row.deadline_at).toISOString() : null,
     createdAt: new Date(row.created_at).toISOString(),
+    hasReview: Boolean(Number(row.has_review ?? 0)),
   };
 }
 
@@ -57,7 +60,8 @@ function assertClient(row: ContractRow, uid: number): void {
   if (row.client_id !== uid) throw new HttpError(403, 'Ação exclusiva do cliente', 'forbidden');
 }
 function assertFreelancer(row: ContractRow, uid: number): void {
-  if (row.freelancer_id !== uid) throw new HttpError(403, 'Ação exclusiva do freelancer', 'forbidden');
+  if (row.freelancer_id !== uid)
+    throw new HttpError(403, 'Ação exclusiva do freelancer', 'forbidden');
 }
 function assertStatus(row: ContractRow, allowed: ContractStatus[]): void {
   if (!allowed.includes(row.status as ContractStatus)) {
@@ -137,7 +141,9 @@ export const contractsService = {
       note: h.note,
       at: new Date(h.created_at).toISOString(),
     }));
-    return { ...toContract(row), history: entries };
+    const reviewRow = await reviewsRepository.findByContractIdWithResponse(id);
+    const review = reviewRow ? toReview(reviewRow, reviewRow.response) : null;
+    return { ...toContract(row), history: entries, review };
   },
 
   async accept(id: number, uid: number): Promise<Contract> {
@@ -159,7 +165,12 @@ export const contractsService = {
         timestampColumn: 'accepted_at',
         creditsEffects: [
           { userId: row.client_id, pendingDelta: 0, balanceDelta: -credits, reason: 'escrow_hold' },
-          { userId: row.freelancer_id, pendingDelta: credits, balanceDelta: 0, reason: 'escrow_in' },
+          {
+            userId: row.freelancer_id,
+            pendingDelta: credits,
+            balanceDelta: 0,
+            reason: 'escrow_in',
+          },
         ],
       });
       if (!ok) {
@@ -181,7 +192,11 @@ export const contractsService = {
       to: 'accepted',
       note: null,
       timestampColumn: 'accepted_at',
-      walletEffect: { userId: row.freelancer_id, pendingDelta: Number(row.freelancer_net), balanceDelta: 0 },
+      walletEffect: {
+        userId: row.freelancer_id,
+        pendingDelta: Number(row.freelancer_net),
+        balanceDelta: 0,
+      },
     });
     return toContract(await loadOr404(id));
   },
@@ -221,7 +236,11 @@ export const contractsService = {
     const releaseEffect = isBarter
       ? {}
       : isCredits
-        ? { creditsEffects: [{ userId: row.freelancer_id, pendingDelta: -credits, balanceDelta: credits }] }
+        ? {
+            creditsEffects: [
+              { userId: row.freelancer_id, pendingDelta: -credits, balanceDelta: credits },
+            ],
+          }
         : { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: net } };
     await applyTransition({
       id,
@@ -272,7 +291,12 @@ export const contractsService = {
       refundEffect = isCredits
         ? {
             creditsEffects: [
-              { userId: row.freelancer_id, pendingDelta: -credits, balanceDelta: 0, reason: 'escrow_refund' },
+              {
+                userId: row.freelancer_id,
+                pendingDelta: -credits,
+                balanceDelta: 0,
+                reason: 'escrow_refund',
+              },
               { userId: row.client_id, pendingDelta: 0, balanceDelta: credits, reason: 'refund' },
             ],
           }
