@@ -98,7 +98,8 @@ export interface CreateContentReportRequest {
 
 // --- Disputas ---
 
-export type DisputeReason = 'not_delivered' | 'quality' | 'deadline' | 'scope' | 'payment' | 'other';
+export type DisputeReason =
+  'not_delivered' | 'quality' | 'deadline' | 'scope' | 'payment' | 'other';
 export type DisputeStatus = 'open' | 'under_review' | 'awaiting_parties' | 'resolved' | 'closed';
 export type DisputeResolution = 'refund_client' | 'release_freelancer' | 'partial_split' | 'none';
 
@@ -292,6 +293,10 @@ export interface Service {
   distanceKm?: number | null;
   /** Serviço com impulsionamento ativo (ranqueia no topo). */
   boosted?: boolean;
+  /** Quem presta o serviço (nome e reputação) — presente na listagem. */
+  ownerName?: string | null;
+  ownerRating?: number;
+  ownerReviews?: number;
 }
 
 // --- Impulsionamento (Boosts) ---
@@ -372,6 +377,8 @@ export interface Contract {
   status: ContractStatus;
   deadlineAt: string | null;
   createdAt: string;
+  /** O cliente já avaliou esta contratação (uma avaliação por contrato). */
+  hasReview: boolean;
 }
 
 export interface ContractStatusHistoryEntry {
@@ -383,6 +390,8 @@ export interface ContractStatusHistoryEntry {
 
 export interface ContractWithHistory extends Contract {
   history: ContractStatusHistoryEntry[];
+  /** Avaliação do cliente (com a resposta do freelancer, se houver). */
+  review: Review | null;
 }
 
 export interface CreateContractRequest {
@@ -519,13 +528,7 @@ export interface LeaderboardEntry {
 // --- Troca de Serviços (Escambo) ---
 
 export type BarterStatus =
-  | 'proposed'
-  | 'accepted'
-  | 'rejected'
-  | 'active'
-  | 'completed'
-  | 'cancelled'
-  | 'disputed';
+  'proposed' | 'accepted' | 'rejected' | 'active' | 'completed' | 'cancelled' | 'disputed';
 
 export interface BarterAgreement {
   id: number;

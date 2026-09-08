@@ -16,9 +16,17 @@ export const createServiceSchema = z
     // RN-016: serviço com preço fixo tem mínimo de R$ 10,00.
     if (data.priceType === 'fixed') {
       if (data.price == null) {
-        ctx.addIssue({ code: 'custom', path: ['price'], message: 'Preço obrigatório para preço fixo' });
+        ctx.addIssue({
+          code: 'custom',
+          path: ['price'],
+          message: 'Preço obrigatório para preço fixo',
+        });
       } else if (data.price < 10) {
-        ctx.addIssue({ code: 'custom', path: ['price'], message: 'Preço mínimo é R$ 10,00 (RN-016)' });
+        ctx.addIssue({
+          code: 'custom',
+          path: ['price'],
+          message: 'Preço mínimo é R$ 10,00 (RN-016)',
+        });
       }
     }
   });

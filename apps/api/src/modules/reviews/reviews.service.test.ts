@@ -24,7 +24,14 @@ import { contractsRepository, type ContractRow } from '../contracts/contracts.re
 const reviews = vi.mocked(reviewsRepository);
 const contracts = vi.mocked(contractsRepository);
 
-function fakeContract(o: Partial<{ client_id: number; freelancer_id: number; status: string; completed_at: Date | null }> = {}): ContractRow {
+function fakeContract(
+  o: Partial<{
+    client_id: number;
+    freelancer_id: number;
+    status: string;
+    completed_at: Date | null;
+  }> = {},
+): ContractRow {
   return {
     id: 1,
     ulid: '01CONTRACT',
@@ -46,7 +53,9 @@ function fakeContract(o: Partial<{ client_id: number; freelancer_id: number; sta
   } as unknown as ContractRow;
 }
 
-function fakeReview(o: Partial<{ id: number; reviewee_id: number; rating: number }> = {}): ReviewRow {
+function fakeReview(
+  o: Partial<{ id: number; reviewee_id: number; rating: number }> = {},
+): ReviewRow {
   return {
     id: 1,
     contract_id: 1,
@@ -123,13 +132,17 @@ describe('reviewsService.create', () => {
 describe('reviewsService.respond', () => {
   it('403 se não é o avaliado', async () => {
     reviews.findById.mockResolvedValue(fakeReview({ reviewee_id: 2 }));
-    await expect(reviewsService.respond(1, 99, 'obrigado')).rejects.toMatchObject({ statusCode: 403 });
+    await expect(reviewsService.respond(1, 99, 'obrigado')).rejects.toMatchObject({
+      statusCode: 403,
+    });
   });
 
   it('409 se já respondeu (RN-046)', async () => {
     reviews.findById.mockResolvedValue(fakeReview({ reviewee_id: 2 }));
     reviews.findResponseByReviewId.mockResolvedValue({ id: 1 });
-    await expect(reviewsService.respond(1, 2, 'obrigado')).rejects.toMatchObject({ statusCode: 409 });
+    await expect(reviewsService.respond(1, 2, 'obrigado')).rejects.toMatchObject({
+      statusCode: 409,
+    });
     expect(reviews.createResponse).not.toHaveBeenCalled();
   });
 

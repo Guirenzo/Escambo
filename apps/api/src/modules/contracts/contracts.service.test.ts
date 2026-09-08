@@ -224,7 +224,12 @@ describe('getById', () => {
   it('retorna contrato com histórico', async () => {
     repo.findById.mockResolvedValue(fakeRow({ client_id: 1, freelancer_id: 2, status: 'pending' }));
     repo.listHistory.mockResolvedValue([
-      { old_status: null, new_status: 'pending', note: 'Proposta enviada', created_at: new Date('2026-01-01T00:00:00Z') },
+      {
+        old_status: null,
+        new_status: 'pending',
+        note: 'Proposta enviada',
+        created_at: new Date('2026-01-01T00:00:00Z'),
+      },
     ] as unknown as HistoryRow[]);
     const c = await contractsService.getById(1, 1);
     expect(c.history).toHaveLength(1);

@@ -1,7 +1,8 @@
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Star } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { Contract } from '@escambo/types';
 import { Button, Pill } from '../../components/ui';
+import { useAuth } from '../../lib/auth';
 import { STATUS_LABEL, brl, dt } from '../../lib/format';
 import { useContractAction, useDeliverContract } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
@@ -39,6 +40,8 @@ const MODE_LABEL: Record<string, string> = {
 /** Tabela de contratações com ações inline e acesso à sala (timeline + chat). */
 export function ContractsCard({ contracts }: { contracts: Contract[] }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const myId = user?.id ?? -1;
   const toast = useToast();
   const act = useContractAction();
   const deliver = useDeliverContract();
@@ -96,6 +99,11 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
                   <Button variant="mini" onClick={() => navigate(`/contratos/${c.id}`)}>
                     <MessageSquare size={14} /> Sala
                   </Button>
+                  {c.status === 'completed' && c.clientId === myId && !c.hasReview && (
+                    <Button variant="mini" onClick={() => navigate(`/contratos/${c.id}`)}>
+                      <Star size={14} /> Avaliar
+                    </Button>
+                  )}
                   {actionsFor(c.status).map((a) => (
                     <Button
                       key={a.action}

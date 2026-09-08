@@ -3,6 +3,7 @@ import type {
   CreateBarterRequest,
   CreateBoostRequest,
   CreateContractRequest,
+  CreateReviewRequest,
   CreateServiceRequest,
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
@@ -26,6 +27,7 @@ export const qk = {
   notifications: ['notifications'] as const,
   barters: ['barters'] as const,
   profiles: ['profiles'] as const,
+  reviews: (freelancerId: number) => ['reviews', freelancerId] as const,
 };
 
 // ---------- Queries ----------
@@ -38,7 +40,8 @@ export const useCategories = () =>
   useQuery({ queryKey: qk.categories, queryFn: () => api.categories(), staleTime: 5 * 60_000 });
 export const useServices = (p?: ServiceQuery) =>
   useQuery({ queryKey: qk.services(p), queryFn: () => api.listServices(p) });
-export const useContracts = () => useQuery({ queryKey: qk.contracts, queryFn: () => api.contracts() });
+export const useContracts = () =>
+  useQuery({ queryKey: qk.contracts, queryFn: () => api.contracts() });
 export const useContractDetail = (id: number) =>
   useQuery({ queryKey: qk.contract(id), queryFn: () => api.contractDetail(id) });
 export const useChatHistory = (id: number) =>
@@ -46,9 +49,14 @@ export const useChatHistory = (id: number) =>
 export const useWithdrawals = () =>
   useQuery({ queryKey: qk.withdrawals, queryFn: () => api.withdrawals() });
 export const useNotifications = () =>
-  useQuery({ queryKey: qk.notifications, queryFn: () => api.notifications(), refetchInterval: 30_000 });
+  useQuery({
+    queryKey: qk.notifications,
+    queryFn: () => api.notifications(),
+    refetchInterval: 30_000,
+  });
 export const useBarters = () => useQuery({ queryKey: qk.barters, queryFn: () => api.barters() });
-export const useProfilesMe = () => useQuery({ queryKey: qk.profiles, queryFn: () => api.profilesMe() });
+export const useProfilesMe = () =>
+  useQuery({ queryKey: qk.profiles, queryFn: () => api.profilesMe() });
 
 // ---------- Mutations (invalidam o que mudou) ----------
 type ContractAction = 'accept' | 'reject' | 'approve' | 'cancel';
@@ -56,7 +64,8 @@ type ContractAction = 'accept' | 'reject' | 'approve' | 'cancel';
 export function useContractAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, action }: { id: number; action: ContractAction }) => api.contractAction(id, action),
+    mutationFn: ({ id, action }: { id: number; action: ContractAction }) =>
+      api.contractAction(id, action),
     onSuccess: (_d, { id }) => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.contract(id) });
@@ -69,7 +78,8 @@ export function useContractAction() {
 export function useDeliverContract() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, message }: { id: number; message: string }) => api.deliverContract(id, message),
+    mutationFn: ({ id, message }: { id: number; message: string }) =>
+      api.deliverContract(id, message),
     onSuccess: (_d, { id }) => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.contract(id) });
@@ -186,6 +196,44 @@ export function useCreateBoost() {
       void qc.invalidateQueries({ queryKey: qk.myBoosts });
       void qc.invalidateQueries({ queryKey: qk.wallet });
       void qc.invalidateQueries({ queryKey: qk.creditTransactions });
+    },
+  });
+}
+
+// ---------- Avaliações ----------
+export const useFreelancerReviews = (freelancerId: number | undefined) =>
+  useQuery({
+    queryKey: qk.reviews(freelancerId ?? 0),
+    queryFn: () => api.reviews(freelancerId!),
+    enabled: !!freelancerId,
+  });
+
+/** Cliente avalia uma contratação concluída: atualiza contrato, perfil (nota) e score. */
+export function useCreateReview() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateReviewRequest) => api.createReview(body),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: qk.contract(r.contractId) });
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: qk.reviews(r.revieweeId) });
+      void qc.invalidateQueries({ queryKey: qk.profiles });
+      void qc.invalidateQueries({ queryKey: qk.gamification });
+      void qc.invalidateQueries({ queryKey: qk.leaderboard });
+      void qc.invalidateQueries({ queryKey: ['services'] });
+    },
+  });
+}
+
+/** Freelancer responde (uma vez) a uma avaliação recebida. */
+export function useRespondReview() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, response }: { id: number; response: string }) =>
+      api.respondReview(id, response),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['reviews'] });
+      void qc.invalidateQueries({ queryKey: ['contract'] });
     },
   });
 }

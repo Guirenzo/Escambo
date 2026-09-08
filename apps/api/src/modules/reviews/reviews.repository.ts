@@ -34,7 +34,25 @@ export const reviewsRepository = {
     return rows[0];
   },
 
-  async listForReviewee(revieweeId: number, limit: number, offset: number): Promise<ReviewListRow[]> {
+  /** Avaliação de um contrato com a resposta do freelancer (para o detalhe da contratação). */
+  async findByContractIdWithResponse(contractId: number): Promise<ReviewListRow | undefined> {
+    const [rows] = await pool.query<ReviewListRow[]>(
+      `SELECT r.id, r.contract_id, r.reviewer_id, r.reviewee_id, r.rating, r.comment, r.created_at,
+              rr.response
+         FROM reviews r
+         LEFT JOIN review_responses rr ON rr.review_id = r.id
+        WHERE r.contract_id = :contractId
+        LIMIT 1`,
+      { contractId },
+    );
+    return rows[0];
+  },
+
+  async listForReviewee(
+    revieweeId: number,
+    limit: number,
+    offset: number,
+  ): Promise<ReviewListRow[]> {
     const [rows] = await pool.query<ReviewListRow[]>(
       `SELECT r.id, r.contract_id, r.reviewer_id, r.reviewee_id, r.rating, r.comment, r.created_at,
               rr.response

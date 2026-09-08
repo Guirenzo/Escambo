@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { createUser, openAs, settled } from './helpers';
+import { completeContract, createService, createUser, openAs, settled } from './helpers';
 
 /**
  * Acessibilidade automatizada (axe-core, regras WCAG 2.x A/AA) nas telas principais.
@@ -51,4 +51,18 @@ test('telas autenticadas não têm violações bloqueantes', async ({ page, requ
     problems.push(...(await audit(page, name)));
   }
   expect(problems.join('\n')).toBe('');
+});
+
+test('sala do contrato concluído (linha do tempo, chat e formulário de avaliação) não tem violações', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const service = await createService(request, freelancer, 200);
+  const client = await createUser(request, 'client');
+  const contractId = await completeContract(request, client, freelancer, service);
+  await openAs(page, client, `/contratos/${contractId}`);
+  await settled(page);
+  await expect(page.getByRole('radiogroup', { name: 'Nota' })).toBeVisible();
+  expect((await audit(page, 'sala do contrato')).join('\n')).toBe('');
 });

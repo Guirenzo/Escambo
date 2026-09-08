@@ -19,7 +19,8 @@
 ```
 
 ### **Plataforma Digital de Serviços Freelance**
-*O iFood dos serviços — conectando quem precisa com quem sabe fazer*
+
+_O iFood dos serviços — conectando quem precisa com quem sabe fazer_
 
 <br />
 
@@ -58,11 +59,11 @@ docker compose run --rm demo-seed     # opcional: contas, serviços, contrataç�
 
 Abra **http://localhost:8090** e entre com uma das contas da demo (senha de todas: `Escambo@123`):
 
-| Conta | Papel | O que tem |
-|---|---|---|
-| `bruno@escambo.demo` | Freelancer | Contratações concluídas, chat, serviço impulsionado, trocas recebidas, saldo e créditos |
-| `marina@escambo.demo` | Freelancer | Entrega aguardando aprovação e uma proposta de troca enviada |
-| `cliente@escambo.demo` | Cliente | Contratações em todos os estados (pendente, em andamento, entregue, concluída) |
+| Conta                  | Papel      | O que tem                                                                               |
+| ---------------------- | ---------- | --------------------------------------------------------------------------------------- |
+| `bruno@escambo.demo`   | Freelancer | Contratações concluídas, chat, serviço impulsionado, trocas recebidas, saldo e créditos |
+| `marina@escambo.demo`  | Freelancer | Entrega aguardando aprovação e uma proposta de troca enviada                            |
+| `cliente@escambo.demo` | Cliente    | Contratações em todos os estados (pendente, em andamento, entregue, concluída)          |
 
 Outros freelancers da demo: `rafael`, `carla`, `diego`, `felipe` (`@escambo.demo`).
 
@@ -102,12 +103,12 @@ back e front. Copie `apps/api/.env.example` para `apps/api/.env` se quiser mudar
 
 ## 🖼️ Telas
 
-| | |
-|---|---|
-| **Login** — hero com os diferenciais<br /><img src="docs/screenshots/01-login.png" alt="Login" /> | **Início** — saldo, escrow, créditos, nível e contratações<br /><img src="docs/screenshots/02-inicio.png" alt="Início" /> |
-| **Serviços** — busca, "perto de mim" e destaque<br /><img src="docs/screenshots/03-servicos.png" alt="Serviços" /> | **Sala do contrato** — linha do tempo do escrow + chat ao vivo<br /><img src="docs/screenshots/04-sala-contrato.png" alt="Sala do contrato" /> |
-| **Trocas** — serviço por serviço, com torna<br /><img src="docs/screenshots/05-trocas.png" alt="Trocas" /> | **Ranking** — pódio e XP<br /><img src="docs/screenshots/06-ranking.png" alt="Ranking" /> |
-| **Carteira** — R$, créditos, extrato e saques<br /><img src="docs/screenshots/07-carteira.png" alt="Carteira" /> | **Perfil** — Escambo Score explicado<br /><img src="docs/screenshots/08-perfil.png" alt="Perfil" /> |
+|                                                                                                                    |                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Login** — hero com os diferenciais<br /><img src="docs/screenshots/01-login.png" alt="Login" />                  | **Início** — saldo, escrow, créditos, nível e contratações<br /><img src="docs/screenshots/02-inicio.png" alt="Início" />                                 |
+| **Serviços** — busca, "perto de mim" e destaque<br /><img src="docs/screenshots/03-servicos.png" alt="Serviços" /> | **Sala do contrato** — linha do tempo do escrow, avaliação e chat ao vivo<br /><img src="docs/screenshots/04-sala-contrato.png" alt="Sala do contrato" /> |
+| **Trocas** — serviço por serviço, com torna<br /><img src="docs/screenshots/05-trocas.png" alt="Trocas" />         | **Ranking** — pódio e XP<br /><img src="docs/screenshots/06-ranking.png" alt="Ranking" />                                                                 |
+| **Carteira** — R$, créditos, extrato e saques<br /><img src="docs/screenshots/07-carteira.png" alt="Carteira" />   | **Perfil** — Escambo Score explicado e avaliações recebidas<br /><img src="docs/screenshots/08-perfil.png" alt="Perfil" />                                |
 
 <sub>Prints gerados automaticamente a partir dos dados de demonstração: `npm run -w apps/web screenshots`.</sub>
 
@@ -121,8 +122,9 @@ back e front. Copie `apps/api/.env.example` para `apps/api/.env` se quiser mudar
 3. **Contratar** "Landing page em React" → escolher **Créditos Escambo** ou **Dinheiro** (escrow com taxa de 15%)
    → **Enviar proposta** → cai na **Sala do contrato**.
 4. Na sala, mandar uma mensagem no **chat**. Em outra aba, entrar como `bruno@escambo.demo`: a mensagem chega
-   **ao vivo** (Socket.IO), e o freelancer pode **Aceitar → Entregar**; o cliente **Aprova** e o valor sai do
-   escrow para a carteira.
+   **ao vivo** (Socket.IO), e o freelancer pode **Aceitar → Entregar**; o cliente **Aprova** (o valor sai do
+   escrow para a carteira) e **Avalia** com estrelas e comentário; a nota entra na hora no Escambo Score do
+   freelancer, que pode responder uma vez.
 5. Como Bruno: **Carteira** (saldo, créditos, extrato do bônus e do boost), **Perfil** (Escambo Score com os
    quatro fatores), **Ranking** (pódio por XP) e **Trocas** (aceitar a proposta gera dois contratos recíprocos).
 
@@ -130,16 +132,17 @@ back e front. Copie `apps/api/.env.example` para `apps/api/.env` se quiser mudar
 
 ## ✨ Diferenciais
 
-| | Diferencial | Como funciona |
-|---|---|---|
-| 🔄 | **Troca de serviços (escambo)** | Um freelancer propõe trocar um serviço seu por um de outro. Ao aceitar, nascem **dois contratos recíprocos** com o mesmo fluxo de escrow; se os valores não batem, a diferença (**torna**) é paga em dinheiro, com 15% de taxa só sobre ela. |
-| 🪙 | **Créditos Escambo (banco de tempo)** | Moeda interna sem taxa. Cada conta ganha um bônus de boas-vindas e pode **contratar em créditos** (retidos no aceite, liberados na aprovação) ou usá-los para **impulsionar** serviços. Ledger completo em `credit_transactions`, com efeitos atômicos junto às transições do contrato. |
-| 📍 | **Descoberta local** | Perfis têm latitude/longitude; a busca aceita `lat`, `lng` e `radiusKm` e devolve a **distância** (Haversine no MySQL, filtrada em subquery). Serviços impulsionados vêm primeiro. |
-| 🛡️ | **Escambo Score** | Índice de confiança 0–100 que **explica seus fatores**: qualidade (nota média), experiência (contratos), prova social (avaliações) e responsividade (tempo de resposta). Aparece no perfil e nos cards. |
-| 🚀 | **Impulsionamento** | Planos de destaque pagos em créditos, com validade; o serviço sobe para o topo da busca e ganha o selo. |
-| 🎮 | **Gamificação** | XP por contrato concluído, níveis, badges e ranking. |
-| 💬 | **Chat em tempo real** | Sala por contrato com histórico, autenticada pelo mesmo JWT do REST. |
-| 🔒 | **Escrow** | Cada transição de estado é atômica: status + histórico + efeito na carteira (ou no ledger de créditos) na mesma transação. |
+|     | Diferencial                           | Como funciona                                                                                                                                                                                                                                                                           |
+| --- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🔄  | **Troca de serviços (escambo)**       | Um freelancer propõe trocar um serviço seu por um de outro. Ao aceitar, nascem **dois contratos recíprocos** com o mesmo fluxo de escrow; se os valores não batem, a diferença (**torna**) é paga em dinheiro, com 15% de taxa só sobre ela.                                            |
+| 🪙  | **Créditos Escambo (banco de tempo)** | Moeda interna sem taxa. Cada conta ganha um bônus de boas-vindas e pode **contratar em créditos** (retidos no aceite, liberados na aprovação) ou usá-los para **impulsionar** serviços. Ledger completo em `credit_transactions`, com efeitos atômicos junto às transições do contrato. |
+| 📍  | **Descoberta local**                  | Perfis têm latitude/longitude; a busca aceita `lat`, `lng` e `radiusKm` e devolve a **distância** (Haversine no MySQL, filtrada em subquery). Serviços impulsionados vêm primeiro.                                                                                                      |
+| 🛡️  | **Escambo Score**                     | Índice de confiança 0–100 que **explica seus fatores**: qualidade (nota média), experiência (contratos), prova social (avaliações) e responsividade (tempo de resposta). Aparece no perfil e nos cards.                                                                                 |
+| ⭐  | **Avaliações**                        | Só o cliente avalia, só contratação concluída, uma avaliação por contrato e até 7 dias após a aprovação. A nota média e a contagem são recalculadas na **mesma transação** e aparecem no perfil, nos cards de serviço e no Score; o freelancer responde uma vez, publicamente.          |
+| 🚀  | **Impulsionamento**                   | Planos de destaque pagos em créditos, com validade; o serviço sobe para o topo da busca e ganha o selo.                                                                                                                                                                                 |
+| 🎮  | **Gamificação**                       | XP por contrato concluído, níveis, badges e ranking.                                                                                                                                                                                                                                    |
+| 💬  | **Chat em tempo real**                | Sala por contrato com histórico, autenticada pelo mesmo JWT do REST.                                                                                                                                                                                                                    |
+| 🔒  | **Escrow**                            | Cada transição de estado é atômica: status + histórico + efeito na carteira (ou no ledger de créditos) na mesma transação.                                                                                                                                                              |
 
 ---
 
@@ -155,12 +158,12 @@ back e front. Copie `apps/api/.env.example` para `apps/api/.env` se quiser mudar
               └──────────── packages/types (DTOs compartilhados) ─────────────┘
 ```
 
-| Camada | Tecnologia |
-|---|---|
-| **Web** | React 18, Vite 6, TypeScript, react-router 6, TanStack Query 5, socket.io-client, Lucide |
-| **API** | Node 22, Express, TypeScript, Zod (validação), mysql2 (pool + transações), JWT + bcrypt, pino, Socket.IO |
+| Camada    | Tecnologia                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Web**   | React 18, Vite 6, TypeScript, react-router 6, TanStack Query 5, socket.io-client, Lucide                           |
+| **API**   | Node 22, Express, TypeScript, Zod (validação), mysql2 (pool + transações), JWT + bcrypt, pino, Socket.IO           |
 | **Banco** | MySQL 8 · `schema.sql` (baseline) + `db/migrations` aplicadas por um runner próprio com ledger `schema_migrations` |
-| **Infra** | Docker Compose (db → job de migrations → api → web/nginx), imagens sem root com healthcheck, CI no GitHub Actions |
+| **Infra** | Docker Compose (db → job de migrations → api → web/nginx), imagens sem root com healthcheck, CI no GitHub Actions  |
 
 **Pronta para produção**: proxy reverso (`TRUST_PROXY`), CORS configurável (REST e WebSocket), limite de corpo, gzip,
 `X-Request-Id` em cada resposta e log, redação de segredos no log, rate limit global e de login, encerramento
@@ -174,12 +177,12 @@ Todas as variáveis estão documentadas em [`apps/api/.env.example`](./apps/api/
 Pirâmide de testes + lint + type-check, tudo no CI a cada push (badge no topo). São **três jobs** que precisam
 passar em todo PR:
 
-| Camada | O quê | Onde | Comando |
-|---|---|---|---|
-| **Unidade (API)** | Regras de negócio de cada serviço com as *repositories* mockadas — 109 testes em 22 arquivos | `apps/api/src/**/*.test.ts` | `npm test` |
-| **Integração (API)** | App Express **real** via Supertest contra um MySQL de verdade (`escambo_test` recriado a cada run): escrow, créditos, geo, boosts, chat, hardening e migrations — 25 testes | `apps/api/test/integration/**` | `npm run -w @escambo/api test:int` |
-| **Componente (Web)** | Client HTTP, helpers e views React (Testing Library + jsdom) — 17 testes | `apps/web/src/**/*.test.tsx` | `npm test` |
-| **Ponta a ponta (Web + API + MySQL)** | Playwright: login, contratar → sala → chat, navegação, em **desktop e mobile** (Pixel 7), mais auditoria de **acessibilidade** com axe (WCAG 2.1 AA) | `apps/web/e2e/**` | `npm run -w apps/web e2e` |
+| Camada                                | O quê                                                                                                                                                                                     | Onde                           | Comando                            |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------------------------------- |
+| **Unidade (API)**                     | Regras de negócio de cada serviço com as _repositories_ mockadas — 109 testes em 22 arquivos                                                                                              | `apps/api/src/**/*.test.ts`    | `npm test`                         |
+| **Integração (API)**                  | App Express **real** via Supertest contra um MySQL de verdade (`escambo_test` recriado a cada run): escrow, créditos, geo, boosts, chat, avaliações, hardening e migrations — 26 testes   | `apps/api/test/integration/**` | `npm run -w @escambo/api test:int` |
+| **Componente (Web)**                  | Client HTTP, helpers e componentes React (Testing Library + jsdom) — 22 testes                                                                                                            | `apps/web/src/**/*.test.tsx`   | `npm test`                         |
+| **Ponta a ponta (Web + API + MySQL)** | Playwright: login, contratar → sala → chat, avaliar → nota no perfil, navegação, em **desktop e mobile** (Pixel 7), mais auditoria de **acessibilidade** com axe (WCAG 2.1 AA) em 9 telas | `apps/web/e2e/**`              | `npm run -w apps/web e2e`          |
 
 ```bash
 npm test                          # unidade (API) + componente (Web) — sem banco
@@ -216,15 +219,15 @@ escambo/
 
 ## 📄 Documentação
 
-| Documento | Descrição |
-|---|---|
-| [📋 RFC Completa](./docs/RFC.md) | Request for Comments — proposta técnica completa |
-| [✅ Requisitos Funcionais](./docs/requisitos-funcionais.md) | 90 RFs especificados |
-| [🔒 Requisitos Não Funcionais](./docs/requisitos-nao-funcionais.md) | 42 RNFs especificados |
-| [🗄️ Modelagem do Banco](./docs/modelagem-banco.md) | 50 tabelas MySQL |
-| [⚖️ Regras de Negócio](./docs/regras-de-negocio.md) | 75 RNs especificadas |
-| [🔌 API](./apps/api/README.md) | Módulos, endpoints e convenções do backend |
-| [🗃️ Banco e migrations](./apps/api/db/README.md) | Baseline, seed e runner de migrations |
+| Documento                                                           | Descrição                                        |
+| ------------------------------------------------------------------- | ------------------------------------------------ |
+| [📋 RFC Completa](./docs/RFC.md)                                    | Request for Comments — proposta técnica completa |
+| [✅ Requisitos Funcionais](./docs/requisitos-funcionais.md)         | 90 RFs especificados                             |
+| [🔒 Requisitos Não Funcionais](./docs/requisitos-nao-funcionais.md) | 42 RNFs especificados                            |
+| [🗄️ Modelagem do Banco](./docs/modelagem-banco.md)                  | 50 tabelas MySQL                                 |
+| [⚖️ Regras de Negócio](./docs/regras-de-negocio.md)                 | 75 RNs especificadas                             |
+| [🔌 API](./apps/api/README.md)                                      | Módulos, endpoints e convenções do backend       |
+| [🗃️ Banco e migrations](./apps/api/db/README.md)                    | Baseline, seed e runner de migrations            |
 
 ---
 
@@ -263,6 +266,6 @@ Curso de Engenharia de Software · Católica SC · 2026
 
 <br />
 
-*"Tornar a contratação de serviços mais acessível, rápida e confiável — conectando freelancers e clientes com poucos toques, sem burocracia e com total transparência."*
+_"Tornar a contratação de serviços mais acessível, rápida e confiável — conectando freelancers e clientes com poucos toques, sem burocracia e com total transparência."_
 
 </div>

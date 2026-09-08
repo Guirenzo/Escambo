@@ -337,6 +337,29 @@ async function ensureContract(
   return contract;
 }
 
+/** Cliente avalia uma contratação concluída (uma vez por contrato). */
+async function ensureReview(client, contract, rating, comment) {
+  const detail = await call('GET', `/contracts/${contract.id}`, { token: client.token });
+  if (detail.status !== 'completed') return;
+  if (detail.review) return log(`avaliação #${contract.id} já existe (${detail.review.rating}★)`);
+  await call('POST', '/reviews', {
+    token: client.token,
+    body: { contractId: contract.id, rating, comment },
+  });
+  log(`avaliação #${contract.id} ${'★'.repeat(rating)} "${comment.slice(0, 40)}…"`);
+}
+
+/** Freelancer responde (uma vez) à avaliação recebida. */
+async function ensureResponse(freelancer, contract, response) {
+  const detail = await call('GET', `/contracts/${contract.id}`, { token: freelancer.token });
+  if (!detail.review || detail.review.response) return;
+  await call('POST', `/reviews/${detail.review.id}/response`, {
+    token: freelancer.token,
+    body: { response },
+  });
+  log(`resposta #${contract.id} "${response.slice(0, 40)}…"`);
+}
+
 async function ensureBoost(user, service) {
   const active = (await call('GET', '/boosts', { token: user.token })).find(
     (b) => b.serviceId === service.id && b.status !== 'expired',
@@ -411,7 +434,7 @@ async function main() {
   await call('GET', '/wallet', { token: ana.token });
 
   step('Contratações (todos os estados do escrow)');
-  await ensureContract(ana, users.bruno, svc['Landing page em React'], {
+  const landing = await ensureContract(ana, users.bruno, svc['Landing page em React'], {
     title: 'Landing page em React',
     price: 1200,
     to: 'completed',
@@ -422,22 +445,27 @@ async function main() {
       ['freelancer', 'Preview no ar: https://preview.escambo.demo/landing — pode olhar?'],
     ],
   });
-  await ensureContract(ana, users.bruno, svc['Ajustes e correções no site'], {
+  const ajustes = await ensureContract(ana, users.bruno, svc['Ajustes e correções no site'], {
     title: 'Ajustes e correções no site',
     price: 400,
     to: 'completed',
   });
-  await ensureContract(ana, users.marina, svc['Identidade visual (logo + guia)'], {
-    title: 'Identidade visual (logo + guia)',
-    price: 800,
-    to: 'completed',
-  });
+  const identidade = await ensureContract(
+    ana,
+    users.marina,
+    svc['Identidade visual (logo + guia)'],
+    {
+      title: 'Identidade visual (logo + guia)',
+      price: 800,
+      to: 'completed',
+    },
+  );
   await ensureContract(ana, users.marina, svc['Posts para redes sociais (pacote 12)'], {
     title: 'Posts para redes sociais (pacote 12)',
     price: 480,
     to: 'delivered',
   });
-  await ensureContract(ana, users.carla, svc['Ensaio de produto (20 fotos)'], {
+  const ensaio = await ensureContract(ana, users.carla, svc['Ensaio de produto (20 fotos)'], {
     title: 'Ensaio de produto (20 fotos)',
     price: 650,
     to: 'completed',
@@ -456,12 +484,30 @@ async function main() {
     price: 700,
     to: 'pending',
   });
-  await ensureContract(ana, users.felipe, svc['Instalação elétrica (visita)'], {
+  const eletrica = await ensureContract(ana, users.felipe, svc['Instalação elétrica (visita)'], {
     title: 'Revisão elétrica rápida (em créditos)',
     price: 60,
     paymentMode: 'credits',
     to: 'completed',
   });
+
+  step('Avaliações (alimentam o Escambo Score)');
+  await ensureReview(
+    ana,
+    landing,
+    5,
+    'Entrega impecável, antes do prazo e com código limpo. Recomendo!',
+  );
+  await ensureReview(ana, ajustes, 5, 'Rápido e preciso. Resolveu tudo em um dia.');
+  await ensureReview(
+    ana,
+    identidade,
+    4,
+    'Identidade linda e bem documentada; as revisões demoraram um pouco.',
+  );
+  await ensureReview(ana, ensaio, 5, 'Fotos incríveis, valorizaram muito o produto.');
+  await ensureReview(ana, eletrica, 5, 'Chegou no horário, resolveu na hora e explicou tudo.');
+  await ensureResponse(users.bruno, landing, 'Obrigado, Ana! Foi um prazer trabalhar com você.');
 
   step('Impulsionamento (pago em créditos Escambo)');
   await ensureBoost(users.bruno, svc['Landing page em React']);

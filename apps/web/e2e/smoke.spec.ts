@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createService, createUser, openAs, PASSWORD, settled } from './helpers';
+import { completeContract, createService, createUser, openAs, PASSWORD, settled } from './helpers';
 
 /**
  * Smoke ponta a ponta: o caminho crítico do produto com Web + API + MySQL reais.
@@ -88,6 +88,14 @@ test('navegação principal funciona (sidebar / barra inferior no mobile)', asyn
     expect(box!.height).toBeLessThan(120);
   }
 
+  const noHorizontalScroll = async (where: string): Promise<void> => {
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `${where} tem overflow horizontal de ${overflow}px`).toBeLessThanOrEqual(0);
+  };
+  await noHorizontalScroll('/');
+
   for (const [label, path, heading] of [
     ['Serviços', '/servicos', 'Serviços'],
     ['Ranking', '/ranking', 'Ranking'],
@@ -97,5 +105,50 @@ test('navegação principal funciona (sidebar / barra inferior no mobile)', asyn
     await nav.getByRole('link', { name: label }).click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
     await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
+    await settled(page);
+    // Nenhuma tela pode rolar horizontalmente (tabelas/grades rolam dentro do próprio container).
+    await noHorizontalScroll(path);
   }
+});
+
+test('cliente avalia a contratação concluída e a nota aparece no perfil do freelancer', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const service = await createService(request, freelancer, 250);
+  const client = await createUser(request, 'client');
+  const contractId = await completeContract(request, client, freelancer, service);
+
+  // Dashboard do cliente oferece "Avaliar" na contratação concluída → sala com o formulário.
+  await openAs(page, client, '/');
+  await settled(page);
+  const row = page.getByRole('row', { name: new RegExp(service.title) });
+  await row.getByRole('button', { name: 'Avaliar' }).click();
+  await expect(page).toHaveURL(new RegExp(`/contratos/${contractId}$`));
+
+  await page.getByRole('radio', { name: '5 estrelas' }).check({ force: true });
+  await expect(page.getByRole('radio', { name: '5 estrelas' })).toBeChecked();
+  await page.getByLabel('Comentário da avaliação').fill('Excelente, entregou antes do prazo.');
+  await page.getByRole('button', { name: 'Enviar avaliação' }).click();
+
+  // A avaliação substitui o formulário.
+  await expect(page.getByText('Excelente, entregou antes do prazo.')).toBeVisible();
+  await expect(page.getByRole('img', { name: '5.0 de 5' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Enviar avaliação' })).toHaveCount(0);
+
+  // No dashboard o botão some (uma avaliação por contrato).
+  await page.goto('/');
+  await settled(page);
+  await expect(row.getByRole('button', { name: 'Avaliar' })).toHaveCount(0);
+
+  // Perfil do freelancer: nota média, contagem e a avaliação recebida com campo de resposta.
+  await openAs(page, freelancer, '/perfil');
+  await settled(page);
+  await expect(page.getByRole('img', { name: '5.0 de 5, 1 avaliações' })).toBeVisible();
+  await expect(page.getByText('Excelente, entregou antes do prazo.')).toBeVisible();
+  await page.getByLabel('Resposta à avaliação').fill('Obrigado pela confiança!');
+  await page.getByRole('button', { name: 'Responder' }).click();
+  await expect(page.getByText('Obrigado pela confiança!')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Responder' })).toHaveCount(0);
 });
