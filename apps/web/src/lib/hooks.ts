@@ -28,6 +28,7 @@ export const qk = {
   barters: ['barters'] as const,
   profiles: ['profiles'] as const,
   reviews: (freelancerId: number) => ['reviews', freelancerId] as const,
+  publicFreelancer: (ulid: string) => ['publicFreelancer', ulid] as const,
 };
 
 // ---------- Queries ----------
@@ -71,6 +72,18 @@ export function useContractAction() {
       void qc.invalidateQueries({ queryKey: qk.contract(id) });
       void qc.invalidateQueries({ queryKey: qk.wallet });
       void qc.invalidateQueries({ queryKey: qk.gamification });
+    },
+  });
+}
+
+/** Cliente pede ajustes numa entrega: volta para o freelancer com o motivo. */
+export function useRequestRevision() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, note }: { id: number; note: string }) => api.requestRevision(id, note),
+    onSuccess: (_d, { id }) => {
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: qk.contract(id) });
     },
   });
 }
@@ -237,3 +250,11 @@ export function useRespondReview() {
     },
   });
 }
+
+// ---------- Perfil público ----------
+export const usePublicFreelancer = (ulid: string | undefined) =>
+  useQuery({
+    queryKey: qk.publicFreelancer(ulid ?? ''),
+    queryFn: () => api.publicFreelancer(ulid!),
+    enabled: !!ulid,
+  });

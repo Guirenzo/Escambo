@@ -1,4 +1,4 @@
-import { ArrowLeft, ListChecks, MessageSquare, Send, Star } from 'lucide-react';
+import { ArrowLeft, Hourglass, ListChecks, MessageSquare, Send, Star } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { ChatMessage, ChatMessageEvent, ContractWithHistory } from '@escambo/types';
 import { StarInput, Stars } from '../../components/Stars';
@@ -13,7 +13,11 @@ import {
   useSendMessage,
 } from '../../lib/hooks';
 import { getSocket } from '../../lib/socket';
+import { ContractActions } from '../contracts/ContractActions';
 import { useToast } from '../../lib/toast';
+
+/** Prazo da plataforma para aprovação tácita (platform_settings.tacit_approval_days). */
+const TACIT_APPROVAL_DAYS = 5;
 
 const MODE_LABEL: Record<string, string> = {
   cash: 'Dinheiro',
@@ -218,9 +222,19 @@ export function SalaContratoView({
           )}
         </div>
         {c && (
-          <span className={`pill status-${c.status}`}>{STATUS_LABEL[c.status] ?? c.status}</span>
+          <div className="sala-head-right">
+            <span className={`pill status-${c.status}`}>{STATUS_LABEL[c.status] ?? c.status}</span>
+            <ContractActions contract={c} exclude={['review']} />
+          </div>
         )}
       </div>
+
+      {c?.status === 'delivered' && c.clientId === myId && (
+        <p className="notice">
+          <Hourglass size={14} /> Entrega registrada. Aprove ou peça revisão; sem resposta em{' '}
+          {TACIT_APPROVAL_DAYS} dias a entrega é aprovada automaticamente e o valor liberado.
+        </p>
+      )}
 
       <div className="sala">
         <div className="stack">

@@ -38,7 +38,13 @@ function toFreelancer(r: FreelancerRow): FreelancerProfile {
 }
 
 function toClient(r: ClientRow): ClientProfile {
-  return { fullName: r.full_name, avatarUrl: r.avatar_url, bio: r.bio, city: r.city, state: r.state };
+  return {
+    fullName: r.full_name,
+    avatarUrl: r.avatar_url,
+    bio: r.bio,
+    city: r.city,
+    state: r.state,
+  };
 }
 
 export const profilesService = {
@@ -77,8 +83,15 @@ export const profilesService = {
   },
 
   async getPublicFreelancer(ulid: string): Promise<PublicFreelancerProfile> {
-    const r: PublicFreelancerRow | undefined = await profilesRepository.findPublicFreelancerByUlid(ulid);
+    const r: PublicFreelancerRow | undefined =
+      await profilesRepository.findPublicFreelancerByUlid(ulid);
     if (!r) throw new HttpError(404, 'Perfil não encontrado', 'profile_not_found');
-    return { ...toFreelancer(r), userUlid: r.ulid, level: r.level, levelName: r.level_name };
+    return {
+      ...toFreelancer(r),
+      userId: r.user_id,
+      userUlid: r.ulid,
+      level: r.level,
+      levelName: r.level_name,
+    };
   },
 };

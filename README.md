@@ -103,12 +103,13 @@ back e front. Copie `apps/api/.env.example` para `apps/api/.env` se quiser mudar
 
 ## 🖼️ Telas
 
-|                                                                                                                    |                                                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Login** — hero com os diferenciais<br /><img src="docs/screenshots/01-login.png" alt="Login" />                  | **Início** — saldo, escrow, créditos, nível e contratações<br /><img src="docs/screenshots/02-inicio.png" alt="Início" />                                 |
-| **Serviços** — busca, "perto de mim" e destaque<br /><img src="docs/screenshots/03-servicos.png" alt="Serviços" /> | **Sala do contrato** — linha do tempo do escrow, avaliação e chat ao vivo<br /><img src="docs/screenshots/04-sala-contrato.png" alt="Sala do contrato" /> |
-| **Trocas** — serviço por serviço, com torna<br /><img src="docs/screenshots/05-trocas.png" alt="Trocas" />         | **Ranking** — pódio e XP<br /><img src="docs/screenshots/06-ranking.png" alt="Ranking" />                                                                 |
-| **Carteira** — R$, créditos, extrato e saques<br /><img src="docs/screenshots/07-carteira.png" alt="Carteira" />   | **Perfil** — Escambo Score explicado e avaliações recebidas<br /><img src="docs/screenshots/08-perfil.png" alt="Perfil" />                                |
+|                                                                                                                                                     |                                                                                                                                                           |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Login** — hero com os diferenciais<br /><img src="docs/screenshots/01-login.png" alt="Login" />                                                   | **Início** — saldo, escrow, créditos, nível e contratações<br /><img src="docs/screenshots/02-inicio.png" alt="Início" />                                 |
+| **Serviços** — busca, "perto de mim" e destaque<br /><img src="docs/screenshots/03-servicos.png" alt="Serviços" />                                  | **Sala do contrato** — linha do tempo do escrow, avaliação e chat ao vivo<br /><img src="docs/screenshots/04-sala-contrato.png" alt="Sala do contrato" /> |
+| **Trocas** — serviço por serviço, com torna<br /><img src="docs/screenshots/05-trocas.png" alt="Trocas" />                                          | **Ranking** — pódio e XP<br /><img src="docs/screenshots/06-ranking.png" alt="Ranking" />                                                                 |
+| **Carteira** — R$, créditos, extrato e saques<br /><img src="docs/screenshots/07-carteira.png" alt="Carteira" />                                    | **Perfil** — Escambo Score explicado e avaliações recebidas<br /><img src="docs/screenshots/08-perfil.png" alt="Perfil" />                                |
+| **Perfil público** — reputação, serviços e avaliações de quem presta<br /><img src="docs/screenshots/09-perfil-publico.png" alt="Perfil público" /> | **Mobile** — mesma app, navegação no rodapé (Pixel 7)<br /><img src="docs/screenshots/10-mobile-inicio.png" alt="Início no mobile" />                     |
 
 <sub>Prints gerados automaticamente a partir dos dados de demonstração: `npm run -w apps/web screenshots`.</sub>
 
@@ -122,8 +123,7 @@ back e front. Copie `apps/api/.env.example` para `apps/api/.env` se quiser mudar
 3. **Contratar** "Landing page em React" → escolher **Créditos Escambo** ou **Dinheiro** (escrow com taxa de 15%)
    → **Enviar proposta** → cai na **Sala do contrato**.
 4. Na sala, mandar uma mensagem no **chat**. Em outra aba, entrar como `bruno@escambo.demo`: a mensagem chega
-   **ao vivo** (Socket.IO), e o freelancer pode **Aceitar → Entregar**; o cliente **Aprova** (o valor sai do
-   escrow para a carteira) e **Avalia** com estrelas e comentário; a nota entra na hora no Escambo Score do
+   **ao vivo** (Socket.IO), e o freelancer pode **Aceitar → Entregar**; o cliente **pede revisão** (a entrega volta com o motivo) ou **Aprova** (o valor sai do escrow para a carteira) e **Avalia** com estrelas e comentário; a nota entra na hora no Escambo Score do
    freelancer, que pode responder uma vez.
 5. Como Bruno: **Carteira** (saldo, créditos, extrato do bônus e do boost), **Perfil** (Escambo Score com os
    quatro fatores), **Ranking** (pódio por XP) e **Trocas** (aceitar a proposta gera dois contratos recíprocos).
@@ -139,6 +139,7 @@ back e front. Copie `apps/api/.env.example` para `apps/api/.env` se quiser mudar
 | 📍  | **Descoberta local**                  | Perfis têm latitude/longitude; a busca aceita `lat`, `lng` e `radiusKm` e devolve a **distância** (Haversine no MySQL, filtrada em subquery). Serviços impulsionados vêm primeiro.                                                                                                      |
 | 🛡️  | **Escambo Score**                     | Índice de confiança 0–100 que **explica seus fatores**: qualidade (nota média), experiência (contratos), prova social (avaliações) e responsividade (tempo de resposta). Aparece no perfil e nos cards.                                                                                 |
 | ⭐  | **Avaliações**                        | Só o cliente avalia, só contratação concluída, uma avaliação por contrato e até 7 dias após a aprovação. A nota média e a contagem são recalculadas na **mesma transação** e aparecem no perfil, nos cards de serviço e no Score; o freelancer responde uma vez, publicamente.          |
+| ⏱️  | **Aprovação tácita**                  | Entrega sem resposta do cliente por `tacit_approval_days` dias (configuração da plataforma, padrão 5) é aprovada por um job em background, com a mesma transação da aprovação manual; o cliente também pode **pedir revisão**, devolvendo a entrega ao freelancer com o motivo.         |
 | 🚀  | **Impulsionamento**                   | Planos de destaque pagos em créditos, com validade; o serviço sobe para o topo da busca e ganha o selo.                                                                                                                                                                                 |
 | 🎮  | **Gamificação**                       | XP por contrato concluído, níveis, badges e ranking.                                                                                                                                                                                                                                    |
 | 💬  | **Chat em tempo real**                | Sala por contrato com histórico, autenticada pelo mesmo JWT do REST.                                                                                                                                                                                                                    |
@@ -167,7 +168,7 @@ back e front. Copie `apps/api/.env.example` para `apps/api/.env` se quiser mudar
 
 **Pronta para produção**: proxy reverso (`TRUST_PROXY`), CORS configurável (REST e WebSocket), limite de corpo, gzip,
 `X-Request-Id` em cada resposta e log, redação de segredos no log, rate limit global e de login, encerramento
-gracioso com drenagem de conexões, `GET /api/health` (readiness, checa o banco) e `GET /api/health/live` (liveness).
+gracioso com drenagem de conexões, `GET /api/health` (readiness, checa o banco) e `GET /api/health/live` (liveness). Sessão com **refresh token rotativo** (o web renova o access token sozinho e revoga no logout) e **jobs em background** no próprio processo (`JOBS_ENABLED`, `JOBS_INTERVAL_MS`; ou `npm run -w @escambo/api jobs:run` num cron).
 Todas as variáveis estão documentadas em [`apps/api/.env.example`](./apps/api/.env.example).
 
 ---
@@ -177,12 +178,12 @@ Todas as variáveis estão documentadas em [`apps/api/.env.example`](./apps/api/
 Pirâmide de testes + lint + type-check, tudo no CI a cada push (badge no topo). São **três jobs** que precisam
 passar em todo PR:
 
-| Camada                                | O quê                                                                                                                                                                                     | Onde                           | Comando                            |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------------------------------- |
-| **Unidade (API)**                     | Regras de negócio de cada serviço com as _repositories_ mockadas — 109 testes em 22 arquivos                                                                                              | `apps/api/src/**/*.test.ts`    | `npm test`                         |
-| **Integração (API)**                  | App Express **real** via Supertest contra um MySQL de verdade (`escambo_test` recriado a cada run): escrow, créditos, geo, boosts, chat, avaliações, hardening e migrations — 26 testes   | `apps/api/test/integration/**` | `npm run -w @escambo/api test:int` |
-| **Componente (Web)**                  | Client HTTP, helpers e componentes React (Testing Library + jsdom) — 22 testes                                                                                                            | `apps/web/src/**/*.test.tsx`   | `npm test`                         |
-| **Ponta a ponta (Web + API + MySQL)** | Playwright: login, contratar → sala → chat, avaliar → nota no perfil, navegação, em **desktop e mobile** (Pixel 7), mais auditoria de **acessibilidade** com axe (WCAG 2.1 AA) em 9 telas | `apps/web/e2e/**`              | `npm run -w apps/web e2e`          |
+| Camada                                | O quê                                                                                                                                                                                                                     | Onde                           | Comando                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ---------------------------------- |
+| **Unidade (API)**                     | Regras de negócio de cada serviço com as _repositories_ mockadas — 112 testes em 23 arquivos                                                                                                                              | `apps/api/src/**/*.test.ts`    | `npm test`                         |
+| **Integração (API)**                  | App Express **real** via Supertest contra um MySQL de verdade (`escambo_test` recriado a cada run): escrow, créditos, geo, boosts, chat, avaliações, aprovação tácita, hardening e migrations — 27 testes                 | `apps/api/test/integration/**` | `npm run -w @escambo/api test:int` |
+| **Componente (Web)**                  | Client HTTP, helpers e componentes React (Testing Library + jsdom) — 33 testes                                                                                                                                            | `apps/web/src/**/*.test.tsx`   | `npm test`                         |
+| **Ponta a ponta (Web + API + MySQL)** | Playwright: login, contratar → sala → chat, avaliar → nota no perfil, pedir revisão, perfil público, navegação, em **desktop e mobile** (Pixel 7), mais auditoria de **acessibilidade** com axe (WCAG 2.1 AA) em 10 telas | `apps/web/e2e/**`              | `npm run -w apps/web e2e`          |
 
 ```bash
 npm test                          # unidade (API) + componente (Web) — sem banco

@@ -8,9 +8,7 @@ import { z } from 'zod';
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3333),
-  LOG_LEVEL: z
-    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
-    .default('info'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
   DB_HOST: z.string().default('localhost'),
   DB_PORT: z.coerce.number().int().positive().default(3306),
@@ -34,13 +32,28 @@ const envSchema = z.object({
   // Rate limiting (por IP).
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
-  LOGIN_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(5 * 60_000),
+  LOGIN_RATE_LIMIT_WINDOW_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5 * 60_000),
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
   // Tempo máximo para drenar conexões no encerramento gracioso.
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
 
   // Créditos Escambo (time-bank): bônus concedido uma vez, no primeiro acesso à carteira.
   CREDITS_WELCOME_BONUS: z.coerce.number().int().min(0).default(100),
+
+  // Jobs em background (aprovação tácita etc.). Em cluster, deixe ligado em UMA instância.
+  JOBS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  JOBS_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5 * 60_000),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -1,35 +1,9 @@
-import { MessageSquare, Star } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { Contract } from '@escambo/types';
 import { Button, Pill } from '../../components/ui';
-import { useAuth } from '../../lib/auth';
 import { STATUS_LABEL, brl, dt } from '../../lib/format';
-import { useContractAction, useDeliverContract } from '../../lib/hooks';
-import { useToast } from '../../lib/toast';
-
-type Action = 'accept' | 'reject' | 'approve' | 'cancel' | 'deliver';
-
-function actionsFor(status: string): { label: string; action: Action }[] {
-  switch (status) {
-    case 'pending':
-      return [
-        { label: 'Aceitar', action: 'accept' },
-        { label: 'Recusar', action: 'reject' },
-        { label: 'Cancelar', action: 'cancel' },
-      ];
-    case 'accepted':
-    case 'in_progress':
-    case 'revision_requested':
-      return [
-        { label: 'Registrar entrega', action: 'deliver' },
-        { label: 'Cancelar', action: 'cancel' },
-      ];
-    case 'delivered':
-      return [{ label: 'Aprovar', action: 'approve' }];
-    default:
-      return [];
-  }
-}
+import { ContractActions } from '../contracts/ContractActions';
 
 const MODE_LABEL: Record<string, string> = {
   cash: 'Dinheiro',
@@ -40,27 +14,6 @@ const MODE_LABEL: Record<string, string> = {
 /** Tabela de contratações com ações inline e acesso à sala (timeline + chat). */
 export function ContractsCard({ contracts }: { contracts: Contract[] }) {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const myId = user?.id ?? -1;
-  const toast = useToast();
-  const act = useContractAction();
-  const deliver = useDeliverContract();
-  const busy = act.isPending || deliver.isPending;
-
-  async function run(id: number, action: Action): Promise<void> {
-    try {
-      if (action === 'deliver') {
-        const message = window.prompt('Mensagem da entrega:') ?? '';
-        if (!message.trim()) return;
-        await deliver.mutateAsync({ id, message });
-      } else {
-        await act.mutateAsync({ id, action });
-      }
-      toast.success('Contratação atualizada');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Erro na ação');
-    }
-  }
 
   return (
     <div className="table-wrap">
@@ -99,21 +52,7 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
                   <Button variant="mini" onClick={() => navigate(`/contratos/${c.id}`)}>
                     <MessageSquare size={14} /> Sala
                   </Button>
-                  {c.status === 'completed' && c.clientId === myId && !c.hasReview && (
-                    <Button variant="mini" onClick={() => navigate(`/contratos/${c.id}`)}>
-                      <Star size={14} /> Avaliar
-                    </Button>
-                  )}
-                  {actionsFor(c.status).map((a) => (
-                    <Button
-                      key={a.action}
-                      variant="mini"
-                      disabled={busy}
-                      onClick={() => void run(c.id, a.action)}
-                    >
-                      {a.label}
-                    </Button>
-                  ))}
+                  <ContractActions contract={c} size="mini" />
                 </div>
               </td>
             </tr>

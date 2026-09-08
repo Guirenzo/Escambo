@@ -95,6 +95,52 @@ async function applyTransition(params: {
   }
 }
 
+/**
+ * Conclui uma entrega: status → completed e liberação do escrow na mesma transação
+ * (cash em R$, credits em créditos, troca não move dinheiro), depois XP e conclusão da troca.
+ */
+async function completeDelivered(
+  row: ContractRow,
+  changedBy: number,
+  note: string | null,
+): Promise<void> {
+  const isBarter = row.payment_mode === 'barter';
+  const isCredits = row.payment_mode === 'credits';
+  const net = Number(row.freelancer_net);
+  const credits = creditsOf(row);
+  const releaseEffect = isBarter
+    ? {}
+    : isCredits
+      ? {
+          creditsEffects: [
+            { userId: row.freelancer_id, pendingDelta: -credits, balanceDelta: credits },
+          ],
+        }
+      : { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: net } };
+  await applyTransition({
+    id: row.id,
+    changedBy,
+    from: row.status,
+    to: 'completed',
+    note,
+    timestampColumn: 'completed_at',
+    ...releaseEffect,
+  });
+  // Efeitos secundários: nunca derrubam a aprovação/liberação do dinheiro.
+  try {
+    await gamificationService.onContractCompleted(row.freelancer_id, row.id);
+  } catch (err) {
+    logger.warn({ err }, 'gamificação (onContractCompleted) falhou');
+  }
+  if (row.barter_agreement_id) {
+    try {
+      await barterService.onLinkedContractCompleted(row.barter_agreement_id);
+    } catch (err) {
+      logger.warn({ err }, 'troca (onLinkedContractCompleted) falhou');
+    }
+  }
+}
+
 export const contractsService = {
   async create(clientId: number, input: CreateContractInput): Promise<Contract> {
     if (input.freelancerId === clientId) {
@@ -228,42 +274,22 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertClient(row, uid); // RF-036/037: só o cliente aprova
     assertStatus(row, ['delivered']);
-    // Troca (barter) não move dinheiro do serviço; cash libera escrow em R$; credits libera em créditos.
-    const isBarter = row.payment_mode === 'barter';
-    const isCredits = row.payment_mode === 'credits';
-    const net = Number(row.freelancer_net);
-    const credits = creditsOf(row);
-    const releaseEffect = isBarter
-      ? {}
-      : isCredits
-        ? {
-            creditsEffects: [
-              { userId: row.freelancer_id, pendingDelta: -credits, balanceDelta: credits },
-            ],
-          }
-        : { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: net } };
-    await applyTransition({
-      id,
-      changedBy: uid,
-      from: row.status,
-      to: 'completed',
-      note: null,
-      timestampColumn: 'completed_at',
-      ...releaseEffect,
-    });
-    // Efeitos secundários: nunca derrubam a aprovação/liberação do dinheiro.
-    try {
-      await gamificationService.onContractCompleted(row.freelancer_id, id);
-    } catch (err) {
-      logger.warn({ err }, 'gamificação (onContractCompleted) falhou');
-    }
-    if (row.barter_agreement_id) {
-      try {
-        await barterService.onLinkedContractCompleted(row.barter_agreement_id);
-      } catch (err) {
-        logger.warn({ err }, 'troca (onLinkedContractCompleted) falhou');
-      }
-    }
+    await completeDelivered(row, uid, null);
+    return toContract(await loadOr404(id));
+  },
+
+  /**
+   * Aprovação tácita: entrega sem resposta do cliente por `days` dias é aprovada em nome dele
+   * (job em background). Libera o escrow com a MESMA transação da aprovação manual.
+   */
+  async approveTacitly(id: number, days: number): Promise<Contract> {
+    const row = await loadOr404(id);
+    assertStatus(row, ['delivered']);
+    await completeDelivered(
+      row,
+      row.client_id,
+      `Aprovação tácita: sem resposta do cliente em ${days} dias`,
+    );
     return toContract(await loadOr404(id));
   },
 

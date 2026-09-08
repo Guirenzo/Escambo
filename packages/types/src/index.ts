@@ -237,6 +237,7 @@ export interface MyProfiles {
 }
 
 export interface PublicFreelancerProfile extends FreelancerProfile {
+  userId: number;
   userUlid: string;
   level: number;
   levelName: string;
@@ -294,6 +295,7 @@ export interface Service {
   /** Serviço com impulsionamento ativo (ranqueia no topo). */
   boosted?: boolean;
   /** Quem presta o serviço (nome e reputação) — presente na listagem. */
+  ownerUlid?: string;
   ownerName?: string | null;
   ownerRating?: number;
   ownerReviews?: number;

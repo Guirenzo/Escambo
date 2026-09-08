@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { devices, expect, test } from '@playwright/test';
 import { PASSWORD, settled } from './helpers';
 
 /**
@@ -15,7 +15,7 @@ const shot = (name: string) => ({ path: `${OUT}/${name}.png`, fullPage: false as
 
 test.skip(!!process.env.CI, 'utilitário de documentação; não roda no CI');
 
-test('gera os prints do README', async ({ page, request }) => {
+test('gera os prints do README', async ({ page, request, browser }) => {
   test.setTimeout(120_000);
 
   // 1. Login (tela pública)
@@ -66,4 +66,24 @@ test('gera os prints do README', async ({ page, request }) => {
     await page.waitForTimeout(400);
     await page.screenshot(shot(name));
   }
+
+  // 9. Perfil público do freelancer (via o ulid do dono do serviço em destaque)
+  const svc = await request.get('/api/services?q=Landing%20page%20em%20React&limit=1');
+  const { items } = (await svc.json()) as { items: { ownerUlid?: string }[] };
+  if (items[0]?.ownerUlid) {
+    await page.goto(`/freelancers/${items[0].ownerUlid}`);
+    await settled(page);
+    await page.waitForTimeout(400);
+    await page.screenshot(shot('09-perfil-publico'));
+  }
+
+  // 10. Mobile (Pixel 7): mesma sessão, navegação no rodapé
+  const mobile = await browser.newContext({ ...devices['Pixel 7'], deviceScaleFactor: 2 });
+  const mp = await mobile.newPage();
+  await mp.addInitScript((t) => window.localStorage.setItem('escambo_token', t ?? ''), token);
+  await mp.goto('/');
+  await settled(mp);
+  await mp.waitForTimeout(600);
+  await mp.screenshot(shot('10-mobile-inicio'));
+  await mobile.close();
 });

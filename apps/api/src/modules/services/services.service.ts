@@ -23,6 +23,7 @@ function toService(row: ServiceRow): Service {
     ...(row.boosted != null ? { boosted: Boolean(Number(row.boosted)) } : {}),
     ...(row.owner_name !== undefined
       ? {
+          ownerUlid: row.owner_ulid ?? undefined,
           ownerName: row.owner_name,
           ownerRating: Number(row.owner_avg_rating ?? 0),
           ownerReviews: Number(row.owner_total_reviews ?? 0),
@@ -51,6 +52,7 @@ export const servicesService = {
   async list(input: ListServicesInput): Promise<Paginated<Service>> {
     const rows = await servicesRepository.list({
       categoryId: input.categoryId,
+      ownerId: input.ownerId,
       q: input.q,
       isRemote: input.isRemote,
       lat: input.lat,

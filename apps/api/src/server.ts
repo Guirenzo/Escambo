@@ -4,6 +4,7 @@ import { pingDb, pool } from './config/db';
 import { env } from './config/env';
 import { logger } from './config/logger';
 import { createSocketServer } from './config/socket';
+import { startJobs, stopJobs } from './jobs/scheduler';
 
 /** Espera o banco ficar disponível antes de subir (resiliência a boot fora de ordem). */
 async function waitForDb(retries = 10, delayMs = 1500): Promise<void> {
@@ -13,7 +14,9 @@ async function waitForDb(retries = 10, delayMs = 1500): Promise<void> {
       return;
     } catch (err) {
       if (attempt === retries) throw err;
-      logger.warn(`Banco indisponível (tentativa ${attempt}/${retries}); nova tentativa em ${delayMs}ms`);
+      logger.warn(
+        `Banco indisponível (tentativa ${attempt}/${retries}); nova tentativa em ${delayMs}ms`,
+      );
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
@@ -27,6 +30,7 @@ async function main(): Promise<void> {
 
   server.listen(env.PORT, () => {
     logger.info(`API Escambo em http://localhost:${env.PORT}/api (env: ${env.NODE_ENV})`);
+    startJobs(); // aprovação tácita etc. (JOBS_ENABLED)
   });
 
   // Encerramento gracioso: para de aceitar conexões, fecha sockets e o pool.
@@ -35,6 +39,7 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info({ signal }, 'Encerrando a API…');
+    stopJobs();
 
     const forced = setTimeout(() => {
       logger.error('Encerramento gracioso excedeu o tempo; forçando saída');
