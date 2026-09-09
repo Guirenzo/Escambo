@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createService, createUser, openAs, settled } from './helpers';
+import { createService, createUser, openAs, settled, topUp } from './helpers';
 
 /**
  * Polimento de marketplace: paginação da busca ("Carregar mais"), propor troca direto do card
@@ -24,6 +24,7 @@ test('freelancer propõe troca a partir do card de outro freelancer', async ({ p
   const wanted = await createService(request, owner, 400);
   const me = await createUser(request, 'freelancer');
   const mine = await createService(request, me, 300);
+  await topUp(request, me, 100); // ofereço 300 por 400: pago R$ 100 de torna, reservados na proposta
 
   await openAs(page, me, '/servicos');
   await settled(page);
@@ -42,10 +43,14 @@ test('freelancer propõe troca a partir do card de outro freelancer', async ({ p
   );
   await form.getByLabel('Serviço que ofereço').selectOption(String(mine.id));
   await form.getByLabel('Valor estimado da minha oferta (R$)').fill('300');
-  await expect(form.getByText(/torna/)).toBeVisible();
+  await expect(
+    form.getByText('Você paga R$ 100,00 de torna · reservado da sua carteira agora'),
+  ).toBeVisible();
   await form.getByRole('button', { name: 'Enviar proposta' }).click();
   await expect(page.locator('.toast', { hasText: 'Proposta de troca enviada' })).toBeVisible();
-  await expect(page.locator('.card.service', { hasText: 'Você propôs' })).toBeVisible();
+  const proposed = page.locator('.card.service', { hasText: 'Você propôs' });
+  await expect(proposed).toBeVisible();
+  await expect(proposed).toContainText('torna reservada');
 });
 
 test('sair de todos os dispositivos encerra a sessão atual', async ({ page, request }) => {

@@ -14,13 +14,18 @@ vi.mock('./barter.repository', () => ({
 vi.mock('../contracts/contracts.repository', () => ({
   contractsRepository: { findById: vi.fn() },
 }));
+vi.mock('../notifications/notifications.service', () => ({
+  notificationsService: { notify: vi.fn().mockResolvedValue(undefined) },
+}));
 
 import { barterService } from './barter.service';
 import { barterRepository, type BarterRow } from './barter.repository';
 import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
+import { notificationsService } from '../notifications/notifications.service';
 
 const repo = vi.mocked(barterRepository);
 const contracts = vi.mocked(contractsRepository);
+const notify = vi.mocked(notificationsService.notify);
 
 type FakeBarterFields = Partial<{
   receiver_id: number;
@@ -28,6 +33,8 @@ type FakeBarterFields = Partial<{
   status: string;
   cash_payer_id: number | null;
   cash_difference: string;
+  platform_fee: string;
+  torna_status: string;
   contract_offered_id: number | null;
   contract_requested_id: number | null;
 }>;
@@ -46,7 +53,8 @@ function fakeBarter(o: FakeBarterFields = {}): BarterRow {
     estimated_value_requested: '800.00',
     cash_difference: '200.00',
     cash_payer_id: 2,
-    platform_fee: '150.00',
+    platform_fee: '30.00',
+    torna_status: 'pending',
     status: 'proposed',
     contract_offered_id: null,
     contract_requested_id: null,
@@ -60,20 +68,80 @@ const contractStatus = (status: string): ContractRow => ({ status }) as unknown 
 beforeEach(() => vi.clearAllMocks());
 
 describe('propose', () => {
-  it('calcula torna, pagador e taxa de 15% sobre o maior valor (RN-066)', async () => {
+  it('receptor paga a torna: taxa de 15% só sobre a torna, reserva fica pendente até o aceite', async () => {
     repo.create.mockResolvedValue(1);
     repo.findById.mockResolvedValue(fakeBarter());
-    await barterService.propose(1, {
+    const b = await barterService.propose(1, {
       receiverId: 2,
       offeredDescription: 'logo',
-      requestedDescription: 'landing',
+      requestedDescription: 'landing page',
       estimatedValueOffered: 1000,
       estimatedValueRequested: 800,
     });
-    const arg = repo.create.mock.calls[0]![0];
-    expect(arg.cashDifference).toBe(200);
-    expect(arg.cashPayerId).toBe(2); // ofertou mais (1000) -> receptor paga a diferença
-    expect(arg.platformFee).toBe(150); // 15% de 1000
+    const [data, hold] = repo.create.mock.calls[0]!;
+    expect(data).toMatchObject({
+      cashDifference: 200,
+      cashPayerId: 2,
+      platformFee: 30,
+      tornaStatus: 'pending',
+    });
+    expect(hold).toBeNull();
+    expect(b.tornaNet).toBe(170);
+  });
+
+  it('proponente paga a torna: reserva na carteira dele já na proposta', async () => {
+    repo.create.mockResolvedValue(1);
+    repo.findById.mockResolvedValue(fakeBarter({ cash_payer_id: 1, torna_status: 'held' }));
+    await barterService.propose(1, {
+      receiverId: 2,
+      offeredDescription: 'logo',
+      requestedDescription: 'landing page',
+      estimatedValueOffered: 600,
+      estimatedValueRequested: 800,
+    });
+    const [data, hold] = repo.create.mock.calls[0]!;
+    expect(data).toMatchObject({ cashDifference: 200, cashPayerId: 1, tornaStatus: 'none' });
+    expect(hold).toEqual({ userId: 1, amount: 200 });
+  });
+
+  it('402 quando o proponente paga a torna e não tem saldo', async () => {
+    repo.create.mockResolvedValue(null);
+    await expect(
+      barterService.propose(1, {
+        receiverId: 2,
+        offeredDescription: 'logo',
+        requestedDescription: 'landing page',
+        estimatedValueOffered: 600,
+        estimatedValueRequested: 800,
+      }),
+    ).rejects.toMatchObject({ statusCode: 402, code: 'insufficient_balance' });
+  });
+
+  it('troca equilibrada: sem torna, sem taxa, sem reserva', async () => {
+    repo.create.mockResolvedValue(1);
+    repo.findById.mockResolvedValue(
+      fakeBarter({
+        cash_difference: '0.00',
+        cash_payer_id: null,
+        platform_fee: '0.00',
+        torna_status: 'none',
+      }),
+    );
+    await barterService.propose(1, {
+      receiverId: 2,
+      offeredDescription: 'a',
+      requestedDescription: 'b',
+      estimatedValueOffered: 500,
+      estimatedValueRequested: 500,
+    });
+    const [data, hold] = repo.create.mock.calls[0]!;
+    expect(data).toMatchObject({
+      cashDifference: 0,
+      cashPayerId: null,
+      platformFee: 0,
+      tornaStatus: 'none',
+    });
+    expect(hold).toBeNull();
   });
 
   it('bloqueia troca consigo mesmo (400)', async () => {
@@ -82,10 +150,11 @@ describe('propose', () => {
         receiverId: 5,
         offeredDescription: 'x',
         requestedDescription: 'y',
-        estimatedValueOffered: 100,
-        estimatedValueRequested: 100,
+        estimatedValueOffered: 1,
+        estimatedValueRequested: 1,
       }),
     ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repo.create).not.toHaveBeenCalled();
   });
 });
 
@@ -100,28 +169,64 @@ describe('accept', () => {
     await expect(barterService.accept(1, 2)).rejects.toMatchObject({ statusCode: 409 });
   });
 
-  it('gera os contratos recíprocos e ativa a troca (torna só registrada, sem mexer em carteira)', async () => {
+  it('gera os contratos recíprocos e reserva a torna do receptor (pendente) no aceite', async () => {
     repo.findById
-      .mockResolvedValueOnce(fakeBarter({ receiver_id: 2, status: 'proposed' }))
       .mockResolvedValueOnce(
-        fakeBarter({ receiver_id: 2, status: 'active', contract_offered_id: 10, contract_requested_id: 11 }),
+        fakeBarter({ receiver_id: 2, status: 'proposed', torna_status: 'pending' }),
+      )
+      .mockResolvedValueOnce(
+        fakeBarter({
+          receiver_id: 2,
+          status: 'active',
+          torna_status: 'held',
+          contract_offered_id: 10,
+          contract_requested_id: 11,
+        }),
       );
-    repo.accept.mockResolvedValue({ contractOfferedId: 10, contractRequestedId: 11 });
+    repo.accept.mockResolvedValue({ ok: true, contractOfferedId: 10, contractRequestedId: 11 });
 
     const b = await barterService.accept(1, 2);
 
     const arg = repo.accept.mock.calls[0]![0];
     expect(arg.contractOffered.freelancerId).toBe(1); // proponente entrega o oferecido
     expect(arg.contractRequested.freelancerId).toBe(2); // receptor entrega o solicitado
-    expect(arg).not.toHaveProperty('torna'); // torna não é escrowada no aceite
+    expect(arg.hold).toEqual({ userId: 2, amount: 200 });
     expect(b.status).toBe('active');
+    expect(b.tornaStatus).toBe('held');
+  });
+
+  it('torna já reservada pelo proponente: aceite não reserva de novo', async () => {
+    repo.findById
+      .mockResolvedValueOnce(fakeBarter({ cash_payer_id: 1, torna_status: 'held' }))
+      .mockResolvedValueOnce(
+        fakeBarter({ cash_payer_id: 1, torna_status: 'held', status: 'active' }),
+      );
+    repo.accept.mockResolvedValue({ ok: true, contractOfferedId: 10, contractRequestedId: 11 });
+    await barterService.accept(1, 2);
+    expect(repo.accept.mock.calls[0]![0].hold).toBeNull();
+  });
+
+  it('402 quando o receptor paga a torna e não tem saldo; 409 em corrida', async () => {
+    repo.findById.mockResolvedValue(fakeBarter());
+    repo.accept.mockResolvedValueOnce({ ok: false, reason: 'insufficient_balance' });
+    await expect(barterService.accept(1, 2)).rejects.toMatchObject({
+      statusCode: 402,
+      code: 'insufficient_balance',
+    });
+    repo.accept.mockResolvedValueOnce({ ok: false, reason: 'conflict' });
+    await expect(barterService.accept(1, 2)).rejects.toMatchObject({ statusCode: 409 });
   });
 });
 
 describe('onLinkedContractCompleted', () => {
-  it('conclui a troca e libera a torna quando os dois contratos estão completos', async () => {
+  it('conclui a troca, liquida a torna e avisa os dois lados quando ambos os contratos completam', async () => {
     repo.findById.mockResolvedValue(
-      fakeBarter({ status: 'active', contract_offered_id: 10, contract_requested_id: 11 }),
+      fakeBarter({
+        status: 'active',
+        torna_status: 'held',
+        contract_offered_id: 10,
+        contract_requested_id: 11,
+      }),
     );
     contracts.findById
       .mockResolvedValueOnce(contractStatus('completed'))
@@ -131,6 +236,21 @@ describe('onLinkedContractCompleted', () => {
     await barterService.onLinkedContractCompleted(1);
 
     expect(repo.completeAndRelease).toHaveBeenCalledWith(1);
+    // pagador (2) e quem recebe a torna (1) recebem mensagens diferentes
+    expect(notify).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        type: 'barter_completed',
+        body: expect.stringMatching(/R\$\s170,00/),
+      }),
+    );
+    expect(notify).toHaveBeenCalledWith(
+      2,
+      expect.objectContaining({
+        type: 'barter_completed',
+        body: expect.stringContaining('paga ao outro lado'),
+      }),
+    );
   });
 
   it('não conclui se apenas um lado está completo', async () => {
@@ -144,5 +264,20 @@ describe('onLinkedContractCompleted', () => {
     await barterService.onLinkedContractCompleted(1);
 
     expect(repo.completeAndRelease).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+describe('onLinkedContractCancelled', () => {
+  it('troca entra em disputa, torna reservada volta e as partes são avisadas', async () => {
+    repo.findById.mockResolvedValue(fakeBarter({ status: 'active', torna_status: 'held' }));
+    repo.disputeAndRefund.mockResolvedValue(true);
+    await barterService.onLinkedContractCancelled(1);
+    expect(repo.disputeAndRefund).toHaveBeenCalledWith(1);
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(notify).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ type: 'barter_disputed', body: expect.stringContaining('voltou') }),
+    );
   });
 });

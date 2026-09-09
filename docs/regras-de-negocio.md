@@ -788,7 +788,7 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Troca |
-| **Descrição** | Em uma troca de serviços, o sistema estima o valor de cada lado. Quando os valores não são equivalentes, a diferença (**torna**) é paga em dinheiro e retida em **escrow**. A comissão de **15%** incide sobre o **maior valor estimado** da troca |
+| **Descrição** | Em uma troca de serviços, o sistema estima o valor de cada lado. Quando os valores não são equivalentes, a diferença (**torna**) é paga em dinheiro por quem recebe o serviço mais valioso: é **reservada da carteira** (ao propor, se o proponente paga; ao aceitar, se é o receptor) e liberada ao outro lado quando os dois contratos são aprovados. A comissão de **15%** incide **sobre a torna** e é descontada de quem a recebe; troca equilibrada não tem taxa. Recusa, cancelamento ou disputa devolvem a reserva |
 | **Impacto** | Garante remuneração justa e receita da plataforma mesmo em transações sem dinheiro integral |
 | **UC Relacionado** | UC-06 |
 
@@ -966,7 +966,7 @@ Cada regra possui:
 | RN-063 | Disputas | Resolução administrativa vinculante | UC-10 |
 | RN-064 | Suporte | Máximo 3 tickets simultâneos | UC-10 |
 | RN-065 | Suporte | Ticket resolvido encerra em 5 dias | UC-10 |
-| RN-066 | Troca | Equivalência e torna; comissão sobre o maior valor | UC-06 |
+| RN-066 | Troca | Equivalência e torna reservada na carteira; comissão de 15% sobre a torna | UC-06 |
 | RN-067 | Troca | Aceite bilateral gera contratos recíprocos | UC-05, UC-06 |
 | RN-068 | Serviços | Máximo 3 pacotes por serviço (basic/standard/premium) | UC-03, UC-04 |
 | RN-069 | Pagamentos | Escrow por marco (milestones) | UC-06 |

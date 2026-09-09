@@ -473,6 +473,8 @@ async function ensureBarter(proposer, receiver, offered, requested, accept) {
     (b) => b.offeredServiceId === offered.id && b.requestedServiceId === requested.id,
   );
   if (!barter) {
+    // Torna: quem recebe o serviço mais valioso paga a diferença (reservada da carteira).
+    if (offered.price < requested.price) await ensureBalance(proposer, requested.price - offered.price);
     barter = await call('POST', '/barters', {
       token: proposer.token,
       body: {
@@ -488,6 +490,7 @@ async function ensureBarter(proposer, receiver, offered, requested, accept) {
     log(`troca    ${offered.title} ⇄ ${requested.title} já existe (${barter.status})`);
   }
   if (accept && barter.status === 'proposed') {
+    if (offered.price > requested.price) await ensureBalance(receiver, offered.price - requested.price);
     await call('POST', `/barters/${barter.id}/accept`, { token: receiver.token });
     log(`  aceita → 2 contratos recíprocos`);
   }
