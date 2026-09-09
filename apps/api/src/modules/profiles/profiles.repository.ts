@@ -57,6 +57,22 @@ export const profilesRepository = {
     );
   },
 
+  /**
+   * Tempo médio de resposta do freelancer (horas), média móvel exponencial: uma amostra nova
+   * pesa 30%. Alimenta a dimensão "responsividade" do Escambo Score.
+   */
+  async blendResponseTime(userId: number, hours: number): Promise<void> {
+    await pool.query<ResultSetHeader>(
+      `UPDATE profiles_freelancer
+          SET response_time_hours = CASE
+            WHEN response_time_hours IS NULL THEN :hours
+            ELSE ROUND(response_time_hours * 0.7 + :hours * 0.3, 2)
+          END
+        WHERE user_id = :userId`,
+      { userId, hours },
+    );
+  },
+
   async upsertClient(
     userId: number,
     d: {

@@ -1,4 +1,4 @@
-import { Heart, Rocket } from 'lucide-react';
+import { ArrowLeftRight, Heart, Rocket } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Service } from '@escambo/types';
 import { Stars } from '../../components/Stars';
@@ -14,6 +14,7 @@ export function ServiceCard({
   showOwner = true,
   favorited,
   onToggleFavorite,
+  onProposeBarter,
 }: {
   service: Service;
   mine: boolean;
@@ -22,6 +23,8 @@ export function ServiceCard({
   showOwner?: boolean;
   favorited?: boolean;
   onToggleFavorite?: (s: Service) => void;
+  /** Só para freelancers: propor troca do próprio serviço por este. */
+  onProposeBarter?: (s: Service) => void;
 }) {
   const favLabel = favorited ? 'Remover dos favoritos' : 'Favoritar';
   return (
@@ -81,9 +84,16 @@ export function ServiceCard({
             <Rocket size={14} /> {s.boosted ? 'Impulsionado' : 'Impulsionar'}
           </Button>
         ) : (
-          <Button variant="mini" onClick={() => onContratar(s)}>
-            Contratar
-          </Button>
+          <>
+            <Button variant="mini" onClick={() => onContratar(s)}>
+              Contratar
+            </Button>
+            {onProposeBarter && (
+              <Button variant="mini" onClick={() => onProposeBarter(s)}>
+                <ArrowLeftRight size={14} /> Propor troca
+              </Button>
+            )}
+          </>
         )}
       </div>
     </div>

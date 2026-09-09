@@ -1,13 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./messaging.repository', () => ({
-  messagingRepository: { getOrCreate: vi.fn(), listMessages: vi.fn(), insertMessage: vi.fn() },
+  messagingRepository: {
+    getOrCreate: vi.fn(),
+    listMessages: vi.fn(),
+    insertMessage: vi.fn(),
+    previousMessage: vi.fn(),
+  },
 }));
 vi.mock('../contracts/contracts.repository', () => ({
   contractsRepository: { findById: vi.fn() },
 }));
 vi.mock('../notifications/notifications.service', () => ({
   notificationsService: { notify: vi.fn() },
+}));
+vi.mock('../profiles/profiles.repository', () => ({
+  profilesRepository: { blendResponseTime: vi.fn() },
 }));
 vi.mock('../../config/realtime', () => ({
   realtime: { emitToContract: vi.fn() },
@@ -71,7 +79,11 @@ describe('messagingService.send', () => {
 
     const msg = await messagingService.send(1, 20, 'resposta'); // freelancer envia
 
-    expect(mRepo.insertMessage).toHaveBeenCalledWith({ conversationId: 5, senderId: 20, content: 'resposta' });
+    expect(mRepo.insertMessage).toHaveBeenCalledWith({
+      conversationId: 5,
+      senderId: 20,
+      content: 'resposta',
+    });
     expect(realtime.emitToContract).toHaveBeenCalledWith(
       1,
       'message:new',

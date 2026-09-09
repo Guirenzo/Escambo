@@ -1,6 +1,13 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { completeContract, createService, createUser, openAs, settled } from './helpers';
+import {
+  completeContract,
+  createAdmin,
+  createService,
+  createUser,
+  openAs,
+  settled,
+} from './helpers';
 
 /**
  * Acessibilidade automatizada (axe-core, regras WCAG 2.x A/AA) nas telas principais.
@@ -65,4 +72,12 @@ test('sala do contrato concluído (linha do tempo, chat e formulário de avalia�
   await settled(page);
   await expect(page.getByRole('radiogroup', { name: 'Nota' })).toBeVisible();
   expect((await audit(page, 'sala do contrato')).join('\n')).toBe('');
+});
+
+test('painel admin (métricas e fila de mediação) não tem violações', async ({ page, request }) => {
+  const admin = await createAdmin(request);
+  await openAs(page, admin, '/admin');
+  await settled(page);
+  await expect(page.getByRole('heading', { level: 1, name: 'Administração' })).toBeVisible();
+  expect((await audit(page, 'admin')).join('\n')).toBe('');
 });

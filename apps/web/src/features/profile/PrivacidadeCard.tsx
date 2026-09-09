@@ -1,4 +1,4 @@
-import { Download, ShieldCheck, Trash2 } from 'lucide-react';
+import { Download, LogOut, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button, QueryState } from '../../components/ui';
 import { dtm } from '../../lib/format';
 import {
@@ -8,6 +8,8 @@ import {
   useRequestExport,
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { api } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
 
 const STATUS: Record<string, string> = {
   pending: 'pendente',
@@ -21,7 +23,21 @@ const STATUS: Record<string, string> = {
 /** Direitos do titular (LGPD): exportar meus dados e pedir a exclusão da conta. */
 export function PrivacidadeCard() {
   const toast = useToast();
+  const { logout } = useAuth();
   const exports = useExportRequests();
+
+  /** Revoga todas as sessões (RN-008) e sai daqui também. */
+  async function logoutEverywhere(): Promise<void> {
+    if (!window.confirm('Sair de todos os dispositivos? Você precisará entrar de novo em cada um.'))
+      return;
+    try {
+      const { revoked } = await api.logoutAll();
+      toast.success(`${revoked} sessão(ões) encerrada(s).`);
+      logout();
+    } catch (er) {
+      toast.error(er instanceof Error ? er.message : 'Erro ao encerrar sessões');
+    }
+  }
   const deletions = useDeletionRequests();
   const requestExport = useRequestExport();
   const requestDeletion = useRequestDeletion();
@@ -63,6 +79,12 @@ export function PrivacidadeCard() {
         Você pode pedir uma cópia de tudo que o Escambo guarda sobre você, e pedir a exclusão da
         conta. As solicitações ficam registradas aqui com o status.
       </p>
+      <div className="loc-row" style={{ marginBottom: 14 }}>
+        <Button variant="ghost" onClick={() => void logoutEverywhere()}>
+          <LogOut size={14} /> Sair de todos os dispositivos
+        </Button>
+        <span className="muted tiny">Encerra todas as sessões abertas, inclusive esta.</span>
+      </div>
       <div className="two-col">
         <div className="stack">
           <Button

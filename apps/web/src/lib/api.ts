@@ -181,6 +181,7 @@ export const api = {
   login: (body: LoginRequest) =>
     request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   me: () => request<PublicUser>('/auth/me'),
+  logoutAll: () => request<{ revoked: number }>('/auth/logout-all', { method: 'POST' }),
   logout: (refreshToken: string) =>
     request<void>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
 
