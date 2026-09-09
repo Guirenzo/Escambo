@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { runExpireDeposits } from '../../src/jobs/expire-deposits';
+import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
 
 const app = createApp();
@@ -91,10 +92,7 @@ describe('Pagamentos: depósito PIX, carteira pré-paga, reembolso e saques', ()
       pendingAfter: 0,
       paymentId: depositId,
     });
-    const notif = await request(app).get('/api/notifications').set(auth(client.token));
-    expect(notif.body.items.some((n: { type: string }) => n.type === 'deposit_confirmed')).toBe(
-      true,
-    );
+    expect(await waitForNotification(app, client.token, 'deposit_confirmed')).toBe(true);
 
     // Pagar de novo não duplica saldo (idempotente).
     await request(app)
@@ -267,10 +265,8 @@ describe('Pagamentos: depósito PIX, carteira pré-paga, reembolso e saques', ()
       'withdrawal',
       'deposit',
     ]);
-    const notif = await request(app).get('/api/notifications').set(auth(freelancer.token));
-    const types = notif.body.items.map((n: { type: string }) => n.type);
-    expect(types).toContain('withdrawal_completed');
-    expect(types).toContain('withdrawal_failed');
+    expect(await waitForNotification(app, freelancer.token, 'withdrawal_completed')).toBe(true);
+    expect(await waitForNotification(app, freelancer.token, 'withdrawal_failed')).toBe(true);
 
     // Lista do titular reflete os estados; visão completa só no admin.
     const listing = await request(app).get('/api/withdrawals').set(auth(freelancer.token));
