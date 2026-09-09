@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { Server } from 'socket.io';
 import type { AuthPayload } from '../middlewares/authenticate';
 import { messagingService } from '../modules/messaging/messaging.service';
+import { blocklist } from './blocklist';
 import { env } from './env';
 import { logger } from './logger';
 import { realtime } from './realtime';
@@ -32,6 +33,7 @@ export function createSocketServer(httpServer: HttpServer): Server {
     if (!token) return next(new Error('unauthorized'));
     try {
       const payload = jwt.verify(token, env.JWT_SECRET) as AuthPayload;
+      if (blocklist.has(payload.uid)) return next(new Error('unauthorized'));
       (socket.data as SocketData).uid = payload.uid;
       next();
     } catch {

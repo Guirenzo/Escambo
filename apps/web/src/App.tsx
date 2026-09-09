@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from '
 import { RequireAuth } from './components/RequireAuth';
 import { Spinner } from './components/ui';
 import { LoginForm } from './features/auth/LoginForm';
+import { LegalView } from './features/legal/LegalView';
 import { Shell } from './features/shell/Shell';
 import { AdminView } from './features/views/AdminView';
 import { CarteiraView } from './features/views/CarteiraView';
@@ -50,6 +51,8 @@ export function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
+        <Route path="/termos" element={<LegalView kind="termos" />} />
+        <Route path="/privacidade" element={<LegalView kind="privacidade" />} />
         <Route element={<RequireAuth />}>
           <Route element={<Shell />}>
             <Route index element={<InicioView />} />

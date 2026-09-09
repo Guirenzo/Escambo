@@ -2,6 +2,7 @@ import { ArrowLeft, Briefcase, Flag, Heart, MapPin, ShieldCheck, Star } from 'lu
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { Service } from '@escambo/types';
+import { Avatar } from '../../components/Avatar';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { Stars } from '../../components/Stars';
 import { Button, QueryState } from '../../components/ui';
@@ -57,9 +58,7 @@ export function FreelancerView() {
           <>
             <section className="card" style={{ marginTop: 12 }}>
               <div className="profile-hero">
-                <span className="profile-avatar" aria-hidden="true">
-                  {p.fullName[0]}
-                </span>
+                <Avatar url={p.avatarUrl} name={p.fullName} size="lg" />
                 <div>
                   <h1 style={{ margin: 0, fontSize: '1.5rem' }}>{p.fullName}</h1>
                   {p.headline && (

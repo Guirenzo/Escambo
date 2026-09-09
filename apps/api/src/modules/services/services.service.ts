@@ -25,6 +25,7 @@ function toService(row: ServiceRow): Service {
       ? {
           ownerUlid: row.owner_ulid ?? undefined,
           ownerName: row.owner_name,
+          ownerAvatarUrl: row.owner_avatar_url ?? null,
           ownerRating: Number(row.owner_avg_rating ?? 0),
           ownerReviews: Number(row.owner_total_reviews ?? 0),
         }

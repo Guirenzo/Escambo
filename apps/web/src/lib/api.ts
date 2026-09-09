@@ -8,6 +8,7 @@ import type {
   ChatHistory,
   ChatMessage,
   ClientProfile,
+  Consent,
   ContentReport,
   Contract,
   ContractWithHistory,
@@ -34,6 +35,7 @@ import type {
   Paginated,
   PublicFreelancerProfile,
   PublicUser,
+  RecordConsentRequest,
   RefreshResponse,
   RegisterRequest,
   ResolveDisputeRequest,
@@ -147,6 +149,9 @@ function expireSession(): void {
   emit(SESSION_EXPIRED_EVENT);
 }
 
+// Conta suspensa/banida pela moderação: o servidor nega com estes códigos; a sessão local acaba.
+const BLOCKED_CODES = new Set(['account_blocked', 'account_suspended', 'account_banned']);
+
 // Nessas rotas um 401 é resposta legítima (credenciais), não token vencido.
 const NO_REFRESH = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
 
@@ -166,6 +171,13 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
   }
   if (res.status === 204) return undefined as T;
   const data: unknown = await res.json().catch(() => ({}));
+  if (
+    res.status === 403 &&
+    accessToken &&
+    BLOCKED_CODES.has((data as { error?: string }).error ?? '')
+  ) {
+    expireSession();
+  }
   if (!res.ok) {
     const err = data as { error?: string; message?: string };
     throw new Error(err.message ?? err.error ?? `Erro ${res.status}`);
@@ -272,6 +284,11 @@ export const api = {
   // denúncias de conteúdo/usuário
   createReport: (body: CreateContentReportRequest) =>
     request<ContentReport>('/reports', { method: 'POST', body: JSON.stringify(body) }),
+
+  // LGPD: consentimentos (termos, privacidade)
+  consents: () => request<Consent[]>('/lgpd/consents'),
+  recordConsent: (body: RecordConsentRequest) =>
+    request<Consent>('/lgpd/consents', { method: 'POST', body: JSON.stringify(body) }),
 
   // LGPD: exportação e exclusão dos meus dados
   exportRequests: () => request<DataExportRequest[]>('/lgpd/export-requests'),

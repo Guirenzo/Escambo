@@ -1,5 +1,6 @@
 import { Briefcase, MapPin, ShieldCheck, Star, User } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
+import { Avatar } from '../../components/Avatar';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { Stars } from '../../components/Stars';
 import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
@@ -105,6 +106,7 @@ export function PerfilView() {
   const [headline, setHeadline] = useState('');
   const [bio, setBio] = useState('');
   const [city, setCity] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
   const [stateUf, setStateUf] = useState('');
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
@@ -118,6 +120,7 @@ export function PerfilView() {
     if (base) {
       setName(base.fullName);
       setCity(base.city ?? '');
+      setAvatarUrl(base.avatarUrl ?? '');
     }
     if (p.freelancer) {
       setHeadline(p.freelancer.headline ?? '');
@@ -154,6 +157,7 @@ export function PerfilView() {
     try {
       await putFreelancer.mutateAsync({
         fullName: name,
+        avatarUrl: avatarUrl.trim() || null,
         headline,
         bio,
         city,
@@ -170,7 +174,7 @@ export function PerfilView() {
   async function saveClient(e: FormEvent): Promise<void> {
     e.preventDefault();
     try {
-      await putClient.mutateAsync({ fullName: name, city });
+      await putClient.mutateAsync({ fullName: name, city, avatarUrl: avatarUrl.trim() || null });
       toast.success('Perfil de cliente salvo!');
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Erro');
@@ -227,6 +231,18 @@ export function PerfilView() {
                   minLength={2}
                 />
               </Field>
+              <Field label="Foto (URL da imagem)">
+                <div className="loc-row">
+                  <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
+                  <Input
+                    type="url"
+                    value={avatarUrl}
+                    onChange={(e) => setAvatarUrl(e.target.value)}
+                    placeholder="https://…/sua-foto.jpg"
+                    maxLength={512}
+                  />
+                </div>
+              </Field>
               <Field label="Headline">
                 <Input
                   value={headline}
@@ -279,6 +295,18 @@ export function PerfilView() {
                   required
                   minLength={2}
                 />
+              </Field>
+              <Field label="Foto (URL da imagem)">
+                <div className="loc-row">
+                  <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
+                  <Input
+                    type="url"
+                    value={avatarUrl}
+                    onChange={(e) => setAvatarUrl(e.target.value)}
+                    placeholder="https://…/sua-foto.jpg"
+                    maxLength={512}
+                  />
+                </div>
               </Field>
               <Field label="Cidade">
                 <Input value={city} onChange={(e) => setCity(e.target.value)} />

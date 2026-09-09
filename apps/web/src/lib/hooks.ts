@@ -36,6 +36,7 @@ export const qk = {
   adminMetrics: ['adminMetrics'] as const,
   adminDisputes: ['adminDisputes'] as const,
   exportRequests: ['exportRequests'] as const,
+  consents: ['consents'] as const,
   deletionRequests: ['deletionRequests'] as const,
   reviews: (freelancerId: number) => ['reviews', freelancerId] as const,
   publicFreelancer: (ulid: string) => ['publicFreelancer', ulid] as const,
@@ -326,6 +327,7 @@ export function useCreateReport() {
   return useMutation({ mutationFn: (body: CreateContentReportRequest) => api.createReport(body) });
 }
 
+export const useConsents = () => useQuery({ queryKey: qk.consents, queryFn: () => api.consents() });
 export const useExportRequests = () =>
   useQuery({ queryKey: qk.exportRequests, queryFn: () => api.exportRequests() });
 export const useDeletionRequests = () =>

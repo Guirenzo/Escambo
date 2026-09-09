@@ -297,6 +297,7 @@ export interface Service {
   /** Quem presta o serviço (nome e reputação) — presente na listagem. */
   ownerUlid?: string;
   ownerName?: string | null;
+  ownerAvatarUrl?: string | null;
   ownerRating?: number;
   ownerReviews?: number;
 }

@@ -19,6 +19,7 @@ export interface ServiceRow extends RowDataPacket {
   boosted?: number; // 1 se tem impulsionamento ativo
   owner_ulid?: string | null; // presentes na listagem (JOIN users / profiles_freelancer)
   owner_name?: string | null;
+  owner_avatar_url?: string | null;
   owner_avg_rating?: string | null;
   owner_total_reviews?: number | null;
 }
@@ -36,7 +37,7 @@ export interface ServiceListFilters {
 }
 
 /** Quem presta o serviço: nome e reputação (avg_rating/total_reviews são mantidos pelo módulo de reviews). */
-const OWNER_COLS = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews`;
+const OWNER_COLS = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews`;
 
 export const servicesRepository = {
   async create(data: {

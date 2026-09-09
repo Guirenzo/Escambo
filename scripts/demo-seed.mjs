@@ -29,6 +29,7 @@ const FREELANCERS = [
     email: 'bruno@escambo.demo',
     profile: {
       fullName: 'Bruno Costa',
+      avatarUrl: 'https://i.pravatar.cc/150?u=bruno@escambo.demo',
       headline: 'Dev Full Stack | 5 anos',
       bio: 'React, Node e MySQL. Entrego rápido e documentado.',
       city: 'Joinville',
@@ -62,6 +63,7 @@ const FREELANCERS = [
     email: 'marina@escambo.demo',
     profile: {
       fullName: 'Marina Alves',
+      avatarUrl: 'https://i.pravatar.cc/150?u=marina@escambo.demo',
       headline: 'Designer de marca | 8 anos',
       bio: 'Identidade visual com estratégia: logo, paleta, tipografia e guia de uso.',
       city: 'Joinville',
@@ -89,6 +91,7 @@ const FREELANCERS = [
     email: 'rafael@escambo.demo',
     profile: {
       fullName: 'Rafael Souza',
+      avatarUrl: 'https://i.pravatar.cc/150?u=rafael@escambo.demo',
       headline: 'Motion designer',
       bio: 'Animações curtas para redes, vinhetas e explainers.',
       city: 'Blumenau',
@@ -110,6 +113,7 @@ const FREELANCERS = [
     email: 'carla@escambo.demo',
     profile: {
       fullName: 'Carla Dias',
+      avatarUrl: 'https://i.pravatar.cc/150?u=carla@escambo.demo',
       headline: 'Fotógrafa de produto',
       bio: 'Fotos limpas para e-commerce e cardápio.',
       city: 'Florianópolis',
@@ -131,6 +135,7 @@ const FREELANCERS = [
     email: 'diego@escambo.demo',
     profile: {
       fullName: 'Diego Ramos',
+      avatarUrl: 'https://i.pravatar.cc/150?u=diego@escambo.demo',
       headline: 'Redator e SEO',
       bio: 'Conteúdo que ranqueia e converte.',
       city: 'Curitiba',
@@ -152,6 +157,7 @@ const FREELANCERS = [
     email: 'felipe@escambo.demo',
     profile: {
       fullName: 'Felipe Nunes',
+      avatarUrl: 'https://i.pravatar.cc/150?u=felipe@escambo.demo',
       headline: 'Eletricista residencial',
       bio: 'Instalações, reparos e laudos. Atendo Joinville e região.',
       city: 'Joinville',
@@ -174,7 +180,12 @@ const FREELANCERS = [
 const CLIENT = {
   key: 'ana',
   email: 'cliente@escambo.demo',
-  profile: { fullName: 'Ana Pereira', city: 'Joinville', state: 'SC' },
+  profile: {
+    fullName: 'Ana Pereira',
+    avatarUrl: 'https://i.pravatar.cc/150?u=cliente@escambo.demo',
+    city: 'Joinville',
+    state: 'SC',
+  },
 };
 
 /** Admin da demo: vira admin por ADMIN_EMAILS (padrão do docker-compose: admin@escambo.demo). */

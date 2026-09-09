@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { LoginRequest, PublicUser, RegisterRequest } from '@escambo/types';
 import { api, getRefreshToken, getToken, SESSION_EXPIRED_EVENT, setSession } from './api';
 import { disconnectSocket } from './socket';
+import { LEGAL_VERSION } from '../features/legal/content';
 
 interface AuthState {
   user: PublicUser | null;
@@ -59,6 +60,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.register(input);
       await login({ email: input.email, password: input.password });
+      // Consentimento LGPD com a versão vigente dos documentos (melhor esforço, não bloqueia).
+      await Promise.all(
+        (['terms_of_use', 'privacy_policy'] as const).map((type) =>
+          api
+            .recordConsent({ type, version: LEGAL_VERSION, accepted: true })
+            .catch(() => undefined),
+        ),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao cadastrar');
       throw e;

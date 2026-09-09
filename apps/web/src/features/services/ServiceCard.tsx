@@ -1,6 +1,7 @@
 import { ArrowLeftRight, Heart, Rocket } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Service } from '@escambo/types';
+import { Avatar } from '../../components/Avatar';
 import { Stars } from '../../components/Stars';
 import { Button } from '../../components/ui';
 import { brl } from '../../lib/format';
@@ -54,9 +55,7 @@ export function ServiceCard({
       </div>
       {showOwner && s.ownerName && (
         <div className="svc-owner">
-          <span className="svc-owner-ini" aria-hidden="true">
-            {s.ownerName[0]}
-          </span>
+          <Avatar url={s.ownerAvatarUrl} name={s.ownerName} size="xs" />
           {s.ownerUlid ? (
             <Link to={`/freelancers/${s.ownerUlid}`} className="muted tiny">
               {s.ownerName}

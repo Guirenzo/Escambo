@@ -2,6 +2,7 @@ import { Download, LogOut, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button, QueryState } from '../../components/ui';
 import { dtm } from '../../lib/format';
 import {
+  useConsents,
   useDeletionRequests,
   useExportRequests,
   useRequestDeletion,
@@ -10,6 +11,13 @@ import {
 import { useToast } from '../../lib/toast';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+
+const CONSENT_LABEL: Record<string, string> = {
+  terms_of_use: 'Termos de Uso',
+  privacy_policy: 'Política de Privacidade',
+  marketing: 'Comunicações de marketing',
+  data_processing: 'Tratamento de dados',
+};
 
 const STATUS: Record<string, string> = {
   pending: 'pendente',
@@ -25,6 +33,7 @@ export function PrivacidadeCard() {
   const toast = useToast();
   const { logout } = useAuth();
   const exports = useExportRequests();
+  const consents = useConsents();
 
   /** Revoga todas as sessões (RN-008) e sai daqui também. */
   async function logoutEverywhere(): Promise<void> {
@@ -79,6 +88,20 @@ export function PrivacidadeCard() {
         Você pode pedir uma cópia de tudo que o Escambo guarda sobre você, e pedir a exclusão da
         conta. As solicitações ficam registradas aqui com o status.
       </p>
+      {consents.data && consents.data.length > 0 && (
+        <ul className="req-list" aria-label="Consentimentos" style={{ marginBottom: 14 }}>
+          {consents.data.map((c) => (
+            <li key={`${c.type}-${c.version}-${c.at}`}>
+              <span>
+                {CONSENT_LABEL[c.type] ?? c.type} · v{c.version}
+              </span>
+              <span className="muted tiny">
+                {c.accepted ? 'aceito' : 'recusado'} em {dtm(c.at)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="loc-row" style={{ marginBottom: 14 }}>
         <Button variant="ghost" onClick={() => void logoutEverywhere()}>
           <LogOut size={14} /> Sair de todos os dispositivos

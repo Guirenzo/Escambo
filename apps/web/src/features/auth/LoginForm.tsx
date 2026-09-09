@@ -4,9 +4,21 @@ import { Button, Field, Input, Select } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 
 const HIGHLIGHTS: { Icon: LucideIcon; title: string; text: string }[] = [
-  { Icon: ArrowLeftRight, title: 'Troque serviço por serviço', text: 'O escambo que dá nome ao app — com torna justa e escrow.' },
-  { Icon: Coins, title: 'Créditos Escambo', text: 'Trabalhe, ganhe créditos e gaste em qualquer serviço.' },
-  { Icon: ShieldCheck, title: 'Confiança de verdade', text: 'Escambo Score, pagamento protegido e chat em tempo real.' },
+  {
+    Icon: ArrowLeftRight,
+    title: 'Troque serviço por serviço',
+    text: 'O escambo que dá nome ao app — com torna justa e escrow.',
+  },
+  {
+    Icon: Coins,
+    title: 'Créditos Escambo',
+    text: 'Trabalhe, ganhe créditos e gaste em qualquer serviço.',
+  },
+  {
+    Icon: ShieldCheck,
+    title: 'Confiança de verdade',
+    text: 'Escambo Score, pagamento protegido e chat em tempo real.',
+  },
 ];
 
 export function LoginForm() {
@@ -16,6 +28,7 @@ export function LoginForm() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'client' | 'freelancer'>('client');
   const [loading, setLoading] = useState(false);
+  const [accepted, setAccepted] = useState(false);
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -44,7 +57,9 @@ export function LoginForm() {
           <br />
           <span className="accent">Evolua.</span>
         </h1>
-        <p className="lead">O iFood dos serviços — do mecânico ao dev, com a confiança que faltava.</p>
+        <p className="lead">
+          O iFood dos serviços — do mecânico ao dev, com a confiança que faltava.
+        </p>
         <ul className="highlights">
           {HIGHLIGHTS.map(({ Icon, title, text }) => (
             <li key={title}>
@@ -63,10 +78,18 @@ export function LoginForm() {
       <section className="auth-panel">
         <form className="card auth-card" onSubmit={handleSubmit}>
           <div className="tabs">
-            <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>
+            <button
+              type="button"
+              className={mode === 'login' ? 'active' : ''}
+              onClick={() => setMode('login')}
+            >
               Entrar
             </button>
-            <button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>
+            <button
+              type="button"
+              className={mode === 'register' ? 'active' : ''}
+              onClick={() => setMode('register')}
+            >
               Criar conta
             </button>
           </div>
@@ -93,19 +116,51 @@ export function LoginForm() {
           </Field>
           {mode === 'register' && (
             <Field label="Eu sou">
-              <Select value={role} onChange={(e) => setRole(e.target.value as 'client' | 'freelancer')}>
+              <Select
+                value={role}
+                onChange={(e) => setRole(e.target.value as 'client' | 'freelancer')}
+              >
                 <option value="client">Cliente — quero contratar</option>
                 <option value="freelancer">Freelancer — quero oferecer</option>
               </Select>
             </Field>
           )}
+          {mode === 'register' && (
+            <label className="consent">
+              <input
+                type="checkbox"
+                checked={accepted}
+                onChange={(e) => setAccepted(e.target.checked)}
+                required
+              />
+              <span>
+                Li e aceito os{' '}
+                <a href="/termos" target="_blank" rel="noreferrer">
+                  Termos de Uso
+                </a>{' '}
+                e a{' '}
+                <a href="/privacidade" target="_blank" rel="noreferrer">
+                  Política de Privacidade
+                </a>
+                .
+              </span>
+            </label>
+          )}
           {error && <p className="error">{error}</p>}
-          <Button type="submit" disabled={loading} className="full">
+          <Button
+            type="submit"
+            disabled={loading || (mode === 'register' && !accepted)}
+            className="full"
+          >
             {loading ? '…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
           </Button>
           <p className="muted tiny center">
             {mode === 'login' ? 'Novo por aqui? ' : 'Já tem conta? '}
-            <button type="button" className="link" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
+            <button
+              type="button"
+              className="link"
+              onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+            >
               {mode === 'login' ? 'Crie sua conta' : 'Entrar'}
             </button>
           </p>
