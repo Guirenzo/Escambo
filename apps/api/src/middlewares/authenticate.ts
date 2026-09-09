@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
+import { blocklist } from '../config/blocklist';
 import { env } from '../config/env';
 import { HttpError } from '../utils/http-error';
 
@@ -26,11 +27,16 @@ export const authenticate: RequestHandler = (req, _res, next) => {
     throw new HttpError(401, 'Token de autenticação ausente', 'missing_token');
   }
 
+  let payload: AuthPayload;
   try {
-    const payload = jwt.verify(header.slice(7), env.JWT_SECRET) as AuthPayload;
-    req.user = { sub: payload.sub, uid: payload.uid, role: payload.role };
-    next();
+    payload = jwt.verify(header.slice(7), env.JWT_SECRET) as AuthPayload;
   } catch {
     throw new HttpError(401, 'Token inválido ou expirado', 'invalid_token');
   }
+  // Suspenso/banido pela moderação: nega na hora, mesmo com token ainda válido (RN-007).
+  if (blocklist.has(payload.uid)) {
+    throw new HttpError(403, 'Conta suspensa ou banida. Fale com o suporte.', 'account_blocked');
+  }
+  req.user = { sub: payload.sub, uid: payload.uid, role: payload.role };
+  next();
 };

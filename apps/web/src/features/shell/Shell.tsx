@@ -12,7 +12,8 @@ import {
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../../lib/auth';
-import { useNotifications } from '../../lib/hooks';
+import { Avatar } from '../../components/Avatar';
+import { useNotifications, useProfilesMe } from '../../lib/hooks';
 import { useRealtimeNotifications } from '../../lib/realtime';
 
 const NAV: { to: string; label: string; Icon: LucideIcon; end?: boolean; adminOnly?: boolean }[] = [
@@ -39,6 +40,9 @@ export function Shell() {
   const initial = handle[0]?.toUpperCase() ?? '?';
 
   // Badge de não lidas + push em tempo real (socket) para qualquer tela.
+  const profiles = useProfilesMe();
+  const avatarUrl =
+    profiles.data?.freelancer?.avatarUrl ?? profiles.data?.client?.avatarUrl ?? null;
   const notifications = useNotifications();
   const unread = notifications.data?.unreadCount ?? 0;
   useRealtimeNotifications();
@@ -74,7 +78,7 @@ export function Shell() {
         </nav>
 
         <div className="side-user">
-          <span className="avatar sm">{initial}</span>
+          <Avatar url={avatarUrl} name={handle || initial} size="sm" />
           <div className="side-user-info">
             <strong title={user?.email}>{handle}</strong>
             <span className="muted tiny">{ROLE_LABEL[user?.role ?? ''] ?? user?.role}</span>

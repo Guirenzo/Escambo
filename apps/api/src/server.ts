@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { createApp } from './app';
+import { blocklist } from './config/blocklist';
 import { pingDb, pool } from './config/db';
 import { env } from './config/env';
 import { logger } from './config/logger';
@@ -24,6 +25,7 @@ async function waitForDb(retries = 10, delayMs = 1500): Promise<void> {
 
 async function main(): Promise<void> {
   await waitForDb();
+  await blocklist.hydrate(); // suspensos/banidos passam a ser negados de imediato
   const app = createApp();
   const server = createServer(app);
   const io = createSocketServer(server); // chat em tempo real no mesmo servidor HTTP

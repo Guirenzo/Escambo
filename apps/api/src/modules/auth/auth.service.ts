@@ -52,6 +52,16 @@ export function isAdminEmail(email: string): boolean {
     .some((entry) => (entry.startsWith('@') ? e.endsWith(entry) : e === entry));
 }
 
+/** Conta suspensa/banida não entra nem renova sessão (RN-007). */
+function assertActive(user: { status: string }): void {
+  if (user.status === 'suspended') {
+    throw new HttpError(403, 'Conta suspensa. Fale com o suporte.', 'account_suspended');
+  }
+  if (user.status === 'banned') {
+    throw new HttpError(403, 'Conta banida. Fale com o suporte.', 'account_banned');
+  }
+}
+
 /** Regras de negócio de autenticação (RF-001 a RF-004, RNF-013). */
 export const authService = {
   async register(input: RegisterInput): Promise<PublicUser> {
@@ -86,6 +96,8 @@ export const authService = {
       throw new HttpError(401, 'Credenciais inválidas', 'invalid_credentials');
     }
 
+    assertActive(user);
+
     // Promoção a admin por ADMIN_EMAILS vale também para contas já existentes.
     if (user.role !== 'admin' && isAdminEmail(user.email)) {
       await authRepository.updateRole(user.id, 'admin');
@@ -108,6 +120,7 @@ export const authService = {
     if (!user) {
       throw new HttpError(401, 'Refresh token inválido ou expirado', 'invalid_refresh');
     }
+    assertActive(user);
 
     await sessionRepository.revokeByHash(tokenHash); // rotação
     return issueSession(user, ctx);
