@@ -46,7 +46,8 @@ export const adminRepository = {
          (SELECT COUNT(*) FROM contracts) AS contracts,
          (SELECT COUNT(*) FROM contracts WHERE status = 'completed') AS completed_contracts,
          (SELECT COUNT(*) FROM disputes WHERE status IN ('open','under_review','awaiting_parties')) AS open_disputes,
-         (SELECT COALESCE(SUM(platform_fee), 0) FROM contracts WHERE status = 'completed') AS platform_fees,
+         (SELECT COALESCE(SUM(platform_fee), 0) FROM contracts WHERE status = 'completed')
+           + (SELECT COALESCE(SUM(platform_fee), 0) FROM barter_agreements WHERE torna_status = 'paid') AS platform_fees,
          (SELECT COALESCE(SUM(balance_pending), 0) FROM wallets) AS in_escrow,
          (SELECT COUNT(*) FROM withdrawals WHERE status IN ('requested','processing')) AS pending_withdrawals,
          (SELECT COALESCE(SUM(amount), 0) FROM withdrawals WHERE status IN ('requested','processing')) AS pending_withdrawals_amount,

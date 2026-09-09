@@ -466,7 +466,10 @@ export type WalletReason =
   | 'escrow_refund' // escrow devolvido ao cliente, nada liberado (freelancer)
   | 'refund' // reembolso ao cliente (recusa, cancelamento, disputa)
   | 'withdrawal' // saque solicitado
-  | 'withdrawal_refund'; // saque cancelado/falhou: valor de volta
+  | 'withdrawal_refund' // saque cancelado/falhou: valor de volta
+  | 'barter_hold' // torna da troca reservada (pagador)
+  | 'barter_payment' // troca concluída: torna paga (pagador)
+  | 'barter_in'; // troca concluída: torna recebida, menos a taxa (outro lado)
 
 export interface WalletTransaction {
   id: number;
@@ -591,6 +594,9 @@ export interface LeaderboardEntry {
 export type BarterStatus =
   'proposed' | 'accepted' | 'rejected' | 'active' | 'completed' | 'cancelled' | 'disputed';
 
+/** Máquina de estados do dinheiro da troca (torna), separada do status do acordo. */
+export type TornaStatus = 'none' | 'pending' | 'held' | 'paid' | 'refunded';
+
 export interface BarterAgreement {
   id: number;
   ulid: string;
@@ -598,13 +604,17 @@ export interface BarterAgreement {
   receiverId: number;
   offeredServiceId: number | null;
   requestedServiceId: number | null;
+  offeredServiceTitle: string | null;
+  requestedServiceTitle: string | null;
   offeredDescription: string | null;
   requestedDescription: string | null;
   estimatedValueOffered: number;
   estimatedValueRequested: number;
   cashDifference: number; // torna
   cashPayerId: number | null;
-  platformFee: number;
+  platformFee: number; // 15% sobre a torna (troca equilibrada não tem taxa)
+  tornaNet: number; // o que o outro lado recebe: torna − taxa
+  tornaStatus: TornaStatus;
   status: BarterStatus;
   contractOfferedId: number | null;
   contractRequestedId: number | null;

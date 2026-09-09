@@ -47,7 +47,7 @@ export const LEGAL: Record<'termos' | 'privacidade', LegalDoc> = {
       {
         title: '4. Trocas de serviço (escambo)',
         paragraphs: [
-          'Uma troca gera dois contratos recíprocos, cada um com o fluxo normal de entrega e aprovação. Quando os valores não batem, a diferença (torna) é paga em dinheiro, com taxa apenas sobre a torna.',
+          'Uma troca gera dois contratos recíprocos, cada um com o fluxo normal de entrega e aprovação. Quando os valores não batem, a diferença (torna) é paga em dinheiro por quem recebe o serviço mais valioso: o valor é reservado da carteira ao propor ou ao aceitar, fica retido enquanto os dois lados entregam e é liberado ao outro lado, descontada a taxa de 15% sobre a torna, quando ambos aprovam. Recusa, cancelamento ou disputa devolvem a reserva.',
         ],
       },
       {

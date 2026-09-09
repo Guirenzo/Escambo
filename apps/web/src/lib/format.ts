@@ -71,6 +71,17 @@ export const WALLET_REASON_LABEL: Record<string, string> = {
   refund: 'Reembolso',
   withdrawal: 'Saque solicitado',
   withdrawal_refund: 'Saque estornado',
+  barter_hold: 'Torna reservada para a troca',
+  barter_payment: 'Torna paga na troca',
+  barter_in: 'Torna recebida na troca',
+};
+
+export const TORNA_STATUS_LABEL: Record<string, string> = {
+  none: '',
+  pending: 'torna reservada no aceite',
+  held: 'torna reservada',
+  paid: 'torna paga',
+  refunded: 'torna devolvida',
 };
 
 export const WITHDRAWAL_STATUS_LABEL: Record<string, string> = {

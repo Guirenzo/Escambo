@@ -1,14 +1,21 @@
-import { ArrowLeftRight, Plus } from 'lucide-react';
+import { ArrowLeftRight, Plus, QrCode } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { BarterAgreement, Service } from '@escambo/types';
 import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
-import { BARTER_STATUS_LABEL, brl, dt } from '../../lib/format';
-import { useBarterAction, useBarters, useProposeBarter, useServices } from '../../lib/hooks';
+import { BARTER_STATUS_LABEL, brl, dt, TORNA_STATUS_LABEL } from '../../lib/format';
+import {
+  useBarterAction,
+  useBarters,
+  useProposeBarter,
+  useServices,
+  useWallet,
+} from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { DepositModal } from '../wallet/DepositModal';
 
-const PLATFORM_FEE_RATE = 0.15; // RN-066 (espelha o backend)
+const PLATFORM_FEE_RATE = 0.15; // RN-066 (espelha o backend): 15% só sobre a torna
 
 function pillClass(status: string): string {
   if (status === 'completed') return 'status-completed';
@@ -18,12 +25,15 @@ function pillClass(status: string): string {
   return 'status-pending';
 }
 
+const round2 = (v: number): number => Math.round(v * 100) / 100;
+
 export function TrocasView() {
   const { user } = useAuth();
   const myId = user?.id ?? -1;
   const toast = useToast();
   const barters = useBarters();
   const services = useServices({ limit: 100 });
+  const wallet = useWallet();
   const [params, setParams] = useSearchParams();
   const propose = useProposeBarter();
   const act = useBarterAction();
@@ -34,6 +44,7 @@ export function TrocasView() {
   const [offerServiceId, setOfferServiceId] = useState(0);
   const [offerDesc, setOfferDesc] = useState('');
   const [offerValue, setOfferValue] = useState('');
+  const [depositFor, setDepositFor] = useState<number | null>(null);
 
   // Vindo de um card ("Propor troca"): abre o formulário com o serviço desejado já escolhido.
   useEffect(() => {
@@ -51,21 +62,24 @@ export function TrocasView() {
   const others = useMemo(() => all.filter((s) => s.ownerId !== myId), [all, myId]);
   const target: Service | undefined = serviceById.get(targetId);
 
+  const balance = wallet.data?.balance ?? 0;
   const offered = Number(offerValue) || 0;
   const requested = target?.price ?? 0;
-  const diff = Math.abs(offered - requested);
-  const fee = PLATFORM_FEE_RATE * Math.max(offered, requested);
+  const diff = round2(Math.abs(offered - requested));
+  const fee = round2(PLATFORM_FEE_RATE * diff);
+  const iPayOnPropose = offered > 0 && requested > offered; // recebo o serviço mais valioso
+  const missing = iPayOnPropose ? round2(Math.max(0, diff - balance)) : 0;
   const tornaHint =
     offered === 0 || requested === 0
       ? null
       : offered > requested
-        ? `Receptor te paga ${brl(diff)} de torna`
+        ? `Receptor te paga ${brl(diff)} de torna · você recebe ${brl(round2(diff - fee))} líquido`
         : requested > offered
-          ? `Você paga ${brl(diff)} de torna`
-          : 'Troca equilibrada — sem torna';
+          ? `Você paga ${brl(diff)} de torna · reservado da sua carteira agora`
+          : 'Troca equilibrada — sem torna nem taxa';
 
-  const svcLabel = (id: number | null, desc: string | null): string =>
-    id != null ? (serviceById.get(id)?.title ?? `Serviço #${id}`) : (desc ?? '—');
+  const svcLabel = (id: number | null, title: string | null, desc: string | null): string =>
+    title ?? (id != null ? (serviceById.get(id)?.title ?? `Serviço #${id}`) : (desc ?? '—'));
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -79,7 +93,11 @@ export function TrocasView() {
         offeredServiceId: offerMode === 'service' ? offerServiceId : null,
         offeredDescription: offerMode === 'describe' ? offerDesc : null,
       });
-      toast.success('Proposta de troca enviada!');
+      toast.success(
+        iPayOnPropose
+          ? `Proposta de troca enviada — ${brl(diff)} de torna reservados`
+          : 'Proposta de troca enviada!',
+      );
       setOpen(false);
       setTargetId(0);
       setOfferDesc('');
@@ -104,8 +122,9 @@ export function TrocasView() {
         title="Trocas"
         subtitle={
           <>
-            Troque serviço por serviço. Quem oferece menos paga a <b>torna</b>; a plataforma retém{' '}
-            {Math.round(PLATFORM_FEE_RATE * 100)}% do maior valor.
+            Troque serviço por serviço. Quem recebe o serviço mais valioso paga a <b>torna</b>,
+            reservada na carteira até os dois lados concluírem; a plataforma retém{' '}
+            {Math.round(PLATFORM_FEE_RATE * 100)}% só sobre a torna.
           </>
         }
         action={
@@ -196,12 +215,27 @@ export function TrocasView() {
             <div className="summary">
               <strong>{tornaHint}</strong>
               <span className="muted tiny">
-                taxa {brl(fee)} · você recebe {brl(requested)} em serviço por {brl(offered)}
+                {diff > 0 ? `taxa ${brl(fee)} sobre a torna` : 'sem taxa'} · você recebe{' '}
+                {brl(requested)} em serviço por {brl(offered)}
               </span>
             </div>
           )}
 
-          <Button type="submit" disabled={propose.isPending || !target}>
+          {missing > 0 && (
+            <div className="demo-box" data-testid="needs-deposit">
+              <div>
+                <strong>Falta {brl(missing)} na sua carteira para reservar a torna</strong>
+                <div className="muted tiny">
+                  Saldo {brl(balance)} · deposite via PIX sem sair daqui.
+                </div>
+              </div>
+              <Button type="button" variant="secondary" onClick={() => setDepositFor(missing)}>
+                <QrCode size={14} /> Depositar {brl(missing)}
+              </Button>
+            </div>
+          )}
+
+          <Button type="submit" disabled={propose.isPending || !target || missing > 0}>
             {propose.isPending ? 'Enviando…' : 'Enviar proposta'}
           </Button>
         </form>
@@ -226,9 +260,17 @@ export function TrocasView() {
                   ? 'Sem torna'
                   : iPayTorna
                     ? `Você paga ${brl(b.cashDifference)} de torna`
-                    : `Você recebe ${brl(b.cashDifference)} de torna`;
+                    : `Você recebe ${brl(b.tornaNet)} de torna (taxa ${brl(b.platformFee)})`;
+              const tornaState = TORNA_STATUS_LABEL[b.tornaStatus] ?? '';
+              // Receptor paga a torna e ainda não a reservou: precisa de saldo para aceitar.
+              const mustFund =
+                iAmReceiver &&
+                iPayTorna &&
+                b.status === 'proposed' &&
+                b.tornaStatus === 'pending' &&
+                balance < b.cashDifference;
               return (
-                <div key={b.id} className="card service">
+                <div key={b.id} className="card service" data-testid={`barter-${b.id}`}>
                   <div className="svc-top">
                     <span className="chip rank">{iAmProposer ? 'Você propôs' : 'Recebida'}</span>
                     <span className={`pill ${pillClass(b.status)}`}>
@@ -240,7 +282,9 @@ export function TrocasView() {
                       <span className="muted tiny">
                         {iAmProposer ? 'Você oferece' : 'Oferecem'}
                       </span>
-                      <strong>{svcLabel(b.offeredServiceId, b.offeredDescription)}</strong>
+                      <strong>
+                        {svcLabel(b.offeredServiceId, b.offeredServiceTitle, b.offeredDescription)}
+                      </strong>
                       <span className="price">{brl(b.estimatedValueOffered)}</span>
                     </div>
                     <span className="arrow">
@@ -248,12 +292,21 @@ export function TrocasView() {
                     </span>
                     <div className="swap-side">
                       <span className="muted tiny">{iAmProposer ? 'Você recebe' : 'Querem'}</span>
-                      <strong>{svcLabel(b.requestedServiceId, b.requestedDescription)}</strong>
+                      <strong>
+                        {svcLabel(
+                          b.requestedServiceId,
+                          b.requestedServiceTitle,
+                          b.requestedDescription,
+                        )}
+                      </strong>
                       <span className="price">{brl(b.estimatedValueRequested)}</span>
                     </div>
                   </div>
                   <div className="svc-foot">
-                    <span className="muted tiny">{tornaLine}</span>
+                    <span className="muted tiny">
+                      {tornaLine}
+                      {tornaState ? ` · ${tornaState}` : ''}
+                    </span>
                     <span className="muted tiny">{dt(b.createdAt)}</span>
                   </div>
                   {b.status === 'active' && (
@@ -261,23 +314,32 @@ export function TrocasView() {
                   )}
                   {b.status === 'proposed' && (
                     <div className="svc-actions">
+                      {iAmReceiver && mustFund && (
+                        <Button
+                          variant="mini"
+                          onClick={() => setDepositFor(round2(b.cashDifference - balance))}
+                        >
+                          <QrCode size={14} /> Depositar {brl(round2(b.cashDifference - balance))}{' '}
+                          para aceitar
+                        </Button>
+                      )}
+                      {iAmReceiver && !mustFund && (
+                        <Button
+                          variant="mini"
+                          disabled={act.isPending}
+                          onClick={() => void run(b.id, 'accept')}
+                        >
+                          Aceitar
+                        </Button>
+                      )}
                       {iAmReceiver && (
-                        <>
-                          <Button
-                            variant="mini"
-                            disabled={act.isPending}
-                            onClick={() => void run(b.id, 'accept')}
-                          >
-                            Aceitar
-                          </Button>
-                          <Button
-                            variant="mini"
-                            disabled={act.isPending}
-                            onClick={() => void run(b.id, 'reject')}
-                          >
-                            Recusar
-                          </Button>
-                        </>
+                        <Button
+                          variant="mini"
+                          disabled={act.isPending}
+                          onClick={() => void run(b.id, 'reject')}
+                        >
+                          Recusar
+                        </Button>
                       )}
                       {iAmProposer && (
                         <Button
@@ -296,6 +358,14 @@ export function TrocasView() {
           </div>
         )}
       </QueryState>
+
+      {depositFor != null && (
+        <DepositModal
+          suggestedAmount={depositFor}
+          onClose={() => setDepositFor(null)}
+          onPaid={() => setDepositFor(null)}
+        />
+      )}
     </div>
   );
 }
