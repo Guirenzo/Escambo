@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { fundWallet } from './wallet.helpers';
 
 const app = createApp();
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
@@ -18,6 +19,7 @@ async function registerAndLogin(role: 'client' | 'freelancer'): Promise<{ id: nu
 async function makeContract(): Promise<{ client: { id: number; token: string }; freelancer: { id: number; token: string }; contractId: number }> {
   const client = await registerAndLogin('client');
   const freelancer = await registerAndLogin('freelancer');
+  await fundWallet(app, client.token, 400);
   const created = await request(app)
     .post('/api/contracts')
     .set(auth(client.token))

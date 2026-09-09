@@ -60,6 +60,45 @@ export const RESOLUTION_LABEL: Record<string, string> = {
   none: 'Sem movimentação',
 };
 
+/** Linhas do extrato de R$ (wallet_transactions.reason). */
+export const WALLET_REASON_LABEL: Record<string, string> = {
+  deposit: 'Depósito via PIX',
+  hold: 'Reservado para a proposta',
+  payment: 'Pagamento da contratação',
+  escrow_in: 'Recebido em escrow',
+  escrow_release: 'Liberado do escrow',
+  escrow_refund: 'Escrow devolvido ao cliente',
+  refund: 'Reembolso',
+  withdrawal: 'Saque solicitado',
+  withdrawal_refund: 'Saque estornado',
+};
+
+export const WITHDRAWAL_STATUS_LABEL: Record<string, string> = {
+  requested: 'Aguardando',
+  processing: 'Em processamento',
+  completed: 'Concluído',
+  failed: 'Falhou',
+  cancelled: 'Cancelado',
+};
+
+/** Classe visual (pill) de cada status de saque. */
+export const WITHDRAWAL_STATUS_TONE: Record<string, string> = {
+  requested: 'pending',
+  processing: 'in_progress',
+  completed: 'completed',
+  failed: 'cancelled',
+  cancelled: 'cancelled',
+};
+
+export const DEPOSIT_STATUS_LABEL: Record<string, string> = {
+  pending: 'Aguardando pagamento',
+  processing: 'Processando',
+  paid: 'Confirmado',
+  failed: 'Falhou',
+  refunded: 'Estornado',
+  cancelled: 'Vencido',
+};
+
 export const REPORT_REASON_LABEL: Record<string, string> = {
   spam: 'Spam',
   fraud: 'Fraude ou golpe',

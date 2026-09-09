@@ -1958,3 +1958,128 @@ button.toggle.on {
   color: var(--amber-ink);
   font-size: 0.9rem;
 }
+
+/* ---------- Carteira: depósito PIX, extrato e saques ---------- */
+.tabs.tabs-mini {
+  padding: 3px;
+  gap: 2px;
+}
+.tabs.tabs-mini button {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  font-size: 0.8rem;
+}
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.preset {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  box-shadow: none;
+}
+.preset:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.preset.on {
+  border-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green);
+}
+.pix-box {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+}
+.pix-qr {
+  width: 176px;
+  height: 176px;
+  border-radius: var(--r-sm);
+  background: #fff;
+  border: 1px solid var(--border);
+}
+.pix-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.pix-amount {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.pix-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  word-break: break-all;
+  resize: none;
+}
+@media (max-width: 560px) {
+  .pix-box {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+  .pix-info {
+    width: 100%;
+    align-items: center;
+  }
+}
+.demo-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  border: 1px dashed var(--amber);
+  background: var(--amber-soft);
+}
+.demo-box strong {
+  color: var(--amber-ink);
+}
+.stack.center {
+  align-items: center;
+  text-align: center;
+}
+.done-ico {
+  display: inline-grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--green-soft);
+  color: var(--green);
+}
+.credit-tx .amt.held {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--amber-ink);
+}
+.list .acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  word-break: break-all;
+}

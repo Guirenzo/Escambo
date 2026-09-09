@@ -110,6 +110,11 @@ export const openapiDocument: Record<string, any> = {
         },
         ['receiverId', 'estimatedValueOffered', 'estimatedValueRequested'],
       ),
+      CreateDeposit: obj({ amount: { type: 'number', minimum: 10 }, method: { type: 'string', enum: ['pix'] } }, ['amount']),
+      PaymentWebhook: obj(
+        { event: { type: 'string' }, gatewayPaymentId: { type: 'string' }, status: { type: 'string', enum: ['paid', 'failed'] } },
+        ['gatewayPaymentId', 'status'],
+      ),
       CreateWithdrawal: obj(
         {
           amount: { type: 'number', minimum: 20 },
@@ -177,6 +182,14 @@ export const openapiDocument: Record<string, any> = {
     '/contracts/{id}/cancel': { post: op('Contratações', 'Cancela (reembolso RN-025)', { auth: true }) },
 
     '/wallet': { get: op('Carteira', 'Saldo R$ + créditos Escambo (disponível e em escrow)', { auth: true }) },
+    '/wallet/transactions': { get: op('Carteira', 'Extrato de R$ (depósitos, reservas, escrow, reembolsos, saques)', { auth: true }) },
+    '/wallet/deposits': {
+      get: op('Carteira', 'Meus depósitos', { auth: true }),
+      post: op('Carteira', 'Gera cobrança PIX de depósito na carteira', { auth: true, body: { $ref: '#/components/schemas/CreateDeposit' }, responses: res201 }),
+    },
+    '/wallet/deposits/{id}': { get: op('Carteira', 'Situação da cobrança', { auth: true }) },
+    '/wallet/deposits/{id}/simulate': { post: op('Carteira', 'Demo: confirma a cobrança sem gateway (PAYMENTS_SIMULATE)', { auth: true }) },
+    '/payments/webhook': { post: op('Carteira', 'Webhook do gateway (header x-webhook-secret)', { body: { $ref: '#/components/schemas/PaymentWebhook' } }) },
     '/credits/transactions': { get: op('Carteira', 'Extrato de créditos Escambo (time-bank)', { auth: true }) },
     '/boosts/plans': { get: op('Impulsionamento', 'Planos de impulsionamento (custo em créditos)', { auth: true }) },
     '/boosts': {
@@ -187,6 +200,7 @@ export const openapiDocument: Record<string, any> = {
       get: op('Saques', 'Meus saques', { auth: true }),
       post: op('Saques', 'Solicita saque (mín. R$20)', { auth: true, body: { $ref: '#/components/schemas/CreateWithdrawal' }, responses: res201 }),
     },
+    '/withdrawals/{id}/cancel': { post: op('Saques', 'Cancela saque ainda não processado (valor volta)', { auth: true }) },
 
     '/reviews': {
       get: op('Avaliações', 'Avaliações de um freelancer (freelancerId)'),
@@ -235,6 +249,10 @@ export const openapiDocument: Record<string, any> = {
       post: op('Admin', 'Resolve disputa (decisão de escrow)', { auth: true, body: { $ref: '#/components/schemas/ResolveDispute' } }),
     },
     '/admin/users/{ulid}/ban': { post: op('Admin', 'Bane usuário', { auth: true, responses: res204 }) },
+    '/admin/withdrawals': { get: op('Admin', 'Fila de saques (status=open|all|…)', { auth: true }) },
+    '/admin/withdrawals/{id}/process': { post: op('Admin', 'Assume o saque (requested → processing)', { auth: true }) },
+    '/admin/withdrawals/{id}/complete': { post: op('Admin', 'Marca o saque como pago', { auth: true }) },
+    '/admin/withdrawals/{id}/fail': { post: op('Admin', 'Saque falhou: valor devolvido à carteira', { auth: true }) },
 
     '/lgpd/consents': {
       get: op('LGPD', 'Meus consentimentos', { auth: true }),

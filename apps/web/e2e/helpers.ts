@@ -87,6 +87,22 @@ export async function createService(
   return { id: svc.id, title, categoryId };
 }
 
+/**
+ * Carteira pré-paga: propostas em dinheiro exigem saldo. Deposita via cobrança PIX do gateway
+ * simulado e confirma o pagamento (PAYMENTS_SIMULATE).
+ */
+export async function topUp(
+  request: APIRequestContext,
+  user: TestUser,
+  amount: number,
+): Promise<void> {
+  const deposit = await api<{ id: number }>(request, 'post', '/wallet/deposits', {
+    token: user.token,
+    data: { amount },
+  });
+  await api(request, 'post', `/wallet/deposits/${deposit.id}/simulate`, { token: user.token });
+}
+
 /** Admin de teste: e-mail no domínio liberado por ADMIN_EMAILS (@admin.escambo.test). */
 export function createAdmin(request: APIRequestContext): Promise<TestUser> {
   return createUser(request, 'client', {
@@ -102,6 +118,7 @@ export async function deliveredContract(
   freelancer: TestUser,
   service: { id: number; title: string },
 ): Promise<number> {
+  await topUp(request, client, 250);
   const created = await api<{ id: number }>(request, 'post', '/contracts', {
     token: client.token,
     data: {
@@ -127,6 +144,7 @@ export async function completeContract(
   freelancer: TestUser,
   service: { id: number; title: string },
 ): Promise<number> {
+  await topUp(request, client, 250);
   const created = await api<{ id: number }>(request, 'post', '/contracts', {
     token: client.token,
     data: {

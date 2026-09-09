@@ -18,4 +18,17 @@ export const resolveDisputeSchema = z
 export type ResolveDisputeInput = z.infer<typeof resolveDisputeSchema>;
 
 export const disputeIdParamSchema = z.object({ id: z.coerce.number().int().positive() });
+export const withdrawalIdParamSchema = z.object({ id: z.coerce.number().int().positive() });
+
+export const adminWithdrawalsQuerySchema = z.object({
+  status: z
+    .enum(['open', 'all', 'requested', 'processing', 'completed', 'failed', 'cancelled'])
+    .default('open'),
+});
+export const completeWithdrawalSchema = z.object({
+  gatewayRef: z.string().max(100).nullable().optional(),
+});
+export const failWithdrawalSchema = z.object({
+  reason: z.string().max(255).nullable().optional(),
+});
 export const userUlidSchema = z.object({ ulid: z.string().length(26) });

@@ -11,7 +11,33 @@ export interface WalletRow extends RowDataPacket {
   credits_pending: string;
 }
 
+export interface WalletTxRow extends RowDataPacket {
+  id: number;
+  amount: string;
+  pending_delta: string;
+  balance_after: string;
+  pending_after: string;
+  reason: string;
+  contract_id: number | null;
+  payment_id: number | null;
+  withdrawal_id: number | null;
+  created_at: Date;
+}
+
 export const walletRepository = {
+  async listTransactions(userId: number, limit: number, offset: number): Promise<WalletTxRow[]> {
+    const [rows] = await pool.query<WalletTxRow[]>(
+      `SELECT id, amount, pending_delta, balance_after, pending_after, reason,
+              contract_id, payment_id, withdrawal_id, created_at
+         FROM wallet_transactions
+        WHERE user_id = :userId
+        ORDER BY id DESC
+        LIMIT ${limit} OFFSET ${offset}`,
+      { userId },
+    );
+    return rows;
+  },
+
   /** Garante que o usuário tem carteira (uma por usuário) e a retorna. */
   async getOrCreate(userId: number): Promise<WalletRow> {
     await pool.query<ResultSetHeader>(`INSERT IGNORE INTO wallets (user_id) VALUES (:userId)`, {

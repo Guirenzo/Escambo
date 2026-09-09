@@ -6,6 +6,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { fundWallet } from './wallet.helpers';
 import { createSocketServer } from '../../src/config/socket';
 
 /**
@@ -77,6 +78,7 @@ describe('Notificações em tempo real (Socket.IO, sala por usuário)', () => {
   it('freelancer conectado recebe a proposta na hora; cliente recebe o aceite; sem token não conecta', async () => {
     const client = await registerAndLogin('client');
     const freelancer = await registerAndLogin('freelancer');
+    await fundWallet(app, client.token, 150);
 
     const freelancerSocket = await connectAs(freelancer);
     const clientSocket = await connectAs(client);

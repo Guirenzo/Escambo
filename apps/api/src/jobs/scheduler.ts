@@ -1,5 +1,6 @@
 import { env } from '../config/env';
 import { logger } from '../config/logger';
+import { runExpireDeposits } from './expire-deposits';
 import { runTacitApproval } from './tacit-approval';
 
 /**
@@ -16,7 +17,10 @@ export interface Job {
   run: () => Promise<unknown>;
 }
 
-export const JOBS: Job[] = [{ name: 'tacit-approval', run: runTacitApproval }];
+export const JOBS: Job[] = [
+  { name: 'tacit-approval', run: runTacitApproval },
+  { name: 'expire-deposits', run: runExpireDeposits },
+];
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;

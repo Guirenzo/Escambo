@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { fundWallet } from './wallet.helpers';
 
 /**
  * Disputa e mediação: uma das partes abre a disputa numa contratação em andamento/entregue,
@@ -45,6 +46,7 @@ describe('Disputas e mediação (admin)', () => {
   it('parte abre disputa → contrato em disputa → admin divide o escrow → partes notificadas', async () => {
     const client = await registerAndLogin('client');
     const freelancer = await registerAndLogin('freelancer');
+    await fundWallet(app, client.token, 200);
     const admin = await registerAndLogin('client', 'admin.escambo.test'); // ADMIN_EMAILS: @admin.escambo.test
     const stranger = await registerAndLogin('client');
 
@@ -125,9 +127,14 @@ describe('Disputas e mediação (admin)', () => {
       refundPercentage: 50,
     });
 
-    // Escrow dividido: freelancer recebe 85 (50% de 170); contrato concluído; notificações.
+    // Escrow dividido: freelancer recebe 85 (50% de 170) e o cliente 100 (50% do preço, taxa
+    // incluída); a plataforma fica com metade da taxa (15). Contrato concluído; notificações.
     const wallet = await request(app).get('/api/wallet').set(auth(freelancer.token));
     expect(wallet.body).toMatchObject({ balance: 85, balancePending: 0 });
+    const clientWallet = await request(app).get('/api/wallet').set(auth(client.token));
+    expect(clientWallet.body).toMatchObject({ balance: 100, balancePending: 0 });
+    const ledger = await request(app).get('/api/wallet/transactions').set(auth(client.token));
+    expect(ledger.body.items[0]).toMatchObject({ reason: 'refund', amount: 100, contractId });
     const after = await request(app).get(`/api/contracts/${contractId}`).set(auth(client.token));
     expect(after.body.status).toBe('completed');
     for (const actor of [client, freelancer]) {

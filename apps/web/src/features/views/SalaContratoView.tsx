@@ -26,6 +26,33 @@ const MODE_LABEL: Record<string, string> = {
   barter: 'Troca',
 };
 
+/** Onde o dinheiro (ou os créditos) está neste momento do contrato. */
+function paymentState(c: { paymentMode: string; status: string }): string {
+  if (c.paymentMode === 'barter') return 'Troca de serviços · sem escrow';
+  const unit = c.paymentMode === 'credits' ? 'Créditos' : 'Valor';
+  switch (c.status) {
+    case 'pending':
+      return c.paymentMode === 'credits'
+        ? 'Créditos retidos no aceite'
+        : 'Reservado na carteira do cliente';
+    case 'accepted':
+    case 'in_progress':
+    case 'delivered':
+    case 'revision_requested':
+      return `${unit} em escrow · liberado na aprovação`;
+    case 'completed':
+      return `${unit} liberado ao freelancer`;
+    case 'rejected':
+      return `${unit} devolvido ao cliente`;
+    case 'cancelled':
+      return `${unit} liquidado pela política de reembolso`;
+    case 'disputed':
+      return 'Congelado até a decisão da mediação';
+    default:
+      return c.status;
+  }
+}
+
 /**
  * Avaliação da contratação (só depois de concluída): o cliente dá a nota (1–5) e um
  * comentário; o freelancer pode responder uma vez. A nota alimenta o Escambo Score.
@@ -271,6 +298,8 @@ export function SalaContratoView({
                         ? `${Math.round(d.freelancerNet)} créditos`
                         : brl(d.freelancerNet)}
                     </strong>
+                    <span className="muted">Pagamento</span>
+                    <span data-testid="payment-state">{paymentState(d)}</span>
                   </div>
                   <ol className="timeline">
                     {d.history.map((h, i) => (

@@ -2,7 +2,7 @@
  * Documentos legais exibidos em /termos e /privacidade e aceitos no cadastro.
  * A versão é gravada no consentimento (LGPD): mudou o texto, suba a versão.
  */
-export const LEGAL_VERSION = '1.0';
+export const LEGAL_VERSION = '1.1';
 export const LEGAL_UPDATED = '2026-09-09';
 
 export interface LegalSection {
@@ -37,9 +37,10 @@ export const LEGAL: Record<'termos' | 'privacidade', LegalDoc> = {
         ],
       },
       {
-        title: '3. Contratações, escrow e taxa',
+        title: '3. Contratações, carteira, escrow e taxa',
         paragraphs: [
-          'Ao aceitar uma proposta, o valor líquido fica retido (escrow) e é liberado ao freelancer quando o cliente aprova a entrega. A plataforma cobra 15% sobre o valor da contratação em dinheiro; contratações em créditos Escambo não têm taxa.',
+          'A carteira é pré-paga: o cliente deposita via PIX e, ao enviar uma proposta em dinheiro, o valor é reservado do saldo na hora. Se o freelancer recusar ou o cliente cancelar antes do aceite, a reserva volta integralmente. No aceite, o valor líquido fica retido (escrow) e é liberado ao freelancer quando o cliente aprova a entrega. A plataforma cobra 15% sobre o valor da contratação em dinheiro; contratações em créditos Escambo não têm taxa.',
+          'Cancelamentos após o aceite e decisões de disputa devolvem ao cliente a fração do valor definida pela política ou pela mediação, e liberam ao freelancer a fração correspondente do líquido. Saques são solicitados na carteira, processados pela equipe e, se não puderem ser pagos, estornados ao saldo; o titular pode cancelar um saque ainda não processado.',
           'Se o cliente não responder a uma entrega em 5 dias, ela é aprovada automaticamente (aprovação tácita). O cliente pode, antes disso, pedir revisão ou abrir uma disputa.',
         ],
       },

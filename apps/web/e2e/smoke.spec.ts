@@ -1,5 +1,13 @@
 import { expect, test } from '@playwright/test';
-import { completeContract, createService, createUser, openAs, PASSWORD, settled } from './helpers';
+import {
+  completeContract,
+  createService,
+  createUser,
+  openAs,
+  PASSWORD,
+  settled,
+  topUp,
+} from './helpers';
 
 /**
  * Smoke ponta a ponta: o caminho crítico do produto com Web + API + MySQL reais.
@@ -34,6 +42,7 @@ test('cliente contrata um serviço, cai na sala do contrato e conversa no chat',
   const freelancer = await createUser(request, 'freelancer');
   const service = await createService(request, freelancer, 300);
   const client = await createUser(request, 'client');
+  await topUp(request, client, 300); // carteira pré-paga: o valor é reservado na proposta
 
   await openAs(page, client, '/servicos');
   await settled(page);
@@ -48,7 +57,7 @@ test('cliente contrata um serviço, cai na sala do contrato e conversa no chat',
   await card.getByRole('button', { name: 'Contratar' }).click();
   const modal = page.getByRole('dialog');
   await expect(modal.getByRole('heading', { name: `Contratar: ${service.title}` })).toBeVisible();
-  await expect(modal.getByText('R$ 300,00')).toBeVisible();
+  await expect(modal.locator('.summary strong')).toHaveText('R$ 300,00');
   await modal.getByRole('button', { name: 'Enviar proposta' }).click();
 
   // sala do contrato

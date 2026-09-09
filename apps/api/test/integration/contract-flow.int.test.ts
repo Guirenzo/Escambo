@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { fundWallet } from './wallet.helpers';
 
 const app = createApp();
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
@@ -37,6 +38,8 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
   it('create → accept → deliver → approve libera o escrow e concede XP', async () => {
     const client = await registerAndLogin('client');
     const freelancer = await registerAndLogin('freelancer');
+    // Carteira pré-paga: o cliente deposita R$ 1000 (PIX simulado) antes de contratar.
+    await fundWallet(app, client.token, 1000);
 
     // Saldo inicial do freelancer zerado.
     const w0 = await request(app).get('/api/wallet').set(auth(freelancer.token));
@@ -56,6 +59,9 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     const contractId = created.body.id as number;
     expect(created.body).toMatchObject({ status: 'pending', platformFee: 150, freelancerNet: 850 });
+    // O valor da proposta sai do disponível do cliente e fica reservado (nada vai ao freelancer ainda).
+    const c0 = await request(app).get('/api/wallet').set(auth(client.token));
+    expect(c0.body).toMatchObject({ balance: 0, balancePending: 1000 });
 
     // Freelancer aceita → valor líquido entra em escrow (balance_pending).
     const acc = await request(app).post(`/api/contracts/${contractId}/accept`).set(auth(freelancer.token));
@@ -63,6 +69,15 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
     expect(acc.body.status).toBe('accepted');
     const w1 = await request(app).get('/api/wallet').set(auth(freelancer.token));
     expect(w1.body).toMatchObject({ balance: 0, balancePending: 850 });
+    // A reserva do cliente pagou a contratação: 850 em escrow do freelancer, 150 de taxa.
+    const c1 = await request(app).get('/api/wallet').set(auth(client.token));
+    expect(c1.body).toMatchObject({ balance: 0, balancePending: 0 });
+    const ledger = await request(app).get('/api/wallet/transactions').set(auth(client.token));
+    expect(ledger.body.items.map((t: { reason: string }) => t.reason)).toEqual([
+      'payment',
+      'hold',
+      'deposit',
+    ]);
 
     // Freelancer entrega.
     const del = await request(app)
@@ -94,6 +109,7 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
   it('cancelar após o aceite estorna o escrow retido', async () => {
     const client = await registerAndLogin('client');
     const freelancer = await registerAndLogin('freelancer');
+    await fundWallet(app, client.token, 500);
 
     const created = await request(app)
       .post('/api/contracts')
@@ -114,14 +130,19 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
     expect(cancel.status, JSON.stringify(cancel.body)).toBe(200);
     expect(cancel.body.status).toBe('cancelled');
 
+    // Sem prazo, o cancelamento após o aceite devolve 50% (RN-025): o cliente recebe 250
+    // (metade do preço) e o freelancer fica com 212,50 (metade do líquido); nada fica retido.
     const wB = await request(app).get('/api/wallet').set(auth(freelancer.token));
-    expect(wB.body.balancePending).toBe(0); // escrow estornado
+    expect(wB.body).toMatchObject({ balance: 212.5, balancePending: 0 });
+    const cB = await request(app).get('/api/wallet').set(auth(client.token));
+    expect(cB.body).toMatchObject({ balance: 250, balancePending: 0 });
   });
 
   it('impõe autorização e autenticação nas transições', async () => {
     const client = await registerAndLogin('client');
     const freelancer = await registerAndLogin('freelancer');
     const outsider = await registerAndLogin('client');
+    await fundWallet(app, client.token, 300);
 
     const created = await request(app)
       .post('/api/contracts')

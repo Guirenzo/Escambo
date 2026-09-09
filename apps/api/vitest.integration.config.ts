@@ -27,6 +27,8 @@ export default defineConfig({
       JWT_SECRET: 'integration-test-secret-key-0123456789',
       ADMIN_EMAILS: '@admin.escambo.test',
       BCRYPT_SALT_ROUNDS: '12',
+      PAYMENTS_SIMULATE: 'true',
+      PAYMENT_WEBHOOK_SECRET: 'segredo-do-webhook-de-integracao',
     },
   },
 });

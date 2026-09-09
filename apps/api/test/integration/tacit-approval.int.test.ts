@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { fundWallet } from './wallet.helpers';
 import { runTacitApproval } from '../../src/jobs/tacit-approval';
 
 /**
@@ -61,6 +62,7 @@ describe('Aprovação tácita (job)', () => {
   it('aprova a entrega vencida, libera o escrow e registra o motivo; a recente fica entregue', async () => {
     const client = await registerAndLogin('client');
     const freelancer = await registerAndLogin('freelancer');
+    await fundWallet(app, client.token, 400);
 
     const old = await deliveredContract(client, freelancer, 'Entrega antiga sem resposta');
     const recent = await deliveredContract(client, freelancer, 'Entrega recente');

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createService, createUser, openAs, settled } from './helpers';
+import { createService, createUser, openAs, settled, topUp } from './helpers';
 
 /**
  * Engajamento: notificações ao vivo (socket → badge + toast), favoritos, filtro por categoria
@@ -14,6 +14,7 @@ test('notificação chega ao vivo: badge no menu, toast e lista atualizada sem r
 }) => {
   const freelancer = await createUser(request, 'freelancer');
   const client = await createUser(request, 'client');
+  await topUp(request, client, 120);
 
   await openAs(page, freelancer, '/');
   await settled(page);

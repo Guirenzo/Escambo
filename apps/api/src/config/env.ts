@@ -56,6 +56,17 @@ const envSchema = z.object({
     .int()
     .positive()
     .default(5 * 60_000),
+
+  // Pagamentos (depósitos na carteira). Só existe o gateway simulado neste estágio:
+  // PAYMENTS_SIMULATE libera o endpoint que "paga" a cobrança PIX (demo/dev/testes) —
+  // DESLIGUE em produção. PAYMENT_WEBHOOK_SECRET protege o webhook do gateway (vazio = desligado).
+  PAYMENTS_SIMULATE: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  PAYMENT_WEBHOOK_SECRET: z.string().default(''),
+  // Validade da cobrança PIX de um depósito.
+  DEPOSIT_EXPIRES_MINUTES: z.coerce.number().int().positive().default(30),
 });
 
 const parsed = envSchema.safeParse(process.env);
