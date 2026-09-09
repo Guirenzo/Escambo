@@ -8,7 +8,7 @@ import type { Contract } from '@escambo/types';
  */
 
 export type ContractActionKey =
-  'accept' | 'reject' | 'deliver' | 'approve' | 'revision' | 'cancel' | 'review';
+  'accept' | 'reject' | 'deliver' | 'approve' | 'revision' | 'cancel' | 'review' | 'dispute';
 
 export interface ContractAction {
   key: ContractActionKey;
@@ -20,6 +20,11 @@ export interface ContractAction {
 }
 
 export type Party = 'client' | 'freelancer' | 'none';
+
+/** Estados em que qualquer das partes pode acionar a mediação da plataforma. */
+export const DISPUTABLE_STATUSES = ['accepted', 'in_progress', 'delivered', 'revision_requested'];
+
+const DISPUTE: ContractAction = { key: 'dispute', label: 'Abrir disputa', tone: 'danger' };
 
 export function partyOf(c: Pick<Contract, 'clientId' | 'freelancerId'>, userId: number): Party {
   if (c.clientId === userId) return 'client';
@@ -54,8 +59,9 @@ export function contractActions(
               tone: 'primary',
               prompt: 'Mensagem da entrega (o que foi feito, onde está):',
             },
+            DISPUTE,
           ]
-        : [{ key: 'cancel', label: 'Cancelar', tone: 'danger' }];
+        : [{ key: 'cancel', label: 'Cancelar', tone: 'danger' }, DISPUTE];
 
     case 'delivered':
       return party === 'client'
@@ -67,8 +73,9 @@ export function contractActions(
               tone: 'secondary',
               prompt: 'O que precisa ser ajustado?',
             },
+            DISPUTE,
           ]
-        : [];
+        : [DISPUTE];
 
     case 'completed':
       return party === 'client' && !c.hasReview

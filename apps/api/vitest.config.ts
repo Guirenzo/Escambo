@@ -15,6 +15,7 @@ export default defineConfig({
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
       JWT_SECRET: 'unit-test-secret-0123456789abcdef',
+      ADMIN_EMAILS: 'root@escambo.test,@admin.escambo.test',
     },
   },
 });

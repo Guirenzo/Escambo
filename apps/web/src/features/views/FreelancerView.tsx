@@ -1,4 +1,4 @@
-import { ArrowLeft, Briefcase, Heart, MapPin, ShieldCheck, Star } from 'lucide-react';
+import { ArrowLeft, Briefcase, Flag, Heart, MapPin, ShieldCheck, Star } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { Service } from '@escambo/types';
@@ -17,6 +17,8 @@ import {
 import { BoostModal } from '../services/BoostModal';
 import { ContratarModal } from '../services/ContratarModal';
 import { ServiceCard } from '../services/ServiceCard';
+import { ModerationButtons } from '../admin/ModerationButtons';
+import { ReportModal } from '../profile/ReportModal';
 
 /** Perfil público do freelancer: reputação explicada, serviços contratáveis e avaliações. */
 export function FreelancerView() {
@@ -35,6 +37,7 @@ export function FreelancerView() {
   );
   const [contratar, setContratar] = useState<Service | null>(null);
   const [boost, setBoost] = useState<Service | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
 
   return (
     <div className="page">
@@ -97,6 +100,14 @@ export function FreelancerView() {
                     >
                       <Heart size={14} /> {isFav ? 'Favorito' : 'Favoritar'}
                     </Button>
+                  )}
+                  {userId !== myId && (
+                    <Button variant="ghost" onClick={() => setReportOpen(true)}>
+                      <Flag size={14} /> Denunciar
+                    </Button>
+                  )}
+                  {user?.role === 'admin' && userId !== myId && (
+                    <ModerationButtons ulid={p.userUlid} />
                   )}
                 </div>
               </div>
@@ -184,6 +195,9 @@ export function FreelancerView() {
         )}
       </QueryState>
 
+      {reportOpen && userId && (
+        <ReportModal targetType="user" targetId={userId} onClose={() => setReportOpen(false)} />
+      )}
       {contratar && <ContratarModal service={contratar} onClose={() => setContratar(null)} />}
       {boost && <BoostModal service={boost} onClose={() => setBoost(null)} />}
     </div>

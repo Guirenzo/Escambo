@@ -13,6 +13,7 @@ import {
   useRespondReview,
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { PrivacidadeCard } from '../profile/PrivacidadeCard';
 
 /** Avaliações que o freelancer recebeu, com resposta pública (uma por avaliação). */
 function AvaliacoesRecebidas({ userId }: { userId: number }) {
@@ -286,6 +287,8 @@ export function PerfilView() {
                 Salvar cliente
               </Button>
             </form>
+
+            <PrivacidadeCard />
           </div>
         )}
       </QueryState>

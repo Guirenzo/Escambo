@@ -1,4 +1,5 @@
 import type {
+  AdminMetrics,
   AuthResponse,
   BarterAgreement,
   Boost,
@@ -7,15 +8,20 @@ import type {
   ChatHistory,
   ChatMessage,
   ClientProfile,
+  ContentReport,
   Contract,
   ContractWithHistory,
   CreateBarterRequest,
   CreateBoostRequest,
+  CreateContentReportRequest,
   CreateContractRequest,
   CreateFavoriteRequest,
   CreateReviewRequest,
   CreateServiceRequest,
   CreditTransaction,
+  DataDeletionRequest,
+  DataExportRequest,
+  Dispute,
   Favorite,
   FavoriteTargetType,
   FreelancerProfile,
@@ -24,11 +30,13 @@ import type {
   LoginRequest,
   MyProfiles,
   NotificationList,
+  OpenDisputeRequest,
   Paginated,
   PublicFreelancerProfile,
   PublicUser,
   RefreshResponse,
   RegisterRequest,
+  ResolveDisputeRequest,
   Review,
   Service,
   UpsertClientProfileRequest,
@@ -254,6 +262,36 @@ export const api = {
     request<void>('/favorites', { method: 'POST', body: JSON.stringify(body) }),
   removeFavorite: (targetType: FavoriteTargetType, targetId: number) =>
     request<void>(`/favorites/${targetType}/${targetId}`, { method: 'DELETE' }),
+
+  // disputas (mediação da plataforma)
+  disputes: () => request<Dispute[]>('/disputes'),
+  openDispute: (body: OpenDisputeRequest) =>
+    request<Dispute>('/disputes', { method: 'POST', body: JSON.stringify(body) }),
+
+  // denúncias de conteúdo/usuário
+  createReport: (body: CreateContentReportRequest) =>
+    request<ContentReport>('/reports', { method: 'POST', body: JSON.stringify(body) }),
+
+  // LGPD: exportação e exclusão dos meus dados
+  exportRequests: () => request<DataExportRequest[]>('/lgpd/export-requests'),
+  requestExport: () => request<DataExportRequest>('/lgpd/export-requests', { method: 'POST' }),
+  deletionRequests: () => request<DataDeletionRequest[]>('/lgpd/deletion-requests'),
+  requestDeletion: (reason: string | null) =>
+    request<DataDeletionRequest>('/lgpd/deletion-requests', {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
+
+  // admin (mediação, métricas, moderação)
+  adminMetrics: () => request<AdminMetrics>('/admin/metrics'),
+  adminDisputes: () => request<Dispute[]>('/admin/disputes'),
+  adminResolveDispute: (id: number, body: ResolveDisputeRequest) =>
+    request<Dispute>(`/admin/disputes/${id}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  adminModerateUser: (ulid: string, action: 'suspend' | 'ban' | 'reactivate') =>
+    request<void>(`/admin/users/${encodeURIComponent(ulid)}/${action}`, { method: 'POST' }),
 
   // perfis
   profilesMe: () => request<MyProfiles>('/profiles/me'),

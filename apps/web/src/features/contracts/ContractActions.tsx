@@ -15,16 +15,19 @@ const TONE: Record<ContractAction['tone'], 'primary' | 'secondary' | 'danger'> =
 
 /**
  * Botões de ação de uma contratação para o usuário logado (aceitar, entregar, aprovar,
- * pedir revisão, cancelar, avaliar). Mesma lógica na tabela do Início e na Sala.
+ * pedir revisão, cancelar, avaliar, abrir disputa). Mesma lógica na tabela do Início e na Sala.
+ * Avaliar e abrir disputa acontecem na Sala: fora dela, os botões levam para lá.
  */
 export function ContractActions({
   contract,
   size = 'normal',
   exclude = [],
+  onDispute,
 }: {
   contract: Contract;
   size?: 'mini' | 'normal';
   exclude?: ContractActionKey[];
+  onDispute?: () => void;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -40,6 +43,11 @@ export function ContractActions({
   async function run(a: ContractAction): Promise<void> {
     if (a.key === 'review') {
       navigate(`/contratos/${contract.id}`);
+      return;
+    }
+    if (a.key === 'dispute') {
+      if (onDispute) onDispute();
+      else navigate(`/contratos/${contract.id}`);
       return;
     }
     let text = '';

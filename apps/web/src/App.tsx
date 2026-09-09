@@ -3,6 +3,7 @@ import { RequireAuth } from './components/RequireAuth';
 import { Spinner } from './components/ui';
 import { LoginForm } from './features/auth/LoginForm';
 import { Shell } from './features/shell/Shell';
+import { AdminView } from './features/views/AdminView';
 import { CarteiraView } from './features/views/CarteiraView';
 import { FreelancerView } from './features/views/FreelancerView';
 import { InicioView } from './features/views/InicioView';
@@ -26,6 +27,13 @@ function LoginRoute() {
     );
   if (user) return <Navigate to="/" replace />;
   return <LoginForm />;
+}
+
+/** /admin: só para administradores (ADMIN_EMAILS); os demais voltam para a home. */
+function AdminRoute() {
+  const { user } = useAuth();
+  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  return <AdminView />;
 }
 
 /** /contratos/:id → sala do contrato (timeline + chat). */
@@ -53,6 +61,7 @@ export function App() {
             <Route path="perfil" element={<PerfilView />} />
             <Route path="contratos/:id" element={<SalaContratoRoute />} />
             <Route path="freelancers/:ulid" element={<FreelancerView />} />
+            <Route path="admin" element={<AdminRoute />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

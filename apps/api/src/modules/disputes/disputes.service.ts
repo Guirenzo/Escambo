@@ -2,6 +2,7 @@ import { ulid } from 'ulid';
 import type { Dispute, DisputeReason, DisputeResolution, DisputeStatus } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
 import { contractsRepository } from '../contracts/contracts.repository';
+import { notificationsService } from '../notifications/notifications.service';
 import { disputesRepository, type DisputeRow } from './disputes.repository';
 import type { OpenDisputeInput } from './disputes.schema';
 
@@ -35,8 +36,20 @@ export const disputesService = {
       description: input.description,
     });
     if (id === null) {
-      throw new HttpError(409, 'A contratação não está em um estado que permite disputa', 'not_disputable');
+      throw new HttpError(
+        409,
+        'A contratação não está em um estado que permite disputa',
+        'not_disputable',
+      );
     }
+    // A outra parte fica sabendo na hora; a mediação (admin) vê a disputa no painel.
+    const other = contract.client_id === userId ? contract.freelancer_id : contract.client_id;
+    void notificationsService.notify(other, {
+      type: 'dispute_opened',
+      title: 'Disputa aberta na contratação',
+      body: 'A mediação do Escambo vai analisar e decidir sobre o valor em escrow.',
+      data: { contractId: input.contractId, disputeId: id },
+    });
     return toDispute((await disputesRepository.findById(id))!);
   },
 

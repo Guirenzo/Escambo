@@ -14,6 +14,7 @@ import {
 } from '../../lib/hooks';
 import { getSocket } from '../../lib/socket';
 import { ContractActions } from '../contracts/ContractActions';
+import { DisputeModal, DisputeSection } from '../contracts/DisputePanel';
 import { useToast } from '../../lib/toast';
 
 /** Prazo da plataforma para aprovação tácita (platform_settings.tacit_approval_days). */
@@ -155,6 +156,7 @@ export function SalaContratoView({
   const [live, setLive] = useState<ChatMessage[]>([]); // mensagens que chegaram pelo socket
   const [connected, setConnected] = useState(false);
   const [draft, setDraft] = useState('');
+  const [disputeOpen, setDisputeOpen] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   // Conecta o socket, entra na sala e ouve mensagens novas em tempo real.
@@ -224,7 +226,11 @@ export function SalaContratoView({
         {c && (
           <div className="sala-head-right">
             <span className={`pill status-${c.status}`}>{STATUS_LABEL[c.status] ?? c.status}</span>
-            <ContractActions contract={c} exclude={['review']} />
+            <ContractActions
+              contract={c}
+              exclude={['review']}
+              onDispute={() => setDisputeOpen(true)}
+            />
           </div>
         )}
       </div>
@@ -290,6 +296,7 @@ export function SalaContratoView({
           </section>
 
           {c && <ReviewSection contract={c} myId={myId} />}
+          {c && c.status === 'disputed' && <DisputeSection contractId={c.id} />}
         </div>
 
         <section className="card chat">
@@ -331,6 +338,7 @@ export function SalaContratoView({
           </form>
         </section>
       </div>
+      {c && disputeOpen && <DisputeModal contract={c} onClose={() => setDisputeOpen(false)} />}
     </div>
   );
 }

@@ -21,6 +21,8 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('1h'),
   BCRYPT_SALT_ROUNDS: z.coerce.number().int().min(12).default(12),
   REFRESH_TOKEN_EXPIRES_DAYS: z.coerce.number().int().positive().default(7),
+  // Contas com poderes de admin: e-mails separados por vírgula; "@dominio" vale para o domínio todo.
+  ADMIN_EMAILS: z.string().default(''),
 
   // --- Hardening HTTP / operacional ---
   // Origens permitidas no CORS: '*' (qualquer) ou lista separada por vírgula.
