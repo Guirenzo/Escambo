@@ -1,13 +1,23 @@
 import { Heart, MapPin, Plus, Search } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
 import type { Category, Service } from '@escambo/types';
-import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
+import { useNavigate } from 'react-router-dom';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  Field,
+  Input,
+  PageHeader,
+  Select,
+  Skeleton,
+} from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import {
   useCategories,
   useCreateService,
   useFavorites,
-  useServices,
+  useServicesInfinite,
   useToggleFavorite,
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
@@ -33,6 +43,8 @@ const RADII = [5, 10, 25, 50, 100];
 export function ServicosView() {
   const { user } = useAuth();
   const myId = user?.id ?? -1;
+  const isFreelancer = user?.role === 'freelancer';
+  const navigate = useNavigate();
   const toast = useToast();
 
   // busca (texto + descoberta local)
@@ -42,7 +54,7 @@ export function ServicosView() {
   const [radiusKm, setRadiusKm] = useState(25);
   const [locating, setLocating] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState(0);
-  const services = useServices({
+  const services = useServicesInfinite({
     q: submitted,
     ...(categoryFilter ? { categoryId: categoryFilter } : {}),
     ...(geo ? { lat: geo.lat, lng: geo.lng, radiusKm } : {}),
@@ -241,48 +253,64 @@ export function ServicosView() {
         </form>
       )}
 
-      <QueryState
-        isLoading={services.isLoading}
-        error={services.error}
-        data={services.data}
-        isEmpty={(d) => d.items.length === 0}
-        empty={
-          geo
-            ? `Nenhum serviço num raio de ${radiusKm} km — aumente o raio.`
-            : 'Nenhum serviço encontrado.'
-        }
-        onRetry={() => void services.refetch()}
-      >
-        {(d) => {
-          const items = onlyFavs ? d.items.filter((s) => favIds.has(s.id)) : d.items;
+      {services.isLoading ? (
+        <Skeleton lines={6} />
+      ) : services.error ? (
+        <ErrorState error={services.error} onRetry={() => void services.refetch()} />
+      ) : (
+        (() => {
+          const all = services.data?.pages.flatMap((p) => p.items) ?? [];
+          const items = onlyFavs ? all.filter((s) => favIds.has(s.id)) : all;
           if (items.length === 0) {
             return (
-              <p className="muted">Nenhum favorito nesta lista. Marque o coração nos serviços.</p>
+              <EmptyState>
+                {onlyFavs
+                  ? 'Nenhum favorito nesta lista. Marque o coração nos serviços.'
+                  : geo
+                    ? `Nenhum serviço num raio de ${radiusKm} km — aumente o raio.`
+                    : 'Nenhum serviço encontrado.'}
+              </EmptyState>
             );
           }
           return (
-            <div className="cards-grid">
-              {items.map((s) => (
-                <ServiceCard
-                  key={s.id}
-                  service={s}
-                  mine={s.ownerId === myId}
-                  onContratar={setContratar}
-                  onBoost={setBoost}
-                  favorited={favIds.has(s.id)}
-                  onToggleFavorite={(svc) =>
-                    toggleFav.mutate({
-                      targetType: 'service',
-                      targetId: svc.id,
-                      favorited: favIds.has(svc.id),
-                    })
-                  }
-                />
-              ))}
-            </div>
+            <>
+              <div className="cards-grid">
+                {items.map((s) => (
+                  <ServiceCard
+                    key={s.id}
+                    service={s}
+                    mine={s.ownerId === myId}
+                    onContratar={setContratar}
+                    onBoost={setBoost}
+                    favorited={favIds.has(s.id)}
+                    onToggleFavorite={(svc) =>
+                      toggleFav.mutate({
+                        targetType: 'service',
+                        targetId: svc.id,
+                        favorited: favIds.has(svc.id),
+                      })
+                    }
+                    onProposeBarter={
+                      isFreelancer ? (svc) => navigate(`/trocas?propor=${svc.id}`) : undefined
+                    }
+                  />
+                ))}
+              </div>
+              {services.hasNextPage && !onlyFavs && (
+                <div className="center" style={{ marginTop: 16 }}>
+                  <Button
+                    variant="secondary"
+                    onClick={() => void services.fetchNextPage()}
+                    disabled={services.isFetchingNextPage}
+                  >
+                    {services.isFetchingNextPage ? 'Carregando…' : 'Carregar mais'}
+                  </Button>
+                </div>
+              )}
+            </>
           );
-        }}
-      </QueryState>
+        })()
+      )}
 
       {contratar && <ContratarModal service={contratar} onClose={() => setContratar(null)} />}
       {boost && <BoostModal service={boost} onClose={() => setBoost(null)} />}

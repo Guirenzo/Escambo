@@ -3,6 +3,8 @@ import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
 import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
 import { notificationsService } from '../notifications/notifications.service';
+import { profilesRepository } from '../profiles/profiles.repository';
+import { logger } from '../../config/logger';
 import { messagingRepository, type MessageRow } from './messaging.repository';
 
 const HISTORY_LIMIT = 200;
@@ -39,6 +41,24 @@ async function contextFor(contractId: number, uid: number): Promise<Conversation
   return { contract, conversationId, otherPartyId };
 }
 
+/** Horas entre a última mensagem do cliente e a resposta do freelancer (se for uma resposta). */
+export function responseHours(
+  previous: { sender_id: number; created_at: Date } | undefined,
+  clientId: number,
+  now: Date = new Date(),
+): number | null {
+  if (!previous || previous.sender_id !== clientId) return null;
+  const ms = now.getTime() - new Date(previous.created_at).getTime();
+  return Math.max(0, Math.round((ms / 3_600_000) * 100) / 100);
+}
+
+async function recordResponseTime(ctx: ConversationContext, messageId: number): Promise<void> {
+  const previous = await messagingRepository.previousMessage(ctx.conversationId, messageId);
+  const hours = responseHours(previous, ctx.contract.client_id);
+  if (hours == null) return;
+  await profilesRepository.blendResponseTime(ctx.contract.freelancer_id, hours);
+}
+
 export const messagingService = {
   /** Histórico do chat do contrato (somente para as partes). */
   async history(contractId: number, uid: number): Promise<ChatHistory> {
@@ -61,6 +81,14 @@ export const messagingService = {
       content,
     });
     const message = toMessage(row);
+
+    // Responsividade do freelancer: quando ele responde a uma mensagem do cliente, o tempo
+    // decorrido vira amostra do tempo médio de resposta (dimensão do Escambo Score).
+    if (uid === ctx.contract.freelancer_id) {
+      void recordResponseTime(ctx, row.id).catch((err) =>
+        logger.warn({ err }, 'responsividade: não foi possível registrar'),
+      );
+    }
 
     // Broadcast para a sala do contrato (no-op se não houver Socket.IO anexado).
     realtime.emitToContract(contractId, 'message:new', { ...message, contractId });

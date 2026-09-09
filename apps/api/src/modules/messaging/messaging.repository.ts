@@ -49,6 +49,20 @@ export const messagingRepository = {
     return res.insertId;
   },
 
+  /** Mensagem imediatamente anterior a `beforeId` na conversa (para medir tempo de resposta). */
+  async previousMessage(
+    conversationId: number,
+    beforeId: number,
+  ): Promise<{ sender_id: number; created_at: Date } | undefined> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT sender_id, created_at FROM messages
+        WHERE conversation_id = :conversationId AND id < :beforeId
+        ORDER BY id DESC LIMIT 1`,
+      { conversationId, beforeId },
+    );
+    return rows[0] as { sender_id: number; created_at: Date } | undefined;
+  },
+
   async listMessages(conversationId: number, limit: number): Promise<MessageRow[]> {
     const [rows] = await pool.query<MessageRow[]>(
       `SELECT id, conversation_id, sender_id, content, created_at

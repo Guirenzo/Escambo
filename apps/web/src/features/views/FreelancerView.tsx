@@ -138,6 +138,11 @@ export function FreelancerView() {
                           showOwner={false}
                           onContratar={setContratar}
                           onBoost={setBoost}
+                          onProposeBarter={
+                            user?.role === 'freelancer'
+                              ? (svc) => navigate(`/trocas?propor=${svc.id}`)
+                              : undefined
+                          }
                         />
                       ))}
                     </div>

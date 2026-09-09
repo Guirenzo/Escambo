@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   CreateBarterRequest,
   CreateBoostRequest,
@@ -51,6 +51,19 @@ export const useCategories = () =>
   useQuery({ queryKey: qk.categories, queryFn: () => api.categories(), staleTime: 5 * 60_000 });
 export const useServices = (p?: ServiceQuery) =>
   useQuery({ queryKey: qk.services(p), queryFn: () => api.listServices(p) });
+/** Tamanho da página da busca de serviços ("Carregar mais" traz a próxima). */
+export const SERVICES_PAGE = 12;
+
+/** Busca de serviços paginada: acumula páginas e sabe se há mais. */
+export const useServicesInfinite = (p?: Omit<ServiceQuery, 'page' | 'limit'>) =>
+  useInfiniteQuery({
+    queryKey: ['services', 'infinite', p ?? {}] as const,
+    queryFn: ({ pageParam }) =>
+      api.listServices({ ...(p ?? {}), page: pageParam, limit: SERVICES_PAGE }),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.items.length === SERVICES_PAGE ? last.page + 1 : undefined),
+  });
+
 export const useContracts = () =>
   useQuery({ queryKey: qk.contracts, queryFn: () => api.contracts() });
 export const useContractDetail = (id: number) =>
