@@ -39,9 +39,9 @@ async function api<T>(
 export async function createUser(
   request: APIRequestContext,
   role: 'client' | 'freelancer',
-  opts: { profile?: boolean } = {},
+  opts: { profile?: boolean; email?: string } = {},
 ): Promise<TestUser> {
-  const email = `e2e-${role}-${unique()}@escambo.test`;
+  const email = opts.email ?? `e2e-${role}-${unique()}@escambo.test`;
   await api(request, 'post', '/auth/register', { data: { email, password: PASSWORD, role } });
   const auth = await api<{ accessToken: string; user: { id: number } }>(
     request,
@@ -85,6 +85,39 @@ export async function createService(
     },
   });
   return { id: svc.id, title, categoryId };
+}
+
+/** Admin de teste: e-mail no domínio liberado por ADMIN_EMAILS (@admin.escambo.test). */
+export function createAdmin(request: APIRequestContext): Promise<TestUser> {
+  return createUser(request, 'client', {
+    email: `e2e-admin-${unique()}@admin.escambo.test`,
+    profile: false,
+  });
+}
+
+/** Contratação levada até 'delivered' pela API (create → accept → deliver). */
+export async function deliveredContract(
+  request: APIRequestContext,
+  client: TestUser,
+  freelancer: TestUser,
+  service: { id: number; title: string },
+): Promise<number> {
+  const created = await api<{ id: number }>(request, 'post', '/contracts', {
+    token: client.token,
+    data: {
+      freelancerId: freelancer.id,
+      serviceId: service.id,
+      title: service.title,
+      description: 'Contratação criada pelos testes ponta a ponta e entregue.',
+      price: 250,
+    },
+  });
+  await api(request, 'post', `/contracts/${created.id}/accept`, { token: freelancer.token });
+  await api(request, 'post', `/contracts/${created.id}/deliver`, {
+    token: freelancer.token,
+    data: { message: 'Entregue.' },
+  });
+  return created.id;
 }
 
 /** Contratação levada até 'completed' pela API (create → accept → deliver → approve). */

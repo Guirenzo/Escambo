@@ -105,6 +105,7 @@ jobs:
       # os testes criam vários usuários por execução; sem isso o rate limit de login derruba a suíte
       LOGIN_RATE_LIMIT_MAX: '1000'
       RATE_LIMIT_MAX: '10000'
+      ADMIN_EMAILS: '@admin.escambo.test'
 
     steps:
       - name: Checkout

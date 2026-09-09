@@ -177,6 +177,9 @@ const CLIENT = {
   profile: { fullName: 'Ana Pereira', city: 'Joinville', state: 'SC' },
 };
 
+/** Admin da demo: vira admin por ADMIN_EMAILS (padrão do docker-compose: admin@escambo.demo). */
+const ADMIN_EMAIL = 'admin@escambo.demo';
+
 // ---------------------------------------------------------------------------
 // HTTP
 // ---------------------------------------------------------------------------
@@ -371,6 +374,20 @@ async function ensureResponse(freelancer, contract, response) {
 }
 
 /** Favorita um serviço (idempotente). */
+/** Cliente abre uma disputa (idempotente) numa contratação entregue — fica na fila do admin. */
+async function ensureDispute(client, contract, reason, description) {
+  const mine = await call('GET', '/disputes', { token: client.token });
+  if (mine.some((d) => d.contractId === contract.id)) return;
+  const detail = await call('GET', `/contracts/${contract.id}`, { token: client.token });
+  if (!['accepted', 'in_progress', 'delivered', 'revision_requested'].includes(detail.status))
+    return;
+  await call('POST', '/disputes', {
+    token: client.token,
+    body: { contractId: contract.id, reason, description },
+  });
+  log(`disputa  #${contract.id} (${reason})`);
+}
+
 async function ensureFavorite(user, service) {
   const mine = await call('GET', '/favorites', { token: user.token });
   if (mine.some((f) => f.targetType === 'service' && f.targetId === service.id)) return;
@@ -437,6 +454,7 @@ async function main() {
   const users = {};
   for (const f of FREELANCERS) users[f.key] = await ensureAccount(f.email, 'freelancer');
   users[CLIENT.key] = await ensureAccount(CLIENT.email, 'client');
+  users.admin = await ensureAccount(ADMIN_EMAIL, 'client');
 
   step('Perfis, carteiras (bônus de boas-vindas) e serviços');
   const categories = await call('GET', '/categories');
@@ -538,6 +556,19 @@ async function main() {
   step('Impulsionamento (pago em créditos Escambo)');
   await ensureBoost(users.bruno, svc['Landing page em React']);
 
+  step('Disputa (fila de mediação do admin)');
+  const vinheta = await ensureContract(ana, users.rafael, svc['Motion graphics 15s'], {
+    title: 'Vinheta animada 5s',
+    price: 300,
+    to: 'delivered',
+  });
+  await ensureDispute(
+    ana,
+    vinheta,
+    'quality',
+    'A vinheta veio com a logo antiga e sem o áudio combinado. Pedi ajuste e não tive retorno.',
+  );
+
   step('Favoritos da cliente');
   await ensureFavorite(ana, svc['Landing page em React']);
   await ensureFavorite(ana, svc['Ensaio de produto (20 fotos)']);
@@ -560,6 +591,7 @@ async function main() {
 
   console.log('\n✔ Demo pronta. Contas (senha Escambo@123):');
   console.log(`  cliente     ${CLIENT.email}`);
+  console.log(`  admin       ${ADMIN_EMAIL}`);
   for (const f of FREELANCERS)
     console.log(`  freelancer  ${f.email.padEnd(24)} ${f.profile.fullName}`);
 }

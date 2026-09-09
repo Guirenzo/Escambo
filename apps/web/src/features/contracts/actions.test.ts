@@ -12,26 +12,27 @@ describe('contractActions (ações por status e papel)', () => {
     expect(partyOf(base, 3)).toBe('none');
   });
 
-  it('proposta pendente: freelancer aceita/recusa, cliente cancela', () => {
+  it('proposta pendente: freelancer aceita/recusa, cliente cancela; ainda sem disputa', () => {
     expect(keys('pending', 2)).toEqual(['accept', 'reject']);
     expect(keys('pending', 1)).toEqual(['cancel']);
   });
 
-  it('em andamento: só o freelancer entrega; cliente pode cancelar', () => {
-    expect(keys('accepted', 2)).toEqual(['deliver']);
-    expect(keys('revision_requested', 2)).toEqual(['deliver']);
-    expect(keys('accepted', 1)).toEqual(['cancel']);
+  it('em andamento: freelancer entrega, cliente cancela; os dois podem abrir disputa', () => {
+    expect(keys('accepted', 2)).toEqual(['deliver', 'dispute']);
+    expect(keys('revision_requested', 2)).toEqual(['deliver', 'dispute']);
+    expect(keys('accepted', 1)).toEqual(['cancel', 'dispute']);
   });
 
-  it('entregue: só o cliente aprova ou pede revisão', () => {
-    expect(keys('delivered', 1)).toEqual(['approve', 'revision']);
-    expect(keys('delivered', 2)).toEqual([]);
+  it('entregue: cliente aprova, pede revisão ou disputa; freelancer só disputa', () => {
+    expect(keys('delivered', 1)).toEqual(['approve', 'revision', 'dispute']);
+    expect(keys('delivered', 2)).toEqual(['dispute']);
   });
 
-  it('concluída: cliente avalia uma vez', () => {
+  it('concluída: cliente avalia uma vez; em disputa ninguém age', () => {
     expect(keys('completed', 1)).toEqual(['review']);
     expect(keys('completed', 1, true)).toEqual([]);
     expect(keys('completed', 2)).toEqual([]);
+    expect(keys('disputed', 1)).toEqual([]);
   });
 
   it('quem não participa não tem ações; estados finais não têm ações', () => {

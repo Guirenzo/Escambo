@@ -86,4 +86,31 @@ test('gera os prints do README', async ({ page, request, browser }) => {
   await mp.waitForTimeout(600);
   await mp.screenshot(shot('10-mobile-inicio'));
   await mobile.close();
+
+  // 11/12. Admin (fila de mediação) e a Sala do contrato em disputa, vista pela cliente.
+  const login = async (email: string) => {
+    const r = await request.post('/api/auth/login', { data: { email, password: PASSWORD } });
+    return ((await r.json()) as { accessToken: string }).accessToken;
+  };
+  const shotAs = async (tok: string, path: string, name: string) => {
+    const ctx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      deviceScaleFactor: 2,
+    });
+    const p = await ctx.newPage();
+    await p.addInitScript((t) => window.localStorage.setItem('escambo_token', t), tok);
+    await p.goto(path);
+    await settled(p);
+    await p.waitForTimeout(500);
+    await p.screenshot(shot(name));
+    await ctx.close();
+  };
+  const adminTok = await login('admin@escambo.demo');
+  await shotAs(adminTok, '/admin', '11-admin');
+  const anaTok = await login('cliente@escambo.demo');
+  const disputes = await request.get('/api/disputes', {
+    headers: { Authorization: `Bearer ${anaTok}` },
+  });
+  const first = ((await disputes.json()) as { contractId: number }[])[0];
+  if (first) await shotAs(anaTok, `/contratos/${first.contractId}`, '12-sala-disputa');
 });

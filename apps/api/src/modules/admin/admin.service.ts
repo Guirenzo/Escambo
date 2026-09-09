@@ -3,6 +3,7 @@ import { HttpError } from '../../utils/http-error';
 import { contractsRepository } from '../contracts/contracts.repository';
 import { disputesRepository } from '../disputes/disputes.repository';
 import { toDispute } from '../disputes/disputes.service';
+import { notificationsService } from '../notifications/notifications.service';
 import { adminRepository } from './admin.repository';
 import type { ResolveDisputeInput } from './admin.schema';
 
@@ -21,7 +22,8 @@ export const adminService = {
   ): Promise<Dispute> {
     const dispute = await disputesRepository.findById(disputeId);
     if (!dispute) throw new HttpError(404, 'Disputa não encontrada', 'dispute_not_found');
-    if (dispute.status === 'resolved') throw new HttpError(409, 'Disputa já resolvida', 'already_resolved');
+    if (dispute.status === 'resolved')
+      throw new HttpError(409, 'Disputa já resolvida', 'already_resolved');
 
     const contract = await contractsRepository.findById(dispute.contract_id);
     if (!contract) throw new HttpError(404, 'Contratação não encontrada', 'contract_not_found');
@@ -57,6 +59,21 @@ export const adminService = {
       note: input.note ?? null,
     });
     if (!ok) throw new HttpError(409, 'Não foi possível resolver a disputa', 'conflict');
+
+    const outcome =
+      input.resolution === 'release_freelancer'
+        ? 'Valor do escrow liberado ao freelancer.'
+        : input.resolution === 'refund_client'
+          ? 'Valor do escrow devolvido ao cliente.'
+          : `Divisão: ${refundPercentage}% devolvido ao cliente, o restante liberado ao freelancer.`;
+    for (const uid of [contract.client_id, contract.freelancer_id]) {
+      void notificationsService.notify(uid, {
+        type: 'dispute_resolved',
+        title: 'Disputa resolvida pela mediação',
+        body: outcome,
+        data: { contractId: contract.id, disputeId },
+      });
+    }
 
     return toDispute((await disputesRepository.findById(disputeId))!);
   },

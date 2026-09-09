@@ -40,6 +40,18 @@ async function issueSession(user: UserRow, ctx: SessionContext): Promise<Refresh
   return { accessToken: signAccessToken(user), refreshToken };
 }
 
+/**
+ * E-mails com poderes de admin (env ADMIN_EMAILS, separados por vírgula). Entradas que começam
+ * com "@" valem para o domínio inteiro (ex.: "@admin.escambo.test").
+ */
+export function isAdminEmail(email: string): boolean {
+  const e = email.trim().toLowerCase();
+  return env.ADMIN_EMAILS.split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean)
+    .some((entry) => (entry.startsWith('@') ? e.endsWith(entry) : e === entry));
+}
+
 /** Regras de negócio de autenticação (RF-001 a RF-004, RNF-013). */
 export const authService = {
   async register(input: RegisterInput): Promise<PublicUser> {
@@ -51,14 +63,16 @@ export const authService = {
     const passwordHash = await bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS); // RNF-011
     const userUlid = ulid();
 
+    // Lista de admins (ADMIN_EMAILS) tem precedência sobre o papel pedido no cadastro.
+    const role: UserRole = isAdminEmail(input.email) ? 'admin' : input.role;
     const id = await authRepository.create({
       ulid: userUlid,
       email: input.email,
       passwordHash,
-      role: input.role,
+      role,
     });
 
-    return { id, ulid: userUlid, email: input.email, role: input.role };
+    return { id, ulid: userUlid, email: input.email, role };
   },
 
   async login(input: LoginInput, ctx: SessionContext = {}): Promise<AuthResponse> {
@@ -70,6 +84,12 @@ export const authService = {
     const ok = await bcrypt.compare(input.password, user.password_hash);
     if (!ok) {
       throw new HttpError(401, 'Credenciais inválidas', 'invalid_credentials');
+    }
+
+    // Promoção a admin por ADMIN_EMAILS vale também para contas já existentes.
+    if (user.role !== 'admin' && isAdminEmail(user.email)) {
+      await authRepository.updateRole(user.id, 'admin');
+      user.role = 'admin';
     }
 
     const tokens = await issueSession(user, ctx);

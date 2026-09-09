@@ -2,9 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   CreateBarterRequest,
   CreateBoostRequest,
+  CreateContentReportRequest,
   CreateContractRequest,
   CreateReviewRequest,
   FavoriteTargetType,
+  OpenDisputeRequest,
+  ResolveDisputeRequest,
   CreateServiceRequest,
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
@@ -29,6 +32,11 @@ export const qk = {
   barters: ['barters'] as const,
   profiles: ['profiles'] as const,
   favorites: ['favorites'] as const,
+  disputes: ['disputes'] as const,
+  adminMetrics: ['adminMetrics'] as const,
+  adminDisputes: ['adminDisputes'] as const,
+  exportRequests: ['exportRequests'] as const,
+  deletionRequests: ['deletionRequests'] as const,
   reviews: (freelancerId: number) => ['reviews', freelancerId] as const,
   publicFreelancer: (ulid: string) => ['publicFreelancer', ulid] as const,
 };
@@ -282,5 +290,73 @@ export function useToggleFavorite() {
         ? api.removeFavorite(targetType, targetId)
         : api.addFavorite({ targetType, targetId }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: qk.favorites }),
+  });
+}
+
+// ---------- Disputas, denúncias, LGPD e admin ----------
+export const useMyDisputes = () =>
+  useQuery({ queryKey: qk.disputes, queryFn: () => api.disputes() });
+
+export function useOpenDispute() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: OpenDisputeRequest) => api.openDispute(body),
+    onSuccess: (d) => {
+      void qc.invalidateQueries({ queryKey: qk.disputes });
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: qk.contract(d.contractId) });
+    },
+  });
+}
+
+export function useCreateReport() {
+  return useMutation({ mutationFn: (body: CreateContentReportRequest) => api.createReport(body) });
+}
+
+export const useExportRequests = () =>
+  useQuery({ queryKey: qk.exportRequests, queryFn: () => api.exportRequests() });
+export const useDeletionRequests = () =>
+  useQuery({ queryKey: qk.deletionRequests, queryFn: () => api.deletionRequests() });
+
+export function useRequestExport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.requestExport(),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.exportRequests }),
+  });
+}
+
+export function useRequestDeletion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (reason: string | null) => api.requestDeletion(reason),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.deletionRequests }),
+  });
+}
+
+export const useAdminMetrics = () =>
+  useQuery({ queryKey: qk.adminMetrics, queryFn: () => api.adminMetrics() });
+export const useAdminDisputes = () =>
+  useQuery({ queryKey: qk.adminDisputes, queryFn: () => api.adminDisputes() });
+
+export function useResolveDispute() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: ResolveDisputeRequest }) =>
+      api.adminResolveDispute(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.adminDisputes });
+      void qc.invalidateQueries({ queryKey: qk.adminMetrics });
+      void qc.invalidateQueries({ queryKey: qk.disputes });
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: ['contract'] });
+    },
+  });
+}
+
+export function useModerateUser() {
+  return useMutation({
+    mutationFn: ({ ulid, action }: { ulid: string; action: 'suspend' | 'ban' | 'reactivate' }) =>
+      api.adminModerateUser(ulid, action),
   });
 }

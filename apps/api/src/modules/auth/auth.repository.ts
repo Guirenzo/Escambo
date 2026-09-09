@@ -49,4 +49,8 @@ export const authRepository = {
     );
     return result.insertId;
   },
+
+  async updateRole(id: number, role: string): Promise<void> {
+    await pool.query<ResultSetHeader>(`UPDATE users SET role = :role WHERE id = :id`, { id, role });
+  },
 };

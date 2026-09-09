@@ -4,6 +4,7 @@ import {
   Briefcase,
   Home,
   LogOut,
+  ShieldAlert,
   Trophy,
   User,
   Wallet,
@@ -14,7 +15,7 @@ import { useAuth } from '../../lib/auth';
 import { useNotifications } from '../../lib/hooks';
 import { useRealtimeNotifications } from '../../lib/realtime';
 
-const NAV: { to: string; label: string; Icon: LucideIcon; end?: boolean }[] = [
+const NAV: { to: string; label: string; Icon: LucideIcon; end?: boolean; adminOnly?: boolean }[] = [
   { to: '/', label: 'Início', Icon: Home, end: true },
   { to: '/servicos', label: 'Serviços', Icon: Briefcase },
   { to: '/trocas', label: 'Trocas', Icon: ArrowLeftRight },
@@ -22,6 +23,7 @@ const NAV: { to: string; label: string; Icon: LucideIcon; end?: boolean }[] = [
   { to: '/carteira', label: 'Carteira', Icon: Wallet },
   { to: '/notificacoes', label: 'Notificações', Icon: Bell },
   { to: '/perfil', label: 'Perfil', Icon: User },
+  { to: '/admin', label: 'Admin', Icon: ShieldAlert, adminOnly: true },
 ];
 
 const ROLE_LABEL: Record<string, string> = {
@@ -52,21 +54,23 @@ export function Shell() {
         </NavLink>
 
         <nav className="side-nav" aria-label="Principal">
-          {NAV.map(({ to, label, Icon, end }) => (
-            <NavLink key={to} to={to} end={end} className="side-link" title={label}>
-              <Icon size={18} strokeWidth={2} />
-              <span>{label}</span>
-              {to === '/notificacoes' && unread > 0 && (
-                <span
-                  className="nav-badge"
-                  aria-label={`${unread} não lida${unread > 1 ? 's' : ''}`}
-                  data-testid="nav-badge"
-                >
-                  {unread > 99 ? '99+' : unread}
-                </span>
-              )}
-            </NavLink>
-          ))}
+          {NAV.filter((n) => !n.adminOnly || user?.role === 'admin').map(
+            ({ to, label, Icon, end }) => (
+              <NavLink key={to} to={to} end={end} className="side-link" title={label}>
+                <Icon size={18} strokeWidth={2} />
+                <span>{label}</span>
+                {to === '/notificacoes' && unread > 0 && (
+                  <span
+                    className="nav-badge"
+                    aria-label={`${unread} não lida${unread > 1 ? 's' : ''}`}
+                    data-testid="nav-badge"
+                  >
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                )}
+              </NavLink>
+            ),
+          )}
         </nav>
 
         <div className="side-user">
