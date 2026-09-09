@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
 
 /**
@@ -109,8 +110,7 @@ describe('Disputas e mediação (admin)', () => {
       .set(auth(freelancer.token))
       .send({ contractId, reason: 'payment', description: 'Tentando abrir de novo.' });
     expect(again.status).toBe(409);
-    const notif = await request(app).get('/api/notifications').set(auth(freelancer.token));
-    expect(notif.body.items.some((n: { type: string }) => n.type === 'dispute_opened')).toBe(true);
+    expect(await waitForNotification(app, freelancer.token, 'dispute_opened')).toBe(true);
 
     // Painel do admin lista a disputa aberta; resolve com divisão 50/50.
     const open = await request(app).get('/api/admin/disputes').set(auth(admin.token));
@@ -138,10 +138,7 @@ describe('Disputas e mediação (admin)', () => {
     const after = await request(app).get(`/api/contracts/${contractId}`).set(auth(client.token));
     expect(after.body.status).toBe('completed');
     for (const actor of [client, freelancer]) {
-      const list = await request(app).get('/api/notifications').set(auth(actor.token));
-      expect(list.body.items.some((n: { type: string }) => n.type === 'dispute_resolved')).toBe(
-        true,
-      );
+      expect(await waitForNotification(app, actor.token, 'dispute_resolved')).toBe(true);
     }
 
     // Resolver de novo → 409; sumiu da lista de abertas.
