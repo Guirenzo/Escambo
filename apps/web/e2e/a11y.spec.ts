@@ -60,6 +60,21 @@ test('telas autenticadas não têm violações bloqueantes', async ({ page, requ
   expect(problems.join('\n')).toBe('');
 });
 
+test('depósito PIX (modal com QR, copia e cola e simulação) não tem violações', async ({
+  page,
+  request,
+}) => {
+  const client = await createUser(request, 'client');
+  await openAs(page, client, '/carteira');
+  await settled(page);
+  await page.getByRole('button', { name: 'Depositar' }).click();
+  const modal = page.getByRole('dialog');
+  expect((await audit(page, 'depósito: valor')).join('\n')).toBe('');
+  await modal.getByRole('button', { name: /Gerar cobrança PIX/ }).click();
+  await expect(modal.getByTestId('pix-code')).toBeVisible();
+  expect((await audit(page, 'depósito: cobrança')).join('\n')).toBe('');
+});
+
 test('sala do contrato concluído (linha do tempo, chat e formulário de avaliação) não tem violações', async ({
   page,
   request,

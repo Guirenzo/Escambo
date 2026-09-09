@@ -4,6 +4,7 @@ import type {
   CreateBoostRequest,
   CreateContentReportRequest,
   CreateContractRequest,
+  CreateDepositRequest,
   CreateReviewRequest,
   FavoriteTargetType,
   OpenDisputeRequest,
@@ -28,6 +29,10 @@ export const qk = {
   contract: (id: number) => ['contract', id] as const,
   chat: (id: number) => ['chat', id] as const,
   withdrawals: ['withdrawals'] as const,
+  walletTransactions: ['walletTransactions'] as const,
+  deposits: ['deposits'] as const,
+  deposit: (id: number) => ['deposit', id] as const,
+  adminWithdrawals: (status: string) => ['adminWithdrawals', status] as const,
   notifications: ['notifications'] as const,
   barters: ['barters'] as const,
   profiles: ['profiles'] as const,
@@ -73,6 +78,18 @@ export const useChatHistory = (id: number) =>
   useQuery({ queryKey: qk.chat(id), queryFn: () => api.chatHistory(id) });
 export const useWithdrawals = () =>
   useQuery({ queryKey: qk.withdrawals, queryFn: () => api.withdrawals() });
+export const useWalletTransactions = () =>
+  useQuery({ queryKey: qk.walletTransactions, queryFn: () => api.walletTransactions() });
+export const useDeposits = () =>
+  useQuery({ queryKey: qk.deposits, queryFn: () => api.deposits() });
+/** Situação de uma cobrança; enquanto pendente, consulta a cada 3 s (o webhook pode chegar a qualquer momento). */
+export const useDeposit = (id: number | null, poll: boolean) =>
+  useQuery({
+    queryKey: qk.deposit(id ?? 0),
+    queryFn: () => api.deposit(id!),
+    enabled: id != null,
+    refetchInterval: poll ? 3000 : false,
+  });
 export const useNotifications = () =>
   useQuery({
     queryKey: qk.notifications,
@@ -140,15 +157,46 @@ export function useSendMessage(contractId: number) {
   });
 }
 
+/** Tudo que muda quando dinheiro entra ou sai da carteira. */
+const WALLET_KEYS = [qk.wallet, qk.walletTransactions, qk.deposits, qk.withdrawals] as const;
+function invalidateWallet(qc: ReturnType<typeof useQueryClient>): void {
+  for (const key of WALLET_KEYS) void qc.invalidateQueries({ queryKey: key });
+}
+
+export function useCreateDeposit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateDepositRequest) => api.createDeposit(body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.deposits }),
+  });
+}
+
+export function useSimulateDeposit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.simulateDeposit(id),
+    onSuccess: (d) => {
+      qc.setQueryData(qk.deposit(d.id), d);
+      invalidateWallet(qc);
+      void qc.invalidateQueries({ queryKey: qk.notifications });
+    },
+  });
+}
+
+export function useCancelWithdrawal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.cancelWithdrawal(id),
+    onSuccess: () => invalidateWallet(qc),
+  });
+}
+
 export function useRequestWithdrawal() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: { amount: number; method: 'pix' | 'bank'; pixKey?: string }) =>
       api.requestWithdrawal(body),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.withdrawals });
-      void qc.invalidateQueries({ queryKey: qk.wallet });
-    },
+    onSuccess: () => invalidateWallet(qc),
   });
 }
 
@@ -365,6 +413,28 @@ export function useResolveDispute() {
       void qc.invalidateQueries({ queryKey: qk.disputes });
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: ['contract'] });
+    },
+  });
+}
+
+export const useAdminWithdrawals = (status: 'open' | 'all') =>
+  useQuery({ queryKey: qk.adminWithdrawals(status), queryFn: () => api.adminWithdrawals(status) });
+
+export function useAdminWithdrawalAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      action,
+      body,
+    }: {
+      id: number;
+      action: 'process' | 'complete' | 'fail';
+      body?: { gatewayRef?: string | null; reason?: string | null };
+    }) => api.adminWithdrawalAction(id, action, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['adminWithdrawals'] });
+      void qc.invalidateQueries({ queryKey: qk.adminMetrics });
     },
   });
 }

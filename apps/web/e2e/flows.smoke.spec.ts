@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createService, createUser, openAs, settled } from './helpers';
+import { createService, createUser, openAs, settled, topUp } from './helpers';
 
 /**
  * Fluxos do ciclo da contratação além do caminho feliz: pedido de revisão e perfil público.
@@ -15,6 +15,7 @@ test('cliente pede revisão da entrega na Sala; o freelancer vê "Entregar revis
   const freelancer = await createUser(request, 'freelancer');
   const service = await createService(request, freelancer, 300);
   const client = await createUser(request, 'client');
+  await topUp(request, client, 300);
 
   // API: contrato criado, aceito e entregue.
   const created = await request.post('/api/contracts', {

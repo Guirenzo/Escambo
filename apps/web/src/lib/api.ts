@@ -1,5 +1,6 @@
 import type {
   AdminMetrics,
+  AdminWithdrawal,
   AuthResponse,
   BarterAgreement,
   Boost,
@@ -16,12 +17,14 @@ import type {
   CreateBoostRequest,
   CreateContentReportRequest,
   CreateContractRequest,
+  CreateDepositRequest,
   CreateFavoriteRequest,
   CreateReviewRequest,
   CreateServiceRequest,
   CreditTransaction,
   DataDeletionRequest,
   DataExportRequest,
+  Deposit,
   Dispute,
   Favorite,
   FavoriteTargetType,
@@ -44,6 +47,7 @@ import type {
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
   Wallet,
+  WalletTransaction,
   Withdrawal,
 } from '@escambo/types';
 
@@ -241,10 +245,19 @@ export const api = {
       body: JSON.stringify({ content }),
     }),
 
-  // carteira / saques
+  // carteira: extrato de R$, depósitos (PIX via gateway) e saques
+  walletTransactions: () => request<Paginated<WalletTransaction>>('/wallet/transactions'),
+  deposits: () => request<Paginated<Deposit>>('/wallet/deposits'),
+  deposit: (id: number) => request<Deposit>(`/wallet/deposits/${id}`),
+  createDeposit: (body: CreateDepositRequest) =>
+    request<Deposit>('/wallet/deposits', { method: 'POST', body: JSON.stringify(body) }),
+  simulateDeposit: (id: number) =>
+    request<Deposit>(`/wallet/deposits/${id}/simulate`, { method: 'POST' }),
   withdrawals: () => request<Paginated<Withdrawal>>('/withdrawals'),
   requestWithdrawal: (body: { amount: number; method: 'pix' | 'bank'; pixKey?: string }) =>
     request<Withdrawal>('/withdrawals', { method: 'POST', body: JSON.stringify(body) }),
+  cancelWithdrawal: (id: number) =>
+    request<Withdrawal>(`/withdrawals/${id}/cancel`, { method: 'POST' }),
 
   // notificações
   notifications: () => request<NotificationList>('/notifications'),
@@ -310,6 +323,17 @@ export const api = {
     }),
   adminModerateUser: (ulid: string, action: 'suspend' | 'ban' | 'reactivate') =>
     request<void>(`/admin/users/${encodeURIComponent(ulid)}/${action}`, { method: 'POST' }),
+  adminWithdrawals: (status: 'open' | 'all' = 'open') =>
+    request<AdminWithdrawal[]>(`/admin/withdrawals?status=${status}`),
+  adminWithdrawalAction: (
+    id: number,
+    action: 'process' | 'complete' | 'fail',
+    body: { gatewayRef?: string | null; reason?: string | null } = {},
+  ) =>
+    request<AdminWithdrawal>(`/admin/withdrawals/${id}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   // perfis
   profilesMe: () => request<MyProfiles>('/profiles/me'),

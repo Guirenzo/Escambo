@@ -137,6 +137,15 @@ export interface AdminMetrics {
   completedContracts: number;
   openDisputes: number;
   platformFees: number;
+  /** Soma do que está retido em escrow / reservado em propostas (passivo da plataforma). */
+  inEscrow: number;
+  /** Saques aguardando processamento (quantidade e valor). */
+  pendingWithdrawals: number;
+  pendingWithdrawalsAmount: number;
+  /** Total já depositado pelos clientes (pagamentos confirmados). */
+  depositsTotal: number;
+  /** Saldo disponível somado de todas as carteiras (passivo com usuários). */
+  usersBalance: number;
 }
 
 // --- LGPD ---
@@ -447,6 +456,55 @@ export interface Wallet {
   creditsPending: number; // créditos retidos em escrow
 }
 
+/** Motivo de cada linha do extrato de R$ (espelho do ledger de créditos). */
+export type WalletReason =
+  | 'deposit' // depósito confirmado pelo gateway
+  | 'hold' // valor reservado ao enviar a proposta (cliente)
+  | 'payment' // proposta aceita: o valor reservado paga a contratação (cliente)
+  | 'escrow_in' // líquido entra em escrow (freelancer)
+  | 'escrow_release' // escrow liberado, total ou parcial (freelancer)
+  | 'escrow_refund' // escrow devolvido ao cliente, nada liberado (freelancer)
+  | 'refund' // reembolso ao cliente (recusa, cancelamento, disputa)
+  | 'withdrawal' // saque solicitado
+  | 'withdrawal_refund'; // saque cancelado/falhou: valor de volta
+
+export interface WalletTransaction {
+  id: number;
+  amount: number; // variação do saldo disponível (+ entra, - sai)
+  pendingDelta: number; // variação do saldo retido
+  balanceAfter: number;
+  pendingAfter: number;
+  reason: WalletReason;
+  contractId: number | null;
+  paymentId: number | null;
+  withdrawalId: number | null;
+  createdAt: string;
+}
+
+export type DepositStatus = 'pending' | 'processing' | 'paid' | 'failed' | 'refunded' | 'cancelled';
+
+/** Depósito na carteira (cobrança PIX gerada pelo gateway de pagamento). */
+export interface Deposit {
+  id: number;
+  amount: number;
+  status: DepositStatus;
+  method: 'pix';
+  gateway: string;
+  /** Identificador da cobrança no gateway (referência para suporte/webhook). */
+  reference: string | null;
+  pixCode: string | null; // "copia e cola" (BR Code)
+  expiresAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  /** Ambiente de demonstração: o pagamento pode ser simulado pela própria API. */
+  canSimulate: boolean;
+}
+
+export interface CreateDepositRequest {
+  amount: number;
+  method?: 'pix';
+}
+
 export type CreditReason =
   | 'welcome'
   | 'escrow_hold'
@@ -576,6 +634,15 @@ export interface Withdrawal {
   maskedDestination: string; // chave PIX / conta mascarada
   createdAt: string;
   processedAt: string | null;
+}
+
+/** Saque na fila do admin (destino completo: é o admin quem paga). */
+export interface AdminWithdrawal extends Withdrawal {
+  userId: number;
+  userUlid: string;
+  userEmail: string;
+  userName: string | null;
+  destination: string;
 }
 
 export interface CreateWithdrawalRequest {

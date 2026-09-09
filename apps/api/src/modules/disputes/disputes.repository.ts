@@ -1,5 +1,6 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
+import { applyWalletEffect } from '../wallet/wallet.ledger';
 
 export interface DisputeRow extends RowDataPacket {
   id: number;
@@ -85,15 +86,21 @@ export const disputesRepository = {
 
   /**
    * Resolve a disputa aplicando a decisão de escrow em UMA transação (RN-063 / RNF-038):
-   * atualiza a disputa, o contrato, a carteira do freelancer e grava histórico + admin_action.
+   * atualiza a disputa, o contrato, as carteiras (freelancer E cliente, em R$ ou créditos)
+   * e grava histórico + admin_action. Retorna false se a disputa já mudou ou se alguma
+   * carteira não comporta o movimento (nada é aplicado).
    */
   async resolve(p: {
     disputeId: number;
     adminId: number;
     contractId: number;
     freelancerId: number;
+    clientId: number;
+    paymentMode: string;
+    /** Quanto está retido para o freelancer (R$ líquido ou créditos). */
     escrowNet: number;
     releaseToFreelancer: number;
+    refundToClient: number;
     contractFinalStatus: 'completed' | 'cancelled';
     resolution: string;
     refundPercentage: number | null;
@@ -127,13 +134,68 @@ export const disputesRepository = {
         { status: p.contractFinalStatus, contractId: p.contractId },
       );
 
-      if (p.escrowNet > 0) {
-        await conn.query<ResultSetHeader>(
-          `UPDATE wallets
-              SET balance_pending = balance_pending - :net, balance = balance + :release
-            WHERE user_id = :freelancerId AND balance_pending >= :net`,
-          { net: p.escrowNet, release: p.releaseToFreelancer, freelancerId: p.freelancerId },
-        );
+      if (p.paymentMode === 'cash' && p.escrowNet > 0) {
+        const okF = await applyWalletEffect(conn, {
+          userId: p.freelancerId,
+          pendingDelta: -p.escrowNet,
+          balanceDelta: p.releaseToFreelancer,
+          reason: p.releaseToFreelancer > 0 ? 'escrow_release' : 'escrow_refund',
+          contractId: p.contractId,
+        });
+        const okC =
+          p.refundToClient <= 0 ||
+          (await applyWalletEffect(conn, {
+            userId: p.clientId,
+            pendingDelta: 0,
+            balanceDelta: p.refundToClient,
+            reason: 'refund',
+            contractId: p.contractId,
+          }));
+        if (!okF || !okC) {
+          await conn.rollback();
+          return false;
+        }
+      } else if (p.paymentMode === 'credits' && p.escrowNet > 0) {
+        // Time-bank: mesma decisão, em créditos, com ledger de créditos.
+        const moves = [
+          {
+            userId: p.freelancerId,
+            pending: -p.escrowNet,
+            balance: p.releaseToFreelancer,
+            reason: p.releaseToFreelancer > 0 ? 'escrow_release' : 'escrow_refund',
+          },
+          { userId: p.clientId, pending: 0, balance: p.refundToClient, reason: 'refund' },
+        ].filter((m) => m.pending !== 0 || m.balance !== 0);
+        for (const m of moves) {
+          const [c] = await conn.query<ResultSetHeader>(
+            `UPDATE wallets
+                SET credits_pending = credits_pending + :pending,
+                    credits_balance = credits_balance + :balance
+              WHERE user_id = :userId
+                AND credits_pending + :pending >= 0
+                AND credits_balance + :balance >= 0`,
+            { pending: m.pending, balance: m.balance, userId: m.userId },
+          );
+          if (c.affectedRows === 0) {
+            await conn.rollback();
+            return false;
+          }
+          const [rows] = await conn.query<RowDataPacket[]>(
+            `SELECT credits_balance + credits_pending AS total FROM wallets WHERE user_id = :userId`,
+            { userId: m.userId },
+          );
+          await conn.query<ResultSetHeader>(
+            `INSERT INTO credit_transactions (user_id, amount, balance_after, reason, contract_id)
+             VALUES (:userId, :amount, :after, :reason, :contractId)`,
+            {
+              userId: m.userId,
+              amount: m.pending + m.balance,
+              after: Number(rows[0]!.total),
+              reason: m.reason,
+              contractId: p.contractId,
+            },
+          );
+        }
       }
 
       await conn.query<ResultSetHeader>(

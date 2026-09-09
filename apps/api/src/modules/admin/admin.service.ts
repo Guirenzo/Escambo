@@ -4,13 +4,12 @@ import { HttpError } from '../../utils/http-error';
 import { authRepository } from '../auth/auth.repository';
 import { sessionRepository } from '../auth/session.repository';
 import { contractsRepository } from '../contracts/contracts.repository';
+import { cashSettlement } from '../contracts/contracts.service';
 import { disputesRepository } from '../disputes/disputes.repository';
 import { toDispute } from '../disputes/disputes.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { adminRepository } from './admin.repository';
 import type { ResolveDisputeInput } from './admin.schema';
-
-const money = (v: number): number => Math.round(v * 100) / 100;
 
 export const adminService = {
   async listOpenDisputes(): Promise<Dispute[]> {
@@ -30,23 +29,45 @@ export const adminService = {
 
     const contract = await contractsRepository.findById(dispute.contract_id);
     if (!contract) throw new HttpError(404, 'Contratação não encontrada', 'contract_not_found');
-    const escrowNet = Number(contract.freelancer_net);
+    const paymentMode = contract.payment_mode ?? 'cash';
+    const isCredits = paymentMode === 'credits';
+    const isBarter = paymentMode === 'barter';
+    // Retido para o freelancer: líquido em R$ ou créditos (inteiros); troca não tem escrow.
+    const escrowNet = isBarter
+      ? 0
+      : isCredits
+        ? Math.round(Number(contract.freelancer_net))
+        : Number(contract.freelancer_net);
+    const price = Number(contract.price);
 
-    let releaseToFreelancer = 0;
     let finalStatus: 'completed' | 'cancelled';
     let refundPercentage: number | null = null;
 
     if (input.resolution === 'release_freelancer') {
-      releaseToFreelancer = escrowNet;
       finalStatus = 'completed';
+      refundPercentage = 0;
     } else if (input.resolution === 'refund_client') {
-      releaseToFreelancer = 0;
       finalStatus = 'cancelled';
       refundPercentage = 100;
     } else {
       refundPercentage = input.refundPercentage ?? 0;
-      releaseToFreelancer = money(escrowNet * (1 - refundPercentage / 100));
       finalStatus = 'completed';
+    }
+
+    // Cash: o cliente recebe a fração do PREÇO (inclui a parte proporcional da taxa) e o
+    // freelancer a fração do LÍQUIDO. Créditos: sem taxa, a fração é sobre o mesmo montante.
+    let releaseToFreelancer: number;
+    let refundToClient: number;
+    if (isCredits) {
+      releaseToFreelancer = Math.round((escrowNet * (100 - refundPercentage)) / 100);
+      refundToClient = escrowNet - releaseToFreelancer;
+    } else if (isBarter) {
+      releaseToFreelancer = 0;
+      refundToClient = 0;
+    } else {
+      const s = cashSettlement(price, escrowNet, refundPercentage);
+      releaseToFreelancer = s.releaseFreelancer;
+      refundToClient = s.refundClient;
     }
 
     const ok = await disputesRepository.resolve({
@@ -54,8 +75,11 @@ export const adminService = {
       adminId,
       contractId: contract.id,
       freelancerId: contract.freelancer_id,
+      clientId: contract.client_id,
+      paymentMode,
       escrowNet,
       releaseToFreelancer,
+      refundToClient,
       contractFinalStatus: finalStatus,
       resolution: input.resolution,
       refundPercentage,
@@ -112,6 +136,11 @@ export const adminService = {
       completedContracts: m.completed_contracts,
       openDisputes: m.open_disputes,
       platformFees: Number(m.platform_fees),
+      inEscrow: Number(m.in_escrow),
+      pendingWithdrawals: Number(m.pending_withdrawals),
+      pendingWithdrawalsAmount: Number(m.pending_withdrawals_amount),
+      depositsTotal: Number(m.deposits_total),
+      usersBalance: Number(m.users_balance),
     };
   },
 };

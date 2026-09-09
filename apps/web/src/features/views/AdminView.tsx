@@ -1,10 +1,34 @@
-import { Briefcase, CheckCircle2, Coins, Gavel, ShieldAlert, Users } from 'lucide-react';
+import {
+  ArrowDownToLine,
+  Banknote,
+  Briefcase,
+  CheckCircle2,
+  Coins,
+  Gavel,
+  Lock,
+  ShieldAlert,
+  Users,
+  XCircle,
+} from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import type { Dispute, DisputeResolution } from '@escambo/types';
-import { Button, Field, Modal, PageHeader, QueryState } from '../../components/ui';
-import { brl, DISPUTE_REASON_LABEL, DISPUTE_STATUS_LABEL, dtm } from '../../lib/format';
-import { useAdminDisputes, useAdminMetrics, useResolveDispute } from '../../lib/hooks';
+import type { AdminWithdrawal, Dispute, DisputeResolution } from '@escambo/types';
+import { Button, Field, Input, Modal, PageHeader, QueryState } from '../../components/ui';
+import {
+  brl,
+  DISPUTE_REASON_LABEL,
+  DISPUTE_STATUS_LABEL,
+  dtm,
+  WITHDRAWAL_STATUS_LABEL,
+  WITHDRAWAL_STATUS_TONE,
+} from '../../lib/format';
+import {
+  useAdminDisputes,
+  useAdminMetrics,
+  useAdminWithdrawalAction,
+  useAdminWithdrawals,
+  useResolveDispute,
+} from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 
 const RESOLUTIONS: { value: DisputeResolution; label: string; hint: string }[] = [
@@ -106,18 +130,105 @@ function ResolveModal({ dispute, onClose }: { dispute: Dispute; onClose: () => v
   );
 }
 
-/** Painel do administrador: métricas da plataforma e fila de mediação. */
+/** Conclui (pagamento feito) ou falha (estorna) um saque da fila. */
+function WithdrawalModal({
+  withdrawal,
+  action,
+  onClose,
+}: {
+  withdrawal: AdminWithdrawal;
+  action: 'complete' | 'fail';
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const act = useAdminWithdrawalAction();
+  const [text, setText] = useState('');
+  const completing = action === 'complete';
+
+  async function submit(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    try {
+      await act.mutateAsync({
+        id: withdrawal.id,
+        action,
+        body: completing ? { gatewayRef: text.trim() || null } : { reason: text.trim() || null },
+      });
+      toast.success(
+        completing
+          ? 'Saque concluído. O titular foi avisado.'
+          : 'Saque marcado como falho; o valor voltou para a carteira do titular.',
+      );
+      onClose();
+    } catch (er) {
+      toast.error(er instanceof Error ? er.message : 'Erro ao processar');
+    }
+  }
+
+  return (
+    <Modal
+      title={`${completing ? 'Concluir' : 'Falhar'} saque #${withdrawal.id}`}
+      onClose={onClose}
+    >
+      <form onSubmit={submit} className="stack">
+        <div className="summary">
+          <strong>{brl(withdrawal.amount)}</strong>
+          <span className="muted tiny">
+            {withdrawal.userName ?? withdrawal.userEmail} ·{' '}
+            {withdrawal.method === 'pix' ? 'PIX' : 'Conta'} {withdrawal.destination}
+          </span>
+        </div>
+        <Field
+          label={completing ? 'Referência do pagamento (opcional)' : 'Motivo (o titular recebe)'}
+        >
+          <Input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={completing ? 'ID da transferência no banco' : 'Ex.: chave PIX inexistente'}
+            maxLength={completing ? 100 : 255}
+          />
+        </Field>
+        <Button type="submit" variant={completing ? 'primary' : 'danger'} disabled={act.isPending}>
+          {completing ? <CheckCircle2 size={16} /> : <XCircle size={16} />}{' '}
+          {act.isPending
+            ? 'Processando…'
+            : completing
+              ? 'Confirmar pagamento'
+              : 'Marcar como falho e estornar'}
+        </Button>
+      </form>
+    </Modal>
+  );
+}
+
+/** Painel do administrador: métricas da plataforma, fila de mediação e fila de saques. */
 export function AdminView() {
   const metrics = useAdminMetrics();
   const disputes = useAdminDisputes();
+  const [scope, setScope] = useState<'open' | 'all'>('open');
+  const withdrawals = useAdminWithdrawals(scope);
+  const act = useAdminWithdrawalAction();
+  const toast = useToast();
   const [resolving, setResolving] = useState<Dispute | null>(null);
+  const [processing, setProcessing] = useState<{
+    withdrawal: AdminWithdrawal;
+    action: 'complete' | 'fail';
+  } | null>(null);
   const m = metrics.data;
+
+  async function startProcessing(w: AdminWithdrawal): Promise<void> {
+    try {
+      await act.mutateAsync({ id: w.id, action: 'process' });
+      toast.info(`Saque #${w.id} em processamento.`);
+    } catch (er) {
+      toast.error(er instanceof Error ? er.message : 'Erro ao processar');
+    }
+  }
 
   return (
     <div className="page">
       <PageHeader
         title="Administração"
-        subtitle="Métricas da plataforma, mediação de disputas e moderação."
+        subtitle="Métricas da plataforma, mediação de disputas, saques e moderação."
       />
 
       <div className="kpis">
@@ -168,6 +279,48 @@ export function AdminView() {
           </div>
           <strong className="kpi-value">{m ? brl(m.platformFees) : '—'}</strong>
           <span className="muted tiny">taxas de 15% sobre concluídas</span>
+        </div>
+        <div className="kpi">
+          <div className="kpi-top">
+            <span className="kpi-ico">
+              <ArrowDownToLine size={18} />
+            </span>
+            <span className="kpi-label">Depósitos confirmados</span>
+          </div>
+          <strong className="kpi-value">{m ? brl(m.depositsTotal) : '—'}</strong>
+          <span className="muted tiny">entradas via PIX (gateway)</span>
+        </div>
+        <div className="kpi amber">
+          <div className="kpi-top">
+            <span className="kpi-ico">
+              <Lock size={18} />
+            </span>
+            <span className="kpi-label">Em escrow</span>
+          </div>
+          <strong className="kpi-value">{m ? brl(m.inEscrow) : '—'}</strong>
+          <span className="muted tiny">reservado em propostas e contratações</span>
+        </div>
+        <div className="kpi">
+          <div className="kpi-top">
+            <span className="kpi-ico">
+              <Banknote size={18} />
+            </span>
+            <span className="kpi-label">Saldo dos usuários</span>
+          </div>
+          <strong className="kpi-value">{m ? brl(m.usersBalance) : '—'}</strong>
+          <span className="muted tiny">disponível para contratar ou sacar</span>
+        </div>
+        <div className="kpi blue">
+          <div className="kpi-top">
+            <span className="kpi-ico">
+              <Banknote size={18} />
+            </span>
+            <span className="kpi-label">Saques pendentes</span>
+          </div>
+          <strong className="kpi-value">{m ? m.pendingWithdrawals : '—'}</strong>
+          <span className="muted tiny">
+            {m ? `${brl(m.pendingWithdrawalsAmount)} a pagar` : ''}
+          </span>
         </div>
       </div>
 
@@ -232,12 +385,128 @@ export function AdminView() {
         </QueryState>
       </section>
 
+      <section className="card">
+        <div className="card-head">
+          <h3>
+            <Banknote size={16} /> Fila de saques
+          </h3>
+          <div className="tabs tabs-mini" role="tablist" aria-label="Filtro de saques">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={scope === 'open'}
+              className={scope === 'open' ? 'active' : ''}
+              onClick={() => setScope('open')}
+            >
+              Abertos
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={scope === 'all'}
+              className={scope === 'all' ? 'active' : ''}
+              onClick={() => setScope('all')}
+            >
+              Todos
+            </button>
+          </div>
+        </div>
+        <QueryState
+          isLoading={withdrawals.isLoading}
+          error={withdrawals.error}
+          data={withdrawals.data}
+          empty="Nenhum saque aguardando. Nada a pagar."
+          onRetry={() => void withdrawals.refetch()}
+        >
+          {(list) => (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Saque</th>
+                    <th>Titular</th>
+                    <th>Valor</th>
+                    <th>Destino</th>
+                    <th>Status</th>
+                    <th className="right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((w) => (
+                    <tr key={w.id} data-testid={`withdrawal-${w.id}`}>
+                      <td className="cell-title">
+                        <strong>#{w.id}</strong>
+                        <span className="muted tiny">pedido em {dtm(w.createdAt)}</span>
+                      </td>
+                      <td className="cell-title">
+                        <strong>{w.userName ?? '—'}</strong>
+                        <span className="muted tiny">{w.userEmail}</span>
+                      </td>
+                      <td>
+                        <strong className="price">{brl(w.amount)}</strong>
+                      </td>
+                      <td>
+                        <span className="mono">{w.destination}</span>
+                        <div className="muted tiny">
+                          {w.method === 'pix' ? 'chave PIX' : 'conta bancária'}
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`pill status-${WITHDRAWAL_STATUS_TONE[w.status] ?? ''}`}>
+                          {WITHDRAWAL_STATUS_LABEL[w.status] ?? w.status}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="acts">
+                          {w.status === 'requested' && (
+                            <Button
+                              variant="mini"
+                              onClick={() => void startProcessing(w)}
+                              disabled={act.isPending}
+                            >
+                              Processar
+                            </Button>
+                          )}
+                          {(w.status === 'requested' || w.status === 'processing') && (
+                            <>
+                              <Button
+                                variant="mini"
+                                onClick={() => setProcessing({ withdrawal: w, action: 'complete' })}
+                              >
+                                <CheckCircle2 size={14} /> Concluir
+                              </Button>
+                              <Button
+                                variant="mini"
+                                onClick={() => setProcessing({ withdrawal: w, action: 'fail' })}
+                              >
+                                <XCircle size={14} /> Falhar
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </QueryState>
+      </section>
+
       <p className="muted tiny">
         Moderação de usuários (suspender, banir, reativar) fica no perfil público de cada
         freelancer, visível só para administradores.
       </p>
 
       {resolving && <ResolveModal dispute={resolving} onClose={() => setResolving(null)} />}
+      {processing && (
+        <WithdrawalModal
+          withdrawal={processing.withdrawal}
+          action={processing.action}
+          onClose={() => setProcessing(null)}
+        />
+      )}
     </div>
   );
 }

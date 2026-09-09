@@ -12,6 +12,7 @@ import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { barterService } from '../barter/barter.service';
 import { gamificationService } from '../gamification/gamification.service';
+import type { WalletEffect } from '../wallet/wallet.ledger';
 import { walletService } from '../wallet/wallet.service';
 import { contractsRepository, type ContractRow } from './contracts.repository';
 import { reviewsRepository } from '../reviews/reviews.repository';
@@ -80,6 +81,31 @@ function refundPercentage(row: ContractRow): number {
   return elapsed < 0.5 ? 50 : 0;
 }
 
+/**
+ * Liquidação do escrow em R$ quando a contratação NÃO chega ao fim combinado (cancelamento
+ * após o aceite, disputa): cada parcela (preço, líquido, taxa) é dividida na mesma proporção.
+ * O cliente recebe `refundPct`% do PREÇO (inclui a parte proporcional da taxa) e o freelancer
+ * fica com o restante do LÍQUIDO; a plataforma retém só a parte proporcional da taxa.
+ */
+export function cashSettlement(
+  price: number,
+  net: number,
+  refundPct: number,
+): { refundClient: number; releaseFreelancer: number } {
+  const pct = Math.min(100, Math.max(0, refundPct));
+  return {
+    refundClient: money((price * pct) / 100),
+    releaseFreelancer: money((net * (100 - pct)) / 100),
+  };
+}
+
+/** Efeitos em R$ da devolução ao cliente do valor RESERVADO na proposta (recusa/cancelamento em pending). */
+function releaseHoldEffects(row: ContractRow): WalletEffect[] {
+  if (row.payment_mode !== 'cash') return [];
+  const price = Number(row.price);
+  return [{ userId: row.client_id, pendingDelta: -price, balanceDelta: price, reason: 'refund' }];
+}
+
 async function applyTransition(params: {
   id: number;
   changedBy: number;
@@ -87,7 +113,13 @@ async function applyTransition(params: {
   to: string;
   note: string | null;
   timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at';
-  walletEffect?: { userId: number; pendingDelta: number; balanceDelta: number };
+  walletEffects?: WalletEffect[];
+  creditsEffects?: {
+    userId: number;
+    pendingDelta: number;
+    balanceDelta: number;
+    reason?: string;
+  }[];
 }): Promise<void> {
   const ok = await contractsRepository.transition(params);
   if (!ok) {
@@ -116,7 +148,16 @@ async function completeDelivered(
             { userId: row.freelancer_id, pendingDelta: -credits, balanceDelta: credits },
           ],
         }
-      : { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: net } };
+      : {
+          walletEffects: [
+            {
+              userId: row.freelancer_id,
+              pendingDelta: -net,
+              balanceDelta: net,
+              reason: 'escrow_release' as const,
+            },
+          ],
+        };
   await applyTransition({
     id: row.id,
     changedBy,
@@ -151,6 +192,10 @@ export const contractsService = {
     const platformFee = isCredits ? 0 : money(input.price * PLATFORM_FEE_RATE); // RN-031
     const freelancerNet = money(input.price - platformFee);
 
+    // Cash (carteira pré-paga, como no iFood): o valor sai do saldo do cliente e fica reservado
+    // já na proposta; volta integralmente se o freelancer recusar ou o cliente cancelar antes do
+    // aceite. Créditos são retidos só no aceite (o cliente já os tem na carteira).
+    if (!isCredits) await walletService.ensure(clientId);
     const id = await contractsRepository.create({
       ulid: ulid(),
       clientId,
@@ -163,7 +208,15 @@ export const contractsService = {
       freelancerNet,
       paymentMode: isCredits ? 'credits' : 'cash',
       deadlineAt: input.deadlineAt ?? null,
+      hold: isCredits ? null : { userId: clientId, amount: input.price },
     });
+    if (id === null) {
+      throw new HttpError(
+        402,
+        'Saldo insuficiente na carteira para reservar o valor da proposta. Faça um depósito e tente de novo.',
+        'insufficient_balance',
+      );
+    }
 
     return toContract(await loadOr404(id));
   },
@@ -229,7 +282,8 @@ export const contractsService = {
       return toContract(await loadOr404(id));
     }
 
-    // Cash: o valor líquido entra em escrow (balance_pending do freelancer) — RN-032.
+    // Cash: o valor reservado do cliente paga a contratação; o líquido entra em escrow
+    // (balance_pending do freelancer) e a taxa fica com a plataforma — RN-031/RN-032.
     await walletService.ensure(row.freelancer_id);
     await applyTransition({
       id,
@@ -238,11 +292,20 @@ export const contractsService = {
       to: 'accepted',
       note: null,
       timestampColumn: 'accepted_at',
-      walletEffect: {
-        userId: row.freelancer_id,
-        pendingDelta: Number(row.freelancer_net),
-        balanceDelta: 0,
-      },
+      walletEffects: [
+        {
+          userId: row.client_id,
+          pendingDelta: -Number(row.price),
+          balanceDelta: 0,
+          reason: 'payment',
+        },
+        {
+          userId: row.freelancer_id,
+          pendingDelta: Number(row.freelancer_net),
+          balanceDelta: 0,
+          reason: 'escrow_in',
+        },
+      ],
     });
     return toContract(await loadOr404(id));
   },
@@ -251,7 +314,14 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertFreelancer(row, uid);
     assertStatus(row, ['pending']);
-    await applyTransition({ id, changedBy: uid, from: row.status, to: 'rejected', note: null });
+    await applyTransition({
+      id,
+      changedBy: uid,
+      from: row.status,
+      to: 'rejected',
+      note: null,
+      walletEffects: releaseHoldEffects(row), // o valor reservado volta ao cliente
+    });
     return toContract(await loadOr404(id));
   },
 
@@ -310,23 +380,45 @@ export const contractsService = {
     const isBarter = row.payment_mode === 'barter';
     const isCredits = row.payment_mode === 'credits';
     const escrowFunded = !isBarter && (row.status === 'accepted' || row.status === 'in_progress');
+    const price = Number(row.price);
     const net = Number(row.freelancer_net);
     const credits = creditsOf(row);
     let refundEffect = {};
-    if (escrowFunded) {
-      refundEffect = isCredits
-        ? {
-            creditsEffects: [
-              {
-                userId: row.freelancer_id,
-                pendingDelta: -credits,
-                balanceDelta: 0,
-                reason: 'escrow_refund',
-              },
-              { userId: row.client_id, pendingDelta: 0, balanceDelta: credits, reason: 'refund' },
-            ],
-          }
-        : { walletEffect: { userId: row.freelancer_id, pendingDelta: -net, balanceDelta: 0 } };
+    if (row.status === 'pending') {
+      // Antes do aceite só existe a reserva do cliente (cash): volta integralmente.
+      refundEffect = { walletEffects: releaseHoldEffects(row) };
+    } else if (escrowFunded && isCredits) {
+      refundEffect = {
+        creditsEffects: [
+          {
+            userId: row.freelancer_id,
+            pendingDelta: -credits,
+            balanceDelta: 0,
+            reason: 'escrow_refund',
+          },
+          { userId: row.client_id, pendingDelta: 0, balanceDelta: credits, reason: 'refund' },
+        ],
+      };
+    } else if (escrowFunded) {
+      // Cash após o aceite: o escrow é liquidado na proporção da política (RN-025).
+      const { refundClient, releaseFreelancer } = cashSettlement(price, net, refund);
+      const walletEffects: WalletEffect[] = [
+        {
+          userId: row.freelancer_id,
+          pendingDelta: -net,
+          balanceDelta: releaseFreelancer,
+          reason: releaseFreelancer > 0 ? 'escrow_release' : 'escrow_refund',
+        },
+      ];
+      if (refundClient > 0) {
+        walletEffects.push({
+          userId: row.client_id,
+          pendingDelta: 0,
+          balanceDelta: refundClient,
+          reason: 'refund',
+        });
+      }
+      refundEffect = { walletEffects };
     }
     await applyTransition({
       id,

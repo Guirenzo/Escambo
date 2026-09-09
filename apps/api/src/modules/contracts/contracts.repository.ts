@@ -1,5 +1,6 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
+import { applyWalletEffect, type WalletEffect } from '../wallet/wallet.ledger';
 
 export interface ContractRow extends RowDataPacket {
   id: number;
@@ -46,7 +47,13 @@ export const contractsRepository = {
     freelancerNet: number;
     paymentMode: 'cash' | 'credits';
     deadlineAt: string | null;
-  }): Promise<number> {
+    /**
+     * Cash: o valor da proposta sai do saldo disponível do cliente e fica RESERVADO
+     * (balance_pending) na mesma transação do INSERT. Retorna null se não há saldo.
+     */
+    hold?: { userId: number; amount: number } | null;
+  }): Promise<number | null> {
+    const { hold, ...row } = data;
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -55,7 +62,7 @@ export const contractsRepository = {
            (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, payment_mode, deadline_at)
          VALUES
            (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, :platformFee, :freelancerNet, :paymentMode, :deadlineAt)`,
-        data,
+        row,
       );
       const id = res.insertId;
       // status inicial no histórico (RN-022): NULL -> pending
@@ -64,6 +71,19 @@ export const contractsRepository = {
          VALUES (:id, :changedBy, NULL, 'pending', 'Proposta enviada')`,
         { id, changedBy: data.clientId },
       );
+      if (hold) {
+        const ok = await applyWalletEffect(conn, {
+          userId: hold.userId,
+          balanceDelta: -hold.amount,
+          pendingDelta: hold.amount,
+          reason: 'hold',
+          contractId: id,
+        });
+        if (!ok) {
+          await conn.rollback();
+          return null; // saldo insuficiente: nada é criado
+        }
+      }
       await conn.commit();
       return id;
     } catch (err) {
@@ -136,8 +156,11 @@ export const contractsRepository = {
     to: string;
     note: string | null;
     timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at';
-    /** Movimento de carteira (cash) aplicado na MESMA transação do status (escrow). */
-    walletEffect?: { userId: number; pendingDelta: number; balanceDelta: number };
+    /**
+     * Movimentos de carteira em R$ (cliente e/ou freelancer) aplicados na MESMA transação do
+     * status, com guarda de saldo e linha no extrato (wallet_transactions).
+     */
+    walletEffects?: WalletEffect[];
     /** Movimentos de CRÉDITOS (escrow time-bank) na mesma transação; `reason` gera ledger. */
     creditsEffects?: {
       userId: number;
@@ -173,22 +196,10 @@ export const contractsRepository = {
         },
       );
 
-      if (params.walletEffect) {
-        // Guarda contra saldo negativo; se a carteira não existe ou ficaria negativa, aborta tudo.
-        const [w] = await conn.query<ResultSetHeader>(
-          `UPDATE wallets
-              SET balance_pending = balance_pending + :pending,
-                  balance         = balance + :balance
-            WHERE user_id = :userId
-              AND balance_pending + :pending >= 0
-              AND balance + :balance >= 0`,
-          {
-            pending: params.walletEffect.pendingDelta,
-            balance: params.walletEffect.balanceDelta,
-            userId: params.walletEffect.userId,
-          },
-        );
-        if (w.affectedRows === 0) {
+      // Guarda contra saldo negativo: se alguma carteira não existe ou ficaria negativa, aborta tudo.
+      for (const eff of params.walletEffects ?? []) {
+        const ok = await applyWalletEffect(conn, { ...eff, contractId: params.id });
+        if (!ok) {
           await conn.rollback();
           return false;
         }

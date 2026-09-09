@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { fundWallet } from './wallet.helpers';
 
 /**
  * Responsividade do Escambo Score sai de dados reais: quando o freelancer responde a uma
@@ -40,6 +41,7 @@ describe('Responsividade (tempo de resposta no chat → Escambo Score)', () => {
   it('freelancer sem histórico tem responsividade neutra; ao responder rápido, vai a 100', async () => {
     const client = await registerAndLogin('client');
     const freelancer = await registerAndLogin('freelancer');
+    await fundWallet(app, client.token, 100);
     const profile = await request(app)
       .put('/api/profiles/freelancer')
       .set(auth(freelancer.token))

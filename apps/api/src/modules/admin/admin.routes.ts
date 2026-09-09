@@ -4,8 +4,12 @@ import { requireAdmin } from '../../middlewares/require-admin';
 import { asyncHandler } from '../../utils/async-handler';
 import {
   banUser,
+  completeWithdrawal,
+  failWithdrawal,
   getMetrics,
   listOpenDisputes,
+  listWithdrawals,
+  processWithdrawal,
   reactivateUser,
   resolveDispute,
   suspendUser,
@@ -21,3 +25,7 @@ adminRoutes.post('/disputes/:id/resolve', asyncHandler(resolveDispute));
 adminRoutes.post('/users/:ulid/suspend', asyncHandler(suspendUser));
 adminRoutes.post('/users/:ulid/ban', asyncHandler(banUser));
 adminRoutes.post('/users/:ulid/reactivate', asyncHandler(reactivateUser));
+adminRoutes.get('/withdrawals', asyncHandler(listWithdrawals));
+adminRoutes.post('/withdrawals/:id/process', asyncHandler(processWithdrawal));
+adminRoutes.post('/withdrawals/:id/complete', asyncHandler(completeWithdrawal));
+adminRoutes.post('/withdrawals/:id/fail', asyncHandler(failWithdrawal));

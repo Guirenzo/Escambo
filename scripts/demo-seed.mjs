@@ -5,7 +5,8 @@
  * Popula uma instância em execução (dev ou docker compose) usando a própria API HTTP,
  * exatamente como o front faz: 6 freelancers com perfil + localização, 1 cliente,
  * serviços, contratações em todos os estados (pendente → aceita → entregue → aprovada),
- * chat, contratação em créditos, impulsionamento e trocas de serviço.
+ * chat, contratação em créditos, impulsionamento, trocas de serviço, depósito PIX (gateway
+ * simulado) na carteira da cliente e saques na fila do admin.
  *
  *   npm run demo:seed                                     # API em http://localhost:3333/api
  *   API_URL=http://localhost:8090/api npm run demo:seed   # stack do docker compose (via nginx)
@@ -294,8 +295,15 @@ async function ensureContract(
   { title, price, paymentMode = 'cash', to, chat = [] },
 ) {
   const mine = items(await call('GET', '/contracts', { token: client.token }));
-  let contract = mine.find((c) => c.title === title && c.freelancerId === freelancer.id);
+  let contract = mine.find(
+    (c) =>
+      c.title === title &&
+      c.freelancerId === freelancer.id &&
+      !['cancelled', 'rejected'].includes(c.status),
+  );
   if (!contract) {
+    // Carteira pré-paga: a proposta em dinheiro reserva o valor do saldo da cliente.
+    if (paymentMode === 'cash') await ensureBalance(client, price);
     contract = await call('POST', '/contracts', {
       token: client.token,
       body: {
@@ -362,6 +370,42 @@ async function ensureContract(
 }
 
 /** Cliente avalia uma contratação concluída (uma vez por contrato). */
+/** Garante saldo disponível na carteira (depósito PIX no gateway simulado + confirmação). */
+async function ensureBalance(user, amount) {
+  const w = await call('GET', '/wallet', { token: user.token });
+  if (Number(w.balance) >= amount) return;
+  const need = Math.max(100, Math.ceil((amount - Number(w.balance)) / 100) * 100);
+  const deposit = await call('POST', '/wallet/deposits', {
+    token: user.token,
+    body: { amount: need, method: 'pix' },
+  });
+  await call('POST', `/wallet/deposits/${deposit.id}/simulate`, { token: user.token });
+  log(`depósito PIX (simulado) de R$ ${need} confirmado para ${user.email}`);
+}
+
+/** Saque do freelancer (idempotente por valor); opcionalmente concluído pelo admin. */
+async function ensureWithdrawal(user, admin, amount, pixKey, { complete = false } = {}) {
+  const mine = items(await call('GET', '/withdrawals', { token: user.token }));
+  let w = mine.find((x) => Number(x.amount) === amount && x.status !== 'cancelled' && x.status !== 'failed');
+  if (!w) {
+    w = await call('POST', '/withdrawals', {
+      token: user.token,
+      body: { amount, method: 'pix', pixKey },
+    });
+    log(`saque #${w.id} de R$ ${amount} solicitado por ${user.email}`);
+  } else {
+    log(`saque #${w.id} de R$ ${amount} já existe (${w.status})`);
+  }
+  if (complete && w.status !== 'completed') {
+    w = await call('POST', `/admin/withdrawals/${w.id}/complete`, {
+      token: admin.token,
+      body: { gatewayRef: `DEMO-${w.id}` },
+    });
+    log(`  concluído pelo admin`);
+  }
+  return w;
+}
+
 async function ensureReview(client, contract, rating, comment) {
   const detail = await call('GET', `/contracts/${contract.id}`, { token: client.token });
   if (detail.status !== 'completed') return;
@@ -483,6 +527,9 @@ async function main() {
   await call('PUT', '/profiles/client', { token: ana.token, body: CLIENT.profile });
   await call('GET', '/wallet', { token: ana.token });
 
+  step('Carteira da cliente (depósito PIX no gateway simulado)');
+  await ensureBalance(ana, 6000);
+
   step('Contratações (todos os estados do escrow)');
   const landing = await ensureContract(ana, users.bruno, svc['Landing page em React'], {
     title: 'Landing page em React',
@@ -579,6 +626,10 @@ async function main() {
     'quality',
     'A vinheta veio com a logo antiga e sem o áudio combinado. Pedi ajuste e não tive retorno.',
   );
+
+  step('Saques (fila do admin)');
+  await ensureWithdrawal(users.marina, users.admin, 200, 'marina@escambo.demo', { complete: true });
+  await ensureWithdrawal(users.bruno, users.admin, 300, '47 99999-0001');
 
   step('Favoritos da cliente');
   await ensureFavorite(ana, svc['Landing page em React']);

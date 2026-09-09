@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { fundWallet } from './wallet.helpers';
 
 /**
  * Avaliações fecham o ciclo do contrato: aprovação → nota do cliente → reputação do freelancer
@@ -70,6 +71,7 @@ describe('Avaliações (reviews) — fecham o ciclo da contratação', () => {
   it('cliente avalia contratação concluída; a nota chega ao perfil, ao detalhe do contrato e ao card do serviço', async () => {
     const client = await registerAndLogin('client');
     const freelancer = await registerAndLogin('freelancer');
+    await fundWallet(app, client.token, 2000);
 
     const profile = await request(app)
       .put('/api/profiles/freelancer')

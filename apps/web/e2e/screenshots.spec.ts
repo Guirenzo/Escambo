@@ -77,6 +77,18 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     await page.screenshot(shot(name));
   }
 
+  // 13. Depósito PIX (modal): valor → cobrança com QR e copia e cola (gateway simulado)
+  await page.goto('/carteira');
+  await settled(page);
+  await page.getByRole('button', { name: 'Depositar' }).click();
+  const depositModal = page.getByRole('dialog');
+  await depositModal.getByRole('button', { name: 'R$ 200,00' }).click();
+  await depositModal.getByRole('button', { name: /Gerar cobrança PIX/ }).click();
+  await expect(depositModal.getByTestId('pix-code')).toBeVisible();
+  await page.waitForTimeout(500);
+  await snap(page, '13-deposito-pix');
+  await depositModal.getByRole('button', { name: 'Fechar' }).click();
+
   // 9. Perfil público do freelancer (via o ulid do dono do serviço em destaque)
   const svc = await request.get('/api/services?q=Landing%20page%20em%20React&limit=1');
   const { items } = (await svc.json()) as { items: { ownerUlid?: string }[] };
@@ -118,6 +130,27 @@ test('gera os prints do README', async ({ page, request, browser }) => {
   const adminTok = await login('admin@escambo.demo');
   await shotAs(adminTok, '/admin', '11-admin');
   const anaTok = await login('cliente@escambo.demo');
+
+  // 14. Modal de contratação visto pela cliente: saldo da carteira pré-paga e valor reservado
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      deviceScaleFactor: 2,
+    });
+    const p = await ctx.newPage();
+    await p.addInitScript((t) => window.localStorage.setItem('escambo_token', t), anaTok);
+    await p.goto('/servicos');
+    await settled(p);
+    await p
+      .locator('.card.service', { hasText: 'Landing page em React' })
+      .first()
+      .getByRole('button', { name: 'Contratar' })
+      .click();
+    await expect(p.getByRole('dialog')).toBeVisible();
+    await p.waitForTimeout(400);
+    await snap(p, '14-contratar');
+    await ctx.close();
+  }
   const disputes = await request.get('/api/disputes', {
     headers: { Authorization: `Bearer ${anaTok}` },
   });

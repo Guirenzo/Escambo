@@ -30,6 +30,13 @@ export function useRealtimeNotifications(): void {
         void qc.invalidateQueries({ queryKey: qk.barters });
         void qc.invalidateQueries({ queryKey: qk.contracts });
       }
+      if (n.type.startsWith('deposit_') || n.type.startsWith('withdrawal_')) {
+        void qc.invalidateQueries({ queryKey: qk.wallet });
+        void qc.invalidateQueries({ queryKey: qk.walletTransactions });
+        void qc.invalidateQueries({ queryKey: qk.deposits });
+        void qc.invalidateQueries({ queryKey: qk.withdrawals });
+        void qc.invalidateQueries({ queryKey: ['deposit'] });
+      }
       if (n.type === 'review_received') {
         void qc.invalidateQueries({ queryKey: qk.profiles });
         void qc.invalidateQueries({ queryKey: ['reviews'] });
