@@ -13,6 +13,16 @@ import { PASSWORD, settled } from './helpers';
 const OUT = '../../docs/screenshots';
 const shot = (name: string) => ({ path: `${OUT}/${name}.png`, fullPage: false as const });
 
+/** Tira o print só depois de todas as imagens (avatares) terminarem de carregar. */
+const snap = async (p: import('@playwright/test').Page, name: string): Promise<void> => {
+  await p
+    .waitForFunction(() => Array.from(document.images).every((i) => i.complete), null, {
+      timeout: 8000,
+    })
+    .catch(() => undefined);
+  await p.screenshot(shot(name));
+};
+
 test.skip(!!process.env.CI, 'utilitário de documentação; não roda no CI');
 
 test('gera os prints do README', async ({ page, request, browser }) => {
@@ -23,13 +33,13 @@ test('gera os prints do README', async ({ page, request, browser }) => {
   await page.getByLabel('E-mail').fill('bruno@escambo.demo');
   await page.getByLabel('Senha').fill(PASSWORD);
   await page.waitForTimeout(400); // fontes
-  await page.screenshot(shot('01-login'));
+  await snap(page, '01-login');
 
   await page.locator('form button[type="submit"]').click();
   await expect(page.getByRole('heading', { name: /^Olá,/ })).toBeVisible();
   await settled(page);
   await page.waitForTimeout(400);
-  await page.screenshot(shot('02-inicio'));
+  await snap(page, '02-inicio');
 
   // 2. Serviços com descoberta local ligada (geolocalização emulada em Joinville)
   await page.goto('/servicos');
@@ -40,7 +50,7 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     await expect(page.getByText(/km de você/).first()).toBeVisible();
   }
   await page.waitForTimeout(400);
-  await page.screenshot(shot('03-servicos'));
+  await snap(page, '03-servicos');
 
   // 3. Sala do contrato com chat (contrato da landing page, o que tem mensagens)
   const token = await page.evaluate(() => window.localStorage.getItem('escambo_token'));
@@ -53,7 +63,7 @@ test('gera os prints do README', async ({ page, request, browser }) => {
   await settled(page);
   await expect(page.locator('.bubble').first()).toBeVisible();
   await page.waitForTimeout(400);
-  await page.screenshot(shot('04-sala-contrato'));
+  await snap(page, '04-sala-contrato');
 
   for (const [path, name] of [
     ['/trocas', '05-trocas'],
@@ -74,7 +84,7 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     await page.goto(`/freelancers/${items[0].ownerUlid}`);
     await settled(page);
     await page.waitForTimeout(400);
-    await page.screenshot(shot('09-perfil-publico'));
+    await snap(page, '09-perfil-publico');
   }
 
   // 10. Mobile (Pixel 7): mesma sessão, navegação no rodapé
@@ -84,7 +94,7 @@ test('gera os prints do README', async ({ page, request, browser }) => {
   await mp.goto('/');
   await settled(mp);
   await mp.waitForTimeout(600);
-  await mp.screenshot(shot('10-mobile-inicio'));
+  await snap(mp, '10-mobile-inicio');
   await mobile.close();
 
   // 11/12. Admin (fila de mediação) e a Sala do contrato em disputa, vista pela cliente.
