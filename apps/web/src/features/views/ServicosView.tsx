@@ -1,9 +1,15 @@
-import { MapPin, Plus, Search } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { Heart, MapPin, Plus, Search } from 'lucide-react';
+import { useMemo, useState, type FormEvent } from 'react';
 import type { Category, Service } from '@escambo/types';
 import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
-import { useCategories, useCreateService, useServices } from '../../lib/hooks';
+import {
+  useCategories,
+  useCreateService,
+  useFavorites,
+  useServices,
+  useToggleFavorite,
+} from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { BoostModal } from '../services/BoostModal';
 import { ContratarModal } from '../services/ContratarModal';
@@ -35,10 +41,24 @@ export function ServicosView() {
   const [geo, setGeo] = useState<Geo | null>(null);
   const [radiusKm, setRadiusKm] = useState(25);
   const [locating, setLocating] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState(0);
   const services = useServices({
     q: submitted,
+    ...(categoryFilter ? { categoryId: categoryFilter } : {}),
     ...(geo ? { lat: geo.lat, lng: geo.lng, radiusKm } : {}),
   });
+
+  // favoritos (serviços): coração no card + filtro "Só favoritos"
+  const favorites = useFavorites();
+  const toggleFav = useToggleFavorite();
+  const [onlyFavs, setOnlyFavs] = useState(false);
+  const favIds = useMemo(
+    () =>
+      new Set(
+        (favorites.data ?? []).filter((f) => f.targetType === 'service').map((f) => f.targetId),
+      ),
+    [favorites.data],
+  );
 
   // novo serviço
   const categories = useCategories();
@@ -119,6 +139,18 @@ export function ServicosView() {
         }}
       >
         <Input placeholder="Buscar serviços…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Select
+          aria-label="Categoria"
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(Number(e.target.value))}
+        >
+          <option value={0}>Todas as categorias</option>
+          {flat.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+        </Select>
         <Button variant="secondary" type="submit">
           <Search size={16} /> Buscar
         </Button>
@@ -152,6 +184,14 @@ export function ServicosView() {
             <span className="muted hint">ordenado por proximidade</span>
           </>
         )}
+        <Button
+          variant="ghost"
+          className={`toggle ${onlyFavs ? 'on' : ''}`}
+          aria-pressed={onlyFavs}
+          onClick={() => setOnlyFavs((v) => !v)}
+        >
+          <Heart size={16} /> Só favoritos{favIds.size ? ` (${favIds.size})` : ''}
+        </Button>
       </div>
 
       {open && (
@@ -213,19 +253,35 @@ export function ServicosView() {
         }
         onRetry={() => void services.refetch()}
       >
-        {(d) => (
-          <div className="cards-grid">
-            {d.items.map((s) => (
-              <ServiceCard
-                key={s.id}
-                service={s}
-                mine={s.ownerId === myId}
-                onContratar={setContratar}
-                onBoost={setBoost}
-              />
-            ))}
-          </div>
-        )}
+        {(d) => {
+          const items = onlyFavs ? d.items.filter((s) => favIds.has(s.id)) : d.items;
+          if (items.length === 0) {
+            return (
+              <p className="muted">Nenhum favorito nesta lista. Marque o coração nos serviços.</p>
+            );
+          }
+          return (
+            <div className="cards-grid">
+              {items.map((s) => (
+                <ServiceCard
+                  key={s.id}
+                  service={s}
+                  mine={s.ownerId === myId}
+                  onContratar={setContratar}
+                  onBoost={setBoost}
+                  favorited={favIds.has(s.id)}
+                  onToggleFavorite={(svc) =>
+                    toggleFav.mutate({
+                      targetType: 'service',
+                      targetId: svc.id,
+                      favorited: favIds.has(svc.id),
+                    })
+                  }
+                />
+              ))}
+            </div>
+          );
+        }}
       </QueryState>
 
       {contratar && <ContratarModal service={contratar} onClose={() => setContratar(null)} />}

@@ -1,4 +1,4 @@
-import { Briefcase, ShieldCheck, Star, User } from 'lucide-react';
+import { Briefcase, MapPin, ShieldCheck, Star, User } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { Stars } from '../../components/Stars';
@@ -104,6 +104,10 @@ export function PerfilView() {
   const [headline, setHeadline] = useState('');
   const [bio, setBio] = useState('');
   const [city, setCity] = useState('');
+  const [stateUf, setStateUf] = useState('');
+  const [lat, setLat] = useState<number | null>(null);
+  const [lng, setLng] = useState<number | null>(null);
+  const [locating, setLocating] = useState(false);
 
   // Preenche o formulário quando o perfil chega.
   useEffect(() => {
@@ -117,13 +121,45 @@ export function PerfilView() {
     if (p.freelancer) {
       setHeadline(p.freelancer.headline ?? '');
       setBio(p.freelancer.bio ?? '');
+      setStateUf(p.freelancer.state ?? '');
+      setLat(p.freelancer.latitude);
+      setLng(p.freelancer.longitude);
     }
   }, [profiles.data]);
+
+  /** Localização do freelancer: é o que faz "Perto de mim" encontrá-lo. */
+  function locateMe(): void {
+    if (!('geolocation' in navigator)) {
+      toast.error('Seu navegador não oferece geolocalização');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLat(pos.coords.latitude);
+        setLng(pos.coords.longitude);
+        setLocating(false);
+      },
+      () => {
+        toast.error('Não consegui obter sua localização');
+        setLocating(false);
+      },
+      { timeout: 8000 },
+    );
+  }
 
   async function saveFreelancer(e: FormEvent): Promise<void> {
     e.preventDefault();
     try {
-      await putFreelancer.mutateAsync({ fullName: name, headline, bio, city });
+      await putFreelancer.mutateAsync({
+        fullName: name,
+        headline,
+        bio,
+        city,
+        state: stateUf.trim().toUpperCase() || null,
+        latitude: lat,
+        longitude: lng,
+      });
       toast.success('Perfil de freelancer salvo!');
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Erro');
@@ -203,6 +239,29 @@ export function PerfilView() {
               <Field label="Cidade">
                 <Input value={city} onChange={(e) => setCity(e.target.value)} />
               </Field>
+              <Field label="Estado (UF)">
+                <Input
+                  value={stateUf}
+                  onChange={(e) => setStateUf(e.target.value)}
+                  maxLength={2}
+                  placeholder="SC"
+                />
+              </Field>
+              <div className="stack">
+                <span className="muted tiny">
+                  Localização (é o que faz "Perto de mim" te encontrar)
+                </span>
+                <div className="loc-row">
+                  <Button type="button" variant="secondary" onClick={locateMe} disabled={locating}>
+                    <MapPin size={14} /> {locating ? 'Localizando…' : 'Usar minha localização'}
+                  </Button>
+                  <span className="muted tiny" aria-live="polite">
+                    {lat != null && lng != null
+                      ? `Definida (${lat.toFixed(4)}, ${lng.toFixed(4)})`
+                      : 'Não definida'}
+                  </span>
+                </div>
+              </div>
               <Button type="submit" disabled={putFreelancer.isPending}>
                 Salvar freelancer
               </Button>

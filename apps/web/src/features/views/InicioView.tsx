@@ -1,9 +1,19 @@
-import { Award, Coins, Flame, Lock, TrendingUp, Wallet, type LucideIcon } from 'lucide-react';
+import {
+  Award,
+  Coins,
+  Flame,
+  Lock,
+  TrendingUp,
+  UserCog,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { PageHeader, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { brl } from '../../lib/format';
-import { useContracts, useGamification, useWallet } from '../../lib/hooks';
+import { useContracts, useGamification, useProfilesMe, useWallet } from '../../lib/hooks';
 import { ContractsCard } from '../dashboard/ContractsCard';
 
 function Kpi({
@@ -52,13 +62,25 @@ export function InicioView() {
   const wallet = useWallet();
   const gam = useGamification();
   const contracts = useContracts();
+  const profiles = useProfilesMe();
   const w = wallet.data;
   const g = gam.data;
   const handle = user?.email?.split('@')[0] ?? '';
+  // Freelancer sem perfil não tem nome nos cards, nem Score, nem aparece em "Perto de mim".
+  const needsProfile =
+    user?.role === 'freelancer' && profiles.data != null && !profiles.data.freelancer;
 
   return (
     <div className="page">
       <PageHeader title={`Olá, ${handle}`} subtitle="Resumo da sua atividade no Escambo." />
+
+      {needsProfile && (
+        <p className="notice" data-testid="onboarding-notice">
+          <UserCog size={14} /> Complete seu perfil de freelancer (nome, cidade e localização) para
+          aparecer em "Perto de mim", ter Escambo Score e mostrar seu nome nos serviços.{' '}
+          <Link to="/perfil">Completar perfil</Link>
+        </p>
+      )}
 
       <div className="kpis">
         <Kpi

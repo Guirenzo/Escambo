@@ -370,6 +370,17 @@ async function ensureResponse(freelancer, contract, response) {
   log(`resposta #${contract.id} "${response.slice(0, 40)}…"`);
 }
 
+/** Favorita um serviço (idempotente). */
+async function ensureFavorite(user, service) {
+  const mine = await call('GET', '/favorites', { token: user.token });
+  if (mine.some((f) => f.targetType === 'service' && f.targetId === service.id)) return;
+  await call('POST', '/favorites', {
+    token: user.token,
+    body: { targetType: 'service', targetId: service.id },
+  });
+  log(`favorito ${service.title}`);
+}
+
 async function ensureBoost(user, service) {
   const active = (await call('GET', '/boosts', { token: user.token })).find(
     (b) => b.serviceId === service.id && b.status !== 'expired',
@@ -526,6 +537,10 @@ async function main() {
 
   step('Impulsionamento (pago em créditos Escambo)');
   await ensureBoost(users.bruno, svc['Landing page em React']);
+
+  step('Favoritos da cliente');
+  await ensureFavorite(ana, svc['Landing page em React']);
+  await ensureFavorite(ana, svc['Ensaio de produto (20 fotos)']);
 
   step('Trocas de serviço (escambo)');
   await ensureBarter(

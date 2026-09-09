@@ -41,6 +41,8 @@ export function createSocketServer(httpServer: HttpServer): Server {
 
   io.on('connection', (socket) => {
     const uid = (socket.data as SocketData).uid;
+    // Sala pessoal: notificações e eventos do usuário chegam em qualquer tela.
+    void socket.join(`user:${uid}`);
 
     // Entra na sala do contrato após checar que o usuário é parte dele.
     socket.on('contract:join', async (contractId: number, ack?: (r: unknown) => void) => {

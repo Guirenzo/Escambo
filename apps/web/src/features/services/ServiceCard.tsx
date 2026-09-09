@@ -1,24 +1,29 @@
-import { Rocket } from 'lucide-react';
+import { Heart, Rocket } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Service } from '@escambo/types';
 import { Stars } from '../../components/Stars';
 import { Button } from '../../components/ui';
 import { brl } from '../../lib/format';
 
-/** Card de serviço da busca e do perfil público: quem presta, preço, distância e ações. */
+/** Card de serviço da busca e do perfil público: quem presta, preço, distância, favorito e ações. */
 export function ServiceCard({
   service: s,
   mine,
   onContratar,
   onBoost,
   showOwner = true,
+  favorited,
+  onToggleFavorite,
 }: {
   service: Service;
   mine: boolean;
   onContratar: (s: Service) => void;
   onBoost: (s: Service) => void;
   showOwner?: boolean;
+  favorited?: boolean;
+  onToggleFavorite?: (s: Service) => void;
 }) {
+  const favLabel = favorited ? 'Remover dos favoritos' : 'Favoritar';
   return (
     <div className="card service">
       <div className="svc-top">
@@ -30,6 +35,18 @@ export function ServiceCard({
             </span>
           )}
           {s.isRemote && <span className="tag">remoto</span>}
+          {onToggleFavorite && !mine && (
+            <button
+              type="button"
+              className={`fav-btn ${favorited ? 'on' : ''}`}
+              aria-pressed={!!favorited}
+              aria-label={favLabel}
+              title={favLabel}
+              onClick={() => onToggleFavorite(s)}
+            >
+              <Heart size={15} />
+            </button>
+          )}
         </span>
       </div>
       {showOwner && s.ownerName && (

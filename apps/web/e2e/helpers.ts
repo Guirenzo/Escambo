@@ -39,6 +39,7 @@ async function api<T>(
 export async function createUser(
   request: APIRequestContext,
   role: 'client' | 'freelancer',
+  opts: { profile?: boolean } = {},
 ): Promise<TestUser> {
   const email = `e2e-${role}-${unique()}@escambo.test`;
   await api(request, 'post', '/auth/register', { data: { email, password: PASSWORD, role } });
@@ -52,7 +53,7 @@ export async function createUser(
   );
   const user = { id: auth.user.id, email, token: auth.accessToken };
   // Freelancer de verdade tem perfil (nome, cidade): é nele que moram nota média e Score.
-  if (role === 'freelancer') {
+  if (role === 'freelancer' && opts.profile !== false) {
     await api(request, 'put', '/profiles/freelancer', {
       token: user.token,
       data: { fullName: `Freela ${user.id}`, city: 'Joinville', isAvailable: true },
@@ -66,13 +67,15 @@ export async function createService(
   request: APIRequestContext,
   owner: TestUser,
   price = 300,
-): Promise<{ id: number; title: string }> {
+  categoryIndex = 0,
+): Promise<{ id: number; title: string; categoryId: number }> {
   const categories = await api<{ id: number }[]>(request, 'get', '/categories');
+  const categoryId = categories[categoryIndex]?.id ?? categories[0].id;
   const title = `Serviço e2e ${unique()}`;
   const svc = await api<{ id: number }>(request, 'post', '/services', {
     token: owner.token,
     data: {
-      categoryId: categories[0].id,
+      categoryId,
       title,
       description: 'Serviço criado automaticamente pelos testes ponta a ponta.',
       priceType: 'fixed',
@@ -81,7 +84,7 @@ export async function createService(
       isRemote: true,
     },
   });
-  return { id: svc.id, title };
+  return { id: svc.id, title, categoryId };
 }
 
 /** Contratação levada até 'completed' pela API (create → accept → deliver → approve). */

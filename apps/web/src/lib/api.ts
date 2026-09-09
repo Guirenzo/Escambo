@@ -12,9 +12,12 @@ import type {
   CreateBarterRequest,
   CreateBoostRequest,
   CreateContractRequest,
+  CreateFavoriteRequest,
   CreateReviewRequest,
   CreateServiceRequest,
   CreditTransaction,
+  Favorite,
+  FavoriteTargetType,
   FreelancerProfile,
   GamificationProfile,
   LeaderboardEntry,
@@ -244,6 +247,13 @@ export const api = {
     request<BarterAgreement>('/barters', { method: 'POST', body: JSON.stringify(body) }),
   barterAction: (id: number, action: 'accept' | 'reject' | 'cancel') =>
     request<BarterAgreement | void>(`/barters/${id}/${action}`, { method: 'POST' }),
+
+  // favoritos (serviços e freelancers)
+  favorites: () => request<Favorite[]>('/favorites'),
+  addFavorite: (body: CreateFavoriteRequest) =>
+    request<void>('/favorites', { method: 'POST', body: JSON.stringify(body) }),
+  removeFavorite: (targetType: FavoriteTargetType, targetId: number) =>
+    request<void>(`/favorites/${targetType}/${targetId}`, { method: 'DELETE' }),
 
   // perfis
   profilesMe: () => request<MyProfiles>('/profiles/me'),

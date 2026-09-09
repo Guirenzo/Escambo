@@ -1779,3 +1779,83 @@ button.toggle.on {
     grid-column: 1 / -1;
   }
 }
+
+/* ---------- Engajamento: badge de notificações, favoritos, localização ---------- */
+.side-link {
+  position: relative;
+}
+.nav-badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--green);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+@media (max-width: 1024px) {
+  .nav-badge {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    margin: 0;
+  }
+}
+.fav-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: none;
+  transition:
+    color var(--t) var(--ease),
+    border-color var(--t) var(--ease),
+    background var(--t) var(--ease);
+}
+.fav-btn:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
+.fav-btn.on {
+  color: var(--red);
+  background: var(--red-soft);
+  border-color: transparent;
+}
+.fav-btn.on svg {
+  fill: currentColor;
+}
+.loc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.notice a {
+  color: inherit;
+  font-weight: 700;
+}
+.searchbar select {
+  max-width: 260px;
+}
+
+/* Barra de busca com categoria: quebra linha em telas estreitas (nunca estoura a página). */
+.searchbar {
+  flex-wrap: wrap;
+}
+.searchbar input {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.searchbar select {
+  flex: 1 1 180px;
+  max-width: none;
+}
