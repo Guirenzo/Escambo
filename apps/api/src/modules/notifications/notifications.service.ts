@@ -1,11 +1,16 @@
 import type { Notification, NotificationList } from '@escambo/types';
 import { logger } from '../../config/logger';
+import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
 import { notificationsRepository, type NotificationRow } from './notifications.repository';
 
 function toNotification(r: NotificationRow): Notification {
   const data =
-    r.data == null ? null : typeof r.data === 'string' ? (JSON.parse(r.data) as Record<string, unknown>) : r.data;
+    r.data == null
+      ? null
+      : typeof r.data === 'string'
+        ? (JSON.parse(r.data) as Record<string, unknown>)
+        : r.data;
   return {
     id: r.id,
     type: r.type,
@@ -21,16 +26,32 @@ export const notificationsService = {
   /** Cria uma notificação in-app. Best-effort: usada em hooks de evento, nunca lança. */
   async notify(
     userId: number,
-    params: { type: string; title: string; body?: string | null; data?: Record<string, unknown> | null },
+    params: {
+      type: string;
+      title: string;
+      body?: string | null;
+      data?: Record<string, unknown> | null;
+    },
   ): Promise<void> {
     try {
-      await notificationsRepository.create({
+      const id = await notificationsRepository.create({
         userId,
         type: params.type,
         title: params.title,
         body: params.body ?? null,
         data: params.data != null ? JSON.stringify(params.data) : null,
       });
+      // Push em tempo real para as conexões do usuário (badge, toast, invalidação de cache).
+      const pushed: Notification = {
+        id,
+        type: params.type,
+        title: params.title,
+        body: params.body ?? null,
+        data: params.data ?? null,
+        isRead: false,
+        createdAt: new Date().toISOString(),
+      };
+      realtime.emitToUser(userId, 'notification:new', pushed);
     } catch (err) {
       logger.warn({ err }, 'notify falhou');
     }

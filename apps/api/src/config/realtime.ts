@@ -11,6 +11,10 @@ export const realtime = {
   attach(server: Server): void {
     io = server;
   },
+  /** Emite um evento para todas as conexões de um usuário (sala `user:<id>`). */
+  emitToUser(userId: number, event: string, payload: unknown): void {
+    io?.to(`user:${userId}`).emit(event, payload);
+  },
   /** Emite um evento para todos na "sala" de um contrato. */
   emitToContract(contractId: number, event: string, payload: unknown): void {
     io?.to(`contract:${contractId}`).emit(event, payload);

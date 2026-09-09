@@ -1,6 +1,18 @@
-import { ArrowLeftRight, Bell, Briefcase, Home, LogOut, Trophy, User, Wallet, type LucideIcon } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  Bell,
+  Briefcase,
+  Home,
+  LogOut,
+  Trophy,
+  User,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../../lib/auth';
+import { useNotifications } from '../../lib/hooks';
+import { useRealtimeNotifications } from '../../lib/realtime';
 
 const NAV: { to: string; label: string; Icon: LucideIcon; end?: boolean }[] = [
   { to: '/', label: 'Início', Icon: Home, end: true },
@@ -12,13 +24,22 @@ const NAV: { to: string; label: string; Icon: LucideIcon; end?: boolean }[] = [
   { to: '/perfil', label: 'Perfil', Icon: User },
 ];
 
-const ROLE_LABEL: Record<string, string> = { client: 'Cliente', freelancer: 'Freelancer', admin: 'Admin' };
+const ROLE_LABEL: Record<string, string> = {
+  client: 'Cliente',
+  freelancer: 'Freelancer',
+  admin: 'Admin',
+};
 
 /** App shell: sidebar fixa à esquerda (marca, navegação, usuário) + área de conteúdo que usa a largura da tela. */
 export function Shell() {
   const { user, logout } = useAuth();
   const handle = user?.email?.split('@')[0] ?? '';
   const initial = handle[0]?.toUpperCase() ?? '?';
+
+  // Badge de não lidas + push em tempo real (socket) para qualquer tela.
+  const notifications = useNotifications();
+  const unread = notifications.data?.unreadCount ?? 0;
+  useRealtimeNotifications();
 
   return (
     <div className="app">
@@ -35,6 +56,15 @@ export function Shell() {
             <NavLink key={to} to={to} end={end} className="side-link" title={label}>
               <Icon size={18} strokeWidth={2} />
               <span>{label}</span>
+              {to === '/notificacoes' && unread > 0 && (
+                <span
+                  className="nav-badge"
+                  aria-label={`${unread} não lida${unread > 1 ? 's' : ''}`}
+                  data-testid="nav-badge"
+                >
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

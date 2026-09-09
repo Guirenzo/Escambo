@@ -1,4 +1,4 @@
-import { ArrowLeft, Briefcase, MapPin, ShieldCheck, Star } from 'lucide-react';
+import { ArrowLeft, Briefcase, Heart, MapPin, ShieldCheck, Star } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { Service } from '@escambo/types';
@@ -7,7 +7,13 @@ import { Stars } from '../../components/Stars';
 import { Button, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { dtm } from '../../lib/format';
-import { useFreelancerReviews, usePublicFreelancer, useServices } from '../../lib/hooks';
+import {
+  useFavorites,
+  useFreelancerReviews,
+  usePublicFreelancer,
+  useServices,
+  useToggleFavorite,
+} from '../../lib/hooks';
 import { BoostModal } from '../services/BoostModal';
 import { ContratarModal } from '../services/ContratarModal';
 import { ServiceCard } from '../services/ServiceCard';
@@ -22,6 +28,11 @@ export function FreelancerView() {
   const userId = profile.data?.userId;
   const services = useServices(userId ? { ownerId: userId, limit: 50 } : undefined);
   const reviews = useFreelancerReviews(userId);
+  const favorites = useFavorites();
+  const toggleFav = useToggleFavorite();
+  const isFav = !!favorites.data?.some(
+    (f) => f.targetType === 'freelancer' && f.targetId === userId,
+  );
   const [contratar, setContratar] = useState<Service | null>(null);
   const [boost, setBoost] = useState<Service | null>(null);
 
@@ -67,8 +78,26 @@ export function FreelancerView() {
                     {!p.isAvailable && <span className="pill">indisponível</span>}
                   </div>
                 </div>
-                <div>
+                <div className="stack">
                   <ScoreBadge score={p.escamboScore} />
+                  {userId !== myId && (
+                    <Button
+                      variant={isFav ? 'secondary' : 'ghost'}
+                      className="toggle"
+                      aria-pressed={isFav}
+                      disabled={toggleFav.isPending || !userId}
+                      onClick={() =>
+                        userId &&
+                        toggleFav.mutate({
+                          targetType: 'freelancer',
+                          targetId: userId,
+                          favorited: isFav,
+                        })
+                      }
+                    >
+                      <Heart size={14} /> {isFav ? 'Favorito' : 'Favoritar'}
+                    </Button>
+                  )}
                 </div>
               </div>
               {p.bio && <p className="profile-bio">{p.bio}</p>}

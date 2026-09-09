@@ -4,6 +4,7 @@ import type {
   CreateBoostRequest,
   CreateContractRequest,
   CreateReviewRequest,
+  FavoriteTargetType,
   CreateServiceRequest,
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
@@ -27,6 +28,7 @@ export const qk = {
   notifications: ['notifications'] as const,
   barters: ['barters'] as const,
   profiles: ['profiles'] as const,
+  favorites: ['favorites'] as const,
   reviews: (freelancerId: number) => ['reviews', freelancerId] as const,
   publicFreelancer: (ulid: string) => ['publicFreelancer', ulid] as const,
 };
@@ -258,3 +260,27 @@ export const usePublicFreelancer = (ulid: string | undefined) =>
     queryFn: () => api.publicFreelancer(ulid!),
     enabled: !!ulid,
   });
+
+// ---------- Favoritos ----------
+export const useFavorites = () =>
+  useQuery({ queryKey: qk.favorites, queryFn: () => api.favorites() });
+
+/** Liga/desliga favorito de um serviço ou freelancer. */
+export function useToggleFavorite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      targetType,
+      targetId,
+      favorited,
+    }: {
+      targetType: FavoriteTargetType;
+      targetId: number;
+      favorited: boolean;
+    }) =>
+      favorited
+        ? api.removeFavorite(targetType, targetId)
+        : api.addFavorite({ targetType, targetId }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.favorites }),
+  });
+}
