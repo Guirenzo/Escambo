@@ -604,6 +604,8 @@ export interface BarterAgreement {
   receiverId: number;
   offeredServiceId: number | null;
   requestedServiceId: number | null;
+  offeredServiceTitle: string | null;
+  requestedServiceTitle: string | null;
   offeredDescription: string | null;
   requestedDescription: string | null;
   estimatedValueOffered: number;

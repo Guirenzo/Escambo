@@ -78,8 +78,8 @@ export function TrocasView() {
           ? `Você paga ${brl(diff)} de torna · reservado da sua carteira agora`
           : 'Troca equilibrada — sem torna nem taxa';
 
-  const svcLabel = (id: number | null, desc: string | null): string =>
-    id != null ? (serviceById.get(id)?.title ?? `Serviço #${id}`) : (desc ?? '—');
+  const svcLabel = (id: number | null, title: string | null, desc: string | null): string =>
+    title ?? (id != null ? (serviceById.get(id)?.title ?? `Serviço #${id}`) : (desc ?? '—'));
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -282,7 +282,9 @@ export function TrocasView() {
                       <span className="muted tiny">
                         {iAmProposer ? 'Você oferece' : 'Oferecem'}
                       </span>
-                      <strong>{svcLabel(b.offeredServiceId, b.offeredDescription)}</strong>
+                      <strong>
+                        {svcLabel(b.offeredServiceId, b.offeredServiceTitle, b.offeredDescription)}
+                      </strong>
                       <span className="price">{brl(b.estimatedValueOffered)}</span>
                     </div>
                     <span className="arrow">
@@ -290,7 +292,13 @@ export function TrocasView() {
                     </span>
                     <div className="swap-side">
                       <span className="muted tiny">{iAmProposer ? 'Você recebe' : 'Querem'}</span>
-                      <strong>{svcLabel(b.requestedServiceId, b.requestedDescription)}</strong>
+                      <strong>
+                        {svcLabel(
+                          b.requestedServiceId,
+                          b.requestedServiceTitle,
+                          b.requestedDescription,
+                        )}
+                      </strong>
                       <span className="price">{brl(b.estimatedValueRequested)}</span>
                     </div>
                   </div>

@@ -2078,6 +2078,13 @@ button.toggle.on {
   gap: 8px;
   flex-shrink: 0;
 }
+.swaps .svc-foot {
+  align-items: flex-start;
+  gap: 12px;
+}
+.swaps .svc-foot > span:last-child {
+  flex-shrink: 0;
+}
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.82rem;

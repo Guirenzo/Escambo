@@ -9,6 +9,8 @@ export interface BarterRow extends RowDataPacket {
   receiver_id: number;
   offered_service_id: number | null;
   requested_service_id: number | null;
+  offered_title?: string | null;
+  requested_title?: string | null;
   offered_description: string | null;
   requested_description: string | null;
   estimated_value_offered: string;
@@ -106,6 +108,12 @@ async function refundTorna(conn: PoolConnection, row: BarterRow): Promise<boolea
   return true;
 }
 
+/** Acordo + títulos dos serviços envolvidos (LEFT JOIN: serviço pode ter sido removido). */
+const WITH_TITLES = `SELECT b.*, so.title AS offered_title, sr.title AS requested_title
+         FROM barter_agreements b
+         LEFT JOIN services so ON so.id = b.offered_service_id
+         LEFT JOIN services sr ON sr.id = b.requested_service_id`;
+
 async function lockRow(conn: PoolConnection, id: number): Promise<BarterRow | undefined> {
   const [rows] = await conn.query<BarterRow[]>(
     `SELECT * FROM barter_agreements WHERE id = :id FOR UPDATE`,
@@ -167,18 +175,17 @@ export const barterRepository = {
   },
 
   async findById(id: number): Promise<BarterRow | undefined> {
-    const [rows] = await pool.query<BarterRow[]>(
-      `SELECT * FROM barter_agreements WHERE id = :id LIMIT 1`,
-      { id },
-    );
+    const [rows] = await pool.query<BarterRow[]>(`${WITH_TITLES} WHERE b.id = :id LIMIT 1`, {
+      id,
+    });
     return rows[0];
   },
 
   async listForUser(userId: number, limit: number, offset: number): Promise<BarterRow[]> {
     const [rows] = await pool.query<BarterRow[]>(
-      `SELECT * FROM barter_agreements
-        WHERE proposer_id = :userId OR receiver_id = :userId
-        ORDER BY created_at DESC
+      `${WITH_TITLES}
+        WHERE b.proposer_id = :userId OR b.receiver_id = :userId
+        ORDER BY b.created_at DESC
         LIMIT ${limit} OFFSET ${offset}`,
       { userId },
     );

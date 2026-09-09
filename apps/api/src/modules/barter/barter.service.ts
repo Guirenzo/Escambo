@@ -30,6 +30,8 @@ function toBarter(row: BarterRow): BarterAgreement {
     receiverId: row.receiver_id,
     offeredServiceId: row.offered_service_id,
     requestedServiceId: row.requested_service_id,
+    offeredServiceTitle: row.offered_title ?? null,
+    requestedServiceTitle: row.requested_title ?? null,
     offeredDescription: row.offered_description,
     requestedDescription: row.requested_description,
     estimatedValueOffered: Number(row.estimated_value_offered),
