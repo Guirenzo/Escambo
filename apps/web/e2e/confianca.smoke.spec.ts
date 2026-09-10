@@ -92,7 +92,10 @@ test('privacidade (LGPD): cópia dos dados baixável na hora; exclusão concluí
   const admin = await createAdmin(request);
   await openAs(page, admin, '/admin');
   await settled(page);
-  const pending = page.getByRole('row', { name: new RegExp(user.email) });
+  // A caixa de saída de e-mails também lista o endereço: escopo na seção de exclusões.
+  const pending = page
+    .locator('section', { hasText: 'Exclusões de conta' })
+    .getByRole('row', { name: new RegExp(user.email) });
   await expect(pending).toContainText('em análise');
   await pending.getByRole('button', { name: 'Concluir exclusão' }).click();
   await page
