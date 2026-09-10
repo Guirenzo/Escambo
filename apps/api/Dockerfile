@@ -12,7 +12,11 @@ RUN npm ci \
 
 # --- runtime ---
 FROM node:22-alpine AS runtime
-ENV NODE_ENV=production
+# Commit do build (o CI passa --build-arg GIT_SHA): aparece em GET /api/health e no log de subida.
+ARG GIT_SHA=dev
+ENV NODE_ENV=production GIT_SHA=$GIT_SHA
+LABEL org.opencontainers.image.revision=$GIT_SHA \
+      org.opencontainers.image.source=https://github.com/Guirenzo/Escambo
 # tini como init: encaminha sinais (SIGTERM) para o Node e faz reap de zumbis.
 RUN apk add --no-cache tini
 WORKDIR /repo

@@ -1,11 +1,17 @@
 import mysql from 'mysql2/promise';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
-import { appliedMigrations, ensureMigrationsTable, loadMigrations, migrate } from './migrate-core';
+import {
+  appliedMigrations,
+  ensureMigrationsTable,
+  loadMigrations,
+  migrate,
+  seedReferenceIfEmpty,
+} from './migrate-core';
 
 /**
  * CLI de migrations. Usa as credenciais da própria API (mesmo database):
- *   npm run db:migrate            # aplica pendentes
+ *   npm run db:migrate            # aplica pendentes (+ seed de referência se o catálogo estiver vazio)
  *   npm run db:migrate -- --status  # lista aplicadas x pendentes
  */
 async function main(): Promise<void> {
@@ -35,6 +41,9 @@ async function main(): Promise<void> {
       { aplicadas: result.applied, ignoradas: result.skipped.length },
       result.applied.length ? 'Migrations aplicadas' : 'Banco já está atualizado',
     );
+    if (await seedReferenceIfEmpty(conn)) {
+      logger.info('Seed de referência carregado (catálogo estava vazio)');
+    }
   } finally {
     await conn.end();
   }

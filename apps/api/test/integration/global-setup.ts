@@ -1,12 +1,10 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import mysql from 'mysql2/promise';
-import { migrate } from '../../src/scripts/migrate-core';
+import { migrate, seedReferenceIfEmpty } from '../../src/scripts/migrate-core';
 
 /**
  * Setup global dos testes de integração: recria o database `escambo_test` do
- * zero, aplica **baseline + migrations** (mesmo caminho da produção) e carrega o
- * seed. Roda no processo principal do vitest (antes dos workers), lendo as
+ * zero, aplica **baseline + migrations + seed de referência** (o mesmo caminho da
+ * produção). Roda no processo principal do vitest (antes dos workers), lendo as
  * credenciais de root direto do ambiente/defaults do docker-compose.
  */
 const cfg = {
@@ -16,11 +14,6 @@ const cfg = {
   password: process.env.TEST_DB_PASSWORD ?? 'escambo_root',
   database: process.env.TEST_DB_NAME ?? 'escambo_test',
 };
-
-const seedPath = join(__dirname, '..', '..', 'db', 'seed.sql');
-
-/** Aponta o `USE escambo;` do seed para o database de teste. */
-const retargetSeed = (sql: string): string => sql.replace(/USE\s+escambo\s*;/gi, `USE ${cfg.database};`);
 
 export default async function setup(): Promise<() => Promise<void>> {
   const admin = await mysql.createConnection({
@@ -45,7 +38,7 @@ export default async function setup(): Promise<() => Promise<void>> {
     multipleStatements: true,
   });
   await migrate(db); // baseline (schema.sql) + migrations em ordem
-  await db.query(retargetSeed(readFileSync(seedPath, 'utf8')));
+  await seedReferenceIfEmpty(db); // catálogo (categorias, badges, planos, configurações)
   await db.end();
 
   // Teardown: derruba o database de teste ao fim da suíte.

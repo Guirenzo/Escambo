@@ -11,6 +11,8 @@ import type { Connection, RowDataPacket } from 'mysql2/promise';
  *   registrado como aplicado — sem re-executar.
  * - `db/migrations/NNNN_descricao.sql` são as mudanças incrementais, aplicadas em
  *   ordem, cada uma registrada em `schema_migrations` (idempotente).
+ * - `seed.sql` (catálogo de referência) entra uma única vez, quando o catálogo está
+ *   vazio — é o caso da primeira subida em produção, sem o init do Docker.
  *
  * A `Connection` recebida precisa ter `multipleStatements: true`.
  */
@@ -37,6 +39,11 @@ function loadBaseline(): string {
     .replace(/USE\s+\w+\s*;/gi, '');
 }
 
+/** Seed de referência (categorias, badges, missões, planos, configurações), sem `USE`. */
+function loadSeed(): string {
+  return readFileSync(join(DB_DIR, 'seed.sql'), 'utf8').replace(/USE\s+\w+\s*;/gi, '');
+}
+
 export function loadMigrations(): MigrationStep[] {
   const steps: MigrationStep[] = [{ name: '0000_baseline', sql: loadBaseline() }];
   if (existsSync(MIGRATIONS_DIR)) {
@@ -44,7 +51,10 @@ export function loadMigrations(): MigrationStep[] {
       .filter((f) => f.endsWith('.sql'))
       .sort();
     for (const f of files) {
-      steps.push({ name: f.replace(/\.sql$/, ''), sql: readFileSync(join(MIGRATIONS_DIR, f), 'utf8') });
+      steps.push({
+        name: f.replace(/\.sql$/, ''),
+        sql: readFileSync(join(MIGRATIONS_DIR, f), 'utf8'),
+      });
     }
   }
   return steps;
@@ -81,6 +91,24 @@ async function record(conn: Connection, step: MigrationStep): Promise<void> {
     step.name,
     checksum(step.sql),
   ]);
+}
+
+/** O catálogo de referência já foi carregado? (âncora: alguma categoria de serviço). */
+async function catalogPresent(conn: Connection): Promise<boolean> {
+  const [rows] = await conn.query<RowDataPacket[]>('SELECT 1 FROM service_categories LIMIT 1');
+  return rows.length > 0;
+}
+
+/**
+ * Carrega o seed de referência se o catálogo estiver vazio (primeira subida sem o init do
+ * Docker, ex.: produção). Roda só uma vez de propósito: o seed é idempotente, mas reaplicá-lo
+ * a cada subida sobrescreveria configurações que o admin tenha alterado depois.
+ * Devolve `true` quando carregou.
+ */
+export async function seedReferenceIfEmpty(conn: Connection): Promise<boolean> {
+  if (await catalogPresent(conn)) return false;
+  await conn.query(loadSeed());
+  return true;
 }
 
 /** Aplica todas as migrations pendentes, em ordem. Idempotente. */

@@ -138,6 +138,22 @@ export function createAdmin(request: APIRequestContext): Promise<TestUser> {
   });
 }
 
+/**
+ * Confirma o e-mail de `user` pelo mesmo caminho do produto: lê o link na caixa de saída
+ * (com uma conta admin) e consome o token. Saque exige e-mail confirmado.
+ */
+export async function verifyEmail(
+  request: APIRequestContext,
+  user: TestUser,
+  admin?: TestUser,
+): Promise<void> {
+  const reader = admin ?? (await createAdmin(request));
+  const mail = await latestEmail(request, reader, user.id, 'verify_email');
+  const token = /token=([A-Za-z0-9_-]+)/.exec(mail.text)?.[1] ?? '';
+  expect(token, 'token de confirmação no e-mail').not.toBe('');
+  await api(request, 'post', '/auth/verify-email', { data: { token } });
+}
+
 /** Contratação levada até 'delivered' pela API (create → accept → deliver). */
 export async function deliveredContract(
   request: APIRequestContext,

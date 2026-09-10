@@ -1,6 +1,6 @@
 import mysql, { type Connection, type RowDataPacket } from 'mysql2/promise';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { appliedMigrations, migrate } from '../../src/scripts/migrate-core';
+import { appliedMigrations, migrate, seedReferenceIfEmpty } from '../../src/scripts/migrate-core';
 
 const cfg = {
   host: process.env.DB_HOST ?? '127.0.0.1',
@@ -52,5 +52,27 @@ describe('runner de migrations', () => {
     const result = await migrate(conn);
     expect(result.applied).toEqual([]);
     expect(result.skipped).toContain('0000_baseline');
+  });
+
+  it('carrega o seed de referência só quando o catálogo está vazio', async () => {
+    expect(await seedReferenceIfEmpty(conn)).toBe(true);
+    const [cats] = await conn.query<RowDataPacket[]>(
+      'SELECT COUNT(*) AS n FROM service_categories',
+    );
+    expect(Number(cats[0]!.n)).toBeGreaterThan(0);
+    const [settings] = await conn.query<RowDataPacket[]>(
+      "SELECT value FROM platform_settings WHERE key_name = 'platform_fee_percentage'",
+    );
+    expect(settings[0]!.value).toBe('15');
+
+    // Segunda chamada não reaplica (não sobrescreve o que o admin tenha alterado).
+    await conn.query(
+      "UPDATE platform_settings SET value = '12' WHERE key_name = 'platform_fee_percentage'",
+    );
+    expect(await seedReferenceIfEmpty(conn)).toBe(false);
+    const [after] = await conn.query<RowDataPacket[]>(
+      "SELECT value FROM platform_settings WHERE key_name = 'platform_fee_percentage'",
+    );
+    expect(after[0]!.value).toBe('12');
   });
 });

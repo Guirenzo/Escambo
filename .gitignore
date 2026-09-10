@@ -7,6 +7,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 *.pem
 *.key
 
@@ -26,10 +27,11 @@ yarn-error.log*
 # Arquivos gerados pela API em runtime (cópias de dados LGPD)
 apps/api/data/
 
-# Banco de dados local / dumps
+# Banco de dados local / dumps (scripts/backup-db.sh grava em backups/)
 *.sqlite
 *.sqlite3
 docker/data/
+backups/
 
 # Editores / SO
 .DS_Store

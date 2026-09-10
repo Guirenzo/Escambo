@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { runExpireDeposits } from '../../src/jobs/expire-deposits';
+import { verifyEmailOf } from './mail.helpers';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
 
@@ -192,6 +193,16 @@ describe('Pagamentos: depósito PIX, carteira pré-paga, reembolso e saques', ()
     const freelancer = await registerAndLogin('freelancer');
     const admin = await registerAndLogin('client', 'admin.escambo.test');
     await fundWallet(app, freelancer.token, 300);
+
+    // Saque é ação sensível: sem e-mail confirmado é 403 e o saldo fica intacto.
+    const locked = await request(app)
+      .post('/api/withdrawals')
+      .set(auth(freelancer.token))
+      .send({ amount: 100, method: 'pix', pixKey: 'chave-100@escambo.test' });
+    expect(locked.status).toBe(403);
+    expect(locked.body.error).toBe('email_not_verified');
+    expect(await wallet(freelancer.token)).toMatchObject({ balance: 300, balancePending: 0 });
+    await verifyEmailOf(app, admin.token, freelancer.id);
 
     const ask = async (amount: number) => {
       const res = await request(app)

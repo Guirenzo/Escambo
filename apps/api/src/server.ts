@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { createApp } from './app';
 import { blocklist } from './config/blocklist';
+import { buildInfo } from './config/build-info';
 import { pingDb, pool } from './config/db';
 import { env } from './config/env';
 import { logger } from './config/logger';
@@ -31,7 +32,10 @@ async function main(): Promise<void> {
   const io = createSocketServer(server); // chat em tempo real no mesmo servidor HTTP
 
   server.listen(env.PORT, () => {
-    logger.info(`API Escambo em http://localhost:${env.PORT}/api (env: ${env.NODE_ENV})`);
+    logger.info(
+      { version: buildInfo.version, commit: buildInfo.commit },
+      `API Escambo em http://localhost:${env.PORT}/api (env: ${env.NODE_ENV})`,
+    );
     startJobs(); // aprovação tácita etc. (JOBS_ENABLED)
   });
 

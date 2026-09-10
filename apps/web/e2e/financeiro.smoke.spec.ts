@@ -7,6 +7,7 @@ import {
   openAs,
   settled,
   topUp,
+  verifyEmail,
 } from './helpers';
 
 /**
@@ -97,9 +98,19 @@ test('freelancer saca; admin conclui na fila de saques; o status muda para o tit
   const client = await createUser(request, 'client');
   await completeContract(request, client, freelancer, service); // 250 − 15% = 212,50 liberados
 
+  // Sem e-mail confirmado a Carteira não oferece o saque (ação sensível): só o reenvio do link.
   await openAs(page, freelancer, '/carteira');
   await settled(page);
   await expect(page.getByTestId('wallet-balance')).toHaveText('R$ 212,50');
+  await expect(page.getByTestId('withdraw-locked')).toBeVisible();
+  await expect(page.getByTestId('withdraw-locked')).toContainText(freelancer.email);
+  await expect(page.locator('form', { hasText: 'Solicitar saque' })).toHaveCount(0);
+
+  const admin = await createAdmin(request);
+  await verifyEmail(request, freelancer, admin);
+  await openAs(page, freelancer, '/carteira');
+  await settled(page);
+  await expect(page.getByTestId('withdraw-locked')).toHaveCount(0);
   await expect(
     page.getByTestId('ledger').locator('li', { hasText: 'Liberado do escrow' }),
   ).toBeVisible();
@@ -114,7 +125,6 @@ test('freelancer saca; admin conclui na fila de saques; o status muda para o tit
   await expect(row.locator('.pill')).toHaveText('Aguardando');
 
   // Admin: fila de saques com o destino completo → Concluir com referência.
-  const admin = await createAdmin(request);
   await openAs(page, admin, '/admin');
   await settled(page);
   const queueRow = page.getByRole('row', { name: new RegExp(`pix-${freelancer.id}@escambo.test`) });
@@ -142,6 +152,8 @@ test('saque falho é estornado pelo admin; saque aguardando pode ser cancelado p
   request,
 }) => {
   const freelancer = await createUser(request, 'freelancer');
+  const admin = await createAdmin(request);
+  await verifyEmail(request, freelancer, admin); // saque exige e-mail confirmado
   await topUp(request, freelancer, 200);
   const ask = async (amount: number, key: string) => {
     const res = await request.post('/api/withdrawals', {
@@ -153,7 +165,6 @@ test('saque falho é estornado pelo admin; saque aguardando pode ser cancelado p
   await ask(50, `falha-${freelancer.id}@escambo.test`);
   await ask(30, `cancela-${freelancer.id}@escambo.test`);
 
-  const admin = await createAdmin(request);
   await openAs(page, admin, '/admin');
   await settled(page);
   const row = page.getByRole('row', { name: new RegExp(`falha-${freelancer.id}@escambo.test`) });

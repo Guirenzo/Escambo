@@ -1,7 +1,9 @@
-import { ArrowDownToLine, Coins, Landmark, Lock, QrCode, Wallet } from 'lucide-react';
+import { ArrowDownToLine, Coins, Landmark, Lock, MailWarning, QrCode, Wallet } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { CreditReason, Deposit, WalletTransaction } from '@escambo/types';
 import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
+import { api } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
 import {
   brl,
   DEPOSIT_STATUS_LABEL,
@@ -65,6 +67,7 @@ function LedgerRow({ t }: { t: WalletTransaction }) {
 }
 
 export function CarteiraView() {
+  const { user } = useAuth();
   const wallet = useWallet();
   const withdrawals = useWithdrawals();
   const deposits = useDeposits();
@@ -77,6 +80,21 @@ export function CarteiraView() {
   const [pixKey, setPixKey] = useState('');
   const [tab, setTab] = useState<'brl' | 'credits'>('brl');
   const [depositing, setDepositing] = useState<null | { initial?: Deposit }>(null);
+  const [resending, setResending] = useState(false);
+  // Saque é a única ação que tira dinheiro da plataforma: a API exige e-mail confirmado (403).
+  const canWithdraw = user?.emailVerified ?? true;
+
+  async function resend(): Promise<void> {
+    setResending(true);
+    try {
+      await api.resendVerification();
+      toast.success(`Link reenviado para ${user?.email ?? 'seu e-mail'}.`);
+    } catch (er) {
+      toast.error(er instanceof Error ? er.message : 'Não foi possível reenviar');
+    } finally {
+      setResending(false);
+    }
+  }
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -149,35 +167,65 @@ export function CarteiraView() {
             impulsionar
           </span>
         </div>
-        <form className="kpi" onSubmit={submit}>
-          <div className="kpi-top">
-            <span className="kpi-ico">
-              <Landmark size={18} />
+        {!canWithdraw && (
+          <div className="kpi withdraw-locked" data-testid="withdraw-locked">
+            <div className="kpi-top">
+              <span className="kpi-ico">
+                <Landmark size={18} />
+              </span>
+              <span className="kpi-label">Solicitar saque</span>
+            </div>
+            <p className="withdraw-locked-msg">
+              <MailWarning size={16} />
+              <span>
+                Confirme seu e-mail para sacar. Enviamos um link para <strong>{user?.email}</strong>
+                .
+              </span>
+            </p>
+            <span className="muted tiny">
+              Segurança: o saque é a única ação que tira dinheiro da plataforma.
             </span>
-            <span className="kpi-label">Solicitar saque</span>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void resend()}
+              disabled={resending}
+            >
+              {resending ? 'Reenviando…' : 'Reenviar e-mail de confirmação'}
+            </Button>
           </div>
-          <Field label="Valor (R$)">
-            <Input
-              type="number"
-              min={20}
-              step="0.01"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-            />
-          </Field>
-          <Field label="Chave PIX">
-            <Input
-              value={pixKey}
-              onChange={(e) => setPixKey(e.target.value)}
-              required
-              placeholder="e-mail / telefone / aleatória"
-            />
-          </Field>
-          <Button type="submit" variant="secondary" disabled={request.isPending}>
-            {request.isPending ? '…' : 'Sacar (mín. R$20)'}
-          </Button>
-        </form>
+        )}
+        {canWithdraw && (
+          <form className="kpi" onSubmit={submit}>
+            <div className="kpi-top">
+              <span className="kpi-ico">
+                <Landmark size={18} />
+              </span>
+              <span className="kpi-label">Solicitar saque</span>
+            </div>
+            <Field label="Valor (R$)">
+              <Input
+                type="number"
+                min={20}
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Chave PIX">
+              <Input
+                value={pixKey}
+                onChange={(e) => setPixKey(e.target.value)}
+                required
+                placeholder="e-mail / telefone / aleatória"
+              />
+            </Field>
+            <Button type="submit" variant="secondary" disabled={request.isPending}>
+              {request.isPending ? '…' : 'Sacar (mín. R$20)'}
+            </Button>
+          </form>
+        )}
       </div>
 
       <div className="two-col">
