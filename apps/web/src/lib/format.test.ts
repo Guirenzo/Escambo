@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BARTER_STATUS_LABEL, brl, dt, hm, STATUS_LABEL } from './format';
+import { BARTER_STATUS_LABEL, brl, displayName, dt, hm, STATUS_LABEL } from './format';
 
 describe('format', () => {
   it('brl formata valores em reais (pt-BR)', () => {
@@ -25,5 +25,14 @@ describe('format', () => {
   it('BARTER_STATUS_LABEL traduz status de troca', () => {
     expect(BARTER_STATUS_LABEL.active).toBe('Em andamento');
     expect(BARTER_STATUS_LABEL.proposed).toBe('Proposta');
+  });
+});
+
+describe('displayName', () => {
+  it('usa o primeiro nome do perfil e cai na parte local do e-mail sem perfil', () => {
+    expect(displayName('Bruno Silva', 'bruno@escambo.demo')).toBe('Bruno');
+    expect(displayName('  Marina ', 'marina@escambo.demo')).toBe('Marina');
+    expect(displayName(null, 'cliente@escambo.demo')).toBe('cliente');
+    expect(displayName(undefined, undefined)).toBe('');
   });
 });

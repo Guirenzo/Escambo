@@ -41,6 +41,7 @@ import {
   useAdminWithdrawals,
   useResolveDispute,
 } from '../../lib/hooks';
+import { usePageTitle } from '../../lib/title';
 import { useToast } from '../../lib/toast';
 
 const RESOLUTIONS: { value: DisputeResolution; label: string; hint: string }[] = [
@@ -326,6 +327,7 @@ function EmailModal({ email, onClose }: { email: AdminEmail; onClose: () => void
 
 /** Painel do administrador: métricas, fila de mediação, fila de saques, pedidos LGPD e e-mails. */
 export function AdminView() {
+  usePageTitle('Administração');
   const metrics = useAdminMetrics();
   const disputes = useAdminDisputes();
   const [scope, setScope] = useState<'open' | 'all'>('open');

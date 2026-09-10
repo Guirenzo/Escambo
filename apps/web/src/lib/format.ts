@@ -3,6 +3,12 @@ export const brl = (v: number): string =>
 
 export const dt = (iso: string): string => new Date(iso).toLocaleDateString('pt-BR');
 
+/** Primeiro nome do perfil ("Bruno" de "Bruno Silva"); sem perfil, a parte local do e-mail. */
+export const displayName = (
+  fullName: string | null | undefined,
+  email: string | undefined,
+): string => fullName?.trim().split(/\s+/)[0] || email?.split('@')[0] || '';
+
 export const dtm = (iso: string): string =>
   new Date(iso).toLocaleString('pt-BR', {
     day: '2-digit',

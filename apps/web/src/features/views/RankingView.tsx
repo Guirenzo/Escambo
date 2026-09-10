@@ -2,6 +2,7 @@ import { Trophy } from 'lucide-react';
 import type { LeaderboardEntry } from '@escambo/types';
 import { Chip, PageHeader, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
+import { usePageTitle } from '../../lib/title';
 import { useGamification, useLeaderboard } from '../../lib/hooks';
 
 const initials = (name: string | null): string =>
@@ -13,6 +14,7 @@ const initials = (name: string | null): string =>
     .join('');
 
 export function RankingView() {
+  usePageTitle('Ranking');
   const { user } = useAuth();
   const board = useLeaderboard();
   const me = useGamification();

@@ -1,13 +1,20 @@
 import { Bell, CheckCheck } from 'lucide-react';
 import { Button, PageHeader, QueryState } from '../../components/ui';
 import { dtm } from '../../lib/format';
-import { useMarkAllNotificationsRead, useMarkNotificationRead, useNotifications } from '../../lib/hooks';
+import {
+  useMarkAllNotificationsRead,
+  useMarkNotificationRead,
+  useNotifications,
+} from '../../lib/hooks';
+import { usePageTitle } from '../../lib/title';
 
 export function NotificacoesView() {
   const notifications = useNotifications();
   const markOne = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
   const unread = notifications.data?.unreadCount ?? 0;
+  // Não lidas na aba do navegador — o mesmo número do badge da navegação.
+  usePageTitle(unread > 0 ? `(${unread}) Notificações` : 'Notificações');
 
   return (
     <div className="page">
@@ -16,7 +23,11 @@ export function NotificacoesView() {
         subtitle={unread > 0 ? `${unread} não lida${unread > 1 ? 's' : ''}` : 'Tudo em dia.'}
         action={
           unread > 0 ? (
-            <Button variant="secondary" disabled={markAll.isPending} onClick={() => markAll.mutate()}>
+            <Button
+              variant="secondary"
+              disabled={markAll.isPending}
+              onClick={() => markAll.mutate()}
+            >
               <CheckCheck size={16} /> Marcar todas como lidas
             </Button>
           ) : undefined
@@ -34,7 +45,11 @@ export function NotificacoesView() {
           {(d) => (
             <ul className="list">
               {d.items.map((n) => (
-                <li key={n.id} className={n.isRead ? '' : 'unread'} onClick={() => !n.isRead && markOne.mutate(n.id)}>
+                <li
+                  key={n.id}
+                  className={n.isRead ? '' : 'unread'}
+                  onClick={() => !n.isRead && markOne.mutate(n.id)}
+                >
                   <div className="rank-left">
                     <span className="kpi-ico">
                       <Bell size={16} />

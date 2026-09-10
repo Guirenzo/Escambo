@@ -15,6 +15,7 @@ import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { displayName } from '../../lib/format';
 import { Avatar } from '../../components/Avatar';
 import { useNotifications, useProfilesMe } from '../../lib/hooks';
 import { useRealtimeNotifications } from '../../lib/realtime';
@@ -68,13 +69,15 @@ const ROLE_LABEL: Record<string, string> = {
 /** App shell: sidebar fixa à esquerda (marca, navegação, usuário) + área de conteúdo que usa a largura da tela. */
 export function Shell() {
   const { user, logout } = useAuth();
-  const handle = user?.email?.split('@')[0] ?? '';
-  const initial = handle[0]?.toUpperCase() ?? '?';
 
   // Badge de não lidas + push em tempo real (socket) para qualquer tela.
   const profiles = useProfilesMe();
   const avatarUrl =
     profiles.data?.freelancer?.avatarUrl ?? profiles.data?.client?.avatarUrl ?? null;
+  const name = displayName(
+    profiles.data?.freelancer?.fullName ?? profiles.data?.client?.fullName,
+    user?.email,
+  );
   const notifications = useNotifications();
   const unread = notifications.data?.unreadCount ?? 0;
   useRealtimeNotifications();
@@ -110,9 +113,9 @@ export function Shell() {
         </nav>
 
         <div className="side-user">
-          <Avatar url={avatarUrl} name={handle || initial} size="sm" />
+          <Avatar url={avatarUrl} name={name} size="sm" />
           <div className="side-user-info">
-            <strong title={user?.email}>{handle}</strong>
+            <strong title={user?.email}>{name}</strong>
             <span className="muted tiny">{ROLE_LABEL[user?.role ?? ''] ?? user?.role}</span>
           </div>
           <button className="icon-btn" onClick={logout} title="Sair" aria-label="Sair">

@@ -1,10 +1,12 @@
 import { ArrowLeftRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { usePageTitle } from '../../lib/title';
 import { LEGAL, LEGAL_UPDATED, LEGAL_VERSION } from './content';
 
 /** Páginas públicas de Termos de Uso e Política de Privacidade (versão gravada no consentimento). */
 export function LegalView({ kind }: { kind: 'termos' | 'privacidade' }) {
   const doc = LEGAL[kind];
+  usePageTitle(doc.title);
   const other = kind === 'termos' ? 'privacidade' : 'termos';
   return (
     <main className="legal">

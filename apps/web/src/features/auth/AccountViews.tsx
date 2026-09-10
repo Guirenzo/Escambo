@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Field, Input } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { usePageTitle } from '../../lib/title';
 
 /** Página pública pequena (fora do app shell) com a marca e um cartão. */
 function PublicCard({ title, children }: { title: string; children: ReactNode }) {
@@ -25,6 +26,7 @@ function PublicCard({ title, children }: { title: string; children: ReactNode })
 
 /** /esqueci-senha — pede o e-mail; a resposta é a mesma exista ou não a conta. */
 export function ForgotPasswordView() {
+  usePageTitle('Esqueci minha senha');
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -87,6 +89,7 @@ export function ForgotPasswordView() {
 
 /** /redefinir-senha?token=… — define a nova senha com o token do e-mail. */
 export function ResetPasswordView() {
+  usePageTitle('Redefinir senha');
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const token = params.get('token') ?? '';
@@ -171,6 +174,7 @@ export function ResetPasswordView() {
 
 /** /verificar-email?token=… — confirma o e-mail assim que abre. */
 export function VerifyEmailView() {
+  usePageTitle('Confirmar e-mail');
   const [params] = useSearchParams();
   const { user, refreshUser } = useAuth();
   const token = params.get('token') ?? '';

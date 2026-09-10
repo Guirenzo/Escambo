@@ -5,13 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0d5c3a" />
     <meta name="description" content="Escambo — o iFood dos serviços: contrate, troque e evolua." />
-    <title>Escambo</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
+    <title>Escambo — o iFood dos serviços</title>
+
+    <!-- Ícones e instalação (PWA básica). As fontes são locais (@fontsource, empacotadas pelo
+         Vite): nenhuma requisição sai para terceiros, e a CSP do nginx pode ser restritiva. -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Prévia ao compartilhar o link (WhatsApp, LinkedIn, Slack…) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Escambo" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:title" content="Escambo — o iFood dos serviços" />
+    <meta
+      property="og:description"
+      content="Contrate com pagamento protegido, troque serviço por serviço e use créditos de tempo."
     />
+    <meta property="og:image" content="/og-cover.png" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="root"></div>

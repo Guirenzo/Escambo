@@ -12,7 +12,8 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
-import { brl } from '../../lib/format';
+import { usePageTitle } from '../../lib/title';
+import { brl, displayName } from '../../lib/format';
 import { useContracts, useGamification, useProfilesMe, useWallet } from '../../lib/hooks';
 import { ContractsCard } from '../dashboard/ContractsCard';
 
@@ -58,6 +59,7 @@ function Kpi({
 }
 
 export function InicioView() {
+  usePageTitle('Início');
   const { user } = useAuth();
   const wallet = useWallet();
   const gam = useGamification();
@@ -65,14 +67,17 @@ export function InicioView() {
   const profiles = useProfilesMe();
   const w = wallet.data;
   const g = gam.data;
-  const handle = user?.email?.split('@')[0] ?? '';
+  const name = displayName(
+    profiles.data?.freelancer?.fullName ?? profiles.data?.client?.fullName,
+    user?.email,
+  );
   // Freelancer sem perfil não tem nome nos cards, nem Score, nem aparece em "Perto de mim".
   const needsProfile =
     user?.role === 'freelancer' && profiles.data != null && !profiles.data.freelancer;
 
   return (
     <div className="page">
-      <PageHeader title={`Olá, ${handle}`} subtitle="Resumo da sua atividade no Escambo." />
+      <PageHeader title={`Olá, ${name}`} subtitle="Resumo da sua atividade no Escambo." />
 
       {needsProfile && (
         <p className="notice" data-testid="onboarding-notice">

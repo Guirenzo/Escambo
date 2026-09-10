@@ -70,6 +70,17 @@ async function main(): Promise<void> {
 
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
+
+  // Falha não tratada deixa o processo em estado desconhecido: registra e encerra drenando as
+  // conexões. Quem reinicia é o orquestrador (restart: unless-stopped no compose).
+  process.on('unhandledRejection', (reason) => {
+    logger.error({ err: reason }, 'Promise rejeitada sem tratamento — encerrando');
+    void shutdown('unhandledRejection');
+  });
+  process.on('uncaughtException', (err) => {
+    logger.fatal({ err }, 'Exceção não capturada — encerrando');
+    void shutdown('uncaughtException');
+  });
 }
 
 main().catch((err) => {

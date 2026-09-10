@@ -11,7 +11,12 @@ const MODE_LABEL: Record<string, string> = {
   barter: 'Troca',
 };
 
-/** Tabela de contratações com ações inline e acesso à sala (timeline + chat). */
+/**
+ * Tabela de contratações com acesso à sala (timeline + chat) e só as ações que avançam o
+ * contrato (aceitar, entregar, aprovar, avaliar). Recusar, cancelar, pedir revisão e abrir
+ * disputa ficam na Sala, onde há linha do tempo, chat e o pedido de justificativa. A modalidade
+ * vai na linha de apoio do título: com quatro colunas a tabela cabe na coluna do Início sem rolar.
+ */
 export function ContractsCard({ contracts }: { contracts: Contract[] }) {
   const navigate = useNavigate();
 
@@ -21,7 +26,6 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
         <thead>
           <tr>
             <th>Contratação</th>
-            <th>Modalidade</th>
             <th className="right">Valor</th>
             <th>Status</th>
             <th className="right">Ações</th>
@@ -32,14 +36,9 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
             <tr key={c.id}>
               <td className="cell-title">
                 <strong>{c.title}</strong>
-                <span className="muted tiny">criada em {dt(c.createdAt)}</span>
-              </td>
-              <td>
-                {c.paymentMode === 'cash' ? (
-                  <span className="muted">{MODE_LABEL.cash}</span>
-                ) : (
-                  <span className="tag">{MODE_LABEL[c.paymentMode] ?? c.paymentMode}</span>
-                )}
+                <span className="muted tiny">
+                  criada em {dt(c.createdAt)} · {MODE_LABEL[c.paymentMode] ?? c.paymentMode}
+                </span>
               </td>
               <td className="num">
                 {c.paymentMode === 'credits' ? `${Math.round(c.price)} cr` : brl(c.price)}
@@ -52,7 +51,11 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
                   <Button variant="mini" onClick={() => navigate(`/contratos/${c.id}`)}>
                     <MessageSquare size={14} /> Sala
                   </Button>
-                  <ContractActions contract={c} size="mini" />
+                  <ContractActions
+                    contract={c}
+                    size="mini"
+                    exclude={['reject', 'cancel', 'revision', 'dispute']}
+                  />
                 </div>
               </td>
             </tr>

@@ -3,8 +3,60 @@ import { createService, createUser, openAs, settled, topUp } from './helpers';
 
 /**
  * Polimento de marketplace: paginação da busca ("Carregar mais"), propor troca direto do card
- * e sair de todos os dispositivos. Rodam em desktop e mobile.
+ * e sair de todos os dispositivos. Mais o acabamento do app: título por tela, página 404 de
+ * verdade e nenhuma requisição para fora. Rodam em desktop e mobile.
  */
+
+test('cada tela tem o próprio título e a navegação é anunciada', async ({ page, request }) => {
+  const user = await createUser(request, 'client');
+  await openAs(page, user, '/');
+  await settled(page);
+  await expect(page).toHaveTitle('Início · Escambo');
+
+  await page.getByRole('link', { name: 'Carteira' }).first().click();
+  await expect(page).toHaveTitle('Carteira · Escambo');
+  // Região viva repete o título para quem usa leitor de tela (o SPA não recarrega).
+  await expect(page.getByTestId('route-announcer')).toHaveText('Carteira · Escambo');
+
+  await page.goto('/servicos');
+  await expect(page).toHaveTitle('Serviços · Escambo');
+});
+
+test('endereço inexistente mostra 404 com saída, em vez de redirecionar em silêncio', async ({
+  page,
+  request,
+}) => {
+  const user = await createUser(request, 'client');
+  await openAs(page, user, '/pagina-que-nao-existe');
+  await expect(page.getByTestId('not-found')).toBeVisible();
+  await expect(page).toHaveTitle('Página não encontrada · Escambo');
+  await page.getByRole('button', { name: 'Ir para o início' }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveTitle('Início · Escambo');
+});
+
+test('o app não carrega código nem fonte de terceiros (tudo empacotado, CSP fechada)', async ({
+  page,
+  request,
+}) => {
+  // Avatares de perfil podem apontar para qualquer host HTTPS (conteúdo do usuário); o que não
+  // pode sair do domínio é código: script, folha de estilo, fonte ou requisição de dados.
+  const DE_TERCEIROS = ['script', 'stylesheet', 'font', 'xhr', 'fetch', 'websocket'];
+  const externas: string[] = [];
+  page.on('request', (r) => {
+    const host = new URL(r.url()).host;
+    const fora = host && !host.startsWith('localhost') && !host.startsWith('127.0.0.1');
+    if (fora && DE_TERCEIROS.includes(r.resourceType())) {
+      externas.push(`${r.resourceType()} ${r.url()}`);
+    }
+  });
+  const user = await createUser(request, 'client');
+  await openAs(page, user, '/');
+  await settled(page);
+  await page.goto('/servicos');
+  await settled(page);
+  expect(externas.join('\n')).toBe('');
+});
 
 test('busca pagina com "Carregar mais"', async ({ page, request }) => {
   const freelancer = await createUser(request, 'freelancer');

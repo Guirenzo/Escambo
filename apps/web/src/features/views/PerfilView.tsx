@@ -5,6 +5,7 @@ import { ScoreBadge } from '../../components/ScoreBadge';
 import { Stars } from '../../components/Stars';
 import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
+import { usePageTitle } from '../../lib/title';
 import { dtm } from '../../lib/format';
 import {
   useFreelancerReviews,
@@ -96,6 +97,7 @@ function AvaliacoesRecebidas({ userId }: { userId: number }) {
 }
 
 export function PerfilView() {
+  usePageTitle('Perfil');
   const { user } = useAuth();
   const profiles = useProfilesMe();
   const putFreelancer = usePutFreelancerProfile();

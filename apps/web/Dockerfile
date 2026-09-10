@@ -15,6 +15,7 @@ ARG GIT_SHA=dev
 LABEL org.opencontainers.image.revision=$GIT_SHA \
       org.opencontainers.image.source=https://github.com/Guirenzo/Escambo
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY apps/web/security-headers.conf /etc/nginx/security-headers.conf
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

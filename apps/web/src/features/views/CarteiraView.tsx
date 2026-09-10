@@ -4,6 +4,7 @@ import type { CreditReason, Deposit, WalletTransaction } from '@escambo/types';
 import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { usePageTitle } from '../../lib/title';
 import {
   brl,
   DEPOSIT_STATUS_LABEL,
@@ -67,6 +68,7 @@ function LedgerRow({ t }: { t: WalletTransaction }) {
 }
 
 export function CarteiraView() {
+  usePageTitle('Carteira');
   const { user } = useAuth();
   const wallet = useWallet();
   const withdrawals = useWithdrawals();
