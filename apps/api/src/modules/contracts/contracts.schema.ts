@@ -1,15 +1,48 @@
 import { z } from 'zod';
 
-export const createContractSchema = z.object({
-  freelancerId: z.number().int().positive(),
-  serviceId: z.number().int().positive().nullable().optional(),
+const milestoneSchema = z.object({
   title: z.string().min(3).max(150),
-  description: z.string().min(10),
-  price: z.number().positive().min(10, 'Contratação mínima é R$ 10,00 (RN-027)'),
-  paymentMode: z.enum(['cash', 'credits']).default('cash'),
-  deadlineAt: z.string().datetime().nullable().optional(),
+  description: z.string().max(1000).nullable().optional(),
+  amount: z.number().positive().multipleOf(0.01),
+  dueAt: z.string().datetime().nullable().optional(),
 });
+
+export const createContractSchema = z
+  .object({
+    freelancerId: z.number().int().positive(),
+    serviceId: z.number().int().positive().nullable().optional(),
+    title: z.string().min(3).max(150),
+    description: z.string().min(10),
+    price: z.number().positive().min(10, 'Contratação mínima é R$ 10,00 (RN-027)'),
+    paymentMode: z.enum(['cash', 'credits']).default('cash'),
+    deadlineAt: z.string().datetime().nullable().optional(),
+    // Escrow por marcos (RN-069): 2 a 10 marcos, só em dinheiro, soma igual ao valor.
+    milestones: z.array(milestoneSchema).min(2).max(10).optional(),
+  })
+  .superRefine((d, ctx) => {
+    if (!d.milestones) return;
+    if (d.paymentMode !== 'cash') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['milestones'],
+        message: 'Marcos só estão disponíveis em contratações em dinheiro',
+      });
+    }
+    const sum = d.milestones.reduce((acc, m) => acc + m.amount, 0);
+    if (Math.abs(sum - d.price) > 0.005) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['milestones'],
+        message: 'A soma dos marcos precisa ser igual ao valor da contratação (RN-069)',
+      });
+    }
+  });
 export type CreateContractInput = z.infer<typeof createContractSchema>;
+
+export const milestoneParamsSchema = z.object({
+  id: z.coerce.number().int().positive(),
+  milestoneId: z.coerce.number().int().positive(),
+});
 
 export const deliverSchema = z.object({
   message: z.string().min(1),

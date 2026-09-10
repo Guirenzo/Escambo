@@ -36,6 +36,15 @@ export const STATUS_LABEL: Record<string, string> = {
   disputed: 'Disputa',
 };
 
+export const MILESTONE_STATUS_LABEL: Record<string, string> = {
+  pending: 'Aguardando aceite',
+  funded: 'Em escrow',
+  delivered: 'Entregue',
+  approved: 'Aprovado',
+  released: 'Liberado',
+  cancelled: 'Cancelado',
+};
+
 export const DISPUTE_REASON_LABEL: Record<string, string> = {
   not_delivered: 'Não foi entregue',
   quality: 'Qualidade abaixo do combinado',

@@ -8,7 +8,8 @@ import type { CreateBarterInput, ListBartersInput } from './barter.schema';
 
 /** Taxa da plataforma sobre a torna (RN-066): troca equilibrada não tem taxa. */
 export const BARTER_FEE_RATE = 0.15;
-const money = (v: number): number => Math.round(v * 100) / 100;
+/** Arredonda em centavos, meio centavo para cima, sem cair no 28333.4999… do ponto flutuante. */
+const money = (v: number): number => Math.sign(v) * (Math.round(Math.abs(v) * 100 + 1e-6) / 100);
 const brl = (v: number): string =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 

@@ -5,6 +5,8 @@ import type {
   ContractStatus,
   ContractStatusHistoryEntry,
   ContractWithHistory,
+  Milestone,
+  MilestoneStatus,
   Paginated,
   PaymentMode,
 } from '@escambo/types';
@@ -15,13 +17,15 @@ import { gamificationService } from '../gamification/gamification.service';
 import type { WalletEffect } from '../wallet/wallet.ledger';
 import { walletService } from '../wallet/wallet.service';
 import { contractsRepository, type ContractRow } from './contracts.repository';
+import { milestonesRepository, type MilestoneRow } from './milestones.repository';
 import { reviewsRepository } from '../reviews/reviews.repository';
 import { toReview } from '../reviews/reviews.service';
 import type { CreateContractInput, DeliverInput, ListContractsInput } from './contracts.schema';
 
 const PLATFORM_FEE_RATE = 0.15; // RN-031
 
-const money = (v: number): number => Math.round(v * 100) / 100;
+/** Arredonda em centavos, meio centavo para cima, sem cair no 28333.4999… do ponto flutuante. */
+const money = (v: number): number => Math.sign(v) * (Math.round(Math.abs(v) * 100 + 1e-6) / 100);
 
 function toContract(row: ContractRow): Contract {
   return {
@@ -40,8 +44,42 @@ function toContract(row: ContractRow): Contract {
     deadlineAt: row.deadline_at ? new Date(row.deadline_at).toISOString() : null,
     createdAt: new Date(row.created_at).toISOString(),
     hasReview: Boolean(Number(row.has_review ?? 0)),
+    hasMilestones: Boolean(Number(row.has_milestones ?? 0)),
   };
 }
+
+function toMilestone(m: MilestoneRow): Milestone {
+  return {
+    id: m.id,
+    title: m.title,
+    description: m.description,
+    amount: Number(m.amount),
+    freelancerNet: Number(m.freelancer_net),
+    sortOrder: m.sort_order,
+    status: m.status as MilestoneStatus,
+    dueAt: m.due_at ? new Date(m.due_at).toISOString() : null,
+    deliveredAt: m.delivered_at ? new Date(m.delivered_at).toISOString() : null,
+    deliveryNote: m.delivery_note,
+    revisionNote: m.revision_note,
+    releasedAt: m.released_at ? new Date(m.released_at).toISOString() : null,
+  };
+}
+
+const hasMilestones = (row: ContractRow): boolean => Boolean(Number(row.has_milestones ?? 0));
+
+/** Contrato por marcos não usa entrega/aprovação únicas: cada marco tem as suas. */
+function assertSingleDelivery(row: ContractRow): void {
+  if (hasMilestones(row)) {
+    throw new HttpError(
+      409,
+      'Esta contratação é por marcos: entregue e aprove marco a marco',
+      'use_milestones',
+    );
+  }
+}
+
+/** Marcos cancelados quando o contrato encerra sem concluir. */
+const MILESTONES_CANCEL = { from: ['pending', 'funded', 'delivered'], to: 'cancelled' };
 
 /** Créditos (inteiros) em jogo num contrato time-bank. */
 const creditsOf = (row: ContractRow): number => Math.round(Number(row.freelancer_net));
@@ -114,6 +152,7 @@ async function applyTransition(params: {
   note: string | null;
   timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at';
   walletEffects?: WalletEffect[];
+  milestonesTo?: { from: string[]; to: string };
   creditsEffects?: {
     userId: number;
     pendingDelta: number;
@@ -167,7 +206,11 @@ async function completeDelivered(
     timestampColumn: 'completed_at',
     ...releaseEffect,
   });
-  // Efeitos secundários: nunca derrubam a aprovação/liberação do dinheiro.
+  await afterCompleted(row);
+}
+
+/** Efeitos secundários da conclusão (XP, troca): nunca derrubam a liberação do dinheiro. */
+async function afterCompleted(row: ContractRow): Promise<void> {
   try {
     await gamificationService.onContractCompleted(row.freelancer_id, row.id);
   } catch (err) {
@@ -195,6 +238,23 @@ export const contractsService = {
     // Cash (carteira pré-paga, como no iFood): o valor sai do saldo do cliente e fica reservado
     // já na proposta; volta integralmente se o freelancer recusar ou o cliente cancelar antes do
     // aceite. Créditos são retidos só no aceite (o cliente já os tem na carteira).
+    // Marcos (RN-069): líquido de cada um com a mesma taxa; o último absorve o arredondamento
+    // para a soma dos líquidos bater exatamente com o líquido do contrato.
+    let milestones = null;
+    if (input.milestones && input.milestones.length > 0) {
+      const specs = input.milestones.map((m, i) => ({
+        title: m.title,
+        description: m.description ?? null,
+        amount: money(m.amount),
+        freelancerNet: money(m.amount * (1 - PLATFORM_FEE_RATE)),
+        sortOrder: i,
+        dueAt: m.dueAt ?? null,
+      }));
+      const partial = specs.slice(0, -1).reduce((acc, m) => acc + m.freelancerNet, 0);
+      specs[specs.length - 1]!.freelancerNet = money(freelancerNet - partial);
+      milestones = specs;
+    }
+
     if (!isCredits) await walletService.ensure(clientId);
     const id = await contractsRepository.create({
       ulid: ulid(),
@@ -209,6 +269,7 @@ export const contractsService = {
       paymentMode: isCredits ? 'credits' : 'cash',
       deadlineAt: input.deadlineAt ?? null,
       hold: isCredits ? null : { userId: clientId, amount: input.price },
+      milestones,
     });
     if (id === null) {
       throw new HttpError(
@@ -242,7 +303,10 @@ export const contractsService = {
     }));
     const reviewRow = await reviewsRepository.findByContractIdWithResponse(id);
     const review = reviewRow ? toReview(reviewRow, reviewRow.response) : null;
-    return { ...toContract(row), history: entries, review };
+    const milestones = hasMilestones(row)
+      ? (await milestonesRepository.listForContract(id)).map(toMilestone)
+      : [];
+    return { ...toContract(row), history: entries, review, milestones };
   },
 
   async accept(id: number, uid: number): Promise<Contract> {
@@ -292,6 +356,7 @@ export const contractsService = {
       to: 'accepted',
       note: null,
       timestampColumn: 'accepted_at',
+      milestonesTo: { from: ['pending'], to: 'funded' }, // marcos financiados no aceite
       walletEffects: [
         {
           userId: row.client_id,
@@ -321,6 +386,7 @@ export const contractsService = {
       to: 'rejected',
       note: null,
       walletEffects: releaseHoldEffects(row), // o valor reservado volta ao cliente
+      milestonesTo: MILESTONES_CANCEL,
     });
     return toContract(await loadOr404(id));
   },
@@ -328,6 +394,7 @@ export const contractsService = {
   async deliver(id: number, uid: number, input: DeliverInput): Promise<Contract> {
     const row = await loadOr404(id);
     assertFreelancer(row, uid); // RF-035
+    assertSingleDelivery(row);
     assertStatus(row, ['accepted', 'in_progress', 'revision_requested']);
     const ok = await contractsRepository.deliver({
       id,
@@ -343,6 +410,7 @@ export const contractsService = {
   async approve(id: number, uid: number): Promise<Contract> {
     const row = await loadOr404(id);
     assertClient(row, uid); // RF-036/037: só o cliente aprova
+    assertSingleDelivery(row);
     assertStatus(row, ['delivered']);
     await completeDelivered(row, uid, null);
     return toContract(await loadOr404(id));
@@ -366,6 +434,7 @@ export const contractsService = {
   async requestRevision(id: number, uid: number, note: string | null): Promise<Contract> {
     const row = await loadOr404(id);
     assertClient(row, uid);
+    assertSingleDelivery(row);
     assertStatus(row, ['delivered']);
     await applyTransition({ id, changedBy: uid, from: row.status, to: 'revision_requested', note });
     return toContract(await loadOr404(id));
@@ -380,8 +449,10 @@ export const contractsService = {
     const isBarter = row.payment_mode === 'barter';
     const isCredits = row.payment_mode === 'credits';
     const escrowFunded = !isBarter && (row.status === 'accepted' || row.status === 'in_progress');
-    const price = Number(row.price);
-    const net = Number(row.freelancer_net);
+    // Por marcos, só o que ainda não foi liberado está em jogo.
+    const remaining = hasMilestones(row) ? await milestonesRepository.escrowRemaining(id) : null;
+    const price = remaining ? remaining.price : Number(row.price);
+    const net = remaining ? remaining.net : Number(row.freelancer_net);
     const credits = creditsOf(row);
     let refundEffect = {};
     if (row.status === 'pending') {
@@ -427,6 +498,7 @@ export const contractsService = {
       to: 'cancelled',
       note: `Reembolso: ${refund}%`,
       timestampColumn: 'cancelled_at',
+      milestonesTo: MILESTONES_CANCEL,
       ...refundEffect,
     });
     if (row.barter_agreement_id) {
@@ -437,5 +509,90 @@ export const contractsService = {
       }
     }
     return { status: 'cancelled', refundPercentage: refund };
+  },
+
+  // ---------- Escrow por marcos (RN-069) ----------
+
+  /** Freelancer entrega um marco (contrato aceito/em andamento; marco financiado). */
+  async deliverMilestone(
+    id: number,
+    milestoneId: number,
+    uid: number,
+    message: string,
+  ): Promise<ContractWithHistory> {
+    const row = await loadOr404(id);
+    assertFreelancer(row, uid);
+    assertStatus(row, ['accepted', 'in_progress']);
+    const ok = await milestonesRepository.deliver({
+      contractId: id,
+      milestoneId,
+      changedBy: uid,
+      message,
+    });
+    if (!ok)
+      throw new HttpError(409, 'Este marco não está aguardando entrega', 'invalid_transition');
+    return this.getById(id, uid);
+  },
+
+  /** Cliente aprova um marco entregue: libera só aquele líquido; o último conclui o contrato. */
+  async approveMilestone(
+    id: number,
+    milestoneId: number,
+    uid: number,
+  ): Promise<{ contract: ContractWithHistory; completed: boolean; net: number; title: string }> {
+    const row = await loadOr404(id);
+    assertClient(row, uid);
+    assertStatus(row, ['accepted', 'in_progress']);
+    const r = await milestonesRepository.approve({
+      contractId: id,
+      milestoneId,
+      changedBy: uid,
+      freelancerId: row.freelancer_id,
+      note: null,
+    });
+    if (!r.ok)
+      throw new HttpError(409, 'Este marco não está aguardando aprovação', 'invalid_transition');
+    if (r.completed) await afterCompleted(row);
+    return {
+      contract: await this.getById(id, uid),
+      completed: r.completed,
+      net: r.net,
+      title: r.title,
+    };
+  },
+
+  /** Aprovação tácita de um marco entregue sem resposta (job). */
+  async approveMilestoneTacitly(id: number, milestoneId: number, days: number): Promise<boolean> {
+    const row = await loadOr404(id);
+    if (row.status !== 'accepted' && row.status !== 'in_progress') return false;
+    const r = await milestonesRepository.approve({
+      contractId: id,
+      milestoneId,
+      changedBy: row.client_id,
+      freelancerId: row.freelancer_id,
+      note: `Aprovação tácita: sem resposta do cliente em ${days} dias`,
+    });
+    if (r.ok && r.completed) await afterCompleted(row);
+    return r.ok;
+  },
+
+  async requestMilestoneRevision(
+    id: number,
+    milestoneId: number,
+    uid: number,
+    note: string | null,
+  ): Promise<ContractWithHistory> {
+    const row = await loadOr404(id);
+    assertClient(row, uid);
+    assertStatus(row, ['accepted', 'in_progress']);
+    const ok = await milestonesRepository.requestRevision({
+      contractId: id,
+      milestoneId,
+      changedBy: uid,
+      note,
+    });
+    if (!ok)
+      throw new HttpError(409, 'Este marco não está aguardando aprovação', 'invalid_transition');
+    return this.getById(id, uid);
   },
 };

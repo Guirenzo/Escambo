@@ -143,6 +143,29 @@ export function useDeliverContract() {
   });
 }
 
+/** Ação num marco (RN-069): atualiza a sala, a lista e a carteira (liberação parcial). */
+export function useMilestoneAction(contractId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      milestoneId,
+      action,
+      text,
+    }: {
+      milestoneId: number;
+      action: 'deliver' | 'approve' | 'request-revision';
+      text?: string;
+    }) => api.milestoneAction(contractId, milestoneId, action, text),
+    onSuccess: (contract) => {
+      qc.setQueryData(qk.contract(contractId), contract);
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: qk.wallet });
+      void qc.invalidateQueries({ queryKey: qk.walletTransactions });
+      void qc.invalidateQueries({ queryKey: qk.gamification });
+    },
+  });
+}
+
 export function useCreateService() {
   const qc = useQueryClient();
   return useMutation({

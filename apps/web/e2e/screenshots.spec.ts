@@ -77,6 +77,34 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     await page.screenshot(shot(name));
   }
 
+  // 15. Sala de uma contratação por marcos (1 liberado, 1 entregue), vista pela cliente
+  {
+    const anaLogin = await request.post('/api/auth/login', {
+      data: { email: 'cliente@escambo.demo', password: PASSWORD },
+    });
+    const anaToken = ((await anaLogin.json()) as { accessToken: string }).accessToken;
+    const list = await request.get('/api/contracts', {
+      headers: { Authorization: `Bearer ${anaToken}` },
+    });
+    const withMs = (
+      (await list.json()) as { items: { id: number; hasMilestones: boolean }[] }
+    ).items.find((c) => c.hasMilestones);
+    if (withMs) {
+      const ctx = await browser.newContext({
+        viewport: { width: 1440, height: 900 },
+        deviceScaleFactor: 2,
+      });
+      const p = await ctx.newPage();
+      await p.addInitScript((t) => window.localStorage.setItem('escambo_token', t), anaToken);
+      await p.goto(`/contratos/${withMs.id}`);
+      await settled(p);
+      await expect(p.getByTestId('milestones')).toBeVisible();
+      await p.waitForTimeout(400);
+      await snap(p, '15-marcos');
+      await ctx.close();
+    }
+  }
+
   // 13. Depósito PIX (modal): valor → cobrança com QR e copia e cola (gateway simulado)
   await page.goto('/carteira');
   await settled(page);
@@ -129,6 +157,28 @@ test('gera os prints do README', async ({ page, request, browser }) => {
   };
   const adminTok = await login('admin@escambo.demo');
   await shotAs(adminTok, '/admin', '11-admin');
+
+  // 16. Caixa de saída de e-mails do admin (provedor simulado): um e-mail aberto
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      deviceScaleFactor: 2,
+    });
+    const p = await ctx.newPage();
+    await p.addInitScript((t) => window.localStorage.setItem('escambo_token', t), adminTok);
+    await p.goto('/admin');
+    await settled(p);
+    const outbox = p.locator('section', { hasText: 'Caixa de saída de e-mails' });
+    await outbox.scrollIntoViewIfNeeded();
+    const first = outbox.getByRole('button', { name: 'Ver' }).first();
+    if (await first.isVisible()) {
+      await first.click();
+      await expect(p.getByTestId('email-text')).toBeVisible();
+      await p.waitForTimeout(300);
+      await snap(p, '16-emails');
+    }
+    await ctx.close();
+  }
   const anaTok = await login('cliente@escambo.demo');
 
   // 14. Modal de contratação visto pela cliente: saldo da carteira pré-paga e valor reservado

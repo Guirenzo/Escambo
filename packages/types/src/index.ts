@@ -447,6 +447,39 @@ export interface Contract {
   createdAt: string;
   /** O cliente já avaliou esta contratação (uma avaliação por contrato). */
   hasReview: boolean;
+  /** Escrow por marcos (RN-069): entrega e liberação acontecem marco a marco. */
+  hasMilestones: boolean;
+}
+
+export type MilestoneStatus =
+  | 'pending'
+  | 'funded'
+  | 'delivered'
+  | 'approved'
+  | 'released'
+  | 'cancelled';
+
+export interface Milestone {
+  id: number;
+  title: string;
+  description: string | null;
+  amount: number;
+  /** O que o freelancer recebe ao liberar este marco (valor − taxa). */
+  freelancerNet: number;
+  sortOrder: number;
+  status: MilestoneStatus;
+  dueAt: string | null;
+  deliveredAt: string | null;
+  deliveryNote: string | null;
+  revisionNote: string | null;
+  releasedAt: string | null;
+}
+
+export interface MilestoneInput {
+  title: string;
+  description?: string | null;
+  amount: number;
+  dueAt?: string | null;
 }
 
 export interface ContractStatusHistoryEntry {
@@ -458,6 +491,8 @@ export interface ContractStatusHistoryEntry {
 
 export interface ContractWithHistory extends Contract {
   history: ContractStatusHistoryEntry[];
+  /** Marcos (vazio quando o contrato é de entrega única). */
+  milestones: Milestone[];
   /** Avaliação do cliente (com a resposta do freelancer, se houver). */
   review: Review | null;
 }
@@ -471,6 +506,8 @@ export interface CreateContractRequest {
   deadlineAt?: string | null;
   /** 'cash' (padrão) ou 'credits' (paga com créditos Escambo). */
   paymentMode?: 'cash' | 'credits';
+  /** Escrow por marcos (só em dinheiro): 2 a 10 marcos cuja soma é o valor da contratação. */
+  milestones?: MilestoneInput[];
 }
 
 export interface CancelResult {

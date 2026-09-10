@@ -252,6 +252,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ message }),
     }),
+  /** Escrow por marcos: entregar, aprovar (libera só aquele valor) ou pedir revisão de um marco. */
+  milestoneAction: (
+    contractId: number,
+    milestoneId: number,
+    action: 'deliver' | 'approve' | 'request-revision',
+    text?: string,
+  ) =>
+    request<ContractWithHistory>(`/contracts/${contractId}/milestones/${milestoneId}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify(
+        action === 'deliver' ? { message: text } : action === 'request-revision' ? { note: text } : {},
+      ),
+    }),
 
   // chat do contrato
   chatHistory: (contractId: number) => request<ChatHistory>(`/messaging/contracts/${contractId}`),

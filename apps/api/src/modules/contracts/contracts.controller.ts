@@ -6,6 +6,7 @@ import {
   createContractSchema,
   deliverSchema,
   listContractsSchema,
+  milestoneParamsSchema,
   noteSchema,
 } from './contracts.schema';
 import { contractsService } from './contracts.service';
@@ -99,6 +100,67 @@ export async function requestRevisionContract(req: Request, res: Response): Prom
     type: 'contract_revision',
     title: 'Revisão solicitada',
     data: { contractId: contract.id },
+  });
+  res.json(contract);
+}
+
+// ---------- Escrow por marcos (RN-069) ----------
+
+export async function deliverMilestone(req: Request, res: Response): Promise<void> {
+  const { id, milestoneId } = milestoneParamsSchema.parse(req.params);
+  const input = deliverSchema.parse(req.body);
+  const contract = await contractsService.deliverMilestone(
+    id,
+    milestoneId,
+    uid(req),
+    input.message,
+  );
+  const m = contract.milestones.find((x) => x.id === milestoneId);
+  void notificationsService.notify(contract.clientId, {
+    type: 'milestone_delivered',
+    title: `Marco entregue: ${m?.title ?? 'marco'}`,
+    body: input.message,
+    data: { contractId: contract.id, milestoneId },
+  });
+  res.json(contract);
+}
+
+export async function approveMilestone(req: Request, res: Response): Promise<void> {
+  const { id, milestoneId } = milestoneParamsSchema.parse(req.params);
+  const r = await contractsService.approveMilestone(id, milestoneId, uid(req));
+  void notificationsService.notify(r.contract.freelancerId, {
+    type: r.completed ? 'contract_completed' : 'milestone_approved',
+    title: r.completed
+      ? 'Contratação concluída — último marco liberado'
+      : `Marco aprovado: ${r.title}`,
+    body: `${r.net.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} liberados na sua carteira.`,
+    data: { contractId: r.contract.id, milestoneId },
+  });
+  void auditService.log({
+    userId: uid(req),
+    action: r.completed ? 'contract_completed' : 'milestone_approved',
+    entityType: 'contract',
+    entityId: r.contract.id,
+    newValue: { milestoneId, net: r.net },
+    ...audit(req),
+  });
+  res.json(r.contract);
+}
+
+export async function requestMilestoneRevision(req: Request, res: Response): Promise<void> {
+  const { id, milestoneId } = milestoneParamsSchema.parse(req.params);
+  const { note } = noteSchema.parse(req.body);
+  const contract = await contractsService.requestMilestoneRevision(
+    id,
+    milestoneId,
+    uid(req),
+    note ?? null,
+  );
+  void notificationsService.notify(contract.freelancerId, {
+    type: 'milestone_revision',
+    title: 'Revisão solicitada em um marco',
+    body: note ?? null,
+    data: { contractId: contract.id, milestoneId },
   });
   res.json(contract);
 }

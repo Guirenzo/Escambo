@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { contractActions, partyOf } from './actions';
 
-const base = { clientId: 1, freelancerId: 2, hasReview: false } as const;
+const base = { clientId: 1, freelancerId: 2, hasReview: false, hasMilestones: false } as const;
 const keys = (status: string, userId: number, hasReview = false) =>
   contractActions({ ...base, status: status as never, hasReview }, userId).map((a) => a.key);
 
