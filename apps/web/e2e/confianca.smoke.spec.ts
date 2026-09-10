@@ -63,19 +63,47 @@ test('quem não é admin não entra no painel', async ({ page, request }) => {
   await expect(page.getByRole('link', { name: 'Admin' })).toHaveCount(0);
 });
 
-test('privacidade (LGPD): solicitar exportação e exclusão dos dados', async ({ page, request }) => {
+test('privacidade (LGPD): cópia dos dados baixável na hora; exclusão concluída pelo admin encerra o acesso', async ({
+  page,
+  request,
+}) => {
   const user = await createUser(request, 'client');
   await openAs(page, user, '/perfil');
   await settled(page);
 
+  // Portabilidade: a cópia fica pronta na hora e o download é um JSON com os dados do titular.
   await page.getByRole('button', { name: 'Solicitar exportação dos meus dados' }).click();
-  await expect(page.locator('.toast', { hasText: 'Exportação solicitada' })).toBeVisible();
-  await expect(page.getByLabel('Exportações solicitadas').locator('li')).toHaveCount(1);
+  await expect(page.locator('.toast', { hasText: 'pronta para download' })).toBeVisible();
+  const row = page.getByLabel('Exportações solicitadas').locator('li').first();
+  await expect(row).toContainText('pronta');
+  const download = page.waitForEvent('download');
+  await row.getByRole('button', { name: 'Baixar' }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^escambo-dados-\d{4}-\d{2}-\d{2}\.json$/);
+  await expect(row).toContainText('baixada');
 
+  // Direito ao esquecimento: pedido registrado…
   page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'Solicitar exclusão da conta' }).click();
   await expect(page.locator('.toast', { hasText: 'Exclusão solicitada' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Exclusão em análise' })).toBeDisabled();
+
+  // …e concluído pelo admin: a conta é anonimizada e o titular perde o acesso na hora.
+  const admin = await createAdmin(request);
+  await openAs(page, admin, '/admin');
+  await settled(page);
+  const pending = page.getByRole('row', { name: new RegExp(user.email) });
+  await expect(pending).toContainText('em análise');
+  await pending.getByRole('button', { name: 'Concluir exclusão' }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Anonimizar e encerrar a conta' })
+    .click();
+  await expect(page.locator('.toast', { hasText: 'Conta anonimizada' })).toBeVisible();
+  await expect(pending).toHaveCount(0);
+
+  await openAs(page, user, '/');
+  await expect(page).toHaveURL(/\/login/);
 });
 
 test('denúncia pelo perfil público; admin vê a moderação', async ({ page, request }) => {

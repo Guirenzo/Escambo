@@ -69,71 +69,73 @@ src/
 
 ## Endpoints atuais
 
-| Método              | Rota                                                     | Descrição                                                                                                     |
-| ------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| GET                 | `/api/health` · `/api/health/live`                       | Readiness (com banco) · Liveness (sem banco)                                                                  |
-| GET                 | `/api/docs` · `/api/openapi.json`                        | **Swagger UI** + spec OpenAPI (RNF-010)                                                                       |
-| POST                | `/api/auth/register`                                     | Cria usuário (`email`, `password`, `role`)                                                                    |
-| POST                | `/api/auth/login`                                        | Autentica → `accessToken` (1h) + `refreshToken` (7d) + sessão                                                 |
-| POST                | `/api/auth/refresh`                                      | Rotaciona o refresh token → novo par de tokens                                                                |
-| POST                | `/api/auth/logout`                                       | Revoga a sessão do `refreshToken` enviado                                                                     |
-| POST                | `/api/auth/logout-all`                                   | **(protegida)** encerra todas as sessões (RN-008)                                                             |
-| GET                 | `/api/auth/me`                                           | **(protegida)** dados do usuário do token — exige `Authorization: Bearer <jwt>`                               |
-| GET                 | `/api/categories`                                        | árvore de categorias (pública)                                                                                |
-| GET                 | `/api/profiles/freelancer/:ulid`                         | perfil público do freelancer (nota + nível + **Escambo Score**)                                               |
-| GET                 | `/api/profiles/me`                                       | **(auth)** meus perfis (freelancer/cliente)                                                                   |
-| PUT                 | `/api/profiles/freelancer` · `/client`                   | **(auth)** cria/edita meu perfil                                                                              |
-| GET                 | `/api/services`                                          | Lista/busca serviços (`categoryId`, `q`, `isRemote`, `page`, `limit`)                                         |
-| GET                 | `/api/services/:id`                                      | Detalhe de um serviço                                                                                         |
-| POST                | `/api/services`                                          | **(protegida)** cria serviço (dono = token)                                                                   |
-| PATCH               | `/api/services/:id`                                      | **(protegida, dono)** atualiza                                                                                |
-| DELETE              | `/api/services/:id`                                      | **(protegida, dono)** soft delete                                                                             |
-| POST                | `/api/contracts`                                         | **(auth)** cliente cria proposta (taxa 15%; em dinheiro reserva o valor — 402 sem saldo)                      |
-| GET                 | `/api/contracts`                                         | **(auth)** minhas contratações                                                                                |
-| GET                 | `/api/contracts/:id`                                     | **(auth, parte)** detalhe + histórico de status                                                               |
-| POST                | `/api/contracts/:id/accept` · `/reject`                  | **(freelancer)** aceita / recusa                                                                              |
-| POST                | `/api/contracts/:id/deliver`                             | **(freelancer)** registra entrega                                                                             |
-| POST                | `/api/contracts/:id/approve`                             | **(cliente)** aprova → concluído                                                                              |
-| POST                | `/api/contracts/:id/request-revision`                    | **(cliente)** solicita revisão                                                                                |
-| POST                | `/api/contracts/:id/cancel`                              | **(parte)** cancela — reembolso RN-025                                                                        |
-| GET                 | `/api/wallet`                                            | **(auth)** saldo R$ + **créditos Escambo** (disponível e em escrow)                                           |
-| GET                 | `/api/wallet/transactions`                               | **(auth)** extrato de R$ (depósitos, reservas, escrow, reembolsos, saques)                                    |
-| POST · GET          | `/api/wallet/deposits`                                   | **(auth)** gera cobrança PIX de depósito (gateway) / meus depósitos                                           |
-| GET · POST          | `/api/wallet/deposits/:id` · `/simulate`                 | **(auth)** situação da cobrança / demo: confirma sem gateway (`PAYMENTS_SIMULATE`)                            |
-| POST                | `/api/payments/webhook`                                  | gateway → API: cobrança paga/falhou (`x-webhook-secret`), idempotente                                         |
-| GET                 | `/api/credits/transactions`                              | **(auth)** extrato de créditos Escambo (time-bank)                                                            |
-| GET · POST          | `/api/boosts/plans` · `/api/boosts`                      | **(auth)** planos e compra de impulsionamento (paga em créditos)                                              |
-| POST                | `/api/reviews`                                           | **(auth, cliente)** avalia contratação concluída (1–5)                                                        |
-| GET                 | `/api/reviews?freelancerId=`                             | avaliações de um freelancer (pública)                                                                         |
-| POST                | `/api/reviews/:id/response`                              | **(auth, avaliado)** responde uma avaliação                                                                   |
-| GET                 | `/api/gamification/me`                                   | **(auth)** XP, nível, progresso, streak, ranking, badges                                                      |
-| GET                 | `/api/gamification/me/history`                           | **(auth)** feed dos ganhos de XP                                                                              |
-| GET                 | `/api/gamification/leaderboard`                          | **(auth)** ranking por XP                                                                                     |
-| POST                | `/api/barters`                                           | **(auth)** propõe troca (torna + taxa de 15% sobre ela; reserva a torna se o proponente paga — 402 sem saldo) |
-| GET                 | `/api/barters`                                           | **(auth)** minhas trocas                                                                                      |
-| GET                 | `/api/barters/:id`                                       | **(auth, parte)** detalhe da troca                                                                            |
-| POST                | `/api/barters/:id/accept`                                | **(receptor)** aceita → gera 2 contratos; reserva a torna se o receptor paga (402 sem saldo)                  |
-| POST                | `/api/barters/:id/reject` · `/cancel`                    | **(receptor/parte)** recusa / cancela                                                                         |
-| POST                | `/api/withdrawals`                                       | **(auth)** solicita saque (débito atômico, mín. R$20)                                                         |
-| GET                 | `/api/withdrawals`                                       | **(auth)** meus saques                                                                                        |
-| POST                | `/api/withdrawals/:id/cancel`                            | **(auth, titular)** cancela saque ainda não processado (valor volta)                                          |
-| GET                 | `/api/notifications`                                     | **(auth)** minhas notificações + total não lidas                                                              |
-| POST                | `/api/notifications/:id/read` · `/read-all`              | **(auth)** marca como lida(s)                                                                                 |
-| GET · POST          | `/api/messaging/contracts/:id`                           | **(auth, parte)** histórico e envio de mensagens do contrato                                                  |
-| WS                  | `/socket.io`                                             | **(auth)** chat em tempo real: `contract:join`, `message:send` → `message:new`                                |
-| POST · GET          | `/api/lgpd/consents`                                     | **(auth)** registra/lista consentimentos (RN-071)                                                             |
-| POST · GET          | `/api/lgpd/deletion-requests`                            | **(auth)** direito ao esquecimento (RN-072)                                                                   |
-| POST · GET          | `/api/lgpd/export-requests`                              | **(auth)** portabilidade dos dados (Art. 18, V)                                                               |
-| POST · GET · DELETE | `/api/favorites`                                         | **(auth)** favoritar serviços/freelancers                                                                     |
-| POST · GET · DELETE | `/api/saved-searches`                                    | **(auth)** buscas salvas (filtros + alerta)                                                                   |
-| POST · GET          | `/api/reports`                                           | **(auth)** denúncias (trust & safety)                                                                         |
-| POST · GET          | `/api/disputes`                                          | **(auth, parte)** abre/lista disputas de contrato                                                             |
-| GET                 | `/api/disputes/:id`                                      | **(auth, parte)** detalhe da disputa                                                                          |
-| POST                | `/api/admin/disputes/:id/resolve`                        | **(admin)** resolve com decisão de escrow                                                                     |
-| GET                 | `/api/admin/disputes` · `/api/admin/metrics`             | **(admin)** disputas abertas / métricas                                                                       |
-| POST                | `/api/admin/users/:ulid/suspend`·`/ban`·`/reactivate`    | **(admin)** moderação (RN-007)                                                                                |
-| GET                 | `/api/admin/withdrawals?status=open\|all`                | **(admin)** fila de saques com destino completo e titular                                                     |
-| POST                | `/api/admin/withdrawals/:id/process`·`/complete`·`/fail` | **(admin)** assume / marca pago / falha com estorno (titular notificado)                                      |
+| Método              | Rota                                                             | Descrição                                                                                                          |
+| ------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| GET                 | `/api/health` · `/api/health/live`                               | Readiness (com banco) · Liveness (sem banco)                                                                       |
+| GET                 | `/api/docs` · `/api/openapi.json`                                | **Swagger UI** + spec OpenAPI (RNF-010)                                                                            |
+| POST                | `/api/auth/register`                                             | Cria usuário (`email`, `password`, `role`)                                                                         |
+| POST                | `/api/auth/login`                                                | Autentica → `accessToken` (1h) + `refreshToken` (7d) + sessão                                                      |
+| POST                | `/api/auth/refresh`                                              | Rotaciona o refresh token → novo par de tokens                                                                     |
+| POST                | `/api/auth/logout`                                               | Revoga a sessão do `refreshToken` enviado                                                                          |
+| POST                | `/api/auth/logout-all`                                           | **(protegida)** encerra todas as sessões (RN-008)                                                                  |
+| GET                 | `/api/auth/me`                                                   | **(protegida)** dados do usuário do token — exige `Authorization: Bearer <jwt>`                                    |
+| GET                 | `/api/categories`                                                | árvore de categorias (pública)                                                                                     |
+| GET                 | `/api/profiles/freelancer/:ulid`                                 | perfil público do freelancer (nota + nível + **Escambo Score**)                                                    |
+| GET                 | `/api/profiles/me`                                               | **(auth)** meus perfis (freelancer/cliente)                                                                        |
+| PUT                 | `/api/profiles/freelancer` · `/client`                           | **(auth)** cria/edita meu perfil                                                                                   |
+| GET                 | `/api/services`                                                  | Lista/busca serviços (`categoryId`, `q`, `isRemote`, `page`, `limit`)                                              |
+| GET                 | `/api/services/:id`                                              | Detalhe de um serviço                                                                                              |
+| POST                | `/api/services`                                                  | **(protegida)** cria serviço (dono = token)                                                                        |
+| PATCH               | `/api/services/:id`                                              | **(protegida, dono)** atualiza                                                                                     |
+| DELETE              | `/api/services/:id`                                              | **(protegida, dono)** soft delete                                                                                  |
+| POST                | `/api/contracts`                                                 | **(auth)** cliente cria proposta (taxa 15%; em dinheiro reserva o valor — 402 sem saldo)                           |
+| GET                 | `/api/contracts`                                                 | **(auth)** minhas contratações                                                                                     |
+| GET                 | `/api/contracts/:id`                                             | **(auth, parte)** detalhe + histórico de status                                                                    |
+| POST                | `/api/contracts/:id/accept` · `/reject`                          | **(freelancer)** aceita / recusa                                                                                   |
+| POST                | `/api/contracts/:id/deliver`                                     | **(freelancer)** registra entrega                                                                                  |
+| POST                | `/api/contracts/:id/approve`                                     | **(cliente)** aprova → concluído                                                                                   |
+| POST                | `/api/contracts/:id/request-revision`                            | **(cliente)** solicita revisão                                                                                     |
+| POST                | `/api/contracts/:id/cancel`                                      | **(parte)** cancela — reembolso RN-025                                                                             |
+| GET                 | `/api/wallet`                                                    | **(auth)** saldo R$ + **créditos Escambo** (disponível e em escrow)                                                |
+| GET                 | `/api/wallet/transactions`                                       | **(auth)** extrato de R$ (depósitos, reservas, escrow, reembolsos, saques)                                         |
+| POST · GET          | `/api/wallet/deposits`                                           | **(auth)** gera cobrança PIX de depósito (gateway) / meus depósitos                                                |
+| GET · POST          | `/api/wallet/deposits/:id` · `/simulate`                         | **(auth)** situação da cobrança / demo: confirma sem gateway (`PAYMENTS_SIMULATE`)                                 |
+| POST                | `/api/payments/webhook`                                          | gateway → API: cobrança paga/falhou (`x-webhook-secret`), idempotente                                              |
+| GET                 | `/api/credits/transactions`                                      | **(auth)** extrato de créditos Escambo (time-bank)                                                                 |
+| GET · POST          | `/api/boosts/plans` · `/api/boosts`                              | **(auth)** planos e compra de impulsionamento (paga em créditos)                                                   |
+| POST                | `/api/reviews`                                                   | **(auth, cliente)** avalia contratação concluída (1–5)                                                             |
+| GET                 | `/api/reviews?freelancerId=`                                     | avaliações de um freelancer (pública)                                                                              |
+| POST                | `/api/reviews/:id/response`                                      | **(auth, avaliado)** responde uma avaliação                                                                        |
+| GET                 | `/api/gamification/me`                                           | **(auth)** XP, nível, progresso, streak, ranking, badges                                                           |
+| GET                 | `/api/gamification/me/history`                                   | **(auth)** feed dos ganhos de XP                                                                                   |
+| GET                 | `/api/gamification/leaderboard`                                  | **(auth)** ranking por XP                                                                                          |
+| POST                | `/api/barters`                                                   | **(auth)** propõe troca (torna + taxa de 15% sobre ela; reserva a torna se o proponente paga — 402 sem saldo)      |
+| GET                 | `/api/barters`                                                   | **(auth)** minhas trocas                                                                                           |
+| GET                 | `/api/barters/:id`                                               | **(auth, parte)** detalhe da troca                                                                                 |
+| POST                | `/api/barters/:id/accept`                                        | **(receptor)** aceita → gera 2 contratos; reserva a torna se o receptor paga (402 sem saldo)                       |
+| POST                | `/api/barters/:id/reject` · `/cancel`                            | **(receptor/parte)** recusa / cancela                                                                              |
+| POST                | `/api/withdrawals`                                               | **(auth)** solicita saque (débito atômico, mín. R$20)                                                              |
+| GET                 | `/api/withdrawals`                                               | **(auth)** meus saques                                                                                             |
+| POST                | `/api/withdrawals/:id/cancel`                                    | **(auth, titular)** cancela saque ainda não processado (valor volta)                                               |
+| GET                 | `/api/notifications`                                             | **(auth)** minhas notificações + total não lidas                                                                   |
+| POST                | `/api/notifications/:id/read` · `/read-all`                      | **(auth)** marca como lida(s)                                                                                      |
+| GET · POST          | `/api/messaging/contracts/:id`                                   | **(auth, parte)** histórico e envio de mensagens do contrato                                                       |
+| WS                  | `/socket.io`                                                     | **(auth)** chat em tempo real: `contract:join`, `message:send` → `message:new`                                     |
+| POST · GET          | `/api/lgpd/consents`                                             | **(auth)** registra/lista consentimentos (RN-071)                                                                  |
+| POST · GET          | `/api/lgpd/deletion-requests`                                    | **(auth)** direito ao esquecimento (RN-072): pedido barrado por contratação aberta ou saldo (409 deletion_blocked) |
+| POST · GET          | `/api/lgpd/export-requests`                                      | **(auth)** portabilidade (Art. 18, V): cópia JSON gerada na hora, válida por `EXPORT_TTL_DAYS`                     |
+| GET                 | `/api/lgpd/export-requests/:id/download`                         | **(auth, titular)** baixa a cópia (410 se expirou)                                                                 |
+| GET · POST          | `/api/admin/deletion-requests` · `/:id/complete` · `/:id/reject` | **(admin)** fila de exclusões; concluir anonimiza e bloqueia; recusar exige justificativa                          |
+| POST · GET · DELETE | `/api/favorites`                                                 | **(auth)** favoritar serviços/freelancers                                                                          |
+| POST · GET · DELETE | `/api/saved-searches`                                            | **(auth)** buscas salvas (filtros + alerta)                                                                        |
+| POST · GET          | `/api/reports`                                                   | **(auth)** denúncias (trust & safety)                                                                              |
+| POST · GET          | `/api/disputes`                                                  | **(auth, parte)** abre/lista disputas de contrato                                                                  |
+| GET                 | `/api/disputes/:id`                                              | **(auth, parte)** detalhe da disputa                                                                               |
+| POST                | `/api/admin/disputes/:id/resolve`                                | **(admin)** resolve com decisão de escrow                                                                          |
+| GET                 | `/api/admin/disputes` · `/api/admin/metrics`                     | **(admin)** disputas abertas / métricas                                                                            |
+| POST                | `/api/admin/users/:ulid/suspend`·`/ban`·`/reactivate`            | **(admin)** moderação (RN-007)                                                                                     |
+| GET                 | `/api/admin/withdrawals?status=open\|all`                        | **(admin)** fila de saques com destino completo e titular                                                          |
+| POST                | `/api/admin/withdrawals/:id/process`·`/complete`·`/fail`         | **(admin)** assume / marca pago / falha com estorno (titular notificado)                                           |
 
 > O módulo `auth` é o **molde**: cada novo módulo (services, contracts, payments…) segue o mesmo
 > formato de pastas e camadas.
@@ -193,6 +195,7 @@ O processo da API agenda jobs (`src/jobs/`) a cada `JOBS_INTERVAL_MS` (padrão 5
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `tacit-approval`  | Entregas sem resposta do cliente há mais de `platform_settings.tacit_approval_days` dias (padrão 5) são aprovadas em nome dele, liberando o escrow na mesma transação da aprovação manual. |
 | `expire-deposits` | Cobranças PIX de depósito vencidas (`DEPOSIT_EXPIRES_MINUTES`, padrão 30) viram `cancelled`; a API já as mostra vencidas antes disso.                                                      |
+| `expire-exports`  | Cópias de dados (LGPD) vencidas (`EXPORT_TTL_DAYS`, padrão 7): arquivo apagado de `DATA_DIR` e pedido marcado como expirado.                                                               |
 
 ## Administradores
 
@@ -216,4 +219,6 @@ gateway real — ou pelo endpoint de simulação, só para demo/dev.
 | ------------------------- | ------ | ------------------------------------------------------------------------------------------------ |
 | `PAYMENTS_SIMULATE`       | `true` | Libera `POST /wallet/deposits/:id/simulate` (o próprio usuário "paga"). **`false` em produção.** |
 | `PAYMENT_WEBHOOK_SECRET`  | vazio  | Segredo do webhook do gateway; vazio = webhook desligado (503).                                  |
+| `DATA_DIR`                | `data` | Pasta dos arquivos gerados (cópias de dados LGPD); volume `api_data` no compose.                 |
+| `EXPORT_TTL_DAYS`         | `7`    | Dias em que a cópia de dados fica disponível para download.                                      |
 | `DEPOSIT_EXPIRES_MINUTES` | `30`   | Validade da cobrança PIX de depósito.                                                            |

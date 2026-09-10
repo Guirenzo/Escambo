@@ -8,13 +8,14 @@ export interface UserRow extends RowDataPacket {
   password_hash: string | null;
   role: string;
   status: string;
+  deleted_at?: Date | null;
 }
 
 /** Camada de acesso a dados da tabela `users`. */
 export const authRepository = {
   async findByEmail(email: string): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status FROM users WHERE email = :email LIMIT 1',
+      'SELECT id, ulid, email, password_hash, role, status, deleted_at FROM users WHERE email = :email LIMIT 1',
       { email },
     );
     return rows[0];
@@ -22,7 +23,7 @@ export const authRepository = {
 
   async findByUlid(ulid: string): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status FROM users WHERE ulid = :ulid LIMIT 1',
+      'SELECT id, ulid, email, password_hash, role, status, deleted_at FROM users WHERE ulid = :ulid LIMIT 1',
       { ulid },
     );
     return rows[0];
@@ -30,7 +31,7 @@ export const authRepository = {
 
   async findById(id: number): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status FROM users WHERE id = :id LIMIT 1',
+      'SELECT id, ulid, email, password_hash, role, status, deleted_at FROM users WHERE id = :id LIMIT 1',
       { id },
     );
     return rows[0];

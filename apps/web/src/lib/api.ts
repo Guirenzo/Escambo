@@ -1,4 +1,5 @@
 import type {
+  AdminDeletionRequest,
   AdminMetrics,
   AdminWithdrawal,
   AuthResponse,
@@ -312,6 +313,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
+  /** Baixa a cópia de dados (JSON) com o token; renova a sessão uma vez num 401. */
+  downloadExport: async (id: number): Promise<{ blob: Blob; fileName: string }> => {
+    const fetchIt = () =>
+      fetch(`${BASE_URL}/lgpd/export-requests/${id}/download`, {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      });
+    let res = await fetchIt();
+    if (res.status === 401 && (await refreshSession())) res = await fetchIt();
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { message?: string };
+      throw new Error(body.message ?? `Erro ${res.status} ao baixar a exportação`);
+    }
+    const disposition = res.headers.get('content-disposition') ?? '';
+    const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `escambo-dados-${id}.json`;
+    return { blob: await res.blob(), fileName };
+  },
 
   // admin (mediação, métricas, moderação)
   adminMetrics: () => request<AdminMetrics>('/admin/metrics'),
@@ -323,6 +340,13 @@ export const api = {
     }),
   adminModerateUser: (ulid: string, action: 'suspend' | 'ban' | 'reactivate') =>
     request<void>(`/admin/users/${encodeURIComponent(ulid)}/${action}`, { method: 'POST' }),
+  adminDeletionRequests: (status: 'pending' | 'all' = 'pending') =>
+    request<AdminDeletionRequest[]>(`/admin/deletion-requests?status=${status}`),
+  adminDeletionAction: (id: number, action: 'complete' | 'reject', body: { note?: string } = {}) =>
+    request<DataDeletionRequest>(`/admin/deletion-requests/${id}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   adminWithdrawals: (status: 'open' | 'all' = 'open') =>
     request<AdminWithdrawal[]>(`/admin/withdrawals?status=${status}`),
   adminWithdrawalAction: (

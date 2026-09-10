@@ -1,11 +1,15 @@
 import type { Request, Response } from 'express';
 import { auditService } from '../audit/audit.service';
+import { lgpdService } from '../lgpd/lgpd.service';
 import { withdrawalService } from '../withdrawal/withdrawal.service';
 import {
+  adminDeletionsQuerySchema,
   adminWithdrawalsQuerySchema,
   completeWithdrawalSchema,
+  deletionIdParamSchema,
   disputeIdParamSchema,
   failWithdrawalSchema,
+  rejectDeletionSchema,
   resolveDisputeSchema,
   userUlidSchema,
   withdrawalIdParamSchema,
@@ -98,6 +102,41 @@ export async function failWithdrawal(req: Request, res: Response): Promise<void>
     ...audit(req),
   });
   res.json(w);
+}
+
+// ---------- LGPD: pedidos de exclusão de conta ----------
+
+export async function listDeletionRequests(req: Request, res: Response): Promise<void> {
+  const { status } = adminDeletionsQuerySchema.parse(req.query);
+  res.json(await lgpdService.listDeletionRequestsForAdmin(status));
+}
+
+export async function completeDeletionRequest(req: Request, res: Response): Promise<void> {
+  const { id } = deletionIdParamSchema.parse(req.params);
+  const r = await lgpdService.completeDeletion(req.user!.uid, id);
+  void auditService.log({
+    userId: req.user!.uid,
+    action: 'lgpd_deletion_completed',
+    entityType: 'data_deletion_request',
+    entityId: id,
+    ...audit(req),
+  });
+  res.json(r);
+}
+
+export async function rejectDeletionRequest(req: Request, res: Response): Promise<void> {
+  const { id } = deletionIdParamSchema.parse(req.params);
+  const { note } = rejectDeletionSchema.parse(req.body ?? {});
+  const r = await lgpdService.rejectDeletion(req.user!.uid, id, note);
+  void auditService.log({
+    userId: req.user!.uid,
+    action: 'lgpd_deletion_rejected',
+    entityType: 'data_deletion_request',
+    entityId: id,
+    newValue: { note },
+    ...audit(req),
+  });
+  res.json(r);
 }
 
 export const suspendUser = (req: Request, res: Response) => moderate(req, res, 'suspend');

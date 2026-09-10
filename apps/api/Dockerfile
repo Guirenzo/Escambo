@@ -23,6 +23,8 @@ COPY --from=build --chown=node:node /repo/apps/api/package.json ./apps/api/packa
 COPY --from=build --chown=node:node /repo/apps/api/dist ./apps/api/dist
 # db/ (schema + migrations) para rodar `node dist/scripts/migrate.js` no container
 COPY --from=build --chown=node:node /repo/apps/api/db ./apps/api/db
+# Arquivos gerados em runtime (cópias de dados LGPD) — montado como volume no compose.
+RUN mkdir -p /repo/apps/api/data && chown node:node /repo/apps/api/data
 WORKDIR /repo/apps/api
 # Roda como usuário sem privilégios (o node:alpine já traz o usuário `node`).
 USER node

@@ -11,3 +11,5 @@ export const deletionRequestSchema = z.object({
   reason: z.string().max(1000).nullable().optional(),
 });
 export type DeletionRequestInput = z.infer<typeof deletionRequestSchema>;
+
+export const exportIdParamSchema = z.object({ id: z.coerce.number().int().positive() });

@@ -119,7 +119,7 @@ export const profilesRepository = {
          FROM users u
          JOIN profiles_freelancer pf ON pf.user_id = u.id
          LEFT JOIN user_xp ux ON ux.user_id = u.id
-        WHERE u.ulid = :ulid LIMIT 1`,
+        WHERE u.ulid = :ulid AND u.deleted_at IS NULL LIMIT 1`,
       { ulid },
     );
     return rows[0];

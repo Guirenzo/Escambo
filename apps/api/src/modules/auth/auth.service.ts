@@ -53,7 +53,10 @@ export function isAdminEmail(email: string): boolean {
 }
 
 /** Conta suspensa/banida não entra nem renova sessão (RN-007). */
-function assertActive(user: { status: string }): void {
+function assertActive(user: { status: string; deleted_at?: Date | null }): void {
+  if (user.deleted_at) {
+    throw new HttpError(403, 'Esta conta foi excluída a pedido do titular.', 'account_deleted');
+  }
   if (user.status === 'suspended') {
     throw new HttpError(403, 'Conta suspensa. Fale com o suporte.', 'account_suspended');
   }

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../../middlewares/authenticate';
 import { asyncHandler } from '../../utils/async-handler';
 import {
+  downloadExport,
   getConsents,
   getDeletionRequests,
   getExportRequests,
@@ -20,3 +21,4 @@ lgpdRoutes.post('/deletion-requests', asyncHandler(requestDeletion));
 lgpdRoutes.get('/deletion-requests', asyncHandler(getDeletionRequests));
 lgpdRoutes.post('/export-requests', asyncHandler(requestExport));
 lgpdRoutes.get('/export-requests', asyncHandler(getExportRequests));
+lgpdRoutes.get('/export-requests/:id/download', asyncHandler(downloadExport));

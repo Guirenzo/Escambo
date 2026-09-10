@@ -13,6 +13,7 @@ export interface MetricsRow extends RowDataPacket {
   pending_withdrawals_amount: string;
   deposits_total: string;
   users_balance: string;
+  pending_deletions: number;
 }
 
 export const adminRepository = {
@@ -52,7 +53,8 @@ export const adminRepository = {
          (SELECT COUNT(*) FROM withdrawals WHERE status IN ('requested','processing')) AS pending_withdrawals,
          (SELECT COALESCE(SUM(amount), 0) FROM withdrawals WHERE status IN ('requested','processing')) AS pending_withdrawals_amount,
          (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE kind = 'topup' AND status = 'paid') AS deposits_total,
-         (SELECT COALESCE(SUM(balance), 0) FROM wallets) AS users_balance`,
+         (SELECT COALESCE(SUM(balance), 0) FROM wallets) AS users_balance,
+         (SELECT COUNT(*) FROM data_deletion_requests WHERE status IN ('pending','processing')) AS pending_deletions`,
     );
     return rows[0]!;
   },

@@ -7,15 +7,22 @@ import {
   Gavel,
   Lock,
   ShieldAlert,
+  Trash2,
   Users,
   XCircle,
 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import type { AdminWithdrawal, Dispute, DisputeResolution } from '@escambo/types';
+import type {
+  AdminDeletionRequest,
+  AdminWithdrawal,
+  Dispute,
+  DisputeResolution,
+} from '@escambo/types';
 import { Button, Field, Input, Modal, PageHeader, QueryState } from '../../components/ui';
 import {
   brl,
+  DELETION_STATUS_LABEL,
   DISPUTE_REASON_LABEL,
   DISPUTE_STATUS_LABEL,
   dtm,
@@ -23,6 +30,8 @@ import {
   WITHDRAWAL_STATUS_TONE,
 } from '../../lib/format';
 import {
+  useAdminDeletionAction,
+  useAdminDeletionRequests,
   useAdminDisputes,
   useAdminMetrics,
   useAdminWithdrawalAction,
@@ -200,7 +209,87 @@ function WithdrawalModal({
   );
 }
 
-/** Painel do administrador: métricas da plataforma, fila de mediação e fila de saques. */
+/** Exclusão de conta (LGPD): concluir anonimiza e bloqueia; recusar exige justificativa. */
+function DeletionModal({
+  request: r,
+  action,
+  onClose,
+}: {
+  request: AdminDeletionRequest;
+  action: 'complete' | 'reject';
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const act = useAdminDeletionAction();
+  const [note, setNote] = useState('');
+  const completing = action === 'complete';
+  const blocked = r.activeContracts > 0 || r.balance > 0 || r.balancePending > 0;
+
+  async function submit(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    try {
+      await act.mutateAsync({ id: r.id, action, note: completing ? undefined : note.trim() });
+      toast.success(
+        completing
+          ? 'Conta anonimizada e acesso encerrado.'
+          : 'Pedido recusado; o titular foi avisado com a justificativa.',
+      );
+      onClose();
+    } catch (er) {
+      toast.error(er instanceof Error ? er.message : 'Erro ao processar');
+    }
+  }
+
+  return (
+    <Modal
+      title={`${completing ? 'Concluir exclusão' : 'Recusar exclusão'} · ${r.userName ?? r.userEmail}`}
+      onClose={onClose}
+    >
+      <form onSubmit={submit} className="stack">
+        <div className="review">
+          <strong>{r.userEmail}</strong>
+          <p className="dispute-desc">{r.reason ?? 'Sem motivo informado.'}</p>
+          <span className="muted tiny">
+            pedido em {dtm(r.createdAt)} · {r.activeContracts} contratação(ões) aberta(s) ·{' '}
+            {brl(r.balance + r.balancePending)} na carteira
+          </span>
+        </div>
+        {completing ? (
+          <p className={blocked ? 'notice' : 'muted tiny'}>
+            {blocked
+              ? 'O titular ainda tem contratações abertas ou saldo: a exclusão não pode ser concluída. Recuse com justificativa ou aguarde.'
+              : 'A conta será anonimizada (e-mail, telefone, senha, perfil, serviços, favoritos e notificações) e o acesso encerrado na hora. Contratações, mensagens, avaliações e extratos ficam sem identificação. Não dá para desfazer.'}
+          </p>
+        ) : (
+          <Field label="Justificativa (o titular recebe)">
+            <Input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Ex.: há uma disputa aberta em nome desta conta"
+              minLength={3}
+              maxLength={500}
+              required
+            />
+          </Field>
+        )}
+        <Button
+          type="submit"
+          variant={completing ? 'danger' : 'primary'}
+          disabled={act.isPending || (completing && blocked)}
+        >
+          {completing ? <Trash2 size={16} /> : <XCircle size={16} />}{' '}
+          {act.isPending
+            ? 'Processando…'
+            : completing
+              ? 'Anonimizar e encerrar a conta'
+              : 'Recusar com justificativa'}
+        </Button>
+      </form>
+    </Modal>
+  );
+}
+
+/** Painel do administrador: métricas, fila de mediação, fila de saques e pedidos LGPD. */
 export function AdminView() {
   const metrics = useAdminMetrics();
   const disputes = useAdminDisputes();
@@ -212,6 +301,12 @@ export function AdminView() {
   const [processing, setProcessing] = useState<{
     withdrawal: AdminWithdrawal;
     action: 'complete' | 'fail';
+  } | null>(null);
+  const [deletionScope, setDeletionScope] = useState<'pending' | 'all'>('pending');
+  const deletions = useAdminDeletionRequests(deletionScope);
+  const [deleting, setDeleting] = useState<{
+    request: AdminDeletionRequest;
+    action: 'complete' | 'reject';
   } | null>(null);
   const m = metrics.data;
 
@@ -494,6 +589,125 @@ export function AdminView() {
         </QueryState>
       </section>
 
+      <section className="card">
+        <div className="card-head">
+          <h3>
+            <Trash2 size={16} /> Exclusões de conta (LGPD)
+            {m && m.pendingDeletions > 0 && (
+              <span className="chip level tiny">{m.pendingDeletions} pendente(s)</span>
+            )}
+          </h3>
+          <div className="tabs tabs-mini" role="tablist" aria-label="Filtro de exclusões">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={deletionScope === 'pending'}
+              className={deletionScope === 'pending' ? 'active' : ''}
+              onClick={() => setDeletionScope('pending')}
+            >
+              Pendentes
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={deletionScope === 'all'}
+              className={deletionScope === 'all' ? 'active' : ''}
+              onClick={() => setDeletionScope('all')}
+            >
+              Todas
+            </button>
+          </div>
+        </div>
+        <QueryState
+          isLoading={deletions.isLoading}
+          error={deletions.error}
+          data={deletions.data}
+          empty="Nenhum pedido de exclusão aguardando."
+          onRetry={() => void deletions.refetch()}
+        >
+          {(list) => (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Pedido</th>
+                    <th>Titular</th>
+                    <th>Motivo</th>
+                    <th>Pendências</th>
+                    <th>Status</th>
+                    <th className="right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((r) => {
+                    const blocked = r.activeContracts > 0 || r.balance > 0 || r.balancePending > 0;
+                    const open = r.status === 'pending' || r.status === 'processing';
+                    return (
+                      <tr key={r.id} data-testid={`deletion-${r.id}`}>
+                        <td className="cell-title">
+                          <strong>#{r.id}</strong>
+                          <span className="muted tiny">pedido em {dtm(r.createdAt)}</span>
+                        </td>
+                        <td className="cell-title">
+                          <strong>{r.userName ?? '—'}</strong>
+                          <span className="muted tiny">{r.userEmail}</span>
+                        </td>
+                        <td>
+                          <div className="muted tiny clamp">{r.reason ?? '—'}</div>
+                        </td>
+                        <td>
+                          {blocked ? (
+                            <span className="muted tiny">
+                              {r.activeContracts > 0
+                                ? `${r.activeContracts} contratação(ões) · `
+                                : ''}
+                              {brl(r.balance + r.balancePending)} na carteira
+                            </span>
+                          ) : (
+                            <span className="muted tiny">nenhuma</span>
+                          )}
+                        </td>
+                        <td>
+                          <span
+                            className={`pill status-${
+                              r.status === 'completed'
+                                ? 'completed'
+                                : r.status === 'rejected'
+                                  ? 'cancelled'
+                                  : 'pending'
+                            }`}
+                          >
+                            {DELETION_STATUS_LABEL[r.status] ?? r.status}
+                          </span>
+                        </td>
+                        <td>
+                          {open && (
+                            <div className="acts">
+                              <Button
+                                variant="mini"
+                                onClick={() => setDeleting({ request: r, action: 'complete' })}
+                              >
+                                <Trash2 size={14} /> Concluir exclusão
+                              </Button>
+                              <Button
+                                variant="mini"
+                                onClick={() => setDeleting({ request: r, action: 'reject' })}
+                              >
+                                <XCircle size={14} /> Recusar
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </QueryState>
+      </section>
+
       <p className="muted tiny">
         Moderação de usuários (suspender, banir, reativar) fica no perfil público de cada
         freelancer, visível só para administradores.
@@ -505,6 +719,13 @@ export function AdminView() {
           withdrawal={processing.withdrawal}
           action={processing.action}
           onClose={() => setProcessing(null)}
+        />
+      )}
+      {deleting && (
+        <DeletionModal
+          request={deleting.request}
+          action={deleting.action}
+          onClose={() => setDeleting(null)}
         />
       )}
     </div>

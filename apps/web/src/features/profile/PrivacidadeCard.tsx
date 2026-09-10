@@ -1,6 +1,7 @@
 import { Download, LogOut, ShieldCheck, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { Button, QueryState } from '../../components/ui';
-import { dtm } from '../../lib/format';
+import { DELETION_STATUS_LABEL, dt, dtm, EXPORT_STATUS_LABEL } from '../../lib/format';
 import {
   useConsents,
   useDeletionRequests,
@@ -19,21 +20,30 @@ const CONSENT_LABEL: Record<string, string> = {
   data_processing: 'Tratamento de dados',
 };
 
-const STATUS: Record<string, string> = {
-  pending: 'pendente',
-  processing: 'em processamento',
-  completed: 'concluída',
-  done: 'concluída',
-  rejected: 'recusada',
-  cancelled: 'cancelada',
-};
+const exportPill = (status: string): string =>
+  status === 'ready' || status === 'downloaded'
+    ? 'status-completed'
+    : status === 'expired' || status === 'failed'
+      ? 'status-cancelled'
+      : 'status-pending';
 
-/** Direitos do titular (LGPD): exportar meus dados e pedir a exclusão da conta. */
+const deletionPill = (status: string): string =>
+  status === 'completed'
+    ? 'status-completed'
+    : status === 'rejected'
+      ? 'status-cancelled'
+      : 'status-pending';
+
+/** Direitos do titular (LGPD): cópia dos meus dados (download) e exclusão da conta. */
 export function PrivacidadeCard() {
   const toast = useToast();
   const { logout } = useAuth();
   const exports = useExportRequests();
   const consents = useConsents();
+  const deletions = useDeletionRequests();
+  const requestExport = useRequestExport();
+  const requestDeletion = useRequestDeletion();
+  const [downloading, setDownloading] = useState<number | null>(null);
 
   /** Revoga todas as sessões (RN-008) e sai daqui também. */
   async function logoutEverywhere(): Promise<void> {
@@ -47,16 +57,38 @@ export function PrivacidadeCard() {
       toast.error(er instanceof Error ? er.message : 'Erro ao encerrar sessões');
     }
   }
-  const deletions = useDeletionRequests();
-  const requestExport = useRequestExport();
-  const requestDeletion = useRequestDeletion();
 
   async function onExport(): Promise<void> {
     try {
-      await requestExport.mutateAsync();
-      toast.success('Exportação solicitada. Você será avisado quando o arquivo estiver pronto.');
+      const r = await requestExport.mutateAsync();
+      toast.success(
+        r.status === 'ready'
+          ? 'Sua cópia de dados está pronta para download.'
+          : 'Exportação solicitada. Você será avisado quando o arquivo estiver pronto.',
+      );
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Erro ao solicitar exportação');
+    }
+  }
+
+  /** Baixa com o token (a rota é autenticada) e dispara o download no navegador. */
+  async function onDownload(id: number): Promise<void> {
+    setDownloading(id);
+    try {
+      const { blob, fileName } = await api.downloadExport(id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      void exports.refetch();
+    } catch (er) {
+      toast.error(er instanceof Error ? er.message : 'Erro ao baixar');
+    } finally {
+      setDownloading(null);
     }
   }
 
@@ -85,8 +117,8 @@ export function PrivacidadeCard() {
         </h3>
       </div>
       <p className="muted tiny">
-        Você pode pedir uma cópia de tudo que o Escambo guarda sobre você, e pedir a exclusão da
-        conta. As solicitações ficam registradas aqui com o status.
+        Você pode baixar uma cópia de tudo que o Escambo guarda sobre você (JSON, disponível por 7
+        dias) e pedir a exclusão da conta. As solicitações ficam registradas aqui com o status.
       </p>
       {consents.data && consents.data.length > 0 && (
         <ul className="req-list" aria-label="Consentimentos" style={{ marginBottom: 14 }}>
@@ -115,7 +147,8 @@ export function PrivacidadeCard() {
             onClick={() => void onExport()}
             disabled={requestExport.isPending}
           >
-            <Download size={14} /> Solicitar exportação dos meus dados
+            <Download size={14} />{' '}
+            {requestExport.isPending ? 'Gerando…' : 'Solicitar exportação dos meus dados'}
           </Button>
           <QueryState
             isLoading={exports.isLoading}
@@ -128,8 +161,26 @@ export function PrivacidadeCard() {
               <ul className="req-list" aria-label="Exportações solicitadas">
                 {list.map((r) => (
                   <li key={r.id}>
-                    <span>Exportação · {dtm(r.createdAt)}</span>
-                    <span className="pill">{STATUS[r.status] ?? r.status}</span>
+                    <span>
+                      Exportação · {dtm(r.createdAt)}
+                      {r.expiresAt && r.downloadUrl ? (
+                        <span className="muted tiny"> · válida até {dt(r.expiresAt)}</span>
+                      ) : null}
+                    </span>
+                    <span className="acts">
+                      <span className={`pill ${exportPill(r.status)}`}>
+                        {EXPORT_STATUS_LABEL[r.status] ?? r.status}
+                      </span>
+                      {r.downloadUrl && (
+                        <Button
+                          variant="mini"
+                          onClick={() => void onDownload(r.id)}
+                          disabled={downloading === r.id}
+                        >
+                          <Download size={12} /> {downloading === r.id ? 'Baixando…' : 'Baixar'}
+                        </Button>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -156,8 +207,15 @@ export function PrivacidadeCard() {
               <ul className="req-list" aria-label="Exclusões solicitadas">
                 {list.map((r) => (
                   <li key={r.id}>
-                    <span>Exclusão · {dtm(r.createdAt)}</span>
-                    <span className="pill">{STATUS[r.status] ?? r.status}</span>
+                    <span>
+                      Exclusão · {dtm(r.createdAt)}
+                      {r.status === 'rejected' && r.adminNote ? (
+                        <span className="muted tiny"> · {r.adminNote}</span>
+                      ) : null}
+                    </span>
+                    <span className={`pill ${deletionPill(r.status)}`}>
+                      {DELETION_STATUS_LABEL[r.status] ?? r.status}
+                    </span>
                   </li>
                 ))}
               </ul>

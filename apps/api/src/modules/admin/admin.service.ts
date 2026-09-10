@@ -141,6 +141,7 @@ export const adminService = {
       pendingWithdrawalsAmount: Number(m.pending_withdrawals_amount),
       depositsTotal: Number(m.deposits_total),
       usersBalance: Number(m.users_balance),
+      pendingDeletions: Number(m.pending_deletions),
     };
   },
 };
