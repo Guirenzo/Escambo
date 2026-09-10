@@ -81,6 +81,9 @@ services:
       # Pagamentos: gateway simulado (demo). Em produção: PAYMENTS_SIMULATE=false e o segredo do webhook.
       PAYMENTS_SIMULATE: ${PAYMENTS_SIMULATE:-true}
       PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
+      # Cópias de dados (LGPD): arquivos ficam no volume api_data por EXPORT_TTL_DAYS dias.
+      DATA_DIR: /repo/apps/api/data
+      EXPORT_TTL_DAYS: ${EXPORT_TTL_DAYS:-7}
       # Rate limit por IP (padrões de produção). Para e2e/carga local, suba: LOGIN_RATE_LIMIT_MAX=1000
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
       LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-10}
@@ -98,6 +101,8 @@ services:
       migrate:
         condition: service_completed_successfully
     environment: *api-env
+    volumes:
+      - api_data:/repo/apps/api/data
     ports:
       - '${API_PORT:-3333}:3333'
 
@@ -129,5 +134,6 @@ services:
     command: ['node', '/demo-seed.mjs']
 
 volumes:
+  api_data:
   escambo_db_data:
     name: escambo_db_data

@@ -67,6 +67,11 @@ const envSchema = z.object({
   PAYMENT_WEBHOOK_SECRET: z.string().default(''),
   // Validade da cobrança PIX de um depósito.
   DEPOSIT_EXPIRES_MINUTES: z.coerce.number().int().positive().default(30),
+
+  // Arquivos gerados pela API (cópias de dados LGPD). No Docker é um volume.
+  DATA_DIR: z.string().default('data'),
+  // Por quantos dias a cópia de dados fica disponível para download.
+  EXPORT_TTL_DAYS: z.coerce.number().int().positive().default(7),
 });
 
 const parsed = envSchema.safeParse(process.env);

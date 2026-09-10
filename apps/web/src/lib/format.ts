@@ -110,6 +110,22 @@ export const DEPOSIT_STATUS_LABEL: Record<string, string> = {
   cancelled: 'Vencido',
 };
 
+export const EXPORT_STATUS_LABEL: Record<string, string> = {
+  pending: 'gerando',
+  processing: 'gerando',
+  ready: 'pronta',
+  downloaded: 'baixada',
+  expired: 'expirada',
+  failed: 'falhou',
+};
+
+export const DELETION_STATUS_LABEL: Record<string, string> = {
+  pending: 'em análise',
+  processing: 'em processamento',
+  completed: 'concluída',
+  rejected: 'recusada',
+};
+
 export const REPORT_REASON_LABEL: Record<string, string> = {
   spam: 'Spam',
   fraud: 'Fraude ou golpe',

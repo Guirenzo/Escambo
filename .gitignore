@@ -23,6 +23,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Arquivos gerados pela API em runtime (cópias de dados LGPD)
+apps/api/data/
+
 # Banco de dados local / dumps
 *.sqlite
 *.sqlite3

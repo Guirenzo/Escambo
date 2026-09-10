@@ -146,6 +146,8 @@ export interface AdminMetrics {
   depositsTotal: number;
   /** Saldo disponível somado de todas as carteiras (passivo com usuários). */
   usersBalance: number;
+  /** Pedidos de exclusão de conta (LGPD) aguardando o admin. */
+  pendingDeletions: number;
 }
 
 // --- LGPD ---
@@ -159,18 +161,44 @@ export interface Consent {
   at: string;
 }
 
+export type DeletionRequestStatus = 'pending' | 'processing' | 'completed' | 'rejected';
+export type ExportRequestStatus =
+  | 'pending'
+  | 'processing'
+  | 'ready'
+  | 'downloaded'
+  | 'expired'
+  | 'failed';
+
 export interface DataDeletionRequest {
   id: number;
   reason: string | null;
-  status: string;
+  status: DeletionRequestStatus;
+  /** Justificativa do admin (recusa). */
+  adminNote: string | null;
   createdAt: string;
+  processedAt: string | null;
+}
+
+/** Solicitação de exclusão vista pelo admin: titular e o que ainda o prende à plataforma. */
+export interface AdminDeletionRequest extends DataDeletionRequest {
+  userId: number;
+  userUlid: string;
+  userEmail: string;
+  userName: string | null;
+  activeContracts: number;
+  balance: number;
+  balancePending: number;
 }
 
 export interface DataExportRequest {
   id: number;
-  status: string;
-  fileUrl: string | null;
+  status: ExportRequestStatus;
+  /** Rota autenticada do arquivo JSON; null quando ainda não está (ou não está mais) disponível. */
+  downloadUrl: string | null;
+  expiresAt: string | null;
   createdAt: string;
+  processedAt: string | null;
 }
 
 export interface RecordConsentRequest {

@@ -259,7 +259,14 @@ export const openapiDocument: Record<string, any> = {
       post: op('LGPD', 'Registra consentimento', { auth: true, responses: res201 }),
     },
     '/lgpd/deletion-requests': { post: op('LGPD', 'Direito ao esquecimento', { auth: true, responses: res201 }) },
-    '/lgpd/export-requests': { post: op('LGPD', 'Portabilidade dos dados', { auth: true, responses: res201 }) },
+    '/lgpd/export-requests': {
+      get: op('LGPD', 'Minhas cópias de dados (status e link de download)', { auth: true }),
+      post: op('LGPD', 'Portabilidade: gera a cópia JSON na hora (válida por EXPORT_TTL_DAYS)', { auth: true, responses: res201 }),
+    },
+    '/lgpd/export-requests/{id}/download': { get: op('LGPD', 'Baixa a cópia de dados (só o titular; 410 se expirou)', { auth: true }) },
+    '/admin/deletion-requests': { get: op('Admin', 'Pedidos de exclusão de conta (status=pending|all)', { auth: true }) },
+    '/admin/deletion-requests/{id}/complete': { post: op('Admin', 'Conclui a exclusão: anonimiza a conta e bloqueia o acesso', { auth: true }) },
+    '/admin/deletion-requests/{id}/reject': { post: op('Admin', 'Recusa com justificativa (titular é avisado)', { auth: true }) },
   },
 };
 

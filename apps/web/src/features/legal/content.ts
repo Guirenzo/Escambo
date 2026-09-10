@@ -2,7 +2,7 @@
  * Documentos legais exibidos em /termos e /privacidade e aceitos no cadastro.
  * A versão é gravada no consentimento (LGPD): mudou o texto, suba a versão.
  */
-export const LEGAL_VERSION = '1.1';
+export const LEGAL_VERSION = '1.2';
 export const LEGAL_UPDATED = '2026-09-09';
 
 export interface LegalSection {
@@ -99,7 +99,8 @@ export const LEGAL: Record<'termos' | 'privacidade', LegalDoc> = {
       {
         title: '4. Seus direitos (LGPD)',
         paragraphs: [
-          'Você pode, a qualquer momento no seu Perfil: ver os consentimentos que deu, solicitar uma cópia de todos os seus dados e solicitar a exclusão da conta. Solicitações são registradas com status e atendidas no prazo legal. Dados de contratações concluídas podem ser mantidos anonimizados para fins fiscais e de segurança.',
+          'Você pode, a qualquer momento no seu Perfil: ver os consentimentos que deu, baixar uma cópia de todos os seus dados (arquivo JSON gerado na hora, disponível por 7 dias) e solicitar a exclusão da conta.',
+          'A exclusão é analisada pela equipe e, quando concluída, anonimiza a conta: e-mail, telefone, senha, perfil, serviços, favoritos e notificações são removidos e o acesso é encerrado. Contratações, mensagens, avaliações e extratos são mantidos sem identificação, para obrigações fiscais e segurança das outras partes. Contratações em andamento ou saldo na carteira precisam ser encerrados antes do pedido; uma recusa vem sempre com justificativa.',
         ],
       },
       {

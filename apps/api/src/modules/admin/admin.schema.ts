@@ -25,6 +25,14 @@ export const adminWithdrawalsQuerySchema = z.object({
     .enum(['open', 'all', 'requested', 'processing', 'completed', 'failed', 'cancelled'])
     .default('open'),
 });
+export const deletionIdParamSchema = z.object({ id: z.coerce.number().int().positive() });
+export const adminDeletionsQuerySchema = z.object({
+  status: z.enum(['pending', 'all']).default('pending'),
+});
+export const rejectDeletionSchema = z.object({
+  note: z.string().min(3).max(500),
+});
+
 export const completeWithdrawalSchema = z.object({
   gatewayRef: z.string().max(100).nullable().optional(),
 });

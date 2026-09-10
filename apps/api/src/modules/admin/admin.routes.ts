@@ -4,13 +4,16 @@ import { requireAdmin } from '../../middlewares/require-admin';
 import { asyncHandler } from '../../utils/async-handler';
 import {
   banUser,
+  completeDeletionRequest,
   completeWithdrawal,
   failWithdrawal,
   getMetrics,
   listOpenDisputes,
+  listDeletionRequests,
   listWithdrawals,
   processWithdrawal,
   reactivateUser,
+  rejectDeletionRequest,
   resolveDispute,
   suspendUser,
 } from './admin.controller';
@@ -29,3 +32,6 @@ adminRoutes.get('/withdrawals', asyncHandler(listWithdrawals));
 adminRoutes.post('/withdrawals/:id/process', asyncHandler(processWithdrawal));
 adminRoutes.post('/withdrawals/:id/complete', asyncHandler(completeWithdrawal));
 adminRoutes.post('/withdrawals/:id/fail', asyncHandler(failWithdrawal));
+adminRoutes.get('/deletion-requests', asyncHandler(listDeletionRequests));
+adminRoutes.post('/deletion-requests/:id/complete', asyncHandler(completeDeletionRequest));
+adminRoutes.post('/deletion-requests/:id/reject', asyncHandler(rejectDeletionRequest));

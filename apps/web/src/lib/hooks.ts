@@ -33,6 +33,7 @@ export const qk = {
   deposits: ['deposits'] as const,
   deposit: (id: number) => ['deposit', id] as const,
   adminWithdrawals: (status: string) => ['adminWithdrawals', status] as const,
+  adminDeletions: (status: string) => ['adminDeletions', status] as const,
   notifications: ['notifications'] as const,
   barters: ['barters'] as const,
   profiles: ['profiles'] as const,
@@ -413,6 +414,31 @@ export function useResolveDispute() {
       void qc.invalidateQueries({ queryKey: qk.disputes });
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: ['contract'] });
+    },
+  });
+}
+
+export const useAdminDeletionRequests = (status: 'pending' | 'all') =>
+  useQuery({
+    queryKey: qk.adminDeletions(status),
+    queryFn: () => api.adminDeletionRequests(status),
+  });
+
+export function useAdminDeletionAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      action,
+      note,
+    }: {
+      id: number;
+      action: 'complete' | 'reject';
+      note?: string;
+    }) => api.adminDeletionAction(id, action, note ? { note } : {}),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['adminDeletions'] });
+      void qc.invalidateQueries({ queryKey: qk.adminMetrics });
     },
   });
 }

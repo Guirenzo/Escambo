@@ -37,6 +37,10 @@ export function useRealtimeNotifications(): void {
         void qc.invalidateQueries({ queryKey: qk.withdrawals });
         void qc.invalidateQueries({ queryKey: ['deposit'] });
       }
+      if (n.type === 'export_ready' || n.type.startsWith('deletion_')) {
+        void qc.invalidateQueries({ queryKey: qk.exportRequests });
+        void qc.invalidateQueries({ queryKey: qk.deletionRequests });
+      }
       if (n.type === 'review_received') {
         void qc.invalidateQueries({ queryKey: qk.profiles });
         void qc.invalidateQueries({ queryKey: ['reviews'] });
