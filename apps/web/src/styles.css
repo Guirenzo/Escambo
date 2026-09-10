@@ -2125,6 +2125,24 @@ button.toggle.on {
   font-weight: 700;
   text-decoration: underline;
 }
+/* Carteira: saque bloqueado até confirmar o e-mail (mesma linguagem visual do lembrete). */
+.kpi.withdraw-locked {
+  border: 1px dashed var(--amber);
+  background: var(--amber-soft);
+}
+.withdraw-locked-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  color: var(--amber-ink);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.withdraw-locked-msg svg {
+  flex: none;
+  margin-top: 2px;
+}
 .done-ico.err {
   background: var(--red-soft);
   color: var(--red);

@@ -8,6 +8,8 @@ import { z } from 'zod';
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3333),
+  // Commit do build (o CI grava na imagem via build-arg); aparece no health e no log de subida.
+  GIT_SHA: z.string().default('dev'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
   DB_HOST: z.string().default('localhost'),

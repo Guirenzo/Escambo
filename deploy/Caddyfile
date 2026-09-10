@@ -1,0 +1,21 @@
+# Escambo — Caddy na frente do web (nginx) com HTTPS automático (Let's Encrypt).
+# DOMAIN e ACME_EMAIL vêm do .env (docker-compose.prod.yml). Com DOMAIN=localhost o Caddy
+# emite um certificado da própria CA interna (útil para testar a stack de produção na máquina).
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		# 1 ano de HSTS: o navegador nem tenta HTTP depois da primeira visita.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+
+	# SPA + /api + /socket.io (WebSocket) — o nginx do web resolve o resto.
+	reverse_proxy web:8080
+}

@@ -11,6 +11,9 @@ RUN npm ci \
 
 # --- runtime: nginx sem root (usuário nginx, porta 8080) servindo o SPA + proxy da API ---
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+ARG GIT_SHA=dev
+LABEL org.opencontainers.image.revision=$GIT_SHA \
+      org.opencontainers.image.source=https://github.com/Guirenzo/Escambo
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
 EXPOSE 8080

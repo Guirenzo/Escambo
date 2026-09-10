@@ -7,6 +7,7 @@ import type {
 } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
 import { adminRepository } from '../admin/admin.repository';
+import { authRepository } from '../auth/auth.repository';
 import { notificationsService } from '../notifications/notifications.service';
 import {
   withdrawalRepository,
@@ -65,6 +66,12 @@ async function loadOr404(id: number): Promise<WithdrawalRow> {
 
 export const withdrawalService = {
   async request(userId: number, input: CreateWithdrawalInput): Promise<Withdrawal> {
+    // Saque é a única ação que tira dinheiro da plataforma: exige e-mail confirmado (ADR 20),
+    // para que uma sessão roubada não mande o saldo para uma chave PIX de terceiro sem aviso.
+    const user = await authRepository.findById(userId);
+    if (!user?.email_verified_at) {
+      throw new HttpError(403, 'Confirme seu e-mail para sacar', 'email_not_verified');
+    }
     const id = await withdrawalRepository.createIfSufficient({
       userId,
       amount: input.amount,

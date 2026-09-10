@@ -71,7 +71,7 @@ src/
 
 | Método              | Rota                                                                            | Descrição                                                                                                                                        |
 | ------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GET                 | `/api/health` · `/api/health/live`                                              | Readiness (com banco) · Liveness (sem banco)                                                                                                     |
+| GET                 | `/api/health` · `/api/health/live`                                              | Readiness (com banco) · Liveness (sem banco) — ambos com `version`, `commit` e `uptime`                                                        |
 | GET                 | `/api/docs` · `/api/openapi.json`                                               | **Swagger UI** + spec OpenAPI (RNF-010)                                                                                                          |
 | POST                | `/api/auth/register`                                                            | Cria usuário (`email`, `password`, `role`)                                                                                                       |
 | POST                | `/api/auth/login`                                                               | Autentica → `accessToken` (1h) + `refreshToken` (7d) + sessão                                                                                    |
@@ -119,7 +119,7 @@ src/
 | GET                 | `/api/barters/:id`                                                              | **(auth, parte)** detalhe da troca                                                                                                               |
 | POST                | `/api/barters/:id/accept`                                                       | **(receptor)** aceita → gera 2 contratos; reserva a torna se o receptor paga (402 sem saldo)                                                     |
 | POST                | `/api/barters/:id/reject` · `/cancel`                                           | **(receptor/parte)** recusa / cancela                                                                                                            |
-| POST                | `/api/withdrawals`                                                              | **(auth)** solicita saque (débito atômico, mín. R$20)                                                                                            |
+| POST                | `/api/withdrawals`                                                              | **(auth)** solicita saque (débito atômico, mín. R$20; exige e-mail confirmado → 403 `email_not_verified`)                                        |
 | GET                 | `/api/withdrawals`                                                              | **(auth)** meus saques                                                                                                                           |
 | POST                | `/api/withdrawals/:id/cancel`                                                   | **(auth, titular)** cancela saque ainda não processado (valor volta)                                                                             |
 | GET                 | `/api/notifications`                                                            | **(auth)** minhas notificações + total não lidas                                                                                                 |
@@ -185,7 +185,7 @@ O backend é pensado para rodar em produção, não só em dev:
 - **Limites** — corpo JSON limitado por `BODY_LIMIT` (JSON malformado → 400, corpo grande → 413) e rate limiting configurável (`RATE_LIMIT_*`, `LOGIN_RATE_LIMIT_*`).
 - **Segurança** — `helmet`, `x-powered-by` desligado, e o logger **redige** `authorization`/senha/token dos logs.
 - **Observabilidade** — log estruturado (pino) com `X-Request-Id` correlacionável em toda resposta; compressão gzip.
-- **Health** — `GET /api/health` (readiness, com banco) e `GET /api/health/live` (liveness, sem banco) para orquestradores.
+- **Health** — `GET /api/health` (readiness, com banco) e `GET /api/health/live` (liveness, sem banco) para orquestradores; os dois devolvem `version` (package.json) e `commit` (`GIT_SHA`, gravado na imagem pelo CI) para conferir o que está no ar.
 - **Container** — imagem multi-stage, roda como usuário `node` (não-root), `tini` como init e `HEALTHCHECK` no liveness.
 
 Todos os parâmetros ficam em variáveis de ambiente (ver [`.env.example`](.env.example)).

@@ -8,6 +8,7 @@
 #
 # Ordem de subida: db (healthy) → migrate (job: aplica migrations pendentes e sai) → api (healthy) → web.
 # Variáveis opcionais (.env na raiz ou no shell): DB_PORT, API_PORT, WEB_PORT, JWT_SECRET, DB_*, CORS_ORIGINS.
+# Produção (imagens do GHCR + Caddy com HTTPS): docker-compose.prod.yml e DEPLOY.md.
 
 name: escambo
 
@@ -56,6 +57,8 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-local}
     container_name: escambo-migrate
     restart: 'no'
     command: ['node', 'dist/scripts/migrate.js']
@@ -102,6 +105,8 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-local}
     container_name: escambo-api
     restart: unless-stopped
     depends_on:
@@ -119,6 +124,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-local}
     container_name: escambo-web
     restart: unless-stopped
     depends_on:

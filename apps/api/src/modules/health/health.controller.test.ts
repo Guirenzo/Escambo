@@ -17,7 +17,15 @@ describe('healthCheck', () => {
     await healthCheck({} as unknown as Request, { json } as unknown as Response);
 
     expect(ping).toHaveBeenCalledOnce();
-    expect(json).toHaveBeenCalledWith(expect.objectContaining({ status: 'ok', db: 'up' }));
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'ok',
+        db: 'up',
+        version: expect.stringMatching(/^\d+\.\d+\.\d+/),
+        commit: expect.any(String),
+        uptime: expect.any(Number),
+      }),
+    );
   });
 
   it('propaga o erro quando o banco está fora (vira 500 no error handler)', async () => {

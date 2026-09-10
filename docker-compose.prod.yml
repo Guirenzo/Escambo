@@ -1,0 +1,128 @@
+# Escambo — PRODUÇÃO numa VPS: imagens publicadas pelo CI (GHCR) + Caddy com HTTPS automático.
+#
+#   cp .env.prod.example .env  →  preencha DOMAIN, senhas, JWT_SECRET, ADMIN_EMAILS, SMTP_*
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d        # db → migrate → api → web → caddy
+#   curl -s https://SEU_DOMINIO/api/health                 # {"status":"ok","db":"up","version":…,"commit":…}
+#
+# Diferenças em relação ao docker-compose.yml (demo/dev):
+#   - sem build: imagens do registro, fixadas por IMAGE_TAG (latest, sha curto ou versão) → rollback = trocar a tag;
+#   - banco e API NÃO publicam porta no host: só o Caddy escuta (80/443) e fala com o web (nginx) pela rede interna;
+#   - segredos obrigatórios (`${VAR:?}`): o compose se recusa a subir com senha padrão;
+#   - gateway simulado desligado, e-mail via SMTP, TRUST_PROXY=2 (Caddy → nginx → API);
+#   - schema, migrations e seed de referência entram pelo job `migrate` (a API só sobe depois dele).
+# Guia completo (VPS, DNS, atualização, rollback, backup): DEPLOY.md
+
+name: escambo
+
+x-api-image: &api-image ${API_IMAGE:-ghcr.io/guirenzo/escambo-api}:${IMAGE_TAG:-latest}
+
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?defina DB_ROOT_PASSWORD no .env}
+      MYSQL_DATABASE: ${DB_NAME:-escambo}
+      MYSQL_USER: ${DB_USER:-escambo}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no .env}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # Aplica baseline + migrations pendentes e, no primeiro boot, o seed de referência (catálogo).
+  # A API só sobe depois que este job termina com sucesso — nunca serve com schema defasado.
+  migrate:
+    image: *api-image
+    restart: 'no'
+    command: ['node', 'dist/scripts/migrate.js']
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: &api-env
+      NODE_ENV: production
+      PORT: 3333
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-escambo}
+      DB_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no .env}
+      DB_NAME: ${DB_NAME:-escambo}
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env (32+ caracteres aleatórios)}
+      # Caddy → nginx (web) → API: dois saltos confiáveis no X-Forwarded-For, para que rate limit
+      # e logs usem o IP real do usuário.
+      TRUST_PROXY: '2'
+      # O web é servido no mesmo domínio (o nginx faz proxy de /api): CORS só para a própria origem.
+      CORS_ORIGINS: https://${DOMAIN:?defina DOMAIN no .env}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:?defina ADMIN_EMAILS no .env}
+      # Não existe gateway real ainda (ADR 15): o simulador fica DESLIGADO por padrão.
+      PAYMENTS_SIMULATE: ${PAYMENTS_SIMULATE:-false}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
+      DATA_DIR: /repo/apps/api/data
+      EXPORT_TTL_DAYS: ${EXPORT_TTL_DAYS:-7}
+      APP_URL: https://${DOMAIN}
+      MAIL_PROVIDER: ${MAIL_PROVIDER:-smtp}
+      MAIL_FROM: ${MAIL_FROM:?defina MAIL_FROM no .env}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
+      LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-10}
+
+  api:
+    image: *api-image
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *api-env
+    volumes:
+      - api_data:/repo/apps/api/data
+    # Sem `ports`: só o web (nginx) fala com a API, pela rede interna do compose.
+
+  web:
+    image: ${WEB_IMAGE:-ghcr.io/guirenzo/escambo-web}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    # Sem `ports`: o Caddy é a única porta de entrada.
+
+  # Borda: HTTPS automático (Let's Encrypt), HTTP → HTTPS, HTTP/3, HSTS. Config em deploy/Caddyfile.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?defina ACME_EMAIL no .env (avisos do Let's Encrypt)}
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+      - '${HTTPS_PORT:-443}:443/udp'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  # Com o projeto `escambo`, vira `escambo_db_data` — o mesmo volume do docker-compose.yml,
+  # então uma instância da demo pode ser promovida sem perder dados.
+  db_data:
+  api_data:
+  caddy_data:
+  caddy_config:

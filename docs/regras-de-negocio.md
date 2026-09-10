@@ -420,7 +420,7 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Carteira |
-| **Descrição** | O valor mínimo para solicitação de saque é de **R$ 20,00**. Saques abaixo desse valor são bloqueados pelo sistema |
+| **Descrição** | O valor mínimo para solicitação de saque é de **R$ 20,00**. Saques abaixo desse valor são bloqueados pelo sistema. O saque exige **e-mail confirmado** (ação sensível: é a única que tira dinheiro da plataforma) |
 | **Impacto** | Reduz custo operacional de transferências de baixo valor |
 | **UC Relacionado** | UC-06 |
 
