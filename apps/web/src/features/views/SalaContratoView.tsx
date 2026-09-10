@@ -4,6 +4,7 @@ import type { ChatMessage, ChatMessageEvent, ContractWithHistory } from '@escamb
 import { StarInput, Stars } from '../../components/Stars';
 import { Button, Input, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
+import { usePageTitle } from '../../lib/title';
 import { brl, dtm, hm, STATUS_LABEL } from '../../lib/format';
 import {
   useChatHistory,
@@ -181,6 +182,7 @@ export function SalaContratoView({
   const myId = user?.id ?? -1;
   const toast = useToast();
   const contract = useContractDetail(contractId);
+  usePageTitle(contract.data ? contract.data.title : 'Contratação');
   const history = useChatHistory(contractId);
   const send = useSendMessage(contractId);
 

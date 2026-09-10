@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { RequireAuth } from './components/RequireAuth';
 import { Spinner } from './components/ui';
+import { NotFoundView } from './features/views/NotFoundView';
 import { ForgotPasswordView, ResetPasswordView, VerifyEmailView } from './features/auth/AccountViews';
 import { LoginForm } from './features/auth/LoginForm';
 import { LegalView } from './features/legal/LegalView';
@@ -16,6 +17,7 @@ import { SalaContratoView } from './features/views/SalaContratoView';
 import { ServicosView } from './features/views/ServicosView';
 import { TrocasView } from './features/views/TrocasView';
 import { useAuth } from './lib/auth';
+import { RouteAnnouncer } from './lib/title';
 import './styles.css';
 
 /** /login: se já autenticado, vai para a home. */
@@ -50,6 +52,7 @@ function SalaContratoRoute() {
 export function App() {
   return (
     <BrowserRouter>
+      <RouteAnnouncer />
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
         <Route path="/esqueci-senha" element={<ForgotPasswordView />} />
@@ -71,7 +74,7 @@ export function App() {
             <Route path="admin" element={<AdminRoute />} />
           </Route>
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFoundView />} />
       </Routes>
     </BrowserRouter>
   );

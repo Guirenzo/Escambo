@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Field, Input, Select } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
+import { usePageTitle } from '../../lib/title';
 
 const HIGHLIGHTS: { Icon: LucideIcon; title: string; text: string }[] = [
   {
@@ -23,6 +24,7 @@ const HIGHLIGHTS: { Icon: LucideIcon; title: string; text: string }[] = [
 ];
 
 export function LoginForm() {
+  usePageTitle('Entrar');
   const { login, register, error } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');

@@ -7,6 +7,7 @@ import { ScoreBadge } from '../../components/ScoreBadge';
 import { Stars } from '../../components/Stars';
 import { Button, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
+import { usePageTitle } from '../../lib/title';
 import { dtm } from '../../lib/format';
 import {
   useFavorites,
@@ -28,6 +29,7 @@ export function FreelancerView() {
   const { user } = useAuth();
   const myId = user?.id ?? -1;
   const profile = usePublicFreelancer(ulid);
+  usePageTitle(profile.data?.fullName ?? 'Freelancer');
   const userId = profile.data?.userId;
   const services = useServices(userId ? { ownerId: userId, limit: 50 } : undefined);
   const reviews = useFreelancerReviews(userId);

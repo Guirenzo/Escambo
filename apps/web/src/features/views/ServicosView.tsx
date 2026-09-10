@@ -13,6 +13,7 @@ import {
   Skeleton,
 } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
+import { usePageTitle } from '../../lib/title';
 import {
   useCategories,
   useCreateService,
@@ -41,6 +42,7 @@ type Geo = { lat: number; lng: number };
 const RADII = [5, 10, 25, 50, 100];
 
 export function ServicosView() {
+  usePageTitle('Serviços');
   const { user } = useAuth();
   const myId = user?.id ?? -1;
   const isFreelancer = user?.role === 'freelancer';

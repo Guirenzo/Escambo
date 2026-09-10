@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { BarterAgreement, Service } from '@escambo/types';
 import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
+import { usePageTitle } from '../../lib/title';
 import { BARTER_STATUS_LABEL, brl, dt, TORNA_STATUS_LABEL } from '../../lib/format';
 import {
   useBarterAction,
@@ -28,6 +29,7 @@ function pillClass(status: string): string {
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
 export function TrocasView() {
+  usePageTitle('Trocas');
   const { user } = useAuth();
   const myId = user?.id ?? -1;
   const toast = useToast();
