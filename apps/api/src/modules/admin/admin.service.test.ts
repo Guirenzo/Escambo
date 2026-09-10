@@ -6,6 +6,9 @@ vi.mock('../disputes/disputes.repository', () => ({
 vi.mock('../contracts/contracts.repository', () => ({
   contractsRepository: { findById: vi.fn() },
 }));
+vi.mock('../contracts/milestones.repository', () => ({
+  milestonesRepository: { escrowRemaining: vi.fn().mockResolvedValue(null) },
+}));
 vi.mock('../auth/auth.repository', () => ({
   authRepository: { findByUlid: vi.fn().mockResolvedValue({ id: 5 }) },
 }));

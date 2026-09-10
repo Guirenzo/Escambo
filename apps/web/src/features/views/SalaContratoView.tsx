@@ -15,6 +15,7 @@ import {
 import { getSocket } from '../../lib/socket';
 import { ContractActions } from '../contracts/ContractActions';
 import { DisputeModal, DisputeSection } from '../contracts/DisputePanel';
+import { MilestonesSection } from '../contracts/MilestonesSection';
 import { useToast } from '../../lib/toast';
 
 /** Prazo da plataforma para aprovação tácita (platform_settings.tacit_approval_days). */
@@ -27,9 +28,12 @@ const MODE_LABEL: Record<string, string> = {
 };
 
 /** Onde o dinheiro (ou os créditos) está neste momento do contrato. */
-function paymentState(c: { paymentMode: string; status: string }): string {
+function paymentState(c: { paymentMode: string; status: string; hasMilestones: boolean }): string {
   if (c.paymentMode === 'barter') return 'Troca de serviços · sem escrow';
   const unit = c.paymentMode === 'credits' ? 'Créditos' : 'Valor';
+  if (c.hasMilestones && (c.status === 'accepted' || c.status === 'in_progress')) {
+    return 'Em escrow · liberado marco a marco';
+  }
   switch (c.status) {
     case 'pending':
       return c.paymentMode === 'credits'
@@ -324,6 +328,7 @@ export function SalaContratoView({
             </QueryState>
           </section>
 
+          {c && <MilestonesSection contract={c} myId={myId} />}
           {c && <ReviewSection contract={c} myId={myId} />}
           {c && c.status === 'disputed' && <DisputeSection contractId={c.id} />}
         </div>

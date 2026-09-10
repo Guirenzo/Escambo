@@ -20,7 +20,7 @@ export function useRealtimeNotifications(): void {
     const socket = getSocket();
     const onNotification = (n: Notification): void => {
       void qc.invalidateQueries({ queryKey: qk.notifications });
-      if (n.type.startsWith('contract_')) {
+      if (n.type.startsWith('contract_') || n.type.startsWith('milestone_')) {
         void qc.invalidateQueries({ queryKey: qk.contracts });
         void qc.invalidateQueries({ queryKey: ['contract'] });
         void qc.invalidateQueries({ queryKey: qk.wallet });

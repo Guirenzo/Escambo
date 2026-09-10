@@ -5,6 +5,7 @@ import { authRepository } from '../auth/auth.repository';
 import { sessionRepository } from '../auth/session.repository';
 import { contractsRepository } from '../contracts/contracts.repository';
 import { cashSettlement } from '../contracts/contracts.service';
+import { milestonesRepository } from '../contracts/milestones.repository';
 import { disputesRepository } from '../disputes/disputes.repository';
 import { toDispute } from '../disputes/disputes.service';
 import { notificationsService } from '../notifications/notifications.service';
@@ -33,12 +34,17 @@ export const adminService = {
     const isCredits = paymentMode === 'credits';
     const isBarter = paymentMode === 'barter';
     // Retido para o freelancer: líquido em R$ ou créditos (inteiros); troca não tem escrow.
+    // Por marcos, conta só o que ainda não foi liberado.
+    const remaining =
+      paymentMode === 'cash' ? await milestonesRepository.escrowRemaining(contract.id) : null;
     const escrowNet = isBarter
       ? 0
       : isCredits
         ? Math.round(Number(contract.freelancer_net))
-        : Number(contract.freelancer_net);
-    const price = Number(contract.price);
+        : remaining
+          ? remaining.net
+          : Number(contract.freelancer_net);
+    const price = remaining ? remaining.price : Number(contract.price);
 
     let finalStatus: 'completed' | 'cancelled';
     let refundPercentage: number | null = null;

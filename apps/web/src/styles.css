@@ -2143,3 +2143,95 @@ button.toggle.on {
   max-height: 60vh;
   overflow: auto;
 }
+
+/* ---------- Escrow por marcos ---------- */
+.milestones {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.milestone {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+.milestone.released {
+  border-color: var(--green-soft);
+  background: #f3faf6;
+}
+.milestone-main {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+.milestone-index {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+.milestone.released .milestone-index {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+.milestone-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.milestone-body .tiny svg {
+  vertical-align: -2px;
+}
+.milestone-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.milestone-side .acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+@media (max-width: 560px) {
+  .milestone {
+    flex-direction: column;
+  }
+  .milestone-side {
+    align-items: flex-start;
+  }
+}
+.ms-editor {
+  display: grid;
+  gap: 8px;
+}
+.ms-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px auto;
+  gap: 8px;
+  align-items: center;
+}
+.ms-sum {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+.ms-sum.bad {
+  color: var(--red);
+}

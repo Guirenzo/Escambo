@@ -280,7 +280,9 @@ describe('cancel (RN-025)', () => {
     // nada volta ao cliente; o freelancer recebe o líquido inteiro
     expect(repo.transition).toHaveBeenCalledWith(
       expect.objectContaining({
-        walletEffects: [{ userId: 2, pendingDelta: -850, balanceDelta: 850, reason: 'escrow_release' }],
+        walletEffects: [
+          { userId: 2, pendingDelta: -850, balanceDelta: 850, reason: 'escrow_release' },
+        ],
       }),
     );
   });
@@ -302,7 +304,10 @@ describe('cashSettlement (liquidação proporcional do escrow)', () => {
   });
 
   it('arredonda em centavos e limita o percentual a 0–100', () => {
-    expect(cashSettlement(99.99, 84.99, 33)).toEqual({ refundClient: 33, releaseFreelancer: 56.94 });
+    expect(cashSettlement(99.99, 84.99, 33)).toEqual({
+      refundClient: 33,
+      releaseFreelancer: 56.94,
+    });
     expect(cashSettlement(100, 85, 150)).toEqual({ refundClient: 100, releaseFreelancer: 0 });
   });
 });

@@ -4,12 +4,15 @@ import { asyncHandler } from '../../utils/async-handler';
 import {
   acceptContract,
   approveContract,
+  approveMilestone,
   cancelContract,
   createContract,
   deliverContract,
+  deliverMilestone,
   getContract,
   listContracts,
   rejectContract,
+  requestMilestoneRevision,
   requestRevisionContract,
 } from './contracts.controller';
 
@@ -29,3 +32,11 @@ contractsRoutes.post('/:id/deliver', asyncHandler(deliverContract));
 contractsRoutes.post('/:id/approve', asyncHandler(approveContract));
 contractsRoutes.post('/:id/request-revision', asyncHandler(requestRevisionContract));
 contractsRoutes.post('/:id/cancel', asyncHandler(cancelContract));
+
+// Escrow por marcos (RN-069): entrega, aprovação (libera só aquele marco) e revisão por marco.
+contractsRoutes.post('/:id/milestones/:milestoneId/deliver', asyncHandler(deliverMilestone));
+contractsRoutes.post('/:id/milestones/:milestoneId/approve', asyncHandler(approveMilestone));
+contractsRoutes.post(
+  '/:id/milestones/:milestoneId/request-revision',
+  asyncHandler(requestMilestoneRevision),
+);

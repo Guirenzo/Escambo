@@ -33,11 +33,18 @@ export function partyOf(c: Pick<Contract, 'clientId' | 'freelancerId'>, userId: 
 }
 
 export function contractActions(
-  c: Pick<Contract, 'clientId' | 'freelancerId' | 'status' | 'hasReview'>,
+  c: Pick<Contract, 'clientId' | 'freelancerId' | 'status' | 'hasReview' | 'hasMilestones'>,
   userId: number,
 ): ContractAction[] {
   const party = partyOf(c, userId);
   if (party === 'none') return [];
+
+  // Por marcos (RN-069): entrega e aprovação acontecem marco a marco, na Sala.
+  if (c.hasMilestones && (c.status === 'accepted' || c.status === 'in_progress')) {
+    return party === 'freelancer'
+      ? [DISPUTE]
+      : [{ key: 'cancel', label: 'Cancelar', tone: 'danger' }, DISPUTE];
+  }
 
   switch (c.status) {
     case 'pending':

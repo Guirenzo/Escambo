@@ -421,6 +421,60 @@ async function ensureWithdrawal(user, admin, amount, pixKey, { complete = false 
   return w;
 }
 
+/** Contratação por marcos (RN-069): aceita, com o 1º marco liberado e o 2º entregue. */
+async function ensureMilestoneContract(client, freelancer, service, { title, price, milestones }) {
+  const mine = items(await call('GET', '/contracts', { token: client.token }));
+  let contract = mine.find(
+    (c) =>
+      c.title === title &&
+      c.freelancerId === freelancer.id &&
+      !['cancelled', 'rejected'].includes(c.status),
+  );
+  if (!contract) {
+    await ensureBalance(client, price);
+    contract = await call('POST', '/contracts', {
+      token: client.token,
+      body: {
+        freelancerId: freelancer.id,
+        serviceId: service.id,
+        title,
+        description: `Contratação do serviço "${service.title}" em ${milestones.length} marcos (demo).`,
+        price,
+        paymentMode: 'cash',
+        milestones,
+      },
+    });
+    log(`contrato #${contract.id} ${title} (${milestones.length} marcos) → pendente`);
+  } else {
+    log(`contrato #${contract.id} ${title} já existe (${contract.status})`);
+  }
+  if (contract.status === 'pending') {
+    await call('POST', `/contracts/${contract.id}/accept`, { token: freelancer.token });
+    log('  aceita pelo freelancer (marcos financiados)');
+  }
+  const detail = await call('GET', `/contracts/${contract.id}`, { token: client.token });
+  if (!['accepted', 'in_progress'].includes(detail.status)) return detail;
+  const [m1, m2] = detail.milestones;
+  if (m1 && m1.status === 'funded') {
+    await call('POST', `/contracts/${contract.id}/milestones/${m1.id}/deliver`, {
+      token: freelancer.token,
+      body: { message: 'Protótipo navegável no Figma, com as telas principais.' },
+    });
+    await call('POST', `/contracts/${contract.id}/milestones/${m1.id}/approve`, {
+      token: client.token,
+    });
+    log(`  marco «${m1.title}» entregue e aprovado`);
+  }
+  if (m2 && m2.status === 'funded') {
+    await call('POST', `/contracts/${contract.id}/milestones/${m2.id}/deliver`, {
+      token: freelancer.token,
+      body: { message: 'Build de teste no TestFlight e APK; login e listagem prontos.' },
+    });
+    log(`  marco «${m2.title}» entregue (aguardando aprovação)`);
+  }
+  return detail;
+}
+
 async function ensureReview(client, contract, rating, comment) {
   const detail = await call('GET', `/contracts/${contract.id}`, { token: client.token });
   if (detail.status !== 'completed') return;
@@ -604,6 +658,15 @@ async function main() {
     title: 'Pacote de 4 artigos SEO',
     price: 700,
     to: 'pending',
+  });
+  await ensureMilestoneContract(ana, users.bruno, svc['App mobile (React Native)'], {
+    title: 'App mobile (React Native) em 3 marcos',
+    price: 4500,
+    milestones: [
+      { title: 'Protótipo e telas', amount: 1500 },
+      { title: 'App funcional (beta)', amount: 1500 },
+      { title: 'Publicação nas lojas', amount: 1500 },
+    ],
   });
   const eletrica = await ensureContract(ana, users.felipe, svc['Instalação elétrica (visita)'], {
     title: 'Revisão elétrica rápida (em créditos)',

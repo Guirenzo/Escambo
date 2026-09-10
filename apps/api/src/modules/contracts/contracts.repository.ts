@@ -1,6 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { applyWalletEffect, type WalletEffect } from '../wallet/wallet.ledger';
+import { milestonesRepository, type MilestoneSpec } from './milestones.repository';
 
 export interface ContractRow extends RowDataPacket {
   id: number;
@@ -22,6 +23,7 @@ export interface ContractRow extends RowDataPacket {
   cancelled_at: Date | null;
   created_at: Date;
   has_review?: number; // 1 se o cliente já avaliou (subquery nas consultas de leitura)
+  has_milestones?: number; // 1 se o contrato é por marcos (RN-069)
 }
 
 export interface HistoryRow extends RowDataPacket {
@@ -33,6 +35,8 @@ export interface HistoryRow extends RowDataPacket {
 
 /** O cliente já avaliou? Uma avaliação por contrato (RN-042). */
 const HAS_REVIEW = `EXISTS(SELECT 1 FROM reviews r WHERE r.contract_id = c.id)`;
+/** Contrato por marcos (RN-069)? */
+const HAS_MILESTONES = `EXISTS(SELECT 1 FROM contract_milestones m WHERE m.contract_id = c.id)`;
 
 export const contractsRepository = {
   async create(data: {
@@ -52,8 +56,10 @@ export const contractsRepository = {
      * (balance_pending) na mesma transação do INSERT. Retorna null se não há saldo.
      */
     hold?: { userId: number; amount: number } | null;
+    /** Marcos (RN-069) criados na mesma transação, ainda 'pending' até o aceite. */
+    milestones?: MilestoneSpec[] | null;
   }): Promise<number | null> {
-    const { hold, ...row } = data;
+    const { hold, milestones, ...row } = data;
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -84,6 +90,9 @@ export const contractsRepository = {
           return null; // saldo insuficiente: nada é criado
         }
       }
+      if (milestones && milestones.length > 0) {
+        await milestonesRepository.insertMany(conn, id, milestones);
+      }
       await conn.commit();
       return id;
     } catch (err) {
@@ -96,7 +105,7 @@ export const contractsRepository = {
 
   async findById(id: number): Promise<ContractRow | undefined> {
     const [rows] = await pool.query<ContractRow[]>(
-      `SELECT c.*, ${HAS_REVIEW} AS has_review FROM contracts c WHERE c.id = :id LIMIT 1`,
+      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones FROM contracts c WHERE c.id = :id LIMIT 1`,
       { id },
     );
     return rows[0];
@@ -104,7 +113,7 @@ export const contractsRepository = {
 
   async listForUser(userId: number, limit: number, offset: number): Promise<ContractRow[]> {
     const [rows] = await pool.query<ContractRow[]>(
-      `SELECT c.*, ${HAS_REVIEW} AS has_review FROM contracts c
+      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones FROM contracts c
         WHERE c.client_id = :userId OR c.freelancer_id = :userId
         ORDER BY c.created_at DESC
         LIMIT ${limit} OFFSET ${offset}`,
@@ -119,7 +128,7 @@ export const contractsRepository = {
    */
   async findDeliveredOlderThan(days: number): Promise<ContractRow[]> {
     const [rows] = await pool.query<ContractRow[]>(
-      `SELECT c.*, ${HAS_REVIEW} AS has_review
+      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones
          FROM contracts c
         WHERE c.status = 'delivered'
           AND (SELECT MAX(h.created_at) FROM contract_status_history h
@@ -161,6 +170,8 @@ export const contractsRepository = {
      * status, com guarda de saldo e linha no extrato (wallet_transactions).
      */
     walletEffects?: WalletEffect[];
+    /** Marcos do contrato mudam de status junto (ex.: pending → funded no aceite). */
+    milestonesTo?: { from: string[]; to: string };
     /** Movimentos de CRÉDITOS (escrow time-bank) na mesma transação; `reason` gera ledger. */
     creditsEffects?: {
       userId: number;
@@ -195,6 +206,14 @@ export const contractsRepository = {
           note: params.note,
         },
       );
+
+      if (params.milestonesTo) {
+        await conn.query<ResultSetHeader>(
+          `UPDATE contract_milestones SET status = :to
+            WHERE contract_id = :id AND status IN (:from)`,
+          { to: params.milestonesTo.to, id: params.id, from: params.milestonesTo.from },
+        );
+      }
 
       // Guarda contra saldo negativo: se alguma carteira não existe ou ficaria negativa, aborta tudo.
       for (const eff of params.walletEffects ?? []) {
