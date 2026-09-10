@@ -3,10 +3,13 @@ import jwt from 'jsonwebtoken';
 import { ulid } from 'ulid';
 import type { AuthResponse, PublicUser, RefreshResponse, UserRole } from '@escambo/types';
 import { env } from '../../config/env';
+import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { generateRefreshToken, hashToken } from '../../utils/tokens';
+import { mailService } from '../mail/mail.service';
 import { authRepository, type UserRow } from './auth.repository';
 import { sessionRepository } from './session.repository';
+import { tokensRepository } from './tokens.repository';
 import type { LoginInput, RegisterInput } from './auth.schema';
 
 export interface SessionContext {
@@ -21,7 +24,46 @@ function signAccessToken(user: { id: number; ulid: string; role: string }): stri
 }
 
 function toPublic(user: UserRow): PublicUser {
-  return { id: user.id, ulid: user.ulid, email: user.email, role: user.role as UserRole };
+  return {
+    id: user.id,
+    ulid: user.ulid,
+    email: user.email,
+    role: user.role as UserRole,
+    emailVerified: user.email_verified_at != null,
+  };
+}
+
+const appLink = (path: string): string => `${env.APP_URL.replace(/\/$/, '')}${path}`;
+
+/** Gera um token de uso único, guarda só o hash e devolve o valor para ir no link. */
+async function issueOneTimeToken(
+  purpose: 'verify_email' | 'password_reset',
+  userId: number,
+  ttlMs: number,
+): Promise<string> {
+  await tokensRepository.invalidateOpen(purpose, userId);
+  const token = generateRefreshToken();
+  await tokensRepository.create(purpose, userId, hashToken(token), new Date(Date.now() + ttlMs));
+  return token;
+}
+
+/** E-mail de boas-vindas com o link de confirmação (melhor esforço). */
+async function sendVerification(user: { id: number; email: string }): Promise<void> {
+  if (!mailService.enabled()) return;
+  const token = await issueOneTimeToken(
+    'verify_email',
+    user.id,
+    env.EMAIL_VERIFY_TTL_HOURS * 3_600_000,
+  );
+  await mailService.send({
+    userId: user.id,
+    to: user.email,
+    template: 'verify_email',
+    vars: {
+      link: appLink(`/verificar-email?token=${token}`),
+      validity: `${env.EMAIL_VERIFY_TTL_HOURS} horas`,
+    },
+  });
 }
 
 /** Emite um novo par (access token JWT + refresh token opaco) e persiste a sessão. */
@@ -85,7 +127,68 @@ export const authService = {
       role,
     });
 
-    return { id, ulid: userUlid, email: input.email, role };
+    // Boas-vindas + confirmação de e-mail. Falha no e-mail não derruba o cadastro.
+    try {
+      await sendVerification({ id, email: input.email });
+    } catch (err) {
+      logger.warn({ err, userId: id }, 'e-mail de confirmação não enviado');
+    }
+
+    return { id, ulid: userUlid, email: input.email, role, emailVerified: false };
+  },
+
+  /** Confirma o e-mail pelo token do link (uso único, com validade). */
+  async verifyEmail(token: string): Promise<PublicUser> {
+    const userId = await tokensRepository.consume('verify_email', hashToken(token));
+    if (!userId) throw new HttpError(400, 'Link inválido ou vencido', 'invalid_token');
+    await authRepository.markEmailVerified(userId);
+    const user = await authRepository.findById(userId);
+    if (!user) throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
+    return toPublic(user);
+  },
+
+  /** Reenvia o link de confirmação (409 se já confirmado). */
+  async resendVerification(userId: number): Promise<void> {
+    const user = await authRepository.findById(userId);
+    if (!user) throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
+    if (user.email_verified_at) {
+      throw new HttpError(409, 'Este e-mail já foi confirmado', 'already_verified');
+    }
+    await sendVerification(user);
+  },
+
+  /**
+   * "Esqueci minha senha": sempre responde igual (sem revelar se o e-mail existe). Se existir
+   * uma conta ativa, envia o link de redefinição com validade curta.
+   */
+  async forgotPassword(email: string): Promise<void> {
+    const user = await authRepository.findByEmail(email);
+    if (!user || user.deleted_at || user.status === 'banned') return;
+    if (!mailService.enabled()) return;
+    const token = await issueOneTimeToken(
+      'password_reset',
+      user.id,
+      env.PASSWORD_RESET_TTL_MINUTES * 60_000,
+    );
+    await mailService.send({
+      userId: user.id,
+      to: user.email,
+      template: 'password_reset',
+      vars: {
+        link: appLink(`/redefinir-senha?token=${token}`),
+        validity: `${env.PASSWORD_RESET_TTL_MINUTES} minutos`,
+      },
+    });
+  },
+
+  /** Define a nova senha pelo token (uso único) e encerra todas as sessões abertas. */
+  async resetPassword(token: string, password: string): Promise<void> {
+    const userId = await tokensRepository.consume('password_reset', hashToken(token));
+    if (!userId) throw new HttpError(400, 'Link inválido ou vencido', 'invalid_token');
+    const passwordHash = await bcrypt.hash(password, env.BCRYPT_SALT_ROUNDS);
+    await authRepository.updatePassword(userId, passwordHash);
+    await authRepository.markEmailVerified(userId); // quem redefine provou controlar o e-mail
+    await sessionRepository.revokeAllForUser(userId);
   },
 
   async login(input: LoginInput, ctx: SessionContext = {}): Promise<AuthResponse> {

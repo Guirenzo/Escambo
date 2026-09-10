@@ -13,6 +13,34 @@ export interface PublicUser {
   ulid: string;
   email: string;
   role: UserRole;
+  /** E-mail confirmado pelo link enviado no cadastro (ou ao redefinir a senha). */
+  emailVerified: boolean;
+}
+
+export interface ForgotPasswordRequest {
+  email: string;
+}
+export interface ResetPasswordRequest {
+  token: string;
+  password: string;
+}
+export interface VerifyEmailRequest {
+  token: string;
+}
+
+/** E-mail registrado na caixa de saída (painel admin; no provedor simulado é a própria entrega). */
+export interface AdminEmail {
+  id: number;
+  userId: number | null;
+  to: string;
+  subject: string;
+  template: 'verify_email' | 'password_reset' | 'notification';
+  text: string;
+  status: 'queued' | 'sent' | 'failed';
+  provider: string;
+  error: string | null;
+  sentAt: string | null;
+  createdAt: string;
 }
 
 export interface RegisterRequest {

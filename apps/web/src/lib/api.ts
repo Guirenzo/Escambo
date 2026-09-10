@@ -1,5 +1,6 @@
 import type {
   AdminDeletionRequest,
+  AdminEmail,
   AdminMetrics,
   AdminWithdrawal,
   AuthResponse,
@@ -201,6 +202,20 @@ export const api = {
   logoutAll: () => request<{ revoked: number }>('/auth/logout-all', { method: 'POST' }),
   logout: (refreshToken: string) =>
     request<void>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
+  verifyEmail: (token: string) =>
+    request<PublicUser>('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) }),
+  resendVerification: () =>
+    request<{ sent: boolean }>('/auth/resend-verification', { method: 'POST' }),
+  forgotPassword: (email: string) =>
+    request<{ sent: boolean }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (token: string, password: string) =>
+    request<void>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    }),
 
   // dashboard
   wallet: () => request<Wallet>('/wallet'),
@@ -340,6 +355,7 @@ export const api = {
     }),
   adminModerateUser: (ulid: string, action: 'suspend' | 'ban' | 'reactivate') =>
     request<void>(`/admin/users/${encodeURIComponent(ulid)}/${action}`, { method: 'POST' }),
+  adminEmails: (limit = 50) => request<AdminEmail[]>(`/admin/emails?limit=${limit}`),
   adminDeletionRequests: (status: 'pending' | 'all' = 'pending') =>
     request<AdminDeletionRequest[]>(`/admin/deletion-requests?status=${status}`),
   adminDeletionAction: (id: number, action: 'complete' | 'reject', body: { note?: string } = {}) =>

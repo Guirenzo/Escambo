@@ -103,6 +103,33 @@ export async function topUp(
   await api(request, 'post', `/wallet/deposits/${deposit.id}/simulate`, { token: user.token });
 }
 
+/**
+ * Último e-mail gerado para um usuário (provedor simulado: a caixa de saída é a entrega).
+ * Lido com uma conta admin; devolve o texto, de onde os testes tiram os links.
+ */
+export async function latestEmail(
+  request: APIRequestContext,
+  admin: TestUser,
+  userId: number,
+  template: 'verify_email' | 'password_reset' | 'notification',
+): Promise<{ subject: string; text: string }> {
+  for (let i = 0; i < 20; i++) {
+    const list = await api<{ template: string; subject: string; text: string }[]>(
+      request,
+      'get',
+      `/admin/emails?userId=${userId}&limit=20`,
+      { token: admin.token },
+    );
+    const found = list.find((e) => e.template === template);
+    if (found) return { subject: found.subject, text: found.text };
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  throw new Error(`e-mail ${template} do usuário ${userId} não apareceu na caixa de saída`);
+}
+
+/** Primeiro link http(s) de um texto de e-mail. */
+export const linkIn = (text: string): string => /https?:\/\/\S+/.exec(text)?.[0] ?? '';
+
 /** Admin de teste: e-mail no domínio liberado por ADMIN_EMAILS (@admin.escambo.test). */
 export function createAdmin(request: APIRequestContext): Promise<TestUser> {
   return createUser(request, 'client', {

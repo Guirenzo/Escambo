@@ -228,6 +228,21 @@ const step = (msg) => console.log(`\n▶ ${msg}`);
 // Passos
 // ---------------------------------------------------------------------------
 
+/** Confirma o e-mail da conta da demo pelo link da caixa de saída (provedor simulado). */
+async function ensureVerified(user, admin) {
+  const me = await call('GET', '/auth/me', { token: user.token });
+  if (me.emailVerified) return;
+  await call('POST', '/auth/resend-verification', { token: user.token }).catch(() => undefined);
+  const emails = await call('GET', `/admin/emails?userId=${user.id}&limit=10`, {
+    token: admin.token,
+  });
+  const mail = emails.find((e) => e.template === 'verify_email');
+  const token = mail && /token=([A-Za-z0-9_-]+)/.exec(mail.text)?.[1];
+  if (!token) return;
+  await call('POST', '/auth/verify-email', { body: { token } });
+  log(`e-mail confirmado: ${user.email}`);
+}
+
 async function ensureAccount(email, role) {
   try {
     await call('POST', '/auth/register', { body: { email, password: PASSWORD, role } });
@@ -513,6 +528,7 @@ async function main() {
   for (const f of FREELANCERS) users[f.key] = await ensureAccount(f.email, 'freelancer');
   users[CLIENT.key] = await ensureAccount(CLIENT.email, 'client');
   users.admin = await ensureAccount(ADMIN_EMAIL, 'client');
+  for (const u of Object.values(users)) await ensureVerified(u, users.admin);
 
   step('Perfis, carteiras (bônus de boas-vindas) e serviços');
   const categories = await call('GET', '/categories');

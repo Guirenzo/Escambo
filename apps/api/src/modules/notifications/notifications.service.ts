@@ -2,7 +2,30 @@ import type { Notification, NotificationList } from '@escambo/types';
 import { logger } from '../../config/logger';
 import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
+import { authRepository } from '../auth/auth.repository';
+import { EMAILED_NOTIFICATION_TYPES, mailService, notificationLink } from '../mail/mail.service';
 import { notificationsRepository, type NotificationRow } from './notifications.repository';
+
+/** Notificações relevantes também vão por e-mail (melhor esforço, fora do caminho da resposta). */
+async function emailNotification(
+  userId: number,
+  params: {
+    type: string;
+    title: string;
+    body?: string | null;
+    data?: Record<string, unknown> | null;
+  },
+): Promise<void> {
+  if (!EMAILED_NOTIFICATION_TYPES.has(params.type) || !mailService.enabled()) return;
+  const user = await authRepository.findById(userId);
+  if (!user || user.deleted_at) return;
+  await mailService.send({
+    userId,
+    to: user.email,
+    template: 'notification',
+    vars: { title: params.title, body: params.body ?? null, link: notificationLink(params.data) },
+  });
+}
 
 function toNotification(r: NotificationRow): Notification {
   const data =
@@ -52,6 +75,9 @@ export const notificationsService = {
         createdAt: new Date().toISOString(),
       };
       realtime.emitToUser(userId, 'notification:new', pushed);
+      emailNotification(userId, params).catch((err) =>
+        logger.warn({ err, type: params.type }, 'e-mail da notificação falhou'),
+      );
     } catch (err) {
       logger.warn({ err }, 'notify falhou');
     }

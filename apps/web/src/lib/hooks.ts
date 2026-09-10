@@ -34,6 +34,7 @@ export const qk = {
   deposit: (id: number) => ['deposit', id] as const,
   adminWithdrawals: (status: string) => ['adminWithdrawals', status] as const,
   adminDeletions: (status: string) => ['adminDeletions', status] as const,
+  adminEmails: ['adminEmails'] as const,
   notifications: ['notifications'] as const,
   barters: ['barters'] as const,
   profiles: ['profiles'] as const,
@@ -417,6 +418,9 @@ export function useResolveDispute() {
     },
   });
 }
+
+export const useAdminEmails = () =>
+  useQuery({ queryKey: qk.adminEmails, queryFn: () => api.adminEmails(50) });
 
 export const useAdminDeletionRequests = (status: 'pending' | 'all') =>
   useQuery({

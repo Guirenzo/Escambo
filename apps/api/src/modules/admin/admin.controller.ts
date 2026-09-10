@@ -1,9 +1,11 @@
 import type { Request, Response } from 'express';
 import { auditService } from '../audit/audit.service';
 import { lgpdService } from '../lgpd/lgpd.service';
+import { mailService } from '../mail/mail.service';
 import { withdrawalService } from '../withdrawal/withdrawal.service';
 import {
   adminDeletionsQuerySchema,
+  adminEmailsQuerySchema,
   adminWithdrawalsQuerySchema,
   completeWithdrawalSchema,
   deletionIdParamSchema,
@@ -102,6 +104,12 @@ export async function failWithdrawal(req: Request, res: Response): Promise<void>
     ...audit(req),
   });
   res.json(w);
+}
+
+/** Caixa de saída de e-mails (no provedor simulado é a própria entrega). */
+export async function listEmails(req: Request, res: Response): Promise<void> {
+  const { limit, userId } = adminEmailsQuerySchema.parse(req.query);
+  res.json(await mailService.listRecent(limit, userId ?? null));
 }
 
 // ---------- LGPD: pedidos de exclusão de conta ----------

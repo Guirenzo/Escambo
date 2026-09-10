@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { RequireAuth } from './components/RequireAuth';
 import { Spinner } from './components/ui';
+import { ForgotPasswordView, ResetPasswordView, VerifyEmailView } from './features/auth/AccountViews';
 import { LoginForm } from './features/auth/LoginForm';
 import { LegalView } from './features/legal/LegalView';
 import { Shell } from './features/shell/Shell';
@@ -51,6 +52,9 @@ export function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginRoute />} />
+        <Route path="/esqueci-senha" element={<ForgotPasswordView />} />
+        <Route path="/redefinir-senha" element={<ResetPasswordView />} />
+        <Route path="/verificar-email" element={<VerifyEmailView />} />
         <Route path="/termos" element={<LegalView kind="termos" />} />
         <Route path="/privacidade" element={<LegalView kind="privacidade" />} />
         <Route element={<RequireAuth />}>

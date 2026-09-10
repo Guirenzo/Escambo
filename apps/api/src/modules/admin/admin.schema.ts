@@ -33,6 +33,11 @@ export const rejectDeletionSchema = z.object({
   note: z.string().min(3).max(500),
 });
 
+export const adminEmailsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).default(50),
+  userId: z.coerce.number().int().positive().optional(),
+});
+
 export const completeWithdrawalSchema = z.object({
   gatewayRef: z.string().max(100).nullable().optional(),
 });
