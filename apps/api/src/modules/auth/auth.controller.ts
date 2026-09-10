@@ -1,5 +1,12 @@
 import type { Request, Response } from 'express';
-import { loginSchema, refreshSchema, registerSchema } from './auth.schema';
+import {
+  forgotPasswordSchema,
+  loginSchema,
+  refreshSchema,
+  registerSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
+} from './auth.schema';
 import { authService } from './auth.service';
 
 function context(req: Request) {
@@ -40,4 +47,29 @@ export async function logoutAll(req: Request, res: Response): Promise<void> {
 export async function me(req: Request, res: Response): Promise<void> {
   const user = await authService.getByUlid(req.user!.sub);
   res.json(user);
+}
+
+/** Confirma o e-mail pelo token do link. */
+export async function verifyEmail(req: Request, res: Response): Promise<void> {
+  const { token } = verifyEmailSchema.parse(req.body);
+  res.json(await authService.verifyEmail(token));
+}
+
+/** Rota protegida — reenvia o link de confirmação. */
+export async function resendVerification(req: Request, res: Response): Promise<void> {
+  await authService.resendVerification(req.user!.uid);
+  res.status(202).json({ sent: true });
+}
+
+/** Esqueci minha senha: resposta idêntica exista ou não a conta. */
+export async function forgotPassword(req: Request, res: Response): Promise<void> {
+  const { email } = forgotPasswordSchema.parse(req.body);
+  await authService.forgotPassword(email);
+  res.status(202).json({ sent: true });
+}
+
+export async function resetPassword(req: Request, res: Response): Promise<void> {
+  const { token, password } = resetPasswordSchema.parse(req.body);
+  await authService.resetPassword(token, password);
+  res.status(204).send();
 }

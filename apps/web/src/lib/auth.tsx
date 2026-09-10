@@ -11,6 +11,8 @@ interface AuthState {
   login: (input: LoginRequest) => Promise<void>;
   register: (input: RegisterRequest) => Promise<void>;
   logout: () => void;
+  /** Recarrega o usuário da sessão (ex.: depois de confirmar o e-mail). */
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -74,6 +76,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function refreshUser(): Promise<void> {
+    if (!getToken() && !getRefreshToken()) return;
+    try {
+      setUser(await api.me());
+    } catch {
+      /* sessão inválida: o client HTTP já avisa via SESSION_EXPIRED_EVENT */
+    }
+  }
+
   /** Sai: revoga o refresh token no servidor (melhor esforço) e limpa a sessão local. */
   function logout(): void {
     const refreshToken = getRefreshToken();
@@ -84,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, error, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, error, login, register, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

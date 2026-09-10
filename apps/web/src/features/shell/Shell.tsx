@@ -4,17 +4,49 @@ import {
   Briefcase,
   Home,
   LogOut,
+  MailWarning,
   ShieldAlert,
   Trophy,
   User,
   Wallet,
   type LucideIcon,
 } from 'lucide-react';
+import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { Avatar } from '../../components/Avatar';
 import { useNotifications, useProfilesMe } from '../../lib/hooks';
 import { useRealtimeNotifications } from '../../lib/realtime';
+import { useToast } from '../../lib/toast';
+
+/** Conta ainda sem e-mail confirmado: lembrete discreto com reenvio do link. */
+function VerifyEmailBanner({ email }: { email: string }) {
+  const toast = useToast();
+  const [sending, setSending] = useState(false);
+  async function resend(): Promise<void> {
+    setSending(true);
+    try {
+      await api.resendVerification();
+      toast.success(`Link reenviado para ${email}.`);
+    } catch (er) {
+      toast.error(er instanceof Error ? er.message : 'Não foi possível reenviar');
+    } finally {
+      setSending(false);
+    }
+  }
+  return (
+    <div className="verify-banner" role="status" data-testid="verify-banner">
+      <MailWarning size={16} />
+      <span>
+        Confirme seu e-mail: enviamos um link para <strong>{email}</strong>.
+      </span>
+      <button type="button" className="link" onClick={() => void resend()} disabled={sending}>
+        {sending ? 'Reenviando…' : 'Reenviar e-mail'}
+      </button>
+    </div>
+  );
+}
 
 const NAV: { to: string; label: string; Icon: LucideIcon; end?: boolean; adminOnly?: boolean }[] = [
   { to: '/', label: 'Início', Icon: Home, end: true },
@@ -90,6 +122,7 @@ export function Shell() {
       </aside>
 
       <main className="main">
+        {user && !user.emailVerified && <VerifyEmailBanner email={user.email} />}
         <Outlet />
       </main>
     </div>

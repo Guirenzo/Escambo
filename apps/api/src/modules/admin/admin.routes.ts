@@ -10,6 +10,7 @@ import {
   getMetrics,
   listOpenDisputes,
   listDeletionRequests,
+  listEmails,
   listWithdrawals,
   processWithdrawal,
   reactivateUser,
@@ -33,5 +34,6 @@ adminRoutes.post('/withdrawals/:id/process', asyncHandler(processWithdrawal));
 adminRoutes.post('/withdrawals/:id/complete', asyncHandler(completeWithdrawal));
 adminRoutes.post('/withdrawals/:id/fail', asyncHandler(failWithdrawal));
 adminRoutes.get('/deletion-requests', asyncHandler(listDeletionRequests));
+adminRoutes.get('/emails', asyncHandler(listEmails));
 adminRoutes.post('/deletion-requests/:id/complete', asyncHandler(completeDeletionRequest));
 adminRoutes.post('/deletion-requests/:id/reject', asyncHandler(rejectDeletionRequest));

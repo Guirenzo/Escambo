@@ -181,6 +181,12 @@ export const openapiDocument: Record<string, any> = {
     '/contracts/{id}/approve': { post: op('Contratações', 'Cliente aprova (libera escrow)', { auth: true }) },
     '/contracts/{id}/cancel': { post: op('Contratações', 'Cancela (reembolso RN-025)', { auth: true }) },
 
+    '/auth/verify-email': { post: op('Auth', 'Confirma o e-mail pelo token do link (uso único)') },
+    '/auth/resend-verification': { post: op('Auth', 'Reenvia o link de confirmação', { auth: true }) },
+    '/auth/forgot-password': { post: op('Auth', 'Esqueci minha senha: envia link de redefinição (resposta igual exista ou não a conta)') },
+    '/auth/reset-password': { post: op('Auth', 'Define nova senha pelo token; encerra todas as sessões', { responses: res204 }) },
+    '/admin/emails': { get: op('Admin', 'Caixa de saída de e-mails (limit, userId)', { auth: true }) },
+
     '/wallet': { get: op('Carteira', 'Saldo R$ + créditos Escambo (disponível e em escrow)', { auth: true }) },
     '/wallet/transactions': { get: op('Carteira', 'Extrato de R$ (depósitos, reservas, escrow, reembolsos, saques)', { auth: true }) },
     '/wallet/deposits': {

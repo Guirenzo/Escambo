@@ -1,5 +1,6 @@
 import { ArrowLeftRight, Coins, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, Field, Input, Select } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 
@@ -145,6 +146,11 @@ export function LoginForm() {
                 .
               </span>
             </label>
+          )}
+          {mode === 'login' && (
+            <p className="muted tiny" style={{ marginTop: -6 }}>
+              <Link to="/esqueci-senha">Esqueci minha senha</Link>
+            </p>
           )}
           {error && <p className="error">{error}</p>}
           <Button

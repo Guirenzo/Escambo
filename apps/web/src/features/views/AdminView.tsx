@@ -6,6 +6,7 @@ import {
   Coins,
   Gavel,
   Lock,
+  Mail,
   ShieldAlert,
   Trash2,
   Users,
@@ -15,6 +16,7 @@ import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   AdminDeletionRequest,
+  AdminEmail,
   AdminWithdrawal,
   Dispute,
   DisputeResolution,
@@ -32,6 +34,7 @@ import {
 import {
   useAdminDeletionAction,
   useAdminDeletionRequests,
+  useAdminEmails,
   useAdminDisputes,
   useAdminMetrics,
   useAdminWithdrawalAction,
@@ -289,7 +292,39 @@ function DeletionModal({
   );
 }
 
-/** Painel do administrador: métricas, fila de mediação, fila de saques e pedidos LGPD. */
+const EMAIL_TEMPLATE_LABEL: Record<string, string> = {
+  verify_email: 'Confirmação de e-mail',
+  password_reset: 'Redefinição de senha',
+  notification: 'Aviso',
+};
+
+/** Conteúdo (texto) de um e-mail da caixa de saída — links clicáveis para a demo. */
+function EmailModal({ email, onClose }: { email: AdminEmail; onClose: () => void }) {
+  const parts = email.text.split(/(https?:\/\/\S+)/g);
+  return (
+    <Modal title={email.subject} onClose={onClose}>
+      <div className="stack">
+        <span className="muted tiny">
+          para {email.to} · {EMAIL_TEMPLATE_LABEL[email.template] ?? email.template} ·{' '}
+          {email.provider} · {dtm(email.createdAt)}
+        </span>
+        <pre className="email-text" data-testid="email-text">
+          {parts.map((p, i) =>
+            /^https?:\/\//.test(p) ? (
+              <a key={i} href={p}>
+                {p}
+              </a>
+            ) : (
+              <span key={i}>{p}</span>
+            ),
+          )}
+        </pre>
+      </div>
+    </Modal>
+  );
+}
+
+/** Painel do administrador: métricas, fila de mediação, fila de saques, pedidos LGPD e e-mails. */
 export function AdminView() {
   const metrics = useAdminMetrics();
   const disputes = useAdminDisputes();
@@ -308,6 +343,8 @@ export function AdminView() {
     request: AdminDeletionRequest;
     action: 'complete' | 'reject';
   } | null>(null);
+  const emails = useAdminEmails();
+  const [openEmail, setOpenEmail] = useState<AdminEmail | null>(null);
   const m = metrics.data;
 
   async function startProcessing(w: AdminWithdrawal): Promise<void> {
@@ -708,6 +745,83 @@ export function AdminView() {
         </QueryState>
       </section>
 
+      <section className="card">
+        <div className="card-head">
+          <h3>
+            <Mail size={16} /> Caixa de saída de e-mails
+          </h3>
+          <span className="muted tiny">
+            {emails.data?.[0]?.provider === 'smtp'
+              ? 'enviados via SMTP'
+              : 'provedor simulado: os e-mails ficam aqui (links de confirmação e de senha)'}
+          </span>
+        </div>
+        <QueryState
+          isLoading={emails.isLoading}
+          error={emails.error}
+          data={emails.data}
+          empty="Nenhum e-mail gerado ainda."
+          onRetry={() => void emails.refetch()}
+        >
+          {(list) => (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Quando</th>
+                    <th>Para</th>
+                    <th>Assunto</th>
+                    <th>Tipo</th>
+                    <th>Status</th>
+                    <th className="right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((e) => (
+                    <tr key={e.id} data-testid={`email-${e.id}`}>
+                      <td className="muted tiny">{dtm(e.createdAt)}</td>
+                      <td>
+                        <span className="mono">{e.to}</span>
+                      </td>
+                      <td>
+                        <strong>{e.subject}</strong>
+                      </td>
+                      <td className="muted tiny">
+                        {EMAIL_TEMPLATE_LABEL[e.template] ?? e.template}
+                      </td>
+                      <td>
+                        <span
+                          className={`pill status-${
+                            e.status === 'sent'
+                              ? 'completed'
+                              : e.status === 'failed'
+                                ? 'cancelled'
+                                : 'pending'
+                          }`}
+                        >
+                          {e.status === 'sent'
+                            ? 'Enviado'
+                            : e.status === 'failed'
+                              ? 'Falhou'
+                              : 'Na fila'}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="acts">
+                          <Button variant="mini" onClick={() => setOpenEmail(e)}>
+                            Ver
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </QueryState>
+      </section>
+
       <p className="muted tiny">
         Moderação de usuários (suspender, banir, reativar) fica no perfil público de cada
         freelancer, visível só para administradores.
@@ -728,6 +842,7 @@ export function AdminView() {
           onClose={() => setDeleting(null)}
         />
       )}
+      {openEmail && <EmailModal email={openEmail} onClose={() => setOpenEmail(null)} />}
     </div>
   );
 }

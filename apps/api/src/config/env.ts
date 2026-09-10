@@ -72,6 +72,24 @@ const envSchema = z.object({
   DATA_DIR: z.string().default('data'),
   // Por quantos dias a cópia de dados fica disponível para download.
   EXPORT_TTL_DAYS: z.coerce.number().int().positive().default(7),
+
+  // Endereço público do app (links nos e-mails: confirmar e-mail, redefinir senha, abrir no app).
+  APP_URL: z.string().url().default('http://localhost:5173'),
+  // E-mail transacional: 'simulated' (caixa de saída no banco, lida no painel admin — demo/dev),
+  // 'smtp' (nodemailer com SMTP_*) ou 'off' (testes unitários).
+  MAIL_PROVIDER: z.enum(['simulated', 'smtp', 'off']).default('simulated'),
+  MAIL_FROM: z.string().default('Escambo <nao-responda@escambo.demo>'),
+  SMTP_HOST: z.string().default(''),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_USER: z.string().default(''),
+  SMTP_PASS: z.string().default(''),
+  SMTP_SECURE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  // Validade dos links de confirmação de e-mail e de redefinição de senha.
+  EMAIL_VERIFY_TTL_HOURS: z.coerce.number().int().positive().default(24),
+  PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(60),
 });
 
 const parsed = envSchema.safeParse(process.env);

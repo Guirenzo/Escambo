@@ -14,6 +14,9 @@ export const pool = mysql.createPool({
   connectionLimit: env.DB_CONNECTION_LIMIT,
   queueLimit: 0,
   namedPlaceholders: true,
+  // Datas sempre em UTC nos dois sentidos: o MySQL (Docker/CI) roda em UTC e compara com NOW();
+  // sem isto, um Date do Node em fuso local (ex.: -03:00) vira 'vencido' ou 'no futuro' à toa.
+  timezone: 'Z',
   enableKeepAlive: true,
   keepAliveInitialDelay: 10_000,
 });

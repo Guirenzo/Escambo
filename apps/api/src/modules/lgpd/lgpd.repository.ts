@@ -213,6 +213,17 @@ export const lgpdRepository = {
       await conn.query<ResultSetHeader>(`DELETE FROM notifications WHERE user_id = :userId`, {
         userId,
       });
+      await conn.query<ResultSetHeader>(`DELETE FROM email_outbox WHERE user_id = :userId`, {
+        userId,
+      });
+      await conn.query<ResultSetHeader>(
+        `DELETE FROM email_verification_tokens WHERE user_id = :userId`,
+        { userId },
+      );
+      await conn.query<ResultSetHeader>(
+        `DELETE FROM password_reset_tokens WHERE user_id = :userId`,
+        { userId },
+      );
       await conn.query<ResultSetHeader>(
         `UPDATE user_sessions SET revoked_at = NOW() WHERE user_id = :userId AND revoked_at IS NULL`,
         { userId },

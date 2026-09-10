@@ -69,7 +69,7 @@ test('cliente contrata um serviço, cai na sala do contrato e conversa no chat',
   // chat em tempo real
   const msg = `Olá! Mensagem e2e ${Date.now()}`;
   await page.getByPlaceholder('Escreva uma mensagem…').fill(msg);
-  await page.getByRole('button', { name: 'Enviar' }).click();
+  await page.getByRole('button', { name: 'Enviar', exact: true }).click();
   await expect(page.locator('.bubble.mine', { hasText: msg })).toBeVisible();
 
   // o contrato aparece na lista do cliente
