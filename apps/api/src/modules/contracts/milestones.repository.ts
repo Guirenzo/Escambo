@@ -235,7 +235,7 @@ export const milestonesRepository = {
         p.changedBy,
         status,
         completed ? 'completed' : 'in_progress',
-        `${p.note ? `${p.note} · ` : ''}Marco «${m.title}» aprovado: ${net.toFixed(2)} liberados`,
+        `${p.note ? `${p.note} · ` : ''}Marco «${m.title}» aprovado: R$ ${net.toFixed(2).replace('.', ',')} liberados`,
       );
       if (completed) {
         await conn.query<ResultSetHeader>(
