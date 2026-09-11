@@ -13,7 +13,9 @@ import {
   listContracts,
   rejectContract,
   requestMilestoneRevision,
+  requestExtension,
   requestRevisionContract,
+  resolveExtension,
 } from './contracts.controller';
 
 export const contractsRoutes = Router();
@@ -32,6 +34,10 @@ contractsRoutes.post('/:id/deliver', asyncHandler(deliverContract));
 contractsRoutes.post('/:id/approve', asyncHandler(approveContract));
 contractsRoutes.post('/:id/request-revision', asyncHandler(requestRevisionContract));
 contractsRoutes.post('/:id/cancel', asyncHandler(cancelContract));
+
+// Prazo (RN-028): o freelancer pede uma única extensão; o cliente aceita ou recusa.
+contractsRoutes.post('/:id/extension', asyncHandler(requestExtension));
+contractsRoutes.post('/:id/extension/:decision', asyncHandler(resolveExtension));
 
 // Escrow por marcos (RN-069): entrega, aprovação (libera só aquele marco) e revisão por marco.
 contractsRoutes.post('/:id/milestones/:milestoneId/deliver', asyncHandler(deliverMilestone));

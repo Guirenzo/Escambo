@@ -191,12 +191,7 @@ export interface Consent {
 
 export type DeletionRequestStatus = 'pending' | 'processing' | 'completed' | 'rejected';
 export type ExportRequestStatus =
-  | 'pending'
-  | 'processing'
-  | 'ready'
-  | 'downloaded'
-  | 'expired'
-  | 'failed';
+  'pending' | 'processing' | 'ready' | 'downloaded' | 'expired' | 'failed';
 
 export interface DataDeletionRequest {
   id: number;
@@ -449,15 +444,28 @@ export interface Contract {
   hasReview: boolean;
   /** Escrow por marcos (RN-069): entrega e liberação acontecem marco a marco. */
   hasMilestones: boolean;
+  /** Quando o prazo foi estendido (RN-028: só uma vez por contratação). */
+  deadlineExtendedAt: string | null;
+  /** Quando as partes foram avisadas de que o prazo estourou (RN-029). */
+  overdueNotifiedAt: string | null;
+  /** Último pedido de extensão de prazo, se houve. */
+  extension: ContractExtension | null;
+}
+
+export type ExtensionStatus = 'pending' | 'accepted' | 'declined';
+
+/** Pedido de extensão de prazo feito pelo freelancer (RN-028). */
+export interface ContractExtension {
+  status: ExtensionStatus;
+  /** Novo prazo proposto (vira o prazo da contratação se o cliente aceitar). */
+  deadlineAt: string;
+  reason: string;
+  requestedAt: string;
+  resolvedAt: string | null;
 }
 
 export type MilestoneStatus =
-  | 'pending'
-  | 'funded'
-  | 'delivered'
-  | 'approved'
-  | 'released'
-  | 'cancelled';
+  'pending' | 'funded' | 'delivered' | 'approved' | 'released' | 'cancelled';
 
 export interface Milestone {
   id: number;
@@ -508,6 +516,11 @@ export interface CreateContractRequest {
   paymentMode?: 'cash' | 'credits';
   /** Escrow por marcos (só em dinheiro): 2 a 10 marcos cuja soma é o valor da contratação. */
   milestones?: MilestoneInput[];
+}
+
+export interface ExtensionRequest {
+  deadlineAt: string;
+  reason: string;
 }
 
 export interface CancelResult {

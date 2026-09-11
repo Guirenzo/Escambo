@@ -73,5 +73,7 @@ INSERT INTO platform_settings (key_name, value, type, description) VALUES
   ('max_boost_days',          '30',    'integer', 'Duração máxima de um impulsionamento'),
   ('ranking_radius_km',       '50',    'integer', 'Raio (km) do ranking local'),
   ('barter_enabled',          'true',  'boolean', 'Habilita a troca de serviços (escambo)'),
-  ('maintenance_mode',        'false', 'boolean', 'Modo de manutenção da plataforma')
+  ('maintenance_mode',        'false', 'boolean', 'Modo de manutenção da plataforma'),
+  ('proposal_expiry_hours',   '72',    'integer', 'Horas para o freelancer responder a uma proposta; depois ela expira e a reserva volta ao cliente (RN-021)'),
+  ('deadline_grace_hours',    '24',    'integer', 'Horas após o aviso de prazo estourado sem entrega nem extensão até a plataforma abrir a disputa (RN-029)')
 ON DUPLICATE KEY UPDATE value = VALUES(value);

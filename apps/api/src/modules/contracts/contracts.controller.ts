@@ -6,10 +6,12 @@ import {
   createContractSchema,
   deliverSchema,
   listContractsSchema,
+  extensionDecisionSchema,
+  extensionSchema,
   milestoneParamsSchema,
   noteSchema,
 } from './contracts.schema';
-import { contractsService } from './contracts.service';
+import { brDate, contractsService } from './contracts.service';
 
 const uid = (req: Request): number => req.user!.uid;
 const audit = (req: Request) => ({
@@ -99,6 +101,38 @@ export async function requestRevisionContract(req: Request, res: Response): Prom
   void notificationsService.notify(contract.freelancerId, {
     type: 'contract_revision',
     title: 'Revisão solicitada',
+    data: { contractId: contract.id },
+  });
+  res.json(contract);
+}
+
+// ---------- Prazos (RN-028) ----------
+
+export async function requestExtension(req: Request, res: Response): Promise<void> {
+  const { id } = contractIdSchema.parse(req.params);
+  const input = extensionSchema.parse(req.body);
+  const contract = await contractsService.requestExtension(id, uid(req), input);
+  void notificationsService.notify(contract.clientId, {
+    type: 'deadline_extension_requested',
+    title: 'Pedido de extensão de prazo',
+    body: `${contract.title}: novo prazo proposto ${brDate(input.deadlineAt)} — ${input.reason}`,
+    data: { contractId: contract.id },
+  });
+  res.json(contract);
+}
+
+export async function resolveExtension(req: Request, res: Response): Promise<void> {
+  const { id, decision } = extensionDecisionSchema.parse(req.params);
+  const accept = decision === 'accept';
+  const contract = await contractsService.resolveExtension(id, uid(req), accept);
+  void notificationsService.notify(contract.freelancerId, {
+    type: accept ? 'deadline_extension_accepted' : 'deadline_extension_declined',
+    title: accept
+      ? `Extensão aceita: novo prazo ${contract.deadlineAt ? brDate(contract.deadlineAt) : ''}`
+      : 'Extensão de prazo recusada',
+    body: accept
+      ? `${contract.title}: o prazo foi estendido (única extensão da contratação).`
+      : `${contract.title}: o prazo original continua valendo.`,
     data: { contractId: contract.id },
   });
   res.json(contract);

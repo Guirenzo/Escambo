@@ -2,6 +2,8 @@ import { env } from '../config/env';
 import { logger } from '../config/logger';
 import { runExpireDeposits } from './expire-deposits';
 import { runExpireExports } from './expire-exports';
+import { runExpireProposals } from './expire-proposals';
+import { runOverdueContracts } from './overdue-contracts';
 import { runTacitApproval } from './tacit-approval';
 
 /**
@@ -20,6 +22,8 @@ export interface Job {
 
 export const JOBS: Job[] = [
   { name: 'tacit-approval', run: runTacitApproval },
+  { name: 'expire-proposals', run: runExpireProposals },
+  { name: 'overdue-contracts', run: runOverdueContracts },
   { name: 'expire-deposits', run: runExpireDeposits },
   { name: 'expire-exports', run: runExpireExports },
 ];

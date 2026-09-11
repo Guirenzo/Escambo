@@ -13,16 +13,34 @@ import type {
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { barterService } from '../barter/barter.service';
+import { disputesRepository } from '../disputes/disputes.repository';
+import { notificationsService } from '../notifications/notifications.service';
 import { gamificationService } from '../gamification/gamification.service';
 import type { WalletEffect } from '../wallet/wallet.ledger';
 import { walletService } from '../wallet/wallet.service';
-import { contractsRepository, type ContractRow } from './contracts.repository';
+import {
+  contractsRepository,
+  DEADLINE_ACTIVE_STATUSES,
+  type ContractRow,
+} from './contracts.repository';
 import { milestonesRepository, type MilestoneRow } from './milestones.repository';
 import { reviewsRepository } from '../reviews/reviews.repository';
 import { toReview } from '../reviews/reviews.service';
-import type { CreateContractInput, DeliverInput, ListContractsInput } from './contracts.schema';
+import type {
+  CreateContractInput,
+  DeliverInput,
+  ExtensionInput,
+  ListContractsInput,
+} from './contracts.schema';
 
 const PLATFORM_FEE_RATE = 0.15; // RN-031
+
+const iso = (d: Date | string | null | undefined): string | null =>
+  d ? new Date(d).toISOString() : null;
+
+/** Data curta em horário de Brasília, para notas e notificações ("15/09/2026"). */
+export const brDate = (d: Date | string): string =>
+  new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
 /** Arredonda em centavos, meio centavo para cima, sem cair no 28333.4999… do ponto flutuante. */
 const money = (v: number): number => Math.sign(v) * (Math.round(Math.abs(v) * 100 + 1e-6) / 100);
@@ -45,6 +63,18 @@ function toContract(row: ContractRow): Contract {
     createdAt: new Date(row.created_at).toISOString(),
     hasReview: Boolean(Number(row.has_review ?? 0)),
     hasMilestones: Boolean(Number(row.has_milestones ?? 0)),
+    deadlineExtendedAt: iso(row.deadline_extended_at),
+    overdueNotifiedAt: iso(row.overdue_notified_at),
+    extension:
+      row.extension_status && row.extension_status !== 'none' && row.extension_deadline_at
+        ? {
+            status: row.extension_status,
+            deadlineAt: new Date(row.extension_deadline_at).toISOString(),
+            reason: row.extension_reason ?? '',
+            requestedAt: iso(row.extension_requested_at) ?? new Date(row.created_at).toISOString(),
+            resolvedAt: iso(row.extension_resolved_at),
+          }
+        : null,
   };
 }
 
@@ -509,6 +539,141 @@ export const contractsService = {
       }
     }
     return { status: 'cancelled', refundPercentage: refund };
+  },
+
+  // ---------- Prazos (RN-021, RN-028, RN-029) ----------
+
+  /** Freelancer pede a única extensão de prazo da contratação (RN-028); o cliente decide. */
+  async requestExtension(id: number, uid: number, input: ExtensionInput): Promise<Contract> {
+    const row = await loadOr404(id);
+    assertFreelancer(row, uid);
+    assertStatus(row, [...DEADLINE_ACTIVE_STATUSES]);
+    if (!row.deadline_at) {
+      throw new HttpError(409, 'Esta contratação não tem prazo de entrega definido', 'no_deadline');
+    }
+    if (row.deadline_extended_at) {
+      throw new HttpError(
+        409,
+        'O prazo desta contratação já foi estendido uma vez (RN-028)',
+        'extension_used',
+      );
+    }
+    if (row.extension_status === 'pending') {
+      throw new HttpError(
+        409,
+        'Já existe um pedido de extensão aguardando o cliente',
+        'extension_pending',
+      );
+    }
+    const proposed = new Date(input.deadlineAt).getTime();
+    if (proposed <= new Date(row.deadline_at).getTime() || proposed <= Date.now()) {
+      throw new HttpError(
+        400,
+        'O novo prazo precisa ser depois do prazo atual e no futuro',
+        'invalid_deadline',
+      );
+    }
+    const ok = await contractsRepository.requestExtension({ id, ...input });
+    if (!ok) throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
+    return toContract(await loadOr404(id));
+  },
+
+  /** Cliente aceita (o prazo muda, de uma vez só) ou recusa o pedido pendente. */
+  async resolveExtension(id: number, uid: number, accept: boolean): Promise<Contract> {
+    const row = await loadOr404(id);
+    assertClient(row, uid);
+    if (row.extension_status !== 'pending' || !row.extension_deadline_at) {
+      throw new HttpError(
+        409,
+        'Não há pedido de extensão aguardando decisão',
+        'no_pending_extension',
+      );
+    }
+    const note = accept
+      ? `Prazo estendido de ${brDate(row.deadline_at!)} para ${brDate(row.extension_deadline_at)} (RN-028): ${row.extension_reason ?? ''}`
+      : null;
+    const ok = await contractsRepository.resolveExtension({
+      id,
+      accept,
+      changedBy: uid,
+      status: row.status,
+      note,
+    });
+    if (!ok) throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
+    return toContract(await loadOr404(id));
+  },
+
+  /**
+   * Job RN-021: proposta sem resposta do freelancer expira. Mesmo caminho do cancelamento antes
+   * do aceite — a reserva da carteira volta inteira ao cliente — registrado em nome do cliente.
+   */
+  async expireProposal(id: number, hours: number): Promise<Contract> {
+    const row = await loadOr404(id);
+    assertStatus(row, ['pending']);
+    await applyTransition({
+      id,
+      changedBy: row.client_id,
+      from: 'pending',
+      to: 'cancelled',
+      note: `Proposta expirada: sem resposta do freelancer em ${hours}h (RN-021)`,
+      timestampColumn: 'cancelled_at',
+      walletEffects: releaseHoldEffects(row),
+      milestonesTo: MILESTONES_CANCEL,
+    });
+    void notificationsService.notify(row.client_id, {
+      type: 'contract_expired',
+      title: 'Sua proposta expirou sem resposta',
+      body: `${row.title}: o freelancer não respondeu em ${hours}h. O valor reservado voltou para a sua carteira.`,
+      data: { contractId: id },
+    });
+    void notificationsService.notify(row.freelancer_id, {
+      type: 'contract_expired',
+      title: 'Uma proposta expirou',
+      body: `${row.title}: sem resposta em ${hours}h, a proposta foi encerrada (RN-021).`,
+      data: { contractId: id },
+    });
+    return toContract(await loadOr404(id));
+  },
+
+  /** Job RN-029, fase 1: avisa as duas partes uma única vez que o prazo estourou. */
+  async notifyOverdue(row: ContractRow, graceHours: number): Promise<boolean> {
+    const ok = await contractsRepository.markOverdueNotified(row.id);
+    if (!ok) return false;
+    const deadline = brDate(row.deadline_at!);
+    void notificationsService.notify(row.freelancer_id, {
+      type: 'contract_overdue',
+      title: 'Prazo de entrega estourado',
+      body: `${row.title}: o prazo era ${deadline}. Registre a entrega ou peça extensão${row.deadline_extended_at ? '' : ' (uma vez)'}; sem isso em ${graceHours}h a mediação é aberta automaticamente.`,
+      data: { contractId: row.id },
+    });
+    void notificationsService.notify(row.client_id, {
+      type: 'contract_overdue',
+      title: 'Prazo de entrega estourado',
+      body: `${row.title}: o prazo era ${deadline} e não houve entrega. Sem entrega nem extensão em ${graceHours}h, a mediação do Escambo é aberta automaticamente.`,
+      data: { contractId: row.id },
+    });
+    return true;
+  },
+
+  /** Job RN-029, fase 2: passada a carência, a plataforma abre a disputa (congela o escrow). */
+  async openOverdueDispute(row: ContractRow, graceHours: number): Promise<number | null> {
+    const disputeId = await disputesRepository.create({
+      ulid: ulid(),
+      contractId: row.id,
+      openedBy: row.client_id,
+      reason: 'deadline',
+      description: `Aberta automaticamente pela plataforma: o prazo de entrega (${brDate(row.deadline_at!)}) estourou há mais de ${graceHours}h sem entrega nem extensão aprovada (RN-029). A mediação decide sobre o valor em escrow.`,
+    });
+    if (disputeId === null) return null;
+    for (const userId of [row.client_id, row.freelancer_id]) {
+      void notificationsService.notify(userId, {
+        type: 'dispute_opened',
+        title: 'Disputa aberta automaticamente: prazo estourado',
+        body: `${row.title}: sem entrega nem extensão ${graceHours}h após o aviso, a mediação do Escambo assumiu (RN-029).`,
+        data: { contractId: row.id, disputeId },
+      });
+    }
+    return disputeId;
   },
 
   // ---------- Escrow por marcos (RN-069) ----------

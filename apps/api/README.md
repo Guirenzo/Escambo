@@ -100,6 +100,8 @@ src/
 | POST                | `/api/contracts/:id/approve`                                                    | **(cliente)** aprova → concluído                                                                                                                 |
 | POST                | `/api/contracts/:id/request-revision`                                           | **(cliente)** solicita revisão                                                                                                                   |
 | POST                | `/api/contracts/:id/cancel`                                                     | **(parte)** cancela — reembolso RN-025                                                                                                           |
+| POST                | `/api/contracts/:id/extension`                                                  | **(freelancer)** pede a única extensão de prazo (RN-028): `deadlineAt` e `reason`; 409 `extension_used` / `extension_pending`                         |
+| POST                | `/api/contracts/:id/extension/accept` · `/decline`                              | **(cliente)** aceita (troca o prazo, registra na linha do tempo) ou recusa o pedido pendente                                                     |
 | POST                | `/api/contracts/:id/milestones/:mid/deliver` · `/approve` · `/request-revision` | **(freelancer / cliente)** escrow por marcos (RN-069): entrega, aprovação que libera só aquele marco (o último conclui) e revisão por marco      |
 | GET                 | `/api/wallet`                                                                   | **(auth)** saldo R$ + **créditos Escambo** (disponível e em escrow)                                                                              |
 | GET                 | `/api/wallet/transactions`                                                      | **(auth)** extrato de R$ (depósitos, reservas, escrow, reembolsos, saques)                                                                       |
@@ -201,6 +203,8 @@ O processo da API agenda jobs (`src/jobs/`) a cada `JOBS_INTERVAL_MS` (padrão 5
 | `tacit-approval`  | Entregas sem resposta do cliente há mais de `platform_settings.tacit_approval_days` dias (padrão 5) são aprovadas em nome dele, liberando o escrow na mesma transação da aprovação manual. |
 | `expire-deposits` | Cobranças PIX de depósito vencidas (`DEPOSIT_EXPIRES_MINUTES`, padrão 30) viram `cancelled`; a API já as mostra vencidas antes disso.                                                      |
 | `expire-exports`  | Cópias de dados (LGPD) vencidas (`EXPORT_TTL_DAYS`, padrão 7): arquivo apagado de `DATA_DIR` e pedido marcado como expirado.                                                               |
+| `expire-proposals` | Propostas sem resposta do freelancer há mais de `platform_settings.proposal_expiry_hours` horas (padrão 72) são encerradas e a reserva volta ao cliente (RN-021).                        |
+| `overdue-contracts` | Prazo estourado: avisa as duas partes uma vez; `deadline_grace_hours` (padrão 24) depois, sem entrega nem extensão aprovada, abre a disputa por prazo em nome do cliente (RN-029).    |
 
 ## Administradores
 

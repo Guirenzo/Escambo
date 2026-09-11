@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Service } from '@escambo/types';
 import { Button, Field, Input, Modal } from '../../components/ui';
-import { brl } from '../../lib/format';
+import { addDays, brl, dateInputValue, endOfDayIso } from '../../lib/format';
 import { useCreateContract, useWallet } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { DepositModal } from '../wallet/DepositModal';
@@ -31,6 +31,10 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
   const [description, setDescription] = useState(`Contratação do serviço "${service.title}".`);
   const [price, setPrice] = useState(String(service.price ?? ''));
   const [mode, setMode] = useState<'cash' | 'credits'>('cash');
+  // Prazo de entrega: sugerido pelo prazo do serviço (RN-028/029 cobram a partir dele).
+  const suggestedDays = service.deliveryDays ?? 7;
+  const [deadline, setDeadline] = useState(dateInputValue(addDays(new Date(), suggestedDays)));
+  const minDeadline = dateInputValue(addDays(new Date(), 1));
   const [depositing, setDepositing] = useState(false);
   const [useMilestones, setUseMilestones] = useState(false);
   const [milestones, setMilestones] = useState<MilestoneDraft[]>([
@@ -78,6 +82,7 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
         description,
         price: priceNum,
         paymentMode: mode,
+        deadlineAt: endOfDayIso(deadline),
         milestones: withMilestones
           ? milestones.map((m) => ({ title: m.title.trim(), amount: Number(m.amount) }))
           : undefined,
@@ -130,6 +135,20 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
             required
           />
         </Field>
+
+        <Field label="Prazo de entrega">
+          <Input
+            type="date"
+            min={minDeadline}
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
+            required
+          />
+        </Field>
+        <span className="muted tiny">
+          Sugerido pelo serviço: {suggestedDays} dia{suggestedDays === 1 ? '' : 's'}. O freelancer
+          pode pedir uma extensão, que só vale com o seu aceite.
+        </span>
 
         <div className="radio-row" role="radiogroup" aria-label="Forma de pagamento">
           <label className={`radio-card ${mode === 'cash' ? 'on' : ''}`}>

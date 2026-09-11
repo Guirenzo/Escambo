@@ -45,6 +45,8 @@ export default defineConfig({
     {
       name: 'screenshots',
       testMatch: /screenshots\.spec\.ts/,
+      // Gerador de prints (17 telas numa execução só), não um teste: precisa de folga.
+      timeout: 180_000,
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },

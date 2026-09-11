@@ -240,6 +240,10 @@ export const api = {
   createContract: (body: CreateContractRequest) =>
     request<Contract>('/contracts', { method: 'POST', body: JSON.stringify(body) }),
   contractDetail: (id: number) => request<ContractWithHistory>(`/contracts/${id}`),
+  requestExtension: (id: number, body: { deadlineAt: string; reason: string }) =>
+    request<Contract>(`/contracts/${id}/extension`, { method: 'POST', body: JSON.stringify(body) }),
+  resolveExtension: (id: number, decision: 'accept' | 'decline') =>
+    request<Contract>(`/contracts/${id}/extension/${decision}`, { method: 'POST' }),
   contractAction: (id: number, action: 'accept' | 'reject' | 'approve' | 'cancel') =>
     request<Contract>(`/contracts/${id}/${action}`, { method: 'POST' }),
   requestRevision: (id: number, note: string) =>
@@ -262,7 +266,11 @@ export const api = {
     request<ContractWithHistory>(`/contracts/${contractId}/milestones/${milestoneId}/${action}`, {
       method: 'POST',
       body: JSON.stringify(
-        action === 'deliver' ? { message: text } : action === 'request-revision' ? { note: text } : {},
+        action === 'deliver'
+          ? { message: text }
+          : action === 'request-revision'
+            ? { note: text }
+            : {},
       ),
     }),
 

@@ -20,6 +20,13 @@ export const createContractSchema = z
     milestones: z.array(milestoneSchema).min(2).max(10).optional(),
   })
   .superRefine((d, ctx) => {
+    if (d.deadlineAt && new Date(d.deadlineAt).getTime() <= Date.now()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['deadlineAt'],
+        message: 'O prazo de entrega precisa estar no futuro',
+      });
+    }
     if (!d.milestones) return;
     if (d.paymentMode !== 'cash') {
       ctx.addIssue({
@@ -54,6 +61,18 @@ export const noteSchema = z.object({ note: z.string().max(1000).optional() });
 export type NoteInput = z.infer<typeof noteSchema>;
 
 export const contractIdSchema = z.object({ id: z.coerce.number().int().positive() });
+
+/** Pedido de extensão de prazo (RN-028): novo prazo e o motivo, que o cliente lê. */
+export const extensionSchema = z.object({
+  deadlineAt: z.string().datetime(),
+  reason: z.string().trim().min(5, 'Explique o motivo em ao menos 5 caracteres').max(500),
+});
+export type ExtensionInput = z.infer<typeof extensionSchema>;
+
+export const extensionDecisionSchema = z.object({
+  id: z.coerce.number().int().positive(),
+  decision: z.enum(['accept', 'decline']),
+});
 
 export const listContractsSchema = z.object({
   page: z.coerce.number().int().positive().default(1),

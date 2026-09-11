@@ -180,6 +180,8 @@ export const openapiDocument: Record<string, any> = {
     '/contracts/{id}/deliver': { post: op('Contratações', 'Registra entrega', { auth: true }) },
     '/contracts/{id}/approve': { post: op('Contratações', 'Cliente aprova (libera escrow)', { auth: true }) },
     '/contracts/{id}/cancel': { post: op('Contratações', 'Cancela (reembolso RN-025)', { auth: true }) },
+    '/contracts/{id}/extension': { post: op('Contratações', 'Freelancer pede a única extensão de prazo (RN-028)', { auth: true }) },
+    '/contracts/{id}/extension/{decision}': { post: op('Contratações', 'Cliente aceita (accept) ou recusa (decline) a extensão', { auth: true }) },
     '/contracts/{id}/milestones/{milestoneId}/deliver': { post: op('Contratações', 'Marco: freelancer entrega (RN-069)', { auth: true }) },
     '/contracts/{id}/milestones/{milestoneId}/approve': { post: op('Contratações', 'Marco: cliente aprova e libera só aquele valor; o último conclui', { auth: true }) },
     '/contracts/{id}/milestones/{milestoneId}/request-revision': { post: op('Contratações', 'Marco: cliente pede revisão', { auth: true }) },

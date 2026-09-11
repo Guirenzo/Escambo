@@ -5,6 +5,33 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.4.0] — 2026-09-11
+
+### Adicionado
+
+- **Prazo de entrega com regra** (RN-021, RN-028, RN-029). O campo `deadline_at` existia e alimentava
+  o Score, mas nada o definia nem o cobrava.
+  - **Contratar** pede o prazo (sugerido pelo prazo do serviço); a Sala mostra quanto falta ou há
+    quanto tempo estourou; o Início mostra "faltam N dias" na contratação.
+  - **Extensão única** (RN-028): o freelancer pede pela Sala, com novo prazo e motivo; o cliente
+    aceita ou recusa. Aceitar troca o prazo, registra na linha do tempo e trava a segunda extensão.
+    `POST /contracts/:id/extension` e `/extension/accept|decline`.
+  - **Proposta expira** (RN-021): job `expire-proposals` encerra propostas sem resposta em
+    `proposal_expiry_hours` (padrão 72) e devolve a reserva ao cliente; os dois são avisados.
+  - **Prazo estourado** (RN-029): job `overdue-contracts` avisa as duas partes uma vez e,
+    `deadline_grace_hours` (padrão 24) depois sem entrega nem extensão aprovada, abre a disputa em
+    nome do cliente (motivo "prazo") — o escrow congela até a mediação. Pedido de extensão
+    pendente segura o job: a decisão é do cliente.
+  - Notificações e e-mails: `contract_expired`, `contract_overdue`,
+    `deadline_extension_requested|accepted|declined`.
+  - Migration `0008`: colunas da extensão e do aviso, índices das varreduras, parâmetros em
+    `platform_settings`.
+
+### Corrigido
+
+- `deadline_at` e `due_at` (marcos) chegavam ao MySQL como string ISO e eram recusados; como
+  nenhuma tela enviava prazo, o erro nunca tinha aparecido. O repositório passa `Date`.
+
 ## [1.3.0] — 2026-09-10
 
 ### Adicionado
