@@ -24,7 +24,19 @@ export interface ContractRow extends RowDataPacket {
   created_at: Date;
   has_review?: number; // 1 se o cliente já avaliou (subquery nas consultas de leitura)
   has_milestones?: number; // 1 se o contrato é por marcos (RN-069)
+  // Prazos (RN-028 / RN-029)
+  extension_status: 'none' | 'pending' | 'accepted' | 'declined';
+  extension_deadline_at: Date | null;
+  extension_reason: string | null;
+  extension_requested_at: Date | null;
+  extension_resolved_at: Date | null;
+  deadline_extended_at: Date | null;
+  overdue_notified_at: Date | null;
 }
+
+/** Status em que o prazo de entrega está correndo. */
+export const DEADLINE_ACTIVE_STATUSES = ['accepted', 'in_progress', 'revision_requested'] as const;
+const DEADLINE_ACTIVE = `('accepted', 'in_progress', 'revision_requested')`;
 
 export interface HistoryRow extends RowDataPacket {
   old_status: string | null;
@@ -59,7 +71,9 @@ export const contractsRepository = {
     /** Marcos (RN-069) criados na mesma transação, ainda 'pending' até o aceite. */
     milestones?: MilestoneSpec[] | null;
   }): Promise<number | null> {
-    const { hold, milestones, ...row } = data;
+    // DATETIME recebe Date (o driver serializa em UTC); string ISO com "T"/"Z" o MySQL recusa.
+    const { hold, milestones, deadlineAt, ...rest } = data;
+    const row = { ...rest, deadlineAt: deadlineAt ? new Date(deadlineAt) : null };
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -139,6 +153,136 @@ export const contractsRepository = {
       { days },
     );
     return rows;
+  },
+
+  /** Propostas sem resposta do freelancer há mais de `hours` horas (RN-021). Troca não expira. */
+  async findPendingOlderThan(hours: number): Promise<ContractRow[]> {
+    const [rows] = await pool.query<ContractRow[]>(
+      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones
+         FROM contracts c
+        WHERE c.status = 'pending'
+          AND c.barter_agreement_id IS NULL
+          AND c.created_at < DATE_SUB(NOW(), INTERVAL :hours HOUR)
+        ORDER BY c.id ASC
+        LIMIT 200`,
+      { hours },
+    );
+    return rows;
+  },
+
+  /** Prazo vencido e ninguém avisado ainda (RN-029, fase 1). Pedido de extensão pendente segura. */
+  async findOverdueUnnoticed(): Promise<ContractRow[]> {
+    const [rows] = await pool.query<ContractRow[]>(
+      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones
+         FROM contracts c
+        WHERE c.status IN ${DEADLINE_ACTIVE}
+          AND c.deadline_at IS NOT NULL
+          AND c.deadline_at < NOW()
+          AND c.overdue_notified_at IS NULL
+          AND c.extension_status <> 'pending'
+        ORDER BY c.id ASC
+        LIMIT 200`,
+    );
+    return rows;
+  },
+
+  /** Avisados há mais de `graceHours` horas e ainda sem entrega nem extensão (RN-029, fase 2). */
+  async findOverdueBeyondGrace(graceHours: number): Promise<ContractRow[]> {
+    const [rows] = await pool.query<ContractRow[]>(
+      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones
+         FROM contracts c
+        WHERE c.status IN ${DEADLINE_ACTIVE}
+          AND c.deadline_at IS NOT NULL
+          AND c.deadline_at < NOW()
+          AND c.overdue_notified_at IS NOT NULL
+          AND c.overdue_notified_at < DATE_SUB(NOW(), INTERVAL :graceHours HOUR)
+          AND c.extension_status <> 'pending'
+        ORDER BY c.id ASC
+        LIMIT 200`,
+      { graceHours },
+    );
+    return rows;
+  },
+
+  /** Marca o aviso de prazo estourado; false se outra instância do job já marcou. */
+  async markOverdueNotified(id: number): Promise<boolean> {
+    const [res] = await pool.query<ResultSetHeader>(
+      `UPDATE contracts SET overdue_notified_at = NOW()
+        WHERE id = :id AND overdue_notified_at IS NULL AND status IN ${DEADLINE_ACTIVE}`,
+      { id },
+    );
+    return res.affectedRows > 0;
+  },
+
+  /**
+   * Registra o pedido de extensão (RN-028). O WHERE repete as regras do service para a
+   * concorrência: nunca fica um segundo pedido pendente nem um pedido depois da extensão usada.
+   */
+  async requestExtension(p: { id: number; deadlineAt: string; reason: string }): Promise<boolean> {
+    const [res] = await pool.query<ResultSetHeader>(
+      `UPDATE contracts
+          SET extension_status = 'pending',
+              extension_deadline_at = :deadlineAt,
+              extension_reason = :reason,
+              extension_requested_at = NOW(),
+              extension_resolved_at = NULL
+        WHERE id = :id
+          AND status IN ${DEADLINE_ACTIVE}
+          AND deadline_at IS NOT NULL
+          AND deadline_extended_at IS NULL
+          AND extension_status <> 'pending'`,
+      { id: p.id, deadlineAt: new Date(p.deadlineAt), reason: p.reason },
+    );
+    return res.affectedRows > 0;
+  },
+
+  /**
+   * Cliente decide o pedido pendente. Aceitar troca o prazo, trava novas extensões, zera o
+   * aviso de atraso (o prazo novo recomeça a contagem) e deixa a mudança na linha do tempo.
+   */
+  async resolveExtension(p: {
+    id: number;
+    accept: boolean;
+    changedBy: number;
+    status: string;
+    note: string | null;
+  }): Promise<boolean> {
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [res] = await conn.query<ResultSetHeader>(
+        p.accept
+          ? `UPDATE contracts
+                SET deadline_at = extension_deadline_at,
+                    deadline_extended_at = NOW(),
+                    extension_status = 'accepted',
+                    extension_resolved_at = NOW(),
+                    overdue_notified_at = NULL
+              WHERE id = :id AND extension_status = 'pending'`
+          : `UPDATE contracts
+                SET extension_status = 'declined', extension_resolved_at = NOW()
+              WHERE id = :id AND extension_status = 'pending'`,
+        { id: p.id },
+      );
+      if (res.affectedRows === 0) {
+        await conn.rollback();
+        return false;
+      }
+      if (p.accept) {
+        await conn.query<ResultSetHeader>(
+          `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
+           VALUES (:id, :changedBy, :status, :status, :note)`,
+          { id: p.id, changedBy: p.changedBy, status: p.status, note: p.note },
+        );
+      }
+      await conn.commit();
+      return true;
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
   },
 
   async listHistory(contractId: number): Promise<HistoryRow[]> {

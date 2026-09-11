@@ -2,8 +2,11 @@ import { MessageSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { Contract } from '@escambo/types';
 import { Button, Pill } from '../../components/ui';
-import { STATUS_LABEL, brl, dt } from '../../lib/format';
+import { STATUS_LABEL, brl, deadlineInfo, dt } from '../../lib/format';
 import { ContractActions } from '../contracts/ContractActions';
+
+/** Status em que o prazo está correndo — só neles vale mostrar quanto falta. */
+const DEADLINE_ACTIVE = ['accepted', 'in_progress', 'revision_requested'];
 
 const MODE_LABEL: Record<string, string> = {
   cash: 'Dinheiro',
@@ -38,6 +41,16 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
                 <strong>{c.title}</strong>
                 <span className="muted tiny">
                   criada em {dt(c.createdAt)} · {MODE_LABEL[c.paymentMode] ?? c.paymentMode}
+                  {DEADLINE_ACTIVE.includes(c.status) &&
+                    (() => {
+                      const info = deadlineInfo(c.deadlineAt);
+                      return info ? (
+                        <>
+                          {' · '}
+                          <span className={`deadline-text-${info.tone}`}>{info.label}</span>
+                        </>
+                      ) : null;
+                    })()}
                 </span>
               </td>
               <td className="num">

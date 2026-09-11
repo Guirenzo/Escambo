@@ -82,8 +82,7 @@ export const useWithdrawals = () =>
   useQuery({ queryKey: qk.withdrawals, queryFn: () => api.withdrawals() });
 export const useWalletTransactions = () =>
   useQuery({ queryKey: qk.walletTransactions, queryFn: () => api.walletTransactions() });
-export const useDeposits = () =>
-  useQuery({ queryKey: qk.deposits, queryFn: () => api.deposits() });
+export const useDeposits = () => useQuery({ queryKey: qk.deposits, queryFn: () => api.deposits() });
 /** Situação de uma cobrança; enquanto pendente, consulta a cada 3 s (o webhook pode chegar a qualquer momento). */
 export const useDeposit = (id: number | null, poll: boolean) =>
   useQuery({
@@ -124,6 +123,31 @@ export function useRequestRevision() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, note }: { id: number; note: string }) => api.requestRevision(id, note),
+    onSuccess: (_d, { id }) => {
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: qk.contract(id) });
+    },
+  });
+}
+
+/** Extensão de prazo (RN-028): pedido do freelancer e decisão do cliente atualizam a Sala e a lista. */
+export function useRequestExtension() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, deadlineAt, reason }: { id: number; deadlineAt: string; reason: string }) =>
+      api.requestExtension(id, { deadlineAt, reason }),
+    onSuccess: (_d, { id }) => {
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: qk.contract(id) });
+    },
+  });
+}
+
+export function useResolveExtension() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, decision }: { id: number; decision: 'accept' | 'decline' }) =>
+      api.resolveExtension(id, decision),
     onSuccess: (_d, { id }) => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.contract(id) });

@@ -83,7 +83,7 @@ export const milestonesRepository = {
         `INSERT INTO contract_milestones
            (contract_id, title, description, amount, freelancer_net, sort_order, due_at)
          VALUES (:contractId, :title, :description, :amount, :freelancerNet, :sortOrder, :dueAt)`,
-        { contractId, ...m },
+        { contractId, ...m, dueAt: m.dueAt ? new Date(m.dueAt) : null },
       );
     }
   },

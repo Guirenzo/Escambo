@@ -17,6 +17,51 @@ export const dtm = (iso: string): string =>
     minute: '2-digit',
   });
 
+const DAY_MS = 86_400_000;
+const startOfDay = (d: Date): number =>
+  new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+export const addDays = (d: Date, days: number): Date => new Date(d.getTime() + days * DAY_MS);
+
+/** Valor de um <input type="date"> (AAAA-MM-DD, no fuso local). */
+export const dateInputValue = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Fim do dia (23:59:59 local) de um valor de <input type="date">, em ISO — o prazo vale o dia inteiro. */
+export const endOfDayIso = (value: string): string => {
+  const [y, m, d] = value.split('-').map(Number);
+  return new Date(y!, (m ?? 1) - 1, d ?? 1, 23, 59, 59).toISOString();
+};
+
+export interface DeadlineInfo {
+  /** Dias de calendário até o prazo (negativo = dias de atraso). */
+  daysLeft: number;
+  tone: 'ok' | 'soon' | 'late';
+  label: string;
+}
+
+/** Estado do prazo em relação a agora, em dias de calendário ("faltam 3 dias", "atrasada há 2 dias"). */
+export function deadlineInfo(
+  deadlineAt: string | null | undefined,
+  now: Date = new Date(),
+): DeadlineInfo | null {
+  if (!deadlineAt) return null;
+  const deadline = new Date(deadlineAt);
+  const daysLeft = Math.round((startOfDay(deadline) - startOfDay(now)) / DAY_MS);
+  if (deadline.getTime() < now.getTime()) {
+    const late = -daysLeft;
+    return {
+      daysLeft,
+      tone: 'late',
+      label:
+        late <= 0 ? 'venceu hoje' : late === 1 ? 'atrasada há 1 dia' : `atrasada há ${late} dias`,
+    };
+  }
+  if (daysLeft <= 0) return { daysLeft: 0, tone: 'soon', label: 'vence hoje' };
+  if (daysLeft === 1) return { daysLeft: 1, tone: 'soon', label: 'vence amanhã' };
+  return { daysLeft, tone: daysLeft <= 3 ? 'soon' : 'ok', label: `faltam ${daysLeft} dias` };
+}
+
 export const hm = (iso: string): string =>
   new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 

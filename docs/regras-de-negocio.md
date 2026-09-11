@@ -273,7 +273,7 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Contratações |
-| **Descrição** | O freelancer tem **72 horas** para aceitar, recusar ou contra-propor após o recebimento de uma proposta. Após esse prazo, a proposta expira automaticamente e o cliente é notificado |
+| **Descrição** | O freelancer tem **72 horas** para aceitar, recusar ou contra-propor após o recebimento de uma proposta. Após esse prazo, a proposta expira automaticamente e o cliente é notificado. Implementado pelo job `expire-proposals` (`platform_settings.proposal_expiry_hours`, padrão 72): a proposta é encerrada com a nota do motivo e a reserva da carteira volta ao cliente |
 | **Impacto** | Garante agilidade no processo e libera o cliente para buscar outro profissional |
 | **UC Relacionado** | UC-05 |
 
@@ -350,7 +350,7 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Contratações |
-| **Descrição** | O prazo de entrega pode ser estendido **apenas uma vez** por contratação, mediante solicitação do freelancer e **aceite explícito do cliente** pelo app |
+| **Descrição** | O prazo de entrega pode ser estendido **apenas uma vez** por contratação, mediante solicitação do freelancer e **aceite explícito do cliente** pelo app. Implementado: o freelancer pede pela Sala (novo prazo e motivo), o cliente aceita ou recusa; a aceitação troca o prazo, registra na linha do tempo e trava a segunda extensão (a recusa não a gasta) |
 | **Impacto** | Evita extensões unilaterais que prejudicam o cliente |
 | **UC Relacionado** | UC-05 |
 
@@ -361,7 +361,7 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Disputas |
-| **Descrição** | Se o prazo de entrega estoura sem registro de entrega e sem extensão aprovada, o sistema cria automaticamente um ticket de suporte com prioridade **Alta** e notifica ambas as partes |
+| **Descrição** | Se o prazo de entrega estoura sem registro de entrega e sem extensão aprovada, o sistema cria automaticamente um ticket de suporte com prioridade **Alta** e notifica ambas as partes. Implementado como **disputa aberta pela plataforma** (motivo "prazo", em nome do cliente) pelo job `overdue-contracts`: aviso às duas partes ao vencer e, `deadline_grace_hours` (padrão 24) depois, sem entrega nem extensão aprovada, a mediação assume e o escrow congela |
 | **Impacto** | Garante que nenhuma contratação fique em estado indefinido |
 | **UC Relacionado** | UC-05, UC-10 |
 

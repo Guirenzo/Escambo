@@ -191,6 +191,10 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     await p.addInitScript((t) => window.localStorage.setItem('escambo_token', t), anaTok);
     await p.goto('/servicos');
     await settled(p);
+    // Busca pelo nome: o card não depende da posição no ranking (o destaque da demo expira).
+    await p.getByPlaceholder('Buscar serviços…').fill('Landing page em React');
+    await p.getByRole('button', { name: 'Buscar' }).click();
+    await settled(p);
     await p
       .locator('.card.service', { hasText: 'Landing page em React' })
       .first()
@@ -206,4 +210,13 @@ test('gera os prints do README', async ({ page, request, browser }) => {
   });
   const first = ((await disputes.json()) as { contractId: number }[])[0];
   if (first) await shotAs(anaTok, `/contratos/${first.contractId}`, '12-sala-disputa');
+
+  // 17. Prazo de entrega: pedido de extensão do freelancer aguardando a decisão da cliente (RN-028).
+  const mine = await request.get('/api/contracts?limit=100', {
+    headers: { Authorization: `Bearer ${anaTok}` },
+  });
+  const withExtension = (
+    (await mine.json()) as { items: { id: number; extension: unknown }[] }
+  ).items.find((c) => c.extension);
+  if (withExtension) await shotAs(anaTok, `/contratos/${withExtension.id}`, '17-prazo');
 });

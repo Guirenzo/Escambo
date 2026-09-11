@@ -5,7 +5,7 @@ import { StarInput, Stars } from '../../components/Stars';
 import { Button, Input, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
-import { brl, dtm, hm, STATUS_LABEL } from '../../lib/format';
+import { brl, dt, dtm, hm, STATUS_LABEL } from '../../lib/format';
 import {
   useChatHistory,
   useContractDetail,
@@ -15,6 +15,7 @@ import {
 } from '../../lib/hooks';
 import { getSocket } from '../../lib/socket';
 import { ContractActions } from '../contracts/ContractActions';
+import { DeadlineSection } from '../contracts/DeadlineSection';
 import { DisputeModal, DisputeSection } from '../contracts/DisputePanel';
 import { MilestonesSection } from '../contracts/MilestonesSection';
 import { useToast } from '../../lib/toast';
@@ -306,6 +307,10 @@ export function SalaContratoView({
                     </strong>
                     <span className="muted">Pagamento</span>
                     <span data-testid="payment-state">{paymentState(d)}</span>
+                    <span className="muted">Prazo</span>
+                    <span data-testid="deadline-kv">
+                      {d.deadlineAt ? dt(d.deadlineAt) : 'sem prazo definido'}
+                    </span>
                   </div>
                   <ol className="timeline">
                     {d.history.map((h, i) => (
@@ -313,7 +318,7 @@ export function SalaContratoView({
                         <span className="dot" />
                         <div>
                           <strong>{STATUS_LABEL[h.status] ?? h.status}</strong>
-                          {h.previousStatus && (
+                          {h.previousStatus && h.previousStatus !== h.status && (
                             <span className="muted tiny">
                               {' '}
                               · de {STATUS_LABEL[h.previousStatus] ?? h.previousStatus}
@@ -330,6 +335,7 @@ export function SalaContratoView({
             </QueryState>
           </section>
 
+          {c && <DeadlineSection contract={c} myId={myId} />}
           {c && <MilestonesSection contract={c} myId={myId} />}
           {c && <ReviewSection contract={c} myId={myId} />}
           {c && c.status === 'disputed' && <DisputeSection contractId={c.id} />}

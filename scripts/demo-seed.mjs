@@ -303,11 +303,35 @@ async function ensureService(user, spec, categories) {
  * Cria (se não existir) uma contratação da cliente para o freelancer e a leva até o
  * estado pedido: 'pending' | 'accepted' | 'delivered' | 'completed'.
  */
+/** Fim do dia daqui a `days` dias, em ISO — o prazo vale o dia inteiro. */
+function endOfDayInDays(days) {
+  const d = new Date(Date.now() + days * 86_400_000);
+  d.setHours(23, 59, 59, 0);
+  return d.toISOString();
+}
+
+/** Pedido de extensão de prazo do freelancer (RN-028), uma vez; o cliente decide na Sala. */
+async function ensureExtensionRequest(freelancer, contract, days, reason) {
+  const detail = await call('GET', `/contracts/${contract.id}`, { token: freelancer.token });
+  const active = ['accepted', 'in_progress', 'revision_requested'].includes(detail.status);
+  if (!active || detail.extension || detail.deadlineExtendedAt || !detail.deadlineAt) {
+    log(
+      `  extensão de prazo do #${contract.id}: nada a fazer (${detail.extension?.status ?? detail.status})`,
+    );
+    return;
+  }
+  await call('POST', `/contracts/${contract.id}/extension`, {
+    token: freelancer.token,
+    body: { deadlineAt: endOfDayInDays(days), reason },
+  });
+  log(`  extensão de prazo pedida no #${contract.id} (aguardando a cliente)`);
+}
+
 async function ensureContract(
   client,
   freelancer,
   service,
-  { title, price, paymentMode = 'cash', to, chat = [] },
+  { title, price, paymentMode = 'cash', to, chat = [], deadlineDays },
 ) {
   const mine = items(await call('GET', '/contracts', { token: client.token }));
   let contract = mine.find(
@@ -328,6 +352,8 @@ async function ensureContract(
         description: `Contratação do serviço "${service.title}" para a demo do Escambo.`,
         price,
         paymentMode,
+        // Prazo de entrega: o do serviço, salvo quando a demo quer outro (RN-028/029).
+        deadlineAt: endOfDayInDays(deadlineDays ?? service.deliveryDays ?? 7),
       },
     });
     log(`contrato #${contract.id} ${title} (${paymentMode}) → pendente`);
@@ -401,7 +427,9 @@ async function ensureBalance(user, amount) {
 /** Saque do freelancer (idempotente por valor); opcionalmente concluído pelo admin. */
 async function ensureWithdrawal(user, admin, amount, pixKey, { complete = false } = {}) {
   const mine = items(await call('GET', '/withdrawals', { token: user.token }));
-  let w = mine.find((x) => Number(x.amount) === amount && x.status !== 'cancelled' && x.status !== 'failed');
+  let w = mine.find(
+    (x) => Number(x.amount) === amount && x.status !== 'cancelled' && x.status !== 'failed',
+  );
   if (!w) {
     w = await call('POST', '/withdrawals', {
       token: user.token,
@@ -543,7 +571,8 @@ async function ensureBarter(proposer, receiver, offered, requested, accept) {
   );
   if (!barter) {
     // Torna: quem recebe o serviço mais valioso paga a diferença (reservada da carteira).
-    if (offered.price < requested.price) await ensureBalance(proposer, requested.price - offered.price);
+    if (offered.price < requested.price)
+      await ensureBalance(proposer, requested.price - offered.price);
     barter = await call('POST', '/barters', {
       token: proposer.token,
       body: {
@@ -559,7 +588,8 @@ async function ensureBarter(proposer, receiver, offered, requested, accept) {
     log(`troca    ${offered.title} ⇄ ${requested.title} já existe (${barter.status})`);
   }
   if (accept && barter.status === 'proposed') {
-    if (offered.price > requested.price) await ensureBalance(receiver, offered.price - requested.price);
+    if (offered.price > requested.price)
+      await ensureBalance(receiver, offered.price - requested.price);
     await call('POST', `/barters/${barter.id}/accept`, { token: receiver.token });
     log(`  aceita → 2 contratos recíprocos`);
   }
@@ -654,6 +684,18 @@ async function main() {
       ['freelancer', 'Anotado. Já começo pelo storyboard e te mostro amanhã.'],
     ],
   });
+  const abertura = await ensureContract(ana, users.rafael, svc['Motion graphics 15s'], {
+    title: 'Abertura animada para o YouTube',
+    price: 600,
+    to: 'accepted',
+    deadlineDays: 4,
+  });
+  await ensureExtensionRequest(
+    users.rafael,
+    abertura,
+    11,
+    'O storyboard foi aprovado tarde; preciso de mais uma semana para a animação final.',
+  );
   await ensureContract(ana, users.diego, svc['Pacote de 4 artigos SEO'], {
     title: 'Pacote de 4 artigos SEO',
     price: 700,

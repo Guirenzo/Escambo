@@ -2004,6 +2004,53 @@ button.toggle.on {
   font-size: 0.9rem;
 }
 
+/* ---------- Prazo de entrega (RN-028 / RN-029) ---------- */
+.deadline-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 1.05rem;
+}
+.card.deadline.late {
+  border-color: var(--red);
+}
+.pill.deadline-ok {
+  background: var(--green-soft);
+  color: var(--green-ink);
+}
+.pill.deadline-soon {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+.pill.deadline-late {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.notice.danger {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.ext-request {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  border: 1px dashed var(--amber);
+  background: var(--amber-soft);
+}
+.deadline-text-late {
+  color: var(--red);
+  font-weight: 600;
+}
+.deadline-text-soon {
+  color: var(--amber-ink);
+  font-weight: 600;
+}
+
 /* ---------- Carteira: depósito PIX, extrato e saques ---------- */
 .tabs.tabs-mini {
   padding: 3px;
