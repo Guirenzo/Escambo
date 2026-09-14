@@ -17,11 +17,38 @@ import {
   withdrawalIdParamSchema,
 } from './admin.schema';
 import { adminService } from './admin.service';
+import { adminRepository } from './admin.repository';
+import { financeQuerySchema } from './finance.schema';
+import { financeService } from './finance.service';
 
-const audit = (req: Request) => ({ ip: req.ip ?? null, userAgent: req.headers['user-agent'] ?? null });
+const audit = (req: Request) => ({
+  ip: req.ip ?? null,
+  userAgent: req.headers['user-agent'] ?? null,
+});
 
 export async function getMetrics(_req: Request, res: Response): Promise<void> {
   res.json(await adminService.getMetrics());
+}
+
+/** GET /admin/finance — receita, depósitos, saques, reembolsos e GMV por período. */
+export async function getFinance(req: Request, res: Response): Promise<void> {
+  res.json(await financeService.report(financeQuerySchema.parse(req.query)));
+}
+
+/** GET /admin/finance/export.csv — ledger de R$ do período (registrado como ação do admin). */
+export async function exportFinanceCsv(req: Request, res: Response): Promise<void> {
+  const q = financeQuerySchema.parse(req.query);
+  const { fileName, csv } = await financeService.exportCsv(q);
+  await adminRepository.recordAction(
+    req.user!.uid,
+    'finance_exported',
+    'finance',
+    null,
+    `${q.from ?? 'padrão'} → ${q.to ?? 'hoje'}`,
+  );
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  res.send(csv);
 }
 
 export async function listOpenDisputes(_req: Request, res: Response): Promise<void> {
@@ -43,7 +70,11 @@ export async function resolveDispute(req: Request, res: Response): Promise<void>
   res.json(dispute);
 }
 
-async function moderate(req: Request, res: Response, action: 'suspend' | 'ban' | 'reactivate'): Promise<void> {
+async function moderate(
+  req: Request,
+  res: Response,
+  action: 'suspend' | 'ban' | 'reactivate',
+): Promise<void> {
   const { ulid } = userUlidSchema.parse(req.params);
   await adminService.moderateUser(req.user!.uid, ulid, action);
   void auditService.log({

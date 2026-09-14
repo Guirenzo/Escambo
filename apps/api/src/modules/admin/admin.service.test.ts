@@ -43,7 +43,9 @@ const disputeRow = (o: Partial<{ status: string }> = {}): DisputeRow =>
     ...o,
   }) as unknown as DisputeRow;
 
-const contractRow = (o: Partial<{ payment_mode: string; price: string; freelancer_net: string }> = {}): ContractRow =>
+const contractRow = (
+  o: Partial<{ payment_mode: string; price: string; freelancer_net: string }> = {},
+): ContractRow =>
   ({
     id: 1,
     client_id: 1,

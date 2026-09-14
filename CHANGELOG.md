@@ -5,6 +5,21 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.7.0] — 2026-09-14
+
+### Adicionado
+
+- **Financeiro do admin**. O painel tinha só totais acumulados; agora há um relatório por
+  período (por dia ou por mês, presets de 30 dias, 6 e 12 meses ou datas livres):
+  - **Receita da plataforma derivada do ledger de R$**: −Σ(disponível + retido) das linhas que
+    não são depósito nem saque. Fecha centavo a centavo com a liquidação de cada contratação,
+    inclusive quando cancelamento ou disputa devolve parte da taxa (ADR 26).
+  - Depósitos, saques (líquidos de estornos), reembolsos, contratações em dinheiro concluídas e
+    GMV, com gráfico de barras e tabela; fotografia do escrow e do saldo dos usuários.
+  - **Exportação do ledger em CSV** (ponto e vírgula, vírgula decimal, BOM: abre direto no
+    Excel pt-BR), registrada como ação do admin. `GET /admin/finance` e
+    `GET /admin/finance/export.csv`.
+
 ## [1.6.0] — 2026-09-14
 
 ### Adicionado

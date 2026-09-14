@@ -2051,6 +2051,78 @@ button.toggle.on {
   font-weight: 600;
 }
 
+/* ---------- Admin: financeiro ---------- */
+.fin-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.fin-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fin-range input {
+  padding: 6px 8px;
+}
+.fin-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 4px 0 12px;
+}
+.fin-kpi {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+.fin-kpi strong {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+}
+.fin-chart {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 6px;
+  height: 150px;
+  margin: 8px 0 14px;
+  padding: 8px 4px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.fin-bar {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 140px; /* um mês só não vira uma barra de parede a parede */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.fin-bar-fill {
+  background: var(--green);
+  border-radius: 4px 4px 0 0;
+  min-height: 2px;
+}
+.fin-bar-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -20px;
+  text-align: center;
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---------- Carteira: depósito PIX, extrato e saques ---------- */
 .tabs.tabs-mini {
   padding: 3px;

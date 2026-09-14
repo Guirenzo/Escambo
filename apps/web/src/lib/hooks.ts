@@ -446,6 +446,9 @@ export function useRequestDeletion() {
   });
 }
 
+export const useAdminFinance = (q: { from?: string; to?: string; granularity: 'day' | 'month' }) =>
+  useQuery({ queryKey: ['adminFinance', q] as const, queryFn: () => api.adminFinance(q) });
+
 export const useAdminMetrics = () =>
   useQuery({ queryKey: qk.adminMetrics, queryFn: () => api.adminMetrics() });
 export const useAdminDisputes = () =>
