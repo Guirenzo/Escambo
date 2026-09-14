@@ -35,12 +35,11 @@ export const adminService = {
     const isBarter = paymentMode === 'barter';
     // Retido para o freelancer: líquido em R$ ou créditos (inteiros); troca não tem escrow.
     // Por marcos, conta só o que ainda não foi liberado.
-    const remaining =
-      paymentMode === 'cash' ? await milestonesRepository.escrowRemaining(contract.id) : null;
+    const remaining = isBarter ? null : await milestonesRepository.escrowRemaining(contract.id);
     const escrowNet = isBarter
       ? 0
       : isCredits
-        ? Math.round(Number(contract.freelancer_net))
+        ? Math.round(remaining ? remaining.net : Number(contract.freelancer_net))
         : remaining
           ? remaining.net
           : Number(contract.freelancer_net);

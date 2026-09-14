@@ -34,7 +34,9 @@ function paymentState(c: { paymentMode: string; status: string; hasMilestones: b
   if (c.paymentMode === 'barter') return 'Troca de serviços · sem escrow';
   const unit = c.paymentMode === 'credits' ? 'Créditos' : 'Valor';
   if (c.hasMilestones && (c.status === 'accepted' || c.status === 'in_progress')) {
-    return 'Em escrow · liberado marco a marco';
+    return c.paymentMode === 'credits'
+      ? 'Créditos em escrow · liberados marco a marco'
+      : 'Em escrow · liberado marco a marco';
   }
   switch (c.status) {
     case 'pending':

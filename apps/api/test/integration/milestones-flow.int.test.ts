@@ -32,6 +32,8 @@ const wallet = async (token: string) =>
   (await request(app).get('/api/wallet').set(auth(token))).body as {
     balance: number;
     balancePending: number;
+    credits: number;
+    creditsPending: number;
   };
 
 const MILESTONES = [
@@ -62,7 +64,7 @@ afterAll(async () => {
 });
 
 describe('Escrow por marcos (RN-069)', () => {
-  it('validação: soma diferente do valor, menos de 2 marcos ou em créditos são recusados', async () => {
+  it('validação: soma diferente do valor, menos de 2 marcos ou fração de crédito são recusados', async () => {
     const client = await registerAndLogin('client');
     const freelancer = await registerAndLogin('freelancer');
     await fundWallet(app, client.token, 1000);
@@ -96,11 +98,73 @@ describe('Escrow por marcos (RN-069)', () => {
         paymentMode: 'credits',
         price: 40,
         milestones: [
-          { title: 'A', amount: 20 },
-          { title: 'B', amount: 20 },
+          { title: 'A', amount: 20.5 },
+          { title: 'B', amount: 19.5 },
         ],
       })
       .expect(422);
+  });
+
+  it('em créditos: aceite retém os créditos, cada marco aprovado libera os seus, cancelar devolve só o restante', async () => {
+    const client = await registerAndLogin('client');
+    const freelancer = await registerAndLogin('freelancer');
+    // Bônus de boas-vindas (100 créditos) no primeiro acesso à carteira.
+    expect((await wallet(client.token)).credits).toBe(100);
+
+    const created = await request(app)
+      .post('/api/contracts')
+      .set(auth(client.token))
+      .send({
+        freelancerId: freelancer.id,
+        title: 'Manutenção em 2 visitas',
+        description: 'Diagnóstico numa visita e correções na outra',
+        price: 80,
+        paymentMode: 'credits',
+        milestones: [
+          { title: 'Visita 1: diagnóstico', amount: 40 },
+          { title: 'Visita 2: correções', amount: 40 },
+        ],
+      });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = created.body.id as number;
+
+    // Aceite: 80 saem do cliente e ficam pendentes para o freelancer; marcos financiados.
+    await request(app).post(`/api/contracts/${id}/accept`).set(auth(freelancer.token)).expect(200);
+    expect(await wallet(client.token)).toMatchObject({ credits: 20, creditsPending: 0 });
+    expect(await wallet(freelancer.token)).toMatchObject({ credits: 100, creditsPending: 80 });
+    const detail = await request(app).get(`/api/contracts/${id}`).set(auth(client.token));
+    const [m1, m2] = detail.body.milestones as {
+      id: number;
+      status: string;
+      freelancerNet: number;
+    }[];
+    expect(m1).toMatchObject({ status: 'funded', freelancerNet: 40 });
+
+    // Marco 1 entregue e aprovado: 40 créditos liberados; contrato segue em andamento.
+    await request(app)
+      .post(`/api/contracts/${id}/milestones/${m1!.id}/deliver`)
+      .set(auth(freelancer.token))
+      .send({ message: 'Diagnóstico feito e relatório no chat.' })
+      .expect(200);
+    const approved = await request(app)
+      .post(`/api/contracts/${id}/milestones/${m1!.id}/approve`)
+      .set(auth(client.token));
+    expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+    expect(approved.body.status).toBe('in_progress');
+    expect(await wallet(freelancer.token)).toMatchObject({ credits: 140, creditsPending: 40 });
+    expect(approved.body.history.at(-1).note).toContain('40 créditos liberados');
+
+    // Cliente cancela: só os 40 do marco aberto voltam; o marco 2 fica cancelado.
+    const cancelled = await request(app)
+      .post(`/api/contracts/${id}/cancel`)
+      .set(auth(client.token));
+    expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
+    expect(await wallet(client.token)).toMatchObject({ credits: 60, creditsPending: 0 });
+    expect(await wallet(freelancer.token)).toMatchObject({ credits: 140, creditsPending: 0 });
+    const after = await request(app).get(`/api/contracts/${id}`).set(auth(client.token));
+    expect(after.body.milestones.find((m: { id: number }) => m.id === m2!.id).status).toBe(
+      'cancelled',
+    );
   });
 
   it('marcos financiados no aceite; cada aprovação libera só a própria parte; o último conclui', async () => {

@@ -5,6 +5,19 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.6.0] — 2026-09-14
+
+### Adicionado
+
+- **Marcos em créditos Escambo** (RN-069 + créditos). Até aqui os marcos só existiam em dinheiro.
+  - Contratar em créditos aceita "Dividir em marcos": marcos inteiros, sem taxa, somando os
+    créditos da contratação; "Dividir igualmente" reparte em inteiros (o último absorve a sobra).
+  - Aceite retém todos os créditos e financia os marcos; cada marco aprovado (ou aprovado
+    tacitamente) libera só os seus créditos, com linha no ledger; o último conclui.
+  - Cancelar e disputar liquidam só os créditos dos marcos ainda abertos.
+  - Sala e notificações falam em créditos ("50 créditos liberados") quando a contratação é em
+    créditos; demo com "Manutenção elétrica em 2 visitas (em créditos)".
+
 ## [1.5.0] — 2026-09-14
 
 ### Adicionado

@@ -167,7 +167,10 @@ export async function approveMilestone(req: Request, res: Response): Promise<voi
     title: r.completed
       ? 'Contratação concluída — último marco liberado'
       : `Marco aprovado: ${r.title}`,
-    body: `${r.net.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} liberados na sua carteira.`,
+    body:
+      r.unit === 'credits'
+        ? `${r.net} créditos liberados na sua carteira.`
+        : `${r.net.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} liberados na sua carteira.`,
     data: { contractId: r.contract.id, milestoneId },
   });
   void auditService.log({

@@ -821,7 +821,7 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Pagamentos |
-| **Descrição** | Contratos divididos em marcos têm **cada marco financiado e liberado individualmente**. A soma dos marcos deve ser igual ao valor total do contrato. A aprovação de um marco libera apenas o valor daquele marco. Cada marco pode ter o próprio prazo (opcional; no futuro, em ordem e nunca depois do prazo da contratação): marco em escrow com prazo vencido avisa as duas partes uma vez — a mediação automática continua sendo pelo prazo da contratação (RN-029) |
+| **Descrição** | Contratos divididos em marcos têm **cada marco financiado e liberado individualmente**. A soma dos marcos deve ser igual ao valor total do contrato. A aprovação de um marco libera apenas o valor daquele marco. Vale em dinheiro e em créditos Escambo (marcos inteiros, sem taxa). Cada marco pode ter o próprio prazo (opcional; no futuro, em ordem e nunca depois do prazo da contratação): marco em escrow com prazo vencido avisa as duas partes uma vez — a mediação automática continua sendo pelo prazo da contratação (RN-029) |
 | **Impacto** | Reduz o risco das duas partes em projetos longos e de maior valor |
 | **UC Relacionado** | UC-06 |
 

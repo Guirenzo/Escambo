@@ -17,6 +17,30 @@ const ms = (dues: (string | null)[]) =>
 const messages = (input: unknown): string[] =>
   createContractSchema.safeParse(input).error?.issues.map((i) => i.message) ?? [];
 
+describe('createContractSchema: marcos em créditos', () => {
+  it('aceita marcos inteiros e recusa fração de crédito', () => {
+    const credits = { ...base, paymentMode: 'credits' as const, price: 80 };
+    expect(
+      createContractSchema.safeParse({
+        ...credits,
+        milestones: [
+          { title: 'Visita 1', amount: 40 },
+          { title: 'Visita 2', amount: 40 },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      messages({
+        ...credits,
+        milestones: [
+          { title: 'Visita 1', amount: 40.5 },
+          { title: 'Visita 2', amount: 39.5 },
+        ],
+      }),
+    ).toContain('O marco 1 precisa ter um número inteiro de créditos');
+  });
+});
+
 describe('createContractSchema: prazos', () => {
   it('prazo da contratação precisa estar no futuro', () => {
     expect(createContractSchema.safeParse(base).success).toBe(true);
