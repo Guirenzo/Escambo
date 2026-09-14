@@ -6,7 +6,9 @@ import {
   banUser,
   completeDeletionRequest,
   completeWithdrawal,
+  exportFinanceCsv,
   failWithdrawal,
+  getFinance,
   getMetrics,
   listOpenDisputes,
   listDeletionRequests,
@@ -24,6 +26,8 @@ export const adminRoutes = Router();
 adminRoutes.use(authenticate, requireAdmin);
 
 adminRoutes.get('/metrics', asyncHandler(getMetrics));
+adminRoutes.get('/finance', asyncHandler(getFinance));
+adminRoutes.get('/finance/export.csv', asyncHandler(exportFinanceCsv));
 adminRoutes.get('/disputes', asyncHandler(listOpenDisputes));
 adminRoutes.post('/disputes/:id/resolve', asyncHandler(resolveDispute));
 adminRoutes.post('/users/:ulid/suspend', asyncHandler(suspendUser));

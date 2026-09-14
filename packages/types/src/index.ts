@@ -158,12 +158,47 @@ export interface ResolveDisputeRequest {
 
 // --- Admin ---
 
+export type FinanceGranularity = 'day' | 'month';
+
+/** Somas de um período (ou de um balde do período). Valores em R$. */
+export interface FinanceTotals {
+  /** Taxas retidas pela plataforma, líquidas de estornos (derivadas do ledger de R$). */
+  revenue: number;
+  /** Depósitos confirmados (dinheiro que entrou). */
+  deposits: number;
+  /** Saques efetivados, líquidos de saques estornados (dinheiro que saiu). */
+  withdrawals: number;
+  /** Reembolsos a clientes (recusa, cancelamento, disputa). */
+  refunds: number;
+  /** Contratações em dinheiro concluídas no período. */
+  completedContracts: number;
+  /** Valor bruto das contratações em dinheiro concluídas (GMV). */
+  gmv: number;
+}
+
+export interface FinanceBucket extends FinanceTotals {
+  /** "AAAA-MM" (mês) ou "AAAA-MM-DD" (dia), em horário de Brasília. */
+  bucket: string;
+}
+
+/** Relatório financeiro do admin (GET /admin/finance). */
+export interface AdminFinanceReport {
+  from: string;
+  to: string;
+  granularity: FinanceGranularity;
+  totals: FinanceTotals;
+  series: FinanceBucket[];
+  /** Fotografia de agora (não depende do período). */
+  now: { inEscrow: number; usersBalance: number };
+}
+
 export interface AdminMetrics {
   users: number;
   freelancers: number;
   contracts: number;
   completedContracts: number;
   openDisputes: number;
+  /** Taxas retidas desde o início, líquidas de estornos (derivadas do ledger de R$, ADR 26). */
   platformFees: number;
   /** Soma do que está retido em escrow / reservado em propostas (passivo da plataforma). */
   inEscrow: number;

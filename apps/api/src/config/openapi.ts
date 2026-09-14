@@ -180,6 +180,8 @@ export const openapiDocument: Record<string, any> = {
     '/contracts/{id}/deliver': { post: op('Contratações', 'Registra entrega', { auth: true }) },
     '/contracts/{id}/approve': { post: op('Contratações', 'Cliente aprova (libera escrow)', { auth: true }) },
     '/contracts/{id}/cancel': { post: op('Contratações', 'Cancela (reembolso RN-025)', { auth: true }) },
+    '/admin/finance': { get: op('Admin', 'Relatório financeiro por período (receita do ledger, depósitos, saques, reembolsos, GMV)', { auth: true }) },
+    '/admin/finance/export.csv': { get: op('Admin', 'Ledger de R$ do período em CSV', { auth: true }) },
     '/contracts/{id}/extension': { post: op('Contratações', 'Freelancer pede a única extensão de prazo (RN-028)', { auth: true }) },
     '/contracts/{id}/extension/{decision}': { post: op('Contratações', 'Cliente aceita (accept) ou recusa (decline) a extensão', { auth: true }) },
     '/contracts/{id}/milestones/{milestoneId}/deliver': { post: op('Contratações', 'Marco: freelancer entrega (RN-069)', { auth: true }) },

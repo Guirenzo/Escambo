@@ -183,3 +183,28 @@ test('saque falho é estornado pelo admin; saque aguardando pode ser cancelado p
   await expect(page.getByTestId('wallet-balance')).toHaveText('R$ 200,00');
   await expect(pending.locator('.pill')).toHaveText('Cancelado');
 });
+
+test('admin vê o relatório financeiro (receita do ledger) e exporta o CSV', async ({
+  page,
+  request,
+}) => {
+  const admin = await createAdmin(request);
+  await openAs(page, admin, '/admin');
+  await settled(page);
+  const fin = page.getByTestId('finance');
+  await expect(fin).toBeVisible();
+  await expect(fin.getByTestId('finance-revenue')).toContainText('R$');
+  await expect(fin.getByTestId('finance-period')).toContainText('por mês');
+
+  await fin.getByRole('tab', { name: 'Últimos 30 dias' }).click();
+  await expect(fin.getByTestId('finance-period')).toContainText('por dia');
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    fin.getByRole('button', { name: 'Exportar CSV' }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(
+    /^escambo-ledger-\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.csv$/,
+  );
+  await expect(page.locator('.toast', { hasText: 'CSV do ledger baixado' })).toBeVisible();
+});

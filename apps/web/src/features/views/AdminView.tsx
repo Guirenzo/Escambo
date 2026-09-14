@@ -42,6 +42,7 @@ import {
   useResolveDispute,
 } from '../../lib/hooks';
 import { usePageTitle } from '../../lib/title';
+import { FinanceSection } from '../admin/FinanceSection';
 import { useToast } from '../../lib/toast';
 
 const RESOLUTIONS: { value: DisputeResolution; label: string; hint: string }[] = [
@@ -412,7 +413,7 @@ export function AdminView() {
             <span className="kpi-label">Receita da plataforma</span>
           </div>
           <strong className="kpi-value">{m ? brl(m.platformFees) : '—'}</strong>
-          <span className="muted tiny">taxas de 15% sobre concluídas</span>
+          <span className="muted tiny">taxas retidas desde o início, líquidas de estornos</span>
         </div>
         <div className="kpi">
           <div className="kpi-top">
@@ -457,6 +458,8 @@ export function AdminView() {
           </span>
         </div>
       </div>
+
+      <FinanceSection />
 
       <section className="card">
         <div className="card-head">

@@ -1,6 +1,7 @@
 import type {
   AdminDeletionRequest,
   AdminEmail,
+  AdminFinanceReport,
   AdminMetrics,
   AdminWithdrawal,
   AuthResponse,
@@ -192,6 +193,12 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
 }
 
 /** Client tipado — todos os tipos vêm de @escambo/types (compartilhados com o backend). */
+/** Query string do relatório financeiro (só os campos preenchidos). */
+const financeQs = (q: { from?: string; to?: string; granularity: string }): string =>
+  new URLSearchParams(
+    Object.entries(q).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1] !== ''),
+  ).toString();
+
 export const api = {
   // auth
   register: (body: RegisterRequest) =>
@@ -368,6 +375,28 @@ export const api = {
 
   // admin (mediação, métricas, moderação)
   adminMetrics: () => request<AdminMetrics>('/admin/metrics'),
+  adminFinance: (q: { from?: string; to?: string; granularity: 'day' | 'month' }) =>
+    request<AdminFinanceReport>(`/admin/finance?${financeQs(q)}`),
+  /** Baixa o ledger do período em CSV com o token; renova a sessão uma vez num 401. */
+  downloadFinanceCsv: async (q: {
+    from?: string;
+    to?: string;
+    granularity: 'day' | 'month';
+  }): Promise<{ blob: Blob; fileName: string }> => {
+    const fetchIt = () =>
+      fetch(`${BASE_URL}/admin/finance/export.csv?${financeQs(q)}`, {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      });
+    let res = await fetchIt();
+    if (res.status === 401 && (await refreshSession())) res = await fetchIt();
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { message?: string };
+      throw new Error(body.message ?? `Erro ${res.status} ao exportar o ledger`);
+    }
+    const disposition = res.headers.get('content-disposition') ?? '';
+    const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'escambo-ledger.csv';
+    return { blob: await res.blob(), fileName };
+  },
   adminDisputes: () => request<Dispute[]>('/admin/disputes'),
   adminResolveDispute: (id: number, body: ResolveDisputeRequest) =>
     request<Dispute>(`/admin/disputes/${id}/resolve`, {
