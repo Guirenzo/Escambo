@@ -8,6 +8,7 @@ import {
   dt,
   endOfDayIso,
   hm,
+  spreadDates,
   STATUS_LABEL,
 } from './format';
 
@@ -79,6 +80,20 @@ describe('prazo de entrega', () => {
       tone: 'late',
       label: 'atrasada há 2 dias',
     });
+  });
+
+  it('spreadDates distribui os prazos dos marcos até o prazo da contratação', () => {
+    const from = new Date(2026, 8, 10, 10, 0);
+    const to = new Date(2026, 8, 20, 23, 59);
+    expect(spreadDates(from, to, 2)).toEqual(['2026-09-15', '2026-09-20']);
+    expect(spreadDates(from, to, 1)).toEqual(['2026-09-20']);
+    expect(spreadDates(from, to, 5)).toEqual([
+      '2026-09-12',
+      '2026-09-14',
+      '2026-09-16',
+      '2026-09-18',
+      '2026-09-20',
+    ]);
   });
 
   it('dateInputValue e endOfDayIso conversam com <input type="date"> no fuso local', () => {

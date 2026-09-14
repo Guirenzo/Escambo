@@ -53,6 +53,7 @@ const contract = async (id: number, token: string) =>
     overdueNotifiedAt: string | null;
     extension: { status: string; deadlineAt: string; reason: string } | null;
     history: { status: string; note: string | null }[];
+    milestones: { id: number; title: string; status: string; dueAt: string | null }[];
   };
 
 const wallet = async (token: string) =>
@@ -239,5 +240,55 @@ describe('Prazos: expiração da proposta, extensão única e disputa automátic
 
     // Não abre uma segunda disputa.
     expect((await runOverdueContracts()).disputed).not.toContain(id);
+  });
+
+  it('RN-069 + prazos: marco com prazo vencido avisa as duas partes uma vez; o prazo do marco não passa do da contratação', async () => {
+    const client = await registerAndLogin('client');
+    const freelancer = await registerAndLogin('freelancer');
+    await fundWallet(app, client.token, 300);
+    const body = (dues: [string, string], deadlineAt: string) => ({
+      freelancerId: freelancer.id,
+      title: 'Site em duas etapas',
+      description: 'Layout aprovado e depois a publicação do site',
+      price: 300,
+      deadlineAt,
+      milestones: [
+        { title: 'Layout', amount: 150, dueAt: dues[0] },
+        { title: 'Publicação', amount: 150, dueAt: dues[1] },
+      ],
+    });
+
+    // Marco depois do prazo da contratação: 422 (validação) com a mensagem certa.
+    const bad = await request(app)
+      .post('/api/contracts')
+      .set(auth(client.token))
+      .send(body([inDays(12), inDays(14)], inDays(10)));
+    expect(bad.status).toBe(422);
+    expect(JSON.stringify(bad.body)).toContain('não pode passar do prazo da contratação');
+
+    const due1 = inDays(3);
+    const created = await request(app)
+      .post('/api/contracts')
+      .set(auth(client.token))
+      .send(body([due1, inDays(9)], inDays(10)));
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = created.body.id as number;
+    await request(app).post(`/api/contracts/${id}/accept`).set(auth(freelancer.token)).expect(200);
+    const [m1] = (await contract(id, client.token)).milestones;
+    expect(m1).toMatchObject({ title: 'Layout', status: 'funded', dueAt: due1 });
+
+    // Dentro do prazo: nada. Prazo do marco vencido: aviso aos dois, uma vez só.
+    expect((await runOverdueContracts()).milestones).not.toContain(m1!.id);
+    await pool.query(
+      `UPDATE contract_milestones SET due_at = DATE_SUB(NOW(), INTERVAL 1 HOUR) WHERE id = :id`,
+      { id: m1!.id },
+    );
+    const first = await runOverdueContracts();
+    expect(first.milestones).toContain(m1!.id);
+    expect(first.disputed).not.toContain(id); // o prazo da contratação (10 dias) segue valendo
+    expect(await waitForNotification(app, freelancer.token, 'milestone_overdue')).toBe(true);
+    expect(await waitForNotification(app, client.token, 'milestone_overdue')).toBe(true);
+    expect((await runOverdueContracts()).milestones).not.toContain(m1!.id);
+    expect((await contract(id, client.token)).status).toBe('accepted');
   });
 });

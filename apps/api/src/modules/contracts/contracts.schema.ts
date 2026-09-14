@@ -43,6 +43,23 @@ export const createContractSchema = z
         message: 'A soma dos marcos precisa ser igual ao valor da contratação (RN-069)',
       });
     }
+    // Prazo por marco: opcional; no futuro, em ordem e nunca depois do prazo da contratação.
+    const deadline = d.deadlineAt ? new Date(d.deadlineAt).getTime() : null;
+    let previous = 0;
+    d.milestones.forEach((m, i) => {
+      if (!m.dueAt) return;
+      const t = new Date(m.dueAt).getTime();
+      const issue = (message: string) =>
+        ctx.addIssue({ code: 'custom', path: ['milestones', i, 'dueAt'], message });
+      if (t <= Date.now()) issue(`O prazo do marco ${i + 1} precisa estar no futuro`);
+      if (t < previous) {
+        issue(`O prazo do marco ${i + 1} precisa ser igual ou depois do marco anterior`);
+      }
+      if (deadline !== null && t > deadline) {
+        issue(`O prazo do marco ${i + 1} não pode passar do prazo da contratação`);
+      }
+      previous = t;
+    });
   });
 export type CreateContractInput = z.infer<typeof createContractSchema>;
 

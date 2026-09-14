@@ -18,11 +18,23 @@ export interface MilestoneRow extends RowDataPacket {
   sort_order: number;
   status: string;
   due_at: Date | null;
+  overdue_notified_at: Date | null;
   delivered_at: Date | null;
   delivery_note: string | null;
   revision_note: string | null;
   released_at: Date | null;
   created_at: Date;
+}
+
+/** Marco financiado com prazo vencido, com o que a notificação precisa. */
+export interface OverdueMilestoneRow extends RowDataPacket {
+  id: number;
+  contract_id: number;
+  title: string;
+  due_at: Date;
+  client_id: number;
+  freelancer_id: number;
+  contract_title: string;
 }
 
 /** Marco entregue há mais de N dias sem resposta (aprovação tácita). */
@@ -43,7 +55,8 @@ export interface MilestoneSpec {
 }
 
 const COLS = `id, contract_id, title, description, amount, freelancer_net, sort_order, status,
-              due_at, delivered_at, delivery_note, revision_note, released_at, created_at`;
+              due_at, overdue_notified_at, delivered_at, delivery_note, revision_note, released_at,
+              created_at`;
 
 /** Marcos que ainda prendem dinheiro (nem liberados nem cancelados). */
 const OPEN = `('pending', 'funded', 'delivered')`;
@@ -302,6 +315,34 @@ export const milestonesRepository = {
   },
 
   /** Marcos entregues sem resposta do cliente há mais de `days` dias (aprovação tácita). */
+  /** Marcos financiados com prazo vencido e ninguém avisado, em contratos ativos (RN-069/RN-029). */
+  async findOverdueUnnoticed(): Promise<OverdueMilestoneRow[]> {
+    const [rows] = await pool.query<OverdueMilestoneRow[]>(
+      `SELECT m.id, m.contract_id, m.title, m.due_at, c.client_id, c.freelancer_id,
+              c.title AS contract_title
+         FROM contract_milestones m
+         JOIN contracts c ON c.id = m.contract_id
+        WHERE m.status = 'funded'
+          AND m.due_at IS NOT NULL
+          AND m.due_at < NOW()
+          AND m.overdue_notified_at IS NULL
+          AND c.status IN ('accepted', 'in_progress')
+        ORDER BY m.id ASC
+        LIMIT 200`,
+    );
+    return rows;
+  },
+
+  /** Marca o aviso de atraso do marco; false se outra instância do job já marcou. */
+  async markOverdueNotified(id: number): Promise<boolean> {
+    const [res] = await pool.query<ResultSetHeader>(
+      `UPDATE contract_milestones SET overdue_notified_at = NOW()
+        WHERE id = :id AND overdue_notified_at IS NULL AND status = 'funded'`,
+      { id },
+    );
+    return res.affectedRows > 0;
+  },
+
   async findDeliveredOlderThan(days: number): Promise<DueMilestoneRow[]> {
     const [rows] = await pool.query<DueMilestoneRow[]>(
       `SELECT m.id, m.contract_id, c.client_id, c.freelancer_id

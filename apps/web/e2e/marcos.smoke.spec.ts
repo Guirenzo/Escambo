@@ -80,3 +80,55 @@ test('contratar em marcos: entrega e aprovação parciais liberam o escrow aos p
   await expect(page.getByTestId('wallet-balance')).toHaveText('R$ 127,50');
   await expect(page.getByText('R$ 127,50').nth(1)).toBeVisible();
 });
+
+const DAY = 86_400_000;
+const pad = (n: number): string => String(n).padStart(2, '0');
+const plus = (days: number): Date => new Date(Date.now() + days * DAY);
+const inputDate = (d: Date): string =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const brDate = (d: Date): string =>
+  `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+
+test('marcos com prazos distribuídos até o prazo da contratação, visíveis na Sala', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const service = await createService(request, freelancer, 300);
+  const client = await createUser(request, 'client');
+  await topUp(request, client, 300);
+
+  await openAs(page, client, '/servicos');
+  await settled(page);
+  await page.getByPlaceholder('Buscar serviços…').fill(service.title);
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  await page
+    .locator('.card.service', { hasText: service.title })
+    .getByRole('button', { name: 'Contratar' })
+    .click();
+  const modal = page.getByRole('dialog');
+  await modal.getByLabel('Prazo de entrega').fill(inputDate(plus(10)));
+  await modal.getByTestId('milestones-toggle').getByRole('checkbox').check();
+  await modal.getByRole('button', { name: 'Dividir igualmente' }).click();
+  await modal.getByRole('button', { name: 'Distribuir prazos' }).click();
+  await expect(modal.getByLabel('Prazo do marco 1')).toHaveValue(inputDate(plus(5)));
+  await expect(modal.getByLabel('Prazo do marco 2')).toHaveValue(inputDate(plus(10)));
+  await modal.getByRole('button', { name: 'Enviar proposta' }).click();
+  await expect(page).toHaveURL(/\/contratos\/\d+$/);
+  const contractId = Number(page.url().split('/').pop());
+
+  // Sala: cada marco mostra o próprio prazo; depois do aceite, quanto falta.
+  const dues = page.getByTestId('milestones').locator('[data-testid^="milestone-due-"]');
+  await expect(dues).toHaveCount(2);
+  await expect(dues.nth(0)).toContainText(`até ${brDate(plus(5))}`);
+  await expect(dues.nth(1)).toContainText(`até ${brDate(plus(10))}`);
+
+  const acc = await request.post(`/api/contracts/${contractId}/accept`, {
+    headers: h(freelancer.token),
+  });
+  expect(acc.ok()).toBeTruthy();
+  await openAs(page, freelancer, `/contratos/${contractId}`);
+  await settled(page);
+  await expect(dues.nth(0)).toContainText('faltam 5 dias');
+  await expect(dues.nth(1)).toContainText('faltam 10 dias');
+});

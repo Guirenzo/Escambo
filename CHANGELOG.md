@@ -5,6 +5,20 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.5.0] — 2026-09-14
+
+### Adicionado
+
+- **Prazo por marco** (RN-069 + RN-029). `due_at` existia e nunca era preenchido.
+  - **Contratar**: cada marco ganha um prazo opcional; "Distribuir prazos" espalha os prazos por
+    igual até o prazo da contratação (o último cai nele). A API valida: no futuro, em ordem e
+    nunca depois do prazo da contratação.
+  - **Sala**: cada marco mostra "até dd/mm" e, enquanto está em escrow, "faltam N dias" ou
+    "atrasado há N dias"; marco entregue depois do prazo aparece como "entregue com atraso".
+  - **Job**: marco financiado com prazo vencido avisa as duas partes uma vez
+    (`milestone_overdue`, também por e-mail). Não abre disputa: a mediação automática continua
+    sendo pelo prazo da contratação. Migration `0009`.
+
 ## [1.4.0] — 2026-09-11
 
 ### Adicionado

@@ -2333,9 +2333,20 @@ button.toggle.on {
 }
 .ms-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 120px auto;
+  grid-template-columns: minmax(0, 1fr) 110px 150px auto;
   gap: 8px;
   align-items: center;
+}
+@media (max-width: 640px) {
+  .ms-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .ms-row > :first-child {
+    grid-column: 1 / -1;
+  }
+  .ms-row > .icon-btn {
+    justify-self: end;
+  }
 }
 .ms-sum {
   display: flex;

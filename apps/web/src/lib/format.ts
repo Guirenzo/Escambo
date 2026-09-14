@@ -33,6 +33,14 @@ export const endOfDayIso = (value: string): string => {
   return new Date(y!, (m ?? 1) - 1, d ?? 1, 23, 59, 59).toISOString();
 };
 
+/** `n` datas espaçadas por igual entre `from` (exclusivo) e `to` (inclusivo), como valores de <input type="date">. */
+export function spreadDates(from: Date, to: Date, n: number): string[] {
+  const span = to.getTime() - from.getTime();
+  return Array.from({ length: n }, (_, i) =>
+    dateInputValue(new Date(from.getTime() + (span * (i + 1)) / n)),
+  );
+}
+
 export interface DeadlineInfo {
   /** Dias de calendário até o prazo (negativo = dias de atraso). */
   daysLeft: number;
