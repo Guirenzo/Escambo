@@ -168,3 +168,35 @@ test('preferência de e-mail: escolher "Resumo diário" persiste no perfil e na 
   });
   expect(((await me.json()) as { emailFrequency: string }).emailFrequency).toBe('daily');
 });
+
+test('perfil rico: dias de atendimento e portfólio aparecem no perfil público', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const client = await createUser(request, 'client');
+
+  await openAs(page, freelancer, '/perfil');
+  await settled(page);
+  const form = page.locator('form', { hasText: 'Salvar freelancer' });
+  await form.getByRole('button', { name: 'seg' }).click();
+  await form.getByRole('button', { name: 'qua' }).click();
+  await form.getByRole('button', { name: 'Salvar freelancer' }).click();
+  await expect(page.locator('.toast', { hasText: 'Perfil de freelancer salvo' })).toBeVisible();
+
+  const card = page.getByTestId('portfolio-card');
+  await card.getByLabel('Título do trabalho').fill('Site da padaria do bairro');
+  await card.getByLabel('Imagem (URL)').fill(PNG_1PX);
+  await card.getByRole('button', { name: 'Adicionar ao portfólio' }).click();
+  await expect(page.locator('.toast', { hasText: 'Trabalho adicionado' })).toBeVisible();
+  await expect(card.getByTestId('portfolio-list')).toContainText('Site da padaria do bairro');
+
+  const me = await request.get('/api/auth/me', {
+    headers: { Authorization: `Bearer ${freelancer.token}` },
+  });
+  const { ulid } = (await me.json()) as { ulid: string };
+  await openAs(page, client, `/freelancers/${ulid}`);
+  await settled(page);
+  await expect(page.getByTestId('available-days')).toContainText('atende seg, qua');
+  await expect(page.getByTestId('portfolio')).toContainText('Site da padaria do bairro');
+});

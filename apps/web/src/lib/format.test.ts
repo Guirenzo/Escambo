@@ -7,6 +7,8 @@ import {
   displayName,
   dt,
   endOfDayIso,
+  formatAvailableDays,
+  formatHours,
   hm,
   spreadDates,
   STATUS_LABEL,
@@ -45,6 +47,23 @@ describe('displayName', () => {
     expect(displayName('  Marina ', 'marina@escambo.demo')).toBe('Marina');
     expect(displayName(null, 'cliente@escambo.demo')).toBe('cliente');
     expect(displayName(undefined, undefined)).toBe('');
+  });
+});
+
+describe('perfil: dias de atendimento e tempo de resposta', () => {
+  it('formatAvailableDays resume dias seguidos e lista os demais', () => {
+    expect(formatAvailableDays([1, 2, 3, 4, 5])).toBe('seg a sex');
+    expect(formatAvailableDays([5, 1, 3])).toBe('seg, qua, sex');
+    expect(formatAvailableDays([0, 6])).toBe('dom, sáb');
+    expect(formatAvailableDays([])).toBe('');
+    expect(formatAvailableDays(null)).toBe('');
+  });
+
+  it('formatHours fala em horas ou dias', () => {
+    expect(formatHours(0.4)).toBe('menos de 1 h');
+    expect(formatHours(2.4)).toBe('2 h');
+    expect(formatHours(30)).toBe('1 dia');
+    expect(formatHours(80)).toBe('3 dias');
   });
 });
 

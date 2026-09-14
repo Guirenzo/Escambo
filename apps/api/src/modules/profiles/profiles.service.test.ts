@@ -7,6 +7,7 @@ vi.mock('./profiles.repository', () => ({
     findFreelancerByUserId: vi.fn(),
     findClientByUserId: vi.fn(),
     findPublicFreelancerByUlid: vi.fn(),
+    listPortfolio: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -43,7 +44,10 @@ describe('profilesService.upsertFreelancer', () => {
 
     const p = await profilesService.upsertFreelancer(1, { fullName: 'Rafael', isAvailable: true });
 
-    expect(repo.upsertFreelancer).toHaveBeenCalledWith(1, expect.objectContaining({ fullName: 'Rafael', isAvailable: true }));
+    expect(repo.upsertFreelancer).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ fullName: 'Rafael', isAvailable: true }),
+    );
     expect(p.isAvailable).toBe(true);
     expect(p.avgRating).toBe(4.5);
     expect(p.totalReviews).toBe(10);
@@ -53,7 +57,9 @@ describe('profilesService.upsertFreelancer', () => {
 describe('profilesService.getPublicFreelancer', () => {
   it('404 quando não existe', async () => {
     repo.findPublicFreelancerByUlid.mockResolvedValue(undefined);
-    await expect(profilesService.getPublicFreelancer('01ABC')).rejects.toMatchObject({ statusCode: 404 });
+    await expect(profilesService.getPublicFreelancer('01ABC')).rejects.toMatchObject({
+      statusCode: 404,
+    });
   });
 
   it('retorna perfil público com nível', async () => {
@@ -70,5 +76,6 @@ describe('profilesService.getPublicFreelancer', () => {
     expect(p.level).toBe(3);
     expect(p.levelName).toBe('Profissional');
     expect(p.avgRating).toBe(4.5);
+    expect(p.portfolio).toEqual([]);
   });
 });

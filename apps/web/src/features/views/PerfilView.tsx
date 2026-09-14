@@ -6,7 +6,7 @@ import { Stars } from '../../components/Stars';
 import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
-import { dtm } from '../../lib/format';
+import { dtm, WEEKDAY_SHORT } from '../../lib/format';
 import {
   useFreelancerReviews,
   useProfilesMe,
@@ -16,6 +16,7 @@ import {
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { EmailPreferencesCard } from '../profile/EmailPreferencesCard';
+import { PortfolioCard } from '../profile/PortfolioCard';
 import { PrivacidadeCard } from '../profile/PrivacidadeCard';
 
 /** Avaliações que o freelancer recebeu, com resposta pública (uma por avaliação). */
@@ -114,6 +115,9 @@ export function PerfilView() {
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
   const [locating, setLocating] = useState(false);
+  const [availableDays, setAvailableDays] = useState<number[]>([]);
+  const toggleDay = (d: number): void =>
+    setAvailableDays((days) => (days.includes(d) ? days.filter((x) => x !== d) : [...days, d]));
 
   // Preenche o formulário quando o perfil chega.
   useEffect(() => {
@@ -131,6 +135,7 @@ export function PerfilView() {
       setStateUf(p.freelancer.state ?? '');
       setLat(p.freelancer.latitude);
       setLng(p.freelancer.longitude);
+      setAvailableDays(p.freelancer.availableDays ?? []);
     }
   }, [profiles.data]);
 
@@ -167,6 +172,7 @@ export function PerfilView() {
         state: stateUf.trim().toUpperCase() || null,
         latitude: lat,
         longitude: lng,
+        availableDays,
       });
       toast.success('Perfil de freelancer salvo!');
     } catch (er) {
@@ -268,6 +274,24 @@ export function PerfilView() {
                 />
               </Field>
               <div className="stack">
+                <span className="muted tiny" id="days-label">
+                  Dias em que você atende
+                </span>
+                <div className="days-row" role="group" aria-labelledby="days-label">
+                  {WEEKDAY_SHORT.map((label, d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      className={`day-chip ${availableDays.includes(d) ? 'on' : ''}`}
+                      aria-pressed={availableDays.includes(d)}
+                      onClick={() => toggleDay(d)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="stack">
                 <span className="muted tiny">
                   Localização (é o que faz "Perto de mim" te encontrar)
                 </span>
@@ -319,6 +343,7 @@ export function PerfilView() {
               </Button>
             </form>
 
+            {p.freelancer && <PortfolioCard />}
             <EmailPreferencesCard />
             <PrivacidadeCard />
           </div>

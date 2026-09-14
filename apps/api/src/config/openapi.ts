@@ -74,7 +74,10 @@ export const openapiDocument: Record<string, any> = {
         },
         ['email', 'password'],
       ),
-      Login: obj({ email: { type: 'string' }, password: { type: 'string' } }, ['email', 'password']),
+      Login: obj({ email: { type: 'string' }, password: { type: 'string' } }, [
+        'email',
+        'password',
+      ]),
       CreateService: obj(
         {
           categoryId: { type: 'integer' },
@@ -110,9 +113,16 @@ export const openapiDocument: Record<string, any> = {
         },
         ['receiverId', 'estimatedValueOffered', 'estimatedValueRequested'],
       ),
-      CreateDeposit: obj({ amount: { type: 'number', minimum: 10 }, method: { type: 'string', enum: ['pix'] } }, ['amount']),
+      CreateDeposit: obj(
+        { amount: { type: 'number', minimum: 10 }, method: { type: 'string', enum: ['pix'] } },
+        ['amount'],
+      ),
       PaymentWebhook: obj(
-        { event: { type: 'string' }, gatewayPaymentId: { type: 'string' }, status: { type: 'string', enum: ['paid', 'failed'] } },
+        {
+          event: { type: 'string' },
+          gatewayPaymentId: { type: 'string' },
+          status: { type: 'string', enum: ['paid', 'failed'] },
+        },
         ['gatewayPaymentId', 'status'],
       ),
       CreateWithdrawal: obj(
@@ -125,7 +135,10 @@ export const openapiDocument: Record<string, any> = {
       ),
       ResolveDispute: obj(
         {
-          resolution: { type: 'string', enum: ['refund_client', 'release_freelancer', 'partial_split'] },
+          resolution: {
+            type: 'string',
+            enum: ['refund_client', 'release_freelancer', 'partial_split'],
+          },
           refundPercentage: { type: 'integer', minimum: 0, maximum: 100, nullable: true },
           note: { type: 'string', nullable: true },
         },
@@ -138,21 +151,38 @@ export const openapiDocument: Record<string, any> = {
     '/health/live': { get: op('Health', 'Liveness — processo responde (sem tocar no banco)') },
 
     '/auth/register': {
-      post: op('Auth', 'Cria conta', { body: { $ref: '#/components/schemas/Register' }, responses: res201 }),
+      post: op('Auth', 'Cria conta', {
+        body: { $ref: '#/components/schemas/Register' },
+        responses: res201,
+      }),
     },
     '/auth/login': {
-      post: op('Auth', 'Autentica (accessToken + refreshToken)', { body: { $ref: '#/components/schemas/Login' } }),
+      post: op('Auth', 'Autentica (accessToken + refreshToken)', {
+        body: { $ref: '#/components/schemas/Login' },
+      }),
     },
     '/auth/refresh': { post: op('Auth', 'Rotaciona o refresh token') },
     '/auth/logout': { post: op('Auth', 'Revoga a sessão') },
-    '/auth/logout-all': { post: op('Auth', 'Encerra todas as sessões', { auth: true, responses: res200 }) },
+    '/auth/logout-all': {
+      post: op('Auth', 'Encerra todas as sessões', { auth: true, responses: res200 }),
+    },
     '/auth/me': { get: op('Auth', 'Dados do usuário do token', { auth: true }) },
 
     '/categories': { get: op('Categorias', 'Árvore de categorias') },
 
     '/profiles/me': { get: op('Perfis', 'Meus perfis', { auth: true }) },
-    '/profiles/freelancer': { put: op('Perfis', 'Cria/edita perfil de freelancer', { auth: true }) },
+    '/profiles/freelancer': {
+      put: op('Perfis', 'Cria/edita perfil de freelancer', { auth: true }),
+    },
     '/profiles/client': { put: op('Perfis', 'Cria/edita perfil de cliente', { auth: true }) },
+    '/profiles/portfolio': {
+      get: op('Perfis', 'Meu portfólio', { auth: true }),
+      post: op('Perfis', 'Adiciona item ao portfólio (máx. 12; imagem e/ou link)', { auth: true }),
+    },
+    '/profiles/portfolio/{id}': {
+      put: op('Perfis', 'Edita item do portfólio', { auth: true }),
+      delete: op('Perfis', 'Remove item do portfólio', { auth: true }),
+    },
     '/profiles/freelancer/{ulid}': {
       get: {
         ...op('Perfis', 'Perfil público do freelancer (nota + nível)'),
@@ -161,8 +191,15 @@ export const openapiDocument: Record<string, any> = {
     },
 
     '/services': {
-      get: op('Serviços', 'Lista/busca serviços (categoryId, q, isRemote, page, limit; lat+lng+radiusKm = descoberta local por proximidade)'),
-      post: op('Serviços', 'Cria serviço', { auth: true, body: { $ref: '#/components/schemas/CreateService' }, responses: res201 }),
+      get: op(
+        'Serviços',
+        'Lista/busca serviços (categoryId, q, isRemote, page, limit; lat+lng+radiusKm = descoberta local por proximidade)',
+      ),
+      post: op('Serviços', 'Cria serviço', {
+        auth: true,
+        body: { $ref: '#/components/schemas/CreateService' },
+        responses: res201,
+      }),
     },
     '/services/{id}': {
       get: op('Serviços', 'Detalhe do serviço'),
@@ -172,76 +209,175 @@ export const openapiDocument: Record<string, any> = {
 
     '/contracts': {
       get: op('Contratações', 'Minhas contratações', { auth: true }),
-      post: op('Contratações', 'Cria proposta (taxa 15%)', { auth: true, body: { $ref: '#/components/schemas/CreateContract' }, responses: res201 }),
+      post: op('Contratações', 'Cria proposta (taxa 15%)', {
+        auth: true,
+        body: { $ref: '#/components/schemas/CreateContract' },
+        responses: res201,
+      }),
     },
     '/contracts/{id}': { get: op('Contratações', 'Detalhe + histórico', { auth: true }) },
-    '/contracts/{id}/accept': { post: op('Contratações', 'Freelancer aceita (financia escrow)', { auth: true }) },
+    '/contracts/{id}/accept': {
+      post: op('Contratações', 'Freelancer aceita (financia escrow)', { auth: true }),
+    },
     '/contracts/{id}/reject': { post: op('Contratações', 'Freelancer recusa', { auth: true }) },
     '/contracts/{id}/deliver': { post: op('Contratações', 'Registra entrega', { auth: true }) },
-    '/contracts/{id}/approve': { post: op('Contratações', 'Cliente aprova (libera escrow)', { auth: true }) },
-    '/contracts/{id}/cancel': { post: op('Contratações', 'Cancela (reembolso RN-025)', { auth: true }) },
+    '/contracts/{id}/approve': {
+      post: op('Contratações', 'Cliente aprova (libera escrow)', { auth: true }),
+    },
+    '/contracts/{id}/cancel': {
+      post: op('Contratações', 'Cancela (reembolso RN-025)', { auth: true }),
+    },
     '/notifications/preferences': {
       get: op('Notificações', 'Preferência de e-mail (instant | daily | off)', { auth: true }),
       put: op('Notificações', 'Define a preferência de e-mail', { auth: true }),
     },
-    '/admin/finance': { get: op('Admin', 'Relatório financeiro por período (receita do ledger, depósitos, saques, reembolsos, GMV)', { auth: true }) },
-    '/admin/finance/export.csv': { get: op('Admin', 'Ledger de R$ do período em CSV', { auth: true }) },
-    '/contracts/{id}/extension': { post: op('Contratações', 'Freelancer pede a única extensão de prazo (RN-028)', { auth: true }) },
-    '/contracts/{id}/extension/{decision}': { post: op('Contratações', 'Cliente aceita (accept) ou recusa (decline) a extensão', { auth: true }) },
-    '/contracts/{id}/milestones/{milestoneId}/deliver': { post: op('Contratações', 'Marco: freelancer entrega (RN-069)', { auth: true }) },
-    '/contracts/{id}/milestones/{milestoneId}/approve': { post: op('Contratações', 'Marco: cliente aprova e libera só aquele valor; o último conclui', { auth: true }) },
-    '/contracts/{id}/milestones/{milestoneId}/request-revision': { post: op('Contratações', 'Marco: cliente pede revisão', { auth: true }) },
+    '/admin/finance': {
+      get: op(
+        'Admin',
+        'Relatório financeiro por período (receita do ledger, depósitos, saques, reembolsos, GMV)',
+        { auth: true },
+      ),
+    },
+    '/admin/finance/export.csv': {
+      get: op('Admin', 'Ledger de R$ do período em CSV', { auth: true }),
+    },
+    '/contracts/{id}/extension': {
+      post: op('Contratações', 'Freelancer pede a única extensão de prazo (RN-028)', {
+        auth: true,
+      }),
+    },
+    '/contracts/{id}/extension/{decision}': {
+      post: op('Contratações', 'Cliente aceita (accept) ou recusa (decline) a extensão', {
+        auth: true,
+      }),
+    },
+    '/contracts/{id}/milestones/{milestoneId}/deliver': {
+      post: op('Contratações', 'Marco: freelancer entrega (RN-069)', { auth: true }),
+    },
+    '/contracts/{id}/milestones/{milestoneId}/approve': {
+      post: op('Contratações', 'Marco: cliente aprova e libera só aquele valor; o último conclui', {
+        auth: true,
+      }),
+    },
+    '/contracts/{id}/milestones/{milestoneId}/request-revision': {
+      post: op('Contratações', 'Marco: cliente pede revisão', { auth: true }),
+    },
 
     '/auth/verify-email': { post: op('Auth', 'Confirma o e-mail pelo token do link (uso único)') },
-    '/auth/resend-verification': { post: op('Auth', 'Reenvia o link de confirmação', { auth: true }) },
-    '/auth/forgot-password': { post: op('Auth', 'Esqueci minha senha: envia link de redefinição (resposta igual exista ou não a conta)') },
-    '/auth/reset-password': { post: op('Auth', 'Define nova senha pelo token; encerra todas as sessões', { responses: res204 }) },
-    '/admin/emails': { get: op('Admin', 'Caixa de saída de e-mails (limit, userId)', { auth: true }) },
+    '/auth/resend-verification': {
+      post: op('Auth', 'Reenvia o link de confirmação', { auth: true }),
+    },
+    '/auth/forgot-password': {
+      post: op(
+        'Auth',
+        'Esqueci minha senha: envia link de redefinição (resposta igual exista ou não a conta)',
+      ),
+    },
+    '/auth/reset-password': {
+      post: op('Auth', 'Define nova senha pelo token; encerra todas as sessões', {
+        responses: res204,
+      }),
+    },
+    '/admin/emails': {
+      get: op('Admin', 'Caixa de saída de e-mails (limit, userId)', { auth: true }),
+    },
 
-    '/wallet': { get: op('Carteira', 'Saldo R$ + créditos Escambo (disponível e em escrow)', { auth: true }) },
-    '/wallet/transactions': { get: op('Carteira', 'Extrato de R$ (depósitos, reservas, escrow, reembolsos, saques)', { auth: true }) },
+    '/wallet': {
+      get: op('Carteira', 'Saldo R$ + créditos Escambo (disponível e em escrow)', { auth: true }),
+    },
+    '/wallet/transactions': {
+      get: op('Carteira', 'Extrato de R$ (depósitos, reservas, escrow, reembolsos, saques)', {
+        auth: true,
+      }),
+    },
     '/wallet/deposits': {
       get: op('Carteira', 'Meus depósitos', { auth: true }),
-      post: op('Carteira', 'Gera cobrança PIX de depósito na carteira', { auth: true, body: { $ref: '#/components/schemas/CreateDeposit' }, responses: res201 }),
+      post: op('Carteira', 'Gera cobrança PIX de depósito na carteira', {
+        auth: true,
+        body: { $ref: '#/components/schemas/CreateDeposit' },
+        responses: res201,
+      }),
     },
     '/wallet/deposits/{id}': { get: op('Carteira', 'Situação da cobrança', { auth: true }) },
-    '/wallet/deposits/{id}/simulate': { post: op('Carteira', 'Demo: confirma a cobrança sem gateway (PAYMENTS_SIMULATE)', { auth: true }) },
-    '/payments/webhook': { post: op('Carteira', 'Webhook do gateway (header x-webhook-secret)', { body: { $ref: '#/components/schemas/PaymentWebhook' } }) },
-    '/credits/transactions': { get: op('Carteira', 'Extrato de créditos Escambo (time-bank)', { auth: true }) },
-    '/boosts/plans': { get: op('Impulsionamento', 'Planos de impulsionamento (custo em créditos)', { auth: true }) },
+    '/wallet/deposits/{id}/simulate': {
+      post: op('Carteira', 'Demo: confirma a cobrança sem gateway (PAYMENTS_SIMULATE)', {
+        auth: true,
+      }),
+    },
+    '/payments/webhook': {
+      post: op('Carteira', 'Webhook do gateway (header x-webhook-secret)', {
+        body: { $ref: '#/components/schemas/PaymentWebhook' },
+      }),
+    },
+    '/credits/transactions': {
+      get: op('Carteira', 'Extrato de créditos Escambo (time-bank)', { auth: true }),
+    },
+    '/boosts/plans': {
+      get: op('Impulsionamento', 'Planos de impulsionamento (custo em créditos)', { auth: true }),
+    },
     '/boosts': {
       get: op('Impulsionamento', 'Meus impulsionamentos', { auth: true }),
-      post: op('Impulsionamento', 'Impulsiona um serviço meu (paga em créditos)', { auth: true, responses: res201 }),
+      post: op('Impulsionamento', 'Impulsiona um serviço meu (paga em créditos)', {
+        auth: true,
+        responses: res201,
+      }),
     },
     '/withdrawals': {
       get: op('Saques', 'Meus saques', { auth: true }),
-      post: op('Saques', 'Solicita saque (mín. R$20)', { auth: true, body: { $ref: '#/components/schemas/CreateWithdrawal' }, responses: res201 }),
+      post: op('Saques', 'Solicita saque (mín. R$20)', {
+        auth: true,
+        body: { $ref: '#/components/schemas/CreateWithdrawal' },
+        responses: res201,
+      }),
     },
-    '/withdrawals/{id}/cancel': { post: op('Saques', 'Cancela saque ainda não processado (valor volta)', { auth: true }) },
+    '/withdrawals/{id}/cancel': {
+      post: op('Saques', 'Cancela saque ainda não processado (valor volta)', { auth: true }),
+    },
 
     '/reviews': {
       get: op('Avaliações', 'Avaliações de um freelancer (freelancerId)'),
       post: op('Avaliações', 'Avalia contratação concluída', { auth: true, responses: res201 }),
     },
-    '/reviews/{id}/response': { post: op('Avaliações', 'Freelancer responde', { auth: true, responses: res201 }) },
+    '/reviews/{id}/response': {
+      post: op('Avaliações', 'Freelancer responde', { auth: true, responses: res201 }),
+    },
 
-    '/gamification/me': { get: op('Gamificação', 'XP, nível, progresso, streak, ranking, badges', { auth: true }) },
+    '/gamification/me': {
+      get: op('Gamificação', 'XP, nível, progresso, streak, ranking, badges', { auth: true }),
+    },
     '/gamification/me/history': { get: op('Gamificação', 'Feed de XP', { auth: true }) },
     '/gamification/leaderboard': { get: op('Gamificação', 'Ranking por XP', { auth: true }) },
 
     '/barters': {
       get: op('Troca (Escambo)', 'Minhas trocas', { auth: true }),
-      post: op('Troca (Escambo)', 'Propõe troca (torna + taxa)', { auth: true, body: { $ref: '#/components/schemas/CreateBarter' }, responses: res201 }),
+      post: op('Troca (Escambo)', 'Propõe troca (torna + taxa)', {
+        auth: true,
+        body: { $ref: '#/components/schemas/CreateBarter' },
+        responses: res201,
+      }),
     },
     '/barters/{id}': { get: op('Troca (Escambo)', 'Detalhe da troca', { auth: true }) },
-    '/barters/{id}/accept': { post: op('Troca (Escambo)', 'Aceita a troca (gera 2 contratos recíprocos; reserva a torna se o receptor paga — 402 sem saldo)', { auth: true }) },
+    '/barters/{id}/accept': {
+      post: op(
+        'Troca (Escambo)',
+        'Aceita a troca (gera 2 contratos recíprocos; reserva a torna se o receptor paga — 402 sem saldo)',
+        { auth: true },
+      ),
+    },
 
-    '/notifications': { get: op('Notificações', 'Minhas notificações + não lidas', { auth: true }) },
-    '/notifications/read-all': { post: op('Notificações', 'Marca todas como lidas', { auth: true }) },
+    '/notifications': {
+      get: op('Notificações', 'Minhas notificações + não lidas', { auth: true }),
+    },
+    '/notifications/read-all': {
+      post: op('Notificações', 'Marca todas como lidas', { auth: true }),
+    },
 
     '/messaging/contracts/{id}': {
       get: op('Chat', 'Histórico do chat do contrato (partes)', { auth: true }),
-      post: op('Chat', 'Envia mensagem (persiste + broadcast Socket.IO)', { auth: true, responses: res201 }),
+      post: op('Chat', 'Envia mensagem (persiste + broadcast Socket.IO)', {
+        auth: true,
+        responses: res201,
+      }),
     },
 
     '/favorites': {
@@ -252,7 +388,9 @@ export const openapiDocument: Record<string, any> = {
       get: op('Trust & Safety', 'Buscas salvas', { auth: true }),
       post: op('Trust & Safety', 'Salvar busca', { auth: true, responses: res201 }),
     },
-    '/reports': { post: op('Trust & Safety', 'Denunciar conteúdo/usuário', { auth: true, responses: res201 }) },
+    '/reports': {
+      post: op('Trust & Safety', 'Denunciar conteúdo/usuário', { auth: true, responses: res201 }),
+    },
 
     '/disputes': {
       get: op('Disputas', 'Minhas disputas', { auth: true }),
@@ -263,27 +401,55 @@ export const openapiDocument: Record<string, any> = {
     '/admin/metrics': { get: op('Admin', 'Métricas da plataforma', { auth: true }) },
     '/admin/disputes': { get: op('Admin', 'Disputas abertas', { auth: true }) },
     '/admin/disputes/{id}/resolve': {
-      post: op('Admin', 'Resolve disputa (decisão de escrow)', { auth: true, body: { $ref: '#/components/schemas/ResolveDispute' } }),
+      post: op('Admin', 'Resolve disputa (decisão de escrow)', {
+        auth: true,
+        body: { $ref: '#/components/schemas/ResolveDispute' },
+      }),
     },
-    '/admin/users/{ulid}/ban': { post: op('Admin', 'Bane usuário', { auth: true, responses: res204 }) },
-    '/admin/withdrawals': { get: op('Admin', 'Fila de saques (status=open|all|…)', { auth: true }) },
-    '/admin/withdrawals/{id}/process': { post: op('Admin', 'Assume o saque (requested → processing)', { auth: true }) },
-    '/admin/withdrawals/{id}/complete': { post: op('Admin', 'Marca o saque como pago', { auth: true }) },
-    '/admin/withdrawals/{id}/fail': { post: op('Admin', 'Saque falhou: valor devolvido à carteira', { auth: true }) },
+    '/admin/users/{ulid}/ban': {
+      post: op('Admin', 'Bane usuário', { auth: true, responses: res204 }),
+    },
+    '/admin/withdrawals': {
+      get: op('Admin', 'Fila de saques (status=open|all|…)', { auth: true }),
+    },
+    '/admin/withdrawals/{id}/process': {
+      post: op('Admin', 'Assume o saque (requested → processing)', { auth: true }),
+    },
+    '/admin/withdrawals/{id}/complete': {
+      post: op('Admin', 'Marca o saque como pago', { auth: true }),
+    },
+    '/admin/withdrawals/{id}/fail': {
+      post: op('Admin', 'Saque falhou: valor devolvido à carteira', { auth: true }),
+    },
 
     '/lgpd/consents': {
       get: op('LGPD', 'Meus consentimentos', { auth: true }),
       post: op('LGPD', 'Registra consentimento', { auth: true, responses: res201 }),
     },
-    '/lgpd/deletion-requests': { post: op('LGPD', 'Direito ao esquecimento', { auth: true, responses: res201 }) },
+    '/lgpd/deletion-requests': {
+      post: op('LGPD', 'Direito ao esquecimento', { auth: true, responses: res201 }),
+    },
     '/lgpd/export-requests': {
       get: op('LGPD', 'Minhas cópias de dados (status e link de download)', { auth: true }),
-      post: op('LGPD', 'Portabilidade: gera a cópia JSON na hora (válida por EXPORT_TTL_DAYS)', { auth: true, responses: res201 }),
+      post: op('LGPD', 'Portabilidade: gera a cópia JSON na hora (válida por EXPORT_TTL_DAYS)', {
+        auth: true,
+        responses: res201,
+      }),
     },
-    '/lgpd/export-requests/{id}/download': { get: op('LGPD', 'Baixa a cópia de dados (só o titular; 410 se expirou)', { auth: true }) },
-    '/admin/deletion-requests': { get: op('Admin', 'Pedidos de exclusão de conta (status=pending|all)', { auth: true }) },
-    '/admin/deletion-requests/{id}/complete': { post: op('Admin', 'Conclui a exclusão: anonimiza a conta e bloqueia o acesso', { auth: true }) },
-    '/admin/deletion-requests/{id}/reject': { post: op('Admin', 'Recusa com justificativa (titular é avisado)', { auth: true }) },
+    '/lgpd/export-requests/{id}/download': {
+      get: op('LGPD', 'Baixa a cópia de dados (só o titular; 410 se expirou)', { auth: true }),
+    },
+    '/admin/deletion-requests': {
+      get: op('Admin', 'Pedidos de exclusão de conta (status=pending|all)', { auth: true }),
+    },
+    '/admin/deletion-requests/{id}/complete': {
+      post: op('Admin', 'Conclui a exclusão: anonimiza a conta e bloqueia o acesso', {
+        auth: true,
+      }),
+    },
+    '/admin/deletion-requests/{id}/reject': {
+      post: op('Admin', 'Recusa com justificativa (titular é avisado)', { auth: true }),
+    },
   },
 };
 

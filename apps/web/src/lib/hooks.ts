@@ -12,6 +12,7 @@ import type {
   CreateServiceRequest,
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
+  UpsertPortfolioItemRequest,
 } from '@escambo/types';
 import { api, type ServiceQuery } from './api';
 
@@ -444,6 +445,27 @@ export function useRequestDeletion() {
     mutationFn: (reason: string | null) => api.requestDeletion(reason),
     onSuccess: () => void qc.invalidateQueries({ queryKey: qk.deletionRequests }),
   });
+}
+
+/** Portfólio do freelancer (meu): lista, adiciona e remove — o público vem no perfil por ulid. */
+export const usePortfolio = () =>
+  useQuery({ queryKey: ['portfolio'] as const, queryFn: () => api.myPortfolio() });
+
+export function usePortfolioMutation() {
+  const qc = useQueryClient();
+  const invalidate = (): void => {
+    void qc.invalidateQueries({ queryKey: ['portfolio'] });
+  };
+  return {
+    add: useMutation({
+      mutationFn: (body: UpsertPortfolioItemRequest) => api.addPortfolioItem(body),
+      onSuccess: invalidate,
+    }),
+    remove: useMutation({
+      mutationFn: (id: number) => api.removePortfolioItem(id),
+      onSuccess: invalidate,
+    }),
+  };
 }
 
 export const useAdminFinance = (q: { from?: string; to?: string; granularity: 'day' | 'month' }) =>
