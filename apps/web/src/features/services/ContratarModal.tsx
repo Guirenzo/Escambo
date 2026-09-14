@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Service } from '@escambo/types';
 import { Button, Field, Input, Modal } from '../../components/ui';
-import { addDays, brl, dateInputValue, endOfDayIso } from '../../lib/format';
+import { addDays, brl, dateInputValue, endOfDayIso, spreadDates } from '../../lib/format';
 import { useCreateContract, useWallet } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { DepositModal } from '../wallet/DepositModal';
@@ -11,6 +11,8 @@ import { DepositModal } from '../wallet/DepositModal';
 interface MilestoneDraft {
   title: string;
   amount: string;
+  /** Prazo do marco (valor de <input type="date">); vazio = sem prazo próprio. */
+  dueAt: string;
 }
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
@@ -38,8 +40,8 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
   const [depositing, setDepositing] = useState(false);
   const [useMilestones, setUseMilestones] = useState(false);
   const [milestones, setMilestones] = useState<MilestoneDraft[]>([
-    { title: 'Etapa 1', amount: '' },
-    { title: 'Etapa 2', amount: '' },
+    { title: 'Etapa 1', amount: '', dueAt: '' },
+    { title: 'Etapa 2', amount: '', dueAt: '' },
   ]);
 
   const credits = wallet.data?.credits ?? 0;
@@ -52,11 +54,21 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
 
   const withMilestones = mode === 'cash' && useMilestones;
   const msSum = round2(milestones.reduce((acc, m) => acc + (Number(m.amount) || 0), 0));
+  // Prazos dos marcos (opcionais): em ordem e nunca depois do prazo da contratação
+  // (AAAA-MM-DD compara bem como texto).
+  const msDatesValid = milestones.every(
+    (m, i) =>
+      !m.dueAt ||
+      (m.dueAt <= deadline &&
+        m.dueAt >= minDeadline &&
+        (i === 0 || !milestones[i - 1]!.dueAt || m.dueAt >= milestones[i - 1]!.dueAt)),
+  );
   const msValid =
     !withMilestones ||
     (milestones.length >= 2 &&
       milestones.every((m) => m.title.trim().length >= 3 && Number(m.amount) > 0) &&
-      Math.abs(msSum - priceNum) < 0.005);
+      Math.abs(msSum - priceNum) < 0.005 &&
+      msDatesValid);
 
   function setMilestone(i: number, patch: Partial<MilestoneDraft>): void {
     setMilestones((ms) => ms.map((m, k) => (k === i ? { ...m, ...patch } : m)));
@@ -72,6 +84,12 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
     );
   }
 
+  /** Espalha os prazos dos marcos por igual até o prazo da contratação (o último cai nele). */
+  function spreadDeadlines(): void {
+    const dates = spreadDates(new Date(), new Date(endOfDayIso(deadline)), milestones.length);
+    setMilestones((ms) => ms.map((m, i) => ({ ...m, dueAt: dates[i] ?? '' })));
+  }
+
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
     try {
@@ -84,7 +102,11 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
         paymentMode: mode,
         deadlineAt: endOfDayIso(deadline),
         milestones: withMilestones
-          ? milestones.map((m) => ({ title: m.title.trim(), amount: Number(m.amount) }))
+          ? milestones.map((m) => ({
+              title: m.title.trim(),
+              amount: Number(m.amount),
+              dueAt: m.dueAt ? endOfDayIso(m.dueAt) : null,
+            }))
           : undefined,
       });
       toast.success(
@@ -219,6 +241,15 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
                   aria-label={`Valor do marco ${i + 1}`}
                   required
                 />
+                <Input
+                  type="date"
+                  min={minDeadline}
+                  max={deadline}
+                  value={m.dueAt}
+                  onChange={(e) => setMilestone(i, { dueAt: e.target.value })}
+                  aria-label={`Prazo do marco ${i + 1}`}
+                  title="Prazo do marco (opcional)"
+                />
                 <button
                   type="button"
                   className="icon-btn"
@@ -236,13 +267,19 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
                 variant="mini"
                 disabled={milestones.length >= 10}
                 onClick={() =>
-                  setMilestones((ms) => [...ms, { title: `Etapa ${ms.length + 1}`, amount: '' }])
+                  setMilestones((ms) => [
+                    ...ms,
+                    { title: `Etapa ${ms.length + 1}`, amount: '', dueAt: '' },
+                  ])
                 }
               >
                 <Plus size={14} /> Marco
               </Button>
               <Button type="button" variant="mini" onClick={splitEvenly}>
                 Dividir igualmente
+              </Button>
+              <Button type="button" variant="mini" onClick={spreadDeadlines}>
+                Distribuir prazos
               </Button>
             </div>
             <div className={`ms-sum ${Math.abs(msSum - priceNum) < 0.005 ? '' : 'bad'}`}>

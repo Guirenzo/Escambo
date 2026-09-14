@@ -469,7 +469,12 @@ async function ensureMilestoneContract(client, freelancer, service, { title, pri
         description: `Contratação do serviço "${service.title}" em ${milestones.length} marcos (demo).`,
         price,
         paymentMode: 'cash',
-        milestones,
+        deadlineAt: endOfDayInDays(30),
+        // Prazo por marco (opcional): `days` vira dueAt no fim daquele dia.
+        milestones: milestones.map(({ days, ...m }) => ({
+          ...m,
+          dueAt: days ? endOfDayInDays(days) : null,
+        })),
       },
     });
     log(`contrato #${contract.id} ${title} (${milestones.length} marcos) → pendente`);
@@ -705,9 +710,9 @@ async function main() {
     title: 'App mobile (React Native) em 3 marcos',
     price: 4500,
     milestones: [
-      { title: 'Protótipo e telas', amount: 1500 },
-      { title: 'App funcional (beta)', amount: 1500 },
-      { title: 'Publicação nas lojas', amount: 1500 },
+      { title: 'Protótipo e telas', amount: 1500, days: 10 },
+      { title: 'App funcional (beta)', amount: 1500, days: 20 },
+      { title: 'Publicação nas lojas', amount: 1500, days: 30 },
     ],
   });
   const eletrica = await ensureContract(ana, users.felipe, svc['Instalação elétrica (visita)'], {

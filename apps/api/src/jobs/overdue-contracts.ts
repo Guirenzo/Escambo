@@ -1,6 +1,7 @@
 import { logger } from '../config/logger';
 import { contractsRepository } from '../modules/contracts/contracts.repository';
 import { contractsService } from '../modules/contracts/contracts.service';
+import { milestonesRepository } from '../modules/contracts/milestones.repository';
 import { settingsRepository } from '../modules/settings/settings.repository';
 
 /**
@@ -9,6 +10,8 @@ import { settingsRepository } from '../modules/settings/settings.repository';
  *  2. `deadline_grace_hours` horas depois do aviso (padrão 24), ainda sem entrega nem extensão
  *     aprovada → a plataforma abre a disputa (motivo "prazo"), congelando o escrow para a mediação.
  * Um pedido de extensão pendente segura as duas fases: a decisão é do cliente.
+ *  3. marcos financiados com prazo próprio vencido → aviso às duas partes (uma vez por marco),
+ *     sem disputa: quem manda na mediação é o prazo da contratação.
  */
 
 export const DEFAULT_DEADLINE_GRACE_HOURS = 24;
@@ -17,6 +20,8 @@ export interface OverdueContractsResult {
   graceHours: number;
   notified: number[];
   disputed: number[];
+  /** Marcos avisados nesta rodada. */
+  milestones: number[];
   failed: number[];
 }
 
@@ -25,7 +30,13 @@ export async function runOverdueContracts(): Promise<OverdueContractsResult> {
     'deadline_grace_hours',
     DEFAULT_DEADLINE_GRACE_HOURS,
   );
-  const result: OverdueContractsResult = { graceHours, notified: [], disputed: [], failed: [] };
+  const result: OverdueContractsResult = {
+    graceHours,
+    notified: [],
+    disputed: [],
+    milestones: [],
+    failed: [],
+  };
 
   for (const row of await contractsRepository.findOverdueUnnoticed()) {
     try {
@@ -49,6 +60,18 @@ export async function runOverdueContracts(): Promise<OverdueContractsResult> {
     } catch (err) {
       result.failed.push(row.id);
       logger.error({ contractId: row.id, err }, 'falha ao abrir disputa por prazo');
+    }
+  }
+
+  for (const m of await milestonesRepository.findOverdueUnnoticed()) {
+    try {
+      if (await contractsService.notifyMilestoneOverdue(m)) result.milestones.push(m.id);
+    } catch (err) {
+      result.failed.push(m.contract_id);
+      logger.error(
+        { contractId: m.contract_id, milestoneId: m.id, err },
+        'falha ao avisar marco atrasado',
+      );
     }
   }
   return result;

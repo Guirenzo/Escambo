@@ -22,6 +22,7 @@ export const EMAILED_NOTIFICATION_TYPES = new Set([
   'milestone_delivered',
   'milestone_approved',
   'milestone_revision',
+  'milestone_overdue',
   'dispute_opened',
   'dispute_resolved',
   'barter_proposed',

@@ -1,7 +1,7 @@
-import { CheckCircle2, Flag, PackageCheck, RotateCcw } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Flag, PackageCheck, RotateCcw } from 'lucide-react';
 import type { ContractWithHistory, Milestone } from '@escambo/types';
 import { Button } from '../../components/ui';
-import { brl, dtm, MILESTONE_STATUS_LABEL } from '../../lib/format';
+import { brl, deadlineInfo, dt, dtm, MILESTONE_STATUS_LABEL } from '../../lib/format';
 import { useMilestoneAction } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 
@@ -96,6 +96,26 @@ export function MilestonesSection({
               <div className="milestone-body">
                 <strong>{m.title}</strong>
                 {m.description && <div className="muted tiny">{m.description}</div>}
+                {m.dueAt && (
+                  <div className="muted tiny" data-testid={`milestone-due-${m.id}`}>
+                    <CalendarClock size={12} /> até {dt(m.dueAt)}
+                    {m.status === 'funded' &&
+                      open &&
+                      (() => {
+                        const info = deadlineInfo(m.dueAt);
+                        return info ? (
+                          <>
+                            {' · '}
+                            <span className={`deadline-text-${info.tone}`}>{info.label}</span>
+                          </>
+                        ) : null;
+                      })()}
+                    {(m.status === 'delivered' || m.status === 'released') &&
+                      m.deliveredAt &&
+                      new Date(m.deliveredAt).getTime() > new Date(m.dueAt).getTime() &&
+                      ' · entregue com atraso'}
+                  </div>
+                )}
                 {m.deliveryNote && m.status !== 'funded' && (
                   <div className="muted tiny">
                     <PackageCheck size={12} /> {m.deliveryNote}

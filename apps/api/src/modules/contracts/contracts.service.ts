@@ -23,7 +23,11 @@ import {
   DEADLINE_ACTIVE_STATUSES,
   type ContractRow,
 } from './contracts.repository';
-import { milestonesRepository, type MilestoneRow } from './milestones.repository';
+import {
+  milestonesRepository,
+  type MilestoneRow,
+  type OverdueMilestoneRow,
+} from './milestones.repository';
 import { reviewsRepository } from '../reviews/reviews.repository';
 import { toReview } from '../reviews/reviews.service';
 import type {
@@ -674,6 +678,31 @@ export const contractsService = {
       });
     }
     return disputeId;
+  },
+
+  /**
+   * Job: marco financiado com prazo vencido — avisa as duas partes uma vez. Não abre disputa:
+   * a mediação automática é pelo prazo da contratação (RN-029); o marco atrasado é o sinal
+   * para entregar ou combinar pelo chat.
+   */
+  async notifyMilestoneOverdue(m: OverdueMilestoneRow): Promise<boolean> {
+    const ok = await milestonesRepository.markOverdueNotified(m.id);
+    if (!ok) return false;
+    const due = brDate(m.due_at);
+    const data = { contractId: m.contract_id, milestoneId: m.id };
+    void notificationsService.notify(m.freelancer_id, {
+      type: 'milestone_overdue',
+      title: `Marco atrasado: ${m.title}`,
+      body: `${m.contract_title}: o prazo deste marco era ${due}. Entregue o marco ou combine com o cliente pelo chat.`,
+      data,
+    });
+    void notificationsService.notify(m.client_id, {
+      type: 'milestone_overdue',
+      title: `Marco atrasado: ${m.title}`,
+      body: `${m.contract_title}: o prazo deste marco era ${due} e não houve entrega. O prazo da contratação continua valendo para a mediação automática.`,
+      data,
+    });
+    return true;
   },
 
   // ---------- Escrow por marcos (RN-069) ----------

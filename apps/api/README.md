@@ -204,7 +204,7 @@ O processo da API agenda jobs (`src/jobs/`) a cada `JOBS_INTERVAL_MS` (padrão 5
 | `expire-deposits` | Cobranças PIX de depósito vencidas (`DEPOSIT_EXPIRES_MINUTES`, padrão 30) viram `cancelled`; a API já as mostra vencidas antes disso.                                                      |
 | `expire-exports`  | Cópias de dados (LGPD) vencidas (`EXPORT_TTL_DAYS`, padrão 7): arquivo apagado de `DATA_DIR` e pedido marcado como expirado.                                                               |
 | `expire-proposals` | Propostas sem resposta do freelancer há mais de `platform_settings.proposal_expiry_hours` horas (padrão 72) são encerradas e a reserva volta ao cliente (RN-021).                        |
-| `overdue-contracts` | Prazo estourado: avisa as duas partes uma vez; `deadline_grace_hours` (padrão 24) depois, sem entrega nem extensão aprovada, abre a disputa por prazo em nome do cliente (RN-029).    |
+| `overdue-contracts` | Prazo estourado: avisa as duas partes uma vez; `deadline_grace_hours` (padrão 24) depois, sem entrega nem extensão aprovada, abre a disputa por prazo em nome do cliente (RN-029). Marco em escrow com prazo vencido avisa as duas partes uma vez, sem disputa. |
 
 ## Administradores
 
