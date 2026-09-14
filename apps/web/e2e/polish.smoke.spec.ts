@@ -150,3 +150,57 @@ test('busca com filtros de preço e prazo e ordenação por menor preço', async
   await page.getByRole('button', { name: 'Limpar filtros' }).click();
   await expect(cards).toHaveCount(3);
 });
+
+test('busca por dia de atendimento: "quem atende sábado" só mostra quem marcou o dia', async ({
+  page,
+  request,
+}) => {
+  const tag = `Atende ${Date.now().toString(36)}`;
+  const profile = (name: string, availableDays: number[] | null) => ({
+    fullName: name,
+    city: 'Joinville',
+    isAvailable: true,
+    availableDays,
+  });
+  const weekdays = await createUser(request, 'freelancer');
+  const weekend = await createUser(request, 'freelancer');
+  const silent = await createUser(request, 'freelancer'); // não informou os dias
+  for (const [u, p] of [
+    [weekdays, profile('Freela semana', [1, 2, 3, 4, 5])],
+    [weekend, profile('Freela fim de semana', [0, 6])],
+    [silent, profile('Freela sem dias', null)],
+  ] as const) {
+    const res = await request.put('/api/profiles/freelancer', {
+      headers: { Authorization: `Bearer ${u.token}` },
+      data: p,
+    });
+    expect(res.ok()).toBeTruthy();
+  }
+  await createService(request, weekdays, 100, 0, { title: `${tag} semana` });
+  await createService(request, weekend, 100, 0, { title: `${tag} fim de semana` });
+  await createService(request, silent, 100, 0, { title: `${tag} sem dias` });
+  const client = await createUser(request, 'client');
+
+  await openAs(page, client, '/servicos');
+  await settled(page);
+  await page.getByPlaceholder('Buscar serviços…').fill(tag);
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  const cards = page.locator('.card.service', { hasText: tag });
+  await expect(cards).toHaveCount(3);
+  // O card diz quando cada um atende; quem não informou não ganha chip.
+  await expect(cards.filter({ hasText: `${tag} semana` }).getByTestId('owner-days')).toHaveText(
+    'atende seg a sex',
+  );
+  await expect(cards.filter({ hasText: 'sem dias' }).getByTestId('owner-days')).toHaveCount(0);
+
+  const filters = page.getByTestId('filters');
+  await filters.getByLabel('Atende no dia').selectOption('6'); // sábado
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText('fim de semana');
+  await expect(cards.first().getByTestId('owner-days')).toHaveText('atende dom, sáb');
+  await filters.getByLabel('Atende no dia').selectOption('1'); // segunda
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText(`${tag} semana`);
+  await page.getByRole('button', { name: 'Limpar filtros' }).click();
+  await expect(cards).toHaveCount(3);
+});

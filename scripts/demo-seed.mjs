@@ -86,6 +86,7 @@ const FREELANCERS = [
     key: 'marina',
     email: 'marina@escambo.demo',
     profile: {
+      availableDays: [1, 2, 3, 4, 5, 6],
       fullName: 'Marina Alves',
       avatarUrl: 'https://i.pravatar.cc/150?u=marina@escambo.demo',
       headline: 'Designer de marca | 8 anos',
@@ -114,6 +115,7 @@ const FREELANCERS = [
     key: 'rafael',
     email: 'rafael@escambo.demo',
     profile: {
+      availableDays: [1, 3, 5],
       fullName: 'Rafael Souza',
       avatarUrl: 'https://i.pravatar.cc/150?u=rafael@escambo.demo',
       headline: 'Motion designer',
@@ -136,6 +138,7 @@ const FREELANCERS = [
     key: 'carla',
     email: 'carla@escambo.demo',
     profile: {
+      availableDays: [0, 6],
       fullName: 'Carla Dias',
       avatarUrl: 'https://i.pravatar.cc/150?u=carla@escambo.demo',
       headline: 'Fotógrafa de produto',
@@ -158,6 +161,7 @@ const FREELANCERS = [
     key: 'diego',
     email: 'diego@escambo.demo',
     profile: {
+      availableDays: [0, 1, 2, 3, 4, 5, 6],
       fullName: 'Diego Ramos',
       avatarUrl: 'https://i.pravatar.cc/150?u=diego@escambo.demo',
       headline: 'Redator e SEO',

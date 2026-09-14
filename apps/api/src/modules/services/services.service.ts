@@ -2,6 +2,7 @@ import type { Paginated, Service, ServicePriceType } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
 import { servicesRepository, type ServiceRow } from './services.repository';
 import type { CreateServiceInput, ListServicesInput, UpdateServiceInput } from './services.schema';
+import { parseDays } from '../profiles/profiles.service';
 
 function toService(row: ServiceRow): Service {
   return {
@@ -28,6 +29,7 @@ function toService(row: ServiceRow): Service {
           ownerAvatarUrl: row.owner_avatar_url ?? null,
           ownerRating: Number(row.owner_avg_rating ?? 0),
           ownerReviews: Number(row.owner_total_reviews ?? 0),
+          ownerAvailableDays: parseDays(row.owner_available_days),
         }
       : {}),
   };
@@ -63,6 +65,7 @@ export const servicesService = {
       maxPrice: input.maxPrice,
       maxDeliveryDays: input.maxDeliveryDays,
       minRating: input.minRating,
+      day: input.day,
       sort: input.sort,
       limit: input.limit,
       offset: (input.page - 1) * input.limit,

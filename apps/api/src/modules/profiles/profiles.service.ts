@@ -22,7 +22,8 @@ import {
 } from './profiles.schema';
 
 /** available_days chega como array (mysql2 parseia JSON) ou string; qualquer outra coisa vira null. */
-function parseDays(v: number[] | string | null | undefined): number[] | null {
+/** JSON da coluna available_days (array, string ou NULL) → lista de dias 0–6. */
+export function parseDays(v: number[] | string | null | undefined): number[] | null {
   if (v == null) return null;
   const arr = typeof v === 'string' ? (JSON.parse(v) as unknown) : v;
   return Array.isArray(arr) ? arr.filter((d): d is number => Number.isInteger(d)) : null;

@@ -5,6 +5,16 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.12.0] — 2026-09-14
+
+### Adicionado
+
+- **Busca por dia de atendimento** (ADR 30): filtro "Atende" na busca (`day=0..6`, com "(hoje)"
+  marcado no dia atual) sobre os dias que o freelancer marcou no perfil — só entre quem informou,
+  via `JSON_CONTAINS` em `profiles_freelancer.available_days`. O card do serviço mostra
+  "atende seg a sex" (`Service.ownerAvailableDays`), e o Perfil avisa quem não marcou dia que
+  fica fora desse filtro. Seed com dias variados (Carla só fim de semana, Felipe sem informar).
+
 ## [1.11.1] — 2026-09-14
 
 ### Corrigido

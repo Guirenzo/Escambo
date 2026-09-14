@@ -118,3 +118,26 @@ describe('servicesService.remove', () => {
     expect(repo.softDelete).toHaveBeenCalledWith(1);
   });
 });
+
+describe('servicesService.list — dias em que o prestador atende (ADR 30)', () => {
+  it('repassa day ao repositório e mapeia owner_available_days (JSON string, array ou NULL)', async () => {
+    repo.list.mockResolvedValue([
+      fakeRow({ id: 1, owner_name: 'A', owner_available_days: '[1,2,3]' } as never),
+      fakeRow({ id: 2, owner_name: 'B', owner_available_days: [6, 0] } as never),
+      fakeRow({ id: 3, owner_name: 'C', owner_available_days: null } as never),
+    ]);
+
+    const page = await servicesService.list({
+      day: 6,
+      page: 1,
+      limit: 20,
+      radiusKm: 25,
+      sort: 'relevance',
+    });
+
+    expect(repo.list).toHaveBeenCalledWith(
+      expect.objectContaining({ day: 6, limit: 20, offset: 0 }),
+    );
+    expect(page.items.map((i) => i.ownerAvailableDays)).toEqual([[1, 2, 3], [6, 0], null]);
+  });
+});

@@ -25,6 +25,7 @@ import { useToast } from '../../lib/toast';
 import { BoostModal } from '../services/BoostModal';
 import { ContratarModal } from '../services/ContratarModal';
 import { ServiceCard } from '../services/ServiceCard';
+import { WEEKDAY_SHORT } from '../../lib/format';
 
 function flatten(
   cats: Category[],
@@ -51,6 +52,8 @@ const SORTS: { key: Sort; label: string; geoOnly?: boolean }[] = [
   { key: 'distance', label: 'Mais perto', geoOnly: true },
 ];
 const DELIVERY_OPTIONS = [3, 7, 15, 30];
+/** Dia da semana de hoje (0=domingo), para marcar "(hoje)" no filtro de atendimento. */
+const TODAY = new Date().getDay();
 const RATING_OPTIONS = [3, 4, 4.5];
 
 interface Filters {
@@ -58,6 +61,8 @@ interface Filters {
   maxPrice: string;
   maxDeliveryDays: number;
   minRating: number;
+  /** Dia em que o prestador atende (0–6); -1 = qualquer. */
+  day: number;
   sort: Sort;
 }
 const NO_FILTERS: Filters = {
@@ -65,6 +70,7 @@ const NO_FILTERS: Filters = {
   maxPrice: '',
   maxDeliveryDays: 0,
   minRating: 0,
+  day: -1,
   sort: 'relevance',
 };
 
@@ -91,6 +97,7 @@ export function ServicosView() {
     filters.maxPrice !== '' ||
     filters.maxDeliveryDays > 0 ||
     filters.minRating > 0 ||
+    filters.day >= 0 ||
     filters.sort !== 'relevance';
   const services = useServicesInfinite({
     q: submitted,
@@ -100,6 +107,7 @@ export function ServicosView() {
     ...(filters.maxPrice !== '' ? { maxPrice: Number(filters.maxPrice) } : {}),
     ...(filters.maxDeliveryDays ? { maxDeliveryDays: filters.maxDeliveryDays } : {}),
     ...(filters.minRating ? { minRating: filters.minRating } : {}),
+    ...(filters.day >= 0 ? { day: filters.day } : {}),
     ...(filters.sort !== 'relevance' ? { sort: filters.sort } : {}),
   });
 
@@ -303,6 +311,22 @@ export function ServicosView() {
             {RATING_OPTIONS.map((r) => (
               <option key={r} value={r}>
                 {r}+ estrelas
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="filter">
+          <span>Atende</span>
+          <Select
+            aria-label="Atende no dia"
+            value={filters.day}
+            onChange={(e) => setFilter({ day: Number(e.target.value) })}
+          >
+            <option value={-1}>qualquer dia</option>
+            {WEEKDAY_SHORT.map((label, d) => (
+              <option key={d} value={d}>
+                {label}
+                {d === TODAY ? ' (hoje)' : ''}
               </option>
             ))}
           </Select>

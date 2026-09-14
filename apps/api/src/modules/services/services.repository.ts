@@ -22,6 +22,7 @@ export interface ServiceRow extends RowDataPacket {
   owner_avatar_url?: string | null;
   owner_avg_rating?: string | null;
   owner_total_reviews?: number | null;
+  owner_available_days?: number[] | string | null;
 }
 
 export type ServiceSort =
@@ -39,6 +40,7 @@ export interface ServiceListFilters {
   maxPrice?: number;
   maxDeliveryDays?: number;
   minRating?: number;
+  day?: number;
   sort?: ServiceSort;
   limit: number;
   offset: number;
@@ -74,7 +76,7 @@ export function orderClause(sort: ServiceSort, geo: boolean, prefix = ''): strin
 }
 
 /** Quem presta o serviço: nome e reputação (avg_rating/total_reviews são mantidos pelo módulo de reviews). */
-const OWNER_COLS = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews`;
+const OWNER_COLS = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, pf.available_days AS owner_available_days`;
 
 export const servicesRepository = {
   async create(data: {
@@ -138,6 +140,11 @@ export const servicesRepository = {
     if (filters.minRating !== undefined && filters.minRating > 0) {
       where.push('COALESCE(pf.avg_rating, 0) >= :minRating');
       params.minRating = filters.minRating;
+    }
+    if (filters.day !== undefined) {
+      // JSON_CONTAINS(available_days, '6'): o dia como JSON. NULL (não informou) não entra.
+      where.push('pf.available_days IS NOT NULL AND JSON_CONTAINS(pf.available_days, :dayJson)');
+      params.dayJson = String(filters.day);
     }
     const sort = filters.sort ?? 'relevance';
 

@@ -193,7 +193,7 @@ export const openapiDocument: Record<string, any> = {
     '/services': {
       get: op(
         'Serviços',
-        'Lista/busca serviços (categoryId, q, isRemote, page, limit; lat+lng+radiusKm = descoberta local por proximidade)',
+        'Lista/busca serviços (categoryId, q, isRemote, minPrice/maxPrice, maxDeliveryDays, minRating, day=0..6 (atende no dia), sort, page, limit; lat+lng+radiusKm = descoberta local por proximidade)',
       ),
       post: op('Serviços', 'Cria serviço', {
         auth: true,
