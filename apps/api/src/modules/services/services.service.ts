@@ -59,6 +59,11 @@ export const servicesService = {
       lat: input.lat,
       lng: input.lng,
       radiusKm: input.radiusKm,
+      minPrice: input.minPrice,
+      maxPrice: input.maxPrice,
+      maxDeliveryDays: input.maxDeliveryDays,
+      minRating: input.minRating,
+      sort: input.sort,
       limit: input.limit,
       offset: (input.page - 1) * input.limit,
     });

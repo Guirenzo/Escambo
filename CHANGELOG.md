@@ -5,6 +5,19 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.8.0] — 2026-09-14
+
+### Adicionado
+
+- **Busca com filtros e ordenação**. Além do texto, da categoria e do "perto de mim" com raio:
+  faixa de preço, prazo máximo (3/7/15/30 dias), nota mínima do prestador (3+/4+/4,5+) e
+  ordenação por relevância (destaque + recência, ou destaque + proximidade), menor/maior
+  preço, melhor avaliados, mais recentes e, com localização, mais perto. Aplicam na hora, com
+  "Limpar filtros" e estado vazio específico. Destaque (impulsionamento) só manda na
+  relevância: quem pede "menor preço" recebe o menor preço. Serviço "a combinar" (sem preço)
+  fica de fora quando há filtro de preço e vai para o fim nas ordenações por preço.
+  `GET /services?minPrice&maxPrice&maxDeliveryDays&minRating&sort`.
+
 ## [1.7.0] — 2026-09-14
 
 ### Adicionado

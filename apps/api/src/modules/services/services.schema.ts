@@ -59,9 +59,20 @@ export const listServicesSchema = z.object({
   lat: z.coerce.number().min(-90).max(90).optional(),
   lng: z.coerce.number().min(-180).max(180).optional(),
   radiusKm: z.coerce.number().positive().max(500).default(25),
+  // Filtros: faixa de preço (serviço sem preço fica de fora quando há filtro), prazo e nota do prestador.
+  minPrice: z.coerce.number().min(0).optional(),
+  maxPrice: z.coerce.number().positive().optional(),
+  maxDeliveryDays: z.coerce.number().int().positive().optional(),
+  minRating: z.coerce.number().min(0).max(5).optional(),
+  // Ordenação: relevância (destaque + recência, ou destaque + proximidade com lat/lng),
+  // preço, nota, recência ou distância (só faz sentido com lat/lng; sem eles cai na relevância).
+  sort: z
+    .enum(['relevance', 'price_asc', 'price_desc', 'rating', 'newest', 'distance'])
+    .default('relevance'),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
 export type ListServicesInput = z.infer<typeof listServicesSchema>;
+export type ServiceSort = ListServicesInput['sort'];
 
 export const serviceIdSchema = z.object({ id: z.coerce.number().int().positive() });

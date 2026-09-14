@@ -41,6 +41,33 @@ function flatten(
 type Geo = { lat: number; lng: number };
 const RADII = [5, 10, 25, 50, 100];
 
+type Sort = 'relevance' | 'price_asc' | 'price_desc' | 'rating' | 'newest' | 'distance';
+const SORTS: { key: Sort; label: string; geoOnly?: boolean }[] = [
+  { key: 'relevance', label: 'Relevância' },
+  { key: 'price_asc', label: 'Menor preço' },
+  { key: 'price_desc', label: 'Maior preço' },
+  { key: 'rating', label: 'Melhor avaliados' },
+  { key: 'newest', label: 'Mais recentes' },
+  { key: 'distance', label: 'Mais perto', geoOnly: true },
+];
+const DELIVERY_OPTIONS = [3, 7, 15, 30];
+const RATING_OPTIONS = [3, 4, 4.5];
+
+interface Filters {
+  minPrice: string;
+  maxPrice: string;
+  maxDeliveryDays: number;
+  minRating: number;
+  sort: Sort;
+}
+const NO_FILTERS: Filters = {
+  minPrice: '',
+  maxPrice: '',
+  maxDeliveryDays: 0,
+  minRating: 0,
+  sort: 'relevance',
+};
+
 export function ServicosView() {
   usePageTitle('Serviços');
   const { user } = useAuth();
@@ -56,10 +83,24 @@ export function ServicosView() {
   const [radiusKm, setRadiusKm] = useState(25);
   const [locating, setLocating] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState(0);
+  // filtros e ordenação: aplicam na hora (entram na chave da consulta)
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const setFilter = (patch: Partial<Filters>): void => setFilters((f) => ({ ...f, ...patch }));
+  const hasFilters =
+    filters.minPrice !== '' ||
+    filters.maxPrice !== '' ||
+    filters.maxDeliveryDays > 0 ||
+    filters.minRating > 0 ||
+    filters.sort !== 'relevance';
   const services = useServicesInfinite({
     q: submitted,
     ...(categoryFilter ? { categoryId: categoryFilter } : {}),
     ...(geo ? { lat: geo.lat, lng: geo.lng, radiusKm } : {}),
+    ...(filters.minPrice !== '' ? { minPrice: Number(filters.minPrice) } : {}),
+    ...(filters.maxPrice !== '' ? { maxPrice: Number(filters.maxPrice) } : {}),
+    ...(filters.maxDeliveryDays ? { maxDeliveryDays: filters.maxDeliveryDays } : {}),
+    ...(filters.minRating ? { minRating: filters.minRating } : {}),
+    ...(filters.sort !== 'relevance' ? { sort: filters.sort } : {}),
   });
 
   // favoritos (serviços): coração no card + filtro "Só favoritos"
@@ -195,7 +236,9 @@ export function ServicosView() {
                 </option>
               ))}
             </Select>
-            <span className="muted hint">ordenado por proximidade</span>
+            {filters.sort === 'relevance' && (
+              <span className="muted hint">ordenado por proximidade</span>
+            )}
           </>
         )}
         <Button
@@ -206,6 +249,83 @@ export function ServicosView() {
         >
           <Heart size={16} /> Só favoritos{favIds.size ? ` (${favIds.size})` : ''}
         </Button>
+      </div>
+
+      {/* Filtros e ordenação (aplicam na hora) */}
+      <div className="filters-bar" data-testid="filters">
+        <label className="filter">
+          <span>Preço de</span>
+          <Input
+            type="number"
+            min={0}
+            step="1"
+            placeholder="R$"
+            aria-label="Preço mínimo"
+            value={filters.minPrice}
+            onChange={(e) => setFilter({ minPrice: e.target.value })}
+          />
+        </label>
+        <label className="filter">
+          <span>até</span>
+          <Input
+            type="number"
+            min={0}
+            step="1"
+            placeholder="R$"
+            aria-label="Preço máximo"
+            value={filters.maxPrice}
+            onChange={(e) => setFilter({ maxPrice: e.target.value })}
+          />
+        </label>
+        <label className="filter">
+          <span>Prazo</span>
+          <Select
+            aria-label="Prazo máximo"
+            value={filters.maxDeliveryDays}
+            onChange={(e) => setFilter({ maxDeliveryDays: Number(e.target.value) })}
+          >
+            <option value={0}>qualquer</option>
+            {DELIVERY_OPTIONS.map((d) => (
+              <option key={d} value={d}>
+                até {d} dias
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="filter">
+          <span>Nota</span>
+          <Select
+            aria-label="Nota mínima"
+            value={filters.minRating}
+            onChange={(e) => setFilter({ minRating: Number(e.target.value) })}
+          >
+            <option value={0}>qualquer</option>
+            {RATING_OPTIONS.map((r) => (
+              <option key={r} value={r}>
+                {r}+ estrelas
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="filter">
+          <span>Ordenar</span>
+          <Select
+            aria-label="Ordenar por"
+            value={filters.sort}
+            onChange={(e) => setFilter({ sort: e.target.value as Sort })}
+          >
+            {SORTS.filter((s) => !s.geoOnly || geo).map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </Select>
+        </label>
+        {hasFilters && (
+          <Button variant="ghost" className="mini" onClick={() => setFilters(NO_FILTERS)}>
+            Limpar filtros
+          </Button>
+        )}
       </div>
 
       {open && (
@@ -268,9 +388,11 @@ export function ServicosView() {
               <EmptyState>
                 {onlyFavs
                   ? 'Nenhum favorito nesta lista. Marque o coração nos serviços.'
-                  : geo
-                    ? `Nenhum serviço num raio de ${radiusKm} km — aumente o raio.`
-                    : 'Nenhum serviço encontrado.'}
+                  : hasFilters
+                    ? 'Nenhum serviço com esses filtros — afrouxe o preço, o prazo ou a nota.'
+                    : geo
+                      ? `Nenhum serviço num raio de ${radiusKm} km — aumente o raio.`
+                      : 'Nenhum serviço encontrado.'}
               </EmptyState>
             );
           }

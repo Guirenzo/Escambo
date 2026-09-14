@@ -63,6 +63,9 @@ export const SESSION_TOKEN_EVENT = 'escambo:token';
 export const SESSION_EXPIRED_EVENT = 'escambo:session-expired';
 
 /** Filtros da busca de serviços (lat+lng+radiusKm = descoberta local por proximidade). */
+export type ServiceSort =
+  'relevance' | 'price_asc' | 'price_desc' | 'rating' | 'newest' | 'distance';
+
 export interface ServiceQuery {
   q?: string;
   categoryId?: number;
@@ -70,6 +73,11 @@ export interface ServiceQuery {
   lat?: number;
   lng?: number;
   radiusKm?: number;
+  minPrice?: number;
+  maxPrice?: number;
+  maxDeliveryDays?: number;
+  minRating?: number;
+  sort?: ServiceSort;
   page?: number;
   limit?: number;
 }

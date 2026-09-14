@@ -68,10 +68,11 @@ export async function createService(
   owner: TestUser,
   price = 300,
   categoryIndex = 0,
+  opts: { title?: string; deliveryDays?: number } = {},
 ): Promise<{ id: number; title: string; categoryId: number }> {
   const categories = await api<{ id: number }[]>(request, 'get', '/categories');
   const categoryId = categories[categoryIndex]?.id ?? categories[0].id;
-  const title = `Serviço e2e ${unique()}`;
+  const title = opts.title ?? `Serviço e2e ${unique()}`;
   const svc = await api<{ id: number }>(request, 'post', '/services', {
     token: owner.token,
     data: {
@@ -80,7 +81,7 @@ export async function createService(
       description: 'Serviço criado automaticamente pelos testes ponta a ponta.',
       priceType: 'fixed',
       price,
-      deliveryDays: 3,
+      deliveryDays: opts.deliveryDays ?? 3,
       isRemote: true,
     },
   });

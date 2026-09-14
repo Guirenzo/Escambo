@@ -24,6 +24,9 @@ export interface ServiceRow extends RowDataPacket {
   owner_total_reviews?: number | null;
 }
 
+export type ServiceSort =
+  'relevance' | 'price_asc' | 'price_desc' | 'rating' | 'newest' | 'distance';
+
 export interface ServiceListFilters {
   categoryId?: number;
   ownerId?: number;
@@ -32,8 +35,42 @@ export interface ServiceListFilters {
   lat?: number;
   lng?: number;
   radiusKm?: number;
+  minPrice?: number;
+  maxPrice?: number;
+  maxDeliveryDays?: number;
+  minRating?: number;
+  sort?: ServiceSort;
   limit: number;
   offset: number;
+}
+
+/**
+ * ORDER BY de cada ordenação. Destaque (boost) só manda na relevância: quem pede "menor
+ * preço" quer o menor preço. `prefix` é o alias da tabela derivada na busca por proximidade.
+ */
+export function orderClause(sort: ServiceSort, geo: boolean, prefix = ''): string {
+  const p = prefix ? `${prefix}.` : '';
+  const s = prefix ? `${prefix}.` : 's.';
+  const pf = prefix ? `${prefix}.` : 'pf.';
+  switch (sort) {
+    case 'price_asc':
+      return `${s}price IS NULL, ${s}price ASC, ${s}created_at DESC, ${s}id DESC`;
+    case 'price_desc':
+      return `${s}price IS NULL, ${s}price DESC, ${s}created_at DESC, ${s}id DESC`;
+    case 'rating':
+      return `COALESCE(${pf}${prefix ? 'owner_avg_rating' : 'avg_rating'}, 0) DESC, COALESCE(${pf}${prefix ? 'owner_total_reviews' : 'total_reviews'}, 0) DESC, ${s}created_at DESC, ${s}id DESC`;
+    case 'newest':
+      return `${s}created_at DESC, ${s}id DESC`;
+    case 'distance':
+      return geo
+        ? `${p}distance_km ASC, ${p}boosted DESC`
+        : `${p}boosted DESC, ${s}created_at DESC, ${s}id DESC`;
+    case 'relevance':
+    default:
+      return geo
+        ? `${p}boosted DESC, ${p}distance_km ASC`
+        : `${p}boosted DESC, ${s}created_at DESC, ${s}id DESC`;
+  }
 }
 
 /** Quem presta o serviço: nome e reputação (avg_rating/total_reviews são mantidos pelo módulo de reviews). */
@@ -86,6 +123,23 @@ export const servicesRepository = {
       where.push('(s.title LIKE :q OR s.description LIKE :q)');
       params.q = `%${filters.q}%`;
     }
+    if (filters.minPrice !== undefined) {
+      where.push('s.price >= :minPrice');
+      params.minPrice = filters.minPrice;
+    }
+    if (filters.maxPrice !== undefined) {
+      where.push('s.price <= :maxPrice');
+      params.maxPrice = filters.maxPrice;
+    }
+    if (filters.maxDeliveryDays !== undefined) {
+      where.push('s.delivery_days IS NOT NULL AND s.delivery_days <= :maxDeliveryDays');
+      params.maxDeliveryDays = filters.maxDeliveryDays;
+    }
+    if (filters.minRating !== undefined && filters.minRating > 0) {
+      where.push('COALESCE(pf.avg_rating, 0) >= :minRating');
+      params.minRating = filters.minRating;
+    }
+    const sort = filters.sort ?? 'relevance';
 
     // Impulsionamento ativo do serviço (ranqueia no topo).
     const boostedExpr = `EXISTS(SELECT 1 FROM boosts bo
@@ -113,7 +167,7 @@ export const servicesRepository = {
               AND pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL
          ) AS sub
           WHERE sub.distance_km <= :radius
-          ORDER BY sub.boosted DESC, sub.distance_km ASC
+          ORDER BY ${orderClause(sort, true, 'sub')}
           LIMIT ${filters.limit} OFFSET ${filters.offset}`,
         params,
       );
@@ -126,7 +180,7 @@ export const servicesRepository = {
         JOIN users u ON u.id = s.user_id
         LEFT JOIN profiles_freelancer pf ON pf.user_id = s.user_id
         WHERE ${where.join(' AND ')}
-        ORDER BY boosted DESC, s.created_at DESC
+        ORDER BY ${orderClause(sort, false)}
         LIMIT ${filters.limit} OFFSET ${filters.offset}`,
       params,
     );
