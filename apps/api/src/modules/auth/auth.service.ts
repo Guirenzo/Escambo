@@ -30,6 +30,7 @@ function toPublic(user: UserRow): PublicUser {
     email: user.email,
     role: user.role as UserRole,
     emailVerified: user.email_verified_at != null,
+    emailFrequency: user.email_frequency ?? 'instant',
   };
 }
 
@@ -134,7 +135,14 @@ export const authService = {
       logger.warn({ err, userId: id }, 'e-mail de confirmação não enviado');
     }
 
-    return { id, ulid: userUlid, email: input.email, role, emailVerified: false };
+    return {
+      id,
+      ulid: userUlid,
+      email: input.email,
+      role,
+      emailVerified: false,
+      emailFrequency: 'instant',
+    };
   },
 
   /** Confirma o e-mail pelo token do link (uso único, com validade). */

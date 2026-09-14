@@ -112,7 +112,7 @@ export async function latestEmail(
   request: APIRequestContext,
   admin: TestUser,
   userId: number,
-  template: 'verify_email' | 'password_reset' | 'notification',
+  template: 'verify_email' | 'password_reset' | 'notification' | 'digest',
 ): Promise<{ subject: string; text: string }> {
   for (let i = 0; i < 20; i++) {
     const list = await api<{ template: string; subject: string; text: string }[]>(

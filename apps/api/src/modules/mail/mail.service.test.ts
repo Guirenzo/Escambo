@@ -41,6 +41,27 @@ describe('templates', () => {
     expect(n.html).toContain('Abrir no Escambo');
   });
 
+  it('resumo diário lista cada novidade e leva para as notificações', () => {
+    const mail = renderEmail('digest', {
+      items: [
+        {
+          title: 'Nova proposta',
+          body: 'Site institucional',
+          link: 'http://app.escambo.test/contratos/9',
+        },
+        { title: 'Extensão aceita', body: null, link: 'http://app.escambo.test/contratos/9' },
+      ],
+    });
+    expect(mail.subject).toBe('Seu resumo do dia: 2 novidades no Escambo');
+    expect(mail.text).toContain('• Nova proposta — Site institucional');
+    expect(mail.text).toContain('• Extensão aceita');
+    expect(mail.text).toContain('/notificacoes');
+    expect(mail.html).toContain('Ver notificações');
+    expect(renderEmail('digest', { items: [{ title: 'x', body: null, link: 'l' }] }).subject).toBe(
+      'Seu resumo do dia: 1 novidade no Escambo',
+    );
+  });
+
   it('link da notificação aponta para a tela certa', () => {
     expect(notificationLink({ contractId: 9 })).toBe(`${env.APP_URL}/contratos/9`);
     expect(notificationLink({ barterId: 2 })).toBe(`${env.APP_URL}/trocas`);

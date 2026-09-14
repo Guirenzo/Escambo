@@ -44,13 +44,20 @@ describe('notify (best-effort)', () => {
     repo.create.mockResolvedValue(1);
     await notificationsService.notify(7, { type: 't', title: 'oi', data: { contractId: 5 } });
     expect(repo.create).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 7, type: 't', title: 'oi', data: JSON.stringify({ contractId: 5 }) }),
+      expect.objectContaining({
+        userId: 7,
+        type: 't',
+        title: 'oi',
+        data: JSON.stringify({ contractId: 5 }),
+      }),
     );
   });
 
   it('não lança se o repositório falhar', async () => {
     repo.create.mockRejectedValue(new Error('db down'));
-    await expect(notificationsService.notify(7, { type: 't', title: 'oi' })).resolves.toBeUndefined();
+    await expect(
+      notificationsService.notify(7, { type: 't', title: 'oi' }),
+    ).resolves.toBeUndefined();
   });
 });
 

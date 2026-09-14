@@ -183,6 +183,7 @@ describe('authService.getByUlid', () => {
       email: 'rafael@exemplo.com',
       role: 'freelancer',
       emailVerified: false,
+      emailFrequency: 'instant',
     });
   });
 

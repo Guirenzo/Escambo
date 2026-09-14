@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+export const emailPreferenceSchema = z.object({
+  emailFrequency: z.enum(['instant', 'daily', 'off']),
+});
+
 export const notificationIdSchema = z.object({ id: z.coerce.number().int().positive() });
 
 export const listNotificationsSchema = z.object({

@@ -1,6 +1,7 @@
 import { env } from '../config/env';
 import { logger } from '../config/logger';
 import { runExpireDeposits } from './expire-deposits';
+import { runDailyDigest } from './daily-digest';
 import { runExpireExports } from './expire-exports';
 import { runExpireProposals } from './expire-proposals';
 import { runOverdueContracts } from './overdue-contracts';
@@ -24,6 +25,7 @@ export const JOBS: Job[] = [
   { name: 'tacit-approval', run: runTacitApproval },
   { name: 'expire-proposals', run: runExpireProposals },
   { name: 'overdue-contracts', run: runOverdueContracts },
+  { name: 'daily-digest', run: () => runDailyDigest() },
   { name: 'expire-deposits', run: runExpireDeposits },
   { name: 'expire-exports', run: runExpireExports },
 ];

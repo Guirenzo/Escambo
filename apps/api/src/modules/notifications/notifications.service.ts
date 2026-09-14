@@ -1,4 +1,9 @@
-import type { Notification, NotificationList } from '@escambo/types';
+import type {
+  EmailFrequency,
+  EmailPreference,
+  Notification,
+  NotificationList,
+} from '@escambo/types';
 import { logger } from '../../config/logger';
 import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
@@ -19,6 +24,8 @@ async function emailNotification(
   if (!EMAILED_NOTIFICATION_TYPES.has(params.type) || !mailService.enabled()) return;
   const user = await authRepository.findById(userId);
   if (!user || user.deleted_at) return;
+  // Resumo diário (job) ou só e-mails essenciais: nada de e-mail por evento (ADR 27).
+  if (user.email_frequency && user.email_frequency !== 'instant') return;
   await mailService.send({
     userId,
     to: user.email,
@@ -98,5 +105,44 @@ export const notificationsService = {
 
   async markAllRead(userId: number): Promise<number> {
     return notificationsRepository.markAllRead(userId);
+  },
+
+  // ---------- Preferência de e-mail (ADR 27) ----------
+
+  async getEmailPreference(userId: number): Promise<EmailPreference> {
+    const user = await authRepository.findById(userId);
+    return { emailFrequency: user?.email_frequency ?? 'instant' };
+  },
+
+  async setEmailPreference(userId: number, value: EmailFrequency): Promise<EmailPreference> {
+    await authRepository.setEmailFrequency(userId, value);
+    return { emailFrequency: value };
+  },
+
+  /**
+   * Resumo diário de um usuário: as notificações desde o último resumo (ou das últimas 24h)
+   * num e-mail só. Devolve quantos itens foram; 0 = nada enviado (mas o dia fica marcado).
+   */
+  async sendDigest(
+    user: { id: number; email: string; last_digest_at: Date | null },
+    now: Date,
+  ): Promise<number> {
+    const since = user.last_digest_at ?? new Date(now.getTime() - 24 * 3_600_000);
+    const rows = await notificationsRepository.listSince(user.id, since);
+    if (rows.length > 0) {
+      const items = rows.map(toNotification).map((n) => ({
+        title: n.title,
+        body: n.body,
+        link: notificationLink(n.data),
+      }));
+      await mailService.send({
+        userId: user.id,
+        to: user.email,
+        template: 'digest',
+        vars: { items },
+      });
+    }
+    await notificationsRepository.markDigest(user.id, now);
+    return rows.length;
   },
 };
