@@ -427,6 +427,8 @@ export interface Service {
   ownerAvatarUrl?: string | null;
   ownerRating?: number;
   ownerReviews?: number;
+  /** Dias em que o prestador atende (0=domingo … 6=sábado); null = não informou. */
+  ownerAvailableDays?: number[] | null;
 }
 
 // --- Impulsionamento (Boosts) ---

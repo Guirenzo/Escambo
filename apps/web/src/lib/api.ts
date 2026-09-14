@@ -79,6 +79,7 @@ export interface ServiceQuery {
   maxPrice?: number;
   maxDeliveryDays?: number;
   minRating?: number;
+  day?: number;
   sort?: ServiceSort;
   page?: number;
   limit?: number;

@@ -64,6 +64,9 @@ export const listServicesSchema = z.object({
   maxPrice: z.coerce.number().positive().optional(),
   maxDeliveryDays: z.coerce.number().int().positive().optional(),
   minRating: z.coerce.number().min(0).max(5).optional(),
+  // Dia da semana em que o prestador atende (0=domingo … 6=sábado). Quem não informou os
+  // dias fica de fora quando há filtro: "atende sábado" é uma afirmação, não um palpite.
+  day: z.coerce.number().int().min(0).max(6).optional(),
   // Ordenação: relevância (destaque + recência, ou destaque + proximidade com lat/lng),
   // preço, nota, recência ou distância (só faz sentido com lat/lng; sem eles cai na relevância).
   sort: z

@@ -290,6 +290,11 @@ export function PerfilView() {
                     </button>
                   ))}
                 </div>
+                {availableDays.length === 0 && (
+                  <span className="muted tiny" data-testid="days-hint">
+                    Sem dias marcados, você fica fora do filtro "atende no dia" da busca.
+                  </span>
+                )}
               </div>
               <div className="stack">
                 <span className="muted tiny">

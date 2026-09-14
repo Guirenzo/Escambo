@@ -782,6 +782,12 @@ button.toggle.on {
   font-size: 0.74rem;
   font-weight: 600;
 }
+.chip.days {
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-weight: 500;
+}
 .chip.level {
   background: var(--amber-soft);
   color: var(--amber-ink);
