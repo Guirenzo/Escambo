@@ -1,3 +1,4 @@
+import { deflateSync } from 'node:zlib';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
@@ -223,4 +224,48 @@ export async function openAs(page: Page, user: TestUser, path = '/'): Promise<vo
 /** Espera a tela terminar de carregar (nenhum skeleton na tela). */
 export async function settled(page: Page): Promise<void> {
   await expect(page.locator('.skeleton')).toHaveCount(0);
+}
+
+function crc32(buf: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of buf) {
+    let c = (crc ^ byte) & 0xff;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    crc = (crc >>> 8) ^ c;
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([len, body, crc]);
+}
+
+/** PNG RGB válido (quadrado verde) para testar upload/render de imagem. */
+export function pngFixture(size = 48): Buffer {
+  const stride = size * 3 + 1;
+  const raw = Buffer.alloc(stride * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const o = y * stride + 1 + x * 3;
+      raw[o] = 46;
+      raw[o + 1] = 160;
+      raw[o + 2] = 100;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', deflateSync(raw)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
 }

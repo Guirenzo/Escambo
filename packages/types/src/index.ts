@@ -597,11 +597,24 @@ export interface CancelResult {
 
 // --- Chat em tempo real (mensagens do contrato) ---
 
+export type ChatMessageType = 'text' | 'image' | 'file';
+
+/** Anexo de uma mensagem: a `url` é relativa à API e exige o token (só as partes leem). */
+export interface ChatAttachment {
+  name: string;
+  mime: string;
+  size: number;
+  url: string;
+}
+
 export interface ChatMessage {
   id: number;
   conversationId: number;
   senderId: number;
+  type: ChatMessageType;
+  /** Texto (ou legenda do anexo); vazio quando a mensagem é só o arquivo. */
   content: string;
+  attachment: ChatAttachment | null;
   createdAt: string;
 }
 

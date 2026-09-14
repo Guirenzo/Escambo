@@ -62,7 +62,8 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     p,
   );
   const messages = await q(
-    `SELECT m.id, cv.contract_id, m.sender_id, m.type, m.content, m.created_at
+    `SELECT m.id, cv.contract_id, m.sender_id, m.type, m.content, m.file_name, m.file_size_bytes,
+            m.created_at
        FROM messages m
        JOIN conversations cv ON cv.id = m.conversation_id
       WHERE cv.participant_a = :userId OR cv.participant_b = :userId

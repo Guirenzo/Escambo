@@ -17,6 +17,10 @@
  * Sem dependências — só Node 20+ (fetch nativo).
  */
 
+import { Blob, Buffer } from 'node:buffer';
+import { deflateSync } from 'node:zlib';
+/* global FormData */
+
 const API = (process.env.API_URL ?? 'http://localhost:3333/api').replace(/\/$/, '');
 const PASSWORD = 'Escambo@123';
 
@@ -357,6 +361,122 @@ async function ensurePortfolio(user, items = []) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Anexos do chat (ADR 29): um PNG desenhado aqui mesmo (sem dependências) e um PDF mínimo,
+// enviados por multipart como qualquer cliente faria.
+// ---------------------------------------------------------------------------
+
+function crc32(buf) {
+  let crc = 0xffffffff;
+  for (let n = 0; n < buf.length; n++) {
+    let c = (crc ^ buf[n]) & 0xff;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    crc = (crc >>> 8) ^ c;
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([len, body, crc]);
+}
+
+/** PNG RGB w×h pintado por pixel(x, y) → [r, g, b]. */
+function png(w, h, pixel) {
+  const stride = w * 3 + 1;
+  const raw = Buffer.alloc(stride * h);
+  for (let y = 0; y < h; y++) {
+    raw[y * stride] = 0; // filtro None
+    for (let x = 0; x < w; x++) {
+      const [r, g, b] = pixel(x, y);
+      const o = y * stride + 1 + x * 3;
+      raw[o] = r;
+      raw[o + 1] = g;
+      raw[o + 2] = b;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; // bits por canal
+  ihdr[9] = 2; // RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', deflateSync(raw)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+const inRect = (x, y, x0, y0, x1, y1) => x >= x0 && x < x1 && y >= y0 && y < y1;
+
+/** "Print" de uma landing page: barra escura, herói em degradê verde e três cards. */
+function landingMockupPng() {
+  const W = 640;
+  const H = 400;
+  return png(W, H, (x, y) => {
+    if (y < 44) return x < 120 && y > 14 && y < 30 && x > 20 ? [232, 246, 238] : [15, 81, 50];
+    if (inRect(x, y, 48, 76, 592, 200)) {
+      const t = (x - 48) / 544;
+      return [Math.round(52 - 30 * t), Math.round(168 - 56 * t), Math.round(104 - 30 * t)];
+    }
+    for (const x0 of [48, 236, 424]) {
+      if (inRect(x, y, x0, 232, x0 + 168, 360)) {
+        const edge = x === x0 || x === x0 + 167 || y === 232 || y === 359;
+        if (edge) return [205, 224, 214];
+        if (inRect(x, y, x0 + 16, 252, x0 + 96, 268)) return [30, 120, 76];
+        if (inRect(x, y, x0 + 16, 284, x0 + 152, 292)) return [214, 224, 219];
+        if (inRect(x, y, x0 + 16, 304, x0 + 120, 312)) return [214, 224, 219];
+        return [255, 255, 255];
+      }
+    }
+    const t = y / H;
+    return [Math.round(240 - 26 * t), Math.round(247 - 12 * t), Math.round(243 - 20 * t)];
+  });
+}
+
+/** PDF de uma página com o título do briefing (mínimo que qualquer leitor abre). */
+function briefingPdf() {
+  return Buffer.from(
+    [
+      '%PDF-1.4',
+      '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+      '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
+      '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj',
+      '4 0 obj << /Length 150 >> stream',
+      'BT /F1 22 Tf 72 760 Td (Briefing - Landing page em React) Tj 0 -36 Td /F1 12 Tf (Escambo - dados de demonstracao) Tj 0 -24 Td (Textos finais, paleta e referencias.) Tj ET',
+      'endstream endobj',
+      '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',
+      'trailer << /Root 1 0 R >>',
+      '%%EOF',
+      '',
+    ].join('\n'),
+  );
+}
+
+/** Envia um anexo no chat do contrato, se ainda não houver um com esse nome (idempotente). */
+async function ensureAttachment(contract, user, { name, type, bytes, caption }) {
+  const history = await call('GET', `/messaging/contracts/${contract.id}`, { token: user.token });
+  if ((history.messages ?? []).some((m) => m.attachment?.name === name)) return;
+  const form = new FormData();
+  form.append('file', new Blob([bytes], { type }), name);
+  if (caption) form.append('content', caption);
+  const res = await fetch(`${API}/messaging/contracts/${contract.id}/attachments`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${user.token}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, data.message ?? data.error ?? res.statusText, 'attachments');
+  }
+  log(`  anexo ${name} no chat`);
+}
+
 async function ensureContract(
   client,
   freelancer,
@@ -685,6 +805,18 @@ async function main() {
       ['client', 'Perfeito, obrigada!'],
       ['freelancer', 'Preview no ar: https://preview.escambo.demo/landing — pode olhar?'],
     ],
+  });
+  await ensureAttachment(landing, users.bruno, {
+    name: 'preview-landing.png',
+    type: 'image/png',
+    bytes: landingMockupPng(),
+    caption: 'Print do preview: herói, três blocos e o rodapé que combinamos.',
+  });
+  await ensureAttachment(landing, ana, {
+    name: 'briefing-landing.pdf',
+    type: 'application/pdf',
+    bytes: briefingPdf(),
+    caption: 'Ficou ótimo! Segue o briefing com os textos finais para fechar.',
   });
   const ajustes = await ensureContract(ana, users.bruno, svc['Ajustes e correções no site'], {
     title: 'Ajustes e correções no site',

@@ -87,6 +87,8 @@ services:
       # Cópias de dados (LGPD): arquivos ficam no volume api_data por EXPORT_TTL_DAYS dias.
       DATA_DIR: /repo/apps/api/data
       EXPORT_TTL_DAYS: ${EXPORT_TTL_DAYS:-7}
+      # Anexos do chat (imagem, PDF, ZIP) no mesmo volume; limite por arquivo em MB (o nginx aceita até 25).
+      UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-10}
       # E-mails: 'simulated' guarda na caixa de saída (painel admin); 'smtp' envia de verdade (SMTP_*).
       APP_URL: ${APP_URL:-http://localhost:8090}
       MAIL_PROVIDER: ${MAIL_PROVIDER:-simulated}

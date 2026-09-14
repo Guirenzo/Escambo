@@ -1,5 +1,21 @@
-import { ArrowLeft, Hourglass, ListChecks, MessageSquare, Send, Star } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  ArrowLeft,
+  Hourglass,
+  ListChecks,
+  MessageSquare,
+  Paperclip,
+  Send,
+  Star,
+} from 'lucide-react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+  type FormEvent,
+} from 'react';
 import type { ChatMessage, ChatMessageEvent, ContractWithHistory } from '@escambo/types';
 import { StarInput, Stars } from '../../components/Stars';
 import { Button, Input, QueryState } from '../../components/ui';
@@ -11,9 +27,18 @@ import {
   useContractDetail,
   useCreateReview,
   useRespondReview,
+  useSendAttachment,
   useSendMessage,
 } from '../../lib/hooks';
 import { getSocket } from '../../lib/socket';
+import {
+  ATTACHMENT_ACCEPT,
+  FileAttachment,
+  ImageAttachment,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_MB,
+  PendingAttachment,
+} from '../contracts/ChatAttachment';
 import { ContractActions } from '../contracts/ContractActions';
 import { DeadlineSection } from '../contracts/DeadlineSection';
 import { DisputeModal, DisputeSection } from '../contracts/DisputePanel';
@@ -188,12 +213,16 @@ export function SalaContratoView({
   usePageTitle(contract.data ? contract.data.title : 'Contratação');
   const history = useChatHistory(contractId);
   const send = useSendMessage(contractId);
+  const sendFile = useSendAttachment(contractId);
 
   const [live, setLive] = useState<ChatMessage[]>([]); // mensagens que chegaram pelo socket
   const [connected, setConnected] = useState(false);
   const [draft, setDraft] = useState('');
   const [disputeOpen, setDisputeOpen] = useState(false);
+  const [pending, setPending] = useState<File | null>(null); // anexo escolhido, ainda não enviado
+  const [dragging, setDragging] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   // Conecta o socket, entra na sala e ouve mensagens novas em tempo real.
   useEffect(() => {
@@ -230,14 +259,43 @@ export function SalaContratoView({
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
+  /** Escolhe um arquivo (clipe, colar ou arrastar); a API confere o tipo pelo conteúdo. */
+  function pick(file: File | undefined | null): void {
+    if (!file) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      toast.error(`Arquivo maior que ${MAX_ATTACHMENT_MB} MB`);
+      return;
+    }
+    setPending(file);
+  }
+
+  function onPaste(e: ClipboardEvent<HTMLInputElement>): void {
+    const file = e.clipboardData.files[0];
+    if (file) {
+      e.preventDefault();
+      pick(file);
+    }
+  }
+
+  function onDrop(e: DragEvent<HTMLElement>): void {
+    e.preventDefault();
+    setDragging(false);
+    pick(e.dataTransfer.files[0]);
+  }
+
+  const sending = send.isPending || sendFile.isPending;
+
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
     const content = draft.trim();
-    if (!content) return;
+    if (!content && !pending) return;
     try {
-      const msg = await send.mutateAsync(content);
+      const msg = pending
+        ? await sendFile.mutateAsync({ file: pending, content: content || undefined })
+        : await send.mutateAsync(content);
       setLive((prev) => (prev.some((x) => x.id === msg.id) ? prev : [...prev, msg]));
       setDraft('');
+      setPending(null);
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Erro ao enviar');
     }
@@ -343,7 +401,15 @@ export function SalaContratoView({
           {c && c.status === 'disputed' && <DisputeSection contractId={c.id} />}
         </div>
 
-        <section className="card chat">
+        <section
+          className={`card chat${dragging ? ' dragging' : ''}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+        >
           <div className="card-head">
             <h3>
               <MessageSquare size={16} /> Chat
@@ -361,25 +427,65 @@ export function SalaContratoView({
               <p className="muted">Nenhuma mensagem ainda. Diga oi!</p>
             ) : (
               messages.map((m) => (
-                <div key={m.id} className={`bubble ${m.senderId === myId ? 'mine' : 'theirs'}`}>
-                  <span>{m.content}</span>
+                <div
+                  key={m.id}
+                  className={`bubble ${m.senderId === myId ? 'mine' : 'theirs'}${m.attachment ? ' with-attachment' : ''}`}
+                  data-testid={m.attachment ? 'attachment-bubble' : undefined}
+                >
+                  {m.type === 'image' && m.attachment && (
+                    <ImageAttachment attachment={m.attachment} />
+                  )}
+                  {m.type === 'file' && m.attachment && (
+                    <FileAttachment attachment={m.attachment} />
+                  )}
+                  {m.content && <span>{m.content}</span>}
                   <span className="muted tiny">{hm(m.createdAt)}</span>
                 </div>
               ))
             )}
             <div ref={endRef} />
           </div>
+          {pending && <PendingAttachment file={pending} onRemove={() => setPending(null)} />}
           <form className="chat-input" onSubmit={submit}>
+            <input
+              ref={fileRef}
+              type="file"
+              accept={ATTACHMENT_ACCEPT}
+              hidden
+              data-testid="attachment-input"
+              onChange={(e) => {
+                pick(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => fileRef.current?.click()}
+              disabled={sending}
+              aria-label="Anexar arquivo"
+              title={`Imagem, PDF ou ZIP até ${MAX_ATTACHMENT_MB} MB`}
+            >
+              <Paperclip size={16} />
+            </Button>
             <Input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="Escreva uma mensagem…"
+              onPaste={onPaste}
+              placeholder={pending ? 'Legenda (opcional)…' : 'Escreva uma mensagem…'}
               maxLength={2000}
             />
-            <Button type="submit" disabled={send.isPending || !draft.trim()} aria-label="Enviar">
+            <Button
+              type="submit"
+              disabled={sending || (!draft.trim() && !pending)}
+              aria-label="Enviar"
+            >
               <Send size={16} />
             </Button>
           </form>
+          <p className="muted tiny chat-hint">
+            Imagem, PDF ou ZIP até {MAX_ATTACHMENT_MB} MB: clipe, colar ou arrastar aqui.
+          </p>
         </section>
       </div>
       {c && disputeOpen && <DisputeModal contract={c} onClose={() => setDisputeOpen(false)} />}

@@ -48,6 +48,7 @@ curl -fsSLO "$base/docker-compose.prod.yml"
 mkdir -p deploy scripts
 curl -fsSL "$base/deploy/Caddyfile" -o deploy/Caddyfile
 curl -fsSL "$base/scripts/backup-db.sh"  -o scripts/backup-db.sh
+curl -fsSL "$base/scripts/backup-uploads.sh" -o scripts/backup-uploads.sh
 curl -fsSL "$base/scripts/restore-db.sh" -o scripts/restore-db.sh
 chmod +x scripts/*.sh
 curl -fsSL "$base/.env.prod.example" -o .env
@@ -117,6 +118,7 @@ pasta para fora da VPS (rclone, scp, S3…) — backup na mesma máquina não é
 COMPOSE_FILE=docker-compose.prod.yml scripts/backup-db.sh
 crontab -e
 # 0 3 * * * cd /opt/escambo && COMPOSE_FILE=docker-compose.prod.yml scripts/backup-db.sh >> backups/backup.log 2>&1
+# 10 3 * * * cd /opt/escambo && COMPOSE_FILE=docker-compose.prod.yml scripts/backup-uploads.sh >> backups/backup.log 2>&1
 ```
 
 Restaurar (para a API, importa, roda migrations pendentes e sobe de novo):
@@ -125,9 +127,19 @@ Restaurar (para a API, importa, roda migrations pendentes e sobe de novo):
 COMPOSE_FILE=docker-compose.prod.yml scripts/restore-db.sh backups/escambo-20260910-030000.sql.gz
 ```
 
-O volume `escambo_api_data` guarda só as cópias de dados LGPD (arquivos temporários, com validade de
-`EXPORT_TTL_DAYS`); não precisa de backup. Os certificados ficam em `caddy_data` e são reemitidos se
-sumirem.
+O volume `escambo_api_data` guarda os **anexos do chat** (`uploads/`, permanentes — o banco só tem a
+chave de cada arquivo) e as cópias de dados LGPD (temporárias, `EXPORT_TTL_DAYS`). Os anexos precisam
+de backup tanto quanto o banco: `scripts/backup-uploads.sh` empacota a pasta de dentro do container
+(`backups/uploads-*.tgz`, mesma retenção) — agende no mesmo cron. Os certificados ficam em
+`caddy_data` e são reemitidos se sumirem.
+
+```bash
+COMPOSE_FILE=docker-compose.prod.yml scripts/backup-uploads.sh
+# restaurar, com a API parada:
+docker compose -f docker-compose.prod.yml stop api
+docker compose -f docker-compose.prod.yml run --rm --no-deps -T --entrypoint sh api -c 'cd /repo/apps/api/data && tar xzf -' < backups/uploads-20260914-030000.tgz
+docker compose -f docker-compose.prod.yml start api
+```
 
 ## 5. Operação
 
@@ -156,7 +168,7 @@ sumirem.
 - [ ] `PAYMENTS_SIMULATE=false` (ou piloto explicitamente sem dinheiro real).
 - [ ] `ADMIN_EMAILS` só com endereços seus; confirme o e-mail da conta admin.
 - [ ] Firewall: só 22, 80 e 443. Banco e API não publicam porta (o compose de produção já não publica).
-- [ ] Backup diário no cron **e** cópia fora da VPS; restauração testada uma vez.
+- [ ] Backup diário no cron (banco **e** anexos do chat) **e** cópia fora da VPS; restauração testada uma vez.
 - [ ] Atualizações do sistema (`unattended-upgrades`) e das imagens oficiais (`pull` periódico).
 - [ ] 2FA na conta do GitHub: quem controla `main` controla o que a VPS puxa.
 

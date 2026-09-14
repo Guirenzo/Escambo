@@ -207,6 +207,25 @@ export function useSendMessage(contractId: number) {
   });
 }
 
+/** Imagem ou arquivo no chat, com legenda opcional. */
+export function useSendAttachment(contractId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, content }: { file: File; content?: string }) =>
+      api.sendAttachment(contractId, file, content),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.chat(contractId) }),
+  });
+}
+
+/** Bytes de um anexo do chat (exige o token). Fica em cache enquanto a Sala está aberta. */
+export const useAttachmentBlob = (url: string, name: string) =>
+  useQuery({
+    queryKey: ['attachment', url] as const,
+    queryFn: () => api.attachmentBlob(url, name),
+    staleTime: Infinity,
+    gcTime: 30 * 60_000,
+  });
+
 /** Tudo que muda quando dinheiro entra ou sai da carteira. */
 const WALLET_KEYS = [qk.wallet, qk.walletTransactions, qk.deposits, qk.withdrawals] as const;
 function invalidateWallet(qc: ReturnType<typeof useQueryClient>): void {

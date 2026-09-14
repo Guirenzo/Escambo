@@ -68,6 +68,8 @@ services:
       PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
       DATA_DIR: /repo/apps/api/data
       EXPORT_TTL_DAYS: ${EXPORT_TTL_DAYS:-7}
+      # Anexos do chat (imagem, PDF, ZIP) no mesmo volume; limite por arquivo em MB (o nginx aceita até 25).
+      UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-10}
       APP_URL: https://${DOMAIN}
       MAIL_PROVIDER: ${MAIL_PROVIDER:-smtp}
       MAIL_FROM: ${MAIL_FROM:?defina MAIL_FROM no .env}

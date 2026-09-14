@@ -8,13 +8,43 @@ export interface ConversationRow extends RowDataPacket {
   participant_b: number;
 }
 
+export type MessageRowType = 'text' | 'image' | 'file' | 'system';
+
 export interface MessageRow extends RowDataPacket {
   id: number;
   conversation_id: number;
   sender_id: number;
+  type: MessageRowType;
   content: string | null;
+  /** Chave do anexo no armazenamento (DATA_DIR/uploads); NULL em mensagem de texto. */
+  file_url: string | null;
+  file_name: string | null;
+  file_mime: string | null;
+  file_size_bytes: number | null;
   created_at: Date;
 }
+
+/** Anexo + quem pode lê-lo (as partes da conversa). */
+export interface AttachmentRow extends RowDataPacket {
+  id: number;
+  type: MessageRowType;
+  file_url: string;
+  file_name: string | null;
+  file_mime: string | null;
+  file_size_bytes: number | null;
+  participant_a: number;
+  participant_b: number;
+}
+
+export interface NewAttachment {
+  key: string;
+  name: string;
+  mime: string;
+  size: number;
+}
+
+const MESSAGE_COLUMNS = `id, conversation_id, sender_id, type, content, file_url, file_name, file_mime,
+       file_size_bytes, created_at`;
 
 /** Normaliza o par (a<b) para casar com a unique key uq_conversation. */
 function orderPair(x: number, y: number): [number, number] {
@@ -65,7 +95,7 @@ export const messagingRepository = {
 
   async listMessages(conversationId: number, limit: number): Promise<MessageRow[]> {
     const [rows] = await pool.query<MessageRow[]>(
-      `SELECT id, conversation_id, sender_id, content, created_at
+      `SELECT ${MESSAGE_COLUMNS}
          FROM messages
         WHERE conversation_id = :conversationId
         ORDER BY id ASC
@@ -75,24 +105,50 @@ export const messagingRepository = {
     return rows;
   },
 
+  /** Insere texto (attachment null) ou imagem/arquivo (content = legenda opcional). */
   async insertMessage(data: {
     conversationId: number;
     senderId: number;
-    content: string;
+    content: string | null;
+    attachment?: (NewAttachment & { kind: 'image' | 'file' }) | null;
   }): Promise<MessageRow> {
+    const a = data.attachment ?? null;
     const [res] = await pool.query<ResultSetHeader>(
-      `INSERT INTO messages (conversation_id, sender_id, type, content)
-       VALUES (:conversationId, :senderId, 'text', :content)`,
-      data,
+      `INSERT INTO messages (conversation_id, sender_id, type, content, file_url, file_name, file_mime, file_size_bytes)
+       VALUES (:conversationId, :senderId, :type, :content, :fileKey, :fileName, :fileMime, :fileSize)`,
+      {
+        conversationId: data.conversationId,
+        senderId: data.senderId,
+        type: a ? a.kind : 'text',
+        content: data.content,
+        fileKey: a?.key ?? null,
+        fileName: a?.name ?? null,
+        fileMime: a?.mime ?? null,
+        fileSize: a?.size ?? null,
+      },
     );
     await pool.query<ResultSetHeader>(
       `UPDATE conversations SET last_message_at = NOW() WHERE id = :conversationId`,
       { conversationId: data.conversationId },
     );
     const [rows] = await pool.query<MessageRow[]>(
-      `SELECT id, conversation_id, sender_id, content, created_at FROM messages WHERE id = :id`,
+      `SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = :id`,
       { id: res.insertId },
     );
     return rows[0]!;
+  },
+
+  /** Anexo de uma mensagem com as partes da conversa (para checar quem pode baixar). */
+  async findAttachment(messageId: number): Promise<AttachmentRow | undefined> {
+    const [rows] = await pool.query<AttachmentRow[]>(
+      `SELECT m.id, m.type, m.file_url, m.file_name, m.file_mime, m.file_size_bytes,
+              cv.participant_a, cv.participant_b
+         FROM messages m
+         JOIN conversations cv ON cv.id = m.conversation_id
+        WHERE m.id = :messageId AND m.file_url IS NOT NULL
+        LIMIT 1`,
+      { messageId },
+    );
+    return rows[0];
   },
 };

@@ -25,3 +25,16 @@ export const apiRateLimiter = rateLimit({
   legacyHeaders: false,
   skip: skipInTest,
 });
+
+/** Upload de anexos no chat: mais caro que uma requisição JSON, então tem teto próprio por IP. */
+export const uploadRateLimiter = rateLimit({
+  windowMs: 60 * 60_000,
+  limit: env.UPLOAD_RATE_LIMIT_MAX,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: skipInTest,
+  message: {
+    error: 'too_many_requests',
+    message: 'Muitos anexos em pouco tempo. Tente novamente mais tarde.',
+  },
+});
