@@ -58,6 +58,36 @@ const COLS = `id, contract_id, title, description, amount, freelancer_net, sort_
               due_at, overdue_notified_at, delivered_at, delivery_note, revision_note, released_at,
               created_at`;
 
+/**
+ * Libera créditos do escrow (pendente → disponível) do freelancer, com linha no ledger de
+ * créditos — o mesmo movimento da conclusão de um contrato em créditos, só que por marco.
+ */
+async function releaseCredits(
+  conn: PoolConnection,
+  userId: number,
+  credits: number,
+  contractId: number,
+): Promise<boolean> {
+  const [upd] = await conn.query<ResultSetHeader>(
+    `UPDATE wallets
+        SET credits_pending = credits_pending - :credits,
+            credits_balance = credits_balance + :credits
+      WHERE user_id = :userId AND credits_pending - :credits >= 0`,
+    { credits, userId },
+  );
+  if (upd.affectedRows === 0) return false;
+  const [rows] = await conn.query<RowDataPacket[]>(
+    `SELECT credits_balance + credits_pending AS total FROM wallets WHERE user_id = :userId`,
+    { userId },
+  );
+  await conn.query<ResultSetHeader>(
+    `INSERT INTO credit_transactions (user_id, amount, balance_after, reason, contract_id)
+     VALUES (:userId, 0, :after, 'escrow_release', :contractId)`,
+    { userId, after: Number(rows[0]!.total), contractId },
+  );
+  return true;
+}
+
 /** Marcos que ainda prendem dinheiro (nem liberados nem cancelados). */
 const OPEN = `('pending', 'funded', 'delivered')`;
 
@@ -200,6 +230,8 @@ export const milestonesRepository = {
     milestoneId: number;
     changedBy: number;
     freelancerId: number;
+    /** Dinheiro (R$ do escrow) ou créditos Escambo (time-bank, sem taxa). */
+    mode: 'cash' | 'credits';
     note: string | null;
   }): Promise<{ ok: boolean; completed: boolean; net: number; title: string }> {
     const conn = await pool.getConnection();
@@ -220,18 +252,22 @@ export const milestonesRepository = {
         await conn.rollback();
         return { ok: false, completed: false, net: 0, title: '' };
       }
-      const net = Number(m.freelancer_net);
+      const net =
+        p.mode === 'credits' ? Math.round(Number(m.freelancer_net)) : Number(m.freelancer_net);
       await conn.query<ResultSetHeader>(
         `UPDATE contract_milestones SET status = 'released', released_at = NOW() WHERE id = :id`,
         { id: m.id },
       );
-      const paid = await applyWalletEffect(conn, {
-        userId: p.freelancerId,
-        pendingDelta: -net,
-        balanceDelta: net,
-        reason: 'escrow_release',
-        contractId: p.contractId,
-      });
+      const paid =
+        p.mode === 'credits'
+          ? await releaseCredits(conn, p.freelancerId, net, p.contractId)
+          : await applyWalletEffect(conn, {
+              userId: p.freelancerId,
+              pendingDelta: -net,
+              balanceDelta: net,
+              reason: 'escrow_release',
+              contractId: p.contractId,
+            });
       if (!paid) {
         await conn.rollback();
         return { ok: false, completed: false, net: 0, title: '' };
@@ -248,7 +284,9 @@ export const milestonesRepository = {
         p.changedBy,
         status,
         completed ? 'completed' : 'in_progress',
-        `${p.note ? `${p.note} · ` : ''}Marco «${m.title}» aprovado: R$ ${net.toFixed(2).replace('.', ',')} liberados`,
+        `${p.note ? `${p.note} · ` : ''}Marco «${m.title}» aprovado: ${
+          p.mode === 'credits' ? `${net} créditos` : `R$ ${net.toFixed(2).replace('.', ',')}`
+        } liberados`,
       );
       if (completed) {
         await conn.query<ResultSetHeader>(

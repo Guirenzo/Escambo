@@ -38,7 +38,12 @@ const repo = vi.mocked(contractsRepository);
 const ms = vi.mocked(milestonesRepository);
 
 function row(
-  o: Partial<{ status: string; has_milestones: number; deadline_at: Date | null }> = {},
+  o: Partial<{
+    status: string;
+    has_milestones: number;
+    deadline_at: Date | null;
+    payment_mode: string;
+  }> = {},
 ): ContractRow {
   return {
     id: 1,
@@ -90,6 +95,29 @@ describe('criação com marcos (RN-069)', () => {
     expect(nets.reduce((a, b) => a + b, 0)).toBeCloseTo(850, 2);
     expect(arg.milestones!.map((m) => m.sortOrder)).toEqual([0, 1, 2]);
   });
+
+  it('em créditos não há taxa: o líquido de cada marco é o próprio valor', async () => {
+    repo.create.mockResolvedValue(1);
+    repo.findById.mockResolvedValue(row({ status: 'pending', payment_mode: 'credits' }));
+    await contractsService.create(1, {
+      freelancerId: 2,
+      title: 'Manutenção em 2 visitas',
+      description: 'Diagnóstico e depois as correções',
+      price: 40,
+      paymentMode: 'credits',
+      milestones: [
+        { title: 'Visita 1', amount: 20 },
+        { title: 'Visita 2', amount: 20 },
+      ],
+    });
+    const arg = repo.create.mock.calls[0]![0];
+    expect(arg.paymentMode).toBe('credits');
+    expect(arg.hold).toBeNull();
+    expect(arg.milestones!.map((m) => [m.amount, m.freelancerNet])).toEqual([
+      [20, 20],
+      [20, 20],
+    ]);
+  });
 });
 
 describe('contrato por marcos não tem entrega/aprovação únicas', () => {
@@ -140,7 +168,17 @@ describe('entrega e aprovação por marco', () => {
     ms.approve.mockResolvedValueOnce({ ok: true, completed: true, net: 283.34, title: 'Deploy' });
     const last = await contractsService.approveMilestone(1, 9, 1);
     expect(last.completed).toBe(true);
+    expect(last.unit).toBe('BRL');
+    expect(ms.approve).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'cash' }));
     expect(gamificationService.onContractCompleted).toHaveBeenCalledWith(2, 1);
+  });
+
+  it('em créditos a aprovação libera créditos (modo passado ao repositório)', async () => {
+    repo.findById.mockResolvedValue(row({ status: 'in_progress', payment_mode: 'credits' }));
+    ms.approve.mockResolvedValueOnce({ ok: true, completed: false, net: 20, title: 'Visita 1' });
+    const r = await contractsService.approveMilestone(1, 7, 1);
+    expect(ms.approve).toHaveBeenCalledWith(expect.objectContaining({ mode: 'credits' }));
+    expect(r).toMatchObject({ net: 20, unit: 'credits', completed: false });
   });
 
   it('só o freelancer entrega e só o cliente aprova; marco fora de estado → 409', async () => {

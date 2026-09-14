@@ -28,11 +28,16 @@ export const createContractSchema = z
       });
     }
     if (!d.milestones) return;
-    if (d.paymentMode !== 'cash') {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['milestones'],
-        message: 'Marcos só estão disponíveis em contratações em dinheiro',
+    // Em créditos (time-bank) cada marco é um número inteiro de créditos, sem taxa.
+    if (d.paymentMode === 'credits') {
+      d.milestones.forEach((m, i) => {
+        if (!Number.isInteger(m.amount)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['milestones', i, 'amount'],
+            message: `O marco ${i + 1} precisa ter um número inteiro de créditos`,
+          });
+        }
       });
     }
     const sum = d.milestones.reduce((acc, m) => acc + m.amount, 0);

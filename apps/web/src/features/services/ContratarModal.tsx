@@ -52,7 +52,11 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
   const missing = Math.max(0, round2(priceNum - balance));
   const needsDeposit = mode === 'cash' && priceNum > 0 && missing > 0;
 
-  const withMilestones = mode === 'cash' && useMilestones;
+  const withMilestones = useMilestones;
+  // Em créditos os marcos são inteiros e somam os créditos da contratação (sem taxa).
+  const isCredits = mode === 'credits';
+  const msTarget = isCredits ? creditsNeeded : priceNum;
+  const fmtAmount = (v: number): string => (isCredits ? `${Math.round(v)} cr` : brl(v));
   const msSum = round2(milestones.reduce((acc, m) => acc + (Number(m.amount) || 0), 0));
   // Prazos dos marcos (opcionais): em ordem e nunca depois do prazo da contratação
   // (AAAA-MM-DD compara bem como texto).
@@ -67,7 +71,8 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
     !withMilestones ||
     (milestones.length >= 2 &&
       milestones.every((m) => m.title.trim().length >= 3 && Number(m.amount) > 0) &&
-      Math.abs(msSum - priceNum) < 0.005 &&
+      (!isCredits || milestones.every((m) => Number.isInteger(Number(m.amount)))) &&
+      Math.abs(msSum - msTarget) < 0.005 &&
       msDatesValid);
 
   function setMilestone(i: number, patch: Partial<MilestoneDraft>): void {
@@ -76,9 +81,12 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
 
   /** Divide o valor em partes iguais (o último absorve os centavos). */
   function splitEvenly(): void {
-    if (priceNum <= 0 || milestones.length === 0) return;
-    const part = Math.floor((priceNum / milestones.length) * 100) / 100;
-    const last = round2(priceNum - part * (milestones.length - 1));
+    if (msTarget <= 0 || milestones.length === 0) return;
+    // Créditos são inteiros; em R$ vale o centavo. O último marco absorve a sobra.
+    const part = isCredits
+      ? Math.floor(msTarget / milestones.length)
+      : Math.floor((msTarget / milestones.length) * 100) / 100;
+    const last = round2(msTarget - part * (milestones.length - 1));
     setMilestones((ms) =>
       ms.map((m, i) => ({ ...m, amount: String(i === ms.length - 1 ? last : part) })),
     );
@@ -111,7 +119,9 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
       });
       toast.success(
         mode === 'credits'
-          ? 'Proposta enviada — créditos retidos no aceite'
+          ? withMilestones
+            ? `Proposta enviada em ${milestones.length} marcos — créditos retidos no aceite`
+            : 'Proposta enviada — créditos retidos no aceite'
           : withMilestones
             ? `Proposta enviada em ${milestones.length} marcos — valor reservado na sua carteira`
             : 'Proposta enviada — valor reservado na sua carteira',
@@ -205,19 +215,17 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
           </label>
         </div>
 
-        {mode === 'cash' && (
-          <label className="consent" data-testid="milestones-toggle">
-            <input
-              type="checkbox"
-              checked={useMilestones}
-              onChange={(e) => setUseMilestones(e.target.checked)}
-            />
-            <span>
-              <Flag size={13} /> Dividir em <b>marcos</b>: cada etapa aprovada libera só o próprio
-              valor (bom para projetos longos).
-            </span>
-          </label>
-        )}
+        <label className="consent" data-testid="milestones-toggle">
+          <input
+            type="checkbox"
+            checked={useMilestones}
+            onChange={(e) => setUseMilestones(e.target.checked)}
+          />
+          <span>
+            <Flag size={13} /> Dividir em <b>marcos</b>: cada etapa aprovada libera só o próprio
+            valor (bom para projetos longos).
+          </span>
+        </label>
 
         {withMilestones && (
           <div className="ms-editor" data-testid="milestones-editor">
@@ -233,8 +241,8 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
                 />
                 <Input
                   type="number"
-                  min={0.01}
-                  step="0.01"
+                  min={isCredits ? 1 : 0.01}
+                  step={isCredits ? 1 : '0.01'}
                   value={m.amount}
                   onChange={(e) => setMilestone(i, { amount: e.target.value })}
                   placeholder="R$"
@@ -282,10 +290,10 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
                 Distribuir prazos
               </Button>
             </div>
-            <div className={`ms-sum ${Math.abs(msSum - priceNum) < 0.005 ? '' : 'bad'}`}>
+            <div className={`ms-sum ${Math.abs(msSum - msTarget) < 0.005 ? '' : 'bad'}`}>
               <span>Soma dos marcos</span>
               <strong>
-                {brl(msSum)} de {brl(priceNum)}
+                {fmtAmount(msSum)} de {fmtAmount(msTarget)}
               </strong>
             </div>
           </div>
@@ -295,7 +303,9 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
           <strong>{mode === 'credits' ? `${creditsNeeded} créditos` : brl(priceNum)}</strong>
           <span className="muted tiny">
             {mode === 'credits'
-              ? 'retidos no aceite · liberados na aprovação'
+              ? withMilestones
+                ? 'retidos no aceite · liberados marco a marco'
+                : 'retidos no aceite · liberados na aprovação'
               : withMilestones
                 ? 'reservado agora · liberado marco a marco (85% ao freelancer)'
                 : 'reservado agora · freelancer recebe 85% no escrow'}

@@ -33,6 +33,9 @@ export function MilestonesSection({
   const list = contract.milestones;
   if (list.length === 0) return null;
 
+  const isCredits = contract.paymentMode === 'credits';
+  /** R$ ou créditos, conforme a modalidade da contratação. */
+  const fmt = (v: number): string => (isCredits ? `${Math.round(v)} cr` : brl(v));
   const isClient = contract.clientId === myId;
   const isFreelancer = contract.freelancerId === myId;
   const open = contract.status === 'accepted' || contract.status === 'in_progress';
@@ -57,7 +60,9 @@ export function MilestonesSection({
       await act.mutateAsync({ milestoneId: m.id, action, text });
       toast.success(
         action === 'approve'
-          ? `Marco aprovado: ${brl(m.freelancerNet)} liberados para o freelancer.`
+          ? `Marco aprovado: ${
+              isCredits ? `${Math.round(m.freelancerNet)} créditos` : brl(m.freelancerNet)
+            } liberados para o freelancer.`
           : action === 'deliver'
             ? 'Marco entregue. O cliente foi avisado.'
             : 'Revisão solicitada neste marco.',
@@ -74,8 +79,8 @@ export function MilestonesSection({
           <Flag size={16} /> Marcos
         </h3>
         <span className="muted tiny">
-          {released.length} de {list.length} liberados · {brl(releasedTotal)} de{' '}
-          {brl(contract.price)}
+          {released.length} de {list.length} liberados · {fmt(releasedTotal)} de{' '}
+          {fmt(contract.price)}
         </span>
       </div>
       <div
@@ -129,14 +134,15 @@ export function MilestonesSection({
                 )}
                 {m.releasedAt && (
                   <div className="muted tiny">
-                    <CheckCircle2 size={12} /> {brl(m.freelancerNet)} liberados em{' '}
-                    {dtm(m.releasedAt)}
+                    <CheckCircle2 size={12} />{' '}
+                    {isCredits ? `${Math.round(m.freelancerNet)} créditos` : brl(m.freelancerNet)}{' '}
+                    liberados em {dtm(m.releasedAt)}
                   </div>
                 )}
               </div>
             </div>
             <div className="milestone-side">
-              <strong className="price">{brl(m.amount)}</strong>
+              <strong className="price">{fmt(m.amount)}</strong>
               <span className={`pill ${pillOf(m.status)}`}>
                 {MILESTONE_STATUS_LABEL[m.status] ?? m.status}
               </span>

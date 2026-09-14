@@ -450,7 +450,12 @@ async function ensureWithdrawal(user, admin, amount, pixKey, { complete = false 
 }
 
 /** Contratação por marcos (RN-069): aceita, com o 1º marco liberado e o 2º entregue. */
-async function ensureMilestoneContract(client, freelancer, service, { title, price, milestones }) {
+async function ensureMilestoneContract(
+  client,
+  freelancer,
+  service,
+  { title, price, milestones, paymentMode = 'cash' },
+) {
   const mine = items(await call('GET', '/contracts', { token: client.token }));
   let contract = mine.find(
     (c) =>
@@ -459,7 +464,7 @@ async function ensureMilestoneContract(client, freelancer, service, { title, pri
       !['cancelled', 'rejected'].includes(c.status),
   );
   if (!contract) {
-    await ensureBalance(client, price);
+    if (paymentMode === 'cash') await ensureBalance(client, price);
     contract = await call('POST', '/contracts', {
       token: client.token,
       body: {
@@ -468,7 +473,7 @@ async function ensureMilestoneContract(client, freelancer, service, { title, pri
         title,
         description: `Contratação do serviço "${service.title}" em ${milestones.length} marcos (demo).`,
         price,
-        paymentMode: 'cash',
+        paymentMode,
         deadlineAt: endOfDayInDays(30),
         // Prazo por marco (opcional): `days` vira dueAt no fim daquele dia.
         milestones: milestones.map(({ days, ...m }) => ({
@@ -720,6 +725,16 @@ async function main() {
     price: 60,
     paymentMode: 'credits',
     to: 'completed',
+  });
+  // Marcos também em créditos (inteiros, sem taxa): 1ª visita liberada, 2ª entregue.
+  await ensureMilestoneContract(ana, users.felipe, svc['Instalação elétrica (visita)'], {
+    title: 'Manutenção elétrica em 2 visitas (em créditos)',
+    price: 40,
+    paymentMode: 'credits',
+    milestones: [
+      { title: 'Visita 1: diagnóstico', amount: 20, days: 7 },
+      { title: 'Visita 2: correções', amount: 20, days: 14 },
+    ],
   });
 
   step('Avaliações (alimentam o Escambo Score)');

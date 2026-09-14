@@ -276,16 +276,19 @@ export const contractsService = {
     // para a soma dos líquidos bater exatamente com o líquido do contrato.
     let milestones = null;
     if (input.milestones && input.milestones.length > 0) {
+      // Em créditos não há taxa: o líquido do marco é o próprio valor (inteiro).
       const specs = input.milestones.map((m, i) => ({
         title: m.title,
         description: m.description ?? null,
-        amount: money(m.amount),
-        freelancerNet: money(m.amount * (1 - PLATFORM_FEE_RATE)),
+        amount: isCredits ? m.amount : money(m.amount),
+        freelancerNet: isCredits ? m.amount : money(m.amount * (1 - PLATFORM_FEE_RATE)),
         sortOrder: i,
         dueAt: m.dueAt ?? null,
       }));
-      const partial = specs.slice(0, -1).reduce((acc, m) => acc + m.freelancerNet, 0);
-      specs[specs.length - 1]!.freelancerNet = money(freelancerNet - partial);
+      if (!isCredits) {
+        const partial = specs.slice(0, -1).reduce((acc, m) => acc + m.freelancerNet, 0);
+        specs[specs.length - 1]!.freelancerNet = money(freelancerNet - partial);
+      }
       milestones = specs;
     }
 
@@ -360,6 +363,7 @@ export const contractsService = {
         to: 'accepted',
         note: null,
         timestampColumn: 'accepted_at',
+        milestonesTo: { from: ['pending'], to: 'funded' }, // marcos financiados no aceite
         creditsEffects: [
           { userId: row.client_id, pendingDelta: 0, balanceDelta: -credits, reason: 'escrow_hold' },
           {
@@ -487,7 +491,8 @@ export const contractsService = {
     const remaining = hasMilestones(row) ? await milestonesRepository.escrowRemaining(id) : null;
     const price = remaining ? remaining.price : Number(row.price);
     const net = remaining ? remaining.net : Number(row.freelancer_net);
-    const credits = creditsOf(row);
+    // Créditos por marcos: só o que ainda não foi liberado volta ao cliente.
+    const credits = remaining ? Math.round(remaining.net) : creditsOf(row);
     let refundEffect = {};
     if (row.status === 'pending') {
       // Antes do aceite só existe a reserva do cliente (cash): volta integralmente.
@@ -733,7 +738,13 @@ export const contractsService = {
     id: number,
     milestoneId: number,
     uid: number,
-  ): Promise<{ contract: ContractWithHistory; completed: boolean; net: number; title: string }> {
+  ): Promise<{
+    contract: ContractWithHistory;
+    completed: boolean;
+    net: number;
+    title: string;
+    unit: 'BRL' | 'credits';
+  }> {
     const row = await loadOr404(id);
     assertClient(row, uid);
     assertStatus(row, ['accepted', 'in_progress']);
@@ -742,6 +753,7 @@ export const contractsService = {
       milestoneId,
       changedBy: uid,
       freelancerId: row.freelancer_id,
+      mode: row.payment_mode === 'credits' ? 'credits' : 'cash',
       note: null,
     });
     if (!r.ok)
@@ -752,6 +764,7 @@ export const contractsService = {
       completed: r.completed,
       net: r.net,
       title: r.title,
+      unit: row.payment_mode === 'credits' ? 'credits' : 'BRL',
     };
   },
 
@@ -764,6 +777,7 @@ export const contractsService = {
       milestoneId,
       changedBy: row.client_id,
       freelancerId: row.freelancer_id,
+      mode: row.payment_mode === 'credits' ? 'credits' : 'cash',
       note: `Aprovação tácita: sem resposta do cliente em ${days} dias`,
     });
     if (r.ok && r.completed) await afterCompleted(row);
