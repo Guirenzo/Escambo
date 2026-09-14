@@ -53,27 +53,20 @@ function orderPair(x: number, y: number): [number, number] {
 
 export const messagingRepository = {
   /**
-   * Retorna a conversa entre as duas partes (única por par), criando se não
-   * existir. Associa/atualiza o contrato quando informado.
+   * Retorna a conversa entre as duas partes (única por par), criando se não existir, e
+   * associa o contrato quando a conversa ainda não tem um. É UMA instrução de propósito: ao
+   * abrir a Sala, o histórico (REST) e o contract:join (socket) chegam juntos, e dois INSERT
+   * concorrentes faziam o segundo tomar "Duplicate entry" (500). Com ON DUPLICATE KEY UPDATE
+   * o duplicado vira "pega o id que já existe" (LAST_INSERT_ID(id)).
    */
   async getOrCreate(uidA: number, uidB: number, contractId: number): Promise<number> {
     const [a, b] = orderPair(uidA, uidB);
-    const [rows] = await pool.query<ConversationRow[]>(
-      `SELECT id, contract_id FROM conversations WHERE participant_a = :a AND participant_b = :b LIMIT 1`,
-      { a, b },
-    );
-    const existing = rows[0];
-    if (existing) {
-      if (existing.contract_id == null) {
-        await pool.query<ResultSetHeader>(
-          `UPDATE conversations SET contract_id = :contractId WHERE id = :id`,
-          { contractId, id: existing.id },
-        );
-      }
-      return existing.id;
-    }
     const [res] = await pool.query<ResultSetHeader>(
-      `INSERT INTO conversations (contract_id, participant_a, participant_b) VALUES (:contractId, :a, :b)`,
+      `INSERT INTO conversations (contract_id, participant_a, participant_b)
+       VALUES (:contractId, :a, :b)
+       ON DUPLICATE KEY UPDATE
+         id = LAST_INSERT_ID(id),
+         contract_id = COALESCE(contract_id, :contractId)`,
       { contractId, a, b },
     );
     return res.insertId;

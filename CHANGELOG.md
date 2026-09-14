@@ -5,6 +5,17 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.11.1] — 2026-09-14
+
+### Corrigido
+
+- **Abrir a Sala podia dar 500 na conversa**: o histórico (REST) e o `contract:join` (socket)
+  chegam juntos e os dois tentavam criar a conversa do par; o segundo tomava
+  `Duplicate entry` — e uma mensagem enviada nesse instante falhava. A criação virou um único
+  `INSERT … ON DUPLICATE KEY UPDATE` (atômico), coberto por teste de integração concorrente.
+  Corrida pré-existente, exposta pelo e2e mobile do CI na 1.11.0 (cujas imagens não foram
+  publicadas; use a 1.11.1).
+
 ## [1.11.0] — 2026-09-14
 
 ### Adicionado
