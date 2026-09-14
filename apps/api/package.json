@@ -1,6 +1,6 @@
 {
   "name": "@escambo/api",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "private": true,
   "description": "API backend do Escambo — Node + Express + TypeScript",
   "license": "MIT",
@@ -27,6 +27,7 @@
     "express-rate-limit": "^7.4.1",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.4.0",
     "mysql2": "^3.11.5",
     "nodemailer": "^10.0.3",
     "pino": "^9.5.0",
@@ -41,6 +42,7 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.10.1",
     "@types/nodemailer": "^6.4.17",
     "@types/supertest": "^6.0.3",

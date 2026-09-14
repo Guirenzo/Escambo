@@ -5,6 +5,31 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.11.0] — 2026-09-14
+
+### Adicionado
+
+- **Anexos no chat** (ADR 29): imagem (JPG, PNG, GIF, WebP) ou arquivo (PDF, ZIP — e docx/xlsx,
+  que são ZIP por dentro) por mensagem, com legenda opcional, até `UPLOAD_MAX_MB` (10 MB).
+  - `POST /messaging/contracts/:id/attachments` (multipart) e `GET /messaging/attachments/:id`,
+    só para as partes do contrato. O tipo é reconhecido pelos **primeiros bytes**: Content-Type e
+    extensão declarados são ignorados (HTML disfarçado de PNG e SVG são recusados com 422).
+  - Arquivos no volume da API (`DATA_DIR/uploads/AAAA/MM/<ulid>.<ext>`), servidos com o token,
+    `Content-Disposition` inline (imagem) ou attachment (arquivo), nome de download limpo e com a
+    extensão real. Migration `0012` (`messages.file_mime`).
+  - Sala: botão de clipe, colar da área de transferência e arrastar sobre o chat; prévia antes de
+    enviar; imagem em miniatura que abre em tamanho real; cartão de arquivo com nome, tamanho e
+    download.
+  - Notificação "Enviou uma imagem" / "Enviou o arquivo …" quando não há legenda; a cópia de dados
+    LGPD passa a listar nome e tamanho dos anexos.
+  - `scripts/backup-uploads.sh`: os anexos vivem fora do banco e entram no backup. O nginx aceita
+    corpo de 25 MB em `/api/` e a CSP permite `blob:` em `img-src`.
+
+### Alterado
+
+- `ChatMessage` ganha `type` (`text` | `image` | `file`) e `attachment` (`name`, `mime`,
+  `size`, `url`).
+
 ## [1.10.0] — 2026-09-14
 
 ### Adicionado

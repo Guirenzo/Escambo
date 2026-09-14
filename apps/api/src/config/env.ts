@@ -74,6 +74,11 @@ const envSchema = z.object({
   DATA_DIR: z.string().default('data'),
   // Por quantos dias a cópia de dados fica disponível para download.
   EXPORT_TTL_DAYS: z.coerce.number().int().positive().default(7),
+  // Anexos do chat (imagem, PDF, ZIP) ficam em DATA_DIR/uploads. Limite por arquivo, em MB —
+  // o nginx do web aceita até 25 MB (client_max_body_size); acima disso, ajuste os dois.
+  UPLOAD_MAX_MB: z.coerce.number().int().positive().max(25).default(10),
+  // Uploads por IP por hora.
+  UPLOAD_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
 
   // Endereço público do app (links nos e-mails: confirmar e-mail, redefinir senha, abrir no app).
   APP_URL: z.string().url().default('http://localhost:5173'),

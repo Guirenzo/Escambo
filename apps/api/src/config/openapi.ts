@@ -379,6 +379,16 @@ export const openapiDocument: Record<string, any> = {
         responses: res201,
       }),
     },
+    '/messaging/contracts/{id}/attachments': {
+      post: op(
+        'Chat',
+        'Envia imagem ou arquivo (multipart: file + content opcional). JPG, PNG, GIF, WebP, PDF ou ZIP, reconhecidos pelo conteúdo, até UPLOAD_MAX_MB',
+        { auth: true, responses: res201 },
+      ),
+    },
+    '/messaging/attachments/{id}': {
+      get: op('Chat', 'Baixa o anexo de uma mensagem (só as partes do contrato)', { auth: true }),
+    },
 
     '/favorites': {
       get: op('Trust & Safety', 'Meus favoritos', { auth: true }),

@@ -176,7 +176,8 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      // FormData (upload): o navegador põe o Content-Type com o boundary do multipart.
+      ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...(options.headers ?? {}),
     },
@@ -200,6 +201,39 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
     throw new Error(err.message ?? err.error ?? `Erro ${res.status}`);
   }
   return data as T;
+}
+
+/** Nome de arquivo do Content-Disposition (prefere o UTF-8 do RFC 5987; senão o ASCII). */
+function fileNameFrom(disposition: string, fallback: string): string {
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8);
+    } catch {
+      /* cai no ASCII */
+    }
+  }
+  return /filename="([^"]+)"/.exec(disposition)?.[1] ?? fallback;
+}
+
+/** GET binário com o token (renova a sessão uma vez num 401): blob + nome sugerido. */
+async function fetchBlob(
+  path: string,
+  fallbackName: string,
+  what: string,
+): Promise<{ blob: Blob; fileName: string }> {
+  const fetchIt = () =>
+    fetch(`${BASE_URL}${path}`, {
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    });
+  let res = await fetchIt();
+  if (res.status === 401 && (await refreshSession())) res = await fetchIt();
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message ?? `Erro ${res.status} ao ${what}`);
+  }
+  const fileName = fileNameFrom(res.headers.get('content-disposition') ?? '', fallbackName);
+  return { blob: await res.blob(), fileName };
 }
 
 /** Client tipado — todos os tipos vêm de @escambo/types (compartilhados com o backend). */
@@ -293,6 +327,19 @@ export const api = {
 
   // chat do contrato
   chatHistory: (contractId: number) => request<ChatHistory>(`/messaging/contracts/${contractId}`),
+  /** Envia imagem ou arquivo (multipart) com legenda opcional. */
+  sendAttachment: (contractId: number, file: File, content?: string) => {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    if (content) form.append('content', content);
+    return request<ChatMessage>(`/messaging/contracts/${contractId}/attachments`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+  /** Bytes de um anexo (a URL do ChatAttachment exige o token, então não vai direto num <img>). */
+  attachmentBlob: (url: string, fallbackName: string) =>
+    fetchBlob(url.replace(/^\/api/, ''), fallbackName, 'baixar o anexo'),
   sendMessage: (contractId: number, content: string) =>
     request<ChatMessage>(`/messaging/contracts/${contractId}`, {
       method: 'POST',
@@ -374,46 +421,24 @@ export const api = {
       body: JSON.stringify({ reason }),
     }),
   /** Baixa a cópia de dados (JSON) com o token; renova a sessão uma vez num 401. */
-  downloadExport: async (id: number): Promise<{ blob: Blob; fileName: string }> => {
-    const fetchIt = () =>
-      fetch(`${BASE_URL}/lgpd/export-requests/${id}/download`, {
-        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-      });
-    let res = await fetchIt();
-    if (res.status === 401 && (await refreshSession())) res = await fetchIt();
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { message?: string };
-      throw new Error(body.message ?? `Erro ${res.status} ao baixar a exportação`);
-    }
-    const disposition = res.headers.get('content-disposition') ?? '';
-    const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `escambo-dados-${id}.json`;
-    return { blob: await res.blob(), fileName };
-  },
+  downloadExport: (id: number) =>
+    fetchBlob(
+      `/lgpd/export-requests/${id}/download`,
+      `escambo-dados-${id}.json`,
+      'baixar a exportação',
+    ),
 
   // admin (mediação, métricas, moderação)
   adminMetrics: () => request<AdminMetrics>('/admin/metrics'),
   adminFinance: (q: { from?: string; to?: string; granularity: 'day' | 'month' }) =>
     request<AdminFinanceReport>(`/admin/finance?${financeQs(q)}`),
   /** Baixa o ledger do período em CSV com o token; renova a sessão uma vez num 401. */
-  downloadFinanceCsv: async (q: {
-    from?: string;
-    to?: string;
-    granularity: 'day' | 'month';
-  }): Promise<{ blob: Blob; fileName: string }> => {
-    const fetchIt = () =>
-      fetch(`${BASE_URL}/admin/finance/export.csv?${financeQs(q)}`, {
-        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-      });
-    let res = await fetchIt();
-    if (res.status === 401 && (await refreshSession())) res = await fetchIt();
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { message?: string };
-      throw new Error(body.message ?? `Erro ${res.status} ao exportar o ledger`);
-    }
-    const disposition = res.headers.get('content-disposition') ?? '';
-    const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'escambo-ledger.csv';
-    return { blob: await res.blob(), fileName };
-  },
+  downloadFinanceCsv: (q: { from?: string; to?: string; granularity: 'day' | 'month' }) =>
+    fetchBlob(
+      `/admin/finance/export.csv?${financeQs(q)}`,
+      'escambo-ledger.csv',
+      'exportar o ledger',
+    ),
   adminDisputes: () => request<Dispute[]>('/admin/disputes'),
   adminResolveDispute: (id: number, body: ResolveDisputeRequest) =>
     request<Dispute>(`/admin/disputes/${id}/resolve`, {

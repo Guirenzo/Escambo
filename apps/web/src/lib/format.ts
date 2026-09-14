@@ -91,6 +91,15 @@ export function formatHours(hours: number): string {
   return days === 1 ? '1 dia' : `${days} dias`;
 }
 
+/** Tamanho de arquivo legível: "512 B", "850 KB", "1,2 MB", "12 MB". */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toLocaleString('pt-BR', { maximumFractionDigits: mb < 10 ? 1 : 0 })} MB`;
+}
+
 export const hm = (iso: string): string =>
   new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 

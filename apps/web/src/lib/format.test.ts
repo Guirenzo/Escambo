@@ -8,6 +8,7 @@ import {
   dt,
   endOfDayIso,
   formatAvailableDays,
+  formatBytes,
   formatHours,
   hm,
   spreadDates,
@@ -122,5 +123,16 @@ describe('prazo de entrega', () => {
     expect([d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()]).toEqual([
       2026, 0, 5, 23, 59,
     ]);
+  });
+});
+
+describe('formatBytes', () => {
+  it('B, KB inteiro, MB com uma casa até 10 e inteiro depois (vírgula pt-BR)', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(512)).toBe('512 B');
+    expect(formatBytes(1024)).toBe('1 KB');
+    expect(formatBytes(870_400)).toBe('850 KB');
+    expect(formatBytes(1_258_291)).toBe('1,2 MB');
+    expect(formatBytes(12_582_912)).toBe('12 MB');
   });
 });
