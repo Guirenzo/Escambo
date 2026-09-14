@@ -1,4 +1,17 @@
-import { ArrowLeft, Briefcase, Flag, Heart, MapPin, ShieldCheck, Star } from 'lucide-react';
+import {
+  ArrowLeft,
+  Briefcase,
+  CalendarDays,
+  Clock,
+  ExternalLink,
+  Flag,
+  Heart,
+  Images,
+  Link2,
+  MapPin,
+  ShieldCheck,
+  Star,
+} from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { Service } from '@escambo/types';
@@ -8,7 +21,7 @@ import { Stars } from '../../components/Stars';
 import { Button, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
-import { dtm } from '../../lib/format';
+import { dtm, formatAvailableDays, formatHours } from '../../lib/format';
 import {
   useFavorites,
   useFreelancerReviews,
@@ -79,6 +92,16 @@ export function FreelancerView() {
                       </span>
                     )}
                     <span className="muted tiny">{p.totalContracts} contratos concluídos</span>
+                    {p.availableDays && p.availableDays.length > 0 && (
+                      <span className="muted tiny" data-testid="available-days">
+                        <CalendarDays size={12} /> atende {formatAvailableDays(p.availableDays)}
+                      </span>
+                    )}
+                    {p.responseTimeHours != null && (
+                      <span className="muted tiny" data-testid="response-time">
+                        <Clock size={12} /> responde em {formatHours(p.responseTimeHours)}
+                      </span>
+                    )}
                     {!p.isAvailable && <span className="pill">indisponível</span>}
                   </div>
                 </div>
@@ -114,6 +137,46 @@ export function FreelancerView() {
               </div>
               {p.bio && <p className="profile-bio">{p.bio}</p>}
             </section>
+
+            {p.portfolio.length > 0 && (
+              <section className="card" style={{ marginTop: 16 }} data-testid="portfolio">
+                <div className="card-head">
+                  <h3>
+                    <Images size={16} /> Portfólio
+                  </h3>
+                  <span className="muted tiny">
+                    {p.portfolio.length} trabalho{p.portfolio.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <div className="portfolio-grid">
+                  {p.portfolio.map((i) => (
+                    <figure className="portfolio-item" key={i.id}>
+                      {i.imageUrl ? (
+                        <img src={i.imageUrl} alt={i.title} loading="lazy" />
+                      ) : (
+                        <div className="portfolio-placeholder" aria-hidden="true">
+                          <Link2 size={22} />
+                        </div>
+                      )}
+                      <figcaption>
+                        <strong>{i.title}</strong>
+                        {i.description && <span className="muted tiny">{i.description}</span>}
+                        {i.externalUrl && (
+                          <a
+                            href={i.externalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="tiny"
+                          >
+                            Ver trabalho <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </figcaption>
+                    </figure>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <div className="two-col" style={{ marginTop: 16 }}>
               <section className="card">

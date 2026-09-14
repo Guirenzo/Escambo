@@ -39,6 +39,7 @@ import type {
   NotificationList,
   OpenDisputeRequest,
   Paginated,
+  PortfolioItem,
   PublicFreelancerProfile,
   PublicUser,
   RecordConsentRequest,
@@ -49,6 +50,7 @@ import type {
   Service,
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
+  UpsertPortfolioItemRequest,
   Wallet,
   WalletTransaction,
   Withdrawal,
@@ -442,6 +444,11 @@ export const api = {
 
   // perfis
   profilesMe: () => request<MyProfiles>('/profiles/me'),
+  myPortfolio: () => request<PortfolioItem[]>('/profiles/portfolio'),
+  addPortfolioItem: (body: UpsertPortfolioItemRequest) =>
+    request<PortfolioItem[]>('/profiles/portfolio', { method: 'POST', body: JSON.stringify(body) }),
+  removePortfolioItem: (id: number) =>
+    request<PortfolioItem[]>(`/profiles/portfolio/${id}`, { method: 'DELETE' }),
   publicFreelancer: (ulid: string) =>
     request<PublicFreelancerProfile>(`/profiles/freelancer/${encodeURIComponent(ulid)}`),
   putFreelancerProfile: (body: UpsertFreelancerProfileRequest) =>

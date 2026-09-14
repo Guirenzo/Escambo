@@ -321,10 +321,31 @@ export interface FreelancerProfile {
   latitude: number | null;
   longitude: number | null;
   isAvailable: boolean;
+  /** Dias da semana em que atende (0 = domingo … 6 = sábado); null = não informou. */
+  availableDays: number[] | null;
+  /** Tempo médio de resposta no chat, em horas (média móvel); null = ainda sem amostra. */
+  responseTimeHours: number | null;
   avgRating: number;
   totalReviews: number;
   totalContracts: number;
   escamboScore: EscamboScore;
+}
+
+/** Item do portfólio do freelancer (imagem e/ou link externo). */
+export interface PortfolioItem {
+  id: number;
+  title: string;
+  description: string | null;
+  imageUrl: string | null;
+  externalUrl: string | null;
+  sortOrder: number;
+}
+
+export interface UpsertPortfolioItemRequest {
+  title: string;
+  description?: string | null;
+  imageUrl?: string | null;
+  externalUrl?: string | null;
 }
 
 export interface ClientProfile {
@@ -345,6 +366,7 @@ export interface PublicFreelancerProfile extends FreelancerProfile {
   userUlid: string;
   level: number;
   levelName: string;
+  portfolio: PortfolioItem[];
 }
 
 export interface UpsertFreelancerProfileRequest {
@@ -357,6 +379,7 @@ export interface UpsertFreelancerProfileRequest {
   latitude?: number | null;
   longitude?: number | null;
   isAvailable?: boolean;
+  availableDays?: number[] | null;
 }
 
 export interface UpsertClientProfileRequest {

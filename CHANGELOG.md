@@ -5,6 +5,19 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.10.0] — 2026-09-14
+
+### Adicionado
+
+- **Perfil do freelancer mais rico** (ADR 28):
+  - **Portfólio**: até 12 trabalhos com imagem e/ou link, editados no Perfil e exibidos numa
+    galeria no perfil público. `GET/POST /profiles/portfolio`, `PUT/DELETE /profiles/portfolio/:id`;
+    a tabela `freelancer_portfolio_items` do baseline finalmente tem uso.
+  - **Dias em que atende**: chips de segunda a domingo no Perfil; o público mostra "atende seg a
+    sex". Migration `0011` (`profiles_freelancer.available_days`, JSON).
+  - **Tempo de resposta visível**: o chat já calculava a média móvel para o Score; agora o
+    perfil público diz "responde em 2 h" (ou "menos de 1 h", "1 dia").
+
 ## [1.9.0] — 2026-09-14
 
 ### Adicionado

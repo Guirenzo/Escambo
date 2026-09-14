@@ -70,6 +70,27 @@ export function deadlineInfo(
   return { daysLeft, tone: daysLeft <= 3 ? 'soon' : 'ok', label: `faltam ${daysLeft} dias` };
 }
 
+export const WEEKDAY_SHORT = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+/** "seg a sex" quando são dias seguidos; senão "seg, qua, sex". Vazio → ''. */
+export function formatAvailableDays(days: number[] | null | undefined): string {
+  if (!days || days.length === 0) return '';
+  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  const consecutive =
+    sorted.length >= 3 && sorted.every((d, i) => i === 0 || d === sorted[i - 1]! + 1);
+  return consecutive
+    ? `${WEEKDAY_SHORT[sorted[0]!]} a ${WEEKDAY_SHORT[sorted[sorted.length - 1]!]}`
+    : sorted.map((d) => WEEKDAY_SHORT[d]).join(', ');
+}
+
+/** Tempo de resposta legível: "menos de 1 h", "2 h", "1 dia", "3 dias". */
+export function formatHours(hours: number): string {
+  if (hours < 1) return 'menos de 1 h';
+  if (hours < 24) return `${Math.round(hours)} h`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? '1 dia' : `${days} dias`;
+}
+
 export const hm = (iso: string): string =>
   new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 

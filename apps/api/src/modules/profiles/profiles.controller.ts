@@ -1,5 +1,11 @@
 import type { Request, Response } from 'express';
-import { ulidParamSchema, upsertClientSchema, upsertFreelancerSchema } from './profiles.schema';
+import {
+  portfolioIdSchema,
+  portfolioItemSchema,
+  ulidParamSchema,
+  upsertClientSchema,
+  upsertFreelancerSchema,
+} from './profiles.schema';
 import { profilesService } from './profiles.service';
 
 export async function getMyProfiles(req: Request, res: Response): Promise<void> {
@@ -14,6 +20,28 @@ export async function putFreelancerProfile(req: Request, res: Response): Promise
 export async function putClientProfile(req: Request, res: Response): Promise<void> {
   const input = upsertClientSchema.parse(req.body);
   res.json(await profilesService.upsertClient(req.user!.uid, input));
+}
+
+// ---------- Portfólio (meu) ----------
+
+export async function getMyPortfolio(req: Request, res: Response): Promise<void> {
+  res.json(await profilesService.listMyPortfolio(req.user!.uid));
+}
+
+export async function addPortfolioItem(req: Request, res: Response): Promise<void> {
+  const input = portfolioItemSchema.parse(req.body);
+  res.status(201).json(await profilesService.addPortfolioItem(req.user!.uid, input));
+}
+
+export async function updatePortfolioItem(req: Request, res: Response): Promise<void> {
+  const { id } = portfolioIdSchema.parse(req.params);
+  const input = portfolioItemSchema.parse(req.body);
+  res.json(await profilesService.updatePortfolioItem(req.user!.uid, id, input));
+}
+
+export async function removePortfolioItem(req: Request, res: Response): Promise<void> {
+  const { id } = portfolioIdSchema.parse(req.params);
+  res.json(await profilesService.removePortfolioItem(req.user!.uid, id));
 }
 
 export async function getPublicFreelancer(req: Request, res: Response): Promise<void> {

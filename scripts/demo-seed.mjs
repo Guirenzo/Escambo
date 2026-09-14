@@ -37,7 +37,26 @@ const FREELANCERS = [
       state: 'SC',
       latitude: -26.3045,
       longitude: -48.8487,
+      availableDays: [1, 2, 3, 4, 5],
     },
+    portfolio: [
+      {
+        title: 'Loja virtual da Cafeteria Grão',
+        description: 'Next.js + Stripe, 3 semanas do briefing ao ar.',
+        imageUrl: 'https://picsum.photos/seed/escambo-cafe/640/400',
+        externalUrl: 'https://exemplo.escambo.demo/cafeteria',
+      },
+      {
+        title: 'Painel de indicadores para clínica',
+        description: 'React + gráficos em tempo real; 4 telas.',
+        imageUrl: 'https://picsum.photos/seed/escambo-clinica/640/400',
+      },
+      {
+        title: 'App de agendamento (React Native)',
+        description: 'iOS e Android publicados nas lojas.',
+        imageUrl: 'https://picsum.photos/seed/escambo-app/640/400',
+      },
+    ],
     services: [
       {
         title: 'Landing page em React',
@@ -325,6 +344,17 @@ async function ensureExtensionRequest(freelancer, contract, days, reason) {
     body: { deadlineAt: endOfDayInDays(days), reason },
   });
   log(`  extensão de prazo pedida no #${contract.id} (aguardando a cliente)`);
+}
+
+/** Portfólio do freelancer (idempotente por título). */
+async function ensurePortfolio(user, items = []) {
+  if (items.length === 0) return;
+  const mine = await call('GET', '/profiles/portfolio', { token: user.token });
+  for (const item of items) {
+    if (mine.some((i) => i.title === item.title)) continue;
+    await call('POST', '/profiles/portfolio', { token: user.token, body: item });
+    log(`  portfólio: «${item.title}»`);
+  }
 }
 
 async function ensureContract(
@@ -635,6 +665,7 @@ async function main() {
     });
     await call('GET', '/wallet', { token: u.token });
     for (const s of f.services) svc[s.title] = await ensureService(u, s, categories);
+    await ensurePortfolio(u, f.portfolio);
   }
   const ana = users.ana;
   await call('PUT', '/profiles/client', { token: ana.token, body: CLIENT.profile });
