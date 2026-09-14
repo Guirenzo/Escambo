@@ -939,6 +939,28 @@ button.toggle.on {
 .geo-bar .hint {
   font-size: 0.82rem;
 }
+/* Filtros da busca: rótulo curto + controle, quebrando linha em telas estreitas. */
+.filters-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.filters-bar .filter {
+  display: grid;
+  gap: 3px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.filters-bar .filter input,
+.filters-bar .filter select {
+  padding: 7px 9px;
+  font-size: 0.88rem;
+  min-width: 110px;
+}
+.filters-bar .filter input[type='number'] {
+  width: 110px;
+}
 .geo-bar select {
   padding: 8px 10px;
   font-size: 0.88rem;

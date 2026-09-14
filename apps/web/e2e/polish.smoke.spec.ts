@@ -113,3 +113,40 @@ test('sair de todos os dispositivos encerra a sessão atual', async ({ page, req
   await page.getByRole('button', { name: 'Sair de todos os dispositivos' }).click();
   await expect(page).toHaveURL(/\/login/);
 });
+
+test('busca com filtros de preço e prazo e ordenação por menor preço', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const tag = `Filtro ${Date.now().toString(36)}`;
+  await createService(request, freelancer, 300, 0, { title: `${tag} médio`, deliveryDays: 10 });
+  await createService(request, freelancer, 100, 0, { title: `${tag} barato`, deliveryDays: 2 });
+  await createService(request, freelancer, 900, 0, { title: `${tag} caro`, deliveryDays: 30 });
+  const client = await createUser(request, 'client');
+
+  await openAs(page, client, '/servicos');
+  await settled(page);
+  await page.getByPlaceholder('Buscar serviços…').fill(tag);
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  const cards = page.locator('.card.service', { hasText: tag });
+  await expect(cards).toHaveCount(3);
+
+  // Menor preço: o barato primeiro; maior preço: o caro primeiro.
+  const filters = page.getByTestId('filters');
+  await filters.getByLabel('Ordenar por').selectOption('price_asc');
+  await expect(cards.first()).toContainText('barato');
+  await filters.getByLabel('Ordenar por').selectOption('price_desc');
+  await expect(cards.first()).toContainText('caro');
+
+  // Faixa de preço e prazo estreitam a lista; limpar volta aos três.
+  await filters.getByLabel('Preço máximo').fill('500');
+  await expect(cards).toHaveCount(2);
+  await filters.getByLabel('Prazo máximo').selectOption('7');
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText('barato');
+  await filters.getByLabel('Preço mínimo').fill('200');
+  await expect(page.getByText('Nenhum serviço com esses filtros')).toBeVisible();
+  await page.getByRole('button', { name: 'Limpar filtros' }).click();
+  await expect(cards).toHaveCount(3);
+});
