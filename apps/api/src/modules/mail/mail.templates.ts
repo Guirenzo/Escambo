@@ -2,7 +2,7 @@ import { env } from '../../config/env';
 
 /** Templates de e-mail em PT-BR: texto puro + HTML simples com a marca (sem imagens externas). */
 
-export type MailTemplate = 'verify_email' | 'password_reset' | 'notification';
+export type MailTemplate = 'verify_email' | 'password_reset' | 'notification' | 'digest';
 
 export interface RenderedMail {
   subject: string;
@@ -19,6 +19,8 @@ export interface TemplateVars {
   validity?: string;
   /** Rótulo do botão. */
   cta?: string;
+  /** Itens do resumo diário. */
+  items?: { title: string; body: string | null; link: string }[];
 }
 
 const esc = (s: string): string =>
@@ -78,6 +80,18 @@ export function renderEmail(template: MailTemplate, vars: TemplateVars): Rendere
         subject: 'Redefinição de senha no Escambo',
         text: textOf(title, paragraphs, link),
         html: layout(title, paragraphs, { label: 'Criar nova senha', link }),
+      };
+    }
+    case 'digest': {
+      const items = vars.items ?? [];
+      const n = items.length;
+      const title = `Seu resumo do dia: ${n} novidade${n === 1 ? '' : 's'}`;
+      const paragraphs = items.map((i) => (i.body ? `• ${i.title} — ${i.body}` : `• ${i.title}`));
+      const link = vars.link ?? `${env.APP_URL.replace(/\/$/, '')}/notificacoes`;
+      return {
+        subject: `${title} no Escambo`,
+        text: textOf(title, paragraphs, link),
+        html: layout(title, paragraphs, { label: 'Ver notificações', link }),
       };
     }
     case 'notification': {

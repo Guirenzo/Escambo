@@ -315,6 +315,13 @@ export const api = {
   notifications: () => request<NotificationList>('/notifications'),
   markNotificationRead: (id: number) =>
     request<void>(`/notifications/${id}/read`, { method: 'POST' }),
+  emailPreference: () =>
+    request<{ emailFrequency: 'instant' | 'daily' | 'off' }>('/notifications/preferences'),
+  updateEmailPreference: (emailFrequency: 'instant' | 'daily' | 'off') =>
+    request<{ emailFrequency: 'instant' | 'daily' | 'off' }>('/notifications/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ emailFrequency }),
+    }),
   markAllNotificationsRead: () =>
     request<{ read: number }>('/notifications/read-all', { method: 'POST' }),
 

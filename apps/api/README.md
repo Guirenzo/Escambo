@@ -126,6 +126,7 @@ src/
 | POST                | `/api/withdrawals/:id/cancel`                                                   | **(auth, titular)** cancela saque ainda não processado (valor volta)                                                                             |
 | GET                 | `/api/notifications`                                                            | **(auth)** minhas notificações + total não lidas                                                                                                 |
 | POST                | `/api/notifications/:id/read` · `/read-all`                                     | **(auth)** marca como lida(s)                                                                                                                    |
+| GET · PUT           | `/api/notifications/preferences`                                                | **(auth)** preferência de e-mail: `instant` (por evento), `daily` (resumo diário) ou `off` (só senha e confirmação)                              |
 | GET · POST          | `/api/messaging/contracts/:id`                                                  | **(auth, parte)** histórico e envio de mensagens do contrato                                                                                     |
 | WS                  | `/socket.io`                                                                    | **(auth)** chat em tempo real: `contract:join`, `message:send` → `message:new`                                                                   |
 | POST · GET          | `/api/lgpd/consents`                                                            | **(auth)** registra/lista consentimentos (RN-071)                                                                                                |
@@ -207,6 +208,7 @@ O processo da API agenda jobs (`src/jobs/`) a cada `JOBS_INTERVAL_MS` (padrão 5
 | `expire-exports`  | Cópias de dados (LGPD) vencidas (`EXPORT_TTL_DAYS`, padrão 7): arquivo apagado de `DATA_DIR` e pedido marcado como expirado.                                                               |
 | `expire-proposals` | Propostas sem resposta do freelancer há mais de `platform_settings.proposal_expiry_hours` horas (padrão 72) são encerradas e a reserva volta ao cliente (RN-021).                        |
 | `overdue-contracts` | Prazo estourado: avisa as duas partes uma vez; `deadline_grace_hours` (padrão 24) depois, sem entrega nem extensão aprovada, abre a disputa por prazo em nome do cliente (RN-029). Marco em escrow com prazo vencido avisa as duas partes uma vez, sem disputa. |
+| `daily-digest`     | A partir de `DIGEST_HOUR` (Brasília), um e-mail por dia para quem escolheu resumo diário, com as notificações desde o resumo anterior; sem novidades, só marca o dia.                    |
 
 ## Administradores
 

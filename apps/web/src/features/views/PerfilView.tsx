@@ -15,6 +15,7 @@ import {
   useRespondReview,
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { EmailPreferencesCard } from '../profile/EmailPreferencesCard';
 import { PrivacidadeCard } from '../profile/PrivacidadeCard';
 
 /** Avaliações que o freelancer recebeu, com resposta pública (uma por avaliação). */
@@ -318,6 +319,7 @@ export function PerfilView() {
               </Button>
             </form>
 
+            <EmailPreferencesCard />
             <PrivacidadeCard />
           </div>
         )}

@@ -180,6 +180,10 @@ export const openapiDocument: Record<string, any> = {
     '/contracts/{id}/deliver': { post: op('Contratações', 'Registra entrega', { auth: true }) },
     '/contracts/{id}/approve': { post: op('Contratações', 'Cliente aprova (libera escrow)', { auth: true }) },
     '/contracts/{id}/cancel': { post: op('Contratações', 'Cancela (reembolso RN-025)', { auth: true }) },
+    '/notifications/preferences': {
+      get: op('Notificações', 'Preferência de e-mail (instant | daily | off)', { auth: true }),
+      put: op('Notificações', 'Define a preferência de e-mail', { auth: true }),
+    },
     '/admin/finance': { get: op('Admin', 'Relatório financeiro por período (receita do ledger, depósitos, saques, reembolsos, GMV)', { auth: true }) },
     '/admin/finance/export.csv': { get: op('Admin', 'Ledger de R$ do período em CSV', { auth: true }) },
     '/contracts/{id}/extension': { post: op('Contratações', 'Freelancer pede a única extensão de prazo (RN-028)', { auth: true }) },

@@ -11,7 +11,47 @@ export interface NotificationRow extends RowDataPacket {
   created_at: Date;
 }
 
+/** Usuário que escolheu resumo diário e ainda não recebeu o de hoje. */
+export interface DigestUserRow extends RowDataPacket {
+  id: number;
+  email: string;
+  last_digest_at: Date | null;
+}
+
 export const notificationsRepository = {
+  /** Notificações criadas depois de `since` (as que entram no resumo), em ordem cronológica. */
+  async listSince(userId: number, since: Date, limit = 50): Promise<NotificationRow[]> {
+    const [rows] = await pool.query<NotificationRow[]>(
+      `SELECT id, type, title, body, data, is_read, created_at
+         FROM notifications WHERE user_id = :userId AND created_at > :since
+        ORDER BY id ASC
+        LIMIT ${limit}`,
+      { userId, since },
+    );
+    return rows;
+  },
+
+  /** Quem quer resumo diário e não recebeu nenhum desde `cutoff` (começo do dia em Brasília). */
+  async usersForDigest(cutoff: Date): Promise<DigestUserRow[]> {
+    const [rows] = await pool.query<DigestUserRow[]>(
+      `SELECT id, email, last_digest_at FROM users
+        WHERE email_frequency = 'daily' AND deleted_at IS NULL
+          AND (last_digest_at IS NULL OR last_digest_at < :cutoff)
+        ORDER BY id ASC
+        LIMIT 500`,
+      { cutoff },
+    );
+    return rows;
+  },
+
+  /** Marca o resumo de hoje como tratado (enviado, ou sem novidades) — trava de um por dia. */
+  async markDigest(userId: number, at: Date): Promise<void> {
+    await pool.query<ResultSetHeader>(`UPDATE users SET last_digest_at = :at WHERE id = :userId`, {
+      userId,
+      at,
+    });
+  },
+
   async create(d: {
     userId: number;
     type: string;

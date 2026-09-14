@@ -15,6 +15,15 @@ export interface PublicUser {
   role: UserRole;
   /** E-mail confirmado pelo link enviado no cadastro (ou ao redefinir a senha). */
   emailVerified: boolean;
+  /** Como o usuário quer os e-mails de notificação (ADR 27). */
+  emailFrequency: EmailFrequency;
+}
+
+/** instant: um e-mail por evento · daily: resumo diário · off: só e-mails essenciais. */
+export type EmailFrequency = 'instant' | 'daily' | 'off';
+
+export interface EmailPreference {
+  emailFrequency: EmailFrequency;
 }
 
 export interface ForgotPasswordRequest {
@@ -34,7 +43,7 @@ export interface AdminEmail {
   userId: number | null;
   to: string;
   subject: string;
-  template: 'verify_email' | 'password_reset' | 'notification';
+  template: 'verify_email' | 'password_reset' | 'notification' | 'digest';
   text: string;
   status: 'queued' | 'sent' | 'failed';
   provider: string;

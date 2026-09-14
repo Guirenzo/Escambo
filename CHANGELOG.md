@@ -5,6 +5,17 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.9.0] — 2026-09-14
+
+### Adicionado
+
+- **Preferência de e-mail e resumo diário** (ADR 27). No Perfil, cada pessoa escolhe: **a cada
+  evento** (padrão, como era), **resumo diário** (um e-mail por dia, a partir de `DIGEST_HOUR`
+  em Brasília, com as notificações desde o resumo anterior) ou **só o essencial** (confirmação
+  de e-mail e redefinição de senha). As notificações no app não mudam.
+  `GET/PUT /notifications/preferences`, template `digest` na caixa de saída, job
+  `daily-digest` com trava de um por dia (`users.last_digest_at`). Migration `0010`.
+
 ## [1.8.0] — 2026-09-14
 
 ### Adicionado

@@ -1,5 +1,9 @@
 import type { Request, Response } from 'express';
-import { listNotificationsSchema, notificationIdSchema } from './notifications.schema';
+import {
+  emailPreferenceSchema,
+  listNotificationsSchema,
+  notificationIdSchema,
+} from './notifications.schema';
 import { notificationsService } from './notifications.service';
 
 export async function getNotifications(req: Request, res: Response): Promise<void> {
@@ -11,6 +15,17 @@ export async function readNotification(req: Request, res: Response): Promise<voi
   const { id } = notificationIdSchema.parse(req.params);
   await notificationsService.markRead(id, req.user!.uid);
   res.status(204).send();
+}
+
+/** GET /notifications/preferences — como o usuário quer os e-mails. */
+export async function getEmailPreference(req: Request, res: Response): Promise<void> {
+  res.json(await notificationsService.getEmailPreference(req.user!.uid));
+}
+
+/** PUT /notifications/preferences — a cada evento, resumo diário ou só o essencial. */
+export async function updateEmailPreference(req: Request, res: Response): Promise<void> {
+  const { emailFrequency } = emailPreferenceSchema.parse(req.body);
+  res.json(await notificationsService.setEmailPreference(req.user!.uid, emailFrequency));
 }
 
 export async function readAllNotifications(req: Request, res: Response): Promise<void> {

@@ -143,3 +143,28 @@ test('avatar por URL aparece na sidebar e no perfil público', async ({ page, re
   await expect(page.locator('.toast', { hasText: 'Perfil de freelancer salvo' })).toBeVisible();
   await expect(page.locator('.side-user .avatar img')).toHaveCount(1);
 });
+
+test('preferência de e-mail: escolher "Resumo diário" persiste no perfil e na sessão', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  await openAs(page, freelancer, '/perfil');
+  await settled(page);
+  const prefs = page.getByTestId('email-prefs');
+  await expect(prefs.getByRole('radio', { name: /A cada evento/ })).toBeChecked();
+  // Rádio controlado: só fica marcado depois que a API responde e a sessão recarrega.
+  await prefs.getByRole('radio', { name: /Resumo diário/ }).click();
+  await expect(page.locator('.toast', { hasText: 'um resumo por dia' })).toBeVisible();
+  await expect(prefs.getByRole('radio', { name: /Resumo diário/ })).toBeChecked();
+
+  await page.reload();
+  await settled(page);
+  await expect(
+    page.getByTestId('email-prefs').getByRole('radio', { name: /Resumo diário/ }),
+  ).toBeChecked();
+  const me = await request.get('/api/auth/me', {
+    headers: { Authorization: `Bearer ${freelancer.token}` },
+  });
+  expect(((await me.json()) as { emailFrequency: string }).emailFrequency).toBe('daily');
+});

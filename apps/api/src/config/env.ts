@@ -92,6 +92,8 @@ const envSchema = z.object({
   // Validade dos links de confirmação de e-mail e de redefinição de senha.
   EMAIL_VERIFY_TTL_HOURS: z.coerce.number().int().positive().default(24),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(60),
+  // Hora (Brasília, 0–23) a partir da qual o resumo diário de notificações é enviado.
+  DIGEST_HOUR: z.coerce.number().int().min(0).max(23).default(8),
 });
 
 const parsed = envSchema.safeParse(process.env);
