@@ -787,6 +787,7 @@ button.toggle.on {
   color: var(--muted);
   border: 1px solid var(--border);
   font-weight: 500;
+  white-space: nowrap;
 }
 .chip.level {
   background: var(--amber-soft);
@@ -1843,6 +1844,7 @@ button.toggle.on {
 }
 .svc-owner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   min-width: 0;
