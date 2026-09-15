@@ -10,13 +10,12 @@ import {
   useBarterAction,
   useBarters,
   useProposeBarter,
+  usePublicSettings,
   useServices,
   useWallet,
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { DepositModal } from '../wallet/DepositModal';
-
-const PLATFORM_FEE_RATE = 0.15; // RN-066 (espelha o backend): 15% só sobre a torna
 
 function pillClass(status: string): string {
   if (status === 'completed') return 'status-completed';
@@ -36,6 +35,7 @@ export function TrocasView() {
   const barters = useBarters();
   const services = useServices({ limit: 100 });
   const wallet = useWallet();
+  const publicSettings = usePublicSettings();
   const [params, setParams] = useSearchParams();
   const propose = useProposeBarter();
   const act = useBarterAction();
@@ -68,7 +68,8 @@ export function TrocasView() {
   const offered = Number(offerValue) || 0;
   const requested = target?.price ?? 0;
   const diff = round2(Math.abs(offered - requested));
-  const fee = round2(PLATFORM_FEE_RATE * diff);
+  const feeRate = (publicSettings.data?.platformFeePercentage ?? 15) / 100; // RN-066: só sobre a torna
+  const fee = round2(feeRate * diff);
   const iPayOnPropose = offered > 0 && requested > offered; // recebo o serviço mais valioso
   const missing = iPayOnPropose ? round2(Math.max(0, diff - balance)) : 0;
   const tornaHint =
@@ -126,7 +127,7 @@ export function TrocasView() {
           <>
             Troque serviço por serviço. Quem recebe o serviço mais valioso paga a <b>torna</b>,
             reservada na carteira até os dois lados concluírem; a plataforma retém{' '}
-            {Math.round(PLATFORM_FEE_RATE * 100)}% só sobre a torna.
+            {Math.round(feeRate * 100)}% só sobre a torna.
           </>
         }
         action={

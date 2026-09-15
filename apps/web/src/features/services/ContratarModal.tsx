@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Service } from '@escambo/types';
 import { Button, Field, Input, Modal } from '../../components/ui';
 import { addDays, brl, dateInputValue, endOfDayIso, spreadDates } from '../../lib/format';
-import { useCreateContract, useWallet } from '../../lib/hooks';
+import { useCreateContract, usePublicSettings, useWallet } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { DepositModal } from '../wallet/DepositModal';
 
@@ -27,6 +27,8 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
   const navigate = useNavigate();
   const toast = useToast();
   const wallet = useWallet();
+  const settings = usePublicSettings();
+  const feePct = settings.data?.platformFeePercentage ?? 15;
   const create = useCreateContract();
 
   const [title, setTitle] = useState(service.title);
@@ -193,7 +195,9 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
             <span className="svc-actions">
               <CreditCard size={14} /> Dinheiro
             </span>
-            <small>Saldo {wallet.data ? brl(balance) : '…'} · escrow em R$ · taxa 15%</small>
+            <small>
+              Saldo {wallet.data ? brl(balance) : '…'} · escrow em R$ · taxa {feePct}%
+            </small>
           </label>
           <label
             className={`radio-card ${mode === 'credits' ? 'on' : ''} ${canCredits ? '' : 'off'}`}

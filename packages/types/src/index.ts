@@ -248,6 +248,39 @@ export interface AdminStorage {
   } | null;
 }
 
+/** Chaves de platform_settings editáveis pelo admin (ADR 32). */
+export type PlatformSettingKey =
+  | 'platform_fee_percentage'
+  | 'tacit_approval_days'
+  | 'proposal_expiry_hours'
+  | 'deadline_grace_hours'
+  | 'attachment_retention_days';
+
+export interface PlatformSetting {
+  key: PlatformSettingKey;
+  label: string;
+  description: string;
+  unit: string;
+  value: number;
+  min: number;
+  max: number;
+  defaultValue: number;
+  updatedAt: string | null;
+  /** E-mail do admin que mudou por último. */
+  updatedBy: string | null;
+}
+
+export interface UpdatePlatformSettingRequest {
+  value: number;
+}
+
+/** Parâmetros que o app mostra sem login: taxa no modal de contratação, prazos nas telas. */
+export interface PublicSettings {
+  platformFeePercentage: number;
+  tacitApprovalDays: number;
+  proposalExpiryHours: number;
+}
+
 /** Resultado de uma rodada do expurgo de anexos (job ou botão do admin). */
 export interface PurgeAttachmentsResult {
   retentionDays: number;

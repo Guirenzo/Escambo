@@ -414,6 +414,24 @@ export const openapiDocument: Record<string, any> = {
         auth: true,
       }),
     },
+    '/settings/public': {
+      get: op(
+        'Plataforma',
+        'Parâmetros públicos: comissão (%), aprovação tácita (dias), validade da proposta (horas)',
+      ),
+    },
+    '/admin/settings': {
+      get: op('Admin', 'Parâmetros editáveis: valor atual, limites, padrão e último autor', {
+        auth: true,
+      }),
+    },
+    '/admin/settings/{key}': {
+      put: op(
+        'Admin',
+        'Muda um parâmetro (inteiro dentro dos limites; auditado; efeito imediato)',
+        { auth: true },
+      ),
+    },
     '/admin/storage/purge': {
       post: op('Admin', 'Roda o expurgo de anexos agora (retenção + órfãos)', { auth: true }),
     },

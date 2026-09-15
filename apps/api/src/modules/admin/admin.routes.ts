@@ -10,8 +10,10 @@ import {
   failWithdrawal,
   getFinance,
   getMetrics,
+  getSettings,
   getStorage,
   purgeStorage,
+  updateSetting,
   listOpenDisputes,
   listDeletionRequests,
   listEmails,
@@ -30,6 +32,8 @@ adminRoutes.use(authenticate, requireAdmin);
 adminRoutes.get('/metrics', asyncHandler(getMetrics));
 adminRoutes.get('/storage', asyncHandler(getStorage));
 adminRoutes.post('/storage/purge', asyncHandler(purgeStorage));
+adminRoutes.get('/settings', asyncHandler(getSettings));
+adminRoutes.put('/settings/:key', asyncHandler(updateSetting));
 adminRoutes.get('/finance', asyncHandler(getFinance));
 adminRoutes.get('/finance/export.csv', asyncHandler(exportFinanceCsv));
 adminRoutes.get('/disputes', asyncHandler(listOpenDisputes));

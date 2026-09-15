@@ -5,8 +5,10 @@ import { contractsRepository } from '../contracts/contracts.repository';
 import { notificationsService } from '../notifications/notifications.service';
 import { barterRepository, type BarterRow, type TornaHold } from './barter.repository';
 import type { CreateBarterInput, ListBartersInput } from './barter.schema';
+import { settingsService } from '../settings/settings.service';
 
 /** Taxa da plataforma sobre a torna (RN-066): troca equilibrada não tem taxa. */
+/** Comissão padrão sobre a torna; a vigente vem de platform_settings (ADR 32). */
 export const BARTER_FEE_RATE = 0.15;
 /** Arredonda em centavos, meio centavo para cima, sem cair no 28333.4999… do ponto flutuante. */
 const money = (v: number): number => Math.sign(v) * (Math.round(Math.abs(v) * 100 + 1e-6) / 100);
@@ -82,7 +84,7 @@ export const barterService = {
     if (offered > requested) cashPayerId = input.receiverId;
     else if (requested > offered) cashPayerId = proposerId;
 
-    const platformFee = money(BARTER_FEE_RATE * cashDifference);
+    const platformFee = money((await settingsService.feeRate()) * cashDifference);
     const proposerPays = cashPayerId === proposerId && cashDifference > 0;
     const hold: TornaHold | null = proposerPays
       ? { userId: proposerId, amount: cashDifference }

@@ -30,14 +30,13 @@ import {
 } from './milestones.repository';
 import { reviewsRepository } from '../reviews/reviews.repository';
 import { toReview } from '../reviews/reviews.service';
+import { settingsService } from '../settings/settings.service';
 import type {
   CreateContractInput,
   DeliverInput,
   ExtensionInput,
   ListContractsInput,
 } from './contracts.schema';
-
-const PLATFORM_FEE_RATE = 0.15; // RN-031
 
 const iso = (d: Date | string | null | undefined): string | null =>
   d ? new Date(d).toISOString() : null;
@@ -266,7 +265,9 @@ export const contractsService = {
     }
     // Contratos em créditos (time-bank) são P2P e não cobram taxa da plataforma.
     const isCredits = input.paymentMode === 'credits';
-    const platformFee = isCredits ? 0 : money(input.price * PLATFORM_FEE_RATE); // RN-031
+    // RN-031: comissão vigente (platform_settings), gravada no contrato — mudar depois não altera.
+    const feeRate = await settingsService.feeRate();
+    const platformFee = isCredits ? 0 : money(input.price * feeRate);
     const freelancerNet = money(input.price - platformFee);
 
     // Cash (carteira pré-paga, como no iFood): o valor sai do saldo do cliente e fica reservado
@@ -281,7 +282,7 @@ export const contractsService = {
         title: m.title,
         description: m.description ?? null,
         amount: isCredits ? m.amount : money(m.amount),
-        freelancerNet: isCredits ? m.amount : money(m.amount * (1 - PLATFORM_FEE_RATE)),
+        freelancerNet: isCredits ? m.amount : money(m.amount * (1 - feeRate)),
         sortOrder: i,
         dueAt: m.dueAt ?? null,
       }));

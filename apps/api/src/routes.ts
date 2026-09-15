@@ -21,6 +21,7 @@ import { savedSearchesRoutes } from './modules/saved-searches/saved-searches.rou
 import { servicesRoutes } from './modules/services/services.routes';
 import { walletRoutes } from './modules/wallet/wallet.routes';
 import { withdrawalRoutes } from './modules/withdrawal/withdrawal.routes';
+import { settingsRoutes } from './modules/settings/settings.routes';
 
 /** Monta as rotas de cada módulo sob /api. */
 export const router = Router();
@@ -47,3 +48,4 @@ router.use('/saved-searches', savedSearchesRoutes);
 router.use('/reports', reportsRoutes);
 router.use('/disputes', disputesRoutes);
 router.use('/admin', adminRoutes);
+router.use('/settings', settingsRoutes);

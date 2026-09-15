@@ -151,3 +151,31 @@ test('admin vê o uso do armazenamento e roda o expurgo de anexos na hora', asyn
   await expect(page.locator('.toast', { hasText: 'Expurgo concluído' })).toBeVisible();
   await expect(card.getByTestId('storage-last-purge')).toContainText('pelo admin');
 });
+
+test('admin muda a retenção dos anexos no painel; o card de armazenamento reflete na hora', async ({
+  page,
+  request,
+}) => {
+  const admin = await createAdmin(request);
+  await openAs(page, admin, '/admin');
+  await settled(page);
+  const row = page.getByTestId('setting-attachment_retention_days');
+  await expect(row).toContainText('Retenção dos anexos');
+  const input = row.getByLabel('Retenção dos anexos');
+  await expect(input).toHaveValue('180');
+  await expect(row.getByRole('button', { name: 'Salvar' })).toBeDisabled();
+
+  await input.fill('90');
+  await row.getByRole('button', { name: 'Salvar' }).click();
+  await expect(page.locator('.toast', { hasText: 'Retenção dos anexos: 90 dias' })).toBeVisible();
+  await expect(row).toContainText(`por ${admin.email}`);
+  await expect(page.getByTestId('storage-card')).toContainText('90 dias');
+
+  // Fora dos limites o botão nem habilita; volta ao padrão para não afetar o resto.
+  await input.fill('3');
+  await expect(row.getByRole('button', { name: 'Salvar' })).toBeDisabled();
+  await input.fill('180');
+  await row.getByRole('button', { name: 'Salvar' }).click();
+  await expect(page.locator('.toast', { hasText: 'Retenção dos anexos: 180 dias' })).toBeVisible();
+  await expect(page.getByTestId('storage-card')).toContainText('180 dias');
+});

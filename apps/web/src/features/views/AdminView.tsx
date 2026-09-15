@@ -43,6 +43,7 @@ import {
 } from '../../lib/hooks';
 import { usePageTitle } from '../../lib/title';
 import { FinanceSection } from '../admin/FinanceSection';
+import { SettingsSection } from '../admin/SettingsSection';
 import { StorageSection } from '../admin/StorageSection';
 import { useToast } from '../../lib/toast';
 
@@ -462,6 +463,7 @@ export function AdminView() {
 
       <FinanceSection />
       <StorageSection />
+      <SettingsSection />
 
       <section className="card">
         <div className="card-head">
