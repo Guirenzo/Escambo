@@ -96,19 +96,41 @@ export interface CreateFavoriteRequest {
 
 // --- Buscas salvas ---
 
+/** Filtros de uma busca salva (ADR 35): os mesmos da busca de serviços, sem ordenação. */
+export interface SavedSearchFilters {
+  categoryId?: number;
+  isRemote?: boolean;
+  lat?: number;
+  lng?: number;
+  radiusKm?: number;
+  minPrice?: number;
+  maxPrice?: number;
+  maxDeliveryDays?: number;
+  minRating?: number;
+  day?: number;
+  period?: AvailabilityPeriod;
+}
+
 export interface SavedSearch {
   id: number;
   name: string | null;
   query: string | null;
-  filters: Record<string, unknown> | null;
+  filters: SavedSearchFilters | null;
   alertEnabled: boolean;
+  /** Até quando o alerta já conferiu serviços novos; null = alerta nunca ligado. */
+  lastAlertAt: string | null;
   createdAt: string;
 }
 
 export interface CreateSavedSearchRequest {
   name?: string | null;
   query?: string | null;
-  filters?: Record<string, unknown> | null;
+  filters?: SavedSearchFilters | null;
+  alertEnabled?: boolean;
+}
+
+export interface UpdateSavedSearchRequest {
+  name?: string;
   alertEnabled?: boolean;
 }
 

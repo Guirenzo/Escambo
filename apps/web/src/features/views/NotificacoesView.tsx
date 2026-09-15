@@ -1,4 +1,5 @@
 import { Bell, CheckCheck } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button, PageHeader, QueryState } from '../../components/ui';
 import { dtm } from '../../lib/format';
 import {
@@ -6,6 +7,7 @@ import {
   useMarkNotificationRead,
   useNotifications,
 } from '../../lib/hooks';
+import { notificationPath } from '../../lib/notifications';
 import { usePageTitle } from '../../lib/title';
 
 export function NotificacoesView() {
@@ -58,6 +60,18 @@ export function NotificacoesView() {
                       <strong>{n.title}</strong>
                       {n.body && <div className="muted">{n.body}</div>}
                       <div className="muted tiny">{dtm(n.createdAt)}</div>
+                      {notificationPath(n.data) && (
+                        <Link
+                          to={notificationPath(n.data)!}
+                          className="tiny notif-link"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!n.isRead) markOne.mutate(n.id);
+                          }}
+                        >
+                          {n.type === 'saved_search_match' ? 'Ver serviços' : 'Abrir'}
+                        </Link>
+                      )}
                     </div>
                   </div>
                   {!n.isRead && <span className="dot" />}

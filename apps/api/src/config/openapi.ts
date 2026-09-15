@@ -395,8 +395,18 @@ export const openapiDocument: Record<string, any> = {
       post: op('Trust & Safety', 'Favoritar serviço/freelancer', { auth: true, responses: res201 }),
     },
     '/saved-searches': {
-      get: op('Trust & Safety', 'Buscas salvas', { auth: true }),
-      post: op('Trust & Safety', 'Salvar busca', { auth: true, responses: res201 }),
+      get: op('Serviços', 'Minhas buscas salvas', { auth: true }),
+      post: op(
+        'Serviços',
+        'Salva a busca (texto + filtros da busca de serviços; até 20 por conta; alertEnabled liga o aviso de serviço novo)',
+        { auth: true, responses: res201 },
+      ),
+    },
+    '/saved-searches/{id}': {
+      patch: op('Serviços', 'Renomeia e/ou liga/desliga o alerta (ligar reinicia o cursor)', {
+        auth: true,
+      }),
+      delete: op('Serviços', 'Apaga a busca salva', { auth: true }),
     },
     '/reports': {
       post: op('Trust & Safety', 'Denunciar conteúdo/usuário', { auth: true, responses: res201 }),

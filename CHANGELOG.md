@@ -5,6 +5,25 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.17.0] — 2026-09-15
+
+### Adicionado
+
+- **Buscas salvas com alerta** (ADR 35). A API de buscas salvas existia sem tela, sem aviso e
+  com filtros em JSON livre; agora é recurso completo.
+  - **Na busca**: botão **Salvar busca** (texto e filtros atuais, nome e "me avisar de serviços
+    novos") e a linha de buscas salvas: aplicar com um clique, ligar/desligar o alerta e apagar.
+  - **Job `saved-search-alerts`**: de hora em hora por busca, procura serviços criados desde o
+    último aviso que casam com o texto e os filtros, fora os do próprio dono, e manda a
+    notificação "3 serviços novos para “logo”" (também por e-mail, conforme a preferência).
+    O link leva a `/servicos?busca=ID`, que reaplica a busca.
+  - **API**: filtros validados (os mesmos da busca; chave desconhecida é 422), até 20 buscas por
+    conta (409 `saved_search_limit`) e `PATCH /saved-searches/:id` para renomear e
+    ligar/desligar. Ligar o alerta reinicia o cursor, sem despejar o catálogo antigo.
+    Migration `0015` (índice do job).
+  - **Notificações**: as que têm destino ganham o link "Abrir" (ou "Ver serviços") na tela de
+    notificações, espelhando o link do e-mail.
+
 ## [1.16.0] — 2026-09-15
 
 ### Adicionado

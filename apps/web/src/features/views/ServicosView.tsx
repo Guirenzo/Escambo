@@ -1,7 +1,13 @@
 import { Heart, MapPin, Plus, Search } from 'lucide-react';
-import { useMemo, useState, type FormEvent } from 'react';
-import type { AvailabilityPeriod, Category, Service } from '@escambo/types';
-import { useNavigate } from 'react-router-dom';
+import { useMemo, useState, type FormEvent, useEffect } from 'react';
+import type {
+  AvailabilityPeriod,
+  Category,
+  SavedSearch,
+  SavedSearchFilters,
+  Service,
+} from '@escambo/types';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Button,
   EmptyState,
@@ -21,10 +27,12 @@ import {
   usePublicSettings,
   useServicesInfinite,
   useToggleFavorite,
+  useSavedSearches,
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { BoostModal } from '../services/BoostModal';
 import { ContratarModal } from '../services/ContratarModal';
+import { SavedSearchesBar, SaveSearchButton } from '../services/SavedSearches';
 import { ServiceCard } from '../services/ServiceCard';
 import { brl, PERIOD_LABEL, PERIOD_ORDER, WEEKDAY_SHORT } from '../../lib/format';
 
@@ -148,6 +156,58 @@ export function ServicosView() {
   // modais dos diferenciais
   const [contratar, setContratar] = useState<Service | null>(null);
   const [boost, setBoost] = useState<Service | null>(null);
+
+  // Busca atual no formato de busca salva (ADR 35): o que a lista está mostrando agora.
+  const currentSearch = useMemo(() => {
+    const f: SavedSearchFilters = {};
+    if (categoryFilter) f.categoryId = categoryFilter;
+    if (geo) {
+      f.lat = geo.lat;
+      f.lng = geo.lng;
+      f.radiusKm = radiusKm;
+    }
+    if (filters.minPrice !== '') f.minPrice = Number(filters.minPrice);
+    if (filters.maxPrice !== '') f.maxPrice = Number(filters.maxPrice);
+    if (filters.maxDeliveryDays) f.maxDeliveryDays = filters.maxDeliveryDays;
+    if (filters.minRating) f.minRating = filters.minRating;
+    if (filters.day >= 0) {
+      f.day = filters.day;
+      if (filters.period) f.period = filters.period;
+    }
+    return { query: submitted ?? null, filters: f };
+  }, [categoryFilter, geo, radiusKm, filters, submitted]);
+
+  /** Aplica uma busca salva: texto, categoria, localização e filtros voltam como foram salvos. */
+  function applySaved(s: SavedSearch): void {
+    const f = s.filters ?? {};
+    setQ(s.query ?? '');
+    setSubmitted(s.query ?? undefined);
+    setCategoryFilter(f.categoryId ?? 0);
+    setGeo(f.lat !== undefined && f.lng !== undefined ? { lat: f.lat, lng: f.lng } : null);
+    if (f.radiusKm) setRadiusKm(f.radiusKm);
+    setOnlyFavs(false);
+    setFilters({
+      ...NO_FILTERS,
+      minPrice: f.minPrice !== undefined ? String(f.minPrice) : '',
+      maxPrice: f.maxPrice !== undefined ? String(f.maxPrice) : '',
+      maxDeliveryDays: f.maxDeliveryDays ?? 0,
+      minRating: f.minRating ?? 0,
+      day: f.day ?? -1,
+      period: f.day !== undefined ? (f.period ?? '') : '',
+    });
+  }
+
+  // Link do alerta (/servicos?busca=ID): aplica a busca salva uma vez e limpa a URL.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const savedList = useSavedSearches();
+  useEffect(() => {
+    const id = Number(searchParams.get('busca'));
+    if (!id || !savedList.data) return;
+    const found = savedList.data.find((s) => s.id === id);
+    if (found) applySaved(found);
+    else toast.error('Essa busca salva não existe mais.');
+    setSearchParams({}, { replace: true });
+  }, [searchParams, savedList.data]);
 
   function toggleNearMe(): void {
     if (geo) {
@@ -278,7 +338,9 @@ export function ServicosView() {
         >
           <span className="now-dot" aria-hidden="true" /> Atende agora
         </Button>
+        <SaveSearchButton current={currentSearch} disabled={onlyFavs} />
       </div>
+      <SavedSearchesBar onApply={applySaved} />
 
       {/* Filtros e ordenação (aplicam na hora) */}
       <div className="filters-bar" data-testid="filters">

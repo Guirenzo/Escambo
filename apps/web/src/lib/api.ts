@@ -25,6 +25,7 @@ import type {
   CreateDepositRequest,
   CreateFavoriteRequest,
   CreateReviewRequest,
+  CreateSavedSearchRequest,
   CreateServiceRequest,
   CreditTransaction,
   DataDeletionRequest,
@@ -52,7 +53,9 @@ import type {
   RegisterRequest,
   ResolveDisputeRequest,
   Review,
+  SavedSearch,
   Service,
+  UpdateSavedSearchRequest,
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
   UpsertPortfolioItemRequest,
@@ -294,6 +297,13 @@ export const api = {
     const s = qs.toString();
     return request<Paginated<Service>>(`/services${s ? `?${s}` : ''}`);
   },
+  // buscas salvas (ADR 35)
+  savedSearches: () => request<SavedSearch[]>('/saved-searches'),
+  createSavedSearch: (body: CreateSavedSearchRequest) =>
+    request<SavedSearch>('/saved-searches', { method: 'POST', body: JSON.stringify(body) }),
+  updateSavedSearch: (id: number, body: UpdateSavedSearchRequest) =>
+    request<SavedSearch>(`/saved-searches/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteSavedSearch: (id: number) => request<void>(`/saved-searches/${id}`, { method: 'DELETE' }),
   createService: (body: CreateServiceRequest) =>
     request<Service>('/services', { method: 'POST', body: JSON.stringify(body) }),
 

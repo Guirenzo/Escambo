@@ -710,6 +710,14 @@ async function ensureDispute(client, contract, reason, description) {
   log(`disputa  #${contract.id} (${reason})`);
 }
 
+/** Busca salva com alerta (ADR 35), idempotente pelo nome. */
+async function ensureSavedSearch(user, spec) {
+  const mine = await call('GET', '/saved-searches', { token: user.token });
+  if (mine.some((s) => s.name === spec.name)) return;
+  await call('POST', '/saved-searches', { token: user.token, body: spec });
+  log(`busca salva ${spec.name}`);
+}
+
 async function ensureFavorite(user, service) {
   const mine = await call('GET', '/favorites', { token: user.token });
   if (mine.some((f) => f.targetType === 'service' && f.targetId === service.id)) return;
@@ -951,6 +959,14 @@ async function main() {
   step('Favoritos da cliente');
   await ensureFavorite(ana, svc['Landing page em React']);
   await ensureFavorite(ana, svc['Ensaio de produto (20 fotos)']);
+
+  step('Busca salva da cliente (com alerta de serviço novo)');
+  await ensureSavedSearch(ana, {
+    name: 'Logo até R$ 1.000',
+    query: 'logo',
+    filters: { maxPrice: 1000 },
+    alertEnabled: true,
+  });
 
   step('Trocas de serviço (escambo)');
   await ensureBarter(

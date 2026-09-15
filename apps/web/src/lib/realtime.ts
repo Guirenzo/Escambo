@@ -41,6 +41,10 @@ export function useRealtimeNotifications(): void {
         void qc.invalidateQueries({ queryKey: qk.exportRequests });
         void qc.invalidateQueries({ queryKey: qk.deletionRequests });
       }
+      if (n.type === 'saved_search_match') {
+        void qc.invalidateQueries({ queryKey: qk.savedSearches });
+        void qc.invalidateQueries({ queryKey: ['services'] });
+      }
       if (n.type === 'review_received') {
         void qc.invalidateQueries({ queryKey: qk.profiles });
         void qc.invalidateQueries({ queryKey: ['reviews'] });
