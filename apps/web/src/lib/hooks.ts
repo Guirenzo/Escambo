@@ -42,6 +42,7 @@ export const qk = {
   favorites: ['favorites'] as const,
   disputes: ['disputes'] as const,
   adminMetrics: ['adminMetrics'] as const,
+  adminStorage: ['adminStorage'] as const,
   adminDisputes: ['adminDisputes'] as const,
   exportRequests: ['exportRequests'] as const,
   consents: ['consents'] as const,
@@ -218,10 +219,11 @@ export function useSendAttachment(contractId: number) {
 }
 
 /** Bytes de um anexo do chat (exige o token). Fica em cache enquanto a Sala está aberta. */
-export const useAttachmentBlob = (url: string, name: string) =>
+export const useAttachmentBlob = (url: string, name: string, enabled = true) =>
   useQuery({
     queryKey: ['attachment', url] as const,
     queryFn: () => api.attachmentBlob(url, name),
+    enabled,
     staleTime: Infinity,
     gcTime: 30 * 60_000,
   });
@@ -492,6 +494,16 @@ export const useAdminFinance = (q: { from?: string; to?: string; granularity: 'd
 
 export const useAdminMetrics = () =>
   useQuery({ queryKey: qk.adminMetrics, queryFn: () => api.adminMetrics() });
+export const useAdminStorage = () =>
+  useQuery({ queryKey: qk.adminStorage, queryFn: () => api.adminStorage() });
+/** Expurgo imediato de anexos; ao terminar, o card de armazenamento é recarregado. */
+export function usePurgeAttachments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.adminPurgeAttachments(),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.adminStorage }),
+  });
+}
 export const useAdminDisputes = () =>
   useQuery({ queryKey: qk.adminDisputes, queryFn: () => api.adminDisputes() });
 

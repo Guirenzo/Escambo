@@ -1,5 +1,7 @@
 import type { Request, Response } from 'express';
+import { runPurgeAttachments } from '../../jobs/purge-attachments';
 import { auditService } from '../audit/audit.service';
+import { storageReport } from '../messaging/attachments.purge';
 import { lgpdService } from '../lgpd/lgpd.service';
 import { mailService } from '../mail/mail.service';
 import { withdrawalService } from '../withdrawal/withdrawal.service';
@@ -181,3 +183,22 @@ export async function rejectDeletionRequest(req: Request, res: Response): Promis
 export const suspendUser = (req: Request, res: Response) => moderate(req, res, 'suspend');
 export const banUser = (req: Request, res: Response) => moderate(req, res, 'ban');
 export const reactivateUser = (req: Request, res: Response) => moderate(req, res, 'reactivate');
+
+/** GET /api/admin/storage — uso do volume (anexos do chat, cópias LGPD) e último expurgo. */
+export async function getStorage(_req: Request, res: Response): Promise<void> {
+  res.json(await storageReport());
+}
+
+/** POST /api/admin/storage/purge — roda o expurgo agora (ignora a hora e a trava diária). */
+export async function purgeStorage(req: Request, res: Response): Promise<void> {
+  const result = await runPurgeAttachments({ force: true, trigger: 'admin' });
+  await auditService.log({
+    userId: req.user!.uid,
+    action: 'attachments_purged',
+    entityType: 'storage',
+    newValue: result,
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+  });
+  res.json(result);
+}

@@ -133,6 +133,11 @@ de backup tanto quanto o banco: `scripts/backup-uploads.sh` empacota a pasta de 
 (`backups/uploads-*.tgz`, mesma retenção) — agende no mesmo cron. Os certificados ficam em
 `caddy_data` e são reemitidos se sumirem.
 
+O volume não cresce para sempre: o job `purge-attachments` apaga, uma vez por dia a partir de
+`ATTACHMENT_PURGE_HOUR` (4h, Brasília), os anexos com mais de `attachment_retention_days` dias
+(180, em `platform_settings`) em conversas sem contratação aberta, além de arquivos órfãos. O
+painel admin mostra o uso do volume e tem o botão "Rodar expurgo agora".
+
 ```bash
 COMPOSE_FILE=docker-compose.prod.yml scripts/backup-uploads.sh
 # restaurar, com a API parada:

@@ -99,6 +99,8 @@ const envSchema = z.object({
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(60),
   // Hora (Brasília, 0–23) a partir da qual o resumo diário de notificações é enviado.
   DIGEST_HOUR: z.coerce.number().int().min(0).max(23).default(8),
+  // Hora (Brasília, 0–23) a partir da qual o expurgo diário de anexos do chat roda (ADR 31).
+  ATTACHMENT_PURGE_HOUR: z.coerce.number().int().min(0).max(23).default(4),
 });
 
 const parsed = envSchema.safeParse(process.env);

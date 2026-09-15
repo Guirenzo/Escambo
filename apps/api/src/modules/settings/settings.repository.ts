@@ -20,4 +20,17 @@ export const settingsRepository = {
     const n = raw == null ? NaN : Number(raw);
     return Number.isFinite(n) ? n : fallback;
   },
+
+  /** Grava (ou cria) uma chave — usado por jobs para guardar estado que sobrevive a reinícios. */
+  async set(
+    key: string,
+    value: string,
+    type: 'string' | 'integer' | 'json' = 'string',
+  ): Promise<void> {
+    await pool.query(
+      `INSERT INTO platform_settings (key_name, value, type) VALUES (:key, :value, :type)
+       ON DUPLICATE KEY UPDATE value = :value`,
+      { key, value, type },
+    );
+  },
 };

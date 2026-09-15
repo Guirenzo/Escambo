@@ -75,5 +75,6 @@ INSERT INTO platform_settings (key_name, value, type, description) VALUES
   ('barter_enabled',          'true',  'boolean', 'Habilita a troca de serviços (escambo)'),
   ('maintenance_mode',        'false', 'boolean', 'Modo de manutenção da plataforma'),
   ('proposal_expiry_hours',   '72',    'integer', 'Horas para o freelancer responder a uma proposta; depois ela expira e a reserva volta ao cliente (RN-021)'),
-  ('deadline_grace_hours',    '24',    'integer', 'Horas após o aviso de prazo estourado sem entrega nem extensão até a plataforma abrir a disputa (RN-029)')
+  ('deadline_grace_hours',    '24',    'integer', 'Horas após o aviso de prazo estourado sem entrega nem extensão até a plataforma abrir a disputa (RN-029)'),
+  ('attachment_retention_days', '180', 'integer', 'Dias que um anexo do chat fica no disco depois de enviado, quando não há mais contratação aberta entre as duas pessoas; a mensagem fica, sem o arquivo (ADR 31)')
 ON DUPLICATE KEY UPDATE value = VALUES(value);

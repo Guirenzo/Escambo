@@ -15,7 +15,7 @@ import {
   saveAttachment,
   type AttachmentKind,
 } from './attachments.storage';
-import { messagingRepository, type MessageRow } from './messaging.repository';
+import { messagingRepository, type MessageRow, type PurgeReason } from './messaging.repository';
 
 const HISTORY_LIMIT = 200;
 
@@ -44,8 +44,17 @@ function toAttachment(row: MessageRow): ChatAttachment | null {
     mime: row.file_mime ?? 'application/octet-stream',
     size: Number(row.file_size_bytes ?? 0),
     url: attachmentUrl(row.id),
+    purgedAt: row.file_purged_at ? new Date(row.file_purged_at).toISOString() : null,
+    purgedReason: row.file_purged_reason ?? null,
   };
 }
+
+/** Mensagem do 410 quando o arquivo já saiu do disco (ADR 31). */
+const PURGED_MESSAGE: Record<PurgeReason, string> = {
+  retention: 'Este anexo foi removido pela política de retenção',
+  lgpd: 'Este anexo foi removido a pedido do titular',
+  missing: 'O arquivo deste anexo não está mais disponível',
+};
 
 function toMessage(row: MessageRow): ChatMessage {
   return {
@@ -208,10 +217,19 @@ export const messagingService = {
     if (row.participant_a !== uid && row.participant_b !== uid) {
       throw new HttpError(403, 'Você não participa desta conversa', 'forbidden');
     }
+    if (row.file_purged_at) {
+      throw new HttpError(
+        410,
+        PURGED_MESSAGE[row.file_purged_reason ?? 'missing'],
+        'attachment_purged',
+      );
+    }
     const path = attachmentPath(row.file_url);
     const size = path ? await attachmentSize(row.file_url) : null;
     if (!path || size == null) {
       logger.warn({ messageId, key: row.file_url }, 'anexo sem arquivo no disco');
+      // Marca de vez: a bolha passa a dizer "indisponível" e o job não tenta apagar de novo.
+      void messagingRepository.markPurged(messageId, 'missing').catch(() => undefined);
       throw new HttpError(
         404,
         'O arquivo deste anexo não está mais disponível',

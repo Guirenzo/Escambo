@@ -1,6 +1,6 @@
-import { Download, FileArchive, FileText, Paperclip, X } from 'lucide-react';
+import { Download, FileArchive, FileText, FileX, Paperclip, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { ChatAttachment as Attachment } from '@escambo/types';
+import type { AttachmentPurgeReason, ChatAttachment as Attachment } from '@escambo/types';
 import { api } from '../../lib/api';
 import { formatBytes } from '../../lib/format';
 import { useAttachmentBlob } from '../../lib/hooks';
@@ -26,6 +26,25 @@ export function saveBlob(blob: Blob, name: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+const PURGED_LABEL: Record<AttachmentPurgeReason, string> = {
+  retention: 'removido pela política de retenção',
+  lgpd: 'removido a pedido do titular',
+  missing: 'arquivo indisponível',
+};
+
+/** Anexo cujo arquivo já saiu do disco (ADR 31): o nome fica, com o motivo. */
+export function PurgedAttachment({ attachment }: { attachment: Attachment }) {
+  return (
+    <span className="attachment-purged" data-testid="attachment-purged">
+      <FileX size={16} aria-hidden="true" />
+      <span className="attachment-text">
+        <span className="attachment-name">{attachment.name}</span>
+        <span className="muted tiny">{PURGED_LABEL[attachment.purgedReason ?? 'missing']}</span>
+      </span>
+    </span>
+  );
+}
+
 /** URL de objeto para um blob, revogada quando o blob muda ou o componente sai. */
 function useObjectUrl(blob: Blob | undefined): string | null {
   const [url, setUrl] = useState<string | null>(null);
@@ -43,7 +62,8 @@ function useObjectUrl(blob: Blob | undefined): string | null {
 
 /** Imagem no chat: miniatura que abre em tamanho real (com download). */
 export function ImageAttachment({ attachment }: { attachment: Attachment }) {
-  const q = useAttachmentBlob(attachment.url, attachment.name);
+  const purged = attachment.purgedAt != null;
+  const q = useAttachmentBlob(attachment.url, attachment.name, !purged);
   const src = useObjectUrl(q.data?.blob);
   const [open, setOpen] = useState(false);
 
@@ -56,6 +76,7 @@ export function ImageAttachment({ attachment }: { attachment: Attachment }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
+  if (purged) return <PurgedAttachment attachment={attachment} />;
   if (q.isError) return <span className="attachment-error">Imagem indisponível</span>;
   if (!src)
     return <span className="attachment-skeleton" role="img" aria-label="Carregando imagem" />;
@@ -124,6 +145,7 @@ export function FileAttachment({ attachment }: { attachment: Attachment }) {
     }
   }
 
+  if (attachment.purgedAt) return <PurgedAttachment attachment={attachment} />;
   return (
     <button
       type="button"
