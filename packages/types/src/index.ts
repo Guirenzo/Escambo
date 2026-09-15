@@ -252,6 +252,8 @@ export interface AdminStorage {
   purgeHour: number;
   uploads: { files: number; bytes: number };
   exports: { files: number; bytes: number };
+  /** Fotos de perfil e imagens do portfólio (ADR 36); orphans = ninguém usa. */
+  media: { files: number; bytes: number; orphans: number };
   attachments: {
     active: number;
     activeBytes: number;
@@ -313,6 +315,13 @@ export interface PublicSettings {
   barterEnabled: boolean;
   /** Ligado: a API responde 503 para quem não é admin; o app mostra a tela de manutenção. */
   maintenanceMode: boolean;
+}
+
+/** Imagem enviada para avatar ou portfólio (ADR 36): a URL pública vai no perfil. */
+export interface MediaUpload {
+  url: string;
+  mime: string;
+  size: number;
 }
 
 /** Resultado de uma rodada do expurgo de anexos (job ou botão do admin). */

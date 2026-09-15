@@ -3,6 +3,8 @@ import { useState, type FormEvent } from 'react';
 import { Button, Field, Input, QueryState } from '../../components/ui';
 import { usePortfolio, usePortfolioMutation } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { ImageUploadButton } from '../../components/ImageUploadButton';
+import { IMAGE_MAX_SIDE } from '../../lib/image';
 
 const MAX_ITEMS = 12;
 
@@ -134,13 +136,28 @@ export function PortfolioCard() {
             />
           </Field>
           <Field label="Imagem (URL)">
-            <Input
-              type="url"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              maxLength={512}
-              placeholder="https://…/foto-do-trabalho.jpg"
-            />
+            <div className="loc-row">
+              <Input
+                type="text"
+                inputMode="url"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                maxLength={512}
+                placeholder="https://…/foto-do-trabalho.jpg ou envie do aparelho"
+              />
+              <ImageUploadButton
+                maxSide={IMAGE_MAX_SIDE.portfolio}
+                label="Enviar imagem"
+                testId="portfolio-upload"
+                onUploaded={(url) => {
+                  setImageUrl(url);
+                  toast.success('Imagem enviada.');
+                }}
+              />
+              {imageUrl.trim() && (
+                <img className="upload-preview" src={imageUrl.trim()} alt="" loading="lazy" />
+              )}
+            </div>
           </Field>
           <Field label="Link do trabalho (URL)">
             <Input

@@ -22,6 +22,7 @@ import { servicesRoutes } from './modules/services/services.routes';
 import { walletRoutes } from './modules/wallet/wallet.routes';
 import { withdrawalRoutes } from './modules/withdrawal/withdrawal.routes';
 import { settingsRoutes } from './modules/settings/settings.routes';
+import { mediaRoutes } from './modules/media/media.routes';
 
 /** Monta as rotas de cada módulo sob /api. */
 export const router = Router();
@@ -49,3 +50,4 @@ router.use('/reports', reportsRoutes);
 router.use('/disputes', disputesRoutes);
 router.use('/admin', adminRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/media', mediaRoutes);

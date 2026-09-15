@@ -2003,6 +2003,11 @@ button.toggle.on {
   gap: 10px;
   flex-wrap: wrap;
 }
+/* Campo de texto ocupa o espaço que sobra; botão e miniatura ficam ao lado ou quebram inteiros. */
+.loc-row > input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
 .notice a {
   color: inherit;
   font-weight: 700;
@@ -2978,4 +2983,18 @@ button.toggle.on {
   margin-top: 4px;
   color: var(--green);
   font-weight: 600;
+}
+
+/* ---------- Imagens enviadas do aparelho (ADR 36) ---------- */
+.upload-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.upload-preview {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
 }

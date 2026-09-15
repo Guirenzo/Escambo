@@ -69,6 +69,12 @@ export function StorageSection() {
                 </dd>
               </div>
               <div>
+                <dt>Fotos e portfólio</dt>
+                <dd>
+                  {s.media.files} imagem(ns) · {formatBytes(s.media.bytes)}
+                </dd>
+              </div>
+              <div>
                 <dt>Já removidos</dt>
                 <dd>
                   {s.attachments.purged}
@@ -78,10 +84,15 @@ export function StorageSection() {
                   </span>
                 </dd>
               </div>
-              <div className={s.attachments.missing || s.attachments.orphans ? 'warn' : ''}>
+              <div
+                className={
+                  s.attachments.missing || s.attachments.orphans || s.media.orphans ? 'warn' : ''
+                }
+              >
                 <dt>Inconsistências</dt>
                 <dd>
-                  {s.attachments.missing} sem arquivo · {s.attachments.orphans} órfão(s)
+                  {s.attachments.missing} sem arquivo · {s.attachments.orphans + s.media.orphans}{' '}
+                  órfão(s)
                 </dd>
               </div>
               <div>

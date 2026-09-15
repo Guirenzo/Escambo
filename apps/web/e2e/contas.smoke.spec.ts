@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
-import { createAdmin, createUser, latestEmail, linkIn, openAs, PASSWORD, settled } from './helpers';
+import {
+  createAdmin,
+  createUser,
+  latestEmail,
+  linkIn,
+  openAs,
+  PASSWORD,
+  settled,
+  pngFixture,
+} from './helpers';
 
 /**
  * Contas e conformidade: cadastro com aceite dos termos (consentimento registrado), páginas
@@ -207,4 +216,48 @@ test('perfil rico: dias de atendimento e portfólio aparecem no perfil público'
   await settled(page);
   await expect(page.getByTestId('available-days')).toContainText('atende seg, qua · manhã');
   await expect(page.getByTestId('portfolio')).toContainText('Site da padaria do bairro');
+});
+
+test('foto de perfil e imagem do portfólio enviadas do aparelho aparecem no perfil público', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const client = await createUser(request, 'client');
+  const mediaUrl = /^\/api\/media\/\d{4}\/\d{2}\/[0-9A-Z]{26}\.(webp|jpg|png)$/;
+
+  await openAs(page, freelancer, '/perfil');
+  await settled(page);
+  const form = page.locator('form', { hasText: 'Salvar freelancer' });
+  await form
+    .getByTestId('avatar-upload')
+    .setInputFiles({ name: 'eu.png', mimeType: 'image/png', buffer: pngFixture(64) });
+  await expect(page.locator('.toast', { hasText: 'Foto enviada' })).toBeVisible();
+  await expect(form.getByLabel('Foto (URL da imagem)')).toHaveValue(mediaUrl);
+  await form.getByRole('button', { name: 'Salvar freelancer' }).click();
+  await expect(page.locator('.toast', { hasText: 'Perfil de freelancer salvo' })).toBeVisible();
+
+  const card = page.getByTestId('portfolio-card');
+  await card.getByLabel('Título do trabalho').fill('Logo da padaria do bairro');
+  await card
+    .getByTestId('portfolio-upload')
+    .setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: pngFixture(96) });
+  await expect(card.getByLabel('Imagem (URL)')).toHaveValue(mediaUrl);
+  await card.getByRole('button', { name: 'Adicionar ao portfólio' }).click();
+  await expect(page.locator('.toast', { hasText: 'Trabalho adicionado' })).toBeVisible();
+
+  const me = await request.get('/api/auth/me', {
+    headers: { Authorization: `Bearer ${freelancer.token}` },
+  });
+  const { ulid } = (await me.json()) as { ulid: string };
+  await openAs(page, client, `/freelancers/${ulid}`);
+  await settled(page);
+  // Avatar e imagem do portfólio vêm da API de mídia, sem token, e carregam de verdade.
+  const images = page.locator('img[src^="/api/media/"]');
+  await expect(images).toHaveCount(2);
+  for (const img of await images.all()) {
+    await expect
+      .poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth))
+      .toBeGreaterThan(0);
+  }
 });
