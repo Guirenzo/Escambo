@@ -398,14 +398,18 @@ export const openapiDocument: Record<string, any> = {
       get: op('Serviços', 'Minhas buscas salvas', { auth: true }),
       post: op(
         'Serviços',
-        'Salva a busca (texto + filtros da busca de serviços; até 20 por conta; alertEnabled liga o aviso de serviço novo)',
+        'Salva a busca (texto + filtros da busca de serviços; até 20 por conta; alertEnabled liga o aviso de serviço novo e alertFrequency escolhe instant, hourly ou daily, padrão hourly)',
         { auth: true, responses: res201 },
       ),
     },
     '/saved-searches/{id}': {
-      patch: op('Serviços', 'Renomeia e/ou liga/desliga o alerta (ligar reinicia o cursor)', {
-        auth: true,
-      }),
+      patch: op(
+        'Serviços',
+        'Renomeia (null apaga o nome), liga/desliga o alerta (ligar reinicia o cursor) e troca a frequência (o cursor fica)',
+        {
+          auth: true,
+        },
+      ),
       delete: op('Serviços', 'Apaga a busca salva', { auth: true }),
     },
     '/reports': {

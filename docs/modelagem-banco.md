@@ -484,7 +484,7 @@ CREATE TABLE favorites (
 ---
 
 ### `saved_searches`
-Buscas salvas com alerta opcional (notifica quando surgem novos serviços que casam com os filtros).
+Buscas salvas com alerta opcional (notifica quando surgem novos serviços que casam com os filtros), na frequência escolhida por busca: na hora, de hora em hora ou uma vez por dia.
 
 ```sql
 CREATE TABLE saved_searches (
@@ -494,6 +494,7 @@ CREATE TABLE saved_searches (
   query         VARCHAR(255)    NULL,
   filters       JSON            NULL,                    -- categoria, faixa de preço, nota mínima, raio
   alert_enabled TINYINT(1)      NOT NULL DEFAULT 0,
+  alert_frequency ENUM('instant','hourly','daily') NOT NULL DEFAULT 'hourly', -- migration 0016 (ADR 37)
   last_alert_at DATETIME        NULL,
   created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

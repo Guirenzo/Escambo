@@ -8,9 +8,10 @@ import { env } from '../../config/env';
 /**
  * Portabilidade (LGPD, art. 18, V): monta a cópia de tudo que a plataforma guarda sobre o
  * titular, em JSON legível, e guarda o arquivo em DATA_DIR/exports. Só leitura no banco.
+ * Formato 1.1: entram as buscas salvas, com a frequência do alerta (ADR 37).
  */
 
-export const EXPORT_FORMAT_VERSION = '1.0';
+export const EXPORT_FORMAT_VERSION = '1.1';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -128,6 +129,11 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     `SELECT target_type, target_id, created_at FROM favorites WHERE user_id = :userId ORDER BY id`,
     p,
   );
+  const savedSearches = await q(
+    `SELECT id, name, query, filters, alert_enabled, alert_frequency, last_alert_at, created_at
+       FROM saved_searches WHERE user_id = :userId ORDER BY id`,
+    p,
+  );
   const notifications = await q(
     `SELECT id, type, title, body, is_read, created_at
        FROM notifications WHERE user_id = :userId ORDER BY id`,
@@ -165,6 +171,7 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     disputas: disputes,
     denunciasFeitas: reports,
     favoritos: favorites,
+    buscasSalvas: savedSearches,
     notificacoes: notifications,
     solicitacoesLgpd: lgpdRequests,
   };

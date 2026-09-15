@@ -111,12 +111,17 @@ export interface SavedSearchFilters {
   period?: AvailabilityPeriod;
 }
 
+/** Com que frequência a busca salva avisa de serviço novo (ADR 37). */
+export type SavedSearchAlertFrequency = 'instant' | 'hourly' | 'daily';
+
 export interface SavedSearch {
   id: number;
   name: string | null;
   query: string | null;
   filters: SavedSearchFilters | null;
   alertEnabled: boolean;
+  /** Vale mesmo com o alerta desligado: é a escolha que volta quando ele for religado. */
+  alertFrequency: SavedSearchAlertFrequency;
   /** Até quando o alerta já conferiu serviços novos; null = alerta nunca ligado. */
   lastAlertAt: string | null;
   createdAt: string;
@@ -127,11 +132,15 @@ export interface CreateSavedSearchRequest {
   query?: string | null;
   filters?: SavedSearchFilters | null;
   alertEnabled?: boolean;
+  /** Padrão: de hora em hora. */
+  alertFrequency?: SavedSearchAlertFrequency;
 }
 
 export interface UpdateSavedSearchRequest {
-  name?: string;
+  /** null apaga o nome, e a busca volta a aparecer pelo texto buscado. */
+  name?: string | null;
   alertEnabled?: boolean;
+  alertFrequency?: SavedSearchAlertFrequency;
 }
 
 // --- Denúncias (trust & safety) ---

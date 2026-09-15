@@ -49,6 +49,11 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       .send({ fullName: 'Titular Exportável', city: 'Joinville' })
       .expect((r) => expect(r.status).toBeLessThan(300));
     await fundWallet(app, user.token, 40);
+    await request(app)
+      .post('/api/saved-searches')
+      .set(auth(user.token))
+      .send({ name: 'Logo diário', query: 'logo', alertEnabled: true, alertFrequency: 'daily' })
+      .expect(201);
 
     const created = await request(app).post('/api/lgpd/export-requests').set(auth(user.token));
     expect(created.status, JSON.stringify(created.body)).toBe(201);
@@ -80,12 +85,20 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       perfis: { freelancer: { full_name: string } | null };
       consentimentos: unknown[];
       carteira: { extratoReais: { reason: string }[]; depositos: unknown[] };
+      buscasSalvas: { name: string; query: string; alert_frequency: string }[];
     };
-    expect(data.formato).toBe('escambo-export/1.0');
+    expect(data.formato).toBe('escambo-export/1.1');
     expect(data.titular.email).toBe(user.email);
     expect(data.perfis.freelancer?.full_name).toBe('Titular Exportável');
     expect(data.carteira.extratoReais.map((t) => t.reason)).toEqual(['deposit']);
     expect(data.carteira.depositos).toHaveLength(1);
+    // Buscas salvas também são dados do titular (formato 1.1).
+    expect(data.buscasSalvas).toHaveLength(1);
+    expect(data.buscasSalvas[0]).toMatchObject({
+      name: 'Logo diário',
+      query: 'logo',
+      alert_frequency: 'daily',
+    });
 
     // Lista reflete o download; depois de vencer, some o link e o job apaga o arquivo.
     const list = await request(app).get('/api/lgpd/export-requests').set(auth(user.token));

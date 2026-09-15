@@ -966,6 +966,7 @@ async function main() {
     query: 'logo',
     filters: { maxPrice: 1000 },
     alertEnabled: true,
+    alertFrequency: 'daily',
   });
 
   step('Trocas de serviço (escambo)');

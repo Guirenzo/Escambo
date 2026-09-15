@@ -3,6 +3,10 @@ import { z } from 'zod';
 /** Máximo de buscas salvas por conta (ADR 35). */
 export const SAVED_SEARCHES_MAX = 20;
 
+/** Quando a busca avisa de serviço novo (ADR 37): na hora, de hora em hora ou uma vez por dia. */
+export const ALERT_FREQUENCIES = ['instant', 'hourly', 'daily'] as const;
+const alertFrequency = z.enum(ALERT_FREQUENCIES);
+
 /**
  * Filtros que uma busca salva guarda (ADR 35): os mesmos da busca de serviços, sem ordenação
  * nem "atende agora" (que valem para o momento, não para um alerta). Chave desconhecida é 422.
@@ -40,6 +44,7 @@ export const createSavedSearchSchema = z
     query: z.string().trim().max(255).nullable().optional(),
     filters: savedFiltersSchema.nullable().optional(),
     alertEnabled: z.boolean().optional(),
+    alertFrequency: alertFrequency.optional(),
   })
   .refine((d) => Boolean(d.query) || Object.keys(d.filters ?? {}).length > 0, {
     message: 'Salve uma busca com texto ou pelo menos um filtro',
@@ -48,8 +53,13 @@ export const createSavedSearchSchema = z
 export type CreateSavedSearchInput = z.infer<typeof createSavedSearchSchema>;
 
 export const updateSavedSearchSchema = z
-  .object({ name: name.optional(), alertEnabled: z.boolean().optional() })
-  .refine((d) => d.name !== undefined || d.alertEnabled !== undefined, {
+  .object({
+    // null apaga o nome: a busca volta a aparecer pelo texto buscado.
+    name: name.nullable().optional(),
+    alertEnabled: z.boolean().optional(),
+    alertFrequency: alertFrequency.optional(),
+  })
+  .refine((d) => Object.values(d).some((v) => v !== undefined), {
     message: 'Nada para alterar',
   });
 export type UpdateSavedSearchInput = z.infer<typeof updateSavedSearchSchema>;
