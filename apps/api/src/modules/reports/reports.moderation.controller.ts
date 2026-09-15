@@ -12,6 +12,7 @@ const RECORDED_AS = {
   dismiss: 'reports_dismissed',
   resolve: 'reports_resolved',
   'remove-image': 'image_removed',
+  'remove-content': 'content_removed',
 } as const;
 
 /** GET /api/admin/reports — fila de moderação agrupada por alvo e imagem (ADR 39). */

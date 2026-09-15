@@ -3364,6 +3364,10 @@ button.gallery-nav:hover:not(:disabled) {
   gap: 10px;
   min-width: 200px;
 }
+.report-target a {
+  color: var(--green);
+  font-weight: 600;
+}
 .report-subject .report-thumb {
   width: 64px;
   height: 64px;
@@ -3505,6 +3509,22 @@ button.gallery-nav:hover:not(:disabled) {
 }
 .removal-quote.mine {
   border-left-color: var(--green);
+}
+/* Texto removido de avaliação ou mensagem (ADR 44). */
+.removal-quote.removed {
+  border-left-color: var(--red);
+}
+.removal-quote.large {
+  font-size: 0.95rem;
+}
+.bubble.removed,
+.bubble.mine.removed {
+  border: 1px dashed var(--border-strong);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.bubble-removed {
+  font-style: italic;
 }
 .removal-foot {
   display: flex;

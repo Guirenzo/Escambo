@@ -44,7 +44,7 @@ import type {
   UpdateEmailPreferenceRequest,
   Favorite,
   FavoriteTargetType,
-  ImageRemoval,
+  ContentRemoval,
   MyModeration,
   FreelancerProfile,
   GamificationProfile,
@@ -514,7 +514,7 @@ export const api = {
   // contestação e reincidência (ADR 41)
   myModeration: () => request<MyModeration>('/moderation/removals'),
   appealRemoval: (id: number, text: string) =>
-    request<ImageRemoval>(`/moderation/removals/${id}/appeal`, {
+    request<ContentRemoval>(`/moderation/removals/${id}/appeal`, {
       method: 'POST',
       body: JSON.stringify({ text }),
     }),

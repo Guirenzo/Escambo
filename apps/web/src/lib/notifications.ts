@@ -11,8 +11,10 @@ export function notificationPath(data: Notification['data']): string | null {
   if (d.barterId != null) return '/trocas';
   if (d.withdrawalId != null || d.paymentId != null || d.depositId != null) return '/carteira';
   if (d.exportRequestId != null || d.deletionRequestId != null) return '/perfil';
-  // Imagem removida pela moderação (ADR 39) e decisão da contestação (ADR 41): o perfil é onde a
-  // pessoa troca a foto e acompanha a contestação.
-  if (d.contentRemoved != null || d.imageRemovalId != null) return '/perfil';
+  // Conteúdo removido pela moderação (ADR 39 e 44) e decisão da contestação (ADR 41): o perfil é
+  // onde a pessoa acompanha. imageRemovalId é a chave das notificações antigas de imagem.
+  if (d.contentRemoved != null || d.removalId != null || d.imageRemovalId != null) {
+    return '/perfil';
+  }
   return null;
 }

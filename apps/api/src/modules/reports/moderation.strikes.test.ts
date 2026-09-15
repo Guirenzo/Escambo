@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./image-removals.repository', () => ({
-  imageRemovalsRepository: { strikeStats: vi.fn() },
+vi.mock('./content-removals.repository', () => ({
+  contentRemovalsRepository: { strikeStats: vi.fn() },
 }));
 vi.mock('../settings/settings.service', () => ({
   settingsService: { number: vi.fn() },
 }));
 
 import { settingsService } from '../settings/settings.service';
-import { imageRemovalsRepository } from './image-removals.repository';
+import { contentRemovalsRepository } from './content-removals.repository';
 import {
   appealDeadline,
   brDateTime,
@@ -18,7 +18,7 @@ import {
 } from './moderation.strikes';
 
 const settings = vi.mocked(settingsService);
-const repo = vi.mocked(imageRemovalsRepository);
+const repo = vi.mocked(contentRemovalsRepository);
 
 const NUMBERS: Record<string, number> = {
   appeal_window_days: 14,
@@ -60,12 +60,17 @@ describe('reincidência na moderação de imagens (ADR 41)', () => {
   });
 
   it('resumo conta a janela a partir de agora e só mostra bloqueio que ainda vale', async () => {
-    repo.strikeStats.mockResolvedValue({ strikes: 2, last: new Date('2026-09-15T12:00:00Z') });
+    repo.strikeStats.mockResolvedValue({
+      strikes: 3,
+      imageStrikes: 2,
+      lastImage: new Date('2026-09-15T12:00:00Z'),
+    });
 
     const during = await strikeSummary(5, new Date('2026-09-18T00:00:00Z'));
     expect(repo.strikeStats).toHaveBeenCalledWith(5, new Date('2026-03-22T00:00:00Z'));
     expect(during).toEqual({
-      strikes: 2,
+      strikes: 3,
+      imageStrikes: 2,
       windowDays: 180,
       reviewThreshold: 3,
       uploadsBlockedUntil: '2026-09-22T12:00:00.000Z',
@@ -73,5 +78,15 @@ describe('reincidência na moderação de imagens (ADR 41)', () => {
 
     const after = await strikeSummary(5, new Date('2026-09-23T00:00:00Z'));
     expect(after.uploadsBlockedUntil).toBeNull();
+  });
+
+  it('avaliação e mensagem removidas contam para a revisão, mas não bloqueiam o envio (ADR 44)', async () => {
+    repo.strikeStats.mockResolvedValue({
+      strikes: 3,
+      imageStrikes: 1,
+      lastImage: new Date('2026-09-15T12:00:00Z'),
+    });
+    const summary = await strikeSummary(5, new Date('2026-09-16T00:00:00Z'));
+    expect(summary).toMatchObject({ strikes: 3, imageStrikes: 1, uploadsBlockedUntil: null });
   });
 });

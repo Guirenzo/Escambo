@@ -138,10 +138,14 @@ function ReviewSection({ contract, myId }: { contract: ContractWithHistory; myId
         <h3 id="review-title">
           <Star size={16} /> Avaliação
         </h3>
-        {review && <Stars value={review.rating} showValue={false} size={16} />}
+        {review && !review.removedAt && <Stars value={review.rating} showValue={false} size={16} />}
       </div>
 
-      {review ? (
+      {review?.removedAt ? (
+        <p className="muted" data-testid="review-removed">
+          Esta avaliação foi removida pela moderação e não aparece no perfil do freelancer.
+        </p>
+      ) : review ? (
         <div className="review">
           <p>{review.comment ?? <span className="muted">Sem comentário.</span>}</p>
           <span className="muted tiny">avaliado em {dtm(review.createdAt)}</span>
@@ -239,11 +243,18 @@ export function SalaContratoView({
     if (socket.connected) onConnect();
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    // Removida ou devolvida pela moderação (ADR 44): a bolha troca no lugar.
+    const replace = (m: ChatMessageEvent): void => {
+      if (m.contractId !== contractId) return;
+      setLive((prev) => [...prev.filter((x) => x.id !== m.id), m]);
+    };
     socket.on('message:new', append);
+    socket.on('message:updated', replace);
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('message:new', append);
+      socket.off('message:updated', replace);
     };
   }, [contractId]);
 
@@ -429,9 +440,14 @@ export function SalaContratoView({
               messages.map((m) => (
                 <div
                   key={m.id}
-                  className={`bubble ${m.senderId === myId ? 'mine' : 'theirs'}${m.attachment ? ' with-attachment' : ''}`}
-                  data-testid={m.attachment ? 'attachment-bubble' : undefined}
+                  className={`bubble ${m.senderId === myId ? 'mine' : 'theirs'}${m.attachment ? ' with-attachment' : ''}${m.removedAt ? ' removed' : ''}`}
+                  data-testid={
+                    m.removedAt ? 'removed-message' : m.attachment ? 'attachment-bubble' : undefined
+                  }
                 >
+                  {m.removedAt && (
+                    <span className="bubble-removed">Mensagem removida pela moderação</span>
+                  )}
                   {m.type === 'image' && m.attachment && (
                     <ImageAttachment attachment={m.attachment} />
                   )}

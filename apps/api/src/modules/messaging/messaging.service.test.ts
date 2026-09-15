@@ -130,6 +130,7 @@ describe('messagingService.history', () => {
         purgedReason: null,
       },
       createdAt: '2026-01-01T00:00:00.000Z',
+      removedAt: null,
     });
   });
 });
@@ -331,7 +332,7 @@ describe('messagingService.attachment (download)', () => {
 });
 
 describe('notificationBody', () => {
-  const base = { id: 1, conversationId: 1, senderId: 1, createdAt: '' };
+  const base = { id: 1, conversationId: 1, senderId: 1, createdAt: '', removedAt: null };
   it('usa a legenda quando há; senão descreve o anexo', () => {
     expect(notificationBody({ ...base, type: 'text', content: 'oi', attachment: null })).toBe('oi');
     expect(

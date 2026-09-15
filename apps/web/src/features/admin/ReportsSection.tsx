@@ -4,7 +4,9 @@ import {
   Flag,
   ImageOff,
   MessageSquare,
+  MessageSquareOff,
   Star,
+  StarOff,
   UserRound,
   XCircle,
   type LucideIcon,
@@ -49,6 +51,12 @@ const COPY: Record<
     done: 'Imagem removida e bloqueada.',
     hint: 'A imagem sai de todo perfil e trabalho que a mostra e a mesma imagem não pode ser enviada de novo. O arquivo fica guardado fora do ar enquanto o dono pode contestar, o dono recebe um aviso com a sua nota e o prazo, e a remoção conta para a reincidência dele.',
   },
+  'remove-content': {
+    title: 'Remover conteúdo',
+    confirm: 'Remover e avisar o autor',
+    done: 'Conteúdo removido.',
+    hint: 'O conteúdo sai do ar e fica guardado para a contestação. O autor recebe um aviso com a sua nota e o prazo, e a remoção conta para a reincidência dele.',
+  },
   dismiss: {
     title: 'Dispensar denúncias',
     confirm: 'Dispensar',
@@ -76,6 +84,34 @@ function removalMessage(r: AdminReportActionResult): string {
   }
   return base;
 }
+
+/** Textos da decisão; remover conteúdo diz se é a avaliação ou a mensagem (ADR 44). */
+function copyFor(
+  action: AdminReportAction,
+  group: AdminReportGroup,
+): (typeof COPY)[AdminReportAction] {
+  if (action !== 'remove-content') return COPY[action];
+  const review = group.targetType === 'review';
+  return {
+    title: review ? 'Remover avaliação' : 'Remover mensagem',
+    confirm: 'Remover e avisar o autor',
+    done: review ? 'Avaliação removida.' : 'Mensagem removida.',
+    hint: review
+      ? 'A avaliação sai do perfil e da nota média do freelancer, e na contratação as partes veem que ela foi removida. O texto fica guardado para a contestação, o autor recebe um aviso com a sua nota e o prazo, e a remoção conta para a reincidência dele.'
+      : 'A mensagem vira um aviso no chat das duas partes, e o anexo dela deixa de abrir. O texto fica guardado para a contestação, o autor recebe um aviso com a sua nota e o prazo, e a remoção conta para a reincidência dele.',
+  };
+}
+
+/** Remoção de texto: avisa se o autor chegou ao limite e a conta foi para revisão (ADR 44). */
+function contentMessage(r: AdminReportActionResult, group: AdminReportGroup): string {
+  const base = copyFor('remove-content', group).done;
+  return r.accountReviewOpened
+    ? `${base} O autor chegou a ${r.ownerStrikes} remoções e a conta entrou na fila para revisão.`
+    : base;
+}
+
+const isContent = (g: AdminReportGroup): boolean =>
+  g.targetType === 'review' || g.targetType === 'message';
 
 const isImage = (g: AdminReportGroup): boolean =>
   (g.targetType === 'avatar' || g.targetType === 'portfolio_item') && Boolean(g.imageUrl);
@@ -134,7 +170,11 @@ export function ReportsSection() {
         note: note.trim() || null,
       });
       toast.success(
-        deciding.action === 'remove-image' ? removalMessage(r) : COPY[deciding.action].done,
+        deciding.action === 'remove-image'
+          ? removalMessage(r)
+          : deciding.action === 'remove-content'
+            ? contentMessage(r, deciding.group)
+            : COPY[deciding.action].done,
       );
       setDeciding(null);
     } catch (er) {
@@ -256,6 +296,19 @@ export function ReportsSection() {
                             >
                               <ImageOff size={14} /> Remover imagem
                             </Button>
+                          ) : isContent(g) ? (
+                            <Button
+                              variant="danger"
+                              className="mini"
+                              onClick={() => open(g, 'remove-content')}
+                            >
+                              {g.targetType === 'review' ? (
+                                <StarOff size={14} />
+                              ) : (
+                                <MessageSquareOff size={14} />
+                              )}{' '}
+                              {g.targetType === 'review' ? 'Remover avaliação' : 'Remover mensagem'}
+                            </Button>
                           ) : (
                             <Button variant="mini" onClick={() => open(g, 'resolve')}>
                               <CheckCircle2 size={14} /> Resolvida
@@ -280,7 +333,10 @@ export function ReportsSection() {
       </QueryState>
 
       {deciding && (
-        <Modal title={COPY[deciding.action].title} onClose={() => setDeciding(null)}>
+        <Modal
+          title={copyFor(deciding.action, deciding.group).title}
+          onClose={() => setDeciding(null)}
+        >
           <form className="stack" onSubmit={confirm}>
             <div className="report-subject">
               <ReportThumb group={deciding.group} />
@@ -290,9 +346,12 @@ export function ReportsSection() {
                   {deciding.group.reports} denúncia{deciding.group.reports > 1 ? 's' : ''}
                   {deciding.group.owner?.name ? ` · de ${deciding.group.owner.name}` : ''}
                 </span>
+                {deciding.group.excerpt && (
+                  <span className="muted tiny clamp">“{deciding.group.excerpt}”</span>
+                )}
               </div>
             </div>
-            <p className="muted tiny">{COPY[deciding.action].hint}</p>
+            <p className="muted tiny">{copyFor(deciding.action, deciding.group).hint}</p>
             <Field label="Nota para o registro">
               <textarea
                 className="textarea"
@@ -305,10 +364,10 @@ export function ReportsSection() {
             </Field>
             <Button
               type="submit"
-              variant={deciding.action === 'remove-image' ? 'danger' : 'primary'}
+              variant={deciding.action.startsWith('remove') ? 'danger' : 'primary'}
               disabled={act.isPending}
             >
-              {act.isPending ? 'Salvando…' : COPY[deciding.action].confirm}
+              {act.isPending ? 'Salvando…' : copyFor(deciding.action, deciding.group).confirm}
             </Button>
           </form>
         </Modal>

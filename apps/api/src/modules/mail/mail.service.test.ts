@@ -67,9 +67,9 @@ describe('templates', () => {
     expect(notificationLink({ barterId: 2 })).toBe(`${env.APP_URL}/trocas`);
     expect(notificationLink({ withdrawalId: 3 })).toBe(`${env.APP_URL}/carteira`);
     expect(notificationLink({ exportRequestId: 1 })).toBe(`${env.APP_URL}/perfil`);
-    expect(notificationLink({ imageRemovalId: 4, decision: 'upheld' })).toBe(
-      `${env.APP_URL}/perfil`,
-    );
+    expect(notificationLink({ removalId: 4, decision: 'upheld' })).toBe(`${env.APP_URL}/perfil`);
+    // Notificações antigas de imagem ainda levam ao perfil.
+    expect(notificationLink({ imageRemovalId: 4 })).toBe(`${env.APP_URL}/perfil`);
     expect(notificationLink(null)).toBe(`${env.APP_URL}/notificacoes`);
     expect(EMAILED_NOTIFICATION_TYPES.has('chat_message')).toBe(false);
     expect(EMAILED_NOTIFICATION_TYPES.has('contract_proposal')).toBe(true);

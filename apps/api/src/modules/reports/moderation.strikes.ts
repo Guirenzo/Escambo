@@ -1,6 +1,6 @@
 import type { StrikeSummary } from '@escambo/types';
 import { settingsService } from '../settings/settings.service';
-import { imageRemovalsRepository } from './image-removals.repository';
+import { contentRemovalsRepository } from './content-removals.repository';
 
 /**
  * Reincidência na moderação de imagens (ADR 41). Nada disso fica guardado: é calculado na hora a
@@ -52,10 +52,15 @@ export async function strikeSummary(
 ): Promise<StrikeSummary> {
   const p = policy ?? (await strikePolicy());
   const since = new Date(now.getTime() - p.windowDays * DAY_MS);
-  const { strikes, last } = await imageRemovalsRepository.strikeStats(ownerId, since);
-  const until = uploadsBlockedUntil(strikes, last, p.blockDays);
+  const { strikes, imageStrikes, lastImage } = await contentRemovalsRepository.strikeStats(
+    ownerId,
+    since,
+  );
+  // O bloqueio de envio vem só das imagens; a revisão da conta conta tudo (ADR 44).
+  const until = uploadsBlockedUntil(imageStrikes, lastImage, p.blockDays);
   return {
     strikes,
+    imageStrikes,
     windowDays: p.windowDays,
     reviewThreshold: p.reviewThreshold,
     uploadsBlockedUntil: until && until.getTime() > now.getTime() ? until.toISOString() : null,

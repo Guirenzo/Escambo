@@ -172,7 +172,7 @@ export interface ContentReport {
 }
 
 export type ReportStatus = 'pending' | 'reviewing' | 'actioned' | 'dismissed';
-export type AdminReportAction = 'dismiss' | 'resolve' | 'remove-image';
+export type AdminReportAction = 'dismiss' | 'resolve' | 'remove-image' | 'remove-content';
 
 /** Denúncias do mesmo alvo (e da mesma imagem) juntas na fila de moderação (ADR 39). */
 export interface AdminReportGroup {
@@ -223,22 +223,27 @@ export interface AdminReportActionResult {
   accountReviewOpened: boolean;
 }
 
-// --- Contestação e reincidência na moderação de imagens (ADR 41) ---
+// --- Contestação e reincidência na moderação de conteúdo (ADR 41 e 44) ---
 
 /** removed: sem contestação · appealed: esperando o admin · upheld: mantida · overturned: revertida. */
-export type ImageRemovalStatus = 'removed' | 'appealed' | 'upheld' | 'overturned';
+export type RemovalStatus = 'removed' | 'appealed' | 'upheld' | 'overturned';
 
-/** Uma imagem removida, como o dono vê no perfil. */
-export interface ImageRemoval {
+/** O que a moderação removeu: imagem (ADR 41), avaliação ou mensagem (ADR 44). */
+export type RemovalTarget = 'avatar' | 'portfolio_item' | 'review' | 'message';
+
+/** Um conteúdo removido, como o dono vê no perfil. */
+export interface ContentRemoval {
   id: number;
-  targetType: 'avatar' | 'portfolio_item';
-  /** "Foto de perfil" ou "Imagem do trabalho “Logo”". */
+  targetType: RemovalTarget;
+  /** "Foto de perfil", "Imagem do trabalho “Logo”", "Avaliação" ou "Mensagem no chat". */
   label: string;
+  /** Texto removido, de avaliação ou mensagem; null para imagem. */
+  excerpt: string | null;
   reason: ReportReason;
   /** Nota da moderação na remoção. */
   note: string | null;
   removedAt: string;
-  status: ImageRemovalStatus;
+  status: RemovalStatus;
   appealDeadline: string;
   /** Ainda sem contestação e dentro do prazo. */
   canAppeal: boolean;
@@ -251,6 +256,8 @@ export interface ImageRemoval {
 /** Reincidência calculada na hora: remoções não revertidas dentro da janela. */
 export interface StrikeSummary {
   strikes: number;
+  /** Só as imagens removidas: é o que conta para o bloqueio de envio (ADR 44). */
+  imageStrikes: number;
   windowDays: number;
   /** Remoções na janela que abrem a revisão da conta. */
   reviewThreshold: number;
@@ -258,7 +265,7 @@ export interface StrikeSummary {
 }
 
 export interface MyModeration {
-  removals: ImageRemoval[];
+  removals: ContentRemoval[];
   strikes: StrikeSummary;
 }
 
@@ -272,17 +279,19 @@ export type AppealDecision = 'uphold' | 'overturn';
 export interface AdminAppeal {
   id: number;
   owner: { id: number; ulid: string; name: string | null };
-  targetType: 'avatar' | 'portfolio_item';
+  targetType: RemovalTarget;
   label: string;
+  /** Texto removido, de avaliação ou mensagem; null para imagem. */
+  excerpt: string | null;
   reason: ReportReason;
   note: string | null;
   removedAt: string;
-  /** Endereço público da imagem; volta a responder quando a remoção é revertida. */
-  imageUrl: string;
+  /** Endereço público da imagem (null para avaliação e mensagem); volta ao ar se revertida. */
+  imageUrl: string | null;
   /** Vazio quando o titular teve a conta anonimizada (LGPD). */
   appealText: string;
   appealedAt: string;
-  status: Exclude<ImageRemovalStatus, 'removed'>;
+  status: Exclude<RemovalStatus, 'removed'>;
   decidedAt: string | null;
   decisionNote: string | null;
   /** O arquivo ainda está guardado e pode ser visto em /admin/appeals/:id/image. */
@@ -300,6 +309,8 @@ export interface AdminAppealDecisionResult {
   /** Perfis e trabalhos que voltaram a mostrar a imagem. */
   restoredReferences: number;
   imageRestored: boolean;
+  /** O conteúdo voltou para onde estava: a imagem, a avaliação ou a mensagem (ADR 44). */
+  contentRestored: boolean;
   /** Arquivo guardado apagado (remoção mantida). */
   fileDeleted: boolean;
 }
@@ -924,6 +935,8 @@ export interface ChatMessage {
   content: string;
   attachment: ChatAttachment | null;
   createdAt: string;
+  /** Removida pela moderação (ADR 44): as partes veem o aviso, sem o texto nem o anexo. */
+  removedAt: string | null;
 }
 
 export interface ChatHistory {
@@ -1032,6 +1045,8 @@ export interface Review {
   comment: string | null;
   response: string | null; // resposta do freelancer (RN-046)
   createdAt: string;
+  /** Removida pela moderação (ADR 44): só a contratação mostra, sem comentário nem resposta. */
+  removedAt: string | null;
 }
 
 export interface CreateReviewRequest {

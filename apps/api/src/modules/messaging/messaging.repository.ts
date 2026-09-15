@@ -1,4 +1,4 @@
-import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { pool } from '../../config/db';
 
 export interface ConversationRow extends RowDataPacket {
@@ -26,6 +26,13 @@ export interface MessageRow extends RowDataPacket {
   file_purged_at: Date | null;
   file_purged_reason: PurgeReason | null;
   created_at: Date;
+  /** Removida pela moderação (ADR 44). */
+  removed_at?: Date | null;
+}
+
+/** Mensagem com o contrato da conversa, para avisar a sala quando ela muda. */
+export interface MessageWithContractRow extends MessageRow {
+  contract_id: number | null;
 }
 
 /** Anexo + quem pode lê-lo (as partes da conversa). */
@@ -38,6 +45,7 @@ export interface AttachmentRow extends RowDataPacket {
   file_size_bytes: number | null;
   file_purged_at: Date | null;
   file_purged_reason: PurgeReason | null;
+  removed_at?: Date | null;
   participant_a: number;
   participant_b: number;
 }
@@ -50,7 +58,7 @@ export interface NewAttachment {
 }
 
 const MESSAGE_COLUMNS = `id, conversation_id, sender_id, type, content, file_url, file_name, file_mime,
-       file_size_bytes, file_purged_at, file_purged_reason, created_at`;
+       file_size_bytes, file_purged_at, file_purged_reason, created_at, removed_at`;
 
 /** Normaliza o par (a<b) para casar com a unique key uq_conversation. */
 function orderPair(x: number, y: number): [number, number] {
@@ -137,11 +145,35 @@ export const messagingRepository = {
     return rows[0]!;
   },
 
+  /** Tira a mensagem do ar pela moderação, ou devolve numa contestação aceita (ADR 44). */
+  async setRemoved(conn: PoolConnection, id: number, removed: boolean): Promise<boolean> {
+    const [res] = await conn.query<ResultSetHeader>(
+      removed
+        ? `UPDATE messages SET removed_at = NOW() WHERE id = :id AND removed_at IS NULL`
+        : `UPDATE messages SET removed_at = NULL WHERE id = :id AND removed_at IS NOT NULL`,
+      { id },
+    );
+    return res.affectedRows > 0;
+  },
+
+  /** A mensagem e o contrato da conversa dela (para o aviso em tempo real). */
+  async findWithContract(id: number): Promise<MessageWithContractRow | undefined> {
+    const [rows] = await pool.query<MessageWithContractRow[]>(
+      `SELECT ${MESSAGE_COLUMNS},
+              (SELECT cv.contract_id FROM conversations cv WHERE cv.id = messages.conversation_id)
+                AS contract_id
+         FROM messages WHERE id = :id LIMIT 1`,
+      { id },
+    );
+    return rows[0];
+  },
+
   /** Anexo de uma mensagem com as partes da conversa (para checar quem pode baixar). */
   async findAttachment(messageId: number): Promise<AttachmentRow | undefined> {
     const [rows] = await pool.query<AttachmentRow[]>(
       `SELECT m.id, m.type, m.file_url, m.file_name, m.file_mime, m.file_size_bytes,
-              m.file_purged_at, m.file_purged_reason, cv.participant_a, cv.participant_b
+              m.file_purged_at, m.file_purged_reason, m.removed_at, cv.participant_a,
+              cv.participant_b
          FROM messages m
          JOIN conversations cv ON cv.id = m.conversation_id
         WHERE m.id = :messageId AND m.file_url IS NOT NULL

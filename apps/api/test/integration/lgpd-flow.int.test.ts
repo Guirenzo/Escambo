@@ -88,7 +88,7 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       buscasSalvas: { name: string; query: string; alert_frequency: string }[];
       moderacao: unknown[];
     };
-    expect(data.formato).toBe('escambo-export/1.3');
+    expect(data.formato).toBe('escambo-export/1.4');
     // Imagens removidas pela moderação e contestações entram no formato 1.2 (ADR 41).
     expect(data.moderacao).toEqual([]);
     expect(data.titular.email).toBe(user.email);

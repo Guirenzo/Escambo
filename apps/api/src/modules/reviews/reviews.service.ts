@@ -15,9 +15,11 @@ export function toReview(row: ReviewRow, response: string | null): Review {
     reviewerId: row.reviewer_id,
     revieweeId: row.reviewee_id,
     rating: row.rating,
-    comment: row.comment,
-    response,
+    // Removida pela moderação (ADR 44): a contratação mostra que saiu, não o que dizia.
+    comment: row.removed_at ? null : row.comment,
+    response: row.removed_at ? null : response,
     createdAt: new Date(row.created_at).toISOString(),
+    removedAt: row.removed_at ? new Date(row.removed_at).toISOString() : null,
   };
 }
 
@@ -85,6 +87,9 @@ export const reviewsService = {
     const review = await reviewsRepository.findById(reviewId);
     if (!review) {
       throw new HttpError(404, 'Avaliação não encontrada', 'review_not_found');
+    }
+    if (review.removed_at) {
+      throw new HttpError(409, 'Esta avaliação foi removida pela moderação', 'review_removed');
     }
     if (review.reviewee_id !== userId) {
       throw new HttpError(403, 'Apenas o avaliado pode responder', 'forbidden');

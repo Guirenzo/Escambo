@@ -4,8 +4,10 @@ import { inTransaction, pool } from '../../config/db';
 import { mediaBlocklist } from '../media/media.blocklist';
 import type { ImageFingerprint } from '../media/media.image';
 import { mediaRepository } from '../media/media.repository';
-import { imageRemovalsRepository } from './image-removals.repository';
-import type { ImageTarget } from './reports.schema';
+import { messagingRepository } from '../messaging/messaging.repository';
+import { reviewsRepository } from '../reviews/reviews.repository';
+import { contentRemovalsRepository } from './content-removals.repository';
+import type { ImageTarget, TextTarget } from './reports.schema';
 
 export interface ContentReportRow extends RowDataPacket {
   id: number;
@@ -26,6 +28,15 @@ export interface ImageTargetRow extends RowDataPacket {
   owner_id: number;
   image_url: string | null;
   title: string | null;
+}
+
+/** Autor e texto de uma avaliação ou mensagem denunciada (ADR 44). */
+export interface TextTargetRow extends RowDataPacket {
+  owner_id: number;
+  text: string | null;
+  rating: number | null;
+  file_name: string | null;
+  removed_at: Date | null;
 }
 
 /** O que a fila mostra de um alvo: dono, título ou trecho e a imagem no ar agora. */
@@ -221,6 +232,57 @@ export const reportsRepository = {
     return rows;
   },
 
+  /** Autor e texto de uma avaliação ou mensagem, e se ela já saiu do ar (ADR 44). */
+  async textTarget(type: TextTarget, id: number): Promise<TextTargetRow | undefined> {
+    const sql =
+      type === 'review'
+        ? `SELECT reviewer_id AS owner_id, comment AS text, rating, NULL AS file_name, removed_at
+             FROM reviews WHERE id = :id LIMIT 1`
+        : `SELECT sender_id AS owner_id, content AS text, NULL AS rating, file_name, removed_at
+             FROM messages WHERE id = :id LIMIT 1`;
+    const [rows] = await pool.query<TextTargetRow[]>(sql, { id });
+    return rows[0];
+  },
+
+  /**
+   * Remoção de avaliação ou mensagem numa transação só (ADR 44): tira o conteúdo do ar (a avaliação
+   * sai da nota média), fecha as denúncias abertas do grupo e, quando há autor, registra a remoção
+   * contestável com uma cópia do texto.
+   */
+  async removeContentAndClose(
+    g: GroupRef & {
+      targetType: TextTarget;
+      reportId: number;
+      reason: string;
+      author: { id: number; snapshot: string } | null;
+    },
+  ): Promise<{ reports: number; removalId: number | null }> {
+    return inTransaction(async (conn) => {
+      const hidden =
+        g.targetType === 'review'
+          ? await reviewsRepository.setRemoved(conn, g.targetId, true)
+          : await messagingRepository.setRemoved(conn, g.targetId, true);
+      const reports = await closeOpen(conn, { ...g, status: 'actioned' });
+      const removalId =
+        g.author && hidden
+          ? await contentRemovalsRepository.insert(conn, {
+              reportId: g.reportId,
+              ownerId: g.author.id,
+              targetType: g.targetType,
+              targetId: g.targetId,
+              imageUrl: null,
+              snapshot: g.author.snapshot,
+              reason: g.reason,
+              note: g.note,
+              refs: null,
+              blocklistId: null,
+              adminId: g.adminId,
+            })
+          : null;
+      return { reports, removalId };
+    });
+  },
+
   /** Revisão de conta por reincidência (ADR 41) ainda aberta: evita abrir outra a cada remoção. */
   async hasOpenAccountReview(userId: number): Promise<boolean> {
     const [rows] = await pool.query<RowDataPacket[]>(
@@ -266,12 +328,13 @@ export const reportsRepository = {
       const removalId =
         g.ownerId === null
           ? null
-          : await imageRemovalsRepository.insert(conn, {
+          : await contentRemovalsRepository.insert(conn, {
               reportId: g.reportId,
               ownerId: g.ownerId,
               targetType: g.targetType as ImageTarget,
               targetId: g.targetId,
               imageUrl: g.url,
+              snapshot: null,
               reason: g.reason,
               note: g.note,
               refs,
