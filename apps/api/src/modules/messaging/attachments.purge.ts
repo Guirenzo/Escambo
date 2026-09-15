@@ -96,7 +96,8 @@ export async function recordPurge(entry: LastPurge): Promise<void> {
 
 /** Uso do volume e saúde dos anexos, para o painel admin. */
 export async function storageReport(): Promise<AdminStorage> {
-  const [uploads, exports, stats, keys, files, last, days] = await Promise.all([
+  // (nunca chame uma variável de `exports`: no build CommonJS ela sombreia o objeto do módulo)
+  const [uploads, lgpdExports, stats, keys, files, last, days] = await Promise.all([
     dataDirUsage('uploads'),
     dataDirUsage('exports'),
     messagingRepository.attachmentStats(),
@@ -111,7 +112,7 @@ export async function storageReport(): Promise<AdminStorage> {
     retentionDays: days,
     purgeHour: env.ATTACHMENT_PURGE_HOUR,
     uploads,
-    exports,
+    exports: lgpdExports,
     attachments: {
       ...stats,
       missing: keys.filter((k) => !onDisk.has(k)).length,
