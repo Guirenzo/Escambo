@@ -6,6 +6,7 @@ import type {
   AdminStorage,
   AdminWithdrawal,
   AuthResponse,
+  AvailabilityPeriod,
   BarterAgreement,
   Boost,
   BoostPlan,
@@ -86,6 +87,8 @@ export interface ServiceQuery {
   maxDeliveryDays?: number;
   minRating?: number;
   day?: number;
+  period?: AvailabilityPeriod;
+  now?: boolean;
   sort?: ServiceSort;
   page?: number;
   limit?: number;

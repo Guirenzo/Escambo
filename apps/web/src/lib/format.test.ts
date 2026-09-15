@@ -7,9 +7,11 @@ import {
   displayName,
   dt,
   endOfDayIso,
+  formatAvailability,
   formatAvailableDays,
   formatBytes,
   formatHours,
+  formatPeriods,
   hm,
   spreadDates,
   STATUS_LABEL,
@@ -134,5 +136,28 @@ describe('formatBytes', () => {
     expect(formatBytes(870_400)).toBe('850 KB');
     expect(formatBytes(1_258_291)).toBe('1,2 MB');
     expect(formatBytes(12_582_912)).toBe('12 MB');
+  });
+});
+
+describe('horário de atendimento (ADR 34)', () => {
+  it('formatPeriods junta em português, na ordem do dia', () => {
+    expect(formatPeriods(['evening', 'morning'])).toBe('manhã e noite');
+    expect(formatPeriods(['afternoon'])).toBe('tarde');
+    expect(formatPeriods(['evening', 'afternoon', 'morning'])).toBe('manhã, tarde e noite');
+    expect(formatPeriods([])).toBe('');
+  });
+
+  it('formatAvailability: mesmos períodos em todos os dias, variados ou o dia todo', () => {
+    const weekdays = [1, 2, 3, 4, 5];
+    const same = Object.fromEntries(
+      weekdays.map((d) => [String(d), ['morning', 'afternoon'] as const]),
+    );
+    expect(formatAvailability(weekdays, null)).toBe('seg a sex');
+    expect(formatAvailability(weekdays, { ...same } as never)).toBe('seg a sex · manhã e tarde');
+    expect(
+      formatAvailability([1, 3, 5], { '1': ['evening'], '3': ['evening'], '5': ['evening'] }),
+    ).toBe('seg, qua, sex · noite');
+    expect(formatAvailability([0, 6], { '6': ['evening'] })).toBe('dom, sáb · horários variados');
+    expect(formatAvailability([], { '1': ['morning'] })).toBe('');
   });
 });

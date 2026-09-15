@@ -1,3 +1,5 @@
+import type { AvailabilityPeriod, AvailablePeriods } from '@escambo/types';
+
 export const brl = (v: number): string =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -81,6 +83,38 @@ export function formatAvailableDays(days: number[] | null | undefined): string {
   return consecutive
     ? `${WEEKDAY_SHORT[sorted[0]!]} a ${WEEKDAY_SHORT[sorted[sorted.length - 1]!]}`
     : sorted.map((d) => WEEKDAY_SHORT[d]).join(', ');
+}
+
+export const PERIOD_ORDER: AvailabilityPeriod[] = ['morning', 'afternoon', 'evening'];
+export const PERIOD_LABEL: Record<AvailabilityPeriod, string> = {
+  morning: 'manhã',
+  afternoon: 'tarde',
+  evening: 'noite',
+};
+
+/** "manhã", "manhã e tarde", "manhã, tarde e noite" (sempre na ordem do dia). */
+export function formatPeriods(periods: AvailabilityPeriod[]): string {
+  const labels = PERIOD_ORDER.filter((p) => periods.includes(p)).map((p) => PERIOD_LABEL[p]);
+  if (labels.length <= 1) return labels[0] ?? '';
+  return `${labels.slice(0, -1).join(', ')} e ${labels[labels.length - 1]}`;
+}
+
+/**
+ * Dias + períodos (ADR 34): "seg a sex · manhã e tarde" quando todos os dias têm os mesmos
+ * períodos; "seg a sex · horários variados" quando não; só os dias quando atende o dia todo.
+ */
+export function formatAvailability(
+  days: number[] | null | undefined,
+  periods: AvailablePeriods | null | undefined,
+): string {
+  const base = formatAvailableDays(days);
+  if (!base || !periods || Object.keys(periods).length === 0) return base;
+  const sorted = [...new Set(days!)].sort((a, b) => a - b);
+  const keys = sorted.map((d) => (periods[String(d)] ?? []).join(','));
+  if (keys.every((k) => k === keys[0])) {
+    return keys[0] ? `${base} · ${formatPeriods(periods[String(sorted[0])]!)}` : base;
+  }
+  return `${base} · horários variados`;
 }
 
 /** Tempo de resposta legível: "menos de 1 h", "2 h", "1 dia", "3 dias". */

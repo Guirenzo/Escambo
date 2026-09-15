@@ -2884,3 +2884,54 @@ button.toggle.on {
 .switch input:checked::after {
   transform: translateX(16px);
 }
+
+/* ---------- Horário de atendimento (ADR 34) ---------- */
+.periods-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.periods-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.periods-day {
+  width: 36px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+.day-chip.period {
+  padding: 4px 10px;
+  font-size: 0.76rem;
+  text-transform: none;
+}
+.chip.now {
+  gap: 6px;
+  background: var(--green-soft);
+  color: var(--green-ink);
+  border: 1px solid var(--green);
+  white-space: nowrap;
+}
+.chip.now::before,
+.now-dot {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  display: inline-block;
+}
+.now-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-end;
+}
+.now-toggle[aria-pressed='true'] .now-dot {
+  background: #fff;
+}

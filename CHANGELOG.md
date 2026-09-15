@@ -5,6 +5,21 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.16.0] — 2026-09-15
+
+### Adicionado
+
+- **Horário de atendimento** (ADR 34): por dia marcado, os períodos em que o freelancer atende
+  (manhã 6h–12h, tarde 12h–18h, noite 18h–24h, horário de Brasília); dia sem período vale o dia
+  todo. Migration `0014` (`profiles_freelancer.available_periods`, JSON).
+  - **Perfil**: chips de período por dia marcado e a chave **Aceitando novos pedidos**, que pausa
+    a agenda sem apagar os dias (antes todo salvamento religava a disponibilidade).
+  - **Perfil público e card do serviço**: "atende seg a sex · manhã e tarde" e o selo
+    **atende agora** (`availableNow` / `ownerAvailableNow`, calculados na hora).
+  - **Busca**: filtro de período junto com o dia (`period`; sem `day` é 422
+    `period_requires_day`) e o botão **Atende agora** (`now=true`): aceitando pedidos, no dia e
+    no período de agora. De madrugada ninguém atende agora.
+
 ## [1.15.0] — 2026-09-15
 
 ### Adicionado

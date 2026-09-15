@@ -301,3 +301,18 @@ export function brDatePlus(days: number): string {
   const { y, m, d } = browserDateParts(new Date(Date.now() + days * DAY_MS));
   return `${pad2(d)}/${pad2(m)}/${y}`;
 }
+
+/** Dia da semana (0 = domingo) e hora de agora no fuso do navegador dos testes. */
+export function browserClockNow(): { day: number; hour: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: BROWSER_TZ,
+    weekday: 'short',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const weekday = parts.find((p) => p.type === 'weekday')!.value;
+  return {
+    day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekday),
+    hour: Number(parts.find((p) => p.type === 'hour')!.value),
+  };
+}

@@ -4,7 +4,7 @@ import type { Service } from '@escambo/types';
 import { Avatar } from '../../components/Avatar';
 import { Stars } from '../../components/Stars';
 import { Button } from '../../components/ui';
-import { brl, formatAvailableDays } from '../../lib/format';
+import { brl, formatAvailability } from '../../lib/format';
 import { usePublicSettings } from '../../lib/hooks';
 
 /** Card de serviço da busca e do perfil público: quem presta, preço, distância, favorito e ações. */
@@ -66,9 +66,14 @@ export function ServiceCard({
             <span className="muted tiny">{s.ownerName}</span>
           )}
           <Stars value={s.ownerRating ?? 0} count={s.ownerReviews ?? 0} size={12} />
+          {s.ownerAvailableNow && (
+            <span className="chip now" data-testid="owner-now">
+              atende agora
+            </span>
+          )}
           {!!s.ownerAvailableDays?.length && (
             <span className="chip days" data-testid="owner-days">
-              atende {formatAvailableDays(s.ownerAvailableDays)}
+              atende {formatAvailability(s.ownerAvailableDays, s.ownerAvailablePeriods)}
             </span>
           )}
         </div>
