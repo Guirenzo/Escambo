@@ -40,8 +40,10 @@ import type {
   NotificationList,
   OpenDisputeRequest,
   Paginated,
+  PlatformSetting,
   PortfolioItem,
   PublicFreelancerProfile,
+  PublicSettings,
   PublicUser,
   PurgeAttachmentsResult,
   RecordConsentRequest,
@@ -434,6 +436,14 @@ export const api = {
   // admin (mediação, métricas, moderação)
   adminMetrics: () => request<AdminMetrics>('/admin/metrics'),
   adminStorage: () => request<AdminStorage>('/admin/storage'),
+  adminSettings: () => request<PlatformSetting[]>('/admin/settings'),
+  adminUpdateSetting: (key: string, value: number) =>
+    request<PlatformSetting>(`/admin/settings/${key}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    }),
+  /** Parâmetros públicos (taxa, prazos) — sem login. */
+  publicSettings: () => request<PublicSettings>('/settings/public'),
   /** Roda o expurgo de anexos agora (retenção + órfãos), sem esperar a hora do job. */
   adminPurgeAttachments: () =>
     request<PurgeAttachmentsResult>('/admin/storage/purge', { method: 'POST' }),

@@ -43,6 +43,8 @@ export const qk = {
   disputes: ['disputes'] as const,
   adminMetrics: ['adminMetrics'] as const,
   adminStorage: ['adminStorage'] as const,
+  adminSettings: ['adminSettings'] as const,
+  publicSettings: ['publicSettings'] as const,
   adminDisputes: ['adminDisputes'] as const,
   exportRequests: ['exportRequests'] as const,
   consents: ['consents'] as const,
@@ -496,6 +498,28 @@ export const useAdminMetrics = () =>
   useQuery({ queryKey: qk.adminMetrics, queryFn: () => api.adminMetrics() });
 export const useAdminStorage = () =>
   useQuery({ queryKey: qk.adminStorage, queryFn: () => api.adminStorage() });
+export const useAdminSettings = () =>
+  useQuery({ queryKey: qk.adminSettings, queryFn: () => api.adminSettings() });
+/** Comissão e prazos que a plataforma pratica agora (muda pelo painel admin). */
+export const usePublicSettings = () =>
+  useQuery({
+    queryKey: qk.publicSettings,
+    queryFn: () => api.publicSettings(),
+    staleTime: 5 * 60_000,
+  });
+/** Muda um parâmetro; recarrega o painel, o armazenamento (retenção) e os públicos (taxa). */
+export function useUpdateSetting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ key, value }: { key: string; value: number }) =>
+      api.adminUpdateSetting(key, value),
+    onSuccess: () => {
+      for (const key of [qk.adminSettings, qk.adminStorage, qk.publicSettings]) {
+        void qc.invalidateQueries({ queryKey: key });
+      }
+    },
+  });
+}
 /** Expurgo imediato de anexos; ao terminar, o card de armazenamento é recarregado. */
 export function usePurgeAttachments() {
   const qc = useQueryClient();

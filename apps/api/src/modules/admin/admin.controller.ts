@@ -2,6 +2,8 @@ import type { Request, Response } from 'express';
 import { runPurgeAttachments } from '../../jobs/purge-attachments';
 import { auditService } from '../audit/audit.service';
 import { storageReport } from '../messaging/attachments.purge';
+import { settingKeyParamSchema, updateSettingSchema } from '../settings/settings.schema';
+import { settingsService } from '../settings/settings.service';
 import { lgpdService } from '../lgpd/lgpd.service';
 import { mailService } from '../mail/mail.service';
 import { withdrawalService } from '../withdrawal/withdrawal.service';
@@ -201,4 +203,27 @@ export async function purgeStorage(req: Request, res: Response): Promise<void> {
     userAgent: req.get('user-agent'),
   });
   res.json(result);
+}
+
+/** GET /api/admin/settings — parâmetros editáveis, valor atual, limites e último autor. */
+export async function getSettings(_req: Request, res: Response): Promise<void> {
+  res.json(await settingsService.listForAdmin());
+}
+
+/** PUT /api/admin/settings/:key — muda um parâmetro (auditado; efeito imediato). */
+export async function updateSetting(req: Request, res: Response): Promise<void> {
+  const { key } = settingKeyParamSchema.parse(req.params);
+  const { value } = updateSettingSchema.parse(req.body);
+  const before = (await settingsService.listForAdmin()).find((s) => s.key === key)?.value ?? null;
+  const item = await settingsService.update(key, value, req.user!.uid);
+  await auditService.log({
+    userId: req.user!.uid,
+    action: 'setting_updated',
+    entityType: 'platform_setting',
+    oldValue: { key, value: before },
+    newValue: { key, value: item.value },
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+  });
+  res.json(item);
 }

@@ -5,6 +5,18 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.14.0] — 2026-09-15
+
+### Adicionado
+
+- **Parâmetros da plataforma no painel admin** (ADR 32): comissão (%), aprovação tácita (dias),
+  validade da proposta (horas), carência do prazo (horas) e retenção dos anexos (dias) — só o
+  que a API lê em tempo de execução. `GET /admin/settings` e `PUT /admin/settings/:key` com
+  limites por chave, autor e data, auditoria (`setting_updated`) e efeito imediato.
+- **Comissão deixa de ser fixa no código**: contratações em dinheiro e a torna das trocas leem
+  `platform_fee_percentage` na criação e gravam a taxa que valia; o modal de contratação e a
+  tela de trocas mostram a taxa vigente (`GET /settings/public`).
+
 ## [1.13.0] — 2026-09-14
 
 ### Adicionado
