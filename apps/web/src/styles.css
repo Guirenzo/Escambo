@@ -3005,6 +3005,91 @@ button.toggle.on {
   font-weight: 600;
 }
 
+/* ---------- Recorte da foto de perfil (ADR 38) ---------- */
+.cropper-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.crop-view {
+  position: relative;
+  width: 280px;
+  height: 280px;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--r);
+  background: var(--surface-2);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.crop-view:active {
+  cursor: grabbing;
+}
+.crop-view:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: 3px;
+}
+.crop-photo,
+.crop-preview img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+/* Janela redonda: o avatar aparece em círculo, o resto da foto fica escurecido */
+.crop-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 999px rgba(12, 20, 16, 0.55);
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: -2px;
+  pointer-events: none;
+}
+.crop-previews {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.crop-preview {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.crop-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.crop-zoom input[type='range'] {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: var(--green);
+}
+.crop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 480px) {
+  .crop-previews {
+    flex-direction: row;
+  }
+}
+
 /* ---------- Imagens enviadas do aparelho (ADR 36) ---------- */
 .upload-btn {
   flex-shrink: 0;

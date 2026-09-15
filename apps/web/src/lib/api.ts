@@ -38,6 +38,7 @@ import type {
   GamificationProfile,
   LeaderboardEntry,
   LoginRequest,
+  MediaPurpose,
   MediaUpload,
   MyProfiles,
   NotificationList,
@@ -299,9 +300,10 @@ export const api = {
     return request<Paginated<Service>>(`/services${s ? `?${s}` : ''}`);
   },
   // imagens de perfil e portfólio (ADR 36)
-  /** Envia a imagem já preparada no navegador; devolve a URL pública (/api/media/...). */
-  uploadMedia: (file: Blob, name: string) => {
+  /** Envia a imagem (recortada ou reduzida no navegador); devolve a URL pública (/api/media/...). */
+  uploadMedia: (file: Blob, name: string, purpose: MediaPurpose) => {
     const form = new FormData();
+    form.append('purpose', purpose);
     form.append('file', file, name);
     return request<MediaUpload>('/media', { method: 'POST', body: form });
   },

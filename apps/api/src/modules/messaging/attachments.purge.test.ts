@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../media/media.storage', () => ({
   removeMediaOrphans: vi.fn().mockResolvedValue(0),
-  mediaUsage: vi.fn().mockResolvedValue({ files: 0, bytes: 0, orphans: 0 }),
+  mediaUsage: vi.fn().mockResolvedValue({ files: 0, variants: 0, bytes: 0, orphans: 0 }),
 }));
 
 vi.mock('node:fs/promises', () => ({ unlink: vi.fn().mockResolvedValue(undefined) }));

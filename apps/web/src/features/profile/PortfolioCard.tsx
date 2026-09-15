@@ -4,7 +4,7 @@ import { Button, Field, Input, QueryState } from '../../components/ui';
 import { usePortfolio, usePortfolioMutation } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { ImageUploadButton } from '../../components/ImageUploadButton';
-import { IMAGE_MAX_SIDE } from '../../lib/image';
+import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
 
 const MAX_ITEMS = 12;
 
@@ -79,7 +79,7 @@ export function PortfolioCard() {
               {items.map((i) => (
                 <li key={i.id}>
                   {i.imageUrl ? (
-                    <img src={i.imageUrl} alt="" loading="lazy" />
+                    <img src={mediaVariant(i.imageUrl, MEDIA_THUMB.small)} alt="" loading="lazy" />
                   ) : (
                     <span className="portfolio-thumb">
                       <Link2 size={16} />
@@ -146,7 +146,7 @@ export function PortfolioCard() {
                 placeholder="https://…/foto-do-trabalho.jpg ou envie do aparelho"
               />
               <ImageUploadButton
-                maxSide={IMAGE_MAX_SIDE.portfolio}
+                purpose="portfolio"
                 label="Enviar imagem"
                 testId="portfolio-upload"
                 onUploaded={(url) => {
@@ -155,7 +155,12 @@ export function PortfolioCard() {
                 }}
               />
               {imageUrl.trim() && (
-                <img className="upload-preview" src={imageUrl.trim()} alt="" loading="lazy" />
+                <img
+                  className="upload-preview"
+                  src={mediaVariant(imageUrl.trim(), MEDIA_THUMB.small)}
+                  alt=""
+                  loading="lazy"
+                />
               )}
             </div>
           </Field>

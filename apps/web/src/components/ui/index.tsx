@@ -1,4 +1,5 @@
 import { AlertTriangle, ArrowLeftRight, Inbox, X } from 'lucide-react';
+import { useId } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -54,7 +55,13 @@ export function Pill({ status, children }: { status?: string; children: ReactNod
   return <span className={status ? `pill status-${status}` : 'pill'}>{children}</span>;
 }
 
-export function Chip({ kind = 'rank', children }: { kind?: 'rank' | 'level'; children: ReactNode }) {
+export function Chip({
+  kind = 'rank',
+  children,
+}: {
+  kind?: 'rank' | 'level';
+  children: ReactNode;
+}) {
   return <span className={`chip ${kind}`}>{children}</span>;
 }
 
@@ -166,11 +173,19 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
 }) {
+  // O título dá nome ao diálogo para leitores de tela (e para getByRole('dialog', { name })).
+  const titleId = useId();
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <div className="modal card" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-head">
-          <h3>{title}</h3>
+          <h3 id={titleId}>{title}</h3>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar">
             <X size={18} />
           </button>

@@ -1,6 +1,6 @@
 {
   "name": "@escambo/api",
-  "version": "1.19.0",
+  "version": "1.20.0",
   "private": true,
   "description": "API backend do Escambo — Node + Express + TypeScript",
   "license": "MIT",
@@ -32,6 +32,7 @@
     "nodemailer": "^10.0.3",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
+    "sharp": "^0.35.4",
     "socket.io": "^4.8.3",
     "ulid": "^2.3.0",
     "zod": "^3.23.8"

@@ -5,6 +5,32 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.20.0] — 2026-09-15
+
+### Adicionado
+
+- **Recorte da foto de perfil e miniaturas** (ADR 38).
+  - **Recorte**: escolher a foto abre a janela "Ajustar foto", com arrastar (mouse, toque ou
+    setas), zoom (controle, botões, roda do mouse ou + e −) e a prévia do avatar redondo nos dois
+    tamanhos em que ele aparece. A foto sobe já quadrada.
+  - **A API processa a imagem**: decodifica e reencoda com a sharp. O avatar sai quadrado de até
+    512 px, o portfólio cabe em 1600 px e GIF animado continua animado no portfólio. Tudo vira
+    WebP, com a orientação da câmera aplicada e sem EXIF, XMP ou ICC. `POST /media` recebe
+    `purpose` (`avatar` ou `portfolio`) e devolve largura e altura; imagem acima de 50 megapixels
+    ou que não abre é 422.
+  - **Miniaturas**: `GET /api/media/…?w=128` ou `?w=480` devolve a miniatura em WebP, gerada na
+    primeira leitura e guardada ao lado do original, com o mesmo cache imutável. Vale também para
+    as imagens enviadas antes desta versão. Avatares e o portfólio do perfil público passam a
+    carregar a miniatura.
+  - **Admin**: o card de armazenamento mostra quantas miniaturas existem, e o expurgo remove as
+    miniaturas junto com as imagens que ninguém usa.
+
+### Alterado
+
+- **Diálogos com nome acessível**: todo modal passa a ser anunciado pelo título.
+- A remoção manual de metadados por segmentos (ADR 36) saiu, porque a reencodagem já descarta
+  tudo.
+
 ## [1.19.0] — 2026-09-15
 
 ### Adicionado
