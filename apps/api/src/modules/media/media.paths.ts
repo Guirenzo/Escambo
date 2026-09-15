@@ -15,8 +15,11 @@ export const MEDIA_URL_RE = new RegExp(`^/api/media/(\\d{4})/(0[1-9]|1[0-2])/(${
 /** Só o nome do arquivo (último segmento da URL). */
 export const MEDIA_FILE_RE = new RegExp(`^${ULID}\\.(jpg|png|gif|webp)$`);
 
-/** Larguras de miniatura aceitas em ?w= (ADR 38): avatar em listas e cartão do portfólio. */
-export const MEDIA_WIDTHS = [128, 480] as const;
+/**
+ * Larguras de miniatura aceitas em ?w=: avatar em listas e cartão do portfólio (ADR 38) e a imagem
+ * da galeria em telas pequenas (ADR 40).
+ */
+export const MEDIA_WIDTHS = [128, 480, 960] as const;
 export type MediaWidth = (typeof MEDIA_WIDTHS)[number];
 
 const ORIGINAL_FILE_RE = new RegExp(`^(${ULID})\\.(?:jpg|png|gif|webp)$`);

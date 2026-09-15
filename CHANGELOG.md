@@ -5,6 +5,20 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.22.0] — 2026-09-15
+
+### Adicionado
+
+- **Galeria do portfólio** (ADR 40). No perfil público, cada trabalho com imagem abre em tela
+  cheia, com título, contador, descrição e link do trabalho.
+  - **Navegação**: botões, setas, Home e End ou deslizar no toque, em círculo. Esc fecha e o foco
+    volta ao cartão, e a rolagem da página trava enquanto a galeria está aberta.
+  - **Link direto**: o trabalho aberto fica na URL (`?trabalho=ID`), e o "voltar" do celular fecha
+    a galeria em vez de sair do perfil.
+  - **Imagem do tamanho da tela**: `srcset` com 480 px, 960 px e o original; a miniatura aparece
+    desfocada enquanto a grande carrega, e as vizinhas são pedidas antes.
+  - **API**: nova largura de miniatura, `GET /api/media/…?w=960`.
+
 ## [1.21.0] — 2026-09-15
 
 ### Adicionado

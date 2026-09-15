@@ -13,9 +13,10 @@ import {
   Star,
 } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Service } from '@escambo/types';
 import { Avatar } from '../../components/Avatar';
+import { PortfolioGallery } from '../../components/PortfolioGallery';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { Stars } from '../../components/Stars';
 import { Button, QueryState } from '../../components/ui';
@@ -55,6 +56,26 @@ export function FreelancerView() {
   const [contratar, setContratar] = useState<Service | null>(null);
   const [boost, setBoost] = useState<Service | null>(null);
   const [report, setReport] = useState<ReportSubject[] | null>(null);
+
+  // Galeria do portfólio (ADR 40): o trabalho aberto fica na URL (?trabalho=ID), para link direto.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const openWorkId = Number(searchParams.get('trabalho')) || null;
+  const withWork = (id: number | null): URLSearchParams => {
+    const next = new URLSearchParams(searchParams);
+    if (id === null) next.delete('trabalho');
+    else next.set('trabalho', String(id));
+    return next;
+  };
+  // Abrir pela página empilha o histórico: o "voltar" do celular fecha a galeria.
+  const openWork = (id: number): void =>
+    setSearchParams(withWork(id), { state: { gallery: true } });
+  const showWork = (id: number): void =>
+    setSearchParams(withWork(id), { replace: true, state: location.state });
+  const closeWork = (): void => {
+    if ((location.state as { gallery?: boolean } | null)?.gallery) navigate(-1);
+    else setSearchParams(withWork(null), { replace: true });
+  };
 
   return (
     <div className="page">
@@ -183,11 +204,18 @@ export function FreelancerView() {
                   {p.portfolio.map((i) => (
                     <figure className="portfolio-item" key={i.id}>
                       {i.imageUrl ? (
-                        <img
-                          src={mediaVariant(i.imageUrl, MEDIA_THUMB.card)}
-                          alt={i.title}
-                          loading="lazy"
-                        />
+                        <button
+                          type="button"
+                          className="portfolio-open"
+                          aria-label={`Ampliar ${i.title}`}
+                          onClick={() => openWork(i.id)}
+                        >
+                          <img
+                            src={mediaVariant(i.imageUrl, MEDIA_THUMB.card)}
+                            alt=""
+                            loading="lazy"
+                          />
+                        </button>
                       ) : (
                         <div className="portfolio-placeholder" aria-hidden="true">
                           <Link2 size={22} />
@@ -231,6 +259,30 @@ export function FreelancerView() {
                   ))}
                 </div>
               </section>
+            )}
+
+            {openWorkId !== null && (
+              <PortfolioGallery
+                items={p.portfolio}
+                openId={openWorkId}
+                onShow={showWork}
+                onClose={closeWork}
+                onReport={
+                  userId !== myId
+                    ? (item) => {
+                        closeWork();
+                        setReport([
+                          {
+                            targetType: 'portfolio_item',
+                            targetId: item.id,
+                            label: `Imagem de “${item.title}”`,
+                            imageUrl: item.imageUrl,
+                          },
+                        ]);
+                      }
+                    : undefined
+                }
+              />
             )}
 
             <div className="two-col" style={{ marginTop: 16 }}>

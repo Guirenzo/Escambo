@@ -88,7 +88,7 @@ export async function serveMedia(req: Request, res: Response): Promise<void> {
   if (width === null) {
     throw new HttpError(
       400,
-      'Largura de miniatura não suportada (use 128 ou 480)',
+      'Largura de miniatura não suportada (use 128, 480 ou 960)',
       'invalid_width',
     );
   }

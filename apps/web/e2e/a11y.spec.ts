@@ -8,6 +8,7 @@ import {
   openAs,
   pngFixture,
   settled,
+  uploadImage,
 } from './helpers';
 
 /**
@@ -48,6 +49,32 @@ test('recorte da foto de perfil não tem violações bloqueantes', async ({ page
   await expect(page.getByRole('dialog', { name: 'Ajustar foto' })).toBeVisible();
   const problems = await audit(page, 'recorte da foto');
   expect(problems, problems.join('\n')).toEqual([]);
+});
+
+test('galeria do portfólio não tem violações bloqueantes', async ({ page, request }) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const headers = { Authorization: `Bearer ${freelancer.token}` };
+  const image = await uploadImage(request, freelancer, pngFixture(120 + (Date.now() % 300), 80));
+  const added = await request.post('/api/profiles/portfolio', {
+    headers,
+    data: {
+      title: 'Trabalho da auditoria',
+      description: 'Descrição do trabalho.',
+      imageUrl: image,
+      externalUrl: 'https://exemplo.com/trabalho',
+    },
+  });
+  expect(added.ok(), await added.text()).toBeTruthy();
+  const { ulid } = (await (await request.get('/api/auth/me', { headers })).json()) as {
+    ulid: string;
+  };
+  const viewer = await createUser(request, 'client');
+  await openAs(page, viewer, `/freelancers/${ulid}`);
+  await settled(page);
+  await page.getByRole('button', { name: 'Ampliar Trabalho da auditoria' }).click();
+  await expect(page.getByRole('dialog', { name: 'Trabalho da auditoria' })).toBeVisible();
+  const problems = await audit(page, 'galeria do portfólio');
+  expect(problems.join('\n')).toBe('');
 });
 
 test('login não tem violações bloqueantes', async ({ page }) => {

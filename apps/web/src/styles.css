@@ -3005,6 +3005,169 @@ button.toggle.on {
   font-weight: 600;
 }
 
+/* ---------- Galeria do portfólio (ADR 40) ---------- */
+.portfolio-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.portfolio-open:focus-visible {
+  outline: 3px solid var(--green);
+  outline-offset: -3px;
+}
+.gallery {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: #0b120e;
+  color: #fff;
+}
+.gallery-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+}
+.gallery-count {
+  flex: none;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.72);
+  font-variant-numeric: tabular-nums;
+}
+.gallery-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gallery-tools {
+  display: flex;
+  gap: 6px;
+}
+.gallery-btn,
+.gallery-nav {
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+}
+.gallery-btn {
+  width: 40px;
+  height: 40px;
+}
+.gallery-btn:hover,
+.gallery-nav:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.gallery-btn:focus-visible,
+.gallery-nav:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+.gallery-stage {
+  position: relative;
+  display: grid;
+  /* faixa com altura definida: a figura ocupa o espaço e a imagem cabe nele, vertical ou não */
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  min-height: 0;
+  padding: 0 72px 8px;
+  touch-action: pan-y;
+}
+.gallery-figure {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  width: min(1100px, 100%);
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+}
+.gallery-figure img {
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+.gallery-placeholder {
+  filter: blur(14px);
+  opacity: 0.55;
+}
+.gallery-image {
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.gallery-image.loaded {
+  opacity: 1;
+}
+.gallery-nav {
+  position: absolute;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  transform: translateY(-50%);
+}
+.gallery-nav.prev {
+  left: 12px;
+}
+.gallery-nav.next {
+  right: 12px;
+}
+.gallery-caption {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 10px 16px 22px;
+  color: rgba(255, 255, 255, 0.86);
+  text-align: center;
+}
+.gallery-caption p {
+  margin: 0;
+}
+.gallery-caption a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #9ee6c1;
+  font-weight: 600;
+}
+@media (max-width: 720px) {
+  .gallery-stage {
+    padding: 0 0 8px;
+  }
+  .gallery-nav {
+    width: 40px;
+    height: 40px;
+    background: rgba(0, 0, 0, 0.5);
+  }
+  .gallery-nav.prev {
+    left: 6px;
+  }
+  .gallery-nav.next {
+    right: 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gallery-image {
+    transition: none;
+  }
+}
+
 /* ---------- Moderação de imagens (ADR 39) ---------- */
 .report-subject {
   display: flex;
