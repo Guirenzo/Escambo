@@ -11,6 +11,8 @@ import { errorHandler } from './middlewares/error-handler';
 import { maintenanceGate } from './middlewares/maintenance';
 import { apiRateLimiter } from './middlewares/rate-limit';
 import { router } from './routes';
+import { serveMedia } from './modules/media/media.controller';
+import { asyncHandler } from './utils/async-handler';
 
 /** Converte a env TRUST_PROXY na forma aceita pelo Express. */
 function parseTrustProxy(value: string): boolean | number | string {
@@ -67,6 +69,10 @@ export function createApp() {
   app.get('/api/docs', (_req, res) => {
     res.type('html').send(swaggerHtml);
   });
+
+  // Imagens públicas de perfil e portfólio (ADR 36): servidas como arquivo estático, fora do
+  // rate limit e da manutenção. O nome é um ULID imutável, então o cache é longo.
+  app.get('/api/media/:year/:month/:file', asyncHandler(serveMedia));
 
   // Manutenção depois do rate limit (o limite protege até a resposta 503) e antes das rotas.
   app.use('/api', apiRateLimiter, maintenanceGate, router);

@@ -418,6 +418,16 @@ export const openapiDocument: Record<string, any> = {
     },
     '/disputes/{id}': { get: op('Disputas', 'Detalhe da disputa', { auth: true }) },
 
+    '/media': {
+      post: op(
+        'Perfil',
+        'Envia imagem para avatar ou portfólio (multipart file; JPG, PNG, GIF ou WebP até 5 MB, reconhecida pelo conteúdo e sem metadados). Devolve a URL pública',
+        { auth: true, responses: res201 },
+      ),
+    },
+    '/media/{year}/{month}/{file}': {
+      get: op('Perfil', 'Imagem pública de perfil ou portfólio (cache imutável de um ano)'),
+    },
     '/admin/metrics': { get: op('Admin', 'Métricas da plataforma', { auth: true }) },
     '/admin/storage': {
       get: op('Admin', 'Uso do volume: anexos do chat, cópias LGPD, órfãos e último expurgo', {

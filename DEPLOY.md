@@ -127,7 +127,7 @@ Restaurar (para a API, importa, roda migrations pendentes e sobe de novo):
 COMPOSE_FILE=docker-compose.prod.yml scripts/restore-db.sh backups/escambo-20260910-030000.sql.gz
 ```
 
-O volume `escambo_api_data` guarda os **anexos do chat** (`uploads/`, permanentes — o banco só tem a
+O volume `escambo_api_data` guarda os **anexos do chat** (`uploads/`) e as **fotos de perfil e imagens do portfólio** (`media/`), permanentes — o banco só tem a
 chave de cada arquivo) e as cópias de dados LGPD (temporárias, `EXPORT_TTL_DAYS`). Os anexos precisam
 de backup tanto quanto o banco: `scripts/backup-uploads.sh` empacota a pasta de dentro do container
 (`backups/uploads-*.tgz`, mesma retenção) — agende no mesmo cron. Os certificados ficam em

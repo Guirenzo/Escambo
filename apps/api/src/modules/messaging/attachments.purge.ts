@@ -5,6 +5,7 @@ import { logger } from '../../config/logger';
 import { settingsRepository } from '../settings/settings.repository';
 import { dataDirUsage, listUploadedFiles, removeAttachment } from './attachments.storage';
 import { messagingRepository } from './messaging.repository';
+import { mediaUsage, removeMediaOrphans } from '../media/media.storage';
 
 /**
  * Expurgo de anexos do chat (ADR 31). O arquivo é o que pesa e o que carrega dado pessoal; a
@@ -52,7 +53,8 @@ export async function purgeByRetention(now: Date = new Date()): Promise<PurgeSum
       logger.error({ err, messageId: row.id }, 'expurgo: falha ao remover anexo');
     }
   }
-  const orphansRemoved = await removeOrphans(now);
+  // Órfãos dos anexos do chat e das imagens de perfil e portfólio (ADR 36).
+  const orphansRemoved = (await removeOrphans(now)) + (await removeMediaOrphans(now));
   return { retentionDays: days, cutoff: cutoff.toISOString(), purged, orphansRemoved, failed };
 }
 
@@ -106,6 +108,7 @@ export async function storageReport(): Promise<AdminStorage> {
     lastPurge(),
     retentionDays(),
   ]);
+  const media = await mediaUsage();
   const onDisk = new Set(files.map((f) => f.key));
   const known = new Set(keys);
   return {
@@ -113,6 +116,7 @@ export async function storageReport(): Promise<AdminStorage> {
     purgeHour: env.ATTACHMENT_PURGE_HOUR,
     uploads,
     exports: lgpdExports,
+    media,
     attachments: {
       ...stats,
       missing: keys.filter((k) => !onDisk.has(k)).length,

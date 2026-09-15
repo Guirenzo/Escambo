@@ -19,6 +19,8 @@ import { useToast } from '../../lib/toast';
 import { EmailPreferencesCard } from '../profile/EmailPreferencesCard';
 import { PortfolioCard } from '../profile/PortfolioCard';
 import { PrivacidadeCard } from '../profile/PrivacidadeCard';
+import { ImageUploadButton } from '../../components/ImageUploadButton';
+import { IMAGE_MAX_SIDE } from '../../lib/image';
 
 /** Avaliações que o freelancer recebeu, com resposta pública (uma por avaliação). */
 function AvaliacoesRecebidas({ userId }: { userId: number }) {
@@ -260,11 +262,21 @@ export function PerfilView() {
                 <div className="loc-row">
                   <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
                   <Input
-                    type="url"
+                    type="text"
+                    inputMode="url"
                     value={avatarUrl}
                     onChange={(e) => setAvatarUrl(e.target.value)}
-                    placeholder="https://…/sua-foto.jpg"
+                    placeholder="https://…/sua-foto.jpg ou envie do aparelho"
                     maxLength={512}
+                  />
+                  <ImageUploadButton
+                    maxSide={IMAGE_MAX_SIDE.avatar}
+                    label="Enviar foto"
+                    testId="avatar-upload"
+                    onUploaded={(url) => {
+                      setAvatarUrl(url);
+                      toast.success('Foto enviada. Salve o perfil para aplicar.');
+                    }}
                   />
                 </div>
               </Field>
@@ -392,11 +404,21 @@ export function PerfilView() {
                 <div className="loc-row">
                   <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
                   <Input
-                    type="url"
+                    type="text"
+                    inputMode="url"
                     value={avatarUrl}
                     onChange={(e) => setAvatarUrl(e.target.value)}
-                    placeholder="https://…/sua-foto.jpg"
+                    placeholder="https://…/sua-foto.jpg ou envie do aparelho"
                     maxLength={512}
+                  />
+                  <ImageUploadButton
+                    maxSide={IMAGE_MAX_SIDE.avatar}
+                    label="Enviar foto"
+                    testId="avatar-upload"
+                    onUploaded={(url) => {
+                      setAvatarUrl(url);
+                      toast.success('Foto enviada. Salve o perfil para aplicar.');
+                    }}
                   />
                 </div>
               </Field>

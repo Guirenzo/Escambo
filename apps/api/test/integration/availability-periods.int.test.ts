@@ -39,7 +39,7 @@ async function freelancer(profile: Record<string, unknown>): Promise<Freela> {
 
 const TAG = `periodo${Date.now()}`;
 
-async function publish(owner: Freela, title: string): Promise<void> {
+async function publish(owner: Freela, title: string, tag = TAG): Promise<void> {
   const cats = await request(app).get('/api/categories').expect(200);
   const list = (Array.isArray(cats.body) ? cats.body : cats.body.items) as { id: number }[];
   await request(app)
@@ -47,7 +47,7 @@ async function publish(owner: Freela, title: string): Promise<void> {
     .set(auth(owner.token))
     .send({
       categoryId: list[0]!.id,
-      title: `${TAG} ${title}`,
+      title: `${tag} ${title}`,
       description: 'Serviço usado para testar horário de atendimento',
       priceType: 'fixed',
       price: 100,
@@ -60,9 +60,11 @@ interface Item {
   ownerAvailablePeriods: Record<string, string[]> | null;
   ownerAvailableNow: boolean;
 }
-const search = (query: string) => request(app).get(`/api/services?q=${TAG}&limit=50${query}`);
-const titles = (res: request.Response): string[] =>
-  (res.body.items as Item[]).map((i) => i.title.replace(`${TAG} `, '')).sort();
+// Cada teste busca pelo próprio prefixo: serviços de um teste não podem casar com a busca de outro.
+const search = (query: string, tag = TAG) =>
+  request(app).get(`/api/services?q=${tag}&limit=50${query}`);
+const titles = (res: request.Response, tag = TAG): string[] =>
+  (res.body.items as Item[]).map((i) => i.title.replace(`${tag} `, '')).sort();
 const on = (days: number[], periods: string[]) =>
   Object.fromEntries(days.map((d) => [String(d), periods]));
 
@@ -138,6 +140,8 @@ describe('Horário de atendimento (ADR 34)', () => {
   });
 
   it('atende agora: só quem aceita pedidos, no dia e no período de agora (Brasília)', async () => {
+    // Prefixo próprio: os freelancers de dia útil do teste anterior atendem agora de dia.
+    const NOW_TAG = `agora${Date.now()}`;
     const slot = currentSlot();
     const nowPeriod = slot.period ?? 'morning';
     const otherPeriod = nowPeriod === 'evening' ? 'morning' : 'evening';
@@ -157,13 +161,13 @@ describe('Horário de atendimento (ADR 34)', () => {
       availableDays: [slot.day],
       availablePeriods: on([slot.day], [otherPeriod]),
     });
-    await publish(now, 'agora');
-    await publish(paused, 'pausado');
-    await publish(otherDay, 'amanhã');
-    await publish(otherTime, 'outro período');
+    await publish(now, 'agora', NOW_TAG);
+    await publish(paused, 'pausado', NOW_TAG);
+    await publish(otherDay, 'amanhã', NOW_TAG);
+    await publish(otherTime, 'outro período', NOW_TAG);
 
-    const res = await search('&now=true').expect(200);
-    const all = (await search('').expect(200)).body.items as Item[];
+    const res = await search('&now=true', NOW_TAG).expect(200);
+    const all = (await search('', NOW_TAG).expect(200)).body.items as Item[];
     const pub = await request(app).get(`/api/profiles/freelancer/${now.ulid}`).expect(200);
     const pubPaused = await request(app).get(`/api/profiles/freelancer/${paused.ulid}`).expect(200);
 
@@ -172,7 +176,7 @@ describe('Horário de atendimento (ADR 34)', () => {
     if (after.day !== slot.day || after.period !== slot.period) return;
 
     const expectNow = slot.period !== null; // de madrugada ninguém atende agora
-    expect(titles(res)).toEqual(expectNow ? ['agora'] : []);
+    expect(titles(res, NOW_TAG)).toEqual(expectNow ? ['agora'] : []);
     expect(all.find((i) => i.title.endsWith('agora'))!.ownerAvailableNow).toBe(expectNow);
     expect(all.find((i) => i.title.endsWith('pausado'))!.ownerAvailableNow).toBe(false);
     expect(pub.body.availableNow).toBe(expectNow);

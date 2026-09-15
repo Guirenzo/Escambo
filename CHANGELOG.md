@@ -5,6 +5,26 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.18.0] — 2026-09-15
+
+### Adicionado
+
+- **Foto de perfil e imagens do portfólio enviadas do aparelho** (ADR 36). Antes os dois campos
+  só aceitavam link; agora têm o botão **Enviar foto** / **Enviar imagem**, e o link continua
+  valendo.
+  - **No navegador**: a imagem é reduzida para o tamanho de uso (512 px no avatar, 1600 px no
+    portfólio), gira conforme a câmera e é reencodada em WebP, o que também descarta o EXIF com
+    GPS. GIF vai como está.
+  - **Na API**: `POST /media` aceita JPG, PNG, GIF ou WebP até 5 MB, reconhecidos pelo conteúdo,
+    e remove de novo os metadados sem decodificar pixels: EXIF, XMP, IPTC e comentários do JPEG;
+    eXIf e textos do PNG; EXIF e XMP do WebP. As imagens ficam em `DATA_DIR/media` e são
+    servidas em `/api/media/AAAA/MM/<ULID>.<ext>`, públicas, com cache imutável de um ano e
+    fora do rate limit.
+  - **Perfil e portfólio** aceitam essa URL no lugar de um link externo; caminho inventado é 422.
+  - **Expurgo**: imagem enviada que nenhum perfil ou portfólio usa há mais de um dia sai do
+    disco. O card de armazenamento do admin mostra a pasta de mídia, e
+    `scripts/backup-uploads.sh` passa a guardar `media/` junto com os anexos.
+
 ## [1.17.0] — 2026-09-15
 
 ### Adicionado

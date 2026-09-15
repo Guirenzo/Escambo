@@ -38,6 +38,7 @@ import type {
   GamificationProfile,
   LeaderboardEntry,
   LoginRequest,
+  MediaUpload,
   MyProfiles,
   NotificationList,
   OpenDisputeRequest,
@@ -296,6 +297,13 @@ export const api = {
     }
     const s = qs.toString();
     return request<Paginated<Service>>(`/services${s ? `?${s}` : ''}`);
+  },
+  // imagens de perfil e portfólio (ADR 36)
+  /** Envia a imagem já preparada no navegador; devolve a URL pública (/api/media/...). */
+  uploadMedia: (file: Blob, name: string) => {
+    const form = new FormData();
+    form.append('file', file, name);
+    return request<MediaUpload>('/media', { method: 'POST', body: form });
   },
   // buscas salvas (ADR 35)
   savedSearches: () => request<SavedSearch[]>('/saved-searches'),

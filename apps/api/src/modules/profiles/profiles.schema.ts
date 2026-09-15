@@ -1,8 +1,15 @@
 import { z } from 'zod';
+import { MEDIA_URL_RE } from '../media/media.paths';
+
+/** Imagem por link externo ou enviada pela plataforma (/api/media/AAAA/MM/<ULID>.<ext>, ADR 36). */
+const imageRef = z.union([
+  z.string().url().max(512),
+  z.string().regex(MEDIA_URL_RE, 'Imagem enviada inválida'),
+]);
 
 export const upsertFreelancerSchema = z.object({
   fullName: z.string().min(2).max(150),
-  avatarUrl: z.string().url().max(512).nullable().optional(),
+  avatarUrl: imageRef.nullable().optional(),
   bio: z.string().max(2000).nullable().optional(),
   headline: z.string().max(255).nullable().optional(),
   city: z.string().max(100).nullable().optional(),
@@ -28,7 +35,7 @@ export const portfolioItemSchema = z
   .object({
     title: z.string().trim().min(3).max(150),
     description: z.string().max(1000).nullable().optional(),
-    imageUrl: url.nullable().optional(),
+    imageUrl: imageRef.nullable().optional(),
     externalUrl: url.nullable().optional(),
   })
   .refine((d) => d.imageUrl || d.externalUrl, {
@@ -44,7 +51,7 @@ export const PORTFOLIO_MAX_ITEMS = 12;
 
 export const upsertClientSchema = z.object({
   fullName: z.string().min(2).max(150),
-  avatarUrl: z.string().url().max(512).nullable().optional(),
+  avatarUrl: imageRef.nullable().optional(),
   bio: z.string().max(2000).nullable().optional(),
   city: z.string().max(100).nullable().optional(),
   state: z.string().length(2).nullable().optional(),
