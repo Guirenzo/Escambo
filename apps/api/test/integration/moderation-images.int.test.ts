@@ -188,6 +188,10 @@ describe('Moderação de imagens (ADR 39)', () => {
       referencesCleared: 1,
       fileRemoved: true,
       blocked: true,
+      removalId: expect.any(Number),
+      ownerStrikes: 1,
+      uploadsBlockedUntil: null,
+      accountReviewOpened: false,
     });
 
     const [profile] = await pool.query(
@@ -290,6 +294,10 @@ describe('Moderação de imagens (ADR 39)', () => {
       referencesCleared: 0,
       fileRemoved: false,
       blocked: false,
+      removalId: null,
+      ownerStrikes: null,
+      uploadsBlockedUntil: null,
+      accountReviewOpened: false,
     });
 
     const removed = await act(admin, r1.body.id, 'remove-image').expect(200);

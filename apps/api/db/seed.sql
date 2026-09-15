@@ -76,5 +76,9 @@ INSERT INTO platform_settings (key_name, value, type, description) VALUES
   ('maintenance_mode',        'false', 'boolean', 'Modo de manutenção da plataforma'),
   ('proposal_expiry_hours',   '72',    'integer', 'Horas para o freelancer responder a uma proposta; depois ela expira e a reserva volta ao cliente (RN-021)'),
   ('deadline_grace_hours',    '24',    'integer', 'Horas após o aviso de prazo estourado sem entrega nem extensão até a plataforma abrir a disputa (RN-029)'),
-  ('attachment_retention_days', '180', 'integer', 'Dias que um anexo do chat fica no disco depois de enviado, quando não há mais contratação aberta entre as duas pessoas; a mensagem fica, sem o arquivo (ADR 31)')
+  ('attachment_retention_days', '180', 'integer', 'Dias que um anexo do chat fica no disco depois de enviado, quando não há mais contratação aberta entre as duas pessoas; a mensagem fica, sem o arquivo (ADR 31)'),
+  ('appeal_window_days',       '14',  'integer', 'Dias que o dono de uma imagem removida tem para contestar, depois a imagem em quarentena é apagada (ADR 41)'),
+  ('strike_window_days',       '180', 'integer', 'Janela em que remoções de imagem não revertidas contam juntas como reincidência (ADR 41)'),
+  ('strike_upload_block_days', '7',   'integer', 'Dias sem enviar imagens a partir da segunda remoção na janela, multiplicados a cada nova remoção, com 0 desligando o bloqueio (ADR 41)'),
+  ('strike_review_threshold',  '3',   'integer', 'Remoções na janela que abrem uma denúncia da conta para revisão do admin (ADR 41)')
 ON DUPLICATE KEY UPDATE value = VALUES(value);

@@ -34,7 +34,7 @@ afterAll(async () => {
 });
 
 describe('Parâmetros da plataforma', () => {
-  it('admin lista os nove parâmetros com padrão, limites e sem autor; não-admin toma 403', async () => {
+  it('admin lista os treze parâmetros com padrão, limites e sem autor; não-admin toma 403', async () => {
     const admin = await registerAndLogin('client', true);
     const res = await request(app).get('/api/admin/settings').set(auth(admin.token)).expect(200);
     expect(res.body.map((s: { key: string }) => s.key)).toEqual([
@@ -43,6 +43,10 @@ describe('Parâmetros da plataforma', () => {
       'proposal_expiry_hours',
       'deadline_grace_hours',
       'attachment_retention_days',
+      'appeal_window_days',
+      'strike_window_days',
+      'strike_upload_block_days',
+      'strike_review_threshold',
       'min_service_price',
       'min_withdrawal_amount',
       'barter_enabled',

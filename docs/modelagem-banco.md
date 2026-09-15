@@ -1097,7 +1097,7 @@ CREATE TABLE disputes (
 ---
 
 ### `content_reports`
-Denúncias de conteúdo/usuário (trust & safety). `target_id` é polimórfico conforme `target_type`. Foto de perfil (`avatar`, com `target_id` = usuário) e imagem do portfólio (`portfolio_item`) guardam a imagem denunciada em `image_url`, e a decisão do admin fica em `resolution_note` (migration 0017, ADR 39). Imagens removidas vão para `media_blocklist` (assinatura SHA-256 e impressão perceptual), que barra o reenvio.
+Denúncias de conteúdo/usuário (trust & safety). `target_id` é polimórfico conforme `target_type`. Foto de perfil (`avatar`, com `target_id` = usuário) e imagem do portfólio (`portfolio_item`) guardam a imagem denunciada em `image_url`, e a decisão do admin fica em `resolution_note` (migration 0017, ADR 39). Imagens removidas vão para `media_blocklist` (assinatura SHA-256 e impressão perceptual), que barra o reenvio, e cada remoção com dono vira um registro contestável em `image_removals` (ADR 41).
 
 ```sql
 CREATE TABLE content_reports (
@@ -1118,6 +1118,43 @@ CREATE TABLE content_reports (
   INDEX idx_report_reporter (reporter_id),
   CONSTRAINT fk_report_reporter    FOREIGN KEY (reporter_id) REFERENCES users(id),
   CONSTRAINT fk_report_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+### `image_removals`
+Remoções de imagem feitas pela moderação (migration 0018, ADR 41). Guarda de onde a imagem saiu (`cleared_refs`, para recolocar se a remoção for revertida), o arquivo em quarentena fora do ar (`quarantine_file`) enquanto cabe contestação e a vida da remoção em `status`: `removed` (sem contestação), `appealed` (esperando o admin), `upheld` (mantida) e `overturned` (revertida). Remoções não revertidas dentro de `strike_window_days` contam como reincidência, calculada na hora, sem contador guardado.
+
+```sql
+CREATE TABLE image_removals (
+  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  report_id       BIGINT UNSIGNED NULL,
+  owner_id        BIGINT UNSIGNED NOT NULL,
+  target_type     ENUM('avatar', 'portfolio_item') NOT NULL,
+  target_id       BIGINT UNSIGNED NOT NULL,
+  image_url       VARCHAR(512)    NOT NULL,
+  reason          ENUM('spam', 'fraud', 'offensive', 'off_platform', 'illegal', 'other') NOT NULL,
+  note            VARCHAR(500)    NULL,
+  cleared_refs    JSON            NOT NULL,
+  quarantine_file VARCHAR(80)     NULL,
+  blocklist_id    BIGINT UNSIGNED NULL,
+  removed_by      BIGINT UNSIGNED NULL,
+  removed_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  status          ENUM('removed', 'appealed', 'upheld', 'overturned') NOT NULL DEFAULT 'removed',
+  appeal_text     VARCHAR(1000)   NULL,
+  appealed_at     DATETIME        NULL,
+  decided_by      BIGINT UNSIGNED NULL,
+  decided_at      DATETIME        NULL,
+  decision_note   VARCHAR(500)    NULL,
+  file_purged_at  DATETIME        NULL,
+
+  PRIMARY KEY (id),
+  INDEX idx_removal_owner (owner_id, removed_at),
+  INDEX idx_removal_status (status, removed_at),
+  CONSTRAINT fk_removal_report FOREIGN KEY (report_id) REFERENCES content_reports(id) ON DELETE SET NULL,
+  CONSTRAINT fk_removal_owner FOREIGN KEY (owner_id) REFERENCES users(id),
+  CONSTRAINT fk_removal_blocklist FOREIGN KEY (blocklist_id) REFERENCES media_blocklist(id) ON DELETE SET NULL,
+  CONSTRAINT fk_removal_admin FOREIGN KEY (removed_by) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_removal_decider FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 

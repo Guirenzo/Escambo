@@ -203,6 +203,95 @@ export interface AdminReportActionResult {
   fileRemoved: boolean;
   /** A imagem entrou na lista de bloqueio e não pode ser enviada de novo. */
   blocked: boolean;
+  /** Registro contestável da remoção (ADR 41); null quando a imagem não tinha dono. */
+  removalId: number | null;
+  /** Remoções do dono que contam na janela de reincidência, já com esta. */
+  ownerStrikes: number | null;
+  /** Até quando o dono fica sem enviar imagens, se a reincidência bloqueou. */
+  uploadsBlockedUntil: string | null;
+  /** Esta remoção levou o dono ao limite e abriu uma denúncia da conta para revisão. */
+  accountReviewOpened: boolean;
+}
+
+// --- Contestação e reincidência na moderação de imagens (ADR 41) ---
+
+/** removed: sem contestação · appealed: esperando o admin · upheld: mantida · overturned: revertida. */
+export type ImageRemovalStatus = 'removed' | 'appealed' | 'upheld' | 'overturned';
+
+/** Uma imagem removida, como o dono vê no perfil. */
+export interface ImageRemoval {
+  id: number;
+  targetType: 'avatar' | 'portfolio_item';
+  /** "Foto de perfil" ou "Imagem do trabalho “Logo”". */
+  label: string;
+  reason: ReportReason;
+  /** Nota da moderação na remoção. */
+  note: string | null;
+  removedAt: string;
+  status: ImageRemovalStatus;
+  appealDeadline: string;
+  /** Ainda sem contestação e dentro do prazo. */
+  canAppeal: boolean;
+  appealText: string | null;
+  appealedAt: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+}
+
+/** Reincidência calculada na hora: remoções não revertidas dentro da janela. */
+export interface StrikeSummary {
+  strikes: number;
+  windowDays: number;
+  /** Remoções na janela que abrem a revisão da conta. */
+  reviewThreshold: number;
+  uploadsBlockedUntil: string | null;
+}
+
+export interface MyModeration {
+  removals: ImageRemoval[];
+  strikes: StrikeSummary;
+}
+
+export interface AppealRemovalRequest {
+  text: string;
+}
+
+export type AppealDecision = 'uphold' | 'overturn';
+
+/** Contestação na fila do admin. */
+export interface AdminAppeal {
+  id: number;
+  owner: { id: number; ulid: string; name: string | null };
+  targetType: 'avatar' | 'portfolio_item';
+  label: string;
+  reason: ReportReason;
+  note: string | null;
+  removedAt: string;
+  /** Endereço público da imagem; volta a responder quando a remoção é revertida. */
+  imageUrl: string;
+  /** Vazio quando o titular teve a conta anonimizada (LGPD). */
+  appealText: string;
+  appealedAt: string;
+  status: Exclude<ImageRemovalStatus, 'removed'>;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  /** O arquivo ainda está guardado e pode ser visto em /admin/appeals/:id/image. */
+  hasImage: boolean;
+  /** Remoções do dono que contam agora na janela de reincidência. */
+  ownerStrikes: number;
+}
+
+export interface AdminAppealDecisionRequest {
+  note?: string | null;
+}
+
+export interface AdminAppealDecisionResult {
+  status: 'upheld' | 'overturned';
+  /** Perfis e trabalhos que voltaram a mostrar a imagem. */
+  restoredReferences: number;
+  imageRestored: boolean;
+  /** Arquivo guardado apagado (remoção mantida). */
+  fileDeleted: boolean;
 }
 
 export interface CreateContentReportRequest {
@@ -339,6 +428,10 @@ export type PlatformSettingKey =
   | 'proposal_expiry_hours'
   | 'deadline_grace_hours'
   | 'attachment_retention_days'
+  | 'appeal_window_days'
+  | 'strike_window_days'
+  | 'strike_upload_block_days'
+  | 'strike_review_threshold'
   | 'min_service_price'
   | 'min_withdrawal_amount'
   | 'barter_enabled'

@@ -71,7 +71,7 @@ export function NotificacoesView() {
                         >
                           {n.type === 'saved_search_match'
                             ? 'Ver serviços'
-                            : n.type === 'content_removed'
+                            : n.type === 'content_removed' || n.type === 'appeal_decided'
                               ? 'Ver perfil'
                               : 'Abrir'}
                         </Link>

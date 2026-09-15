@@ -11,6 +11,10 @@ export const SETTING_KEYS = [
   'proposal_expiry_hours',
   'deadline_grace_hours',
   'attachment_retention_days',
+  'appeal_window_days',
+  'strike_window_days',
+  'strike_upload_block_days',
+  'strike_review_threshold',
   'min_service_price',
   'min_withdrawal_amount',
   'barter_enabled',
@@ -79,6 +83,46 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     min: 7,
     max: 3650,
     defaultValue: 180,
+  },
+  appeal_window_days: {
+    type: 'integer',
+    label: 'Prazo para contestar remoção',
+    description:
+      'Dono de imagem removida pela moderação pode contestar pelo perfil durante esse tempo; depois o arquivo guardado fora do ar é apagado (ADR 41). Vale também para remoções já feitas.',
+    unit: 'dias',
+    min: 1,
+    max: 60,
+    defaultValue: 14,
+  },
+  strike_window_days: {
+    type: 'integer',
+    label: 'Janela de reincidência',
+    description:
+      'Remoções de imagem não revertidas dentro desse tempo contam juntas para o bloqueio de envio e a revisão da conta (ADR 41).',
+    unit: 'dias',
+    min: 30,
+    max: 730,
+    defaultValue: 180,
+  },
+  strike_upload_block_days: {
+    type: 'integer',
+    label: 'Bloqueio de envio por reincidência',
+    description:
+      'Da segunda remoção na janela em diante, a pessoa fica esse tempo sem enviar imagens, multiplicado pelas remoções depois da primeira. Zero desliga o bloqueio (ADR 41).',
+    unit: 'dias',
+    min: 0,
+    max: 90,
+    defaultValue: 7,
+  },
+  strike_review_threshold: {
+    type: 'integer',
+    label: 'Revisão da conta por reincidência',
+    description:
+      'Com essa quantidade de remoções na janela, a fila de denúncias recebe a conta para revisão, uma vez enquanto a revisão estiver aberta (ADR 41).',
+    unit: 'remoções',
+    min: 2,
+    max: 20,
+    defaultValue: 3,
   },
   min_service_price: {
     type: 'decimal',

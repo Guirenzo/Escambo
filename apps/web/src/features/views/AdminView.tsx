@@ -45,6 +45,7 @@ import { usePageTitle } from '../../lib/title';
 import { FinanceSection } from '../admin/FinanceSection';
 import { SettingsSection } from '../admin/SettingsSection';
 import { StorageSection } from '../admin/StorageSection';
+import { AppealsSection } from '../admin/AppealsSection';
 import { ReportsSection } from '../admin/ReportsSection';
 import { useToast } from '../../lib/toast';
 
@@ -466,6 +467,7 @@ export function AdminView() {
       <StorageSection />
       <SettingsSection />
       <ReportsSection />
+      <AppealsSection />
 
       <section className="card">
         <div className="card-head">

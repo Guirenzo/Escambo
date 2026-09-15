@@ -14,6 +14,7 @@ import { HttpError } from '../../utils/http-error';
 import { authRepository } from '../auth/auth.repository';
 import { purgeForUser } from '../messaging/attachments.purge';
 import { notificationsService } from '../notifications/notifications.service';
+import { appealsService } from '../reports/appeals.service';
 import {
   buildExport,
   deleteExportFile,
@@ -190,6 +191,13 @@ export const lgpdService = {
       if (purged) logger.info({ userId: row.user_id, purged }, 'anexos do titular removidos');
     } catch (err) {
       logger.error({ err, userId: row.user_id }, 'anexos do titular: falha ao remover');
+    }
+    // Imagens do titular guardadas em quarentena pela moderação (ADR 41) também saem agora.
+    try {
+      const purged = await appealsService.purgeForOwner(row.user_id);
+      if (purged) logger.info({ userId: row.user_id, purged }, 'quarentena do titular removida');
+    } catch (err) {
+      logger.error({ err, userId: row.user_id }, 'quarentena do titular: falha ao remover');
     }
     return toDeletion((await lgpdRepository.findDeletion(id))!);
   },

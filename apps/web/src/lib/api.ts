@@ -1,4 +1,7 @@
 import type {
+  AdminAppeal,
+  AdminAppealDecisionRequest,
+  AdminAppealDecisionResult,
   AdminDeletionRequest,
   AdminEmail,
   AdminFinanceReport,
@@ -9,6 +12,7 @@ import type {
   AdminMetrics,
   AdminStorage,
   AdminWithdrawal,
+  AppealDecision,
   AuthResponse,
   AvailabilityPeriod,
   BarterAgreement,
@@ -38,6 +42,8 @@ import type {
   Dispute,
   Favorite,
   FavoriteTargetType,
+  ImageRemoval,
+  MyModeration,
   FreelancerProfile,
   GamificationProfile,
   LeaderboardEntry,
@@ -499,6 +505,27 @@ export const api = {
     request<AdminReportGroup[]>(`/admin/reports?status=${status}`),
   adminReportAction: (id: number, action: AdminReportAction, body: AdminReportActionRequest = {}) =>
     request<AdminReportActionResult>(`/admin/reports/${id}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  // contestação e reincidência (ADR 41)
+  myModeration: () => request<MyModeration>('/moderation/removals'),
+  appealRemoval: (id: number, text: string) =>
+    request<ImageRemoval>(`/moderation/removals/${id}/appeal`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  adminAppeals: (status: 'pending' | 'decided' = 'pending') =>
+    request<AdminAppeal[]>(`/admin/appeals?status=${status}`),
+  /** Imagem em quarentena: a rota exige o token, então vem como blob. */
+  adminAppealImage: (id: number) =>
+    fetchBlob(`/admin/appeals/${id}/image`, `contestacao-${id}`, 'carregar a imagem'),
+  adminDecideAppeal: (
+    id: number,
+    decision: AppealDecision,
+    body: AdminAppealDecisionRequest = {},
+  ) =>
+    request<AdminAppealDecisionResult>(`/admin/appeals/${id}/${decision}`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),

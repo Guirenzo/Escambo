@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { detectType, type DetectedType } from '../messaging/attachments.storage';
+import { brDateTime, strikeSummary } from '../reports/moderation.strikes';
 import { mediaBlocklist } from './media.blocklist';
 import { fingerprint, processUpload } from './media.image';
 import { MEDIA_MIME, mediaKeyFromParts, parseMediaWidth } from './media.paths';
@@ -19,9 +20,18 @@ const WEBP: DetectedType = { mime: 'image/webp', ext: 'webp', kind: 'image', nam
  * POST /api/media — imagem para avatar ou portfólio (ADR 36 e 38). O tipo vem dos primeiros bytes
  * (só imagem, nada de SVG); depois a sharp decodifica e reencoda em WebP, orientado, sem
  * metadados e no tamanho do uso. Imagem removida pela moderação é recusada, mesmo reencodada ou
- * reduzida (ADR 39). Devolve a URL pública e as dimensões finais.
+ * reduzida (ADR 39), e quem está bloqueado por reincidência na moderação não envia (ADR 41).
+ * Devolve a URL pública e as dimensões finais.
  */
 export async function uploadMedia(req: Request, res: Response): Promise<void> {
+  const { uploadsBlockedUntil } = await strikeSummary(req.user!.uid);
+  if (uploadsBlockedUntil) {
+    throw new HttpError(
+      403,
+      `Envio de imagens bloqueado até ${brDateTime(new Date(uploadsBlockedUntil))} por imagens removidas pela moderação`,
+      'uploads_restricted',
+    );
+  }
   if (!req.file) throw new HttpError(422, 'Envie a imagem no campo "file"', 'file_required');
   if (req.file.buffer.length === 0) throw new HttpError(422, 'O arquivo está vazio', 'empty_file');
   const { purpose } = uploadSchema.parse(req.body ?? {});

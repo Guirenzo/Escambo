@@ -429,7 +429,43 @@ export const openapiDocument: Record<string, any> = {
     '/admin/reports/{id}/{action}': {
       post: op(
         'Admin',
-        'dismiss, resolve ou remove-image no grupo da denúncia, com nota. remove-image tira a imagem de todo perfil e trabalho, apaga o arquivo, avisa o dono e bloqueia o reenvio',
+        'dismiss, resolve ou remove-image no grupo da denúncia, com nota. remove-image tira a imagem de todo perfil e trabalho, guarda o arquivo em quarentena, bloqueia o reenvio, registra a remoção contestável e avisa o dono com o prazo; devolve as remoções do dono na janela, o bloqueio de envio e se a conta foi para revisão (ADR 41)',
+        { auth: true },
+      ),
+    },
+    '/moderation/removals': {
+      get: op(
+        'Trust & Safety',
+        'Minhas imagens removidas pela moderação, com motivo, prazo e situação da contestação, e a reincidência: remoções na janela, limite de revisão e bloqueio de envio',
+        { auth: true },
+      ),
+    },
+    '/moderation/removals/{id}/appeal': {
+      post: op(
+        'Trust & Safety',
+        'Contesta a remoção com um texto de 20 a 1000 caracteres, uma vez e dentro do prazo (404 removal_not_found, 409 appeal_exists, 410 appeal_window_closed)',
+        {
+          auth: true,
+          body: obj({ text: { type: 'string', minLength: 20, maxLength: 1000 } }, ['text']),
+        },
+      ),
+    },
+    '/admin/appeals': {
+      get: op(
+        'Admin',
+        'Contestações pendentes (das mais antigas) ou decididas (?status=pending|decided), com dono, texto e remoções na janela',
+        { auth: true },
+      ),
+    },
+    '/admin/appeals/{id}/image': {
+      get: op('Admin', 'Imagem guardada em quarentena, sem cache, para decidir a contestação', {
+        auth: true,
+      }),
+    },
+    '/admin/appeals/{id}/{decision}': {
+      post: op(
+        'Admin',
+        'uphold mantém a remoção e apaga o arquivo guardado; overturn devolve o arquivo, recoloca a imagem onde o lugar continua vazio, tira do bloqueio e a remoção deixa de contar. Nota opcional e dono avisado (409 appeal_not_pending)',
         { auth: true },
       ),
     },
@@ -443,7 +479,7 @@ export const openapiDocument: Record<string, any> = {
     '/media': {
       post: op(
         'Perfil',
-        'Envia imagem para avatar ou portfólio (multipart file + purpose avatar|portfolio, padrão portfolio; JPG, PNG, GIF ou WebP até 5 MB e 50 MP). A API reencoda em WebP orientado e sem metadados: avatar quadrado de até 512 px, portfólio de até 1600 px. Devolve URL, largura e altura',
+        'Envia imagem para avatar ou portfólio (multipart file + purpose avatar|portfolio, padrão portfolio; JPG, PNG, GIF ou WebP até 5 MB e 50 MP). A API reencoda em WebP orientado e sem metadados: avatar quadrado de até 512 px, portfólio de até 1600 px. Devolve URL, largura e altura. 422 image_blocked para imagem removida pela moderação e 403 uploads_restricted durante o bloqueio por reincidência',
         { auth: true, responses: res201 },
       ),
     },
