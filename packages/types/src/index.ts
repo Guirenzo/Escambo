@@ -261,8 +261,11 @@ export interface AdminStorage {
   purgeHour: number;
   uploads: { files: number; bytes: number };
   exports: { files: number; bytes: number };
-  /** Fotos de perfil e imagens do portfólio (ADR 36); orphans = ninguém usa. */
-  media: { files: number; bytes: number; orphans: number };
+  /**
+   * Fotos de perfil e imagens do portfólio (ADR 36 e 38): files = imagens enviadas, variants =
+   * miniaturas geradas, bytes = tudo junto; orphans = imagens que ninguém usa.
+   */
+  media: { files: number; variants: number; bytes: number; orphans: number };
   attachments: {
     active: number;
     activeBytes: number;
@@ -326,11 +329,17 @@ export interface PublicSettings {
   maintenanceMode: boolean;
 }
 
-/** Imagem enviada para avatar ou portfólio (ADR 36): a URL pública vai no perfil. */
+/** Para que a imagem vai (ADR 38): avatar sai quadrado; portfólio cabe em 1600 px e pode animar. */
+export type MediaPurpose = 'avatar' | 'portfolio';
+
+/** Imagem enviada para avatar ou portfólio (ADR 36 e 38): a URL pública vai no perfil. */
 export interface MediaUpload {
   url: string;
+  /** Sempre image/webp: a API reencoda tudo. */
   mime: string;
   size: number;
+  width: number;
+  height: number;
 }
 
 /** Resultado de uma rodada do expurgo de anexos (job ou botão do admin). */

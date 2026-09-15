@@ -71,7 +71,8 @@ export function StorageSection() {
               <div>
                 <dt>Fotos e portfólio</dt>
                 <dd>
-                  {s.media.files} imagem(ns) · {formatBytes(s.media.bytes)}
+                  {s.media.files} imagem(ns) · {s.media.variants} miniatura(s) ·{' '}
+                  {formatBytes(s.media.bytes)}
                 </dd>
               </div>
               <div>

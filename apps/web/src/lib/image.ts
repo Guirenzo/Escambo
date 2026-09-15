@@ -1,8 +1,27 @@
-/** Maior lado, em px, de cada uso (ADR 36): avatar pequeno, portfólio com folga para a galeria. */
+/** Maior lado, em px, de cada uso (ADR 36 e 38): avatar recortado em quadrado, portfólio com folga. */
 export const IMAGE_MAX_SIDE = { avatar: 512, portfolio: 1600 } as const;
 
 /** Limite da API para imagens de perfil e portfólio. */
 export const MEDIA_MAX_MB = 5;
+
+/**
+ * Larguras de miniatura que a API gera (ADR 38): `small` cobre o maior avatar e as prévias em tela
+ * de alta densidade; `card` cobre o cartão do portfólio no perfil público.
+ */
+export const MEDIA_THUMB = { small: 128, card: 480 } as const;
+export type MediaThumbWidth = (typeof MEDIA_THUMB)[keyof typeof MEDIA_THUMB];
+
+const MEDIA_URL =
+  /^\/api\/media\/\d{4}\/(0[1-9]|1[0-2])\/[0-9A-HJKMNP-TV-Z]{26}\.(jpg|png|gif|webp)$/;
+
+/** Miniatura de uma imagem enviada ao Escambo; link externo (e o que não for mídia) volta igual. */
+export function mediaVariant(url: string, width: MediaThumbWidth): string {
+  return MEDIA_URL.test(url) ? `${url}?w=${width}` : url;
+}
+
+/** O navegador consegue abrir a foto para o recorte (createImageBitmap + canvas). */
+export const canCrop = (): boolean =>
+  typeof createImageBitmap === 'function' && typeof document !== 'undefined';
 
 /** Dimensões que cabem em `max` sem distorcer e sem ampliar. */
 export function fitWithin(

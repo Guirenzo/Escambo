@@ -6,6 +6,7 @@ import {
   createService,
   createUser,
   openAs,
+  pngFixture,
   settled,
 } from './helpers';
 
@@ -35,6 +36,19 @@ async function audit(page: Page, name: string): Promise<string[]> {
         .join('\n'),
   );
 }
+
+test('recorte da foto de perfil não tem violações bloqueantes', async ({ page, request }) => {
+  const freelancer = await createUser(request, 'freelancer');
+  await openAs(page, freelancer, '/perfil');
+  await settled(page);
+  await page
+    .getByTestId('avatar-upload')
+    .first()
+    .setInputFiles({ name: 'eu.png', mimeType: 'image/png', buffer: pngFixture(120, 80) });
+  await expect(page.getByRole('dialog', { name: 'Ajustar foto' })).toBeVisible();
+  const problems = await audit(page, 'recorte da foto');
+  expect(problems, problems.join('\n')).toEqual([]);
+});
 
 test('login não tem violações bloqueantes', async ({ page }) => {
   await page.goto('/login');

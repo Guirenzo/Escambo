@@ -22,6 +22,7 @@ import { Button, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
 import { dtm, formatAvailability, formatHours } from '../../lib/format';
+import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
 import {
   useFavorites,
   useFreelancerReviews,
@@ -158,7 +159,11 @@ export function FreelancerView() {
                   {p.portfolio.map((i) => (
                     <figure className="portfolio-item" key={i.id}>
                       {i.imageUrl ? (
-                        <img src={i.imageUrl} alt={i.title} loading="lazy" />
+                        <img
+                          src={mediaVariant(i.imageUrl, MEDIA_THUMB.card)}
+                          alt={i.title}
+                          loading="lazy"
+                        />
                       ) : (
                         <div className="portfolio-placeholder" aria-hidden="true">
                           <Link2 size={22} />

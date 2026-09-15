@@ -425,12 +425,15 @@ export const openapiDocument: Record<string, any> = {
     '/media': {
       post: op(
         'Perfil',
-        'Envia imagem para avatar ou portfólio (multipart file; JPG, PNG, GIF ou WebP até 5 MB, reconhecida pelo conteúdo e sem metadados). Devolve a URL pública',
+        'Envia imagem para avatar ou portfólio (multipart file + purpose avatar|portfolio, padrão portfolio; JPG, PNG, GIF ou WebP até 5 MB e 50 MP). A API reencoda em WebP orientado e sem metadados: avatar quadrado de até 512 px, portfólio de até 1600 px. Devolve URL, largura e altura',
         { auth: true, responses: res201 },
       ),
     },
     '/media/{year}/{month}/{file}': {
-      get: op('Perfil', 'Imagem pública de perfil ou portfólio (cache imutável de um ano)'),
+      get: op(
+        'Perfil',
+        'Imagem pública de perfil ou portfólio (cache imutável de um ano); ?w=128 ou ?w=480 devolve a miniatura em WebP, gerada na primeira leitura',
+      ),
     },
     '/admin/metrics': { get: op('Admin', 'Métricas da plataforma', { auth: true }) },
     '/admin/storage': {

@@ -245,12 +245,12 @@ function pngChunk(type: string, data: Buffer): Buffer {
   return Buffer.concat([len, body, crc]);
 }
 
-/** PNG RGB válido (quadrado verde) para testar upload/render de imagem. */
-export function pngFixture(size = 48): Buffer {
-  const stride = size * 3 + 1;
-  const raw = Buffer.alloc(stride * size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
+/** PNG RGB válido (retângulo verde; quadrado se vier só a largura) para testar upload de imagem. */
+export function pngFixture(width = 48, height = width): Buffer {
+  const stride = width * 3 + 1;
+  const raw = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
       const o = y * stride + 1 + x * 3;
       raw[o] = 46;
       raw[o + 1] = 160;
@@ -258,8 +258,8 @@ export function pngFixture(size = 48): Buffer {
     }
   }
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0);
-  ihdr.writeUInt32BE(size, 4);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
   ihdr[9] = 2;
   return Buffer.concat([

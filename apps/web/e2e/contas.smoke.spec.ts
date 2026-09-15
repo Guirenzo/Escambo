@@ -231,7 +231,13 @@ test('foto de perfil e imagem do portfólio enviadas do aparelho aparecem no per
   const form = page.locator('form', { hasText: 'Salvar freelancer' });
   await form
     .getByTestId('avatar-upload')
-    .setInputFiles({ name: 'eu.png', mimeType: 'image/png', buffer: pngFixture(64) });
+    .setInputFiles({ name: 'eu.png', mimeType: 'image/png', buffer: pngFixture(96, 60) });
+  // Recorte (ADR 38): a foto em paisagem abre a janela quadrada; aproxima um pouco e confirma.
+  const crop = page.getByRole('dialog', { name: 'Ajustar foto' });
+  await expect(crop).toBeVisible();
+  await crop.getByRole('button', { name: 'Aproximar' }).click();
+  await crop.getByRole('button', { name: 'Usar foto' }).click();
+  await expect(crop).toBeHidden();
   await expect(page.locator('.toast', { hasText: 'Foto enviada' })).toBeVisible();
   await expect(form.getByLabel('Foto (URL da imagem)')).toHaveValue(mediaUrl);
   await form.getByRole('button', { name: 'Salvar freelancer' }).click();
@@ -260,4 +266,13 @@ test('foto de perfil e imagem do portfólio enviadas do aparelho aparecem no per
       .poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth))
       .toBeGreaterThan(0);
   }
+  // Miniaturas (ADR 38): o avatar vem da de 128 px e é quadrado; o portfólio, da de 480 px.
+  const avatar = page.locator('.avatar img');
+  await expect(avatar).toHaveAttribute('src', /\?w=128$/);
+  const [w, h] = await avatar.evaluate((el) => [
+    (el as HTMLImageElement).naturalWidth,
+    (el as HTMLImageElement).naturalHeight,
+  ]);
+  expect(w).toBe(h);
+  await expect(page.locator('.portfolio-item img')).toHaveAttribute('src', /\?w=480$/);
 });

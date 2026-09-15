@@ -20,7 +20,6 @@ import { EmailPreferencesCard } from '../profile/EmailPreferencesCard';
 import { PortfolioCard } from '../profile/PortfolioCard';
 import { PrivacidadeCard } from '../profile/PrivacidadeCard';
 import { ImageUploadButton } from '../../components/ImageUploadButton';
-import { IMAGE_MAX_SIDE } from '../../lib/image';
 
 /** Avaliações que o freelancer recebeu, com resposta pública (uma por avaliação). */
 function AvaliacoesRecebidas({ userId }: { userId: number }) {
@@ -270,7 +269,7 @@ export function PerfilView() {
                     maxLength={512}
                   />
                   <ImageUploadButton
-                    maxSide={IMAGE_MAX_SIDE.avatar}
+                    purpose="avatar"
                     label="Enviar foto"
                     testId="avatar-upload"
                     onUploaded={(url) => {
@@ -412,7 +411,7 @@ export function PerfilView() {
                     maxLength={512}
                   />
                   <ImageUploadButton
-                    maxSide={IMAGE_MAX_SIDE.avatar}
+                    purpose="avatar"
                     label="Enviar foto"
                     testId="avatar-upload"
                     onUploaded={(url) => {

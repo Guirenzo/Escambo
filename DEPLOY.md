@@ -127,11 +127,12 @@ Restaurar (para a API, importa, roda migrations pendentes e sobe de novo):
 COMPOSE_FILE=docker-compose.prod.yml scripts/restore-db.sh backups/escambo-20260910-030000.sql.gz
 ```
 
-O volume `escambo_api_data` guarda os **anexos do chat** (`uploads/`) e as **fotos de perfil e imagens do portfólio** (`media/`), permanentes — o banco só tem a
+O volume `escambo_api_data` guarda os **anexos do chat** (`uploads/`) e as **fotos de perfil e imagens do portfólio** (`media/`, com as miniaturas geradas ao lado de cada original), permanentes — o banco só tem a
 chave de cada arquivo) e as cópias de dados LGPD (temporárias, `EXPORT_TTL_DAYS`). Os anexos precisam
 de backup tanto quanto o banco: `scripts/backup-uploads.sh` empacota a pasta de dentro do container
 (`backups/uploads-*.tgz`, mesma retenção) — agende no mesmo cron. Os certificados ficam em
-`caddy_data` e são reemitidos se sumirem.
+`caddy_data` e são reemitidos se sumirem. As imagens são processadas pela sharp, que já traz o binário
+da libvips para Alpine: a imagem da API não precisa de pacote extra nem de compilador.
 
 O volume não cresce para sempre: o job `purge-attachments` apaga, uma vez por dia a partir de
 `ATTACHMENT_PURGE_HOUR` (4h, Brasília), os anexos com mais de `attachment_retention_days` dias
