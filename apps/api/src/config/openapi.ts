@@ -179,6 +179,16 @@ export const openapiDocument: Record<string, any> = {
       get: op('Perfis', 'Meu portfólio', { auth: true }),
       post: op('Perfis', 'Adiciona item ao portfólio (máx. 12; imagem e/ou link)', { auth: true }),
     },
+    '/profiles/portfolio/order': {
+      put: op(
+        'Perfis',
+        'Reordena o portfólio: ids de todos os trabalhos, do primeiro ao último (409 portfolio_order_mismatch se a lista não bate com o portfólio de agora)',
+        {
+          auth: true,
+          body: obj({ ids: { type: 'array', items: { type: 'integer' } } }, ['ids']),
+        },
+      ),
+    },
     '/profiles/portfolio/{id}': {
       put: op('Perfis', 'Edita item do portfólio', { auth: true }),
       delete: op('Perfis', 'Remove item do portfólio', { auth: true }),

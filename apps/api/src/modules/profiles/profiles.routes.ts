@@ -9,6 +9,7 @@ import {
   putClientProfile,
   putFreelancerProfile,
   removePortfolioItem,
+  reorderPortfolio,
   updatePortfolioItem,
 } from './profiles.controller';
 
@@ -25,5 +26,7 @@ profilesRoutes.put('/client', authenticate, asyncHandler(putClientProfile));
 // Portfólio do freelancer (o público sai junto com GET /freelancer/:ulid)
 profilesRoutes.get('/portfolio', authenticate, asyncHandler(getMyPortfolio));
 profilesRoutes.post('/portfolio', authenticate, asyncHandler(addPortfolioItem));
+// A ordem vem antes de /portfolio/:id, senão "order" cairia como id.
+profilesRoutes.put('/portfolio/order', authenticate, asyncHandler(reorderPortfolio));
 profilesRoutes.put('/portfolio/:id', authenticate, asyncHandler(updatePortfolioItem));
 profilesRoutes.delete('/portfolio/:id', authenticate, asyncHandler(removePortfolioItem));

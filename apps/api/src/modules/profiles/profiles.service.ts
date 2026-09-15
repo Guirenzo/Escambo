@@ -157,6 +157,24 @@ export const profilesService = {
     return this.listMyPortfolio(userId);
   },
 
+  /**
+   * Reordena o portfólio (ADR 43). A lista precisa ter exatamente os trabalhos de agora: se algum
+   * entrou ou saiu no meio do caminho (outra aba), recusa em vez de adivinhar a posição.
+   */
+  async reorderPortfolio(userId: number, ids: number[]): Promise<PortfolioItem[]> {
+    const current = await profilesRepository.listPortfolio(userId);
+    const known = new Set(current.map((r) => r.id));
+    if (ids.length !== current.length || !ids.every((id) => known.has(id))) {
+      throw new HttpError(
+        409,
+        'O portfólio mudou enquanto você reordenava; recarregue e tente de novo',
+        'portfolio_order_mismatch',
+      );
+    }
+    await profilesRepository.reorderPortfolio(userId, ids);
+    return this.listMyPortfolio(userId);
+  },
+
   async upsertClient(userId: number, input: UpsertClientInput): Promise<ClientProfile> {
     await profilesRepository.upsertClient(userId, {
       fullName: input.fullName,

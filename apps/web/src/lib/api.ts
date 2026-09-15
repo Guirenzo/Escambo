@@ -65,6 +65,7 @@ import type {
   RecordConsentRequest,
   RefreshResponse,
   RegisterRequest,
+  ReorderPortfolioRequest,
   ResolveDisputeRequest,
   Review,
   SavedSearch,
@@ -558,6 +559,12 @@ export const api = {
     request<PortfolioItem[]>('/profiles/portfolio', { method: 'POST', body: JSON.stringify(body) }),
   removePortfolioItem: (id: number) =>
     request<PortfolioItem[]>(`/profiles/portfolio/${id}`, { method: 'DELETE' }),
+  /** Nova ordem do portfólio: os ids de todos os trabalhos, do primeiro ao último (ADR 43). */
+  reorderPortfolio: (ids: number[]) =>
+    request<PortfolioItem[]>('/profiles/portfolio/order', {
+      method: 'PUT',
+      body: JSON.stringify({ ids } satisfies ReorderPortfolioRequest),
+    }),
   publicFreelancer: (ulid: string) =>
     request<PublicFreelancerProfile>(`/profiles/freelancer/${encodeURIComponent(ulid)}`),
   putFreelancerProfile: (body: UpsertFreelancerProfileRequest) =>

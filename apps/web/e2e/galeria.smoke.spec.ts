@@ -73,6 +73,23 @@ test('galeria do portfólio: amplia, navega pelo teclado, devolve o foco e abre 
   await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('dialog', { name: logo })).toBeVisible();
 
+  // Zoom (ADR 43): botão, teclado e duplo clique; ampliada, a seta desloca em vez de trocar.
+  const canvas = logoDialog.locator('.gallery-canvas');
+  await logoDialog.getByRole('button', { name: 'Ampliar imagem' }).click();
+  await expect(
+    logoDialog.getByRole('button', { name: 'Voltar ao tamanho inteiro (150%)' }),
+  ).toBeVisible();
+  await page.keyboard.press('+');
+  await expect(canvas).toHaveAttribute('style', /scale\(2\.25\)/);
+  await page.keyboard.press('ArrowRight');
+  await expect(logoDialog.getByText('1 de 2')).toBeVisible();
+  await page.keyboard.press('0');
+  await expect(canvas).toHaveAttribute('style', /scale\(1\)/);
+  await logoDialog.locator('img.gallery-image').dblclick();
+  await expect(canvas).toHaveAttribute('style', /scale\(2\.5\)/);
+  await logoDialog.getByRole('button', { name: /Voltar ao tamanho inteiro/ }).click();
+  await expect(canvas).toHaveAttribute('style', /scale\(1\)/);
+
   // Esc fecha, tira o trabalho da URL e devolve o foco ao cartão.
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -85,4 +102,64 @@ test('galeria do portfólio: amplia, navega pelo teclado, devolve o foco e abre 
   await page.getByRole('button', { name: 'Fechar galeria' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`${profile}$`));
+});
+
+test('ordem do portfólio: o freelancer move pelas setas, a ordem fica e sai no perfil público', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const headers = { Authorization: `Bearer ${freelancer.token}` };
+  const tag = Date.now().toString(36);
+  const titles = [`Primeiro ${tag}`, `Segundo ${tag}`, `Terceiro ${tag}`];
+  for (const title of titles) {
+    const res = await request.post('/api/profiles/portfolio', {
+      headers,
+      data: { title, externalUrl: `https://exemplo.com/${tag}` },
+    });
+    expect(res.ok(), await res.text()).toBeTruthy();
+  }
+  const [first, second, third] = titles as [string, string, string];
+
+  await openAs(page, freelancer, '/perfil');
+  await settled(page);
+  const card = page.getByTestId('portfolio-card');
+  const rows = card.locator('[data-testid^="portfolio-row-"] strong');
+  await expect(rows).toHaveText([first, second, third]);
+  await expect(card.getByRole('button', { name: `Mover ${first} para cima` })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
+
+  // O terceiro sobe duas vezes: o foco fica no mesmo botão e a posição é anunciada.
+  const up = () => card.getByRole('button', { name: `Mover ${third} para cima` });
+  await up().click();
+  await expect(rows).toHaveText([first, third, second]);
+  await expect(up()).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(rows).toHaveText([third, first, second]);
+  await expect(up()).toBeFocused();
+  await expect(up()).toHaveAttribute('aria-disabled', 'true');
+  await expect(card.locator('.portfolio-announce')).toHaveText(`${third} agora é o 1º de 3.`);
+
+  // Fica depois de recarregar e sai igual no perfil público.
+  await expect
+    .poll(async () =>
+      (
+        (await (await request.get('/api/profiles/portfolio', { headers })).json()) as {
+          title: string;
+        }[]
+      ).map((i) => i.title),
+    )
+    .toEqual([third, first, second]);
+  await page.reload();
+  await settled(page);
+  await expect(rows).toHaveText([third, first, second]);
+  const { ulid } = (await (await request.get('/api/auth/me', { headers })).json()) as {
+    ulid: string;
+  };
+  const client = await createUser(request, 'client');
+  await openAs(page, client, `/freelancers/${ulid}`);
+  await settled(page);
+  await expect(page.locator('.portfolio-item')).toContainText([third, first, second]);
 });

@@ -142,4 +142,88 @@ describe('Perfil do freelancer: dias de atendimento e portfólio', () => {
     expect(removed.status).toBe(200);
     expect(removed.body).toHaveLength(11);
   });
+
+  it('ordem do portfólio: grava todas as posições, sai no perfil público e recusa lista diferente (ADR 43)', async () => {
+    const f = await registerAndLogin('freelancer');
+    const other = await registerAndLogin('freelancer');
+    for (const a of [f, other]) {
+      await request(app)
+        .put('/api/profiles/freelancer')
+        .set(auth(a.token))
+        .send({ fullName: 'Freela Ordem' })
+        .expect(200);
+    }
+    const put = (a: Actor, ids: unknown) =>
+      request(app).put('/api/profiles/portfolio/order').set(auth(a.token)).send({ ids });
+    let list: { id: number; title: string }[] = [];
+    for (const title of ['Logo', 'Site', 'Cardápio']) {
+      const res = await request(app)
+        .post('/api/profiles/portfolio')
+        .set(auth(f.token))
+        .send({ title, externalUrl: `https://exemplo.test/${title.length}` })
+        .expect(201);
+      list = res.body;
+    }
+    const id = (title: string): number => list.find((i) => i.title === title)!.id;
+
+    const reordered = await put(f, [id('Cardápio'), id('Logo'), id('Site')]);
+    expect(reordered.status, JSON.stringify(reordered.body)).toBe(200);
+    expect(
+      (reordered.body as { title: string; sortOrder: number }[]).map((i) => [i.title, i.sortOrder]),
+    ).toEqual([
+      ['Cardápio', 1],
+      ['Logo', 2],
+      ['Site', 3],
+    ]);
+    const pub = await request(app).get(`/api/profiles/freelancer/${f.ulid}`).expect(200);
+    expect((pub.body.portfolio as { title: string }[]).map((i) => i.title)).toEqual([
+      'Cardápio',
+      'Logo',
+      'Site',
+    ]);
+
+    // Lista que não bate com o portfólio de agora (faltando ou com trabalho de outro) não grava.
+    const foreign = await request(app)
+      .post('/api/profiles/portfolio')
+      .set(auth(other.token))
+      .send({ title: 'Alheio', externalUrl: 'https://exemplo.test/alheio' })
+      .expect(201);
+    const foreignId = (foreign.body as { id: number }[])[0]!.id;
+    for (const ids of [
+      [id('Logo'), id('Site')],
+      [id('Logo'), id('Site'), id('Cardápio'), foreignId],
+    ]) {
+      const res = await put(f, ids);
+      expect([res.status, res.body.error], JSON.stringify(ids)).toEqual([
+        409,
+        'portfolio_order_mismatch',
+      ]);
+    }
+    for (const ids of [[], [id('Logo'), id('Logo'), id('Site')], 'x', [0]]) {
+      expect((await put(f, ids)).status, JSON.stringify(ids)).toBe(422);
+    }
+    await request(app)
+      .put('/api/profiles/portfolio/order')
+      .send({ ids: [1] })
+      .expect(401);
+    const unchanged = await request(app).get('/api/profiles/portfolio').set(auth(f.token));
+    expect((unchanged.body as { title: string }[]).map((i) => i.title)).toEqual([
+      'Cardápio',
+      'Logo',
+      'Site',
+    ]);
+
+    // Trabalho novo entra no fim, sem mexer na ordem escolhida.
+    const added = await request(app)
+      .post('/api/profiles/portfolio')
+      .set(auth(f.token))
+      .send({ title: 'Fachada', externalUrl: 'https://exemplo.test/fachada' })
+      .expect(201);
+    expect((added.body as { title: string }[]).map((i) => i.title)).toEqual([
+      'Cardápio',
+      'Logo',
+      'Site',
+      'Fachada',
+    ]);
+  });
 });

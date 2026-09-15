@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import {
   portfolioIdSchema,
   portfolioItemSchema,
+  portfolioOrderSchema,
   ulidParamSchema,
   upsertClientSchema,
   upsertFreelancerSchema,
@@ -42,6 +43,12 @@ export async function updatePortfolioItem(req: Request, res: Response): Promise<
 export async function removePortfolioItem(req: Request, res: Response): Promise<void> {
   const { id } = portfolioIdSchema.parse(req.params);
   res.json(await profilesService.removePortfolioItem(req.user!.uid, id));
+}
+
+/** PUT /profiles/portfolio/order — nova ordem, com os ids de todos os trabalhos (ADR 43). */
+export async function reorderPortfolio(req: Request, res: Response): Promise<void> {
+  const { ids } = portfolioOrderSchema.parse(req.body);
+  res.json(await profilesService.reorderPortfolio(req.user!.uid, ids));
 }
 
 export async function getPublicFreelancer(req: Request, res: Response): Promise<void> {

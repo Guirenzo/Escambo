@@ -49,6 +49,15 @@ export const portfolioIdSchema = z.object({ id: z.coerce.number().int().positive
 /** Limite de itens no portfólio (RF de perfil): o suficiente para mostrar o trabalho sem virar depósito. */
 export const PORTFOLIO_MAX_ITEMS = 12;
 
+/** Nova ordem do portfólio (ADR 43): cada trabalho uma vez, do primeiro ao último. */
+export const portfolioOrderSchema = z.object({
+  ids: z
+    .array(z.number().int().positive())
+    .min(1)
+    .max(PORTFOLIO_MAX_ITEMS)
+    .refine((ids) => new Set(ids).size === ids.length, { message: 'Trabalho repetido na ordem' }),
+});
+
 export const upsertClientSchema = z.object({
   fullName: z.string().min(2).max(150),
   avatarUrl: imageRef.nullable().optional(),

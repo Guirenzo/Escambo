@@ -1,23 +1,54 @@
-import { Images, Link2, Plus, Trash2 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { ChevronDown, ChevronUp, Images, Link2, Plus, Trash2 } from 'lucide-react';
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Button, Field, Input, QueryState } from '../../components/ui';
 import { usePortfolio, usePortfolioMutation } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { ImageUploadButton } from '../../components/ImageUploadButton';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
+import { moveItem, positionLabel } from '../../lib/reorder';
 
 const MAX_ITEMS = 12;
 
-/** Portfólio do freelancer: trabalhos com imagem e/ou link, que aparecem no perfil público. */
+/**
+ * Portfólio do freelancer: trabalhos com imagem e/ou link, que aparecem no perfil público na ordem
+ * daqui. As setas mudam a ordem na hora, devolvem o foco ao mesmo botão e anunciam a nova posição
+ * (ADR 43).
+ */
 export function PortfolioCard() {
   const toast = useToast();
   const portfolio = usePortfolio();
-  const { add, remove } = usePortfolioMutation();
+  const { add, remove, reorder } = usePortfolioMutation();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [externalUrl, setExternalUrl] = useState('');
   const count = portfolio.data?.length ?? 0;
+  const [announce, setAnnounce] = useState('');
+  const refocus = useRef<string | null>(null);
+
+  // Mudar de lugar tira o item do DOM e o navegador perde o foco: ele volta ao mesmo botão.
+  useLayoutEffect(() => {
+    const key = refocus.current;
+    if (!key) return;
+    refocus.current = null;
+    document.querySelector<HTMLButtonElement>(`[data-move="${key}"]`)?.focus();
+  }, [portfolio.data]);
+
+  function move(index: number, step: -1 | 1): void {
+    const items = portfolio.data ?? [];
+    const item = items[index];
+    const target = index + step;
+    if (!item || target < 0 || target >= items.length) return;
+    refocus.current = `${item.id}:${step < 0 ? 'up' : 'down'}`;
+    setAnnounce(`${item.title} agora é o ${positionLabel(target, items.length)}.`);
+    reorder.mutate(
+      moveItem(items, index, step).map((i) => i.id),
+      {
+        onError: (er) =>
+          toast.error(er instanceof Error ? er.message : 'Não foi possível mudar a ordem'),
+      },
+    );
+  }
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -61,6 +92,15 @@ export function PortfolioCard() {
           {count} de {MAX_ITEMS} · aparece no seu perfil público
         </span>
       </div>
+      {count > 1 && (
+        <p className="muted tiny">
+          O perfil público mostra os trabalhos nesta ordem. Use as setas para trazer o mais forte
+          para o começo.
+        </p>
+      )}
+      <p className="sr-only portfolio-announce" aria-live="polite">
+        {announce}
+      </p>
 
       <QueryState
         isLoading={portfolio.isLoading}
@@ -76,8 +116,11 @@ export function PortfolioCard() {
             </p>
           ) : (
             <ul className="portfolio-list" data-testid="portfolio-list">
-              {items.map((i) => (
-                <li key={i.id}>
+              {items.map((i, index) => (
+                <li key={i.id} data-testid={`portfolio-row-${i.id}`}>
+                  <span className="portfolio-pos" aria-hidden="true">
+                    {index + 1}
+                  </span>
                   {i.imageUrl ? (
                     <img src={mediaVariant(i.imageUrl, MEDIA_THUMB.small)} alt="" loading="lazy" />
                   ) : (
@@ -99,6 +142,30 @@ export function PortfolioCard() {
                       </a>
                     )}
                   </div>
+                  {items.length > 1 && (
+                    <div className="portfolio-move">
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        data-move={`${i.id}:up`}
+                        aria-label={`Mover ${i.title} para cima`}
+                        aria-disabled={index === 0}
+                        onClick={() => move(index, -1)}
+                      >
+                        <ChevronUp size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        data-move={`${i.id}:down`}
+                        aria-label={`Mover ${i.title} para baixo`}
+                        aria-disabled={index === items.length - 1}
+                        onClick={() => move(index, 1)}
+                      >
+                        <ChevronDown size={16} />
+                      </button>
+                    </div>
+                  )}
                   <button
                     type="button"
                     className="icon-btn"
