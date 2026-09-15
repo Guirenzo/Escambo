@@ -48,6 +48,12 @@ export interface ServiceListFilters {
   period?: AvailabilityPeriod;
   /** Dia e período de agora (Brasília) para "atende agora"; period null = madrugada. */
   now?: Slot;
+  /** Criados a partir de (inclusive) — janela dos alertas de busca salva (ADR 35). */
+  createdFrom?: Date;
+  /** Criados antes de (exclusive). */
+  createdBefore?: Date;
+  /** Esconde os serviços deste dono (quem salvou a busca não é avisado do próprio serviço). */
+  excludeOwnerId?: number;
   sort?: ServiceSort;
   limit: number;
   offset: number;
@@ -121,7 +127,7 @@ export const servicesRepository = {
 
   async list(filters: ServiceListFilters): Promise<ServiceRow[]> {
     const where: string[] = ['s.deleted_at IS NULL', 's.is_active = 1'];
-    const params: Record<string, string | number> = {};
+    const params: Record<string, string | number | Date> = {};
 
     if (filters.categoryId !== undefined) {
       where.push('s.category_id = :categoryId');
@@ -130,6 +136,18 @@ export const servicesRepository = {
     if (filters.ownerId !== undefined) {
       where.push('s.user_id = :ownerId');
       params.ownerId = filters.ownerId;
+    }
+    if (filters.excludeOwnerId !== undefined) {
+      where.push('s.user_id <> :excludeOwnerId');
+      params.excludeOwnerId = filters.excludeOwnerId;
+    }
+    if (filters.createdFrom) {
+      where.push('s.created_at >= :createdFrom');
+      params.createdFrom = filters.createdFrom;
+    }
+    if (filters.createdBefore) {
+      where.push('s.created_at < :createdBefore');
+      params.createdBefore = filters.createdBefore;
     }
     if (filters.isRemote !== undefined) {
       where.push('s.is_remote = :isRemote');

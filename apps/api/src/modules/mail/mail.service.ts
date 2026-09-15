@@ -23,6 +23,7 @@ export const EMAILED_NOTIFICATION_TYPES = new Set([
   'milestone_approved',
   'milestone_revision',
   'milestone_overdue',
+  'saved_search_match',
   'dispute_opened',
   'dispute_resolved',
   'barter_proposed',
@@ -45,6 +46,9 @@ export function notificationLink(data: Record<string, unknown> | null | undefine
   if (data?.barterId != null) return `${base}/trocas`;
   if (data?.withdrawalId != null || data?.paymentId != null) return `${base}/carteira`;
   if (data?.exportRequestId != null || data?.deletionRequestId != null) return `${base}/perfil`;
+  // Alerta de busca salva (ADR 35): o link reaplica a busca na tela de serviços.
+  if (typeof data?.savedSearchId === 'number')
+    return `${base}/servicos?busca=${data.savedSearchId}`;
   return `${base}/notificacoes`;
 }
 

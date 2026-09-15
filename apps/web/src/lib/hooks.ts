@@ -6,10 +6,12 @@ import type {
   CreateContractRequest,
   CreateDepositRequest,
   CreateReviewRequest,
+  CreateSavedSearchRequest,
+  CreateServiceRequest,
   FavoriteTargetType,
   OpenDisputeRequest,
   ResolveDisputeRequest,
-  CreateServiceRequest,
+  UpdateSavedSearchRequest,
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
   UpsertPortfolioItemRequest,
@@ -40,6 +42,7 @@ export const qk = {
   barters: ['barters'] as const,
   profiles: ['profiles'] as const,
   favorites: ['favorites'] as const,
+  savedSearches: ['savedSearches'] as const,
   disputes: ['disputes'] as const,
   adminMetrics: ['adminMetrics'] as const,
   adminStorage: ['adminStorage'] as const,
@@ -601,4 +604,26 @@ export function useModerateUser() {
     mutationFn: ({ ulid, action }: { ulid: string; action: 'suspend' | 'ban' | 'reactivate' }) =>
       api.adminModerateUser(ulid, action),
   });
+}
+
+/** Buscas salvas da conta (ADR 35). */
+export const useSavedSearches = () =>
+  useQuery({ queryKey: qk.savedSearches, queryFn: () => api.savedSearches() });
+
+/** Criar, alterar (nome, alerta) e apagar buscas salvas; recarregam a lista. */
+export function useSavedSearchMutations() {
+  const qc = useQueryClient();
+  const done = (): void => void qc.invalidateQueries({ queryKey: qk.savedSearches });
+  return {
+    create: useMutation({
+      mutationFn: (body: CreateSavedSearchRequest) => api.createSavedSearch(body),
+      onSuccess: done,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, ...body }: { id: number } & UpdateSavedSearchRequest) =>
+        api.updateSavedSearch(id, body),
+      onSuccess: done,
+    }),
+    remove: useMutation({ mutationFn: (id: number) => api.deleteSavedSearch(id), onSuccess: done }),
+  };
 }

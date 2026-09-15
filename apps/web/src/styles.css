@@ -2931,3 +2931,51 @@ button.toggle.on {
   background: var(--green);
   display: inline-block;
 }
+
+/* ---------- Buscas salvas (ADR 35) ---------- */
+.saved-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 14px;
+}
+.saved-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.saved-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.saved-chip .saved-apply,
+.saved-chip .saved-apply:hover:not(:disabled) {
+  background: none;
+  border: 0;
+  padding: 4px 2px;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.saved-chip .saved-apply:hover:not(:disabled) {
+  color: var(--green);
+}
+.saved-chip .icon-btn {
+  padding: 4px;
+  color: var(--muted);
+}
+.saved-chip .saved-bell.on {
+  color: var(--green);
+}
+.notif-link {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--green);
+  font-weight: 600;
+}
