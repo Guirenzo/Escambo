@@ -2806,3 +2806,81 @@ button.toggle.on {
     align-items: stretch;
   }
 }
+
+/* ---------- Modo de manutenção (ADR 33) e switch dos parâmetros ---------- */
+.maintenance-view {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+.maintenance-card {
+  max-width: 460px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 28px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.maintenance-ico {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--green);
+}
+.maintenance-card h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+.maintenance-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #fff3cd;
+  color: #7a4d00;
+  border-bottom: 1px solid #e0b04a;
+  font-size: 0.85rem;
+}
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.switch input {
+  width: 38px;
+  height: 22px;
+  appearance: none;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.switch input::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.switch input:checked {
+  background: var(--green);
+}
+.switch input:checked::after {
+  transform: translateX(16px);
+}

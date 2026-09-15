@@ -72,6 +72,9 @@ export const barterService = {
    * reservado na carteira dele já aqui (402 sem saldo); se é o receptor, fica pendente até o aceite.
    */
   async propose(proposerId: number, input: CreateBarterInput): Promise<BarterAgreement> {
+    if (!(await settingsService.barterEnabled())) {
+      throw new HttpError(403, 'As trocas estão desativadas no momento', 'barter_disabled');
+    }
     if (input.receiverId === proposerId) {
       throw new HttpError(400, 'Você não pode propor uma troca consigo mesmo', 'self_barter');
     }

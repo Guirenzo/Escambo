@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 export const createWithdrawalSchema = z
   .object({
-    amount: z.number().positive().min(20, 'Saque mínimo é R$ 20,00 (RN-034)'),
+    // O mínimo (RN-034) vem de platform_settings e é checado no serviço.
+    amount: z.number().positive(),
     method: z.enum(['pix', 'bank']),
     pixKey: z.string().min(1).max(255).nullable().optional(),
     bankName: z.string().max(100).nullable().optional(),
@@ -14,7 +15,11 @@ export const createWithdrawalSchema = z
       ctx.addIssue({ code: 'custom', path: ['pixKey'], message: 'Chave PIX obrigatória' });
     }
     if (d.method === 'bank' && (!d.bankName || !d.bankAgency || !d.bankAccount)) {
-      ctx.addIssue({ code: 'custom', path: ['bankAccount'], message: 'Dados bancários obrigatórios' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['bankAccount'],
+        message: 'Dados bancários obrigatórios',
+      });
     }
   });
 export type CreateWithdrawalInput = z.infer<typeof createWithdrawalSchema>;

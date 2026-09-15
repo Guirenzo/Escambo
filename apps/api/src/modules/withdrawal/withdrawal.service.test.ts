@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../settings/settings.service', () => ({
+  settingsService: { minWithdrawal: vi.fn().mockResolvedValue(20) },
+}));
+
 vi.mock('./withdrawal.repository', () => ({
   withdrawalRepository: { createIfSufficient: vi.fn(), findById: vi.fn() },
 }));

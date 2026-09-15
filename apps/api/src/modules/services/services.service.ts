@@ -3,6 +3,7 @@ import { HttpError } from '../../utils/http-error';
 import { servicesRepository, type ServiceRow } from './services.repository';
 import type { CreateServiceInput, ListServicesInput, UpdateServiceInput } from './services.schema';
 import { parseDays } from '../profiles/profiles.service';
+import { settingsService } from '../settings/settings.service';
 
 function toService(row: ServiceRow): Service {
   return {
@@ -35,8 +36,22 @@ function toService(row: ServiceRow): Service {
   };
 }
 
+/** RN-016: preço fixo abaixo do mínimo vigente (platform_settings.min_service_price) é recusado. */
+async function assertMinPrice(priceType: string, price: number | null | undefined): Promise<void> {
+  if (priceType !== 'fixed' || price == null) return;
+  const min = await settingsService.minServicePrice();
+  if (price < min) {
+    throw new HttpError(
+      422,
+      `Preço mínimo é R$ ${min.toFixed(2).replace('.', ',')} (RN-016)`,
+      'price_below_minimum',
+    );
+  }
+}
+
 export const servicesService = {
   async create(ownerId: number, input: CreateServiceInput): Promise<Service> {
+    await assertMinPrice(input.priceType, input.price);
     const id = await servicesRepository.create({
       userId: ownerId,
       categoryId: input.categoryId,
@@ -85,6 +100,10 @@ export const servicesService = {
     if (row.user_id !== ownerId) {
       throw new HttpError(403, 'Você não é o dono deste serviço', 'forbidden');
     }
+    await assertMinPrice(
+      input.priceType ?? row.price_type,
+      input.price ?? (row.price == null ? null : Number(row.price)),
+    );
 
     // Mapeamento fixo input -> colunas (nunca chaves cruas do usuário).
     const fields: Record<string, unknown> = {};

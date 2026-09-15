@@ -15,6 +15,7 @@ import {
   type WithdrawalRow,
 } from './withdrawal.repository';
 import type { CreateWithdrawalInput, ListWithdrawalsInput } from './withdrawal.schema';
+import { settingsService } from '../settings/settings.service';
 
 /** Mascara chave PIX / conta na resposta (nunca expõe o valor completo). */
 function mask(value: string): string {
@@ -66,6 +67,10 @@ async function loadOr404(id: number): Promise<WithdrawalRow> {
 
 export const withdrawalService = {
   async request(userId: number, input: CreateWithdrawalInput): Promise<Withdrawal> {
+    const min = await settingsService.minWithdrawal();
+    if (input.amount < min) {
+      throw new HttpError(422, `Saque mínimo é ${brl(min)} (RN-034)`, 'below_minimum');
+    }
     // Saque é a única ação que tira dinheiro da plataforma: exige e-mail confirmado (ADR 20),
     // para que uma sessão roubada não mande o saldo para uma chave PIX de terceiro sem aviso.
     const user = await authRepository.findById(userId);

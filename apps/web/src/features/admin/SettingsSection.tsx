@@ -6,20 +6,36 @@ import { dtm } from '../../lib/format';
 import { useAdminSettings, useUpdateSetting } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 
+const show = (s: PlatformSetting, v: number | boolean): string =>
+  s.type === 'boolean' ? (v ? 'ligado' : 'desligado') : `${v} ${s.unit}`.trim();
+
 /** Uma linha: valor atual editável dentro dos limites, padrão e quem mudou por último. */
 function SettingRow({ setting }: { setting: PlatformSetting }) {
   const update = useUpdateSetting();
   const toast = useToast();
+  const isFlag = setting.type === 'boolean';
   const [draft, setDraft] = useState(String(setting.value));
-  useEffect(() => setDraft(String(setting.value)), [setting.value]);
+  const [flag, setFlag] = useState(setting.value === true);
+  useEffect(() => {
+    setDraft(String(setting.value));
+    setFlag(setting.value === true);
+  }, [setting.value]);
+
   const parsed = Number(draft);
-  const changed = draft.trim() !== '' && parsed !== setting.value;
-  const valid = Number.isInteger(parsed) && parsed >= setting.min && parsed <= setting.max;
+  const changed = isFlag ? flag !== setting.value : draft.trim() !== '' && parsed !== setting.value;
+  const valid = isFlag
+    ? true
+    : Number.isFinite(parsed) &&
+      parsed >= setting.min &&
+      parsed <= setting.max &&
+      (setting.type === 'integer'
+        ? Number.isInteger(parsed)
+        : Math.round(parsed * 100) / 100 === parsed);
 
   async function save(): Promise<void> {
     try {
-      const saved = await update.mutateAsync({ key: setting.key, value: parsed });
-      toast.success(`${saved.label}: ${saved.value} ${saved.unit}. Vale a partir de agora.`);
+      const saved = await update.mutateAsync({ key: setting.key, value: isFlag ? flag : parsed });
+      toast.success(`${saved.label}: ${show(saved, saved.value)}. Vale a partir de agora.`);
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Não foi possível salvar');
     }
@@ -31,7 +47,8 @@ function SettingRow({ setting }: { setting: PlatformSetting }) {
         <strong>{setting.label}</strong>
         <span className="muted tiny">{setting.description}</span>
         <span className="muted tiny">
-          Padrão {setting.defaultValue} {setting.unit} · entre {setting.min} e {setting.max}
+          Padrão {show(setting, setting.defaultValue)}
+          {isFlag ? '' : ` · entre ${setting.min} e ${setting.max}`}
           {setting.updatedAt
             ? ` · alterado ${dtm(setting.updatedAt)}${setting.updatedBy ? ` por ${setting.updatedBy}` : ''}`
             : ''}
@@ -44,16 +61,31 @@ function SettingRow({ setting }: { setting: PlatformSetting }) {
           if (changed && valid) void save();
         }}
       >
-        <Input
-          type="number"
-          aria-label={setting.label}
-          value={draft}
-          min={setting.min}
-          max={setting.max}
-          step={1}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-        <span className="muted tiny">{setting.unit}</span>
+        {isFlag ? (
+          <label className="switch">
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label={setting.label}
+              checked={flag}
+              onChange={(e) => setFlag(e.target.checked)}
+            />
+            <span>{flag ? 'ligado' : 'desligado'}</span>
+          </label>
+        ) : (
+          <>
+            <Input
+              type="number"
+              aria-label={setting.label}
+              value={draft}
+              min={setting.min}
+              max={setting.max}
+              step={setting.type === 'integer' ? 1 : 0.01}
+              onChange={(e) => setDraft(e.target.value)}
+            />
+            <span className="muted tiny">{setting.unit}</span>
+          </>
+        )}
         <Button
           type="submit"
           variant="secondary"
@@ -67,7 +99,7 @@ function SettingRow({ setting }: { setting: PlatformSetting }) {
   );
 }
 
-/** Parâmetros da plataforma (ADR 32): o que a API lê em tempo de execução, editável pelo admin. */
+/** Parâmetros da plataforma (ADR 32/33): o que a API lê em tempo de execução, editável pelo admin. */
 export function SettingsSection() {
   const settings = useAdminSettings();
   return (

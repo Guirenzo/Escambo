@@ -511,7 +511,7 @@ export const usePublicSettings = () =>
 export function useUpdateSetting() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ key, value }: { key: string; value: number }) =>
+    mutationFn: ({ key, value }: { key: string; value: number | boolean }) =>
       api.adminUpdateSetting(key, value),
     onSuccess: () => {
       for (const key of [qk.adminSettings, qk.adminStorage, qk.publicSettings]) {

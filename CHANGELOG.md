@@ -5,6 +5,24 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.15.0] — 2026-09-15
+
+### Adicionado
+
+- **As chaves restantes de `platform_settings` ganharam efeito** (ADR 33), editáveis no painel
+  com tipos (inteiro, decimal, liga/desliga):
+  - **Modo de manutenção**: ligado, a API responde 503 `maintenance` (com `Retry-After`) para
+    quem não é admin; health, login, parâmetros públicos e o painel admin continuam, e o admin
+    passa em qualquer rota. O app mostra a tela "Estamos em manutenção" (tenta de novo sozinho)
+    e o admin vê uma faixa lembrando de desligar.
+  - **Trocas de serviço on/off**: desligadas, propor troca dá 403 `barter_disabled`; o app esconde
+    "Propor troca" e avisa na tela de Trocas. Trocas já propostas seguem o fluxo.
+  - **Saque mínimo** e **preço mínimo de serviço** lidos das settings (422 `below_minimum` /
+    `price_below_minimum` com o valor vigente); a Carteira e o formulário de serviço mostram o
+    mínimo atual.
+  - `GET /settings/public` passa a trazer mínimos, trocas e manutenção. Leituras em caminhos
+    quentes têm cache de 5 s, limpo no processo a cada mudança.
+
 ## [1.14.0] — 2026-09-15
 
 ### Adicionado

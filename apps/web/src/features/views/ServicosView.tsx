@@ -18,6 +18,7 @@ import {
   useCategories,
   useCreateService,
   useFavorites,
+  usePublicSettings,
   useServicesInfinite,
   useToggleFavorite,
 } from '../../lib/hooks';
@@ -25,7 +26,7 @@ import { useToast } from '../../lib/toast';
 import { BoostModal } from '../services/BoostModal';
 import { ContratarModal } from '../services/ContratarModal';
 import { ServiceCard } from '../services/ServiceCard';
-import { WEEKDAY_SHORT } from '../../lib/format';
+import { brl, WEEKDAY_SHORT } from '../../lib/format';
 
 function flatten(
   cats: Category[],
@@ -81,6 +82,7 @@ export function ServicosView() {
   const isFreelancer = user?.role === 'freelancer';
   const navigate = useNavigate();
   const toast = useToast();
+  const minServicePrice = usePublicSettings().data?.minServicePrice ?? 10;
 
   // busca (texto + descoberta local)
   const [q, setQ] = useState('');
@@ -383,10 +385,10 @@ export function ServicosView() {
               minLength={10}
             />
           </Field>
-          <Field label="Preço (R$)">
+          <Field label={`Preço (R$) · mínimo ${brl(minServicePrice)}`}>
             <Input
               type="number"
-              min={10}
+              min={minServicePrice}
               step="0.01"
               value={price}
               onChange={(e) => setPrice(e.target.value)}

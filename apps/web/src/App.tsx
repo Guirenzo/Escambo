@@ -2,7 +2,11 @@ import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from '
 import { RequireAuth } from './components/RequireAuth';
 import { Spinner } from './components/ui';
 import { NotFoundView } from './features/views/NotFoundView';
-import { ForgotPasswordView, ResetPasswordView, VerifyEmailView } from './features/auth/AccountViews';
+import {
+  ForgotPasswordView,
+  ResetPasswordView,
+  VerifyEmailView,
+} from './features/auth/AccountViews';
 import { LoginForm } from './features/auth/LoginForm';
 import { LegalView } from './features/legal/LegalView';
 import { Shell } from './features/shell/Shell';
@@ -19,6 +23,7 @@ import { TrocasView } from './features/views/TrocasView';
 import { useAuth } from './lib/auth';
 import { RouteAnnouncer } from './lib/title';
 import './styles.css';
+import { MaintenanceGate } from './components/MaintenanceGate';
 
 /** /login: se já autenticado, vai para a home. */
 function LoginRoute() {
@@ -53,29 +58,31 @@ export function App() {
   return (
     <BrowserRouter>
       <RouteAnnouncer />
-      <Routes>
-        <Route path="/login" element={<LoginRoute />} />
-        <Route path="/esqueci-senha" element={<ForgotPasswordView />} />
-        <Route path="/redefinir-senha" element={<ResetPasswordView />} />
-        <Route path="/verificar-email" element={<VerifyEmailView />} />
-        <Route path="/termos" element={<LegalView kind="termos" />} />
-        <Route path="/privacidade" element={<LegalView kind="privacidade" />} />
-        <Route element={<RequireAuth />}>
-          <Route element={<Shell />}>
-            <Route index element={<InicioView />} />
-            <Route path="servicos" element={<ServicosView />} />
-            <Route path="trocas" element={<TrocasView />} />
-            <Route path="ranking" element={<RankingView />} />
-            <Route path="carteira" element={<CarteiraView />} />
-            <Route path="notificacoes" element={<NotificacoesView />} />
-            <Route path="perfil" element={<PerfilView />} />
-            <Route path="contratos/:id" element={<SalaContratoRoute />} />
-            <Route path="freelancers/:ulid" element={<FreelancerView />} />
-            <Route path="admin" element={<AdminRoute />} />
+      <MaintenanceGate>
+        <Routes>
+          <Route path="/login" element={<LoginRoute />} />
+          <Route path="/esqueci-senha" element={<ForgotPasswordView />} />
+          <Route path="/redefinir-senha" element={<ResetPasswordView />} />
+          <Route path="/verificar-email" element={<VerifyEmailView />} />
+          <Route path="/termos" element={<LegalView kind="termos" />} />
+          <Route path="/privacidade" element={<LegalView kind="privacidade" />} />
+          <Route element={<RequireAuth />}>
+            <Route element={<Shell />}>
+              <Route index element={<InicioView />} />
+              <Route path="servicos" element={<ServicosView />} />
+              <Route path="trocas" element={<TrocasView />} />
+              <Route path="ranking" element={<RankingView />} />
+              <Route path="carteira" element={<CarteiraView />} />
+              <Route path="notificacoes" element={<NotificacoesView />} />
+              <Route path="perfil" element={<PerfilView />} />
+              <Route path="contratos/:id" element={<SalaContratoRoute />} />
+              <Route path="freelancers/:ulid" element={<FreelancerView />} />
+              <Route path="admin" element={<AdminRoute />} />
+            </Route>
           </Route>
-        </Route>
-        <Route path="*" element={<NotFoundView />} />
-      </Routes>
+          <Route path="*" element={<NotFoundView />} />
+        </Routes>
+      </MaintenanceGate>
     </BrowserRouter>
   );
 }

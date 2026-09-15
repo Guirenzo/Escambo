@@ -417,7 +417,7 @@ export const openapiDocument: Record<string, any> = {
     '/settings/public': {
       get: op(
         'Plataforma',
-        'Parâmetros públicos: comissão (%), aprovação tácita (dias), validade da proposta (horas)',
+        'Parâmetros públicos: comissão (%), aprovação tácita (dias), validade da proposta (horas), mínimos de serviço e saque (R$), trocas ligadas, modo de manutenção',
       ),
     },
     '/admin/settings': {
@@ -428,7 +428,7 @@ export const openapiDocument: Record<string, any> = {
     '/admin/settings/{key}': {
       put: op(
         'Admin',
-        'Muda um parâmetro (inteiro dentro dos limites; auditado; efeito imediato)',
+        'Muda um parâmetro (inteiro, decimal ou liga/desliga, dentro dos limites; auditado; efeito imediato)',
         { auth: true },
       ),
     },

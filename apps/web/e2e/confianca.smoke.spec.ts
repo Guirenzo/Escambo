@@ -179,3 +179,36 @@ test('admin muda a retenção dos anexos no painel; o card de armazenamento refl
   await expect(page.locator('.toast', { hasText: 'Retenção dos anexos: 180 dias' })).toBeVisible();
   await expect(page.getByTestId('storage-card')).toContainText('180 dias');
 });
+
+test('modo de manutenção: cliente vê a tela e volta quando o admin desliga; admin vê a faixa', async ({
+  page,
+  request,
+}) => {
+  const admin = await createAdmin(request);
+  const client = await createUser(request, 'client');
+  const set = (value: boolean) =>
+    request.put('/api/admin/settings/maintenance_mode', {
+      headers: { Authorization: `Bearer ${admin.token}` },
+      data: { value },
+    });
+  try {
+    expect((await set(true)).ok()).toBeTruthy();
+
+    await openAs(page, client, '/servicos');
+    await expect(page.getByTestId('maintenance-view')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Estamos em manutenção' })).toBeVisible();
+
+    await openAs(page, admin, '/admin');
+    await settled(page);
+    await expect(page.getByTestId('maintenance-banner')).toContainText('Modo de manutenção ligado');
+    await expect(page.getByTestId('settings-card')).toBeVisible();
+
+    expect((await set(false)).ok()).toBeTruthy();
+    await openAs(page, client, '/servicos');
+    await settled(page);
+    await expect(page.getByTestId('maintenance-view')).toHaveCount(0);
+    await expect(page.getByPlaceholder('Buscar serviços…')).toBeVisible();
+  } finally {
+    await set(false);
+  }
+});
