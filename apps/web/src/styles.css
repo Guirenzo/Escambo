@@ -2852,9 +2852,14 @@ button.toggle.on {
 }
 .switch {
   display: inline-flex;
+  /* label global é coluna; o switch é linha: botão e texto lado a lado, alinhados à esquerda */
+  flex-direction: row;
+  align-self: flex-start;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
   cursor: pointer;
 }
 .switch input {
@@ -2925,13 +2930,4 @@ button.toggle.on {
   border-radius: 50%;
   background: var(--green);
   display: inline-block;
-}
-.now-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-end;
-}
-.now-toggle[aria-pressed='true'] .now-dot {
-  background: #fff;
 }

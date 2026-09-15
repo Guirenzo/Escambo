@@ -268,6 +268,16 @@ export function ServicosView() {
         >
           <Heart size={16} /> Só favoritos{favIds.size ? ` (${favIds.size})` : ''}
         </Button>
+        {/* Atende agora (ADR 34): aceitando pedidos, no dia e no período de agora em Brasília */}
+        <Button
+          variant="ghost"
+          className={`toggle ${filters.now ? 'on' : ''}`}
+          aria-pressed={filters.now}
+          title="Aceitando pedidos, no dia e no período de agora (horário de Brasília)"
+          onClick={() => setFilter({ now: !filters.now })}
+        >
+          <span className="now-dot" aria-hidden="true" /> Atende agora
+        </Button>
       </div>
 
       {/* Filtros e ordenação (aplicam na hora) */}
@@ -362,15 +372,6 @@ export function ServicosView() {
             ))}
           </Select>
         </label>
-        <Button
-          type="button"
-          variant={filters.now ? 'primary' : 'ghost'}
-          className="mini now-toggle"
-          aria-pressed={filters.now}
-          onClick={() => setFilter({ now: !filters.now })}
-        >
-          <span className="now-dot" aria-hidden="true" /> Atende agora
-        </Button>
         <label className="filter">
           <span>Ordenar</span>
           <Select

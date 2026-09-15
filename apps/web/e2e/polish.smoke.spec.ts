@@ -258,8 +258,8 @@ test('busca por período do dia e "atende agora" (horário de Brasília)', async
   // Atende agora: aceitando pedidos, no dia e período de agora (madrugada: ninguém).
   await page.getByRole('button', { name: 'Limpar filtros' }).click();
   await expect(cards).toHaveCount(3);
-  await filters.getByRole('button', { name: 'Atende agora' }).click();
-  await expect(filters.getByRole('button', { name: 'Atende agora' })).toHaveAttribute(
+  await page.getByRole('button', { name: 'Atende agora' }).click();
+  await expect(page.getByRole('button', { name: 'Atende agora' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
