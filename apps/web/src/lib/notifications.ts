@@ -11,5 +11,7 @@ export function notificationPath(data: Notification['data']): string | null {
   if (d.barterId != null) return '/trocas';
   if (d.withdrawalId != null || d.paymentId != null || d.depositId != null) return '/carteira';
   if (d.exportRequestId != null || d.deletionRequestId != null) return '/perfil';
+  // Imagem removida pela moderação (ADR 39): o perfil é onde a pessoa troca a foto.
+  if (d.contentRemoved != null) return '/perfil';
   return null;
 }

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { MediaPurpose } from '@escambo/types';
 import sharp from 'sharp';
 import { HttpError } from '../../utils/http-error';
@@ -15,6 +16,8 @@ export const PORTFOLIO_MAX_SIDE = 1600;
 /** 50 megapixels: sobra para foto de câmera e barra imagem montada para estourar a memória. */
 export const MAX_INPUT_PIXELS = 50_000_000;
 const WEBP_QUALITY = 82;
+/** Até quantos bits diferentes duas impressões perceptuais contam como a mesma imagem (ADR 39). */
+export const PERCEPTUAL_MATCH_BITS = 6;
 
 export interface ProcessedImage {
   data: Buffer;
@@ -64,6 +67,62 @@ export async function processUpload(bytes: Buffer, purpose: MediaPurpose): Promi
   } catch (err) {
     throw unreadable(err);
   }
+}
+
+/**
+ * Impressão perceptual de 64 bits (dHash, ADR 39): a imagem vira 9 × 8 tons de cinza e cada bit diz
+ * se um ponto é mais claro que o vizinho da direita. Reencodar, comprimir ou reduzir mexe em poucos
+ * bits; outra foto mexe em muitos.
+ */
+export async function perceptualHash(bytes: Buffer): Promise<bigint> {
+  const { data, info } = await sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS })
+    .autoOrient()
+    .greyscale()
+    .resize(9, 8, { fit: 'fill' })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const step = info.channels;
+  let hash = 0n;
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      const i = (y * 9 + x) * step;
+      hash = (hash << 1n) | (data[i]! > data[i + step]! ? 1n : 0n);
+    }
+  }
+  return hash;
+}
+
+/** Quantos bits diferem entre duas impressões. */
+export function hammingDistance(a: bigint, b: bigint): number {
+  let x = a ^ b;
+  let bits = 0;
+  while (x > 0n) {
+    bits += Number(x & 1n);
+    x >>= 1n;
+  }
+  return bits;
+}
+
+/**
+ * Imagem quase lisa gera impressão quase toda zero (ou um) e parece com qualquer outra lisa, então
+ * não serve para comparar: para ela vale só a assinatura exata do arquivo.
+ */
+export function isInformativeHash(hash: bigint): boolean {
+  const bits = hammingDistance(hash, 0n);
+  return bits >= 8 && bits <= 56;
+}
+
+export interface ImageFingerprint {
+  sha256: string;
+  /** null quando a imagem não tem detalhe suficiente para comparação perceptual. */
+  dhash: bigint | null;
+}
+
+/** Assinatura exata do arquivo e, se a imagem tiver detalhe, a impressão perceptual. */
+export async function fingerprint(bytes: Buffer): Promise<ImageFingerprint> {
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const hash = await perceptualHash(bytes).catch(() => null);
+  return { sha256, dhash: hash !== null && isInformativeHash(hash) ? hash : null };
 }
 
 /**

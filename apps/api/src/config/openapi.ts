@@ -413,7 +413,25 @@ export const openapiDocument: Record<string, any> = {
       delete: op('Serviços', 'Apaga a busca salva', { auth: true }),
     },
     '/reports': {
-      post: op('Trust & Safety', 'Denunciar conteúdo/usuário', { auth: true, responses: res201 }),
+      post: op(
+        'Trust & Safety',
+        'Denunciar conteúdo, usuário ou imagem (avatar e portfolio_item guardam a imagem denunciada; recusa a própria imagem, alvo sem imagem e denúncia repetida)',
+        { auth: true, responses: res201 },
+      ),
+    },
+    '/admin/reports': {
+      get: op(
+        'Admin',
+        'Fila de moderação: denúncias pendentes ou resolvidas (?status=pending|resolved), agrupadas por alvo e imagem',
+        { auth: true },
+      ),
+    },
+    '/admin/reports/{id}/{action}': {
+      post: op(
+        'Admin',
+        'dismiss, resolve ou remove-image no grupo da denúncia, com nota. remove-image tira a imagem de todo perfil e trabalho, apaga o arquivo, avisa o dono e bloqueia o reenvio',
+        { auth: true },
+      ),
     },
 
     '/disputes': {

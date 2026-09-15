@@ -2,6 +2,10 @@ import type {
   AdminDeletionRequest,
   AdminEmail,
   AdminFinanceReport,
+  AdminReportAction,
+  AdminReportActionRequest,
+  AdminReportActionResult,
+  AdminReportGroup,
   AdminMetrics,
   AdminStorage,
   AdminWithdrawal,
@@ -490,6 +494,14 @@ export const api = {
     }),
   adminModerateUser: (ulid: string, action: 'suspend' | 'ban' | 'reactivate') =>
     request<void>(`/admin/users/${encodeURIComponent(ulid)}/${action}`, { method: 'POST' }),
+  // moderação (ADR 39)
+  adminReports: (status: 'pending' | 'resolved' = 'pending') =>
+    request<AdminReportGroup[]>(`/admin/reports?status=${status}`),
+  adminReportAction: (id: number, action: AdminReportAction, body: AdminReportActionRequest = {}) =>
+    request<AdminReportActionResult>(`/admin/reports/${id}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   adminEmails: (limit = 50) => request<AdminEmail[]>(`/admin/emails?limit=${limit}`),
   adminDeletionRequests: (status: 'pending' | 'all' = 'pending') =>
     request<AdminDeletionRequest[]>(`/admin/deletion-requests?status=${status}`),

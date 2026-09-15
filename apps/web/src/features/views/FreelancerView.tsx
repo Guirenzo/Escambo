@@ -34,7 +34,7 @@ import { BoostModal } from '../services/BoostModal';
 import { ContratarModal } from '../services/ContratarModal';
 import { ServiceCard } from '../services/ServiceCard';
 import { ModerationButtons } from '../admin/ModerationButtons';
-import { ReportModal } from '../profile/ReportModal';
+import { ReportModal, type ReportSubject } from '../profile/ReportModal';
 
 /** Perfil público do freelancer: reputação explicada, serviços contratáveis e avaliações. */
 export function FreelancerView() {
@@ -54,7 +54,7 @@ export function FreelancerView() {
   );
   const [contratar, setContratar] = useState<Service | null>(null);
   const [boost, setBoost] = useState<Service | null>(null);
-  const [reportOpen, setReportOpen] = useState(false);
+  const [report, setReport] = useState<ReportSubject[] | null>(null);
 
   return (
     <div className="page">
@@ -133,7 +133,31 @@ export function FreelancerView() {
                     </Button>
                   )}
                   {userId !== myId && (
-                    <Button variant="ghost" onClick={() => setReportOpen(true)}>
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        userId &&
+                        setReport([
+                          {
+                            targetType: 'user',
+                            targetId: userId,
+                            label: 'O perfil',
+                            hint: 'golpe, spam, negociação por fora ou comportamento',
+                          },
+                          ...(p.avatarUrl
+                            ? [
+                                {
+                                  targetType: 'avatar' as const,
+                                  targetId: userId,
+                                  label: 'A foto do perfil',
+                                  hint: 'imagem ofensiva, falsa ou de outra pessoa',
+                                  imageUrl: p.avatarUrl,
+                                },
+                              ]
+                            : []),
+                        ])
+                      }
+                    >
                       <Flag size={14} /> Denunciar
                     </Button>
                   )}
@@ -168,6 +192,26 @@ export function FreelancerView() {
                         <div className="portfolio-placeholder" aria-hidden="true">
                           <Link2 size={22} />
                         </div>
+                      )}
+                      {i.imageUrl && userId !== myId && (
+                        <button
+                          type="button"
+                          className="icon-btn portfolio-report"
+                          aria-label={`Denunciar imagem de ${i.title}`}
+                          title="Denunciar imagem"
+                          onClick={() =>
+                            setReport([
+                              {
+                                targetType: 'portfolio_item',
+                                targetId: i.id,
+                                label: `Imagem de “${i.title}”`,
+                                imageUrl: i.imageUrl,
+                              },
+                            ])
+                          }
+                        >
+                          <Flag size={14} />
+                        </button>
                       )}
                       <figcaption>
                         <strong>{i.title}</strong>
@@ -275,9 +319,7 @@ export function FreelancerView() {
         )}
       </QueryState>
 
-      {reportOpen && userId && (
-        <ReportModal targetType="user" targetId={userId} onClose={() => setReportOpen(false)} />
-      )}
+      {report && <ReportModal subjects={report} onClose={() => setReport(null)} />}
       {contratar && <ContratarModal service={contratar} onClose={() => setContratar(null)} />}
       {boost && <BoostModal service={boost} onClose={() => setBoost(null)} />}
     </div>

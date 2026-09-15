@@ -6,6 +6,7 @@ import { env } from '../../config/env';
 import type { DetectedType } from '../messaging/attachments.storage';
 import { makeVariant } from './media.image';
 import {
+  MEDIA_WIDTHS,
   mediaIdOf,
   mediaKeyFromUrl,
   mediaUrl,
@@ -19,7 +20,8 @@ import { mediaRepository } from './media.repository';
  * volume dos anexos do chat mas numa pasta própria: estas são públicas, aquelas não. Miniaturas
  * nascem na primeira leitura com ?w= e ficam ao lado do original (<ULID>.w<largura>.webp). Imagem
  * enviada e não usada (troca de foto, formulário abandonado, conta anonimizada) vira órfã e sai no
- * expurgo depois de um dia, junto com as miniaturas dela.
+ * expurgo depois de um dia, junto com as miniaturas dela. Imagem removida pela moderação (ADR 39)
+ * sai na hora.
  */
 
 export const MEDIA_MAX_BYTES = 5 * 1024 * 1024;
@@ -42,6 +44,30 @@ export async function saveMedia(bytes: Buffer, type: DetectedType): Promise<stri
   await mkdir(path.join(mediaDir(), dir), { recursive: true });
   await writeFile(mediaFilePath(key)!, bytes, { flag: 'wx' });
   return mediaUrl(key);
+}
+
+/** Bytes de um original em disco; null se não existe (já expurgado ou removido). */
+export async function readMediaFile(key: string): Promise<Buffer | null> {
+  const abs = mediaFilePath(key);
+  if (!abs) return null;
+  return readFile(abs).catch(() => null);
+}
+
+/**
+ * Apaga agora o original e as miniaturas (remoção pela moderação, ADR 39): a URL é pública e com
+ * cache imutável, então não dá para esperar o expurgo de órfãos. Devolve se o original existia.
+ */
+export async function deleteMediaImage(key: string): Promise<boolean> {
+  const abs = mediaFilePath(key);
+  if (!abs) return false;
+  for (const width of MEDIA_WIDTHS) {
+    const variant = mediaFilePath(mediaVariantKey(key, width));
+    if (variant) await unlink(variant).catch(() => undefined);
+  }
+  return unlink(abs).then(
+    () => true,
+    () => false,
+  );
 }
 
 const exists = (abs: string): Promise<boolean> =>

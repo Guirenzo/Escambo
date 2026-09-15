@@ -5,6 +5,30 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.21.0] — 2026-09-15
+
+### Adicionado
+
+- **Moderação de imagens e fila de denúncias** (ADR 39).
+  - **Denunciar foto e imagem do portfólio**: no perfil público, "Denunciar" pergunta se é o perfil
+    ou a foto, e cada trabalho com imagem tem a própria bandeira. O modal mostra a imagem que vai
+    para a moderação. A API guarda a imagem como estava na hora e recusa a própria imagem, alvo sem
+    imagem e denúncia repetida.
+  - **Fila de denúncias no painel admin**: denúncias de todos os tipos agrupadas por alvo e imagem,
+    com dono, motivos contados, descrições e se a imagem ainda está no ar, em abas de pendentes e
+    resolvidas. `GET /admin/reports` e `POST /admin/reports/:id/dismiss|resolve|remove-image`.
+  - **Remover imagem**: a imagem sai de todo perfil e trabalho que a mostra, o arquivo e as
+    miniaturas são apagados na hora, o dono recebe notificação e e-mail com o motivo e a nota, e a
+    decisão fica nas ações do admin e na auditoria.
+  - **Imagem removida não volta**: o envio é recusado (`image_blocked`) quando bate com a
+    assinatura do arquivo ou com a impressão perceptual, o que pega a mesma foto reencodada ou
+    reduzida. Migration `0017_moderacao_imagens`.
+
+### Corrigido
+
+- **Denúncias sem destino**: até aqui as denúncias eram gravadas, mas não apareciam em lugar
+  nenhum do painel.
+
 ## [1.20.0] — 2026-09-15
 
 ### Adicionado

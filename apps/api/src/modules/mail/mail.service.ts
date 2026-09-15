@@ -36,6 +36,7 @@ export const EMAILED_NOTIFICATION_TYPES = new Set([
   'export_ready',
   'deletion_rejected',
   'review_received',
+  'content_removed',
 ]);
 
 /** Para onde o e-mail de notificação aponta, a partir dos dados da notificação. */
@@ -45,7 +46,12 @@ export function notificationLink(data: Record<string, unknown> | null | undefine
   if (typeof contractId === 'number') return `${base}/contratos/${contractId}`;
   if (data?.barterId != null) return `${base}/trocas`;
   if (data?.withdrawalId != null || data?.paymentId != null) return `${base}/carteira`;
-  if (data?.exportRequestId != null || data?.deletionRequestId != null) return `${base}/perfil`;
+  if (
+    data?.exportRequestId != null ||
+    data?.deletionRequestId != null ||
+    data?.contentRemoved != null
+  )
+    return `${base}/perfil`;
   // Alerta de busca salva (ADR 35): o link reaplica a busca na tela de serviços.
   if (typeof data?.savedSearchId === 'number')
     return `${base}/servicos?busca=${data.savedSearchId}`;

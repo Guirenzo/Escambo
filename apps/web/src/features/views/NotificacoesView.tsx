@@ -69,7 +69,11 @@ export function NotificacoesView() {
                             if (!n.isRead) markOne.mutate(n.id);
                           }}
                         >
-                          {n.type === 'saved_search_match' ? 'Ver serviços' : 'Abrir'}
+                          {n.type === 'saved_search_match'
+                            ? 'Ver serviços'
+                            : n.type === 'content_removed'
+                              ? 'Ver perfil'
+                              : 'Abrir'}
                         </Link>
                       )}
                     </div>
