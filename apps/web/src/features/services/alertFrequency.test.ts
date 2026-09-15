@@ -18,5 +18,8 @@ describe('frequência do alerta de busca salva (ADR 37)', () => {
     expect(alertNotice('instant')).toMatch(/assim que aparecer/);
     expect(alertNotice('hourly')).toMatch(/uma vez por hora/);
     expect(alertNotice('daily')).toMatch(/resumo por dia/);
+    expect(alertNotice('daily', 7)).toBe(
+      'Mandamos um resumo por dia, às 07:00, quando aparecer serviço novo.',
+    );
   });
 });

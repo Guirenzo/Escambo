@@ -153,7 +153,7 @@ test('avatar por URL aparece na sidebar e no perfil público', async ({ page, re
   await expect(page.locator('.side-user .avatar img')).toHaveCount(1);
 });
 
-test('preferência de e-mail: escolher "Resumo diário" persiste no perfil e na sessão', async ({
+test('preferência de e-mail: "Resumo diário" e a hora do resumo persistem no perfil e na sessão', async ({
   page,
   request,
 }) => {
@@ -176,6 +176,19 @@ test('preferência de e-mail: escolher "Resumo diário" persiste no perfil e na 
     headers: { Authorization: `Bearer ${freelancer.token}` },
   });
   expect(((await me.json()) as { emailFrequency: string }).emailFrequency).toBe('daily');
+
+  // Hora do resumo do dia (ADR 42): troca, aparece na opção diária e fica depois de recarregar.
+  const hourSelect = () => page.getByTestId('email-prefs').getByLabel('Horário do resumo do dia');
+  await hourSelect().selectOption('20');
+  await expect(page.locator('.toast', { hasText: 'sai às 20:00' })).toBeVisible();
+  await expect(page.getByTestId('email-prefs')).toContainText('um e-mail por dia, às 20:00');
+  await page.reload();
+  await settled(page);
+  await expect(hourSelect()).toHaveValue('20');
+  const after = await request.get('/api/auth/me', {
+    headers: { Authorization: `Bearer ${freelancer.token}` },
+  });
+  expect(((await after.json()) as { digestHour: number }).digestHour).toBe(20);
 });
 
 test('perfil rico: dias de atendimento e portfólio aparecem no perfil público', async ({

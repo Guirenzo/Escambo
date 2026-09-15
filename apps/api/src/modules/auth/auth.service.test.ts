@@ -184,6 +184,7 @@ describe('authService.getByUlid', () => {
       role: 'freelancer',
       emailVerified: false,
       emailFrequency: 'instant',
+      digestHour: expect.any(Number),
     });
   });
 

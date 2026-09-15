@@ -1,4 +1,5 @@
 import type { SavedSearchAlertFrequency } from '@escambo/types';
+import { digestHourLabel } from '../../lib/format';
 
 /** As frequências do alerta de busca salva (ADR 37), na ordem em que aparecem na tela. */
 export const ALERT_FREQUENCY_OPTIONS: {
@@ -19,7 +20,7 @@ export const ALERT_FREQUENCY_OPTIONS: {
   {
     value: 'daily',
     label: 'Uma vez por dia',
-    hint: 'um resumo pela manhã com os serviços novos do dia',
+    hint: 'um resumo com os serviços novos do dia, na hora do seu resumo (Perfil)',
   },
 ];
 
@@ -30,13 +31,15 @@ export const DEFAULT_ALERT_FREQUENCY: SavedSearchAlertFrequency = 'hourly';
 export const alertFrequencyLabel = (f: SavedSearchAlertFrequency): string =>
   ALERT_FREQUENCY_OPTIONS.find((o) => o.value === f)?.label ?? 'De hora em hora';
 
-/** O que a pessoa lê ao ligar o alerta, conforme a frequência escolhida. */
-export function alertNotice(f: SavedSearchAlertFrequency): string {
+/** O que a pessoa lê ao ligar o alerta, conforme a frequência e a hora do resumo do dia (ADR 42). */
+export function alertNotice(f: SavedSearchAlertFrequency, digestHour?: number): string {
   switch (f) {
     case 'instant':
       return 'Avisamos assim que aparecer serviço novo.';
     case 'daily':
-      return 'Mandamos um resumo por dia, pela manhã, quando aparecer serviço novo.';
+      return digestHour === undefined
+        ? 'Mandamos um resumo por dia, na hora do seu resumo, quando aparecer serviço novo.'
+        : `Mandamos um resumo por dia, às ${digestHourLabel(digestHour)}, quando aparecer serviço novo.`;
     default:
       return 'Avisamos no máximo uma vez por hora quando aparecer serviço novo.';
   }

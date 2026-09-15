@@ -4,6 +4,8 @@ import {
   brl,
   dateInputValue,
   deadlineInfo,
+  DIGEST_HOURS,
+  digestHourLabel,
   displayName,
   dt,
   endOfDayIso,
@@ -159,5 +161,14 @@ describe('horário de atendimento (ADR 34)', () => {
     ).toBe('seg, qua, sex · noite');
     expect(formatAvailability([0, 6], { '6': ['evening'] })).toBe('dom, sáb · horários variados');
     expect(formatAvailability([], { '1': ['morning'] })).toBe('');
+  });
+});
+
+describe('hora do resumo do dia (ADR 42)', () => {
+  it('oferece as 24 horas e mostra com dois dígitos', () => {
+    expect(DIGEST_HOURS).toHaveLength(24);
+    expect([DIGEST_HOURS[0], DIGEST_HOURS[23]]).toEqual([0, 23]);
+    expect(digestHourLabel(7)).toBe('07:00');
+    expect(digestHourLabel(20)).toBe('20:00');
   });
 });

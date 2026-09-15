@@ -10,6 +10,7 @@ vi.mock('../modules/notifications/notifications.service', () => ({
   notificationsService: { notify: vi.fn() },
 }));
 
+import { env } from '../config/env';
 import { notificationsService } from '../modules/notifications/notifications.service';
 import { savedSearchesRepository } from '../modules/saved-searches/saved-searches.repository';
 import { servicesRepository } from '../modules/services/services.repository';
@@ -65,7 +66,11 @@ describe('job saved-search-alerts (ADR 35 e 37)', () => {
       {
         instant: new Date('2026-09-15T15:30:44.000Z'),
         hourly: new Date('2026-09-15T14:30:45.000Z'),
-        daily: new Date('2026-09-15T10:59:59.000Z'),
+        daily: {
+          dayStart: new Date('2026-09-15T03:00:00.000Z'),
+          hourNow: 12,
+          defaultHour: env.DIGEST_HOUR,
+        },
       },
       200,
     );
@@ -175,11 +180,12 @@ describe('horário do alerta diário (ADR 37)', () => {
     expect(lastDailyAlertAt(late, 23)).toEqual(new Date('2026-09-15T02:00:00.000Z'));
   });
 
-  it('limites: na hora é qualquer cursor antes do fim; por dia, antes do último horário diário', () => {
+  it('limites: na hora e de hora em hora são instantes; por dia vão o dia e a hora de Brasília', () => {
+    // 10:00Z = 07:00 em Brasília: quem tem hora 8 ainda está no horário de ontem; a consulta decide.
     expect(alertDueThresholds(new Date('2026-09-15T10:00:00Z'), 8)).toEqual({
       instant: new Date('2026-09-15T09:59:59.000Z'),
       hourly: new Date('2026-09-15T09:00:00.000Z'),
-      daily: new Date('2026-09-14T10:59:59.000Z'),
+      daily: { dayStart: new Date('2026-09-15T03:00:00.000Z'), hourNow: 7, defaultHour: 8 },
     });
   });
 });

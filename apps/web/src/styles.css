@@ -2362,6 +2362,50 @@ button.toggle.on {
 .pref-list input[type='radio'] {
   margin-top: 3px;
 }
+/* Hora do resumo do dia (ADR 42): uma linha só, abaixo das frequências. */
+.pref-hour {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r);
+}
+.pref-hour-ico {
+  display: grid;
+  grid-row: span 2;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  background: var(--green-soft);
+  color: var(--green);
+}
+.pref-hour-field {
+  /* o label global é coluna; aqui o texto e o seletor ficam na mesma linha */
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.pref-hour-field select {
+  width: auto;
+  min-width: 104px;
+}
+.pref-hour > .muted {
+  grid-column: 2;
+}
+@media (max-width: 640px) {
+  .pref-hour-ico {
+    align-self: start;
+  }
+}
 
 /* ---------- Admin: financeiro ---------- */
 .fin-controls {

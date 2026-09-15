@@ -2,7 +2,8 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
-import { runDailyDigest } from '../../src/jobs/daily-digest';
+import { env } from '../../src/config/env';
+import { runDailyDigest, startOfTodayBrt } from '../../src/jobs/daily-digest';
 import { fundWallet } from './wallet.helpers';
 
 /**
@@ -51,15 +52,12 @@ const noonBrt = (): Date => {
 };
 
 async function propose(client: Actor, freelancer: Actor, title: string): Promise<void> {
-  const res = await request(app)
-    .post('/api/contracts')
-    .set(auth(client.token))
-    .send({
-      freelancerId: freelancer.id,
-      title,
-      description: 'Contratação do teste de resumo diário',
-      price: 50,
-    });
+  const res = await request(app).post('/api/contracts').set(auth(client.token)).send({
+    freelancerId: freelancer.id,
+    title,
+    description: 'Contratação do teste de resumo diário',
+    price: 50,
+  });
   expect(res.status, JSON.stringify(res.body)).toBe(201);
 }
 
@@ -83,7 +81,7 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
 
     // Preferência: padrão instant; validação; persistência.
     const def = await request(app).get('/api/notifications/preferences').set(auth(daily.token));
-    expect(def.body).toEqual({ emailFrequency: 'instant' });
+    expect(def.body).toEqual({ emailFrequency: 'instant', digestHour: env.DIGEST_HOUR });
     await request(app)
       .put('/api/notifications/preferences')
       .set(auth(daily.token))
@@ -114,9 +112,10 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
     expect(templates(await outbox(admin, daily.id))).not.toContain('notification');
     expect(templates(await outbox(admin, off.id))).not.toContain('notification');
 
-    // Job: antes da hora não faz nada; ao meio-dia manda um resumo só para quem é daily.
+    // Job: de madrugada quem tem a hora padrão não recebe; ao meio-dia, um resumo só para quem é daily.
     const dawn = new Date(noonBrt().getTime() - 10 * 3_600_000); // 02:00 em Brasília
-    expect((await runDailyDigest(dawn)).skipped).toBe('before_hour');
+    const early = await runDailyDigest(dawn);
+    expect([...early.sent, ...early.empty]).not.toContain(daily.id);
     const first = await runDailyDigest(noonBrt());
     expect(first.sent).toContain(daily.id);
     expect(first.sent).not.toContain(off.id);
@@ -133,5 +132,56 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
     const again = await runDailyDigest(noonBrt());
     expect(again.sent).not.toContain(daily.id);
     expect((await outbox(admin, daily.id)).filter((m) => m.template === 'digest')).toHaveLength(1);
+  });
+
+  it('hora por pessoa: cada um recebe a partir da própria hora, uma vez por dia de Brasília (ADR 42)', async () => {
+    const early = await registerAndLogin('freelancer');
+    const standard = await registerAndLogin('freelancer');
+    const late = await registerAndLogin('freelancer');
+    const put = (a: Actor, body: Record<string, unknown>) =>
+      request(app).put('/api/notifications/preferences').set(auth(a.token)).send(body);
+
+    expect((await put(early, { emailFrequency: 'daily', digestHour: 6 }).expect(200)).body).toEqual(
+      { emailFrequency: 'daily', digestHour: 6 },
+    );
+    await put(standard, { emailFrequency: 'daily' }).expect(200);
+    await put(late, { emailFrequency: 'daily' }).expect(200);
+    // Só a hora, num segundo pedido: a frequência fica e a sessão já mostra.
+    expect((await put(late, { digestHour: 21 }).expect(200)).body).toEqual({
+      emailFrequency: 'daily',
+      digestHour: 21,
+    });
+    const me = await request(app).get('/api/auth/me').set(auth(late.token));
+    expect(me.body).toMatchObject({ emailFrequency: 'daily', digestHour: 21 });
+    for (const body of [{ digestHour: 24 }, { digestHour: -1 }, { digestHour: 7.5 }, {}]) {
+      expect((await put(late, body)).status, JSON.stringify(body)).toBe(422);
+    }
+
+    const HOUR = 3_600_000;
+    const dayStart = startOfTodayBrt(new Date());
+    const at = (hourBrt: number): Date => new Date(dayStart.getTime() + hourBrt * HOUR);
+    const handled = (r: { sent: number[]; empty: number[] }): number[] => [...r.sent, ...r.empty];
+
+    const seven = handled(await runDailyDigest(at(7)));
+    expect(seven).toContain(early.id);
+    expect(seven).not.toContain(standard.id);
+    expect(seven).not.toContain(late.id);
+
+    const noon = handled(await runDailyDigest(at(12)));
+    expect(noon).toContain(standard.id);
+    expect(noon).not.toContain(early.id);
+    expect(noon).not.toContain(late.id);
+
+    // Trocar a hora depois de receber não manda um segundo resumo no mesmo dia.
+    await put(early, { digestHour: 22 }).expect(200);
+    const night = handled(await runDailyDigest(at(22)));
+    expect(night).toContain(late.id);
+    expect(night).not.toContain(early.id);
+
+    // null volta à hora padrão.
+    expect((await put(late, { digestHour: null }).expect(200)).body).toEqual({
+      emailFrequency: 'daily',
+      digestHour: env.DIGEST_HOUR,
+    });
   });
 });

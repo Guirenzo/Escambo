@@ -5,6 +5,24 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.24.0] — 2026-09-15
+
+### Adicionado
+
+- **Hora do resumo do dia por pessoa** (ADR 42). No cartão de e-mails do perfil, cada pessoa
+  escolhe a hora, em Brasília, do resumo diário por e-mail e dos alertas diários das buscas salvas;
+  sem escolha, vale `DIGEST_HOUR`. A hora aparece na opção de resumo diário e nos avisos das buscas.
+  - `PUT /api/notifications/preferences` aceita `emailFrequency`, `digestHour` ou os dois (`null`
+    volta à hora padrão), e a sessão (`GET /api/auth/me`) passa a trazer `digestHour`.
+  - Migration `0019_horario_resumo`.
+
+### Alterado
+
+- O job `daily-digest` roda a toda rodada e entrega a cada pessoa a partir da hora dela, mantendo um
+  resumo por dia de Brasília; o resultado não tem mais `skipped: 'before_hour'`.
+- O alerta diário das buscas salvas vence no horário do resumo do dono.
+- A cópia de dados da LGPD passa ao formato 1.3, com a preferência de e-mail e a hora do resumo.
+
 ## [1.23.0] — 2026-09-15
 
 ### Adicionado

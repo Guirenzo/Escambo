@@ -31,6 +31,7 @@ function toPublic(user: UserRow): PublicUser {
     role: user.role as UserRole,
     emailVerified: user.email_verified_at != null,
     emailFrequency: user.email_frequency ?? 'instant',
+    digestHour: user.digest_hour ?? env.DIGEST_HOUR,
   };
 }
 
@@ -142,6 +143,7 @@ export const authService = {
       role,
       emailVerified: false,
       emailFrequency: 'instant',
+      digestHour: env.DIGEST_HOUR,
     };
   },
 

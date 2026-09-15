@@ -9,10 +9,11 @@ import { env } from '../../config/env';
  * Portabilidade (LGPD, art. 18, V): monta a cópia de tudo que a plataforma guarda sobre o
  * titular, em JSON legível, e guarda o arquivo em DATA_DIR/exports. Só leitura no banco.
  * Formato 1.1: entram as buscas salvas, com a frequência do alerta (ADR 37). Formato 1.2: entram
- * as imagens removidas pela moderação, com a contestação e a decisão (ADR 41).
+ * as imagens removidas pela moderação, com a contestação e a decisão (ADR 41). Formato 1.3: a
+ * preferência de e-mail e a hora do resumo do dia entram nos dados do titular (ADR 42).
  */
 
-export const EXPORT_FORMAT_VERSION = '1.2';
+export const EXPORT_FORMAT_VERSION = '1.3';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -22,7 +23,8 @@ const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket
 export async function buildExport(userId: number): Promise<Record<string, unknown>> {
   const p = { userId };
   const [user] = await q(
-    `SELECT ulid, email, phone, role, status, email_verified_at, last_login_at, created_at
+    `SELECT ulid, email, phone, role, status, email_verified_at, email_frequency, digest_hour,
+            last_login_at, created_at
        FROM users WHERE id = :userId`,
     p,
   );

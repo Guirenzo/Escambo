@@ -1,53 +1,71 @@
-import { Mail } from 'lucide-react';
+import { Clock, Mail } from 'lucide-react';
 import { useState } from 'react';
-import type { EmailFrequency } from '@escambo/types';
+import type { EmailFrequency, UpdateEmailPreferenceRequest } from '@escambo/types';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { DIGEST_HOURS, digestHourLabel } from '../../lib/format';
 import { useToast } from '../../lib/toast';
 
-const OPTIONS: { value: EmailFrequency; label: string; hint: string }[] = [
+const OPTIONS: { value: EmailFrequency; label: string; hint: (hour: string) => string }[] = [
   {
     value: 'instant',
     label: 'A cada evento',
-    hint: 'um e-mail na hora para proposta, aceite, entrega, pagamento, prazo, troca e disputa',
+    hint: () =>
+      'um e-mail na hora para proposta, aceite, entrega, pagamento, prazo, troca e disputa',
   },
   {
     value: 'daily',
     label: 'Resumo diário',
-    hint: 'um e-mail por dia, pela manhã, com tudo o que aconteceu desde o resumo anterior',
+    hint: (hour) =>
+      `um e-mail por dia, às ${hour}, com tudo o que aconteceu desde o resumo anterior`,
   },
   {
     value: 'off',
     label: 'Só o essencial',
-    hint: 'apenas confirmação de e-mail e redefinição de senha; o resto fica em Notificações',
+    hint: () => 'apenas confirmação de e-mail e redefinição de senha; o resto fica em Notificações',
   },
 ];
 
-/** Como o usuário quer os e-mails de notificação (ADR 27). O app não muda nada além disso. */
+/**
+ * Como o usuário quer os e-mails de notificação (ADR 27) e a hora do resumo do dia (ADR 42), que
+ * vale para o e-mail diário e para as buscas salvas com alerta diário. O app não muda além disso.
+ */
 export function EmailPreferencesCard() {
   const { user, refreshUser } = useAuth();
   const toast = useToast();
-  const [saving, setSaving] = useState<EmailFrequency | null>(null);
+  const [saving, setSaving] = useState(false);
   const current = user?.emailFrequency ?? 'instant';
+  const hour = user?.digestHour ?? 8;
 
-  async function choose(value: EmailFrequency): Promise<void> {
-    if (value === current || saving) return;
-    setSaving(value);
+  async function save(change: UpdateEmailPreferenceRequest, done: string): Promise<void> {
+    if (saving) return;
+    setSaving(true);
     try {
-      await api.updateEmailPreference(value);
+      await api.updateEmailPreference(change);
       await refreshUser();
-      toast.success(
-        value === 'daily'
-          ? 'Pronto: um resumo por dia, pela manhã.'
-          : value === 'off'
-            ? 'Pronto: só e-mails essenciais. As novidades ficam em Notificações.'
-            : 'Pronto: um e-mail a cada evento.',
-      );
+      toast.success(done);
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Não foi possível salvar');
     } finally {
-      setSaving(null);
+      setSaving(false);
     }
+  }
+
+  function choose(value: EmailFrequency): void {
+    if (value === current) return;
+    void save(
+      { emailFrequency: value },
+      value === 'daily'
+        ? `Pronto: um resumo por dia, às ${digestHourLabel(hour)}.`
+        : value === 'off'
+          ? 'Pronto: só e-mails essenciais. As novidades ficam em Notificações.'
+          : 'Pronto: um e-mail a cada evento.',
+    );
+  }
+
+  function chooseHour(value: number): void {
+    if (value === hour) return;
+    void save({ digestHour: value }, `Pronto: seu resumo do dia sai às ${digestHourLabel(value)}.`);
   }
 
   return (
@@ -67,16 +85,40 @@ export function EmailPreferencesCard() {
               name="emailFrequency"
               value={o.value}
               checked={current === o.value}
-              disabled={saving !== null}
-              onChange={() => void choose(o.value)}
+              disabled={saving}
+              onChange={() => choose(o.value)}
             />
             <span>
               <strong>{o.label}</strong>
-              <span className="muted tiny">{o.hint}</span>
+              <span className="muted tiny">{o.hint(digestHourLabel(hour))}</span>
             </span>
           </label>
         ))}
       </fieldset>
+      <div className="pref-hour">
+        <span className="pref-hour-ico" aria-hidden="true">
+          <Clock size={16} />
+        </span>
+        <label className="pref-hour-field">
+          <span>Horário do resumo do dia</span>
+          <select
+            value={hour}
+            disabled={saving}
+            aria-describedby="digest-hour-hint"
+            onChange={(e) => chooseHour(Number(e.target.value))}
+          >
+            {DIGEST_HOURS.map((h) => (
+              <option key={h} value={h}>
+                {digestHourLabel(h)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span id="digest-hour-hint" className="muted tiny">
+          Horário de Brasília. Vale para o resumo por e-mail e para as buscas salvas com alerta
+          diário.
+        </span>
+      </div>
     </section>
   );
 }
