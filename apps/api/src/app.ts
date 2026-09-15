@@ -8,6 +8,7 @@ import { env } from './config/env';
 import { logger } from './config/logger';
 import { openapiDocument, swaggerHtml } from './config/openapi';
 import { errorHandler } from './middlewares/error-handler';
+import { maintenanceGate } from './middlewares/maintenance';
 import { apiRateLimiter } from './middlewares/rate-limit';
 import { router } from './routes';
 
@@ -22,7 +23,10 @@ function parseTrustProxy(value: string): boolean | number | string {
 /** Origens permitidas: '*' reflete a origem da requisição; senão, lista fixa. */
 function corsOrigin(value: string): CorsOptions['origin'] {
   if (value.trim() === '*') return true;
-  const allow = value.split(',').map((o) => o.trim()).filter(Boolean);
+  const allow = value
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   return (origin, cb) => {
     if (!origin || allow.includes(origin)) return cb(null, true);
     cb(new Error('Origem não permitida pelo CORS'));
@@ -64,7 +68,8 @@ export function createApp() {
     res.type('html').send(swaggerHtml);
   });
 
-  app.use('/api', apiRateLimiter, router);
+  // Manutenção depois do rate limit (o limite protege até a resposta 503) e antes das rotas.
+  app.use('/api', apiRateLimiter, maintenanceGate, router);
 
   // 404 padronizado
   app.use((_req, res) => {

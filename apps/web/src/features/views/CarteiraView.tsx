@@ -17,6 +17,7 @@ import {
   useCancelWithdrawal,
   useCreditTransactions,
   useDeposits,
+  usePublicSettings,
   useRequestWithdrawal,
   useWallet,
   useWalletTransactions,
@@ -71,6 +72,7 @@ export function CarteiraView() {
   usePageTitle('Carteira');
   const { user } = useAuth();
   const wallet = useWallet();
+  const minWithdrawal = usePublicSettings().data?.minWithdrawalAmount ?? 20;
   const withdrawals = useWithdrawals();
   const deposits = useDeposits();
   const ledger = useWalletTransactions();
@@ -205,10 +207,10 @@ export function CarteiraView() {
               </span>
               <span className="kpi-label">Solicitar saque</span>
             </div>
-            <Field label="Valor (R$)">
+            <Field label={`Valor (R$) · mínimo ${brl(minWithdrawal)}`}>
               <Input
                 type="number"
-                min={20}
+                min={minWithdrawal}
                 step="0.01"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}

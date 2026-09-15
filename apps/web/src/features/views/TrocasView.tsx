@@ -2,7 +2,15 @@ import { ArrowLeftRight, Plus, QrCode } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { BarterAgreement, Service } from '@escambo/types';
-import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
+import {
+  Button,
+  EmptyState,
+  Field,
+  Input,
+  PageHeader,
+  QueryState,
+  Select,
+} from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
 import { BARTER_STATUS_LABEL, brl, dt, TORNA_STATUS_LABEL } from '../../lib/format';
@@ -69,6 +77,7 @@ export function TrocasView() {
   const requested = target?.price ?? 0;
   const diff = round2(Math.abs(offered - requested));
   const feeRate = (publicSettings.data?.platformFeePercentage ?? 15) / 100; // RN-066: só sobre a torna
+  const barterEnabled = publicSettings.data?.barterEnabled ?? true;
   const fee = round2(feeRate * diff);
   const iPayOnPropose = offered > 0 && requested > offered; // recebo o serviço mais valioso
   const missing = iPayOnPropose ? round2(Math.max(0, diff - balance)) : 0;
@@ -131,17 +140,25 @@ export function TrocasView() {
           </>
         }
         action={
-          <Button
-            variant={open ? 'secondary' : 'primary'}
-            onClick={() => setOpen((o) => !o)}
-            disabled={others.length === 0}
-          >
-            <Plus size={16} /> {open ? 'Fechar' : 'Propor troca'}
-          </Button>
+          barterEnabled ? (
+            <Button
+              variant={open ? 'secondary' : 'primary'}
+              onClick={() => setOpen((o) => !o)}
+              disabled={others.length === 0}
+            >
+              <Plus size={16} /> {open ? 'Fechar' : 'Propor troca'}
+            </Button>
+          ) : null
         }
       />
 
-      {open && (
+      {!barterEnabled && (
+        <EmptyState>
+          As trocas estão desativadas no momento. Trocas já propostas seguem o fluxo normal.
+        </EmptyState>
+      )}
+
+      {open && barterEnabled && (
         <form className="card" onSubmit={submit}>
           <h3>Nova proposta de troca</h3>
           <Field label="Eu quero (serviço de outro freelancer)">

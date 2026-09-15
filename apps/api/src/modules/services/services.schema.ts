@@ -13,21 +13,13 @@ export const createServiceSchema = z
     isRemote: z.boolean().default(false),
   })
   .superRefine((data, ctx) => {
-    // RN-016: serviço com preço fixo tem mínimo de R$ 10,00.
-    if (data.priceType === 'fixed') {
-      if (data.price == null) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['price'],
-          message: 'Preço obrigatório para preço fixo',
-        });
-      } else if (data.price < 10) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['price'],
-          message: 'Preço mínimo é R$ 10,00 (RN-016)',
-        });
-      }
+    // RN-016: preço fixo exige preço; o mínimo vem de platform_settings e é checado no serviço.
+    if (data.priceType === 'fixed' && data.price == null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['price'],
+        message: 'Preço obrigatório para preço fixo',
+      });
     }
   });
 export type CreateServiceInput = z.infer<typeof createServiceSchema>;

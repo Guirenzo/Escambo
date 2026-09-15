@@ -33,7 +33,7 @@ export const settingsRepository = {
   async set(
     key: string,
     value: string,
-    type: 'string' | 'integer' | 'json' = 'string',
+    type: 'string' | 'integer' | 'decimal' | 'boolean' | 'json' = 'string',
     updatedBy: number | null = null,
   ): Promise<void> {
     await pool.query(

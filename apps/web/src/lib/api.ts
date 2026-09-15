@@ -67,6 +67,8 @@ const REFRESH_KEY = 'escambo_refresh';
 /** Eventos de sessão (ouvidos pelo AuthProvider e pelo socket). */
 export const SESSION_TOKEN_EVENT = 'escambo:token';
 export const SESSION_EXPIRED_EVENT = 'escambo:session-expired';
+/** A API respondeu 503 em modo de manutenção (ADR 33): o app mostra a tela de manutenção. */
+export const MAINTENANCE_EVENT = 'escambo:maintenance';
 
 /** Filtros da busca de serviços (lat+lng+radiusKm = descoberta local por proximidade). */
 export type ServiceSort =
@@ -203,6 +205,7 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
   }
   if (!res.ok) {
     const err = data as { error?: string; message?: string };
+    if (res.status === 503 && err.error === 'maintenance') emit(MAINTENANCE_EVENT);
     throw new Error(err.message ?? err.error ?? `Erro ${res.status}`);
   }
   return data as T;
@@ -437,7 +440,7 @@ export const api = {
   adminMetrics: () => request<AdminMetrics>('/admin/metrics'),
   adminStorage: () => request<AdminStorage>('/admin/storage'),
   adminSettings: () => request<PlatformSetting[]>('/admin/settings'),
-  adminUpdateSetting: (key: string, value: number) =>
+  adminUpdateSetting: (key: string, value: number | boolean) =>
     request<PlatformSetting>(`/admin/settings/${key}`, {
       method: 'PUT',
       body: JSON.stringify({ value }),

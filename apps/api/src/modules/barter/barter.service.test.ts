@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../settings/settings.service', () => ({
-  settingsService: { feeRate: vi.fn().mockResolvedValue(0.15) },
+  settingsService: {
+    feeRate: vi.fn().mockResolvedValue(0.15),
+    barterEnabled: vi.fn().mockResolvedValue(true),
+  },
 }));
 
 vi.mock('./barter.repository', () => ({

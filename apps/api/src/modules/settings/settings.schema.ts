@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
 /**
- * Parâmetros da plataforma que o admin edita pelo painel (ADR 32). Só entram aqui chaves que a
- * API lê em tempo de execução — mudar o valor tem efeito imediato, e a descrição diz qual.
+ * Parâmetros da plataforma que o admin edita pelo painel (ADR 32, ADR 33). Só entram aqui
+ * chaves que a API lê em tempo de execução — mudar o valor tem efeito imediato, e a descrição
+ * diz qual. Tipos: inteiro, decimal (dinheiro) e liga/desliga.
  */
 export const SETTING_KEYS = [
   'platform_fee_percentage',
@@ -10,20 +11,27 @@ export const SETTING_KEYS = [
   'proposal_expiry_hours',
   'deadline_grace_hours',
   'attachment_retention_days',
+  'min_service_price',
+  'min_withdrawal_amount',
+  'barter_enabled',
+  'maintenance_mode',
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
+export type SettingType = 'integer' | 'decimal' | 'boolean';
 
 export interface SettingDef {
+  type: SettingType;
   label: string;
   description: string;
   unit: string;
   min: number;
   max: number;
-  defaultValue: number;
+  defaultValue: number | boolean;
 }
 
 export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
   platform_fee_percentage: {
+    type: 'integer',
     label: 'Comissão da plataforma',
     description:
       'Sobre o valor bruto das contratações em dinheiro e sobre a torna das trocas (RN-031, RN-066). Vale para o que for criado a partir da mudança; contratações existentes mantêm a taxa registrada.',
@@ -33,6 +41,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     defaultValue: 15,
   },
   tacit_approval_days: {
+    type: 'integer',
     label: 'Aprovação tácita',
     description:
       'Entrega sem resposta do cliente por esse tempo é aprovada em nome dele, liberando o escrow (job tacit-approval).',
@@ -42,6 +51,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     defaultValue: 5,
   },
   proposal_expiry_hours: {
+    type: 'integer',
     label: 'Validade da proposta',
     description:
       'Proposta sem resposta do freelancer por esse tempo expira e a reserva volta ao cliente (RN-021, job expire-proposals).',
@@ -51,6 +61,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     defaultValue: 72,
   },
   deadline_grace_hours: {
+    type: 'integer',
     label: 'Carência do prazo',
     description:
       'Depois do aviso de prazo estourado, sem entrega nem extensão aprovada, a plataforma abre a disputa em nome do cliente (RN-029, job overdue-contracts).',
@@ -60,6 +71,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     defaultValue: 24,
   },
   attachment_retention_days: {
+    type: 'integer',
     label: 'Retenção dos anexos',
     description:
       'Anexo do chat com mais que isso, numa conversa sem contratação aberta, sai do disco; a mensagem fica e diz por quê (ADR 31, job purge-attachments).',
@@ -68,7 +80,47 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     max: 3650,
     defaultValue: 180,
   },
+  min_service_price: {
+    type: 'decimal',
+    label: 'Preço mínimo de serviço',
+    description:
+      'Serviço com preço fixo abaixo disso é recusado ao criar ou editar (RN-016). O formulário mostra o mínimo vigente.',
+    unit: 'R$',
+    min: 1,
+    max: 100000,
+    defaultValue: 10,
+  },
+  min_withdrawal_amount: {
+    type: 'decimal',
+    label: 'Saque mínimo',
+    description:
+      'Pedido de saque abaixo disso é recusado (RN-034). A Carteira mostra o mínimo vigente.',
+    unit: 'R$',
+    min: 1,
+    max: 10000,
+    defaultValue: 20,
+  },
+  barter_enabled: {
+    type: 'boolean',
+    label: 'Trocas de serviço',
+    description:
+      'Desligado: ninguém propõe troca nova (403) e o app esconde "Propor troca"; trocas já propostas seguem o fluxo normal.',
+    unit: '',
+    min: 0,
+    max: 1,
+    defaultValue: true,
+  },
+  maintenance_mode: {
+    type: 'boolean',
+    label: 'Modo de manutenção',
+    description:
+      'Ligado: a API responde 503 para quem não é admin (health, login, parâmetros públicos e este painel continuam) e o app mostra a tela de manutenção. Desligue aqui mesmo.',
+    unit: '',
+    min: 0,
+    max: 1,
+    defaultValue: false,
+  },
 };
 
 export const settingKeyParamSchema = z.object({ key: z.enum(SETTING_KEYS) });
-export const updateSettingSchema = z.object({ value: z.number().int() });
+export const updateSettingSchema = z.object({ value: z.union([z.number(), z.boolean()]) });

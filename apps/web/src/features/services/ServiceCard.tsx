@@ -5,6 +5,7 @@ import { Avatar } from '../../components/Avatar';
 import { Stars } from '../../components/Stars';
 import { Button } from '../../components/ui';
 import { brl, formatAvailableDays } from '../../lib/format';
+import { usePublicSettings } from '../../lib/hooks';
 
 /** Card de serviço da busca e do perfil público: quem presta, preço, distância, favorito e ações. */
 export function ServiceCard({
@@ -27,6 +28,7 @@ export function ServiceCard({
   /** Só para freelancers: propor troca do próprio serviço por este. */
   onProposeBarter?: (s: Service) => void;
 }) {
+  const barterEnabled = usePublicSettings().data?.barterEnabled ?? true;
   const favLabel = favorited ? 'Remover dos favoritos' : 'Favoritar';
   return (
     <div className="card service">
@@ -92,7 +94,7 @@ export function ServiceCard({
             <Button variant="mini" onClick={() => onContratar(s)}>
               Contratar
             </Button>
-            {onProposeBarter && (
+            {onProposeBarter && barterEnabled && (
               <Button variant="mini" onClick={() => onProposeBarter(s)}>
                 <ArrowLeftRight size={14} /> Propor troca
               </Button>

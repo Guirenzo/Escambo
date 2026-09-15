@@ -254,24 +254,31 @@ export type PlatformSettingKey =
   | 'tacit_approval_days'
   | 'proposal_expiry_hours'
   | 'deadline_grace_hours'
-  | 'attachment_retention_days';
+  | 'attachment_retention_days'
+  | 'min_service_price'
+  | 'min_withdrawal_amount'
+  | 'barter_enabled'
+  | 'maintenance_mode';
+
+export type PlatformSettingType = 'integer' | 'decimal' | 'boolean';
 
 export interface PlatformSetting {
   key: PlatformSettingKey;
+  type: PlatformSettingType;
   label: string;
   description: string;
   unit: string;
-  value: number;
+  value: number | boolean;
   min: number;
   max: number;
-  defaultValue: number;
+  defaultValue: number | boolean;
   updatedAt: string | null;
   /** E-mail do admin que mudou por último. */
   updatedBy: string | null;
 }
 
 export interface UpdatePlatformSettingRequest {
-  value: number;
+  value: number | boolean;
 }
 
 /** Parâmetros que o app mostra sem login: taxa no modal de contratação, prazos nas telas. */
@@ -279,6 +286,11 @@ export interface PublicSettings {
   platformFeePercentage: number;
   tacitApprovalDays: number;
   proposalExpiryHours: number;
+  minServicePrice: number;
+  minWithdrawalAmount: number;
+  barterEnabled: boolean;
+  /** Ligado: a API responde 503 para quem não é admin; o app mostra a tela de manutenção. */
+  maintenanceMode: boolean;
 }
 
 /** Resultado de uma rodada do expurgo de anexos (job ou botão do admin). */
