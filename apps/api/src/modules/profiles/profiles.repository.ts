@@ -149,6 +149,21 @@ export const profilesRepository = {
   },
 
   /**
+   * Grava a ordem do portfólio de uma vez (ADR 43): a posição de cada id na lista vira o
+   * sort_order (1, 2, 3…). Só mexe nos ids da lista que são do próprio dono.
+   */
+  async reorderPortfolio(userId: number, ids: number[]): Promise<number> {
+    const [res] = await pool.query<ResultSetHeader>(
+      `UPDATE freelancer_portfolio_items i
+         JOIN profiles_freelancer pf ON pf.id = i.freelancer_id
+          SET i.sort_order = FIELD(i.id, :ids)
+        WHERE pf.user_id = :userId AND i.id IN (:ids)`,
+      { userId, ids },
+    );
+    return res.affectedRows;
+  },
+
+  /**
    * Tempo médio de resposta do freelancer (horas), média móvel exponencial: uma amostra nova
    * pesa 30%. Alimenta a dimensão "responsividade" do Escambo Score.
    */

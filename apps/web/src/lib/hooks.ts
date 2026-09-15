@@ -12,6 +12,7 @@ import type {
   CreateServiceRequest,
   FavoriteTargetType,
   OpenDisputeRequest,
+  PortfolioItem,
   ResolveDisputeRequest,
   UpdateSavedSearchRequest,
   UpsertClientProfileRequest,
@@ -19,6 +20,7 @@ import type {
   UpsertPortfolioItemRequest,
 } from '@escambo/types';
 import { api, type ServiceQuery } from './api';
+import { orderByIds } from './reorder';
 
 /** Chaves de cache — centralizadas para invalidação consistente. */
 export const qk = {
@@ -495,6 +497,30 @@ export function usePortfolioMutation() {
     remove: useMutation({
       mutationFn: (id: number) => api.removePortfolioItem(id),
       onSuccess: invalidate,
+    }),
+    /**
+     * Nova ordem (ADR 43): a lista muda na hora e os pedidos vão um de cada vez, na ordem dos
+     * cliques. Se um falhar, a lista volta; ao fim da fila, recarrega do servidor.
+     */
+    reorder: useMutation({
+      mutationKey: ['portfolio', 'order'],
+      scope: { id: 'portfolio-order' },
+      mutationFn: (ids: number[]) => api.reorderPortfolio(ids),
+      onMutate: async (ids) => {
+        await qc.cancelQueries({ queryKey: ['portfolio'] });
+        const previous = qc.getQueryData<PortfolioItem[]>(['portfolio']);
+        if (previous) qc.setQueryData(['portfolio'], orderByIds(previous, ids));
+        return { previous };
+      },
+      onError: (_error, _ids, context) => {
+        if (context?.previous) qc.setQueryData(['portfolio'], context.previous);
+      },
+      onSettled: () => {
+        if (qc.isMutating({ mutationKey: ['portfolio', 'order'] }) === 1) {
+          invalidate();
+          void qc.invalidateQueries({ queryKey: ['publicFreelancer'] });
+        }
+      },
     }),
   };
 }

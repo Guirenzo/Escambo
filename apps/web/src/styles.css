@@ -2287,6 +2287,41 @@ button.toggle.on {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Ordem do portfólio (ADR 43): a posição e as setas de subir e descer. */
+.portfolio-pos {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.portfolio-move {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+.portfolio-move [aria-disabled='true'] {
+  opacity: 0.35;
+  cursor: default;
+}
+@media (max-width: 480px) {
+  .portfolio-list li {
+    gap: 8px;
+  }
+  .portfolio-pos {
+    display: none;
+  }
+  /* as setas empilhadas deixam mais largura para o título */
+  .portfolio-move {
+    flex-direction: column;
+  }
+}
 .portfolio-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -3118,8 +3153,8 @@ button.toggle.on {
   width: 40px;
   height: 40px;
 }
-.gallery-btn:hover,
-.gallery-nav:hover {
+button.gallery-btn:hover:not(:disabled),
+button.gallery-nav:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.22);
 }
 .gallery-btn:focus-visible,
@@ -3135,8 +3170,11 @@ button.toggle.on {
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   min-height: 0;
-  padding: 0 72px 8px;
-  touch-action: pan-y;
+  /* embaixo fica o espaço do controle de zoom, sem cobrir a imagem inteira */
+  padding: 0 72px 60px;
+  overflow: hidden;
+  /* a galeria cuida de todos os gestos: deslizar, pinça e arrastar a imagem ampliada */
+  touch-action: none;
 }
 .gallery-figure {
   display: grid;
@@ -3145,6 +3183,66 @@ button.toggle.on {
   height: 100%;
   min-height: 0;
   margin: 0;
+}
+/* Zoom (ADR 43): a camada com as duas imagens recebe a escala e o deslocamento. */
+.gallery-canvas {
+  display: grid;
+  grid-area: 1 / 1;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+.gallery-canvas.smooth {
+  transition: transform 0.2s ease-out;
+}
+.gallery-figure.zoomed {
+  cursor: grab;
+}
+.gallery-figure.zoomed:active {
+  cursor: grabbing;
+}
+.gallery-zoom {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  transform: translateX(-50%);
+}
+.gallery-zoom .gallery-btn {
+  width: 36px;
+  height: 36px;
+  background: transparent;
+}
+.gallery-zoom-level {
+  min-width: 58px;
+  height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.gallery-zoom button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+.gallery-zoom-level:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+.gallery-zoom [aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
 }
 .gallery-figure img {
   grid-area: 1 / 1;
@@ -3167,6 +3265,7 @@ button.toggle.on {
 .gallery-nav {
   position: absolute;
   top: 50%;
+  z-index: 2;
   width: 48px;
   height: 48px;
   transform: translateY(-50%);
@@ -3214,7 +3313,8 @@ button.toggle.on {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .gallery-image {
+  .gallery-image,
+  .gallery-canvas.smooth {
     transition: none;
   }
 }

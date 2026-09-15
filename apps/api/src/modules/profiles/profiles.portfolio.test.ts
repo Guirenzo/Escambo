@@ -9,6 +9,7 @@ vi.mock('./profiles.repository', () => ({
     createPortfolioItem: vi.fn(),
     updatePortfolioItem: vi.fn(),
     deletePortfolioItem: vi.fn(),
+    reorderPortfolio: vi.fn(),
   },
 }));
 
@@ -122,6 +123,25 @@ describe('portfólio', () => {
     await expect(profilesService.removePortfolioItem(7, 99)).rejects.toMatchObject({
       code: 'portfolio_item_not_found',
     });
+  });
+
+  it('reordena só com exatamente os trabalhos de agora; lista diferente é 409 e não grava (ADR 43)', async () => {
+    repo.listPortfolio.mockResolvedValue([item(1), item(2), item(3)]);
+    await profilesService.reorderPortfolio(7, [3, 1, 2]);
+    expect(repo.reorderPortfolio).toHaveBeenCalledWith(7, [3, 1, 2]);
+
+    repo.reorderPortfolio.mockClear();
+    for (const ids of [
+      [3, 1],
+      [3, 1, 2, 4],
+      [3, 1, 9],
+    ]) {
+      await expect(profilesService.reorderPortfolio(7, ids)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'portfolio_order_mismatch',
+      });
+    }
+    expect(repo.reorderPortfolio).not.toHaveBeenCalled();
   });
 });
 

@@ -5,6 +5,23 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.25.0] — 2026-09-15
+
+### Adicionado
+
+- **Ordem do portfólio** (ADR 43). No perfil, cada trabalho mostra a posição e tem botões para
+  subir e descer: a lista muda na hora, a ordem é gravada em fila e sai igual no perfil público. O
+  foco fica no mesmo botão e a nova posição é anunciada para leitor de tela.
+  `PUT /api/profiles/portfolio/order` com os ids de todos os trabalhos (409
+  `portfolio_order_mismatch` se a lista não bate com o portfólio de agora).
+- **Zoom na galeria do portfólio** (ADR 43). De 100% a 400%, com pinça e duplo toque no celular e
+  com roda, duplo clique, botões e as teclas `+`, `-` e `0` no computador. Ampliada, a imagem se
+  arrasta e as setas a deslocam; a versão maior só é baixada quando alguém aproxima.
+
+### Corrigido
+
+- Os botões da galeria não ficam mais verdes ao passar o mouse.
+
 ## [1.24.0] — 2026-09-15
 
 ### Adicionado

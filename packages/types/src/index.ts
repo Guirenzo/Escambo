@@ -639,6 +639,11 @@ export interface UpsertPortfolioItemRequest {
   externalUrl?: string | null;
 }
 
+/** Nova ordem do portfólio (ADR 43): os ids de todos os trabalhos, do primeiro ao último. */
+export interface ReorderPortfolioRequest {
+  ids: number[];
+}
+
 export interface ClientProfile {
   fullName: string;
   avatarUrl: string | null;
