@@ -49,6 +49,11 @@ export function useRealtimeNotifications(): void {
         void qc.invalidateQueries({ queryKey: qk.profiles });
         void qc.invalidateQueries({ queryKey: ['reviews'] });
       }
+      if (n.type === 'content_removed') {
+        void qc.invalidateQueries({ queryKey: qk.profiles });
+        void qc.invalidateQueries({ queryKey: ['portfolio'] });
+        void qc.invalidateQueries({ queryKey: ['publicFreelancer'] });
+      }
       // Mensagem de chat com a sala aberta já aparece no próprio chat; o resto avisa.
       const inRoom =
         n.type === 'chat_message' && window.location.pathname.startsWith('/contratos/');

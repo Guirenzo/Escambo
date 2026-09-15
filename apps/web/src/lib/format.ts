@@ -266,3 +266,11 @@ export const REPORT_REASON_LABEL: Record<string, string> = {
   illegal: 'Atividade ilegal',
   other: 'Outro',
 };
+
+/** Situação de um grupo de denúncias na fila de moderação (ADR 39). */
+export const REPORT_STATUS_LABEL: Record<string, string> = {
+  pending: 'Pendente',
+  reviewing: 'Em análise',
+  actioned: 'Com ação',
+  dismissed: 'Dispensada',
+};

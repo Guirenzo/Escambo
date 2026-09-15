@@ -245,6 +245,21 @@ function pngChunk(type: string, data: Buffer): Buffer {
   return Buffer.concat([len, body, crc]);
 }
 
+/** Envia uma imagem pela API de mídia (ADR 36 e 38) e devolve a URL pública. */
+export async function uploadImage(
+  request: APIRequestContext,
+  user: TestUser,
+  buffer: Buffer,
+  purpose: 'avatar' | 'portfolio' = 'portfolio',
+): Promise<string> {
+  const res = await request.post('/api/media', {
+    headers: { Authorization: `Bearer ${user.token}` },
+    multipart: { purpose, file: { name: 'imagem.png', mimeType: 'image/png', buffer } },
+  });
+  expect(res.ok(), `POST /media → ${res.status()} ${await res.text()}`).toBeTruthy();
+  return ((await res.json()) as { url: string }).url;
+}
+
 /** PNG RGB válido (retângulo verde; quadrado se vier só a largura) para testar upload de imagem. */
 export function pngFixture(width = 48, height = width): Buffer {
   const stride = width * 3 + 1;

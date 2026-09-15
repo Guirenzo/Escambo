@@ -4,6 +4,7 @@ import type {
   CreateBoostRequest,
   CreateContentReportRequest,
   CreateContractRequest,
+  AdminReportAction,
   CreateDepositRequest,
   CreateReviewRequest,
   CreateSavedSearchRequest,
@@ -38,6 +39,7 @@ export const qk = {
   adminWithdrawals: (status: string) => ['adminWithdrawals', status] as const,
   adminDeletions: (status: string) => ['adminDeletions', status] as const,
   adminEmails: ['adminEmails'] as const,
+  adminReports: (status: string) => ['adminReports', status] as const,
   notifications: ['notifications'] as const,
   barters: ['barters'] as const,
   profiles: ['profiles'] as const,
@@ -595,6 +597,30 @@ export function useAdminWithdrawalAction() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['adminWithdrawals'] });
       void qc.invalidateQueries({ queryKey: qk.adminMetrics });
+    },
+  });
+}
+
+/** Fila de moderação do admin (ADR 39). */
+export const useAdminReports = (status: 'pending' | 'resolved') =>
+  useQuery({ queryKey: qk.adminReports(status), queryFn: () => api.adminReports(status) });
+
+/** Dispensar, resolver ou remover a imagem de um grupo de denúncias. */
+export function useAdminReportAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      action,
+      note,
+    }: {
+      id: number;
+      action: AdminReportAction;
+      note: string | null;
+    }) => api.adminReportAction(id, action, { note }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['adminReports'] });
+      void qc.invalidateQueries({ queryKey: qk.adminStorage });
     },
   });
 }

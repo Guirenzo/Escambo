@@ -1097,13 +1097,13 @@ CREATE TABLE disputes (
 ---
 
 ### `content_reports`
-Denúncias de conteúdo/usuário (trust & safety). `target_id` é polimórfico conforme `target_type`.
+Denúncias de conteúdo/usuário (trust & safety). `target_id` é polimórfico conforme `target_type`. Foto de perfil (`avatar`, com `target_id` = usuário) e imagem do portfólio (`portfolio_item`) guardam a imagem denunciada em `image_url`, e a decisão do admin fica em `resolution_note` (migration 0017, ADR 39). Imagens removidas vão para `media_blocklist` (assinatura SHA-256 e impressão perceptual), que barra o reenvio.
 
 ```sql
 CREATE TABLE content_reports (
   id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   reporter_id BIGINT UNSIGNED NOT NULL,
-  target_type ENUM('user', 'service', 'review', 'message') NOT NULL,
+  target_type ENUM('user', 'service', 'review', 'message', 'avatar', 'portfolio_item') NOT NULL,
   target_id   BIGINT UNSIGNED NOT NULL,
   reason      ENUM('spam', 'fraud', 'offensive', 'off_platform', 'illegal', 'other') NOT NULL,
   description TEXT            NULL,

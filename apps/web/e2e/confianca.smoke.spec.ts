@@ -5,7 +5,9 @@ import {
   createUser,
   deliveredContract,
   openAs,
+  pngFixture,
   settled,
+  uploadImage,
 } from './helpers';
 
 /**
@@ -150,6 +152,60 @@ test('admin vê o uso do armazenamento e roda o expurgo de anexos na hora', asyn
   await card.getByRole('button', { name: 'Rodar expurgo agora' }).click();
   await expect(page.locator('.toast', { hasText: 'Expurgo concluído' })).toBeVisible();
   await expect(card.getByTestId('storage-last-purge')).toContainText('pelo admin');
+});
+
+test('imagem do portfólio denunciada: admin remove na fila e ela some do perfil público', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const title = `Trabalho denunciado ${Date.now().toString(36)}`;
+  // Imagem única por execução: a removida entra na lista de bloqueio e não pode ser enviada de novo.
+  const image = await uploadImage(request, freelancer, pngFixture(80 + (Date.now() % 400), 64));
+  const headers = { Authorization: `Bearer ${freelancer.token}` };
+  const added = await request.post('/api/profiles/portfolio', {
+    headers,
+    data: { title, imageUrl: image },
+  });
+  expect(added.ok(), await added.text()).toBeTruthy();
+  const me = await request.get('/api/auth/me', { headers });
+  const { ulid } = (await me.json()) as { ulid: string };
+  const profileUrl = `/freelancers/${ulid}`;
+
+  // Cliente denuncia a imagem do trabalho: o modal mostra a imagem que vai para a moderação.
+  const client = await createUser(request, 'client');
+  await openAs(page, client, profileUrl);
+  await settled(page);
+  await page.getByRole('button', { name: `Denunciar imagem de ${title}` }).click();
+  const modal = page.getByRole('dialog', { name: 'Denunciar imagem' });
+  await expect(modal.locator('.report-subject img')).toBeVisible();
+  await modal.getByLabel('Motivo').selectOption('offensive');
+  await modal.getByRole('button', { name: 'Enviar denúncia' }).click();
+  await expect(
+    page.locator('.toast', { hasText: 'A moderação vai analisar a imagem' }),
+  ).toBeVisible();
+
+  // Admin encontra o grupo na fila, remove com nota e ele sai das pendentes.
+  const admin = await createAdmin(request);
+  await openAs(page, admin, '/admin');
+  await settled(page);
+  const group = page
+    .getByTestId('reports-card')
+    .locator('[data-testid^="report-group-"]', { hasText: title });
+  await expect(group).toContainText('Conteúdo ofensivo');
+  await group.getByRole('button', { name: 'Remover imagem' }).click();
+  const decision = page.getByRole('dialog', { name: 'Remover imagem' });
+  await decision.getByLabel('Nota para o registro').fill('Imagem ofensiva no portfólio.');
+  await decision.getByRole('button', { name: 'Remover e bloquear' }).click();
+  await expect(page.locator('.toast', { hasText: 'Imagem removida' })).toBeVisible();
+  await expect(group).toHaveCount(0);
+
+  // No perfil público o trabalho continua, sem a imagem.
+  await openAs(page, client, profileUrl);
+  await settled(page);
+  const item = page.locator('.portfolio-item', { hasText: title });
+  await expect(item).toBeVisible();
+  await expect(item.locator('img')).toHaveCount(0);
 });
 
 test('admin muda a retenção dos anexos no painel; o card de armazenamento reflete na hora', async ({

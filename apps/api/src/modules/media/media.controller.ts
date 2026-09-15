@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { detectType, type DetectedType } from '../messaging/attachments.storage';
-import { processUpload } from './media.image';
+import { mediaBlocklist } from './media.blocklist';
+import { fingerprint, processUpload } from './media.image';
 import { MEDIA_MIME, mediaKeyFromParts, parseMediaWidth } from './media.paths';
 import { mediaFilePath, mediaVariantPath, saveMedia } from './media.storage';
 
@@ -17,7 +18,8 @@ const WEBP: DetectedType = { mime: 'image/webp', ext: 'webp', kind: 'image', nam
 /**
  * POST /api/media — imagem para avatar ou portfólio (ADR 36 e 38). O tipo vem dos primeiros bytes
  * (só imagem, nada de SVG); depois a sharp decodifica e reencoda em WebP, orientado, sem
- * metadados e no tamanho do uso. Devolve a URL pública e as dimensões finais.
+ * metadados e no tamanho do uso. Imagem removida pela moderação é recusada, mesmo reencodada ou
+ * reduzida (ADR 39). Devolve a URL pública e as dimensões finais.
  */
 export async function uploadMedia(req: Request, res: Response): Promise<void> {
   if (!req.file) throw new HttpError(422, 'Envie a imagem no campo "file"', 'file_required');
@@ -28,6 +30,13 @@ export async function uploadMedia(req: Request, res: Response): Promise<void> {
     throw new HttpError(422, 'Envie uma imagem JPG, PNG, GIF ou WebP', 'not_an_image');
   }
   const image = await processUpload(req.file.buffer, purpose);
+  if (await mediaBlocklist.matches(await fingerprint(image.data))) {
+    throw new HttpError(
+      422,
+      'Esta imagem foi removida pela moderação e não pode ser usada no Escambo',
+      'image_blocked',
+    );
+  }
   const url = await saveMedia(image.data, WEBP);
   res.status(201).json({
     url,

@@ -145,7 +145,9 @@ export interface UpdateSavedSearchRequest {
 
 // --- Denúncias (trust & safety) ---
 
-export type ReportTargetType = 'user' | 'service' | 'review' | 'message';
+/** avatar e portfolio_item são imagens (ADR 39): a moderação pode removê-las e bloqueá-las. */
+export type ReportTargetType =
+  'user' | 'service' | 'review' | 'message' | 'avatar' | 'portfolio_item';
 export type ReportReason = 'spam' | 'fraud' | 'offensive' | 'off_platform' | 'illegal' | 'other';
 
 export interface ContentReport {
@@ -154,7 +156,53 @@ export interface ContentReport {
   targetId: number;
   reason: ReportReason;
   status: string;
+  /** Imagem denunciada como estava na hora da denúncia (só avatar e portfolio_item). */
+  imageUrl: string | null;
   createdAt: string;
+}
+
+export type ReportStatus = 'pending' | 'reviewing' | 'actioned' | 'dismissed';
+export type AdminReportAction = 'dismiss' | 'resolve' | 'remove-image';
+
+/** Denúncias do mesmo alvo (e da mesma imagem) juntas na fila de moderação (ADR 39). */
+export interface AdminReportGroup {
+  /** Denúncia mais recente do grupo: as ações são chamadas por ela e valem para o grupo todo. */
+  id: number;
+  targetType: ReportTargetType;
+  targetId: number;
+  imageUrl: string | null;
+  /** O alvo ainda mostra essa imagem (false: já foi trocada, removida ou o alvo sumiu). */
+  imageLive: boolean;
+  /** Como o alvo aparece para o admin: "Foto de perfil", "Trabalho “Logo”", "Serviço “X”". */
+  label: string;
+  /** Trecho do conteúdo denunciado (comentário da avaliação, texto da mensagem). */
+  excerpt: string | null;
+  owner: { id: number; ulid: string; name: string | null } | null;
+  status: ReportStatus;
+  reports: number;
+  reasons: { reason: ReportReason; count: number }[];
+  /** Até três descrições, das mais recentes. */
+  descriptions: string[];
+  firstReportedAt: string;
+  lastReportedAt: string;
+  reviewedAt: string | null;
+  resolutionNote: string | null;
+}
+
+export interface AdminReportActionRequest {
+  note?: string | null;
+}
+
+export interface AdminReportActionResult {
+  status: ReportStatus;
+  /** Quantas denúncias do grupo foram fechadas. */
+  reports: number;
+  /** Perfis e trabalhos que deixaram de mostrar a imagem. */
+  referencesCleared: number;
+  /** Arquivo removido do disco (imagem enviada ao Escambo). */
+  fileRemoved: boolean;
+  /** A imagem entrou na lista de bloqueio e não pode ser enviada de novo. */
+  blocked: boolean;
 }
 
 export interface CreateContentReportRequest {
