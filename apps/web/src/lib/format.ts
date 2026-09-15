@@ -5,6 +5,12 @@ export const brl = (v: number): string =>
 
 export const dt = (iso: string): string => new Date(iso).toLocaleDateString('pt-BR');
 
+/** As horas que a pessoa pode escolher para o resumo do dia (ADR 42), de 0 a 23. */
+export const DIGEST_HOURS: readonly number[] = Array.from({ length: 24 }, (_, h) => h);
+
+/** "08:00": a hora do resumo do dia como aparece na tela. */
+export const digestHourLabel = (hour: number): string => `${String(hour).padStart(2, '0')}:00`;
+
 /** Primeiro nome do perfil ("Bruno" de "Bruno Silva"); sem perfil, a parte local do e-mail. */
 export const displayName = (
   fullName: string | null | undefined,

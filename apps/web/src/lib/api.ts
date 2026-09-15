@@ -40,6 +40,8 @@ import type {
   DataExportRequest,
   Deposit,
   Dispute,
+  EmailPreference,
+  UpdateEmailPreferenceRequest,
   Favorite,
   FavoriteTargetType,
   ImageRemoval,
@@ -405,12 +407,12 @@ export const api = {
   notifications: () => request<NotificationList>('/notifications'),
   markNotificationRead: (id: number) =>
     request<void>(`/notifications/${id}/read`, { method: 'POST' }),
-  emailPreference: () =>
-    request<{ emailFrequency: 'instant' | 'daily' | 'off' }>('/notifications/preferences'),
-  updateEmailPreference: (emailFrequency: 'instant' | 'daily' | 'off') =>
-    request<{ emailFrequency: 'instant' | 'daily' | 'off' }>('/notifications/preferences', {
+  emailPreference: () => request<EmailPreference>('/notifications/preferences'),
+  /** Frequência dos e-mails e hora do resumo do dia (ADR 42): muda só o que vier. */
+  updateEmailPreference: (body: UpdateEmailPreferenceRequest) =>
+    request<EmailPreference>('/notifications/preferences', {
       method: 'PUT',
-      body: JSON.stringify({ emailFrequency }),
+      body: JSON.stringify(body),
     }),
   markAllNotificationsRead: () =>
     request<{ read: number }>('/notifications/read-all', { method: 'POST' }),

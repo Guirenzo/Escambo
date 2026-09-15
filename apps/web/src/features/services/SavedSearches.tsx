@@ -7,6 +7,7 @@ import type {
   UpdateSavedSearchRequest,
 } from '@escambo/types';
 import { Button, Field, Input, Modal } from '../../components/ui';
+import { useAuth } from '../../lib/auth';
 import { useSavedSearchMutations, useSavedSearches } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import {
@@ -93,6 +94,7 @@ export function SaveSearchButton({
   const [alert, setAlert] = useState(true);
   const [frequency, setFrequency] = useState<SavedSearchAlertFrequency>(DEFAULT_ALERT_FREQUENCY);
   const { create } = useSavedSearchMutations();
+  const digestHour = useAuth().user?.digestHour;
   const toast = useToast();
   const empty = !current.query && Object.keys(current.filters).length === 0;
 
@@ -113,7 +115,7 @@ export function SaveSearchButton({
         alertEnabled: alert,
         alertFrequency: frequency,
       });
-      toast.success(alert ? `Busca salva. ${alertNotice(frequency)}` : 'Busca salva.');
+      toast.success(alert ? `Busca salva. ${alertNotice(frequency, digestHour)}` : 'Busca salva.');
       setOpen(false);
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Não foi possível salvar a busca');
@@ -165,6 +167,7 @@ function EditSavedSearchModal({ search, onClose }: { search: SavedSearch; onClos
   const [alert, setAlert] = useState(search.alertEnabled);
   const [frequency, setFrequency] = useState(search.alertFrequency);
   const { update } = useSavedSearchMutations();
+  const digestHour = useAuth().user?.digestHour;
   const toast = useToast();
 
   async function save(e: FormEvent): Promise<void> {
@@ -184,7 +187,7 @@ function EditSavedSearchModal({ search, onClose }: { search: SavedSearch; onClos
       const alertChanged = body.alertEnabled !== undefined || body.alertFrequency !== undefined;
       toast.success(
         alert && alertChanged
-          ? `Busca atualizada. ${alertNotice(frequency)}`
+          ? `Busca atualizada. ${alertNotice(frequency, digestHour)}`
           : body.alertEnabled === false
             ? 'Busca atualizada. Alerta desligado.'
             : 'Busca atualizada.',
@@ -225,6 +228,7 @@ function EditSavedSearchModal({ search, onClose }: { search: SavedSearch; onClos
 export function SavedSearchesBar({ onApply }: { onApply: (s: SavedSearch) => void }) {
   const saved = useSavedSearches();
   const { update, remove } = useSavedSearchMutations();
+  const digestHour = useAuth().user?.digestHour;
   const [editing, setEditing] = useState<SavedSearch | null>(null);
   const toast = useToast();
   const items = saved.data ?? [];
@@ -234,7 +238,9 @@ export function SavedSearchesBar({ onApply }: { onApply: (s: SavedSearch) => voi
     try {
       await update.mutateAsync({ id: s.id, alertEnabled: !s.alertEnabled });
       toast.info(
-        s.alertEnabled ? 'Alerta desligado.' : `Alerta ligado. ${alertNotice(s.alertFrequency)}`,
+        s.alertEnabled
+          ? 'Alerta desligado.'
+          : `Alerta ligado. ${alertNotice(s.alertFrequency, digestHour)}`,
       );
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Não foi possível alterar o alerta');

@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { env } from '../../src/config/env';
 import { lastDailyAlertAt, runSavedSearchAlerts } from '../../src/jobs/saved-search-alerts';
 
 /**
@@ -216,5 +217,39 @@ describe('Buscas salvas com alerta (ADR 35)', () => {
     const notes = await alertsFor(searcher.token, daily.id);
     expect(notes).toHaveLength(1);
     expect(notes[0]).toMatchObject({ title: `Resumo do dia: serviço novo para “${TAG}”` });
+  });
+
+  it('"uma vez por dia" segue a hora do resumo de cada dono (ADR 42)', async () => {
+    const morning = await actor('client');
+    const evening = await actor('client');
+    const freela = await actor('freelancer');
+    await request(app)
+      .put('/api/notifications/preferences')
+      .set(auth(evening.token))
+      .send({ digestHour: 21 })
+      .expect(200);
+    const TAG = `horario${Date.now()}`;
+    const saveDaily = async (a: Actor): Promise<{ id: number; lastAlertAt: string }> =>
+      (await save(a.token, { query: TAG, alertEnabled: true, alertFrequency: 'daily' })).body;
+    const m = await saveDaily(morning);
+    const e = await saveDaily(evening);
+    await publish(freela, `${TAG} novo`, 300);
+
+    // Primeiro horário de cada um depois do cursor; as horas 8 e 21 nunca coincidem.
+    const nextSlot = (s: { lastAlertAt: string }, hour: number): number =>
+      lastDailyAlertAt(new Date(s.lastAlertAt), hour).getTime() + 24 * HOUR;
+    const [first, second] = [
+      { id: m.id, at: nextSlot(m, env.DIGEST_HOUR) },
+      { id: e.id, at: nextSlot(e, 21) },
+    ].sort((a, b) => a.at - b.at) as [{ id: number; at: number }, { id: number; at: number }];
+
+    const before = await runSavedSearchAlerts(new Date(first.at - 60_000));
+    expect(before.alerted).not.toContain(m.id);
+    expect(before.alerted).not.toContain(e.id);
+    const atFirst = await runSavedSearchAlerts(new Date(first.at + 60_000));
+    expect(atFirst.alerted).toContain(first.id);
+    expect(atFirst.alerted).not.toContain(second.id);
+    const atSecond = await runSavedSearchAlerts(new Date(second.at + 60_000));
+    expect(atSecond.alerted).toContain(second.id);
   });
 });

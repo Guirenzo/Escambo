@@ -1,9 +1,10 @@
 import type {
-  EmailFrequency,
   EmailPreference,
   Notification,
   NotificationList,
+  UpdateEmailPreferenceRequest,
 } from '@escambo/types';
+import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
@@ -111,12 +112,19 @@ export const notificationsService = {
 
   async getEmailPreference(userId: number): Promise<EmailPreference> {
     const user = await authRepository.findById(userId);
-    return { emailFrequency: user?.email_frequency ?? 'instant' };
+    return {
+      emailFrequency: user?.email_frequency ?? 'instant',
+      digestHour: user?.digest_hour ?? env.DIGEST_HOUR,
+    };
   },
 
-  async setEmailPreference(userId: number, value: EmailFrequency): Promise<EmailPreference> {
-    await authRepository.setEmailFrequency(userId, value);
-    return { emailFrequency: value };
+  /** Frequência e hora do resumo do dia (ADR 42): muda só o que vier e devolve como ficou. */
+  async setEmailPreference(
+    userId: number,
+    change: UpdateEmailPreferenceRequest,
+  ): Promise<EmailPreference> {
+    await authRepository.setEmailPreference(userId, change);
+    return this.getEmailPreference(userId);
   },
 
   /**

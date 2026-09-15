@@ -20,7 +20,11 @@ export interface SavedSearchRow extends RowDataPacket {
 export interface AlertDueThresholds {
   instant: Date;
   hourly: Date;
-  daily: Date;
+  /**
+   * Diária (ADR 42): o limite depende da hora do resumo de cada dono, então vão o começo do dia de
+   * Brasília da janela, a hora da janela e a hora padrão, e a consulta calcula o de cada um.
+   */
+  daily: { dayStart: Date; hourNow: number; defaultHour: number };
 }
 
 const COLS =
@@ -133,13 +137,23 @@ export const savedSearchesRepository = {
           AND u.deleted_at IS NULL
           AND u.status NOT IN ('suspended', 'banned')
           AND COALESCE(s.last_alert_at, s.created_at) <= CASE s.alert_frequency
-                WHEN 'instant' THEN :instant
-                WHEN 'daily' THEN :daily
-                ELSE :hourly
+                WHEN 'instant' THEN CAST(:instant AS DATETIME)
+                WHEN 'daily' THEN DATE_SUB(
+                  DATE_ADD(CAST(:dayStart AS DATETIME), INTERVAL COALESCE(u.digest_hour, :defaultHour) HOUR),
+                  INTERVAL IF(COALESCE(u.digest_hour, :defaultHour) <= :hourNow, 1, 86401) SECOND
+                )
+                ELSE CAST(:hourly AS DATETIME)
               END
         ORDER BY COALESCE(s.last_alert_at, s.created_at) ASC, s.id ASC
         LIMIT ${Math.trunc(limit)}`,
-      { instant: due.instant, hourly: due.hourly, daily: due.daily },
+      // Diária: o horário do dono hoje, se já passou, senão o de ontem, menos um segundo.
+      {
+        instant: due.instant,
+        hourly: due.hourly,
+        dayStart: due.daily.dayStart,
+        hourNow: due.daily.hourNow,
+        defaultHour: due.daily.defaultHour,
+      },
     );
     return rows;
   },

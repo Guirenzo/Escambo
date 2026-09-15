@@ -1,8 +1,15 @@
 import { z } from 'zod';
 
-export const emailPreferenceSchema = z.object({
-  emailFrequency: z.enum(['instant', 'daily', 'off']),
-});
+/** Frequência dos e-mails e hora do resumo do dia (ADR 27 e 42): pelo menos um dos dois. */
+export const emailPreferenceSchema = z
+  .object({
+    emailFrequency: z.enum(['instant', 'daily', 'off']).optional(),
+    /** Hora em Brasília; null volta à hora padrão da plataforma. */
+    digestHour: z.number().int().min(0).max(23).nullable().optional(),
+  })
+  .refine((b) => b.emailFrequency !== undefined || b.digestHour !== undefined, {
+    message: 'Informe a frequência dos e-mails ou a hora do resumo',
+  });
 
 export const notificationIdSchema = z.object({ id: z.coerce.number().int().positive() });
 

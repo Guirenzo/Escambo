@@ -8,7 +8,7 @@ vi.mock('./notifications.repository', () => ({
   },
 }));
 vi.mock('../auth/auth.repository', () => ({
-  authRepository: { findById: vi.fn(), setEmailFrequency: vi.fn() },
+  authRepository: { findById: vi.fn(), setEmailPreference: vi.fn() },
 }));
 vi.mock('../mail/mail.service', () => ({
   EMAILED_NOTIFICATION_TYPES: new Set(['contract_proposal']),
@@ -20,6 +20,7 @@ vi.mock('../mail/mail.service', () => ({
 }));
 vi.mock('../../config/realtime', () => ({ realtime: { emitToUser: vi.fn() } }));
 
+import { env } from '../../config/env';
 import { authRepository } from '../auth/auth.repository';
 import { mailService } from '../mail/mail.service';
 import { notificationsRepository, type NotificationRow } from './notifications.repository';
@@ -29,8 +30,8 @@ const users = vi.mocked(authRepository);
 const repo = vi.mocked(notificationsRepository);
 const send = vi.mocked(mailService.send);
 
-const user = (email_frequency: 'instant' | 'daily' | 'off') =>
-  ({ id: 7, email: 'f@escambo.test', deleted_at: null, email_frequency }) as never;
+const user = (email_frequency: 'instant' | 'daily' | 'off', digest_hour: number | null = null) =>
+  ({ id: 7, email: 'f@escambo.test', deleted_at: null, email_frequency, digest_hour }) as never;
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => vi.clearAllMocks());
@@ -51,13 +52,21 @@ describe('preferência de e-mail (ADR 27)', () => {
     }
   });
 
-  it('get/set da preferência passam pelo repositório de usuários', async () => {
+  it('get/set da preferência passam pelo repositório de usuários; sem hora escolhida vale a padrão', async () => {
     users.findById.mockResolvedValue(user('daily'));
-    expect(await notificationsService.getEmailPreference(7)).toEqual({ emailFrequency: 'daily' });
-    expect(await notificationsService.setEmailPreference(7, 'off')).toEqual({
-      emailFrequency: 'off',
+    expect(await notificationsService.getEmailPreference(7)).toEqual({
+      emailFrequency: 'daily',
+      digestHour: env.DIGEST_HOUR,
     });
-    expect(users.setEmailFrequency).toHaveBeenCalledWith(7, 'off');
+
+    users.findById.mockResolvedValue(user('off', 20));
+    expect(
+      await notificationsService.setEmailPreference(7, { emailFrequency: 'off', digestHour: 20 }),
+    ).toEqual({ emailFrequency: 'off', digestHour: 20 });
+    expect(users.setEmailPreference).toHaveBeenCalledWith(7, {
+      emailFrequency: 'off',
+      digestHour: 20,
+    });
   });
 
   it('sendDigest junta as notificações desde o último resumo num e-mail só e marca o dia', async () => {

@@ -11,12 +11,12 @@ import {
   servicesRepository,
   type ServiceListFilters,
 } from '../modules/services/services.repository';
-import { startOfTodayBrt } from './daily-digest';
+import { hourInBrt, startOfTodayBrt } from './daily-digest';
 
 /**
  * Alertas de busca salva (ADR 35 e 37). Cada busca com alerta tem um cursor (last_alert_at) e uma
  * frequência. "Na hora" confere a toda rodada dos jobs; "de hora em hora" espera o cursor passar
- * de ALERT_EVERY_MINUTES; "uma vez por dia" espera o cursor ficar antes do último DIGEST_HOUR em
+ * de ALERT_EVERY_MINUTES; "uma vez por dia" espera o cursor ficar antes do último horário do dono (ADR 42) em
  * Brasília, o mesmo horário do resumo diário de e-mail. Vencida, a busca procura serviços criados
  * em [cursor, agora) que casam com o texto e os filtros — fora os do próprio dono — e manda uma
  * notificação com até MATCHES_SHOWN títulos. O cursor avança mesmo sem resultado. Janela fechada
@@ -48,16 +48,17 @@ export function lastDailyAlertAt(now: Date, hour: number = env.DIGEST_HOUR): Dat
 /**
  * Limite do cursor de cada frequência para entrar na rodada que fecha em `until`. Os cursores são
  * segundos cheios, então "até um segundo antes" é o mesmo que "antes de": na hora, qualquer cursor
- * anterior ao fim da janela; por dia, anterior ao último horário diário.
+ * anterior ao fim da janela; por dia, anterior ao último horário diário do dono (ADR 42), que a
+ * consulta calcula com a hora dele do mesmo jeito que `lastDailyAlertAt`.
  */
 export function alertDueThresholds(
   until: Date,
-  hour: number = env.DIGEST_HOUR,
+  defaultHour: number = env.DIGEST_HOUR,
 ): AlertDueThresholds {
   return {
     instant: new Date(until.getTime() - SECOND),
     hourly: new Date(until.getTime() - ALERT_EVERY_MINUTES * 60_000),
-    daily: new Date(lastDailyAlertAt(until, hour).getTime() - SECOND),
+    daily: { dayStart: startOfTodayBrt(until), hourNow: hourInBrt(until), defaultHour },
   };
 }
 

@@ -22,10 +22,13 @@ export async function getEmailPreference(req: Request, res: Response): Promise<v
   res.json(await notificationsService.getEmailPreference(req.user!.uid));
 }
 
-/** PUT /notifications/preferences — a cada evento, resumo diário ou só o essencial. */
+/**
+ * PUT /notifications/preferences — a cada evento, resumo diário ou só o essencial, e a hora do
+ * resumo do dia (ADR 42). Muda só o que vier e devolve como ficou.
+ */
 export async function updateEmailPreference(req: Request, res: Response): Promise<void> {
-  const { emailFrequency } = emailPreferenceSchema.parse(req.body);
-  res.json(await notificationsService.setEmailPreference(req.user!.uid, emailFrequency));
+  const change = emailPreferenceSchema.parse(req.body);
+  res.json(await notificationsService.setEmailPreference(req.user!.uid, change));
 }
 
 export async function readAllNotifications(req: Request, res: Response): Promise<void> {

@@ -228,8 +228,22 @@ export const openapiDocument: Record<string, any> = {
       post: op('Contratações', 'Cancela (reembolso RN-025)', { auth: true }),
     },
     '/notifications/preferences': {
-      get: op('Notificações', 'Preferência de e-mail (instant | daily | off)', { auth: true }),
-      put: op('Notificações', 'Define a preferência de e-mail', { auth: true }),
+      get: op(
+        'Notificações',
+        'Preferência de e-mail (instant | daily | off) e hora do resumo do dia (digestHour, 0 a 23 em Brasília; sem escolha, a hora padrão)',
+        { auth: true },
+      ),
+      put: op(
+        'Notificações',
+        'Muda a frequência dos e-mails e/ou a hora do resumo do dia, que vale para o e-mail diário e para os alertas diários das buscas salvas (digestHour null volta à hora padrão)',
+        {
+          auth: true,
+          body: obj({
+            emailFrequency: { type: 'string', enum: ['instant', 'daily', 'off'] },
+            digestHour: { type: 'integer', minimum: 0, maximum: 23, nullable: true },
+          }),
+        },
+      ),
     },
     '/admin/finance': {
       get: op(

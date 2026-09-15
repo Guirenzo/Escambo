@@ -17,6 +17,8 @@ export interface PublicUser {
   emailVerified: boolean;
   /** Como o usuário quer os e-mails de notificação (ADR 27). */
   emailFrequency: EmailFrequency;
+  /** Hora (0 a 23, Brasília) do resumo do dia: e-mail diário e alertas diários de busca (ADR 42). */
+  digestHour: number;
 }
 
 /** instant: um e-mail por evento · daily: resumo diário · off: só e-mails essenciais. */
@@ -24,6 +26,14 @@ export type EmailFrequency = 'instant' | 'daily' | 'off';
 
 export interface EmailPreference {
   emailFrequency: EmailFrequency;
+  /** Hora do resumo do dia; quem nunca escolheu fica com a hora padrão da plataforma. */
+  digestHour: number;
+}
+
+/** Muda só o que vier; `digestHour: null` volta à hora padrão da plataforma. */
+export interface UpdateEmailPreferenceRequest {
+  emailFrequency?: EmailFrequency;
+  digestHour?: number | null;
 }
 
 export interface ForgotPasswordRequest {

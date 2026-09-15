@@ -32,14 +32,20 @@ export const notificationsRepository = {
   },
 
   /** Quem quer resumo diário e não recebeu nenhum desde `cutoff` (começo do dia em Brasília). */
-  async usersForDigest(cutoff: Date): Promise<DigestUserRow[]> {
+  async usersForDigest(
+    dayStart: Date,
+    hourNow: number,
+    defaultHour: number,
+  ): Promise<DigestUserRow[]> {
+    // Hora de cada um (ADR 42): já chegou hoje e ainda não recebeu o resumo deste dia de Brasília.
     const [rows] = await pool.query<DigestUserRow[]>(
       `SELECT id, email, last_digest_at FROM users
         WHERE email_frequency = 'daily' AND deleted_at IS NULL
-          AND (last_digest_at IS NULL OR last_digest_at < :cutoff)
+          AND COALESCE(digest_hour, :defaultHour) <= :hourNow
+          AND (last_digest_at IS NULL OR last_digest_at < :dayStart)
         ORDER BY id ASC
         LIMIT 500`,
-      { cutoff },
+      { dayStart, hourNow, defaultHour },
     );
     return rows;
   },

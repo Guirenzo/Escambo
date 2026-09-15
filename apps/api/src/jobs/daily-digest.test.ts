@@ -10,6 +10,7 @@ vi.mock('../modules/notifications/notifications.service', () => ({
   notificationsService: { sendDigest: vi.fn() },
 }));
 
+import { env } from '../config/env';
 import { mailService } from '../modules/mail/mail.service';
 import { notificationsRepository } from '../modules/notifications/notifications.repository';
 import { notificationsService } from '../modules/notifications/notifications.service';
@@ -41,12 +42,20 @@ describe('hora e dia em Brasília', () => {
 });
 
 describe('runDailyDigest', () => {
-  it('não faz nada com o e-mail desligado ou antes da hora', async () => {
+  it('não faz nada com o e-mail desligado', async () => {
     mail.enabled.mockReturnValue(false);
     expect((await runDailyDigest(NOON_BRT)).skipped).toBe('mail_off');
-    mail.enabled.mockReturnValue(true);
-    expect((await runDailyDigest(DAWN_BRT)).skipped).toBe('before_hour');
     expect(repo.usersForDigest).not.toHaveBeenCalled();
+  });
+
+  it('de madrugada também consulta: quem escolheu essa hora já recebe (ADR 42)', async () => {
+    const r = await runDailyDigest(DAWN_BRT);
+    expect(repo.usersForDigest).toHaveBeenCalledWith(
+      new Date('2026-09-14T03:00:00.000Z'),
+      3,
+      env.DIGEST_HOUR,
+    );
+    expect(r).toEqual({ skipped: null, sent: [], empty: [], failed: [] });
   });
 
   it('a partir da hora, um resumo por usuário elegível; sem novidades só marca o dia', async () => {
@@ -61,7 +70,11 @@ describe('runDailyDigest', () => {
 
     const r = await runDailyDigest(NOON_BRT);
 
-    expect(repo.usersForDigest).toHaveBeenCalledWith(new Date('2026-09-14T03:00:00.000Z'));
+    expect(repo.usersForDigest).toHaveBeenCalledWith(
+      new Date('2026-09-14T03:00:00.000Z'),
+      12,
+      env.DIGEST_HOUR,
+    );
     expect(svc.sendDigest).toHaveBeenCalledWith(u1, NOON_BRT);
     expect(r).toEqual({ skipped: null, sent: [1], empty: [2], failed: [3] });
   });
