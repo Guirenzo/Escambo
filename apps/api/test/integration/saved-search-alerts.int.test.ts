@@ -2,10 +2,11 @@ import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
-import { runSavedSearchAlerts } from '../../src/jobs/saved-search-alerts';
+import { lastDailyAlertAt, runSavedSearchAlerts } from '../../src/jobs/saved-search-alerts';
 
 /**
- * Buscas salvas com alerta (ADR 35) contra o MySQL real: validação e limite, PATCH, dono, e o job
+ * Buscas salvas com alerta (ADR 35 e 37) contra o MySQL real: validação e limite, PATCH, dono,
+ * frequência (na hora, de hora em hora, uma vez por dia) e o job
  * avisando uma vez só com os serviços novos que casam — sem os do próprio dono — com o cursor
  * avançando. O job roda com "agora" no futuro para a hora do alerta já ter vencido.
  */
@@ -94,9 +95,11 @@ describe('Buscas salvas com alerta (ADR 35)', () => {
       query: 'logo',
       filters: { maxPrice: 500, day: 1, period: 'morning' },
       alertEnabled: true,
+      alertFrequency: 'hourly',
     });
     expect(typeof created.body.lastAlertAt).toBe('string');
     const id = created.body.id as number;
+    expect((await save(u.token, { query: 'x', alertFrequency: 'weekly' })).status).toBe(422);
 
     const patch = (token: string, body: Record<string, unknown>) =>
       request(app).patch(`/api/saved-searches/${id}`).set(auth(token)).send(body);
@@ -108,6 +111,20 @@ describe('Buscas salvas com alerta (ADR 35)', () => {
     expect((await patch(u.token, { name: 'Logo até 500' }).expect(200)).body.name).toBe(
       'Logo até 500',
     );
+
+    // Frequência (ADR 37): trocar não mexe no cursor; nome null volta a mostrar o texto.
+    const before = (await patch(u.token, { alertEnabled: true }).expect(200)).body.lastAlertAt;
+    expect((await patch(u.token, { alertFrequency: 'daily' }).expect(200)).body).toMatchObject({
+      alertEnabled: true,
+      alertFrequency: 'daily',
+      lastAlertAt: before,
+    });
+    expect((await patch(u.token, { alertFrequency: 'weekly' })).status).toBe(422);
+    expect((await patch(u.token, { name: null }).expect(200)).body).toMatchObject({
+      name: null,
+      query: 'logo',
+      alertFrequency: 'daily',
+    });
 
     for (let i = 1; i < 20; i++) await save(u.token, { query: `busca ${i}` }).expect(201);
     const full = await save(u.token, { query: 'a vigésima primeira' });
@@ -153,5 +170,51 @@ describe('Buscas salvas com alerta (ADR 35)', () => {
     ]);
     const cursor = new Date((rows as { last_alert_at: Date }[])[0]!.last_alert_at);
     expect(cursor.getTime()).toBeGreaterThan(Date.now() + 2 * HOUR);
+  });
+
+  it('frequência: "na hora" avisa na rodada seguinte e "de hora em hora" espera a hora', async () => {
+    const searcher = await actor('client');
+    const freela = await actor('freelancer');
+    const TAG = `freq${Date.now()}`;
+    const instant = (
+      await save(searcher.token, { query: TAG, alertEnabled: true, alertFrequency: 'instant' })
+    ).body as { id: number; alertFrequency: string };
+    const hourly = (
+      await save(searcher.token, { name: `${TAG} hora`, query: TAG, alertEnabled: true })
+    ).body as { id: number; alertFrequency: string };
+    expect([instant.alertFrequency, hourly.alertFrequency]).toEqual(['instant', 'hourly']);
+    await publish(freela, `${TAG} novo`, 300);
+
+    // Uma rodada dos jobs depois (5 min): só a "na hora" avisa.
+    const soon = await runSavedSearchAlerts(new Date(Date.now() + 5 * 60_000));
+    expect(soon.alerted).toContain(instant.id);
+    expect(soon.alerted).not.toContain(hourly.id);
+
+    // Passada a hora: a de hora em hora avisa, e a "na hora" não repete o mesmo serviço.
+    const later = await runSavedSearchAlerts(inHours(1.1));
+    expect(later.alerted).toContain(hourly.id);
+    expect(later.alerted).not.toContain(instant.id);
+    expect(await alertsFor(searcher.token, instant.id)).toHaveLength(1);
+    expect(await alertsFor(searcher.token, hourly.id)).toHaveLength(1);
+  });
+
+  it('frequência: "uma vez por dia" só avisa no horário do resumo diário, com título de resumo', async () => {
+    const searcher = await actor('client');
+    const freela = await actor('freelancer');
+    const TAG = `diario${Date.now()}`;
+    const daily = (
+      await save(searcher.token, { query: TAG, alertEnabled: true, alertFrequency: 'daily' })
+    ).body as { id: number; lastAlertAt: string };
+    await publish(freela, `${TAG} novo`, 300);
+
+    // Primeiro horário diário depois do cursor: um minuto antes não vence; um minuto depois, sim.
+    const next = new Date(lastDailyAlertAt(new Date(daily.lastAlertAt)).getTime() + 24 * HOUR);
+    const early = await runSavedSearchAlerts(new Date(next.getTime() - 60_000));
+    expect(early.alerted).not.toContain(daily.id);
+    const onTime = await runSavedSearchAlerts(new Date(next.getTime() + 60_000));
+    expect(onTime.alerted).toContain(daily.id);
+    const notes = await alertsFor(searcher.token, daily.id);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ title: `Resumo do dia: serviço novo para “${TAG}”` });
   });
 });

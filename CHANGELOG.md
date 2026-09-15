@@ -5,6 +5,30 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.19.0] — 2026-09-15
+
+### Adicionado
+
+- **Frequência do alerta de busca salva** (ADR 37). Antes todo alerta era de hora em hora; agora
+  cada busca escolhe.
+  - **Na hora**: avisa na rodada seguinte dos jobs, em poucos minutos.
+  - **De hora em hora**: o comportamento anterior, que continua como padrão e vale para as buscas
+    que já existiam.
+  - **Uma vez por dia**: um aviso no horário do resumo diário de e-mail (`DIGEST_HOUR`, em
+    Brasília), com o título "Resumo do dia".
+  - **Na tela**: salvar uma busca pede a frequência, e cada busca salva ganhou **Editar** (nome,
+    alerta e frequência). O sino mostra a frequência no título, e desligar o alerta guarda a
+    escolha.
+  - **API**: `alertFrequency` (`instant`, `hourly` ou `daily`) no `POST` e no
+    `PATCH /saved-searches`. Trocar a frequência mantém o cursor, então não repete nem pula
+    serviço; `name: null` apaga o nome. Migration `0016_frequencia_alerta`.
+
+### Corrigido
+
+- **Cartão de e-mails do perfil com o radio acima do texto.** A lista de opções herdava o estilo global de rótulo, em coluna e negrito; agora o radio fica ao lado do texto, na cor da marca, e a dica volta ao peso normal. A frequência do alerta usa a mesma lista.
+- **Cópia de dados (LGPD) sem as buscas salvas.** O arquivo exportado agora traz `buscasSalvas`,
+  com texto, filtros, alerta e frequência, e passa ao formato `escambo-export/1.1`.
+
 ## [1.18.0] — 2026-09-15
 
 ### Adicionado

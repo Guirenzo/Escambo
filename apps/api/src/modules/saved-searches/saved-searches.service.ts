@@ -27,6 +27,7 @@ export function toSavedSearch(r: SavedSearchRow): SavedSearch {
     query: r.query,
     filters: parseFilters(r.filters),
     alertEnabled: Boolean(r.alert_enabled),
+    alertFrequency: r.alert_frequency,
     lastAlertAt: r.last_alert_at ? new Date(r.last_alert_at).toISOString() : null,
     createdAt: new Date(r.created_at).toISOString(),
   };
@@ -52,6 +53,7 @@ export const savedSearchesService = {
       query: input.query?.trim() || null,
       filters: filters ? JSON.stringify(filters) : null,
       alertEnabled: input.alertEnabled ?? false,
+      alertFrequency: input.alertFrequency ?? 'hourly',
     });
     return toSavedSearch((await savedSearchesRepository.findForUser(id, userId))!);
   },

@@ -2322,12 +2322,18 @@ button.toggle.on {
 .pref-list {
   display: grid;
   gap: 8px;
+  accent-color: var(--green);
   margin: 0;
   padding: 0;
   border: 0;
 }
 .pref-list label {
   display: flex;
+  /* o label global é coluna, em negrito e cinza; aqui o radio fica ao lado do texto */
+  flex-direction: row;
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--text);
   gap: 10px;
   align-items: flex-start;
   padding: 10px 12px;
@@ -2342,6 +2348,9 @@ button.toggle.on {
 .pref-list label > span {
   display: grid;
   gap: 2px;
+}
+.pref-list label strong {
+  font-weight: 600;
 }
 .pref-list input[type='radio'] {
   margin-top: 3px;
@@ -2977,6 +2986,17 @@ button.toggle.on {
 }
 .saved-chip .saved-bell.on {
   color: var(--green);
+}
+/* Frequência do alerta (ADR 37): inativa, mas visível, com o alerta desligado */
+.alert-frequency legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+.alert-frequency:disabled {
+  opacity: 0.55;
+}
+.alert-frequency:disabled label {
+  cursor: not-allowed;
 }
 .notif-link {
   display: inline-block;
