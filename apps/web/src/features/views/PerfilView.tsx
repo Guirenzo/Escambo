@@ -17,6 +17,7 @@ import {
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { EmailPreferencesCard } from '../profile/EmailPreferencesCard';
+import { ModeracaoCard } from '../profile/ModeracaoCard';
 import { PortfolioCard } from '../profile/PortfolioCard';
 import { PrivacidadeCard } from '../profile/PrivacidadeCard';
 import { ImageUploadButton } from '../../components/ImageUploadButton';
@@ -429,6 +430,7 @@ export function PerfilView() {
               </Button>
             </form>
 
+            <ModeracaoCard />
             {p.freelancer && <PortfolioCard />}
             <EmailPreferencesCard />
             <PrivacidadeCard />

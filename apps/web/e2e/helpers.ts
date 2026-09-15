@@ -260,16 +260,21 @@ export async function uploadImage(
   return ((await res.json()) as { url: string }).url;
 }
 
-/** PNG RGB válido (retângulo verde; quadrado se vier só a largura) para testar upload de imagem. */
-export function pngFixture(width = 48, height = width): Buffer {
+/** PNG RGB de 8 bits a partir da cor de cada pixel. */
+function rgbPng(
+  width: number,
+  height: number,
+  color: (x: number, y: number) => readonly number[],
+): Buffer {
   const stride = width * 3 + 1;
   const raw = Buffer.alloc(stride * height);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const o = y * stride + 1 + x * 3;
-      raw[o] = 46;
-      raw[o + 1] = 160;
-      raw[o + 2] = 100;
+      const [r = 0, g = 0, b = 0] = color(x, y);
+      raw[o] = r;
+      raw[o + 1] = g;
+      raw[o + 2] = b;
     }
   }
   const ihdr = Buffer.alloc(13);
@@ -283,6 +288,26 @@ export function pngFixture(width = 48, height = width): Buffer {
     pngChunk('IDAT', deflateSync(raw)),
     pngChunk('IEND', Buffer.alloc(0)),
   ]);
+}
+
+/** PNG RGB válido (retângulo verde; quadrado se vier só a largura) para testar upload de imagem. */
+export function pngFixture(width = 48, height = width): Buffer {
+  return rgbPng(width, height, () => [46, 160, 100]);
+}
+
+/**
+ * PNG de 9 × 8 blocos com cores sorteadas: tem detalhe para a impressão perceptual (ADR 39), então
+ * cada chamada é uma imagem diferente para a lista de bloqueio, mesmo repetindo a execução.
+ */
+export function noisyPngFixture(cell = 16): Buffer {
+  const colors = Array.from({ length: 72 }, () =>
+    [0, 0, 0].map(() => Math.floor(Math.random() * 256)),
+  );
+  return rgbPng(
+    9 * cell,
+    8 * cell,
+    (x, y) => colors[Math.floor(y / cell) * 9 + Math.floor(x / cell)] ?? [],
+  );
 }
 
 // ---------- datas no fuso do navegador dos testes ----------

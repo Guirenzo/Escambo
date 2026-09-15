@@ -4,19 +4,23 @@ import type {
   ReportReason,
   ReportStatus,
   ReportTargetType,
+  StrikeSummary,
 } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
 import { fingerprint } from '../media/media.image';
 import { mediaKeyFromUrl } from '../media/media.paths';
-import { deleteMediaImage, readMediaFile } from '../media/media.storage';
+import { deleteMediaImage, quarantineMediaImage, readMediaFile } from '../media/media.storage';
 import { notificationsService } from '../notifications/notifications.service';
+import { imageRemovalsRepository } from './image-removals.repository';
+import { appealDeadline, brDateTime, strikePolicy, strikeSummary } from './moderation.strikes';
 import { reportsRepository, type ContentReportRow, type TargetInfoRow } from './reports.repository';
 import { isImageTarget, type ReportAction } from './reports.schema';
 
 /**
  * Fila de moderação (ADR 39). Denúncias do mesmo alvo e da mesma imagem viram um grupo (a foto pode
  * ser trocada entre uma denúncia e outra, e cada imagem é analisada por si), e cada decisão vale
- * para o grupo inteiro.
+ * para o grupo inteiro. Remoção de imagem com dono vira registro contestável, com o arquivo em
+ * quarentena, e conta para a reincidência (ADR 41).
  */
 
 /** Quantas denúncias a fila lê de uma vez: sobra para a triagem sem varrer a tabela toda. */
@@ -118,6 +122,16 @@ function toGroup(rows: ContentReportRow[], info: TargetInfoRow | undefined): Adm
   };
 }
 
+const NO_REMOVAL = {
+  referencesCleared: 0,
+  fileRemoved: false,
+  blocked: false,
+  removalId: null,
+  ownerStrikes: null,
+  uploadsBlockedUntil: null,
+  accountReviewOpened: false,
+} as const;
+
 export const moderationService = {
   /** Pendentes: as mais denunciadas primeiro. Resolvidas: as decisões mais recentes primeiro. */
   async listQueue(scope: 'pending' | 'resolved'): Promise<AdminReportGroup[]> {
@@ -145,8 +159,9 @@ export const moderationService = {
 
   /**
    * Decide o grupo da denúncia `reportId`. Dispensar e resolver só fecham as denúncias. Remover a
-   * imagem tira a URL de todo perfil e trabalho, fecha as denúncias e bloqueia o reenvio numa
-   * transação, apaga o arquivo e as miniaturas e avisa o dono.
+   * imagem tira a URL de todo perfil e trabalho, fecha as denúncias, bloqueia o reenvio e registra
+   * a remoção numa transação; depois o arquivo vai para a quarentena, a reincidência do dono é
+   * calculada (com revisão da conta ao chegar no limite) e o dono é avisado de como contestar.
    */
   async act(
     adminId: number,
@@ -178,10 +193,7 @@ export const moderationService = {
     if (action !== 'remove-image') {
       const status = action === 'dismiss' ? 'dismissed' : 'actioned';
       const reports = await reportsRepository.closeGroup({ ...group, status });
-      return {
-        target,
-        result: { status, reports, referencesCleared: 0, fileRemoved: false, blocked: false },
-      };
+      return { target, result: { ...NO_REMOVAL, status, reports } };
     }
 
     if (!isImageTarget(report.target_type) || !report.image_url) {
@@ -193,18 +205,48 @@ export const moderationService = {
     }
     const owner = await reportsRepository.imageTarget(report.target_type, report.target_id);
     const key = mediaKeyFromUrl(report.image_url);
-    // A impressão sai do arquivo antes de apagá-lo; link externo não tem arquivo para bloquear.
+    // A impressão sai do arquivo antes de ele sair do ar; link externo não tem arquivo para bloquear.
     const original = key ? await readMediaFile(key) : null;
     const print = original ? await fingerprint(original) : null;
-    const { cleared, reports } = await reportsRepository.removeImageAndClose({
+    const { cleared, reports, removalId } = await reportsRepository.removeImageAndClose({
       ...group,
       url: report.image_url,
       print,
       reportId,
+      ownerId: owner?.owner_id ?? null,
+      reason: report.reason,
     });
-    const fileRemoved = key ? await deleteMediaImage(key) : false;
 
-    if (owner && (cleared > 0 || fileRemoved)) {
+    // Com registro, o arquivo vai para a quarentena enquanto cabe contestação; sem dono, sai de vez.
+    let fileRemoved = false;
+    if (key && removalId !== null) {
+      const quarantined = await quarantineMediaImage(key, removalId);
+      if (quarantined) await imageRemovalsRepository.setQuarantineFile(removalId, quarantined);
+      fileRemoved = quarantined !== null;
+    } else if (key) {
+      fileRemoved = await deleteMediaImage(key);
+    }
+
+    let strikes: StrikeSummary | null = null;
+    let accountReviewOpened = false;
+    if (owner && removalId !== null) {
+      const policy = await strikePolicy();
+      const now = new Date();
+      strikes = await strikeSummary(owner.owner_id, now, policy);
+      if (
+        strikes.strikes >= policy.reviewThreshold &&
+        !(await reportsRepository.hasOpenAccountReview(owner.owner_id))
+      ) {
+        await reportsRepository.create({
+          reporterId: adminId,
+          targetType: 'user',
+          targetId: owner.owner_id,
+          imageUrl: null,
+          reason: 'other',
+          description: `Reincidência: ${strikes.strikes} imagens removidas nos últimos ${policy.windowDays} dias. Revise a conta.`,
+        });
+        accountReviewOpened = true;
+      }
       await notificationsService.notify(owner.owner_id, {
         type: 'content_removed',
         title:
@@ -216,13 +258,15 @@ export const moderationService = {
         body: [
           `A moderação removeu a imagem por ${REASON_TEXT[report.reason] ?? REASON_TEXT.other}.`,
           note,
-          print
-            ? 'A mesma imagem não pode ser enviada de novo; você pode escolher outra no perfil.'
-            : 'Você pode escolher outra imagem no perfil.',
+          print ? 'A mesma imagem não pode ser enviada de novo.' : null,
+          `Se discordar, conteste pelo seu perfil até ${brDateTime(appealDeadline(now, policy.appealWindowDays))}.`,
+          strikes.uploadsBlockedUntil
+            ? `Como é a ${strikes.strikes}ª imagem removida nos últimos ${strikes.windowDays} dias, o envio de imagens fica bloqueado até ${brDateTime(new Date(strikes.uploadsBlockedUntil))}.`
+            : null,
         ]
           .filter(Boolean)
           .join(' '),
-        data: { contentRemoved: report.target_type, reportId },
+        data: { contentRemoved: report.target_type, reportId, imageRemovalId: removalId },
       });
     }
     return {
@@ -233,6 +277,10 @@ export const moderationService = {
         referencesCleared: cleared,
         fileRemoved,
         blocked: print !== null,
+        removalId,
+        ownerStrikes: strikes?.strikes ?? null,
+        uploadsBlockedUntil: strikes?.uploadsBlockedUntil ?? null,
+        accountReviewOpened,
       },
     };
   },

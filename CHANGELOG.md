@@ -5,6 +5,38 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.23.0] — 2026-09-15
+
+### Adicionado
+
+- **Contestação de remoção de imagem** (ADR 41).
+  - **No perfil**: o cartão "Moderação" lista as imagens removidas com motivo, nota, prazo e
+    situação, e o dono contesta uma vez, dentro do prazo, com um texto de 20 a 1000 caracteres. O
+    aviso da remoção já traz a data limite. `GET /api/moderation/removals` e
+    `POST /api/moderation/removals/:id/appeal`.
+  - **No painel admin**: fila de contestações pendentes e decididas, com a imagem guardada, o texto
+    do dono e as remoções dele na janela. Manter apaga o arquivo; reverter devolve a imagem para
+    onde estava, se o lugar continua vazio, tira do bloqueio e a remoção deixa de contar. O dono
+    recebe notificação e e-mail com a nota. `GET /api/admin/appeals`,
+    `GET /api/admin/appeals/:id/image` e `POST /api/admin/appeals/:id/uphold|overturn`.
+  - **Quarentena**: a imagem removida sai do ar na hora, mas o arquivo fica em `DATA_DIR/quarantine`
+    enquanto cabe contestação; o job `purge-quarantine` apaga o que não pode mais voltar.
+- **Reincidência progressiva** (ADR 41).
+  - Da segunda remoção em 180 dias, o envio de imagens fica bloqueado por 7 dias vezes as remoções
+    depois da primeira (`403 uploads_restricted`, com a data de liberação), e o perfil mostra o
+    bloqueio com o medidor de remoções.
+  - Na terceira, a conta entra na fila de denúncias para revisão, uma vez enquanto a revisão estiver
+    aberta, e o aviso da fila diz ao admin o que a remoção causou.
+  - Prazo de contestação, janela, dias de bloqueio e limite de revisão são parâmetros do painel.
+    Migration `0018_contestacao_reincidencia`.
+
+### Alterado
+
+- A cópia de dados da LGPD passa ao formato 1.2, com as imagens removidas e as contestações, e a
+  anonimização apaga os arquivos em quarentena e o texto das contestações do titular.
+- A resposta de `POST /api/admin/reports/:id/remove-image` ganha `removalId`, `ownerStrikes`,
+  `uploadsBlockedUntil` e `accountReviewOpened`.
+
 ## [1.22.0] — 2026-09-15
 
 ### Adicionado

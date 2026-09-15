@@ -267,6 +267,21 @@ export const REPORT_REASON_LABEL: Record<string, string> = {
   other: 'Outro',
 };
 
+/** Situação de uma imagem removida, como o dono vê no perfil (ADR 41). */
+export const REMOVAL_STATUS_LABEL: Record<string, string> = {
+  removed: 'Removida',
+  appealed: 'Contestação em análise',
+  upheld: 'Remoção mantida',
+  overturned: 'Remoção revertida',
+};
+
+/** Situação de uma contestação na fila do admin (ADR 41). */
+export const APPEAL_STATUS_LABEL: Record<string, string> = {
+  appealed: 'Aguardando decisão',
+  upheld: 'Mantida',
+  overturned: 'Revertida',
+};
+
 /** Situação de um grupo de denúncias na fila de moderação (ADR 39). */
 export const REPORT_STATUS_LABEL: Record<string, string> = {
   pending: 'Pendente',

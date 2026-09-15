@@ -1,4 +1,4 @@
-import mysql from 'mysql2/promise';
+import mysql, { type PoolConnection } from 'mysql2/promise';
 import { env } from './env';
 
 /**
@@ -20,6 +20,22 @@ export const pool = mysql.createPool({
   enableKeepAlive: true,
   keepAliveInitialDelay: 10_000,
 });
+
+/** Executa `work` numa transação: commit no fim, rollback se algo falhar. */
+export async function inTransaction<T>(work: (conn: PoolConnection) => Promise<T>): Promise<T> {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const out = await work(conn);
+    await conn.commit();
+    return out;
+  } catch (err) {
+    await conn.rollback().catch(() => undefined);
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
 
 /** Verifica conectividade com o banco (usado no /health e no boot). */
 export async function pingDb(): Promise<void> {

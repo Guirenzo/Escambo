@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../messaging/attachments.purge', () => ({ purgeForUser: vi.fn().mockResolvedValue(0) }));
+vi.mock('../reports/appeals.service', () => ({
+  appealsService: { purgeForOwner: vi.fn().mockResolvedValue(0) },
+}));
 
 vi.mock('./lgpd.repository', () => ({
   lgpdRepository: {

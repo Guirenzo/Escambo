@@ -5,6 +5,7 @@ import type {
   CreateContentReportRequest,
   CreateContractRequest,
   AdminReportAction,
+  AppealDecision,
   CreateDepositRequest,
   CreateReviewRequest,
   CreateSavedSearchRequest,
@@ -40,6 +41,8 @@ export const qk = {
   adminDeletions: (status: string) => ['adminDeletions', status] as const,
   adminEmails: ['adminEmails'] as const,
   adminReports: (status: string) => ['adminReports', status] as const,
+  adminAppeals: (status: string) => ['adminAppeals', status] as const,
+  myModeration: ['myModeration'] as const,
   notifications: ['notifications'] as const,
   barters: ['barters'] as const,
   profiles: ['profiles'] as const,
@@ -621,6 +624,58 @@ export function useAdminReportAction() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['adminReports'] });
       void qc.invalidateQueries({ queryKey: qk.adminStorage });
+    },
+  });
+}
+
+/** Imagens removidas da conta e a reincidência (ADR 41). */
+export const useMyModeration = () =>
+  useQuery({ queryKey: qk.myModeration, queryFn: () => api.myModeration() });
+
+/** Contesta uma remoção; a lista do perfil recarrega com a contestação. */
+export function useAppealRemoval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, text }: { id: number; text: string }) => api.appealRemoval(id, text),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.myModeration });
+    },
+  });
+}
+
+/** Contestações na fila do admin (ADR 41). */
+export const useAdminAppeals = (status: 'pending' | 'decided') =>
+  useQuery({ queryKey: qk.adminAppeals(status), queryFn: () => api.adminAppeals(status) });
+
+/**
+ * Arquivo guardado de uma contestação. A rota não usa cache, então a cópia fica na memória e a
+ * miniatura e o diálogo usam a mesma.
+ */
+export const useAppealImage = (id: number, enabled: boolean) =>
+  useQuery({
+    queryKey: ['appealImage', id],
+    queryFn: async () => (await api.adminAppealImage(id)).blob,
+    enabled,
+    staleTime: Infinity,
+    retry: false,
+  });
+
+/** Mantém ou reverte uma remoção contestada. */
+export function useAdminAppealDecision() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      decision,
+      note,
+    }: {
+      id: number;
+      decision: AppealDecision;
+      note: string | null;
+    }) => api.adminDecideAppeal(id, decision, { note }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['adminAppeals'] });
+      void qc.invalidateQueries({ queryKey: ['adminReports'] });
     },
   });
 }

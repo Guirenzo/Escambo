@@ -37,6 +37,7 @@ export const EMAILED_NOTIFICATION_TYPES = new Set([
   'deletion_rejected',
   'review_received',
   'content_removed',
+  'appeal_decided',
 ]);
 
 /** Para onde o e-mail de notificação aponta, a partir dos dados da notificação. */
@@ -49,7 +50,8 @@ export function notificationLink(data: Record<string, unknown> | null | undefine
   if (
     data?.exportRequestId != null ||
     data?.deletionRequestId != null ||
-    data?.contentRemoved != null
+    data?.contentRemoved != null ||
+    data?.imageRemovalId != null
   )
     return `${base}/perfil`;
   // Alerta de busca salva (ADR 35): o link reaplica a busca na tela de serviços.

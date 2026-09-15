@@ -8,10 +8,11 @@ import { env } from '../../config/env';
 /**
  * Portabilidade (LGPD, art. 18, V): monta a cópia de tudo que a plataforma guarda sobre o
  * titular, em JSON legível, e guarda o arquivo em DATA_DIR/exports. Só leitura no banco.
- * Formato 1.1: entram as buscas salvas, com a frequência do alerta (ADR 37).
+ * Formato 1.1: entram as buscas salvas, com a frequência do alerta (ADR 37). Formato 1.2: entram
+ * as imagens removidas pela moderação, com a contestação e a decisão (ADR 41).
  */
 
-export const EXPORT_FORMAT_VERSION = '1.1';
+export const EXPORT_FORMAT_VERSION = '1.2';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -125,6 +126,12 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
        FROM content_reports WHERE reporter_id = :userId ORDER BY id`,
     p,
   );
+  const moderation = await q(
+    `SELECT id, target_type, reason, note, removed_at, status, appeal_text, appealed_at,
+            decided_at, decision_note
+       FROM image_removals WHERE owner_id = :userId ORDER BY id`,
+    p,
+  );
   const favorites = await q(
     `SELECT target_type, target_id, created_at FROM favorites WHERE user_id = :userId ORDER BY id`,
     p,
@@ -170,6 +177,7 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     },
     disputas: disputes,
     denunciasFeitas: reports,
+    moderacao: moderation,
     favoritos: favorites,
     buscasSalvas: savedSearches,
     notificacoes: notifications,

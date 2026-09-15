@@ -1,9 +1,10 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import type { PoolConnection } from 'mysql2/promise';
-import { pool } from '../../config/db';
+import { inTransaction, pool } from '../../config/db';
 import { mediaBlocklist } from '../media/media.blocklist';
 import type { ImageFingerprint } from '../media/media.image';
 import { mediaRepository } from '../media/media.repository';
+import { imageRemovalsRepository } from './image-removals.repository';
 import type { ImageTarget } from './reports.schema';
 
 export interface ContentReportRow extends RowDataPacket {
@@ -53,21 +54,6 @@ const COLS = `id, reporter_id, target_type, target_id, image_url, reason, descri
 const OWNER = `u.id AS owner_id, u.ulid AS owner_ulid, COALESCE(pf.full_name, pc.full_name) AS owner_name`;
 const OWNER_JOINS = `LEFT JOIN profiles_freelancer pf ON pf.user_id = u.id
                      LEFT JOIN profiles_client pc ON pc.user_id = u.id`;
-
-async function inTransaction<T>(work: (conn: PoolConnection) => Promise<T>): Promise<T> {
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-    const out = await work(conn);
-    await conn.commit();
-    return out;
-  } catch (err) {
-    await conn.rollback().catch(() => undefined);
-    throw err;
-  } finally {
-    conn.release();
-  }
-}
 
 /** Fecha as denúncias abertas do grupo; todas ganham o mesmo reviewed_at e a mesma nota. */
 async function closeOpen(
@@ -235,29 +221,64 @@ export const reportsRepository = {
     return rows;
   },
 
+  /** Revisão de conta por reincidência (ADR 41) ainda aberta: evita abrir outra a cada remoção. */
+  async hasOpenAccountReview(userId: number): Promise<boolean> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT 1 FROM content_reports
+        WHERE target_type = 'user' AND target_id = :userId AND status IN ('pending', 'reviewing')
+          AND description LIKE 'Reincidência:%'
+        LIMIT 1`,
+      { userId },
+    );
+    return rows.length > 0;
+  },
+
   /** Dispensa ou resolve o grupo, sem mexer no conteúdo. Devolve quantas denúncias fechou. */
   async closeGroup(g: GroupRef & { status: 'actioned' | 'dismissed' }): Promise<number> {
     return inTransaction((conn) => closeOpen(conn, g));
   },
 
   /**
-   * Remoção de imagem numa transação só (ADR 39): tira a URL de todo perfil e trabalho que a
-   * mostra, fecha as denúncias abertas do grupo e, se houver impressão do arquivo, bloqueia o reenvio.
+   * Remoção de imagem numa transação só (ADR 39 e 41): anota de onde a imagem sai, tira a URL de
+   * todo perfil e trabalho que a mostra, fecha as denúncias abertas do grupo, bloqueia o reenvio se
+   * houver impressão do arquivo e, quando a imagem tem dono, registra a remoção contestável.
    */
   async removeImageAndClose(
-    g: GroupRef & { url: string; print: ImageFingerprint | null; reportId: number },
-  ): Promise<{ cleared: number; reports: number }> {
+    g: GroupRef & {
+      url: string;
+      print: ImageFingerprint | null;
+      reportId: number;
+      ownerId: number | null;
+      reason: string;
+    },
+  ): Promise<{ cleared: number; reports: number; removalId: number | null }> {
     return inTransaction(async (conn) => {
+      const refs = await mediaRepository.referencesTo(conn, g.url);
       const cleared = await mediaRepository.clearReferences(conn, g.url);
       const reports = await closeOpen(conn, { ...g, status: 'actioned' });
-      if (g.print) {
-        await mediaBlocklist.add(conn, {
-          print: g.print,
-          reportId: g.reportId,
-          adminId: g.adminId,
-        });
-      }
-      return { cleared, reports };
+      const blocklistId = g.print
+        ? await mediaBlocklist.add(conn, {
+            print: g.print,
+            reportId: g.reportId,
+            adminId: g.adminId,
+          })
+        : null;
+      const removalId =
+        g.ownerId === null
+          ? null
+          : await imageRemovalsRepository.insert(conn, {
+              reportId: g.reportId,
+              ownerId: g.ownerId,
+              targetType: g.targetType as ImageTarget,
+              targetId: g.targetId,
+              imageUrl: g.url,
+              reason: g.reason,
+              note: g.note,
+              refs,
+              blocklistId,
+              adminId: g.adminId,
+            });
+      return { cleared, reports, removalId };
     });
   },
 };

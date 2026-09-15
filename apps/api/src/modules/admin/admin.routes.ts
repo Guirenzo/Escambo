@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../../middlewares/authenticate';
 import { requireAdmin } from '../../middlewares/require-admin';
 import { asyncHandler } from '../../utils/async-handler';
+import { appealImage, decideAppeal, listAppeals } from '../reports/appeals.controller';
 import { actOnReport, listReports } from '../reports/reports.moderation.controller';
 import {
   banUser,
@@ -39,6 +40,9 @@ adminRoutes.get('/finance', asyncHandler(getFinance));
 adminRoutes.get('/finance/export.csv', asyncHandler(exportFinanceCsv));
 adminRoutes.get('/reports', asyncHandler(listReports));
 adminRoutes.post('/reports/:id/:action', asyncHandler(actOnReport));
+adminRoutes.get('/appeals', asyncHandler(listAppeals));
+adminRoutes.get('/appeals/:id/image', asyncHandler(appealImage));
+adminRoutes.post('/appeals/:id/:decision', asyncHandler(decideAppeal));
 adminRoutes.get('/disputes', asyncHandler(listOpenDisputes));
 adminRoutes.post('/disputes/:id/resolve', asyncHandler(resolveDispute));
 adminRoutes.post('/users/:ulid/suspend', asyncHandler(suspendUser));

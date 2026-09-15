@@ -11,7 +11,12 @@ import {
 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import type { AdminReportAction, AdminReportGroup, ReportTargetType } from '@escambo/types';
+import type {
+  AdminReportAction,
+  AdminReportActionResult,
+  AdminReportGroup,
+  ReportTargetType,
+} from '@escambo/types';
 import { Button, Field, Modal, QueryState } from '../../components/ui';
 import { dtm, REPORT_REASON_LABEL, REPORT_STATUS_LABEL } from '../../lib/format';
 import { useAdminReportAction, useAdminReports } from '../../lib/hooks';
@@ -42,7 +47,7 @@ const COPY: Record<
     title: 'Remover imagem',
     confirm: 'Remover e bloquear',
     done: 'Imagem removida e bloqueada.',
-    hint: 'A imagem sai de todo perfil e trabalho que a mostra, o arquivo é apagado, o dono recebe um aviso com a sua nota e a mesma imagem não pode ser enviada de novo.',
+    hint: 'A imagem sai de todo perfil e trabalho que a mostra e a mesma imagem não pode ser enviada de novo. O arquivo fica guardado fora do ar enquanto o dono pode contestar, o dono recebe um aviso com a sua nota e o prazo, e a remoção conta para a reincidência dele.',
   },
   dismiss: {
     title: 'Dispensar denúncias',
@@ -57,6 +62,20 @@ const COPY: Record<
     hint: 'Use quando a ação já foi tomada em outro lugar, como suspender a conta no perfil.',
   },
 };
+
+/** O que a remoção causou além de tirar a imagem: bloqueio de envio e revisão da conta (ADR 41). */
+function removalMessage(r: AdminReportActionResult): string {
+  const base = r.blocked
+    ? 'Imagem removida e bloqueada.'
+    : 'Imagem removida. Era um link externo, então não há arquivo para bloquear.';
+  if (r.accountReviewOpened) {
+    return `${base} O dono chegou a ${r.ownerStrikes} remoções e a conta entrou na fila para revisão.`;
+  }
+  if (r.uploadsBlockedUntil) {
+    return `${base} O dono fica sem enviar imagens até ${dtm(r.uploadsBlockedUntil)}.`;
+  }
+  return base;
+}
 
 const isImage = (g: AdminReportGroup): boolean =>
   (g.targetType === 'avatar' || g.targetType === 'portfolio_item') && Boolean(g.imageUrl);
@@ -115,9 +134,7 @@ export function ReportsSection() {
         note: note.trim() || null,
       });
       toast.success(
-        deciding.action === 'remove-image' && !r.blocked
-          ? 'Imagem removida. Era um link externo, então não há arquivo para bloquear.'
-          : COPY[deciding.action].done,
+        deciding.action === 'remove-image' ? removalMessage(r) : COPY[deciding.action].done,
       );
       setDeciding(null);
     } catch (er) {

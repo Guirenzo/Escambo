@@ -210,6 +210,11 @@ export const lgpdRepository = {
       await conn.query<ResultSetHeader>(`DELETE FROM saved_searches WHERE user_id = :userId`, {
         userId,
       });
+      // O texto da contestação é do titular; a remoção fica, sem ele, como registro da moderação.
+      await conn.query<ResultSetHeader>(
+        `UPDATE image_removals SET appeal_text = NULL WHERE owner_id = :userId`,
+        { userId },
+      );
       await conn.query<ResultSetHeader>(`DELETE FROM notifications WHERE user_id = :userId`, {
         userId,
       });
