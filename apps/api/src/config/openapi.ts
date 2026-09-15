@@ -453,7 +453,7 @@ export const openapiDocument: Record<string, any> = {
     '/admin/reports/{id}/{action}': {
       post: op(
         'Admin',
-        'dismiss, resolve ou remove-image no grupo da denúncia, com nota. remove-image tira a imagem de todo perfil e trabalho, guarda o arquivo em quarentena, bloqueia o reenvio, registra a remoção contestável e avisa o dono com o prazo; devolve as remoções do dono na janela, o bloqueio de envio e se a conta foi para revisão (ADR 41)',
+        'dismiss, resolve, remove-image ou remove-content no grupo da denúncia, com nota. remove-content tira do ar a avaliação (recalcula a nota) ou a mensagem (aviso no chat), registra a remoção contestável com o texto e avisa o autor (ADR 44). remove-image tira a imagem de todo perfil e trabalho, guarda o arquivo em quarentena, bloqueia o reenvio, registra a remoção contestável e avisa o dono com o prazo; devolve as remoções do dono na janela, o bloqueio de envio e se a conta foi para revisão (ADR 41)',
         { auth: true },
       ),
     },

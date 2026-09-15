@@ -12,12 +12,14 @@ vi.mock('./reports.repository', () => ({
     closeGroup: vi.fn(),
     removeImageAndClose: vi.fn(),
     imageTarget: vi.fn(),
+    textTarget: vi.fn(),
+    removeContentAndClose: vi.fn(),
     hasOpenAccountReview: vi.fn(),
     create: vi.fn(),
   },
 }));
-vi.mock('./image-removals.repository', () => ({
-  imageRemovalsRepository: { setQuarantineFile: vi.fn() },
+vi.mock('./content-removals.repository', () => ({
+  contentRemovalsRepository: { setQuarantineFile: vi.fn() },
 }));
 vi.mock('./moderation.strikes', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./moderation.strikes')>()),
@@ -33,17 +35,21 @@ vi.mock('../media/media.image', () => ({ fingerprint: vi.fn() }));
 vi.mock('../notifications/notifications.service', () => ({
   notificationsService: { notify: vi.fn() },
 }));
+vi.mock('../messaging/messaging.service', () => ({
+  messagingService: { announceChange: vi.fn() },
+}));
 
 import { fingerprint } from '../media/media.image';
 import { deleteMediaImage, quarantineMediaImage, readMediaFile } from '../media/media.storage';
+import { messagingService } from '../messaging/messaging.service';
 import { notificationsService } from '../notifications/notifications.service';
-import { imageRemovalsRepository } from './image-removals.repository';
+import { contentRemovalsRepository } from './content-removals.repository';
 import { strikePolicy, strikeSummary } from './moderation.strikes';
 import { moderationService } from './reports.moderation';
 import { reportsRepository } from './reports.repository';
 
 const repo = vi.mocked(reportsRepository);
-const removals = vi.mocked(imageRemovalsRepository);
+const removals = vi.mocked(contentRemovalsRepository);
 const readFile = vi.mocked(readMediaFile);
 const deleteImage = vi.mocked(deleteMediaImage);
 const quarantine = vi.mocked(quarantineMediaImage);
@@ -51,6 +57,7 @@ const print = vi.mocked(fingerprint);
 const notify = vi.mocked(notificationsService.notify);
 const policy = vi.mocked(strikePolicy);
 const summary = vi.mocked(strikeSummary);
+const announce = vi.mocked(messagingService.announceChange);
 
 const MEDIA = '/api/media/2026/09/01J8ZQ4K7M3VX5R2T9W6Y1B0CD.webp';
 const KEY = '2026/09/01J8ZQ4K7M3VX5R2T9W6Y1B0CD.webp';
@@ -113,10 +120,12 @@ beforeEach(() => {
   });
   summary.mockResolvedValue({
     strikes: 1,
+    imageStrikes: 1,
     windowDays: 180,
     reviewThreshold: 3,
     uploadsBlockedUntil: null,
   });
+  announce.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -233,7 +242,7 @@ describe('remoção contestável e reincidência (ADR 41)', () => {
       type: 'content_removed',
       title: 'Sua foto de perfil foi removida',
       body: 'A moderação removeu a imagem por conteúdo ofensivo. Imagem ofensiva. A mesma imagem não pode ser enviada de novo. Se discordar, conteste pelo seu perfil até 29/09/2026 às 12:00.',
-      data: { contentRemoved: 'avatar', reportId: 4, imageRemovalId: 31 },
+      data: { contentRemoved: 'avatar', reportId: 4, removalId: 31 },
     });
     expect(result).toEqual({
       status: 'actioned',
@@ -252,6 +261,7 @@ describe('remoção contestável e reincidência (ADR 41)', () => {
     repo.findById.mockResolvedValue(row({ id: 4 }));
     summary.mockResolvedValue({
       strikes: 3,
+      imageStrikes: 3,
       windowDays: 180,
       reviewThreshold: 3,
       uploadsBlockedUntil: '2026-09-29T15:00:00.000Z',
@@ -265,7 +275,7 @@ describe('remoção contestável e reincidência (ADR 41)', () => {
       targetId: 9,
       imageUrl: null,
       reason: 'other',
-      description: 'Reincidência: 3 imagens removidas nos últimos 180 dias. Revise a conta.',
+      description: 'Reincidência: 3 remoções de conteúdo nos últimos 180 dias. Revise a conta.',
     });
     expect(notify).toHaveBeenCalledWith(
       9,
@@ -331,5 +341,144 @@ describe('remoção contestável e reincidência (ADR 41)', () => {
     expect(summary).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
     expect(result).toMatchObject({ fileRemoved: true, removalId: null, ownerStrikes: null });
+  });
+});
+
+describe('remoção de avaliação e mensagem (ADR 44)', () => {
+  it('mensagem: sai do ar com cópia do texto, o autor é avisado com o prazo e o chat se atualiza', async () => {
+    repo.findById.mockResolvedValue(
+      row({
+        id: 8,
+        target_type: 'message',
+        target_id: 55,
+        image_url: null,
+        reason: 'off_platform',
+      }),
+    );
+    repo.textTarget.mockResolvedValue({
+      owner_id: 12,
+      text: 'Me paga no pix por fora',
+      rating: null,
+      file_name: null,
+      removed_at: null,
+    } as never);
+    repo.removeContentAndClose.mockResolvedValue({ reports: 2, removalId: 40 });
+    summary.mockResolvedValue({
+      strikes: 2,
+      imageStrikes: 0,
+      windowDays: 180,
+      reviewThreshold: 3,
+      uploadsBlockedUntil: null,
+    });
+
+    const { result, target } = await moderationService.act(
+      1,
+      8,
+      'remove-content',
+      'Pagamento por fora.',
+    );
+
+    expect(repo.textTarget).toHaveBeenCalledWith('message', 55);
+    expect(repo.removeContentAndClose).toHaveBeenCalledWith({
+      targetType: 'message',
+      targetId: 55,
+      imageUrl: null,
+      adminId: 1,
+      note: 'Pagamento por fora.',
+      reportId: 8,
+      reason: 'off_platform',
+      author: { id: 12, snapshot: 'Me paga no pix por fora' },
+    });
+    expect(notify).toHaveBeenCalledWith(12, {
+      type: 'content_removed',
+      title: 'Uma mensagem sua no chat foi removida',
+      body: 'A moderação removeu a mensagem por negociação fora da plataforma. Pagamento por fora. Se discordar, conteste pelo seu perfil até 29/09/2026 às 12:00.',
+      data: { contentRemoved: 'message', reportId: 8, removalId: 40 },
+    });
+    expect(announce).toHaveBeenCalledWith(55);
+    expect(readFile).not.toHaveBeenCalled();
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      status: 'actioned',
+      reports: 2,
+      referencesCleared: 0,
+      fileRemoved: false,
+      blocked: false,
+      removalId: 40,
+      ownerStrikes: 2,
+      uploadsBlockedUntil: null,
+      accountReviewOpened: false,
+    });
+    expect(target).toEqual({ type: 'message', id: 55, imageUrl: null });
+  });
+
+  it('avaliação: a cópia leva a nota, e a terceira remoção de qualquer conteúdo abre a revisão da conta', async () => {
+    repo.findById.mockResolvedValue(
+      row({ id: 9, target_type: 'review', target_id: 21, image_url: null }),
+    );
+    repo.textTarget.mockResolvedValue({
+      owner_id: 12,
+      text: 'Péssimo, um golpista',
+      rating: 1,
+      file_name: null,
+      removed_at: null,
+    } as never);
+    repo.removeContentAndClose.mockResolvedValue({ reports: 1, removalId: 41 });
+    summary.mockResolvedValue({
+      strikes: 3,
+      imageStrikes: 1,
+      windowDays: 180,
+      reviewThreshold: 3,
+      uploadsBlockedUntil: null,
+    });
+
+    const { result } = await moderationService.act(1, 9, 'remove-content', null);
+
+    expect(repo.removeContentAndClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        author: { id: 12, snapshot: 'Nota 1 de 5. Péssimo, um golpista' },
+      }),
+    );
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetType: 'user',
+        targetId: 12,
+        description: 'Reincidência: 3 remoções de conteúdo nos últimos 180 dias. Revise a conta.',
+      }),
+    );
+    expect(notify).toHaveBeenCalledWith(
+      12,
+      expect.objectContaining({ title: 'Sua avaliação foi removida' }),
+    );
+    expect(announce).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ removalId: 41, ownerStrikes: 3, accountReviewOpened: true });
+  });
+
+  it('conteúdo que já saiu do ar só fecha as denúncias; denúncia que não é de texto é 422', async () => {
+    repo.findById.mockResolvedValueOnce(
+      row({ id: 9, target_type: 'review', target_id: 21, image_url: null }),
+    );
+    repo.textTarget.mockResolvedValueOnce({
+      owner_id: 12,
+      text: 'x',
+      rating: 2,
+      file_name: null,
+      removed_at: new Date(),
+    } as never);
+    repo.removeContentAndClose.mockResolvedValueOnce({ reports: 1, removalId: null });
+
+    const { result } = await moderationService.act(1, 9, 'remove-content', null);
+
+    expect(repo.removeContentAndClose).toHaveBeenCalledWith(
+      expect.objectContaining({ author: null }),
+    );
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ reports: 1, removalId: null, ownerStrikes: null });
+
+    repo.findById.mockResolvedValueOnce(row({ id: 4 }));
+    await expect(moderationService.act(1, 4, 'remove-content', null)).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'not_a_content_report',
+    });
   });
 });

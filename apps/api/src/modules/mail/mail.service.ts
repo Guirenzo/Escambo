@@ -51,7 +51,8 @@ export function notificationLink(data: Record<string, unknown> | null | undefine
     data?.exportRequestId != null ||
     data?.deletionRequestId != null ||
     data?.contentRemoved != null ||
-    data?.imageRemovalId != null
+    data?.imageRemovalId != null ||
+    data?.removalId != null
   )
     return `${base}/perfil`;
   // Alerta de busca salva (ADR 35): o link reaplica a busca na tela de serviços.

@@ -1,6 +1,6 @@
-import { Gavel, ImageOff, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Gavel, ImageOff, MessageSquareOff, ShieldAlert, ShieldCheck, StarOff } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import type { ImageRemoval, StrikeSummary } from '@escambo/types';
+import type { ContentRemoval, StrikeSummary } from '@escambo/types';
 import { Button, Field, Modal } from '../../components/ui';
 import { dtm, REMOVAL_STATUS_LABEL, REPORT_REASON_LABEL } from '../../lib/format';
 import { useAppealRemoval, useMyModeration } from '../../lib/hooks';
@@ -10,18 +10,31 @@ import { useToast } from '../../lib/toast';
 const APPEAL_MIN = 20;
 const APPEAL_MAX = 1000;
 
-const TONE: Record<ImageRemoval['status'], string> = {
+const TONE: Record<ContentRemoval['status'], string> = {
   removed: 'cancelled',
   appealed: 'pending',
   upheld: 'cancelled',
   overturned: 'completed',
 };
 
-const reasonOf = (r: ImageRemoval): string => REPORT_REASON_LABEL[r.reason] ?? r.reason;
+const reasonOf = (r: ContentRemoval): string => REPORT_REASON_LABEL[r.reason] ?? r.reason;
+
+/** Ícone do que foi removido: imagem, avaliação ou mensagem (ADR 44). */
+function RemovalIcon({ type }: { type: ContentRemoval['targetType'] }) {
+  if (type === 'review') return <StarOff size={18} />;
+  if (type === 'message') return <MessageSquareOff size={18} />;
+  return <ImageOff size={18} />;
+}
 
 /** Reincidência: um segmento por remoção até o limite que leva a conta para revisão. */
 function StrikePanel({ strikes }: { strikes: StrikeSummary }) {
-  const { strikes: count, reviewThreshold, windowDays, uploadsBlockedUntil } = strikes;
+  const {
+    strikes: count,
+    imageStrikes,
+    reviewThreshold,
+    windowDays,
+    uploadsBlockedUntil,
+  } = strikes;
   const tone = uploadsBlockedUntil ? 'blocked' : count === 0 ? 'clear' : '';
   return (
     <div className={`strike-panel ${tone}`} data-testid="strike-panel">
@@ -41,14 +54,14 @@ function StrikePanel({ strikes }: { strikes: StrikeSummary }) {
       <p>
         {uploadsBlockedUntil ? (
           <>
-            <strong>Envio de imagens bloqueado até {dtm(uploadsBlockedUntil)}.</strong> Com {count}{' '}
-            imagens removidas nos últimos {windowDays} dias, novos envios ficam parados por um tempo
-            que cresce a cada remoção.
+            <strong>Envio de imagens bloqueado até {dtm(uploadsBlockedUntil)}.</strong> Com{' '}
+            {imageStrikes} imagens removidas nos últimos {windowDays} dias, novos envios de imagem
+            ficam parados por um tempo que cresce a cada nova imagem removida.
           </>
         ) : count === 0 ? (
           'Nenhuma remoção conta contra você agora: remoções revertidas ou antigas não contam.'
         ) : (
-          `${count === 1 ? 'Uma remoção conta' : `${count} remoções contam`} nos últimos ${windowDays} dias. A partir da segunda, o envio de imagens fica bloqueado por um tempo; com ${reviewThreshold}, a conta passa por revisão.`
+          `${count === 1 ? 'Uma remoção conta' : `${count} remoções contam`} nos últimos ${windowDays} dias. A partir da segunda imagem removida, o envio de imagens fica bloqueado por um tempo; com ${reviewThreshold} remoções de qualquer conteúdo, a conta passa por revisão.`
         )}
       </p>
     </div>
@@ -56,7 +69,7 @@ function StrikePanel({ strikes }: { strikes: StrikeSummary }) {
 }
 
 /** Situação da remoção, na linha de baixo do item. */
-function RemovalFoot({ removal, onAppeal }: { removal: ImageRemoval; onAppeal: () => void }) {
+function RemovalFoot({ removal, onAppeal }: { removal: ContentRemoval; onAppeal: () => void }) {
   if (removal.canAppeal) {
     return (
       <div className="removal-foot">
@@ -86,14 +99,14 @@ export function ModeracaoCard() {
   const moderation = useMyModeration();
   const appeal = useAppealRemoval();
   const toast = useToast();
-  const [appealing, setAppealing] = useState<ImageRemoval | null>(null);
+  const [appealing, setAppealing] = useState<ContentRemoval | null>(null);
   const [text, setText] = useState('');
 
   const data = moderation.data;
   if (!data || data.removals.length === 0) return null;
   const length = text.trim().length;
 
-  function open(removal: ImageRemoval): void {
+  function open(removal: ContentRemoval): void {
     setText('');
     setAppealing(removal);
   }
@@ -117,9 +130,7 @@ export function ModeracaoCard() {
           <ShieldAlert size={16} /> Moderação
         </h3>
         <span className="muted tiny">
-          {data.removals.length === 1
-            ? '1 imagem removida'
-            : `${data.removals.length} imagens removidas`}
+          {data.removals.length === 1 ? '1 remoção' : `${data.removals.length} remoções`}
         </span>
       </div>
       <StrikePanel strikes={data.strikes} />
@@ -131,7 +142,11 @@ export function ModeracaoCard() {
               className={`removal-ico${r.status === 'overturned' ? ' restored' : ''}`}
               aria-hidden="true"
             >
-              {r.status === 'overturned' ? <ShieldCheck size={18} /> : <ImageOff size={18} />}
+              {r.status === 'overturned' ? (
+                <ShieldCheck size={18} />
+              ) : (
+                <RemovalIcon type={r.targetType} />
+              )}
             </span>
             <div className="removal-body">
               <div className="removal-head">
@@ -143,6 +158,12 @@ export function ModeracaoCard() {
               <span className="muted tiny">
                 Removida em {dtm(r.removedAt)} · {reasonOf(r)}
               </span>
+              {r.excerpt && (
+                <p className="removal-quote removed">
+                  <span>Conteúdo removido</span>
+                  {r.excerpt}
+                </p>
+              )}
               {r.note && (
                 <p className="removal-quote">
                   <span>Nota da moderação</span>
@@ -172,7 +193,7 @@ export function ModeracaoCard() {
           <form className="stack" onSubmit={submit}>
             <div className="report-subject">
               <span className="report-thumb icon" aria-hidden="true">
-                <ImageOff size={18} />
+                <RemovalIcon type={appealing.targetType} />
               </span>
               <div className="cell-title">
                 <strong>{appealing.label}</strong>
@@ -181,10 +202,16 @@ export function ModeracaoCard() {
                 </span>
               </div>
             </div>
+            {appealing.excerpt && (
+              <p className="removal-quote removed">
+                <span>Conteúdo removido</span>
+                {appealing.excerpt}
+              </p>
+            )}
             <p className="muted tiny">
-              Conte por que a imagem não viola as regras: de quem é, onde foi feita e o que mostra.
-              A contestação é analisada uma vez. Se for aceita, a imagem volta para onde estava e a
-              remoção deixa de contar.
+              Conte por que {appealing.excerpt ? 'o conteúdo' : 'a imagem'} não viola as regras: o
+              contexto, de quem é e o que mostra. A contestação é analisada uma vez. Se for aceita,
+              o conteúdo volta para onde estava e a remoção deixa de contar.
             </p>
             <Field label="Por que a remoção deve ser revertida">
               <textarea

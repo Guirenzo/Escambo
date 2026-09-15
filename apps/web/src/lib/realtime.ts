@@ -54,6 +54,10 @@ export function useRealtimeNotifications(): void {
         void qc.invalidateQueries({ queryKey: ['portfolio'] });
         void qc.invalidateQueries({ queryKey: ['publicFreelancer'] });
         void qc.invalidateQueries({ queryKey: qk.myModeration });
+        // Avaliação e mensagem removidas ou devolvidas (ADR 44).
+        void qc.invalidateQueries({ queryKey: ['contract'] });
+        void qc.invalidateQueries({ queryKey: ['reviews'] });
+        void qc.invalidateQueries({ queryKey: ['chat'] });
       }
       // Mensagem de chat com a sala aberta já aparece no próprio chat; o resto avisa.
       const inRoom =

@@ -98,7 +98,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     type: 'integer',
     label: 'Janela de reincidência',
     description:
-      'Remoções de imagem não revertidas dentro desse tempo contam juntas para o bloqueio de envio e a revisão da conta (ADR 41).',
+      'Remoções não revertidas dentro desse tempo contam juntas: as de imagem para o bloqueio de envio, e todas (imagem, avaliação e mensagem) para a revisão da conta (ADR 41 e 44).',
     unit: 'dias',
     min: 30,
     max: 730,
@@ -108,7 +108,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     type: 'integer',
     label: 'Bloqueio de envio por reincidência',
     description:
-      'Da segunda remoção na janela em diante, a pessoa fica esse tempo sem enviar imagens, multiplicado pelas remoções depois da primeira. Zero desliga o bloqueio (ADR 41).',
+      'Da segunda imagem removida na janela em diante, a pessoa fica esse tempo sem enviar imagens, multiplicado pelas imagens removidas depois da primeira. Avaliação e mensagem removidas não bloqueiam. Zero desliga o bloqueio (ADR 41 e 44).',
     unit: 'dias',
     min: 0,
     max: 90,
@@ -118,7 +118,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     type: 'integer',
     label: 'Revisão da conta por reincidência',
     description:
-      'Com essa quantidade de remoções na janela, a fila de denúncias recebe a conta para revisão, uma vez enquanto a revisão estiver aberta (ADR 41).',
+      'Com essa quantidade de remoções na janela, de imagem, avaliação ou mensagem, a fila de denúncias recebe a conta para revisão, uma vez enquanto a revisão estiver aberta (ADR 41 e 44).',
     unit: 'remoções',
     min: 2,
     max: 20,

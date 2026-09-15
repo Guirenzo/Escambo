@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./image-removals.repository', () => ({
-  imageRemovalsRepository: {
+vi.mock('./content-removals.repository', () => ({
+  contentRemovalsRepository: {
     findById: vi.fn(),
     listForOwner: vi.fn(),
     appeal: vi.fn(),
     uphold: vi.fn(),
     overturn: vi.fn(),
+    overturnContent: vi.fn(),
     markFilePurged: vi.fn(),
     listQuarantineToPurge: vi.fn(),
   },
@@ -24,14 +25,18 @@ vi.mock('../media/media.storage', () => ({
 vi.mock('../notifications/notifications.service', () => ({
   notificationsService: { notify: vi.fn() },
 }));
+vi.mock('../messaging/messaging.service', () => ({
+  messagingService: { announceChange: vi.fn().mockResolvedValue(undefined) },
+}));
 
 import { deleteQuarantined, restoreQuarantined } from '../media/media.storage';
+import { messagingService } from '../messaging/messaging.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { appealsService } from './appeals.service';
-import { imageRemovalsRepository } from './image-removals.repository';
+import { contentRemovalsRepository } from './content-removals.repository';
 import { strikePolicy, strikeSummary } from './moderation.strikes';
 
-const repo = vi.mocked(imageRemovalsRepository);
+const repo = vi.mocked(contentRemovalsRepository);
 const policy = vi.mocked(strikePolicy);
 const summary = vi.mocked(strikeSummary);
 const notify = vi.mocked(notificationsService.notify);
@@ -49,6 +54,7 @@ const removal = (o: Record<string, unknown> = {}) =>
     target_type: 'avatar',
     target_id: 9,
     image_url: MEDIA,
+    content_snapshot: null,
     reason: 'offensive',
     note: 'Imagem ofensiva.',
     cleared_refs: [{ table: 'profiles_freelancer', id: 2 }],
@@ -77,6 +83,7 @@ beforeEach(() => {
   });
   summary.mockResolvedValue({
     strikes: 1,
+    imageStrikes: 1,
     windowDays: 180,
     reviewThreshold: 3,
     uploadsBlockedUntil: null,
@@ -141,12 +148,13 @@ describe('contestação de remoção de imagem (ADR 41)', () => {
       type: 'appeal_decided',
       title: 'Contestação analisada: a remoção foi mantida',
       body: 'Foto de perfil continua fora do ar. Continua ofensiva.',
-      data: { imageRemovalId: 31, decision: 'upheld' },
+      data: { removalId: 31, decision: 'upheld' },
     });
     expect(r).toEqual({
       status: 'upheld',
       restoredReferences: 0,
       imageRestored: false,
+      contentRestored: false,
       fileDeleted: true,
     });
   });
@@ -176,6 +184,7 @@ describe('contestação de remoção de imagem (ADR 41)', () => {
       status: 'overturned',
       restoredReferences: 1,
       imageRestored: true,
+      contentRestored: true,
       fileDeleted: false,
     });
   });
@@ -215,5 +224,59 @@ describe('contestação de remoção de imagem (ADR 41)', () => {
     expect(repo.listQuarantineToPurge).toHaveBeenCalledWith(new Date('2026-09-06T12:00:00Z'), 500);
     expect(removeFile).toHaveBeenCalledWith('32.png');
     expect(repo.markFilePurged).toHaveBeenCalledTimes(2);
+  });
+
+  it('mensagem: reverter devolve ao chat e avisa a sala e o autor, sem mexer em arquivo (ADR 44)', async () => {
+    repo.findById.mockResolvedValue(
+      removal({
+        status: 'appealed',
+        target_type: 'message',
+        target_id: 55,
+        image_url: null,
+        content_snapshot: 'Me paga no pix',
+        cleared_refs: null,
+        quarantine_file: null,
+        blocklist_id: null,
+      }),
+    );
+    repo.overturnContent.mockResolvedValue({ decided: true, restored: 1 });
+
+    const r = await appealsService.decide(1, 31, 'overturn', 'Era brincadeira.');
+
+    expect(repo.overturnContent).toHaveBeenCalledWith({
+      id: 31,
+      adminId: 1,
+      note: 'Era brincadeira.',
+      targetType: 'message',
+      targetId: 55,
+    });
+    expect(repo.overturn).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
+    expect(vi.mocked(messagingService.announceChange)).toHaveBeenCalledWith(55);
+    expect(notify).toHaveBeenCalledWith(9, {
+      type: 'appeal_decided',
+      title: 'Contestação aceita: seu conteúdo voltou',
+      body: 'Sua mensagem voltou ao chat e a remoção deixou de contar como ocorrência. Era brincadeira.',
+      data: { removalId: 31, decision: 'overturned' },
+    });
+    expect(r).toEqual({
+      status: 'overturned',
+      restoredReferences: 1,
+      imageRestored: false,
+      contentRestored: true,
+      fileDeleted: false,
+    });
+  });
+
+  it('o dono vê o rótulo e o texto da avaliação removida (ADR 44)', async () => {
+    repo.listForOwner.mockResolvedValue([
+      removal({ target_type: 'review', image_url: null, content_snapshot: 'Nota 1 de 5. Ruim.' }),
+    ]);
+    const mine = await appealsService.mine(9, NOW);
+    expect(mine.removals[0]).toMatchObject({
+      targetType: 'review',
+      label: 'Avaliação',
+      excerpt: 'Nota 1 de 5. Ruim.',
+    });
   });
 });

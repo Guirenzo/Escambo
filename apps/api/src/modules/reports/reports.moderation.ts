@@ -10,11 +10,12 @@ import { HttpError } from '../../utils/http-error';
 import { fingerprint } from '../media/media.image';
 import { mediaKeyFromUrl } from '../media/media.paths';
 import { deleteMediaImage, quarantineMediaImage, readMediaFile } from '../media/media.storage';
+import { messagingService } from '../messaging/messaging.service';
 import { notificationsService } from '../notifications/notifications.service';
-import { imageRemovalsRepository } from './image-removals.repository';
+import { contentRemovalsRepository } from './content-removals.repository';
 import { appealDeadline, brDateTime, strikePolicy, strikeSummary } from './moderation.strikes';
 import { reportsRepository, type ContentReportRow, type TargetInfoRow } from './reports.repository';
-import { isImageTarget, type ReportAction } from './reports.schema';
+import { isImageTarget, isTextTarget, type ReportAction } from './reports.schema';
 
 /**
  * Fila de moderação (ADR 39). Denúncias do mesmo alvo e da mesma imagem viram um grupo (a foto pode
@@ -122,6 +123,122 @@ function toGroup(rows: ContentReportRow[], info: TargetInfoRow | undefined): Adm
   };
 }
 
+/** Cópia do texto removido (ADR 44): a nota vai junto na avaliação, o nome do anexo na mensagem. */
+export function contentSnapshot(
+  type: string,
+  t: { text: string | null; rating: number | null; file_name: string | null },
+): string {
+  const text = t.text?.trim() ?? '';
+  const body =
+    type === 'review'
+      ? [`Nota ${t.rating ?? '?'} de 5.`, text].filter(Boolean).join(' ')
+      : text || (t.file_name ? `Anexo: ${t.file_name}` : '(mensagem sem texto)');
+  return body.length > 1000 ? `${body.slice(0, 999)}…` : body;
+}
+
+/**
+ * O dono chegou ao limite de reincidência com esta remoção? Abre a denúncia da conta para revisão,
+ * uma vez enquanto ela estiver aberta. Conta qualquer conteúdo removido (ADR 41 e 44).
+ */
+async function openAccountReview(
+  adminId: number,
+  ownerId: number,
+  strikes: StrikeSummary,
+  reviewThreshold: number,
+): Promise<boolean> {
+  if (strikes.strikes < reviewThreshold) return false;
+  if (await reportsRepository.hasOpenAccountReview(ownerId)) return false;
+  await reportsRepository.create({
+    reporterId: adminId,
+    targetType: 'user',
+    targetId: ownerId,
+    imageUrl: null,
+    reason: 'other',
+    description: `Reincidência: ${strikes.strikes} remoções de conteúdo nos últimos ${strikes.windowDays} dias. Revise a conta.`,
+  });
+  return true;
+}
+
+/**
+ * Remove a avaliação ou a mensagem do grupo (ADR 44): tira do ar numa transação, avisa o autor com
+ * o prazo para contestar, conta a reincidência e, se for mensagem, atualiza o chat das duas partes.
+ * Conteúdo que já tinha saído do ar só fecha as denúncias.
+ */
+async function removeContent(
+  adminId: number,
+  reportId: number,
+  report: ContentReportRow,
+  group: {
+    targetType: string;
+    targetId: number;
+    imageUrl: string | null;
+    adminId: number;
+    note: string | null;
+  },
+): Promise<AdminReportActionResult> {
+  const type = report.target_type;
+  if (!isTextTarget(type)) {
+    throw new HttpError(
+      422,
+      'Só uma denúncia de avaliação ou de mensagem permite remover o conteúdo',
+      'not_a_content_report',
+    );
+  }
+  const content = await reportsRepository.textTarget(type, report.target_id);
+  const author =
+    content && !content.removed_at
+      ? { id: content.owner_id, snapshot: contentSnapshot(type, content) }
+      : null;
+  const { reports, removalId } = await reportsRepository.removeContentAndClose({
+    ...group,
+    targetType: type,
+    reportId,
+    reason: report.reason,
+    author,
+  });
+
+  let strikes: StrikeSummary | null = null;
+  let accountReviewOpened = false;
+  if (author && removalId !== null) {
+    const policy = await strikePolicy();
+    const now = new Date();
+    strikes = await strikeSummary(author.id, now, policy);
+    accountReviewOpened = await openAccountReview(
+      adminId,
+      author.id,
+      strikes,
+      policy.reviewThreshold,
+    );
+    await notificationsService.notify(author.id, {
+      type: 'content_removed',
+      title:
+        type === 'review' ? 'Sua avaliação foi removida' : 'Uma mensagem sua no chat foi removida',
+      body: [
+        `A moderação removeu ${type === 'review' ? 'a avaliação' : 'a mensagem'} por ${REASON_TEXT[report.reason] ?? REASON_TEXT.other}.`,
+        group.note,
+        `Se discordar, conteste pelo seu perfil até ${brDateTime(appealDeadline(now, policy.appealWindowDays))}.`,
+      ]
+        .filter(Boolean)
+        .join(' '),
+      data: { contentRemoved: type, reportId, removalId },
+    });
+    if (type === 'message') {
+      await messagingService.announceChange(report.target_id).catch(() => undefined);
+    }
+  }
+  return {
+    status: 'actioned',
+    reports,
+    referencesCleared: 0,
+    fileRemoved: false,
+    blocked: false,
+    removalId,
+    ownerStrikes: strikes?.strikes ?? null,
+    uploadsBlockedUntil: strikes?.uploadsBlockedUntil ?? null,
+    accountReviewOpened,
+  };
+}
+
 const NO_REMOVAL = {
   referencesCleared: 0,
   fileRemoved: false,
@@ -190,7 +307,11 @@ export const moderationService = {
       note,
     };
 
-    if (action !== 'remove-image') {
+    if (action === 'remove-content') {
+      return { target, result: await removeContent(adminId, reportId, report, group) };
+    }
+
+    if (action === 'dismiss' || action === 'resolve') {
       const status = action === 'dismiss' ? 'dismissed' : 'actioned';
       const reports = await reportsRepository.closeGroup({ ...group, status });
       return { target, result: { ...NO_REMOVAL, status, reports } };
@@ -221,7 +342,7 @@ export const moderationService = {
     let fileRemoved = false;
     if (key && removalId !== null) {
       const quarantined = await quarantineMediaImage(key, removalId);
-      if (quarantined) await imageRemovalsRepository.setQuarantineFile(removalId, quarantined);
+      if (quarantined) await contentRemovalsRepository.setQuarantineFile(removalId, quarantined);
       fileRemoved = quarantined !== null;
     } else if (key) {
       fileRemoved = await deleteMediaImage(key);
@@ -233,20 +354,12 @@ export const moderationService = {
       const policy = await strikePolicy();
       const now = new Date();
       strikes = await strikeSummary(owner.owner_id, now, policy);
-      if (
-        strikes.strikes >= policy.reviewThreshold &&
-        !(await reportsRepository.hasOpenAccountReview(owner.owner_id))
-      ) {
-        await reportsRepository.create({
-          reporterId: adminId,
-          targetType: 'user',
-          targetId: owner.owner_id,
-          imageUrl: null,
-          reason: 'other',
-          description: `Reincidência: ${strikes.strikes} imagens removidas nos últimos ${policy.windowDays} dias. Revise a conta.`,
-        });
-        accountReviewOpened = true;
-      }
+      accountReviewOpened = await openAccountReview(
+        adminId,
+        owner.owner_id,
+        strikes,
+        policy.reviewThreshold,
+      );
       await notificationsService.notify(owner.owner_id, {
         type: 'content_removed',
         title:
@@ -261,12 +374,12 @@ export const moderationService = {
           print ? 'A mesma imagem não pode ser enviada de novo.' : null,
           `Se discordar, conteste pelo seu perfil até ${brDateTime(appealDeadline(now, policy.appealWindowDays))}.`,
           strikes.uploadsBlockedUntil
-            ? `Como é a ${strikes.strikes}ª imagem removida nos últimos ${strikes.windowDays} dias, o envio de imagens fica bloqueado até ${brDateTime(new Date(strikes.uploadsBlockedUntil))}.`
+            ? `Como é a ${strikes.imageStrikes}ª imagem removida nos últimos ${strikes.windowDays} dias, o envio de imagens fica bloqueado até ${brDateTime(new Date(strikes.uploadsBlockedUntil))}.`
             : null,
         ]
           .filter(Boolean)
           .join(' '),
-        data: { contentRemoved: report.target_type, reportId, imageRemovalId: removalId },
+        data: { contentRemoved: report.target_type, reportId, removalId },
       });
     }
     return {

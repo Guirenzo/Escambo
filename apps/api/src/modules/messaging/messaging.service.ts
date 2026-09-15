@@ -57,14 +57,17 @@ const PURGED_MESSAGE: Record<PurgeReason, string> = {
 };
 
 function toMessage(row: MessageRow): ChatMessage {
+  // Removida pela moderação (ADR 44): as duas partes veem o aviso, sem o texto nem o anexo.
+  const removedAt = row.removed_at ? new Date(row.removed_at).toISOString() : null;
   return {
     id: row.id,
     conversationId: row.conversation_id,
     senderId: row.sender_id,
     type: row.type === 'image' || row.type === 'file' ? row.type : 'text',
-    content: row.content ?? '',
-    attachment: toAttachment(row),
+    content: removedAt ? '' : (row.content ?? ''),
+    attachment: removedAt ? null : toAttachment(row),
     createdAt: new Date(row.created_at).toISOString(),
+    removedAt,
   };
 }
 
@@ -144,6 +147,16 @@ function deliver(ctx: ConversationContext, uid: number, row: MessageRow): ChatMe
 }
 
 export const messagingService = {
+  /** Avisa a sala do contrato que a mensagem mudou: removida ou devolvida pela moderação (ADR 44). */
+  async announceChange(messageId: number): Promise<void> {
+    const row = await messagingRepository.findWithContract(messageId);
+    if (!row?.contract_id) return;
+    realtime.emitToContract(row.contract_id, 'message:updated', {
+      ...toMessage(row),
+      contractId: row.contract_id,
+    });
+  },
+
   /** Histórico do chat do contrato (somente para as partes). */
   async history(contractId: number, uid: number): Promise<ChatHistory> {
     const ctx = await contextFor(contractId, uid);
@@ -216,6 +229,9 @@ export const messagingService = {
     if (!row) throw new HttpError(404, 'Anexo não encontrado', 'attachment_not_found');
     if (row.participant_a !== uid && row.participant_b !== uid) {
       throw new HttpError(403, 'Você não participa desta conversa', 'forbidden');
+    }
+    if (row.removed_at) {
+      throw new HttpError(410, 'Esta mensagem foi removida pela moderação', 'message_removed');
     }
     if (row.file_purged_at) {
       throw new HttpError(

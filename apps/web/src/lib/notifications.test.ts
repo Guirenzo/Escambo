@@ -10,7 +10,8 @@ describe('notificationPath', () => {
     expect(notificationPath({ depositId: 1 })).toBe('/carteira');
     expect(notificationPath({ exportRequestId: 5 })).toBe('/perfil');
     expect(notificationPath({ contentRemoved: 'avatar', reportId: 3 })).toBe('/perfil');
-    expect(notificationPath({ imageRemovalId: 8, decision: 'overturned' })).toBe('/perfil');
+    expect(notificationPath({ removalId: 8, decision: 'overturned' })).toBe('/perfil');
+    expect(notificationPath({ imageRemovalId: 8 })).toBe('/perfil');
   });
 
   it('sem destino conhecido não inventa link', () => {

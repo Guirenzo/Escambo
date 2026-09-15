@@ -15,6 +15,12 @@ export type ImageTarget = (typeof IMAGE_TARGETS)[number];
 export const isImageTarget = (t: string): t is ImageTarget =>
   (IMAGE_TARGETS as readonly string[]).includes(t);
 
+/** Alvos de texto (ADR 44): a moderação pode tirar a avaliação ou a mensagem do ar. */
+export const TEXT_TARGETS = ['review', 'message'] as const;
+export type TextTarget = (typeof TEXT_TARGETS)[number];
+export const isTextTarget = (t: string): t is TextTarget =>
+  (TEXT_TARGETS as readonly string[]).includes(t);
+
 export const REPORT_REASONS = [
   'spam',
   'fraud',
@@ -39,7 +45,7 @@ export const moderationQuerySchema = z.object({
 
 export const reportActionParamSchema = z.object({
   id: z.coerce.number().int().positive(),
-  action: z.enum(['dismiss', 'resolve', 'remove-image']),
+  action: z.enum(['dismiss', 'resolve', 'remove-image', 'remove-content']),
 });
 export type ReportAction = z.infer<typeof reportActionParamSchema>['action'];
 

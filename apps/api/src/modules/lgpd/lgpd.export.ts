@@ -10,10 +10,11 @@ import { env } from '../../config/env';
  * titular, em JSON legível, e guarda o arquivo em DATA_DIR/exports. Só leitura no banco.
  * Formato 1.1: entram as buscas salvas, com a frequência do alerta (ADR 37). Formato 1.2: entram
  * as imagens removidas pela moderação, com a contestação e a decisão (ADR 41). Formato 1.3: a
- * preferência de e-mail e a hora do resumo do dia entram nos dados do titular (ADR 42).
+ * preferência de e-mail e a hora do resumo do dia entram nos dados do titular (ADR 42). Formato
+ * 1.4: o texto das avaliações e mensagens removidas pela moderação (ADR 44).
  */
 
-export const EXPORT_FORMAT_VERSION = '1.3';
+export const EXPORT_FORMAT_VERSION = '1.4';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -129,9 +130,9 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     p,
   );
   const moderation = await q(
-    `SELECT id, target_type, reason, note, removed_at, status, appeal_text, appealed_at,
+    `SELECT id, target_type, content_snapshot, reason, note, removed_at, status, appeal_text, appealed_at,
             decided_at, decision_note
-       FROM image_removals WHERE owner_id = :userId ORDER BY id`,
+       FROM content_removals WHERE owner_id = :userId ORDER BY id`,
     p,
   );
   const favorites = await q(

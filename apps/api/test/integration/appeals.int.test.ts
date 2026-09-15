@@ -174,7 +174,7 @@ describe('Contestação e reincidência (ADR 41)', () => {
     await request(app).get(url).expect(404);
 
     const warned = (await notificationsOf(owner)).find((n) => n.type === 'content_removed');
-    expect(warned!.data).toMatchObject({ imageRemovalId: id });
+    expect(warned!.data).toMatchObject({ removalId: id });
     expect(warned!.body).toMatch(
       /Se discordar, conteste pelo seu perfil até \d{2}\/\d{2}\/\d{4} às \d{2}:\d{2}\./,
     );
@@ -182,6 +182,7 @@ describe('Contestação e reincidência (ADR 41)', () => {
     const mine = await removalsOf(owner).expect(200);
     expect(mine.body.strikes).toEqual({
       strikes: 1,
+      imageStrikes: 1,
       windowDays: 180,
       reviewThreshold: 3,
       uploadsBlockedUntil: null,
@@ -243,6 +244,7 @@ describe('Contestação e reincidência (ADR 41)', () => {
       status: 'overturned',
       restoredReferences: 1,
       imageRestored: true,
+      contentRestored: true,
       fileDeleted: false,
     });
 
@@ -264,7 +266,7 @@ describe('Contestação e reincidência (ADR 41)', () => {
     });
     expect((await notificationsOf(owner)).find((n) => n.type === 'appeal_decided')).toMatchObject({
       title: 'Contestação aceita: sua imagem voltou',
-      data: { imageRemovalId: id, decision: 'overturned' },
+      data: { removalId: id, decision: 'overturned' },
     });
     const again = await decide(admin, id, 'uphold');
     expect([again.status, again.body.error]).toEqual([409, 'appeal_not_pending']);
@@ -294,6 +296,7 @@ describe('Contestação e reincidência (ADR 41)', () => {
       status: 'upheld',
       restoredReferences: 0,
       imageRestored: false,
+      contentRestored: false,
       fileDeleted: true,
     });
     const gone = await request(app)
@@ -320,7 +323,7 @@ describe('Contestação e reincidência (ADR 41)', () => {
     const blocked = await upload(owner, await blocks(1401), 'portfolio');
     expect([blocked.status, blocked.body.error]).toEqual([403, 'uploads_restricted']);
     const warned = (await notificationsOf(owner)).find(
-      (n) => n.data?.imageRemovalId === second.removalId,
+      (n) => n.data?.removalId === second.removalId,
     );
     expect(warned!.body).toContain(
       'Como é a 2ª imagem removida nos últimos 180 dias, o envio de imagens fica bloqueado até',
@@ -328,7 +331,7 @@ describe('Contestação e reincidência (ADR 41)', () => {
 
     // Prazo vencido: não contesta mais, e o expurgo apaga o arquivo guardado.
     await pool.query(
-      'UPDATE image_removals SET removed_at = DATE_SUB(NOW(), INTERVAL 15 DAY) WHERE id = ?',
+      'UPDATE content_removals SET removed_at = DATE_SUB(NOW(), INTERVAL 15 DAY) WHERE id = ?',
       [second.removalId],
     );
     const late = await appeal(owner, second.removalId, 'Contestação enviada depois do prazo.');
@@ -339,7 +342,7 @@ describe('Contestação e reincidência (ADR 41)', () => {
       canAppeal: false,
     });
     expect(await appealsService.purgeQuarantine()).toBeGreaterThanOrEqual(1);
-    const [rows] = await pool.query('SELECT file_purged_at FROM image_removals WHERE id = ?', [
+    const [rows] = await pool.query('SELECT file_purged_at FROM content_removals WHERE id = ?', [
       second.removalId,
     ]);
     expect((rows as { file_purged_at: Date | null }[])[0]!.file_purged_at).not.toBeNull();
@@ -381,7 +384,7 @@ describe('Contestação e reincidência (ADR 41)', () => {
     expect(review[0]).toMatchObject({
       label: 'Perfil',
       reports: 1,
-      descriptions: ['Reincidência: 3 imagens removidas nos últimos 180 dias. Revise a conta.'],
+      descriptions: ['Reincidência: 3 remoções de conteúdo nos últimos 180 dias. Revise a conta.'],
     });
   });
 });

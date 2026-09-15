@@ -1100,7 +1100,7 @@ CREATE TABLE disputes (
 ---
 
 ### `content_reports`
-Denúncias de conteúdo/usuário (trust & safety). `target_id` é polimórfico conforme `target_type`. Foto de perfil (`avatar`, com `target_id` = usuário) e imagem do portfólio (`portfolio_item`) guardam a imagem denunciada em `image_url`, e a decisão do admin fica em `resolution_note` (migration 0017, ADR 39). Imagens removidas vão para `media_blocklist` (assinatura SHA-256 e impressão perceptual), que barra o reenvio, e cada remoção com dono vira um registro contestável em `image_removals` (ADR 41).
+Denúncias de conteúdo/usuário (trust & safety). `target_id` é polimórfico conforme `target_type`. Foto de perfil (`avatar`, com `target_id` = usuário) e imagem do portfólio (`portfolio_item`) guardam a imagem denunciada em `image_url`, e a decisão do admin fica em `resolution_note` (migration 0017, ADR 39). Imagens removidas vão para `media_blocklist` (assinatura SHA-256 e impressão perceptual), que barra o reenvio, e cada remoção com dono vira um registro contestável em `content_removals` (ADR 41 e 44). Avaliações e mensagens removidas pela moderação ganham `removed_at` e saem do ar sem perder a linha (migration 0020, ADR 44).
 
 ```sql
 CREATE TABLE content_reports (
@@ -1124,20 +1124,21 @@ CREATE TABLE content_reports (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
-### `image_removals`
-Remoções de imagem feitas pela moderação (migration 0018, ADR 41). Guarda de onde a imagem saiu (`cleared_refs`, para recolocar se a remoção for revertida), o arquivo em quarentena fora do ar (`quarantine_file`) enquanto cabe contestação e a vida da remoção em `status`: `removed` (sem contestação), `appealed` (esperando o admin), `upheld` (mantida) e `overturned` (revertida). Remoções não revertidas dentro de `strike_window_days` contam como reincidência, calculada na hora, sem contador guardado.
+### `content_removals`
+Conteúdo removido pela moderação: imagem, avaliação ou mensagem (migrations 0018 e 0020, ADR 41 e 44). Até a 0020 a tabela se chamava `image_removals` e só guardava imagens; `content_snapshot` guarda o texto removido de avaliação e mensagem. Guarda de onde a imagem saiu (`cleared_refs`, para recolocar se a remoção for revertida), o arquivo em quarentena fora do ar (`quarantine_file`) enquanto cabe contestação e a vida da remoção em `status`: `removed` (sem contestação), `appealed` (esperando o admin), `upheld` (mantida) e `overturned` (revertida). Remoções não revertidas dentro de `strike_window_days` contam como reincidência, calculada na hora, sem contador guardado.
 
 ```sql
-CREATE TABLE image_removals (
+CREATE TABLE content_removals (
   id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   report_id       BIGINT UNSIGNED NULL,
   owner_id        BIGINT UNSIGNED NOT NULL,
-  target_type     ENUM('avatar', 'portfolio_item') NOT NULL,
+  target_type     ENUM('avatar', 'portfolio_item', 'review', 'message') NOT NULL,
   target_id       BIGINT UNSIGNED NOT NULL,
-  image_url       VARCHAR(512)    NOT NULL,
+  image_url       VARCHAR(512)    NULL,
+  content_snapshot VARCHAR(1200)  NULL,
   reason          ENUM('spam', 'fraud', 'offensive', 'off_platform', 'illegal', 'other') NOT NULL,
   note            VARCHAR(500)    NULL,
-  cleared_refs    JSON            NOT NULL,
+  cleared_refs    JSON            NULL,
   quarantine_file VARCHAR(80)     NULL,
   blocklist_id    BIGINT UNSIGNED NULL,
   removed_by      BIGINT UNSIGNED NULL,

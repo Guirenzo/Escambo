@@ -5,6 +5,32 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.26.0] — 2026-09-15
+
+### Adicionado
+
+- **Remover avaliação ou mensagem denunciada** (ADR 44). Na fila de denúncias, os grupos de
+  avaliação e de mensagem ganham "Remover avaliação" e "Remover mensagem".
+  - A avaliação sai do perfil público e da nota média, recalculada na hora; na contratação, as
+    partes veem que ela foi removida pela moderação.
+  - A mensagem vira um aviso no chat para as duas partes, em tempo real, e o anexo dela deixa de
+    ser servido.
+  - O autor recebe notificação e e-mail com a nota e o prazo para contestar.
+  - `POST /api/admin/reports/:id/remove-content`.
+- **Contestação de avaliação e mensagem** (ADR 44). O cartão "Moderação" do perfil mostra o texto
+  removido e aceita a contestação; na fila do admin, o texto aparece na decisão, e reverter devolve
+  a avaliação, com a nota recalculada, ou a mensagem. A decisão ganha `contentRestored`.
+
+### Alterado
+
+- A tabela `image_removals` passa a se chamar `content_removals` e guarda uma cópia do texto
+  removido. Migration `0020_moderacao_conteudo`.
+- A reincidência conta qualquer conteúdo removido para a revisão da conta; o bloqueio de envio
+  segue só para imagens, e o resumo da reincidência ganha `imageStrikes`.
+- As notificações de remoção e de decisão usam `removalId` nos dados; os links continuam aceitando
+  `imageRemovalId`.
+- A cópia de dados da LGPD passa ao formato 1.4, com o texto removido.
+
 ## [1.25.0] — 2026-09-15
 
 ### Adicionado
