@@ -1,6 +1,6 @@
 import { Heart, MapPin, Plus, Search } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
-import type { Category, Service } from '@escambo/types';
+import type { AvailabilityPeriod, Category, Service } from '@escambo/types';
 import { useNavigate } from 'react-router-dom';
 import {
   Button,
@@ -26,7 +26,7 @@ import { useToast } from '../../lib/toast';
 import { BoostModal } from '../services/BoostModal';
 import { ContratarModal } from '../services/ContratarModal';
 import { ServiceCard } from '../services/ServiceCard';
-import { brl, WEEKDAY_SHORT } from '../../lib/format';
+import { brl, PERIOD_LABEL, PERIOD_ORDER, WEEKDAY_SHORT } from '../../lib/format';
 
 function flatten(
   cats: Category[],
@@ -64,6 +64,10 @@ interface Filters {
   minRating: number;
   /** Dia em que o prestador atende (0–6); -1 = qualquer. */
   day: number;
+  /** Período do dia (só com o dia escolhido); '' = qualquer. */
+  period: '' | AvailabilityPeriod;
+  /** Só quem atende agora (Brasília). */
+  now: boolean;
   sort: Sort;
 }
 const NO_FILTERS: Filters = {
@@ -72,6 +76,8 @@ const NO_FILTERS: Filters = {
   maxDeliveryDays: 0,
   minRating: 0,
   day: -1,
+  period: '',
+  now: false,
   sort: 'relevance',
 };
 
@@ -100,6 +106,7 @@ export function ServicosView() {
     filters.maxDeliveryDays > 0 ||
     filters.minRating > 0 ||
     filters.day >= 0 ||
+    filters.now ||
     filters.sort !== 'relevance';
   const services = useServicesInfinite({
     q: submitted,
@@ -110,6 +117,8 @@ export function ServicosView() {
     ...(filters.maxDeliveryDays ? { maxDeliveryDays: filters.maxDeliveryDays } : {}),
     ...(filters.minRating ? { minRating: filters.minRating } : {}),
     ...(filters.day >= 0 ? { day: filters.day } : {}),
+    ...(filters.day >= 0 && filters.period ? { period: filters.period } : {}),
+    ...(filters.now ? { now: true } : {}),
     ...(filters.sort !== 'relevance' ? { sort: filters.sort } : {}),
   });
 
@@ -259,6 +268,16 @@ export function ServicosView() {
         >
           <Heart size={16} /> Só favoritos{favIds.size ? ` (${favIds.size})` : ''}
         </Button>
+        {/* Atende agora (ADR 34): aceitando pedidos, no dia e no período de agora em Brasília */}
+        <Button
+          variant="ghost"
+          className={`toggle ${filters.now ? 'on' : ''}`}
+          aria-pressed={filters.now}
+          title="Aceitando pedidos, no dia e no período de agora (horário de Brasília)"
+          onClick={() => setFilter({ now: !filters.now })}
+        >
+          <span className="now-dot" aria-hidden="true" /> Atende agora
+        </Button>
       </div>
 
       {/* Filtros e ordenação (aplicam na hora) */}
@@ -322,13 +341,33 @@ export function ServicosView() {
           <Select
             aria-label="Atende no dia"
             value={filters.day}
-            onChange={(e) => setFilter({ day: Number(e.target.value) })}
+            onChange={(e) => {
+              const day = Number(e.target.value);
+              setFilter(day < 0 ? { day, period: '' } : { day });
+            }}
           >
             <option value={-1}>qualquer dia</option>
             {WEEKDAY_SHORT.map((label, d) => (
               <option key={d} value={d}>
                 {label}
                 {d === TODAY ? ' (hoje)' : ''}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="filter">
+          <span>Período</span>
+          <Select
+            aria-label="Período do dia"
+            value={filters.period}
+            disabled={filters.day < 0}
+            title={filters.day < 0 ? 'Escolha o dia primeiro' : undefined}
+            onChange={(e) => setFilter({ period: e.target.value as Filters['period'] })}
+          >
+            <option value="">qualquer período</option>
+            {PERIOD_ORDER.map((p) => (
+              <option key={p} value={p}>
+                {PERIOD_LABEL[p]}
               </option>
             ))}
           </Select>

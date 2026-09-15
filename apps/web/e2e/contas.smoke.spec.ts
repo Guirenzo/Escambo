@@ -179,8 +179,16 @@ test('perfil rico: dias de atendimento e portfólio aparecem no perfil público'
   await openAs(page, freelancer, '/perfil');
   await settled(page);
   const form = page.locator('form', { hasText: 'Salvar freelancer' });
-  await form.getByRole('button', { name: 'seg' }).click();
-  await form.getByRole('button', { name: 'qua' }).click();
+  await form.getByRole('button', { name: 'seg', exact: true }).click();
+  await form.getByRole('button', { name: 'qua', exact: true }).click();
+  // Horário (ADR 34): manhã nos dois dias → "seg, qua · manhã" no perfil público.
+  await form.getByRole('button', { name: 'seg manhã' }).click();
+  await form.getByRole('button', { name: 'qua manhã' }).click();
+  await expect(form.getByRole('button', { name: 'seg manhã' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(form.getByRole('switch', { name: 'Aceitando novos pedidos' })).toBeChecked();
   await form.getByRole('button', { name: 'Salvar freelancer' }).click();
   await expect(page.locator('.toast', { hasText: 'Perfil de freelancer salvo' })).toBeVisible();
 
@@ -197,6 +205,6 @@ test('perfil rico: dias de atendimento e portfólio aparecem no perfil público'
   const { ulid } = (await me.json()) as { ulid: string };
   await openAs(page, client, `/freelancers/${ulid}`);
   await settled(page);
-  await expect(page.getByTestId('available-days')).toContainText('atende seg, qua');
+  await expect(page.getByTestId('available-days')).toContainText('atende seg, qua · manhã');
   await expect(page.getByTestId('portfolio')).toContainText('Site da padaria do bairro');
 });

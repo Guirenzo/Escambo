@@ -392,6 +392,12 @@ export interface EscamboScore {
   breakdown: ScoreBreakdown;
 }
 
+/** Período do dia em que o freelancer atende (Brasília): manhã 6–12, tarde 12–18, noite 18–24. */
+export type AvailabilityPeriod = 'morning' | 'afternoon' | 'evening';
+
+/** Por dia marcado ('0' = domingo … '6' = sábado), os períodos; dia sem chave = o dia todo. */
+export type AvailablePeriods = Record<string, AvailabilityPeriod[]>;
+
 export interface FreelancerProfile {
   fullName: string;
   avatarUrl: string | null;
@@ -404,6 +410,10 @@ export interface FreelancerProfile {
   isAvailable: boolean;
   /** Dias da semana em que atende (0 = domingo … 6 = sábado); null = não informou. */
   availableDays: number[] | null;
+  /** Períodos por dia (ADR 34); null = atende o dia todo nos dias marcados. */
+  availablePeriods: AvailablePeriods | null;
+  /** Aceitando pedidos, atende hoje e está num período marcado agora (Brasília). */
+  availableNow: boolean;
   /** Tempo médio de resposta no chat, em horas (média móvel); null = ainda sem amostra. */
   responseTimeHours: number | null;
   avgRating: number;
@@ -461,6 +471,7 @@ export interface UpsertFreelancerProfileRequest {
   longitude?: number | null;
   isAvailable?: boolean;
   availableDays?: number[] | null;
+  availablePeriods?: AvailablePeriods | null;
 }
 
 export interface UpsertClientProfileRequest {
@@ -510,6 +521,9 @@ export interface Service {
   ownerReviews?: number;
   /** Dias em que o prestador atende (0=domingo … 6=sábado); null = não informou. */
   ownerAvailableDays?: number[] | null;
+  ownerAvailablePeriods?: AvailablePeriods | null;
+  /** O prestador atende agora (aceitando pedidos, dia e período de agora). */
+  ownerAvailableNow?: boolean;
 }
 
 // --- Impulsionamento (Boosts) ---

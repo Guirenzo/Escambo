@@ -4,6 +4,7 @@ import { servicesRepository, type ServiceRow } from './services.repository';
 import type { CreateServiceInput, ListServicesInput, UpdateServiceInput } from './services.schema';
 import { parseDays } from '../profiles/profiles.service';
 import { settingsService } from '../settings/settings.service';
+import { currentSlot, isAvailableNow, parsePeriods } from '../profiles/availability';
 
 function toService(row: ServiceRow): Service {
   return {
@@ -31,6 +32,12 @@ function toService(row: ServiceRow): Service {
           ownerRating: Number(row.owner_avg_rating ?? 0),
           ownerReviews: Number(row.owner_total_reviews ?? 0),
           ownerAvailableDays: parseDays(row.owner_available_days),
+          ownerAvailablePeriods: parsePeriods(row.owner_available_periods),
+          ownerAvailableNow: isAvailableNow({
+            isAvailable: Number(row.owner_is_available ?? 0) === 1,
+            availableDays: parseDays(row.owner_available_days),
+            availablePeriods: parsePeriods(row.owner_available_periods),
+          }),
         }
       : {}),
   };
@@ -68,6 +75,9 @@ export const servicesService = {
   },
 
   async list(input: ListServicesInput): Promise<Paginated<Service>> {
+    if (input.period && input.day === undefined) {
+      throw new HttpError(422, 'Escolha o dia para filtrar por período', 'period_requires_day');
+    }
     const rows = await servicesRepository.list({
       categoryId: input.categoryId,
       ownerId: input.ownerId,
@@ -81,6 +91,8 @@ export const servicesService = {
       maxDeliveryDays: input.maxDeliveryDays,
       minRating: input.minRating,
       day: input.day,
+      period: input.period,
+      now: input.now ? currentSlot() : undefined,
       sort: input.sort,
       limit: input.limit,
       offset: (input.page - 1) * input.limit,

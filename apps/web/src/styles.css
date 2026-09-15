@@ -2852,9 +2852,14 @@ button.toggle.on {
 }
 .switch {
   display: inline-flex;
+  /* label global é coluna; o switch é linha: botão e texto lado a lado, alinhados à esquerda */
+  flex-direction: row;
+  align-self: flex-start;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
   cursor: pointer;
 }
 .switch input {
@@ -2883,4 +2888,46 @@ button.toggle.on {
 }
 .switch input:checked::after {
   transform: translateX(16px);
+}
+
+/* ---------- Horário de atendimento (ADR 34) ---------- */
+.periods-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.periods-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.periods-day {
+  width: 36px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+.day-chip.period {
+  padding: 4px 10px;
+  font-size: 0.76rem;
+  text-transform: none;
+}
+.chip.now {
+  gap: 6px;
+  background: var(--green-soft);
+  color: var(--green-ink);
+  border: 1px solid var(--green);
+  white-space: nowrap;
+}
+.chip.now::before,
+.now-dot {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  display: inline-block;
 }

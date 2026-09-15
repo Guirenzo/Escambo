@@ -59,6 +59,13 @@ export const listServicesSchema = z.object({
   // Dia da semana em que o prestador atende (0=domingo … 6=sábado). Quem não informou os
   // dias fica de fora quando há filtro: "atende sábado" é uma afirmação, não um palpite.
   day: z.coerce.number().int().min(0).max(6).optional(),
+  // Período do dia (Brasília) em que atende, junto com `day` (ADR 34). Dia sem períodos = o dia todo.
+  period: z.enum(['morning', 'afternoon', 'evening']).optional(),
+  // Atende agora: aceitando pedidos, no dia e no período de agora em Brasília.
+  now: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
   // Ordenação: relevância (destaque + recência, ou destaque + proximidade com lat/lng),
   // preço, nota, recência ou distância (só faz sentido com lat/lng; sem eles cai na relevância).
   sort: z

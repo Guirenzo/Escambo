@@ -124,3 +124,26 @@ describe('portfólio', () => {
     });
   });
 });
+
+describe('horário de atendimento no perfil (ADR 34)', () => {
+  it('normaliza os períodos pelos dias marcados e expõe availablePeriods e availableNow', async () => {
+    repo.findFreelancerByUserId.mockResolvedValueOnce(
+      freelancerRow({
+        available_days: [1],
+        available_periods: '{"1":["morning"]}',
+        is_available: 0,
+      }),
+    );
+    const p = await profilesService.upsertFreelancer(7, {
+      fullName: 'Bruno Costa',
+      availableDays: [1],
+      availablePeriods: { '1': ['morning', 'morning'], '2': ['evening'] },
+    });
+    expect(repo.upsertFreelancer).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ availablePeriods: '{"1":["morning"]}' }),
+    );
+    expect(p.availablePeriods).toEqual({ '1': ['morning'] });
+    expect(p.availableNow).toBe(false); // pausado nunca atende agora
+  });
+});

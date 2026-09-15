@@ -21,7 +21,7 @@ import { Stars } from '../../components/Stars';
 import { Button, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
-import { dtm, formatAvailableDays, formatHours } from '../../lib/format';
+import { dtm, formatAvailability, formatHours } from '../../lib/format';
 import {
   useFavorites,
   useFreelancerReviews,
@@ -94,7 +94,13 @@ export function FreelancerView() {
                     <span className="muted tiny">{p.totalContracts} contratos concluídos</span>
                     {p.availableDays && p.availableDays.length > 0 && (
                       <span className="muted tiny" data-testid="available-days">
-                        <CalendarDays size={12} /> atende {formatAvailableDays(p.availableDays)}
+                        <CalendarDays size={12} /> atende{' '}
+                        {formatAvailability(p.availableDays, p.availablePeriods)}
+                      </span>
+                    )}
+                    {p.availableNow && (
+                      <span className="chip now" data-testid="available-now">
+                        atende agora
                       </span>
                     )}
                     {p.responseTimeHours != null && (

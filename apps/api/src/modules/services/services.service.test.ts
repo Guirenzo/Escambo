@@ -145,3 +145,40 @@ describe('servicesService.list — dias em que o prestador atende (ADR 30)', () 
     expect(page.items.map((i) => i.ownerAvailableDays)).toEqual([[1, 2, 3], [6, 0], null]);
   });
 });
+
+describe('servicesService.list — período e atende agora (ADR 34)', () => {
+  const base = { page: 1, limit: 20, radiusKm: 25, sort: 'relevance' as const };
+
+  it('período sem dia é 422; com dia repassa; now vira o dia e o período de Brasília', async () => {
+    repo.list.mockResolvedValue([]);
+    await expect(servicesService.list({ ...base, period: 'morning' })).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'period_requires_day',
+    });
+    await servicesService.list({ ...base, day: 1, period: 'evening', now: true });
+    expect(repo.list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        day: 1,
+        period: 'evening',
+        now: expect.objectContaining({ day: expect.any(Number) }),
+      }),
+    );
+  });
+
+  it('card traz os períodos do prestador e se ele atende agora (pausado, nunca)', async () => {
+    repo.list.mockResolvedValue([
+      fakeRow({
+        id: 1,
+        owner_name: 'A',
+        owner_available_days: '[0,1,2,3,4,5,6]',
+        owner_available_periods: '{"1":["morning"]}',
+        owner_is_available: 0,
+      } as never),
+    ]);
+    const page = await servicesService.list(base);
+    expect(page.items[0]).toMatchObject({
+      ownerAvailablePeriods: { '1': ['morning'] },
+      ownerAvailableNow: false,
+    });
+  });
+});

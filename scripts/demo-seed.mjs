@@ -22,6 +22,9 @@ import { deflateSync } from 'node:zlib';
 /* global FormData */
 
 const API = (process.env.API_URL ?? 'http://localhost:3333/api').replace(/\/$/, '');
+
+/** Os mesmos períodos em vários dias (horário de atendimento, ADR 34). */
+const periodsOn = (days, periods) => Object.fromEntries(days.map((d) => [d, periods]));
 const PASSWORD = 'Escambo@123';
 
 // ---------------------------------------------------------------------------
@@ -42,6 +45,7 @@ const FREELANCERS = [
       latitude: -26.3045,
       longitude: -48.8487,
       availableDays: [1, 2, 3, 4, 5],
+      availablePeriods: periodsOn([1, 2, 3, 4, 5], ['morning', 'afternoon']),
     },
     portfolio: [
       {
@@ -87,6 +91,7 @@ const FREELANCERS = [
     email: 'marina@escambo.demo',
     profile: {
       availableDays: [1, 2, 3, 4, 5, 6],
+      availablePeriods: periodsOn([1, 2, 3, 4, 5, 6], ['morning']),
       fullName: 'Marina Alves',
       avatarUrl: 'https://i.pravatar.cc/150?u=marina@escambo.demo',
       headline: 'Designer de marca | 8 anos',
@@ -116,6 +121,7 @@ const FREELANCERS = [
     email: 'rafael@escambo.demo',
     profile: {
       availableDays: [1, 3, 5],
+      availablePeriods: periodsOn([1, 3, 5], ['evening']),
       fullName: 'Rafael Souza',
       avatarUrl: 'https://i.pravatar.cc/150?u=rafael@escambo.demo',
       headline: 'Motion designer',

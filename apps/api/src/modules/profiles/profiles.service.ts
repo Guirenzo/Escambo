@@ -20,6 +20,7 @@ import {
   type UpsertClientInput,
   type UpsertFreelancerInput,
 } from './profiles.schema';
+import { isAvailableNow, normalizePeriods, parsePeriods } from './availability';
 
 /** available_days chega como array (mysql2 parseia JSON) ou string; qualquer outra coisa vira null. */
 /** JSON da coluna available_days (array, string ou NULL) → lista de dias 0–6. */
@@ -56,6 +57,12 @@ function toFreelancer(r: FreelancerRow): FreelancerProfile {
     longitude: r.longitude != null ? Number(r.longitude) : null,
     isAvailable: Boolean(r.is_available),
     availableDays: parseDays(r.available_days),
+    availablePeriods: parsePeriods(r.available_periods),
+    availableNow: isAvailableNow({
+      isAvailable: Boolean(r.is_available),
+      availableDays: parseDays(r.available_days),
+      availablePeriods: parsePeriods(r.available_periods),
+    }),
     responseTimeHours: r.response_time_hours != null ? Number(r.response_time_hours) : null,
     avgRating: Number(r.avg_rating),
     totalReviews: r.total_reviews,
@@ -92,6 +99,7 @@ export const profilesService = {
       longitude: input.longitude ?? null,
       isAvailable: input.isAvailable ?? true,
       availableDays: normalizeDays(input.availableDays),
+      availablePeriods: normalizePeriods(input.availableDays, input.availablePeriods),
     });
     return toFreelancer((await profilesRepository.findFreelancerByUserId(userId))!);
   },

@@ -13,6 +13,8 @@ export interface FreelancerRow extends RowDataPacket {
   is_available: number;
   /** JSON (mysql2 já devolve parseado; string só em drivers antigos). */
   available_days: number[] | string | null;
+  /** JSON {"1": ["morning"]} (mysql2 já entrega objeto) ou NULL. */
+  available_periods: unknown;
   avg_rating: string;
   total_reviews: number;
   total_contracts: number;
@@ -57,16 +59,18 @@ export const profilesRepository = {
       isAvailable: boolean;
       /** JSON serializado dos dias (ou null). */
       availableDays: string | null;
+      /** JSON serializado dos períodos por dia (ou null = o dia todo). */
+      availablePeriods: string | null;
     },
   ): Promise<void> {
     await pool.query<ResultSetHeader>(
       `INSERT INTO profiles_freelancer
-         (user_id, full_name, avatar_url, bio, headline, city, state, latitude, longitude, is_available, available_days)
-       VALUES (:userId, :fullName, :avatarUrl, :bio, :headline, :city, :state, :latitude, :longitude, :isAvailable, :availableDays)
+         (user_id, full_name, avatar_url, bio, headline, city, state, latitude, longitude, is_available, available_days, available_periods)
+       VALUES (:userId, :fullName, :avatarUrl, :bio, :headline, :city, :state, :latitude, :longitude, :isAvailable, :availableDays, :availablePeriods)
        ON DUPLICATE KEY UPDATE
          full_name = :fullName, avatar_url = :avatarUrl, bio = :bio, headline = :headline,
          city = :city, state = :state, latitude = :latitude, longitude = :longitude, is_available = :isAvailable,
-         available_days = :availableDays`,
+         available_days = :availableDays, available_periods = :availablePeriods`,
       { userId, ...d },
     );
   },
@@ -182,7 +186,7 @@ export const profilesRepository = {
   async findFreelancerByUserId(userId: number): Promise<FreelancerRow | undefined> {
     const [rows] = await pool.query<FreelancerRow[]>(
       `SELECT full_name, avatar_url, bio, headline, city, state, latitude, longitude,
-              is_available, available_days, avg_rating, total_reviews, total_contracts, response_time_hours
+              is_available, available_days, available_periods, avg_rating, total_reviews, total_contracts, response_time_hours
          FROM profiles_freelancer WHERE user_id = :userId LIMIT 1`,
       { userId },
     );
@@ -200,7 +204,7 @@ export const profilesRepository = {
   async findPublicFreelancerByUlid(ulid: string): Promise<PublicFreelancerRow | undefined> {
     const [rows] = await pool.query<PublicFreelancerRow[]>(
       `SELECT pf.full_name, pf.avatar_url, pf.bio, pf.headline, pf.city, pf.state,
-              pf.latitude, pf.longitude, pf.is_available, pf.available_days,
+              pf.latitude, pf.longitude, pf.is_available, pf.available_days, pf.available_periods,
               pf.avg_rating, pf.total_reviews, pf.total_contracts, pf.response_time_hours,
               u.id AS user_id, u.ulid, COALESCE(ux.level, 1) AS level, COALESCE(ux.level_name, 'Iniciante') AS level_name
          FROM users u

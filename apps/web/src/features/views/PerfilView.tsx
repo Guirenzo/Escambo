@@ -1,4 +1,5 @@
 import { Briefcase, MapPin, ShieldCheck, Star, User } from 'lucide-react';
+import type { AvailabilityPeriod, AvailablePeriods } from '@escambo/types';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Avatar } from '../../components/Avatar';
 import { ScoreBadge } from '../../components/ScoreBadge';
@@ -6,7 +7,7 @@ import { Stars } from '../../components/Stars';
 import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
-import { dtm, WEEKDAY_SHORT } from '../../lib/format';
+import { dtm, PERIOD_LABEL, PERIOD_ORDER, WEEKDAY_SHORT } from '../../lib/format';
 import {
   useFreelancerReviews,
   useProfilesMe,
@@ -118,6 +119,14 @@ export function PerfilView() {
   const [availableDays, setAvailableDays] = useState<number[]>([]);
   const toggleDay = (d: number): void =>
     setAvailableDays((days) => (days.includes(d) ? days.filter((x) => x !== d) : [...days, d]));
+  // Períodos por dia (ADR 34): dia sem período marcado = o dia todo.
+  const [availablePeriods, setAvailablePeriods] = useState<AvailablePeriods>({});
+  const [isAvailable, setIsAvailable] = useState(true);
+  const togglePeriod = (d: number, p: AvailabilityPeriod): void =>
+    setAvailablePeriods((cur) => {
+      const list = cur[String(d)] ?? [];
+      return { ...cur, [String(d)]: list.includes(p) ? list.filter((x) => x !== p) : [...list, p] };
+    });
 
   // Preenche o formulário quando o perfil chega.
   useEffect(() => {
@@ -136,6 +145,8 @@ export function PerfilView() {
       setLat(p.freelancer.latitude);
       setLng(p.freelancer.longitude);
       setAvailableDays(p.freelancer.availableDays ?? []);
+      setAvailablePeriods(p.freelancer.availablePeriods ?? {});
+      setIsAvailable(p.freelancer.isAvailable);
     }
   }, [profiles.data]);
 
@@ -173,6 +184,11 @@ export function PerfilView() {
         latitude: lat,
         longitude: lng,
         availableDays,
+        // Só os dias marcados; o servidor normaliza (nenhum ou os três períodos = o dia todo).
+        availablePeriods: Object.fromEntries(
+          availableDays.map((d) => [String(d), availablePeriods[String(d)] ?? []]),
+        ),
+        isAvailable,
       });
       toast.success('Perfil de freelancer salvo!');
     } catch (er) {
@@ -295,6 +311,50 @@ export function PerfilView() {
                     Sem dias marcados, você fica fora do filtro "atende no dia" da busca.
                   </span>
                 )}
+                {availableDays.length > 0 && (
+                  <div className="periods-grid" data-testid="periods-grid">
+                    {[...availableDays]
+                      .sort((a, b) => a - b)
+                      .map((d) => (
+                        <div key={d} className="periods-row">
+                          <span className="periods-day">{WEEKDAY_SHORT[d]}</span>
+                          {PERIOD_ORDER.map((p) => {
+                            const on = (availablePeriods[String(d)] ?? []).includes(p);
+                            return (
+                              <button
+                                key={p}
+                                type="button"
+                                className={`day-chip period ${on ? 'on' : ''}`}
+                                aria-pressed={on}
+                                aria-label={`${WEEKDAY_SHORT[d]} ${PERIOD_LABEL[p]}`}
+                                onClick={() => togglePeriod(d, p)}
+                              >
+                                {PERIOD_LABEL[p]}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    <span className="muted tiny">
+                      Sem período marcado, vale o dia todo. Manhã 6h–12h, tarde 12h–18h, noite
+                      18h–24h (horário de Brasília).
+                    </span>
+                  </div>
+                )}
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    aria-label="Aceitando novos pedidos"
+                    checked={isAvailable}
+                    onChange={(e) => setIsAvailable(e.target.checked)}
+                  />
+                  <span>
+                    {isAvailable
+                      ? 'Aceitando novos pedidos'
+                      : 'Agenda pausada: você não aparece em "atende agora"'}
+                  </span>
+                </label>
               </div>
               <div className="stack">
                 <span className="muted tiny">

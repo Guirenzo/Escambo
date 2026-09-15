@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createService, createUser, openAs, settled, topUp } from './helpers';
+import { browserClockNow, createService, createUser, openAs, settled, topUp } from './helpers';
 
 /**
  * Polimento de marketplace: paginação da busca ("Carregar mais"), propor troca direto do card
@@ -203,4 +203,75 @@ test('busca por dia de atendimento: "quem atende sábado" só mostra quem marcou
   await expect(cards.first()).toContainText(`${tag} semana`);
   await page.getByRole('button', { name: 'Limpar filtros' }).click();
   await expect(cards).toHaveCount(3);
+});
+
+test('busca por período do dia e "atende agora" (horário de Brasília)', async ({
+  page,
+  request,
+}) => {
+  const tag = `Periodo ${Date.now().toString(36)}`;
+  const everyDay = [0, 1, 2, 3, 4, 5, 6];
+  const put = async (u: { token: string }, data: Record<string, unknown>) => {
+    const res = await request.put('/api/profiles/freelancer', {
+      headers: { Authorization: `Bearer ${u.token}` },
+      data: { city: 'Joinville', ...data },
+    });
+    expect(res.ok(), await res.text()).toBeTruthy();
+  };
+  const allDay = await createUser(request, 'freelancer');
+  const mornings = await createUser(request, 'freelancer');
+  const paused = await createUser(request, 'freelancer');
+  await put(allDay, { fullName: 'Freela dia todo', isAvailable: true, availableDays: everyDay });
+  await put(mornings, {
+    fullName: 'Freela manhãs',
+    isAvailable: true,
+    availableDays: [1],
+    availablePeriods: { '1': ['morning'] },
+  });
+  await put(paused, { fullName: 'Freela pausado', isAvailable: false, availableDays: everyDay });
+  await createService(request, allDay, 100, 0, { title: `${tag} dia todo` });
+  await createService(request, mornings, 100, 0, { title: `${tag} manhãs` });
+  await createService(request, paused, 100, 0, { title: `${tag} pausado` });
+  const client = await createUser(request, 'client');
+
+  await openAs(page, client, '/servicos');
+  await settled(page);
+  await page.getByPlaceholder('Buscar serviços…').fill(tag);
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  const cards = page.locator('.card.service', { hasText: tag });
+  await expect(cards).toHaveCount(3);
+  await expect(cards.filter({ hasText: `${tag} manhãs` }).getByTestId('owner-days')).toHaveText(
+    'atende seg · manhã',
+  );
+
+  // Período só com o dia: segunda à noite → quem atende o dia todo (pausado também: o filtro
+  // de dia é sobre a agenda marcada; "agora" é que olha a pausa).
+  const filters = page.getByTestId('filters');
+  await expect(filters.getByLabel('Período do dia')).toBeDisabled();
+  await filters.getByLabel('Atende no dia').selectOption('1');
+  await filters.getByLabel('Período do dia').selectOption('evening');
+  await expect(cards).toHaveCount(2);
+  await expect(cards.filter({ hasText: `${tag} manhãs` })).toHaveCount(0);
+  await filters.getByLabel('Período do dia').selectOption('morning');
+  await expect(cards).toHaveCount(3);
+
+  // Atende agora: aceitando pedidos, no dia e período de agora (madrugada: ninguém).
+  await page.getByRole('button', { name: 'Limpar filtros' }).click();
+  await expect(cards).toHaveCount(3);
+  await page.getByRole('button', { name: 'Atende agora' }).click();
+  await expect(page.getByRole('button', { name: 'Atende agora' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  const { day, hour } = browserClockNow();
+  const expected = hour < 6 ? 0 : 1 + (day === 1 && hour < 12 ? 1 : 0);
+  if (expected === 0) {
+    await expect(page.getByText('Nenhum serviço com esses filtros')).toBeVisible();
+  } else {
+    await expect(cards).toHaveCount(expected);
+    await expect(cards.filter({ hasText: `${tag} dia todo` }).getByTestId('owner-now')).toHaveText(
+      'atende agora',
+    );
+  }
+  await expect(cards.filter({ hasText: `${tag} pausado` })).toHaveCount(0);
 });

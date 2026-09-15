@@ -12,6 +12,14 @@ export const upsertFreelancerSchema = z.object({
   isAvailable: z.boolean().optional(),
   // Dias da semana em que atende (0 = domingo … 6 = sábado).
   availableDays: z.array(z.number().int().min(0).max(6)).max(7).nullable().optional(),
+  // Por dia marcado, os períodos em que atende (dia sem chave = o dia todo), ADR 34.
+  availablePeriods: z
+    .record(
+      z.string().regex(/^[0-6]$/),
+      z.array(z.enum(['morning', 'afternoon', 'evening'])).max(3),
+    )
+    .nullable()
+    .optional(),
 });
 export type UpsertFreelancerInput = z.infer<typeof upsertFreelancerSchema>;
 
