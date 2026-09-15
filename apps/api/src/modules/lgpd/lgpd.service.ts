@@ -12,6 +12,7 @@ import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { authRepository } from '../auth/auth.repository';
+import { purgeForUser } from '../messaging/attachments.purge';
 import { notificationsService } from '../notifications/notifications.service';
 import {
   buildExport,
@@ -182,6 +183,14 @@ export const lgpdService = {
     const ok = await lgpdRepository.completeDeletion(id, row.user_id, adminId);
     if (!ok) throw new HttpError(409, 'Solicitação já processada', 'invalid_transition');
     blocklist.add(row.user_id); // efeito imediato, como na moderação
+    // Arquivos que o titular enviou no chat são dados dele: saem do disco agora. O texto das
+    // mensagens fica (registro das duas partes) e a bolha diz "removido a pedido do titular".
+    try {
+      const purged = await purgeForUser(row.user_id);
+      if (purged) logger.info({ userId: row.user_id, purged }, 'anexos do titular removidos');
+    } catch (err) {
+      logger.error({ err, userId: row.user_id }, 'anexos do titular: falha ao remover');
+    }
     return toDeletion((await lgpdRepository.findDeletion(id))!);
   },
 

@@ -5,6 +5,7 @@ import { runDailyDigest } from './daily-digest';
 import { runExpireExports } from './expire-exports';
 import { runExpireProposals } from './expire-proposals';
 import { runOverdueContracts } from './overdue-contracts';
+import { runPurgeAttachments } from './purge-attachments';
 import { runTacitApproval } from './tacit-approval';
 
 /**
@@ -28,6 +29,7 @@ export const JOBS: Job[] = [
   { name: 'daily-digest', run: () => runDailyDigest() },
   { name: 'expire-deposits', run: runExpireDeposits },
   { name: 'expire-exports', run: runExpireExports },
+  { name: 'purge-attachments', run: () => runPurgeAttachments() },
 ];
 
 let timer: NodeJS.Timeout | null = null;

@@ -269,3 +269,35 @@ export function pngFixture(size = 48): Buffer {
     pngChunk('IEND', Buffer.alloc(0)),
   ]);
 }
+
+// ---------- datas no fuso do navegador dos testes ----------
+// O Playwright abre o navegador em America/Sao_Paulo (playwright.config), mas o processo do
+// Node que roda os testes usa o fuso da máquina — UTC no CI. Entre 21h e 0h de Brasília o
+// "hoje" dos dois diverge, e qualquer "faltam N dias" ou <input type="date"> comparado com
+// new Date() do Node falha. Estas funções calculam no fuso do navegador.
+const BROWSER_TZ = 'America/Sao_Paulo';
+const DAY_MS = 86_400_000;
+const pad2 = (n: number): string => String(n).padStart(2, '0');
+
+function browserDateParts(d: Date): { y: number; m: number; d: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BROWSER_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const get = (type: string): number => Number(parts.find((p) => p.type === type)!.value);
+  return { y: get('year'), m: get('month'), d: get('day') };
+}
+
+/** Valor de <input type="date"> (AAAA-MM-DD) para daqui a N dias, no fuso do navegador. */
+export function inputDatePlus(days: number): string {
+  const { y, m, d } = browserDateParts(new Date(Date.now() + days * DAY_MS));
+  return `${y}-${pad2(m)}-${pad2(d)}`;
+}
+
+/** Como o app exibe a data (dd/mm/aaaa) para daqui a N dias, no fuso do navegador. */
+export function brDatePlus(days: number): string {
+  const { y, m, d } = browserDateParts(new Date(Date.now() + days * DAY_MS));
+  return `${pad2(d)}/${pad2(m)}/${y}`;
+}

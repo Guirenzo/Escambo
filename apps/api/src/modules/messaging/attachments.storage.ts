@@ -1,4 +1,4 @@
-import { mkdir, stat, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { ulid } from 'ulid';
 import { env } from '../../config/env';
@@ -114,7 +114,7 @@ export function contentDisposition(kind: AttachmentKind, name: string): string {
 
 // ---------- disco ----------
 
-const uploadsDir = (): string => path.resolve(env.DATA_DIR, 'uploads');
+export const uploadsDir = (): string => path.resolve(env.DATA_DIR, 'uploads');
 
 /** Caminho absoluto de uma chave, ou null se ela tentar sair da pasta de uploads. */
 export function attachmentPath(key: string): string | null {
@@ -149,4 +149,59 @@ export async function attachmentSize(key: string): Promise<number | null> {
   } catch {
     return null;
   }
+}
+
+// ---------- inventário do disco (expurgo e painel admin, ADR 31) ----------
+
+export interface DiskFile {
+  /** Chave como fica em messages.file_url (AAAA/MM/<ulid>.<ext>). */
+  key: string;
+  path: string;
+  size: number;
+  mtimeMs: number;
+}
+
+/** Todos os arquivos da pasta de uploads (vazio se a pasta ainda não existe). */
+export async function listUploadedFiles(): Promise<DiskFile[]> {
+  const root = uploadsDir();
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await readdir(root, { recursive: true, withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const files: DiskFile[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const abs = path.join(entry.parentPath, entry.name);
+    const st = await stat(abs);
+    files.push({
+      key: path.relative(root, abs).split(path.sep).join('/'),
+      path: abs,
+      size: st.size,
+      mtimeMs: st.mtimeMs,
+    });
+  }
+  return files;
+}
+
+/** Quantidade e bytes de uma subpasta de DATA_DIR (uploads, exports). */
+export async function dataDirUsage(
+  sub: 'uploads' | 'exports',
+): Promise<{ files: number; bytes: number }> {
+  const dir = path.resolve(env.DATA_DIR, sub);
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await readdir(dir, { recursive: true, withFileTypes: true });
+  } catch {
+    return { files: 0, bytes: 0 };
+  }
+  let files = 0;
+  let bytes = 0;
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    files++;
+    bytes += (await stat(path.join(entry.parentPath, entry.name))).size;
+  }
+  return { files, bytes };
 }

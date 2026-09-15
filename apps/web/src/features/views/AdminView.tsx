@@ -43,6 +43,7 @@ import {
 } from '../../lib/hooks';
 import { usePageTitle } from '../../lib/title';
 import { FinanceSection } from '../admin/FinanceSection';
+import { StorageSection } from '../admin/StorageSection';
 import { useToast } from '../../lib/toast';
 
 const RESOLUTIONS: { value: DisputeResolution; label: string; hint: string }[] = [
@@ -460,6 +461,7 @@ export function AdminView() {
       </div>
 
       <FinanceSection />
+      <StorageSection />
 
       <section className="card">
         <div className="card-head">

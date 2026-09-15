@@ -409,6 +409,14 @@ export const openapiDocument: Record<string, any> = {
     '/disputes/{id}': { get: op('Disputas', 'Detalhe da disputa', { auth: true }) },
 
     '/admin/metrics': { get: op('Admin', 'Métricas da plataforma', { auth: true }) },
+    '/admin/storage': {
+      get: op('Admin', 'Uso do volume: anexos do chat, cópias LGPD, órfãos e último expurgo', {
+        auth: true,
+      }),
+    },
+    '/admin/storage/purge': {
+      post: op('Admin', 'Roda o expurgo de anexos agora (retenção + órfãos)', { auth: true }),
+    },
     '/admin/disputes': { get: op('Admin', 'Disputas abertas', { auth: true }) },
     '/admin/disputes/{id}/resolve': {
       post: op('Admin', 'Resolve disputa (decisão de escrow)', {

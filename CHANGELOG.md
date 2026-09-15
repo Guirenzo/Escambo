@@ -5,6 +5,26 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.13.0] — 2026-09-14
+
+### Adicionado
+
+- **Expurgo de anexos** (ADR 31): o arquivo de um anexo sai do disco, a mensagem fica e diz por
+  quê (`ChatAttachment.purgedAt`/`purgedReason`; download responde 410 `attachment_purged`).
+  - **Retenção**: anexos com mais de `platform_settings.attachment_retention_days` dias (180) em
+    conversas **sem contratação aberta** entre as duas pessoas. Job `purge-attachments`, uma vez
+    por dia a partir de `ATTACHMENT_PURGE_HOUR` (4h, Brasília), com a trava do último expurgo
+    guardada em `platform_settings`.
+  - **LGPD**: ao concluir a anonimização, os arquivos que o titular enviou saem na hora; o texto
+    das mensagens fica e a bolha mostra "removido a pedido do titular".
+  - **Órfãos**: arquivo no disco sem linha no banco há mais de 24 h é apagado; linha sem arquivo
+    é marcada como indisponível no primeiro download.
+  - **Painel admin**: card "Armazenamento" (`GET /admin/storage`) com anexos no disco, pasta de
+    uploads, cópias LGPD, removidos, inconsistências, retenção e último expurgo; botão "Rodar
+    expurgo agora" (`POST /admin/storage/purge`, auditado).
+  - Migration `0013`: `messages.file_purged_at`, `file_purged_reason`, coluna gerada
+    `has_file` com índice, e o parâmetro `attachment_retention_days`.
+
 ## [1.12.0] — 2026-09-14
 
 ### Adicionado

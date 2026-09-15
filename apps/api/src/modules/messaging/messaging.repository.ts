@@ -9,6 +9,8 @@ export interface ConversationRow extends RowDataPacket {
 }
 
 export type MessageRowType = 'text' | 'image' | 'file' | 'system';
+/** Por que o arquivo de um anexo saiu do disco (ADR 31). */
+export type PurgeReason = 'retention' | 'lgpd' | 'missing';
 
 export interface MessageRow extends RowDataPacket {
   id: number;
@@ -21,6 +23,8 @@ export interface MessageRow extends RowDataPacket {
   file_name: string | null;
   file_mime: string | null;
   file_size_bytes: number | null;
+  file_purged_at: Date | null;
+  file_purged_reason: PurgeReason | null;
   created_at: Date;
 }
 
@@ -32,6 +36,8 @@ export interface AttachmentRow extends RowDataPacket {
   file_name: string | null;
   file_mime: string | null;
   file_size_bytes: number | null;
+  file_purged_at: Date | null;
+  file_purged_reason: PurgeReason | null;
   participant_a: number;
   participant_b: number;
 }
@@ -44,7 +50,7 @@ export interface NewAttachment {
 }
 
 const MESSAGE_COLUMNS = `id, conversation_id, sender_id, type, content, file_url, file_name, file_mime,
-       file_size_bytes, created_at`;
+       file_size_bytes, file_purged_at, file_purged_reason, created_at`;
 
 /** Normaliza o par (a<b) para casar com a unique key uq_conversation. */
 function orderPair(x: number, y: number): [number, number] {
@@ -135,7 +141,7 @@ export const messagingRepository = {
   async findAttachment(messageId: number): Promise<AttachmentRow | undefined> {
     const [rows] = await pool.query<AttachmentRow[]>(
       `SELECT m.id, m.type, m.file_url, m.file_name, m.file_mime, m.file_size_bytes,
-              cv.participant_a, cv.participant_b
+              m.file_purged_at, m.file_purged_reason, cv.participant_a, cv.participant_b
          FROM messages m
          JOIN conversations cv ON cv.id = m.conversation_id
         WHERE m.id = :messageId AND m.file_url IS NOT NULL
@@ -143,5 +149,76 @@ export const messagingRepository = {
       { messageId },
     );
     return rows[0];
+  },
+
+  // ---------- expurgo (ADR 31) ----------
+
+  /** Anexos com mais de `cutoff` em conversas SEM contratação aberta entre as duas pessoas. */
+  async listPurgeable(cutoff: Date, limit: number): Promise<{ id: number; file_url: string }[]> {
+    // limit é uma constante do job (inteiro) — seguro para interpolar.
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT m.id, m.file_url
+         FROM messages m
+         JOIN conversations cv ON cv.id = m.conversation_id
+        WHERE m.has_file = 1 AND m.file_purged_at IS NULL AND m.created_at < :cutoff
+          AND NOT EXISTS (
+            SELECT 1 FROM contracts c
+             WHERE ((c.client_id = cv.participant_a AND c.freelancer_id = cv.participant_b)
+                 OR (c.client_id = cv.participant_b AND c.freelancer_id = cv.participant_a))
+               AND c.status IN ('pending', 'accepted', 'in_progress', 'delivered', 'revision_requested', 'disputed'))
+        ORDER BY m.id
+        LIMIT ${Math.trunc(limit)}`,
+      { cutoff },
+    );
+    return rows as { id: number; file_url: string }[];
+  },
+
+  /** Anexos ainda no disco enviados por um usuário (expurgo LGPD). */
+  async listUserAttachments(userId: number): Promise<{ id: number; file_url: string }[]> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, file_url FROM messages
+        WHERE sender_id = :userId AND has_file = 1 AND file_purged_at IS NULL`,
+      { userId },
+    );
+    return rows as { id: number; file_url: string }[];
+  },
+
+  async markPurged(id: number, reason: PurgeReason): Promise<void> {
+    await pool.query<ResultSetHeader>(
+      `UPDATE messages SET file_purged_at = NOW(), file_purged_reason = :reason
+        WHERE id = :id AND file_purged_at IS NULL`,
+      { id, reason },
+    );
+  },
+
+  /** Chaves dos anexos que ainda deveriam estar no disco. */
+  async listAttachmentKeys(): Promise<string[]> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT file_url FROM messages WHERE has_file = 1 AND file_purged_at IS NULL`,
+    );
+    return rows.map((r) => String(r.file_url));
+  },
+
+  async attachmentStats(): Promise<{
+    active: number;
+    activeBytes: number;
+    purged: number;
+    purged30d: number;
+  }> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT COALESCE(SUM(file_purged_at IS NULL), 0) AS active,
+              COALESCE(SUM(CASE WHEN file_purged_at IS NULL THEN file_size_bytes END), 0) AS active_bytes,
+              COALESCE(SUM(file_purged_at IS NOT NULL), 0) AS purged,
+              COALESCE(SUM(file_purged_at >= NOW() - INTERVAL 30 DAY), 0) AS purged_30d
+         FROM messages
+        WHERE has_file = 1`,
+    );
+    const r = rows[0]!;
+    return {
+      active: Number(r.active),
+      activeBytes: Number(r.active_bytes),
+      purged: Number(r.purged),
+      purged30d: Number(r.purged_30d),
+    };
   },
 };

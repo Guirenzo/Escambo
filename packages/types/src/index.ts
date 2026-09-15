@@ -222,6 +222,42 @@ export interface AdminMetrics {
   pendingDeletions: number;
 }
 
+/** Uso do volume da API e saúde dos anexos do chat (painel admin, ADR 31). */
+export interface AdminStorage {
+  /** platform_settings.attachment_retention_days */
+  retentionDays: number;
+  /** Hora (Brasília) do expurgo diário. */
+  purgeHour: number;
+  uploads: { files: number; bytes: number };
+  exports: { files: number; bytes: number };
+  attachments: {
+    active: number;
+    activeBytes: number;
+    purged: number;
+    purged30d: number;
+    /** Linhas cujo arquivo não está no disco. */
+    missing: number;
+    /** Arquivos no disco sem linha no banco. */
+    orphans: number;
+  };
+  lastPurge: {
+    at: string;
+    purged: number;
+    orphansRemoved: number;
+    trigger: 'job' | 'admin';
+  } | null;
+}
+
+/** Resultado de uma rodada do expurgo de anexos (job ou botão do admin). */
+export interface PurgeAttachmentsResult {
+  retentionDays: number;
+  cutoff: string | null;
+  purged: number;
+  orphansRemoved: number;
+  failed: number;
+  skipped: 'before_hour' | 'already_today' | null;
+}
+
 // --- LGPD ---
 
 export type ConsentType = 'terms_of_use' | 'privacy_policy' | 'marketing' | 'data_processing';
@@ -602,11 +638,17 @@ export interface CancelResult {
 export type ChatMessageType = 'text' | 'image' | 'file';
 
 /** Anexo de uma mensagem: a `url` é relativa à API e exige o token (só as partes leem). */
+/** Por que o arquivo de um anexo saiu do disco (ADR 31): retenção, pedido do titular ou sumiu. */
+export type AttachmentPurgeReason = 'retention' | 'lgpd' | 'missing';
+
 export interface ChatAttachment {
   name: string;
   mime: string;
   size: number;
   url: string;
+  /** Quando o arquivo foi removido do disco; null = disponível. */
+  purgedAt: string | null;
+  purgedReason: AttachmentPurgeReason | null;
 }
 
 export interface ChatMessage {

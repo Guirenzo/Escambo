@@ -2719,3 +2719,51 @@ button.toggle.on {
 .ms-sum.bad {
   color: var(--red);
 }
+
+/* ---------- Anexo removido (expurgo, ADR 31) e armazenamento no admin ---------- */
+.attachment-purged {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  max-width: 100%;
+}
+.bubble.mine .attachment-purged {
+  border-color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.85);
+}
+.bubble.mine .attachment-purged .muted {
+  color: rgba(255, 255, 255, 0.7);
+}
+.attachment-purged .attachment-name {
+  text-decoration: line-through;
+  font-weight: 500;
+}
+.storage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px 16px;
+  margin: 0 0 10px;
+}
+.storage-grid > div {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.storage-grid > div.warn {
+  border-color: #e0b04a;
+  background: #fff8e6;
+}
+.storage-grid dt {
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.storage-grid dd {
+  margin: 0;
+  font-weight: 600;
+}

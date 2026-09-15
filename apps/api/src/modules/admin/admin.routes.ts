@@ -10,6 +10,8 @@ import {
   failWithdrawal,
   getFinance,
   getMetrics,
+  getStorage,
+  purgeStorage,
   listOpenDisputes,
   listDeletionRequests,
   listEmails,
@@ -26,6 +28,8 @@ export const adminRoutes = Router();
 adminRoutes.use(authenticate, requireAdmin);
 
 adminRoutes.get('/metrics', asyncHandler(getMetrics));
+adminRoutes.get('/storage', asyncHandler(getStorage));
+adminRoutes.post('/storage/purge', asyncHandler(purgeStorage));
 adminRoutes.get('/finance', asyncHandler(getFinance));
 adminRoutes.get('/finance/export.csv', asyncHandler(exportFinanceCsv));
 adminRoutes.get('/disputes', asyncHandler(listOpenDisputes));

@@ -3,6 +3,7 @@ import type {
   AdminEmail,
   AdminFinanceReport,
   AdminMetrics,
+  AdminStorage,
   AdminWithdrawal,
   AuthResponse,
   BarterAgreement,
@@ -42,6 +43,7 @@ import type {
   PortfolioItem,
   PublicFreelancerProfile,
   PublicUser,
+  PurgeAttachmentsResult,
   RecordConsentRequest,
   RefreshResponse,
   RegisterRequest,
@@ -431,6 +433,10 @@ export const api = {
 
   // admin (mediação, métricas, moderação)
   adminMetrics: () => request<AdminMetrics>('/admin/metrics'),
+  adminStorage: () => request<AdminStorage>('/admin/storage'),
+  /** Roda o expurgo de anexos agora (retenção + órfãos), sem esperar a hora do job. */
+  adminPurgeAttachments: () =>
+    request<PurgeAttachmentsResult>('/admin/storage/purge', { method: 'POST' }),
   adminFinance: (q: { from?: string; to?: string; granularity: 'day' | 'month' }) =>
     request<AdminFinanceReport>(`/admin/finance?${financeQs(q)}`),
   /** Baixa o ledger do período em CSV com o token; renova a sessão uma vez num 401. */

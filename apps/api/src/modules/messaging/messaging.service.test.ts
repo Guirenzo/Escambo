@@ -7,6 +7,7 @@ vi.mock('./messaging.repository', () => ({
     insertMessage: vi.fn(),
     previousMessage: vi.fn(),
     findAttachment: vi.fn(),
+    markPurged: vi.fn().mockResolvedValue(undefined),
   },
 }));
 vi.mock('../contracts/contracts.repository', () => ({
@@ -125,6 +126,8 @@ describe('messagingService.history', () => {
         mime: 'image/png',
         size: 1234,
         url: '/api/messaging/attachments/7',
+        purgedAt: null,
+        purgedReason: null,
       },
       createdAt: '2026-01-01T00:00:00.000Z',
     });
@@ -342,7 +345,14 @@ describe('notificationBody', () => {
         ...base,
         type: 'file',
         content: '',
-        attachment: { name: 'briefing.pdf', mime: 'application/pdf', size: 1, url: '' },
+        attachment: {
+          name: 'briefing.pdf',
+          mime: 'application/pdf',
+          size: 1,
+          url: '',
+          purgedAt: null,
+          purgedReason: null,
+        },
       }),
     ).toBe('Enviou o arquivo briefing.pdf');
   });

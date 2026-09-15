@@ -135,3 +135,19 @@ test('denúncia pelo perfil público; admin vê a moderação', async ({ page, r
   await page.getByRole('button', { name: 'Suspender' }).click();
   await expect(page.locator('.toast', { hasText: 'suspenso' })).toBeVisible();
 });
+
+test('admin vê o uso do armazenamento e roda o expurgo de anexos na hora', async ({
+  page,
+  request,
+}) => {
+  const admin = await createAdmin(request);
+  await openAs(page, admin, '/admin');
+  await settled(page);
+  const card = page.getByTestId('storage-card');
+  await expect(card.getByRole('heading', { name: 'Armazenamento' })).toBeVisible();
+  await expect(card).toContainText('Anexos no disco');
+  await expect(card).toContainText('Retenção');
+  await card.getByRole('button', { name: 'Rodar expurgo agora' }).click();
+  await expect(page.locator('.toast', { hasText: 'Expurgo concluído' })).toBeVisible();
+  await expect(card.getByTestId('storage-last-purge')).toContainText('pelo admin');
+});
