@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../settings/settings.service', () => ({
+  settingsService: { feeRate: vi.fn().mockResolvedValue(0.15) },
+}));
+
 vi.mock('./contracts.repository', () => ({
   contractsRepository: {
     create: vi.fn(),
