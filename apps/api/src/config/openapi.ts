@@ -450,7 +450,7 @@ export const openapiDocument: Record<string, any> = {
     '/media/{year}/{month}/{file}': {
       get: op(
         'Perfil',
-        'Imagem pública de perfil ou portfólio (cache imutável de um ano); ?w=128 ou ?w=480 devolve a miniatura em WebP, gerada na primeira leitura',
+        'Imagem pública de perfil ou portfólio (cache imutável de um ano); ?w=128, ?w=480 ou ?w=960 devolve a miniatura em WebP, gerada na primeira leitura',
       ),
     },
     '/admin/metrics': { get: op('Admin', 'Métricas da plataforma', { auth: true }) },

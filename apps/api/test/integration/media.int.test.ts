@@ -157,6 +157,9 @@ describe('Imagens de perfil e portfólio (ADR 36 e 38)', () => {
     expect(card.headers['content-type']).toBe('image/webp');
     expect(card.headers['cache-control']).toBe('public, max-age=31536000, immutable');
     expect(await dims(card.body as Buffer)).toEqual(['webp', 480, 320]);
+    // Galeria em tela pequena (ADR 40).
+    const large = await fetchMedia(`${url}?w=960`).expect(200);
+    expect(await dims(large.body as Buffer)).toEqual(['webp', 960, 640]);
     const stored = await readFile(mediaFilePath(mediaVariantKey(key, 480))!);
     expect(stored.equals(card.body as Buffer)).toBe(true);
     const again = await fetchMedia(`${url}?w=480`).expect(200);

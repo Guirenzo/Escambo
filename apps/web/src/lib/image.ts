@@ -8,7 +8,7 @@ export const MEDIA_MAX_MB = 5;
  * Larguras de miniatura que a API gera (ADR 38): `small` cobre o maior avatar e as prévias em tela
  * de alta densidade; `card` cobre o cartão do portfólio no perfil público.
  */
-export const MEDIA_THUMB = { small: 128, card: 480 } as const;
+export const MEDIA_THUMB = { small: 128, card: 480, large: 960 } as const;
 export type MediaThumbWidth = (typeof MEDIA_THUMB)[keyof typeof MEDIA_THUMB];
 
 const MEDIA_URL =
@@ -18,6 +18,9 @@ const MEDIA_URL =
 export function mediaVariant(url: string, width: MediaThumbWidth): string {
   return MEDIA_URL.test(url) ? `${url}?w=${width}` : url;
 }
+
+/** Endereço de imagem enviada ao Escambo (tem miniaturas); link externo não é. */
+export const isMediaUrl = (url: string): boolean => MEDIA_URL.test(url);
 
 /** O navegador consegue abrir a foto para o recorte (createImageBitmap + canvas). */
 export const canCrop = (): boolean =>

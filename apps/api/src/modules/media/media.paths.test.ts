@@ -47,6 +47,7 @@ describe('endereços de mídia (ADR 36 e 38)', () => {
     expect(parseMediaWidth(undefined)).toBeUndefined();
     expect(parseMediaWidth('128')).toBe(128);
     expect(parseMediaWidth('480')).toBe(480);
+    expect(parseMediaWidth('960')).toBe(960);
     for (const bad of ['100', '0128', '128px', '', ' 128', ['128', '480'], '1600']) {
       expect(parseMediaWidth(bad), JSON.stringify(bad)).toBeNull();
     }
