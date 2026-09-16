@@ -8,6 +8,7 @@ import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
+import { timezoneOf } from '../../utils/timezone';
 import { authRepository } from '../auth/auth.repository';
 import { EMAILED_NOTIFICATION_TYPES, mailService, notificationLink } from '../mail/mail.service';
 import { notificationsRepository, type NotificationRow } from './notifications.repository';
@@ -115,6 +116,7 @@ export const notificationsService = {
     return {
       emailFrequency: user?.email_frequency ?? 'instant',
       digestHour: user?.digest_hour ?? env.DIGEST_HOUR,
+      timezone: timezoneOf(user?.timezone),
     };
   },
 

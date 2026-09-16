@@ -121,7 +121,7 @@ report_snapshots              (relatórios)
 ## 3. Módulo 01 — Autenticação
 
 ### `users`
-Tabela central de todos os usuários da plataforma. A preferência de e-mail (`email_frequency`, ADR 27) e a hora do resumo do dia (`digest_hour`, ADR 42) moram aqui, junto com `last_digest_at`, a trava de um resumo por dia.
+Tabela central de todos os usuários da plataforma. A preferência de e-mail (`email_frequency`, ADR 27) e a hora do resumo do dia (`digest_hour`, ADR 42) e o fuso da conta (`timezone`, ADR 46) moram aqui, junto com `last_digest_at`, a trava de um resumo por dia.
 
 ```sql
 CREATE TABLE users (
@@ -134,7 +134,8 @@ CREATE TABLE users (
   status        ENUM('active', 'suspended', 'banned', 'pending_verification') NOT NULL DEFAULT 'pending_verification',
   email_verified_at DATETIME    NULL,
   email_frequency   ENUM('instant', 'daily', 'off') NOT NULL DEFAULT 'instant', -- e-mail por evento, resumo diário ou só o essencial (migration 0010)
-  digest_hour       TINYINT UNSIGNED NULL,                    -- hora do resumo do dia, 0 a 23 em Brasília; NULL = DIGEST_HOUR (migration 0019)
+  digest_hour       TINYINT UNSIGNED NULL,                    -- hora do resumo do dia, 0 a 23 no fuso da conta; NULL = DIGEST_HOUR (migration 0019)
+  timezone          VARCHAR(40)     NULL,                     -- fuso IANA do Brasil; NULL = America/Sao_Paulo (migration 0022, ADR 46)
   last_digest_at    DATETIME    NULL,                          -- último resumo diário (trava de um por dia)
   phone_verified_at DATETIME    NULL,
   last_login_at     DATETIME    NULL,

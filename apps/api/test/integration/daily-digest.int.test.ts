@@ -81,7 +81,11 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
 
     // Preferência: padrão instant; validação; persistência.
     const def = await request(app).get('/api/notifications/preferences').set(auth(daily.token));
-    expect(def.body).toEqual({ emailFrequency: 'instant', digestHour: env.DIGEST_HOUR });
+    expect(def.body).toEqual({
+      emailFrequency: 'instant',
+      digestHour: env.DIGEST_HOUR,
+      timezone: 'America/Sao_Paulo',
+    });
     await request(app)
       .put('/api/notifications/preferences')
       .set(auth(daily.token))
@@ -138,22 +142,40 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
     const early = await registerAndLogin('freelancer');
     const standard = await registerAndLogin('freelancer');
     const late = await registerAndLogin('freelancer');
+    const manaus = await registerAndLogin('freelancer');
     const put = (a: Actor, body: Record<string, unknown>) =>
       request(app).put('/api/notifications/preferences').set(auth(a.token)).send(body);
 
     expect((await put(early, { emailFrequency: 'daily', digestHour: 6 }).expect(200)).body).toEqual(
-      { emailFrequency: 'daily', digestHour: 6 },
+      { emailFrequency: 'daily', digestHour: 6, timezone: 'America/Sao_Paulo' },
     );
+    // Fuso da pessoa (ADR 46): 08:00 de Manaus é 09:00 de Brasília.
+    expect(
+      (
+        await put(manaus, {
+          emailFrequency: 'daily',
+          digestHour: 8,
+          timezone: 'America/Manaus',
+        }).expect(200)
+      ).body,
+    ).toEqual({ emailFrequency: 'daily', digestHour: 8, timezone: 'America/Manaus' });
     await put(standard, { emailFrequency: 'daily' }).expect(200);
     await put(late, { emailFrequency: 'daily' }).expect(200);
     // Só a hora, num segundo pedido: a frequência fica e a sessão já mostra.
     expect((await put(late, { digestHour: 21 }).expect(200)).body).toEqual({
       emailFrequency: 'daily',
       digestHour: 21,
+      timezone: 'America/Sao_Paulo',
     });
     const me = await request(app).get('/api/auth/me').set(auth(late.token));
     expect(me.body).toMatchObject({ emailFrequency: 'daily', digestHour: 21 });
-    for (const body of [{ digestHour: 24 }, { digestHour: -1 }, { digestHour: 7.5 }, {}]) {
+    for (const body of [
+      { digestHour: 24 },
+      { digestHour: -1 },
+      { digestHour: 7.5 },
+      { timezone: 'Europe/Lisbon' },
+      {},
+    ]) {
       expect((await put(late, body)).status, JSON.stringify(body)).toBe(422);
     }
 
@@ -166,9 +188,11 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
     expect(seven).toContain(early.id);
     expect(seven).not.toContain(standard.id);
     expect(seven).not.toContain(late.id);
+    expect(seven).not.toContain(manaus.id); // 06:00 em Manaus
 
     const noon = handled(await runDailyDigest(at(12)));
     expect(noon).toContain(standard.id);
+    expect(noon).toContain(manaus.id); // 11:00 em Manaus, depois das 08:00 dela
     expect(noon).not.toContain(early.id);
     expect(noon).not.toContain(late.id);
 
@@ -178,10 +202,11 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
     expect(night).toContain(late.id);
     expect(night).not.toContain(early.id);
 
-    // null volta à hora padrão.
-    expect((await put(late, { digestHour: null }).expect(200)).body).toEqual({
+    // null volta à hora e ao fuso padrão.
+    expect((await put(manaus, { digestHour: null, timezone: null }).expect(200)).body).toEqual({
       emailFrequency: 'daily',
       digestHour: env.DIGEST_HOUR,
+      timezone: 'America/Sao_Paulo',
     });
   });
 });

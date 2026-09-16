@@ -1,6 +1,8 @@
 import type { SavedSearchAlertFrequency } from '@escambo/types';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
+import type { BrazilTimezone } from '@escambo/types';
 import { pool } from '../../config/db';
+import { DEFAULT_TIMEZONE } from '../../utils/timezone';
 
 export interface SavedSearchRow extends RowDataPacket {
   id: number;
@@ -21,10 +23,11 @@ export interface AlertDueThresholds {
   instant: Date;
   hourly: Date;
   /**
-   * Diária (ADR 42): o limite depende da hora do resumo de cada dono, então vão o começo do dia de
-   * Brasília da janela, a hora da janela e a hora padrão, e a consulta calcula o de cada um.
+   * Diária (ADR 42 e 46): o limite depende da hora do resumo de cada dono e do fuso dele, então
+   * vão o fuso, o começo do dia local da janela, a hora local da janela e a hora padrão, e a
+   * consulta calcula o de cada um; só as contas desse fuso entram.
    */
-  daily: { dayStart: Date; hourNow: number; defaultHour: number };
+  daily: { zone: BrazilTimezone; dayStart: Date; hourNow: number; defaultHour: number };
 }
 
 const COLS =
@@ -136,6 +139,7 @@ export const savedSearchesRepository = {
         WHERE s.alert_enabled = 1
           AND u.deleted_at IS NULL
           AND u.status NOT IN ('suspended', 'banned')
+          AND COALESCE(u.timezone, :defaultZone) = :zone
           AND COALESCE(s.last_alert_at, s.created_at) <= CASE s.alert_frequency
                 WHEN 'instant' THEN CAST(:instant AS DATETIME)
                 WHEN 'daily' THEN DATE_SUB(
@@ -153,6 +157,8 @@ export const savedSearchesRepository = {
         dayStart: due.daily.dayStart,
         hourNow: due.daily.hourNow,
         defaultHour: due.daily.defaultHour,
+        zone: due.daily.zone,
+        defaultZone: DEFAULT_TIMEZONE,
       },
     );
     return rows;

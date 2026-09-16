@@ -1,23 +1,24 @@
-import type { SavedSearchAlertFrequency, SavedSearchFilters } from '@escambo/types';
+import type { BrazilTimezone, SavedSearchAlertFrequency, SavedSearchFilters } from '@escambo/types';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
 import { notificationsService } from '../modules/notifications/notifications.service';
 import {
   savedSearchesRepository,
   type AlertDueThresholds,
+  type SavedSearchRow,
 } from '../modules/saved-searches/saved-searches.repository';
 import { parseFilters, searchLabel } from '../modules/saved-searches/saved-searches.service';
 import {
   servicesRepository,
   type ServiceListFilters,
 } from '../modules/services/services.repository';
-import { hourInBrt, startOfTodayBrt } from './daily-digest';
+import { BRAZIL_TIMEZONES, DEFAULT_TIMEZONE, hourIn, startOfTodayIn } from '../utils/timezone';
 
 /**
  * Alertas de busca salva (ADR 35 e 37). Cada busca com alerta tem um cursor (last_alert_at) e uma
  * frequência. "Na hora" confere a toda rodada dos jobs; "de hora em hora" espera o cursor passar
- * de ALERT_EVERY_MINUTES; "uma vez por dia" espera o cursor ficar antes do último horário do dono (ADR 42) em
- * Brasília, o mesmo horário do resumo diário de e-mail. Vencida, a busca procura serviços criados
+ * de ALERT_EVERY_MINUTES; "uma vez por dia" espera o cursor ficar antes do último horário do dono
+ * (ADR 42) no fuso dele (ADR 46), o mesmo horário do resumo diário de e-mail. Vencida, a busca procura serviços criados
  * em [cursor, agora) que casam com o texto e os filtros — fora os do próprio dono — e manda uma
  * notificação com até MATCHES_SHOWN títulos. O cursor avança mesmo sem resultado. Janela fechada
  * à esquerda e aberta à direita, no segundo cheio (DATETIME não tem milissegundo): um serviço
@@ -39,26 +40,36 @@ export interface SavedSearchAlertsResult {
   failed: number[];
 }
 
-/** Último horário do alerta diário até `now`: `hour` de hoje em Brasília se já passou, senão o de ontem. */
-export function lastDailyAlertAt(now: Date, hour: number = env.DIGEST_HOUR): Date {
-  const today = new Date(startOfTodayBrt(now).getTime() + hour * HOUR);
+/** Último horário do alerta diário até `now`: `hour` de hoje no fuso se já passou, senão o de ontem. */
+export function lastDailyAlertAt(
+  now: Date,
+  hour: number = env.DIGEST_HOUR,
+  zone: BrazilTimezone = DEFAULT_TIMEZONE,
+): Date {
+  const today = new Date(startOfTodayIn(zone, now).getTime() + hour * HOUR);
   return today.getTime() <= now.getTime() ? today : new Date(today.getTime() - DAY);
 }
 
 /**
  * Limite do cursor de cada frequência para entrar na rodada que fecha em `until`. Os cursores são
  * segundos cheios, então "até um segundo antes" é o mesmo que "antes de": na hora, qualquer cursor
- * anterior ao fim da janela; por dia, anterior ao último horário diário do dono (ADR 42), que a
- * consulta calcula com a hora dele do mesmo jeito que `lastDailyAlertAt`.
+ * anterior ao fim da janela; por dia, anterior ao último horário diário do dono (ADR 42) no fuso
+ * `zone` (ADR 46), que a consulta calcula com a hora dele do mesmo jeito que `lastDailyAlertAt`.
  */
 export function alertDueThresholds(
   until: Date,
   defaultHour: number = env.DIGEST_HOUR,
+  zone: BrazilTimezone = DEFAULT_TIMEZONE,
 ): AlertDueThresholds {
   return {
     instant: new Date(until.getTime() - SECOND),
     hourly: new Date(until.getTime() - ALERT_EVERY_MINUTES * 60_000),
-    daily: { dayStart: startOfTodayBrt(until), hourNow: hourInBrt(until), defaultHour },
+    daily: {
+      zone,
+      dayStart: startOfTodayIn(zone, until),
+      hourNow: hourIn(zone, until),
+      defaultHour,
+    },
   };
 }
 
@@ -110,10 +121,16 @@ export async function runSavedSearchAlerts(
   now: Date = new Date(),
 ): Promise<SavedSearchAlertsResult> {
   const until = new Date(Math.floor(now.getTime() / SECOND) * SECOND);
-  const due = await savedSearchesRepository.dueForAlert(
-    alertDueThresholds(until),
-    MAX_SEARCHES_PER_RUN,
-  );
+  // Um fuso por vez (ADR 46): o limite diário depende do dia e da hora locais de cada fuso.
+  const due: SavedSearchRow[] = [];
+  for (const zone of BRAZIL_TIMEZONES) {
+    due.push(
+      ...(await savedSearchesRepository.dueForAlert(
+        alertDueThresholds(until, env.DIGEST_HOUR, zone),
+        MAX_SEARCHES_PER_RUN,
+      )),
+    );
+  }
   const result: SavedSearchAlertsResult = { checked: due.length, alerted: [], failed: [] };
 
   for (const s of due) {

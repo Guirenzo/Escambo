@@ -7,13 +7,15 @@ import type {
   StrikeSummary,
 } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
+import { formatDateTime, timezoneOf } from '../../utils/timezone';
+import { authRepository } from '../auth/auth.repository';
 import { fingerprint } from '../media/media.image';
 import { mediaKeyFromUrl } from '../media/media.paths';
 import { deleteMediaImage, quarantineMediaImage, readMediaFile } from '../media/media.storage';
 import { messagingService } from '../messaging/messaging.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { contentRemovalsRepository } from './content-removals.repository';
-import { appealDeadline, brDateTime, strikePolicy, strikeSummary } from './moderation.strikes';
+import { appealDeadline, strikePolicy, strikeSummary } from './moderation.strikes';
 import { reportsRepository, type ContentReportRow, type TargetInfoRow } from './reports.repository';
 import { isImageTarget, isTextTarget, type ReportAction } from './reports.schema';
 
@@ -40,6 +42,10 @@ const REASON_TEXT: Record<string, string> = {
 };
 
 const iso = (d: Date): string => new Date(d).toISOString();
+
+/** Fuso da conta, para as datas do aviso saírem na hora dela (ADR 46). */
+const zoneOf = async (userId: number) =>
+  timezoneOf((await authRepository.findById(userId))?.timezone);
 
 function labelFor(type: string, info: TargetInfoRow | undefined): string {
   switch (type) {
@@ -204,6 +210,7 @@ async function removeContent(
     const policy = await strikePolicy();
     const now = new Date();
     strikes = await strikeSummary(author.id, now, policy);
+    const zone = await zoneOf(author.id);
     accountReviewOpened = await openAccountReview(
       adminId,
       author.id,
@@ -217,7 +224,7 @@ async function removeContent(
       body: [
         `A moderação removeu ${type === 'review' ? 'a avaliação' : 'a mensagem'} por ${REASON_TEXT[report.reason] ?? REASON_TEXT.other}.`,
         group.note,
-        `Se discordar, conteste pelo seu perfil até ${brDateTime(appealDeadline(now, policy.appealWindowDays))}.`,
+        `Se discordar, conteste pelo seu perfil até ${formatDateTime(appealDeadline(now, policy.appealWindowDays), zone)}.`,
       ]
         .filter(Boolean)
         .join(' '),
@@ -355,6 +362,7 @@ export const moderationService = {
       const policy = await strikePolicy();
       const now = new Date();
       strikes = await strikeSummary(owner.owner_id, now, policy);
+      const zone = await zoneOf(owner.owner_id);
       accountReviewOpened = await openAccountReview(
         adminId,
         owner.owner_id,
@@ -373,9 +381,9 @@ export const moderationService = {
           `A moderação removeu a imagem por ${REASON_TEXT[report.reason] ?? REASON_TEXT.other}.`,
           note,
           print ? 'A mesma imagem não pode ser enviada de novo.' : null,
-          `Se discordar, conteste pelo seu perfil até ${brDateTime(appealDeadline(now, policy.appealWindowDays))}.`,
+          `Se discordar, conteste pelo seu perfil até ${formatDateTime(appealDeadline(now, policy.appealWindowDays), zone)}.`,
           strikes.uploadsBlockedUntil
-            ? `Como é a ${strikes.imageStrikes}ª imagem removida nos últimos ${strikes.windowDays} dias, o envio de imagens fica bloqueado até ${brDateTime(new Date(strikes.uploadsBlockedUntil))}.`
+            ? `Como é a ${strikes.imageStrikes}ª imagem removida nos últimos ${strikes.windowDays} dias, o envio de imagens fica bloqueado até ${formatDateTime(new Date(strikes.uploadsBlockedUntil), zone)}.`
             : null,
         ]
           .filter(Boolean)

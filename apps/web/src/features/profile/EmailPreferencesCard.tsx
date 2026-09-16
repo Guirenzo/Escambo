@@ -1,9 +1,10 @@
 import { Clock, Mail } from 'lucide-react';
 import { useState } from 'react';
-import type { EmailFrequency, UpdateEmailPreferenceRequest } from '@escambo/types';
+import type { BrazilTimezone, EmailFrequency, UpdateEmailPreferenceRequest } from '@escambo/types';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { DIGEST_HOURS, digestHourLabel } from '../../lib/format';
+import { DEFAULT_TIMEZONE, TIMEZONE_OPTIONS, timezoneLabel } from '../../lib/timezones';
 import { useToast } from '../../lib/toast';
 
 const OPTIONS: { value: EmailFrequency; label: string; hint: (hour: string) => string }[] = [
@@ -27,8 +28,9 @@ const OPTIONS: { value: EmailFrequency; label: string; hint: (hour: string) => s
 ];
 
 /**
- * Como o usuário quer os e-mails de notificação (ADR 27) e a hora do resumo do dia (ADR 42), que
- * vale para o e-mail diário e para as buscas salvas com alerta diário. O app não muda além disso.
+ * Como o usuário quer os e-mails de notificação (ADR 27), a hora do resumo do dia (ADR 42), que
+ * vale para o e-mail diário e para as buscas salvas com alerta diário, e o fuso em que essa hora
+ * e as datas dos avisos valem (ADR 46). O app não muda além disso.
  */
 export function EmailPreferencesCard() {
   const { user, refreshUser } = useAuth();
@@ -36,6 +38,7 @@ export function EmailPreferencesCard() {
   const [saving, setSaving] = useState(false);
   const current = user?.emailFrequency ?? 'instant';
   const hour = user?.digestHour ?? 8;
+  const zone = user?.timezone ?? DEFAULT_TIMEZONE;
 
   async function save(change: UpdateEmailPreferenceRequest, done: string): Promise<void> {
     if (saving) return;
@@ -65,7 +68,18 @@ export function EmailPreferencesCard() {
 
   function chooseHour(value: number): void {
     if (value === hour) return;
-    void save({ digestHour: value }, `Pronto: seu resumo do dia sai às ${digestHourLabel(value)}.`);
+    void save(
+      { digestHour: value },
+      `Pronto: seu resumo do dia sai às ${digestHourLabel(value)}, horário de ${timezoneLabel(zone)}.`,
+    );
+  }
+
+  function chooseZone(value: BrazilTimezone): void {
+    if (value === zone) return;
+    void save(
+      { timezone: value },
+      `Pronto: horário de ${timezoneLabel(value)} no resumo do dia e nos avisos.`,
+    );
   }
 
   return (
@@ -114,9 +128,24 @@ export function EmailPreferencesCard() {
             ))}
           </select>
         </label>
+        <label className="pref-hour-field">
+          <span>Fuso horário</span>
+          <select
+            value={zone}
+            disabled={saving}
+            aria-describedby="digest-hour-hint"
+            onChange={(e) => chooseZone(e.target.value as BrazilTimezone)}
+          >
+            {TIMEZONE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label} ({o.hint})
+              </option>
+            ))}
+          </select>
+        </label>
         <span id="digest-hour-hint" className="muted tiny">
-          Horário de Brasília. Vale para o resumo por e-mail e para as buscas salvas com alerta
-          diário.
+          Horário de {timezoneLabel(zone)}. Vale para o resumo por e-mail, para as buscas salvas com
+          alerta diário e para as datas nos avisos.
         </span>
       </div>
     </section>

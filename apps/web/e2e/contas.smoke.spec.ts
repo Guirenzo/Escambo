@@ -153,7 +153,7 @@ test('avatar por URL aparece na sidebar e no perfil público', async ({ page, re
   await expect(page.locator('.side-user .avatar img')).toHaveCount(1);
 });
 
-test('preferência de e-mail: "Resumo diário" e a hora do resumo persistem no perfil e na sessão', async ({
+test('preferência de e-mail: "Resumo diário", a hora e o fuso do resumo persistem no perfil e na sessão', async ({
   page,
   request,
 }) => {
@@ -189,6 +189,19 @@ test('preferência de e-mail: "Resumo diário" e a hora do resumo persistem no p
     headers: { Authorization: `Bearer ${freelancer.token}` },
   });
   expect(((await after.json()) as { digestHour: number }).digestHour).toBe(20);
+
+  // Fuso da conta (ADR 46): troca, a dica muda e fica depois de recarregar.
+  const zoneSelect = () => page.getByTestId('email-prefs').getByLabel('Fuso horário');
+  await zoneSelect().selectOption('America/Manaus');
+  await expect(page.locator('.toast', { hasText: 'horário de Manaus' })).toBeVisible();
+  await expect(page.getByTestId('email-prefs')).toContainText('Horário de Manaus.');
+  await page.reload();
+  await settled(page);
+  await expect(zoneSelect()).toHaveValue('America/Manaus');
+  const withZone = await request.get('/api/auth/me', {
+    headers: { Authorization: `Bearer ${freelancer.token}` },
+  });
+  expect(((await withZone.json()) as { timezone: string }).timezone).toBe('America/Manaus');
 });
 
 test('perfil rico: dias de atendimento e portfólio aparecem no perfil público', async ({
