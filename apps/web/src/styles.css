@@ -2424,7 +2424,8 @@ button.toggle.on {
 /* Hora do resumo do dia (ADR 42): uma linha só, abaixo das frequências. */
 .pref-hour {
   display: grid;
-  grid-template-columns: auto 1fr;
+  /* minmax(0, 1fr): o seletor de fuso não alarga a coluna nem a página no celular */
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 4px 12px;
   margin-top: 10px;
@@ -2434,7 +2435,7 @@ button.toggle.on {
 }
 .pref-hour-ico {
   display: grid;
-  grid-row: span 2;
+  grid-row: span 3;
   place-items: center;
   width: 34px;
   height: 34px;
@@ -2456,6 +2457,7 @@ button.toggle.on {
 .pref-hour-field select {
   width: auto;
   min-width: 104px;
+  max-width: 100%;
 }
 .pref-hour > .muted {
   grid-column: 2;

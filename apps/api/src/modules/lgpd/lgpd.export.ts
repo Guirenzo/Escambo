@@ -11,10 +11,11 @@ import { env } from '../../config/env';
  * Formato 1.1: entram as buscas salvas, com a frequência do alerta (ADR 37). Formato 1.2: entram
  * as imagens removidas pela moderação, com a contestação e a decisão (ADR 41). Formato 1.3: a
  * preferência de e-mail e a hora do resumo do dia entram nos dados do titular (ADR 42). Formato
- * 1.4: o texto das avaliações e mensagens removidas pela moderação (ADR 44).
+ * 1.4: o texto das avaliações e mensagens removidas pela moderação (ADR 44). Formato 1.5: o fuso
+ * da conta (ADR 46).
  */
 
-export const EXPORT_FORMAT_VERSION = '1.4';
+export const EXPORT_FORMAT_VERSION = '1.5';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -24,7 +25,7 @@ const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket
 export async function buildExport(userId: number): Promise<Record<string, unknown>> {
   const p = { userId };
   const [user] = await q(
-    `SELECT ulid, email, phone, role, status, email_verified_at, email_frequency, digest_hour,
+    `SELECT ulid, email, phone, role, status, email_verified_at, email_frequency, digest_hour, timezone,
             last_login_at, created_at
        FROM users WHERE id = :userId`,
     p,

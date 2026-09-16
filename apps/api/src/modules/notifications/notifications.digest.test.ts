@@ -57,12 +57,13 @@ describe('preferência de e-mail (ADR 27)', () => {
     expect(await notificationsService.getEmailPreference(7)).toEqual({
       emailFrequency: 'daily',
       digestHour: env.DIGEST_HOUR,
+      timezone: 'America/Sao_Paulo',
     });
 
     users.findById.mockResolvedValue(user('off', 20));
     expect(
       await notificationsService.setEmailPreference(7, { emailFrequency: 'off', digestHour: 20 }),
-    ).toEqual({ emailFrequency: 'off', digestHour: 20 });
+    ).toEqual({ emailFrequency: 'off', digestHour: 20, timezone: 'America/Sao_Paulo' });
     expect(users.setEmailPreference).toHaveBeenCalledWith(7, {
       emailFrequency: 'off',
       digestHour: 20,

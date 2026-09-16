@@ -48,12 +48,21 @@ describe('runDailyDigest', () => {
     expect(repo.usersForDigest).not.toHaveBeenCalled();
   });
 
-  it('de madrugada também consulta: quem escolheu essa hora já recebe (ADR 42)', async () => {
+  it('de madrugada também consulta, um fuso por vez com o dia e a hora dele (ADR 42 e 46)', async () => {
     const r = await runDailyDigest(DAWN_BRT);
+    expect(repo.usersForDigest).toHaveBeenCalledTimes(5);
     expect(repo.usersForDigest).toHaveBeenCalledWith(
       new Date('2026-09-14T03:00:00.000Z'),
       3,
       env.DIGEST_HOUR,
+      'America/Sao_Paulo',
+    );
+    // Manaus está uma hora atrás: 02:30 do dia 14, cuja meia-noite foi 04:00Z.
+    expect(repo.usersForDigest).toHaveBeenCalledWith(
+      new Date('2026-09-14T04:00:00.000Z'),
+      2,
+      env.DIGEST_HOUR,
+      'America/Manaus',
     );
     expect(r).toEqual({ skipped: null, sent: [], empty: [], failed: [] });
   });
@@ -62,7 +71,9 @@ describe('runDailyDigest', () => {
     const u1 = { id: 1, email: 'a@escambo.test', last_digest_at: null };
     const u2 = { id: 2, email: 'b@escambo.test', last_digest_at: new Date('2026-09-13T11:00:00Z') };
     const u3 = { id: 3, email: 'c@escambo.test', last_digest_at: null };
-    repo.usersForDigest.mockResolvedValue([u1, u2, u3] as never);
+    repo.usersForDigest.mockImplementation(async (_day, _hour, _default, zone) =>
+      zone === 'America/Sao_Paulo' ? ([u1, u2, u3] as never) : [],
+    );
     svc.sendDigest
       .mockResolvedValueOnce(3)
       .mockResolvedValueOnce(0)
@@ -74,6 +85,7 @@ describe('runDailyDigest', () => {
       new Date('2026-09-14T03:00:00.000Z'),
       12,
       env.DIGEST_HOUR,
+      'America/Sao_Paulo',
     );
     expect(svc.sendDigest).toHaveBeenCalledWith(u1, NOON_BRT);
     expect(r).toEqual({ skipped: null, sent: [1], empty: [2], failed: [3] });

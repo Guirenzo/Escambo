@@ -17,9 +17,19 @@ export interface PublicUser {
   emailVerified: boolean;
   /** Como o usuário quer os e-mails de notificação (ADR 27). */
   emailFrequency: EmailFrequency;
-  /** Hora (0 a 23, Brasília) do resumo do dia: e-mail diário e alertas diários de busca (ADR 42). */
+  /** Hora (0 a 23) do resumo do dia: e-mail diário e alertas diários de busca (ADR 42). */
   digestHour: number;
+  /** Fuso da conta (ADR 46): vale para a hora do resumo e para as datas nos avisos. */
+  timezone: BrazilTimezone;
 }
+
+/** Fusos do Brasil que a conta pode escolher (ADR 46); sem horário de verão desde 2019. */
+export type BrazilTimezone =
+  | 'America/Noronha'
+  | 'America/Sao_Paulo'
+  | 'America/Cuiaba'
+  | 'America/Manaus'
+  | 'America/Rio_Branco';
 
 /** instant: um e-mail por evento · daily: resumo diário · off: só e-mails essenciais. */
 export type EmailFrequency = 'instant' | 'daily' | 'off';
@@ -28,12 +38,15 @@ export interface EmailPreference {
   emailFrequency: EmailFrequency;
   /** Hora do resumo do dia; quem nunca escolheu fica com a hora padrão da plataforma. */
   digestHour: number;
+  /** Fuso da conta; quem nunca escolheu fica em Brasília (ADR 46). */
+  timezone: BrazilTimezone;
 }
 
-/** Muda só o que vier; `digestHour: null` volta à hora padrão da plataforma. */
+/** Muda só o que vier; `null` na hora ou no fuso volta ao padrão da plataforma. */
 export interface UpdateEmailPreferenceRequest {
   emailFrequency?: EmailFrequency;
   digestHour?: number | null;
+  timezone?: BrazilTimezone | null;
 }
 
 export interface ForgotPasswordRequest {

@@ -11,7 +11,6 @@ import { settingsService } from '../settings/settings.service';
 import { contentRemovalsRepository } from './content-removals.repository';
 import {
   appealDeadline,
-  brDateTime,
   strikePolicy,
   strikeSummary,
   uploadsBlockedUntil,
@@ -42,12 +41,10 @@ describe('reincidência na moderação de imagens (ADR 41)', () => {
     expect(uploadsBlockedUntil(3, null, 7)).toBeNull();
   });
 
-  it('prazo de contestação e data em Brasília nos avisos', () => {
+  it('prazo de contestação', () => {
     expect(appealDeadline(new Date('2026-09-15T15:00:00Z'), 14)).toEqual(
       new Date('2026-09-29T15:00:00Z'),
     );
-    expect(brDateTime(new Date('2026-09-29T15:00:00Z'))).toBe('29/09/2026 às 12:00');
-    expect(brDateTime(new Date('2026-01-01T02:30:00Z'))).toBe('31/12/2025 às 23:30');
   });
 
   it('lê os quatro parâmetros da plataforma', async () => {

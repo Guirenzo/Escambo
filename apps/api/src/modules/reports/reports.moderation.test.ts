@@ -38,7 +38,11 @@ vi.mock('../notifications/notifications.service', () => ({
 vi.mock('../messaging/messaging.service', () => ({
   messagingService: { announceChange: vi.fn() },
 }));
+vi.mock('../auth/auth.repository', () => ({
+  authRepository: { findById: vi.fn() },
+}));
 
+import { authRepository } from '../auth/auth.repository';
 import { fingerprint } from '../media/media.image';
 import { deleteMediaImage, quarantineMediaImage, readMediaFile } from '../media/media.storage';
 import { messagingService } from '../messaging/messaging.service';
@@ -58,6 +62,7 @@ const notify = vi.mocked(notificationsService.notify);
 const policy = vi.mocked(strikePolicy);
 const summary = vi.mocked(strikeSummary);
 const announce = vi.mocked(messagingService.announceChange);
+const users = vi.mocked(authRepository);
 
 const MEDIA = '/api/media/2026/09/01J8ZQ4K7M3VX5R2T9W6Y1B0CD.webp';
 const KEY = '2026/09/01J8ZQ4K7M3VX5R2T9W6Y1B0CD.webp';
@@ -126,6 +131,7 @@ beforeEach(() => {
     uploadsBlockedUntil: null,
   });
   announce.mockResolvedValue(undefined);
+  users.findById.mockResolvedValue({ timezone: null } as never);
 });
 
 afterEach(() => {
@@ -189,7 +195,9 @@ describe('fila de moderação (ADR 39)', () => {
         description: 'Sinalizado automaticamente: Pix.',
       }),
     ]);
-    repo.messagesByIds.mockResolvedValue([info({ id: 8, title: 'me paga no pix', image_url: null })]);
+    repo.messagesByIds.mockResolvedValue([
+      info({ id: 8, title: 'me paga no pix', image_url: null }),
+    ]);
 
     const [group] = await moderationService.listQueue('pending');
 
@@ -281,6 +289,19 @@ describe('remoção contestável e reincidência (ADR 41)', () => {
       uploadsBlockedUntil: null,
       accountReviewOpened: false,
     });
+  });
+
+  it('o prazo no aviso sai no fuso do dono (ADR 46)', async () => {
+    repo.findById.mockResolvedValue(row({ id: 4 }));
+    users.findById.mockResolvedValue({ timezone: 'America/Manaus' } as never);
+
+    await moderationService.act(1, 4, 'remove-image', null);
+
+    expect(users.findById).toHaveBeenCalledWith(9);
+    expect(notify).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({ body: expect.stringContaining('até 29/09/2026 às 11:00.') }),
+    );
   });
 
   it('no limite de reincidência: bloqueio no aviso e denúncia da conta aberta uma vez', async () => {

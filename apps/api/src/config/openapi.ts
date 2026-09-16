@@ -240,17 +240,28 @@ export const openapiDocument: Record<string, any> = {
     '/notifications/preferences': {
       get: op(
         'Notificações',
-        'Preferência de e-mail (instant | daily | off) e hora do resumo do dia (digestHour, 0 a 23 em Brasília; sem escolha, a hora padrão)',
+        'Preferência de e-mail (instant | daily | off), hora do resumo do dia (digestHour, 0 a 23; sem escolha, a hora padrão) e fuso da conta (timezone, um dos fusos do Brasil; sem escolha, America/Sao_Paulo)',
         { auth: true },
       ),
       put: op(
         'Notificações',
-        'Muda a frequência dos e-mails e/ou a hora do resumo do dia, que vale para o e-mail diário e para os alertas diários das buscas salvas (digestHour null volta à hora padrão)',
+        'Muda a frequência dos e-mails, a hora do resumo do dia e/ou o fuso da conta; hora e fuso valem para o e-mail diário, para os alertas diários das buscas salvas e para as datas nos avisos (null volta ao padrão)',
         {
           auth: true,
           body: obj({
             emailFrequency: { type: 'string', enum: ['instant', 'daily', 'off'] },
             digestHour: { type: 'integer', minimum: 0, maximum: 23, nullable: true },
+            timezone: {
+              type: 'string',
+              enum: [
+                'America/Noronha',
+                'America/Sao_Paulo',
+                'America/Cuiaba',
+                'America/Manaus',
+                'America/Rio_Branco',
+              ],
+              nullable: true,
+            },
           }),
         },
       ),

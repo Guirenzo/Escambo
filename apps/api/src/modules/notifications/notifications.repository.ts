@@ -1,5 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
+import type { BrazilTimezone } from '@escambo/types';
 import { pool } from '../../config/db';
+import { DEFAULT_TIMEZONE } from '../../utils/timezone';
 
 export interface NotificationRow extends RowDataPacket {
   id: number;
@@ -31,21 +33,25 @@ export const notificationsRepository = {
     return rows;
   },
 
-  /** Quem quer resumo diário e não recebeu nenhum desde `cutoff` (começo do dia em Brasília). */
+  /**
+   * Quem quer resumo diário, está no fuso `zone` (ADR 46), já chegou na própria hora hoje
+   * (ADR 42) e ainda não recebeu o resumo deste dia local (`dayStart`, meia-noite no fuso).
+   */
   async usersForDigest(
     dayStart: Date,
     hourNow: number,
     defaultHour: number,
+    zone: BrazilTimezone,
   ): Promise<DigestUserRow[]> {
-    // Hora de cada um (ADR 42): já chegou hoje e ainda não recebeu o resumo deste dia de Brasília.
     const [rows] = await pool.query<DigestUserRow[]>(
       `SELECT id, email, last_digest_at FROM users
         WHERE email_frequency = 'daily' AND deleted_at IS NULL
+          AND COALESCE(timezone, :defaultZone) = :zone
           AND COALESCE(digest_hour, :defaultHour) <= :hourNow
           AND (last_digest_at IS NULL OR last_digest_at < :dayStart)
         ORDER BY id ASC
         LIMIT 500`,
-      { dayStart, hourNow, defaultHour },
+      { dayStart, hourNow, defaultHour, zone, defaultZone: DEFAULT_TIMEZONE },
     );
     return rows;
   },

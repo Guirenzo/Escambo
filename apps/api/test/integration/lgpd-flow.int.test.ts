@@ -88,12 +88,16 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       buscasSalvas: { name: string; query: string; alert_frequency: string }[];
       moderacao: unknown[];
     };
-    expect(data.formato).toBe('escambo-export/1.4');
+    expect(data.formato).toBe('escambo-export/1.5');
     // Imagens removidas pela moderação e contestações entram no formato 1.2 (ADR 41).
     expect(data.moderacao).toEqual([]);
     expect(data.titular.email).toBe(user.email);
     // Preferência de e-mail e hora do resumo entram no formato 1.3 (ADR 42).
-    expect(data.titular).toMatchObject({ email_frequency: 'instant', digest_hour: null });
+    expect(data.titular).toMatchObject({
+      email_frequency: 'instant',
+      digest_hour: null,
+      timezone: null,
+    });
     expect(data.perfis.freelancer?.full_name).toBe('Titular Exportável');
     expect(data.carteira.extratoReais.map((t) => t.reason)).toEqual(['deposit']);
     expect(data.carteira.depositos).toHaveLength(1);

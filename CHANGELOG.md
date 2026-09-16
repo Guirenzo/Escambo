@@ -5,6 +5,24 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.28.0] — 2026-09-16
+
+### Adicionado
+
+- **Fuso horário por pessoa** (ADR 46). No cartão de e-mails do perfil, a conta escolhe entre os
+  cinco fusos do Brasil; sem escolha, vale Brasília. A hora do resumo do dia, o alerta diário das
+  buscas salvas e as datas escritas nos avisos (prazo para contestar, fim do bloqueio de envio)
+  passam a valer nesse fuso.
+  - `PUT /api/notifications/preferences` aceita `timezone` (`null` volta a Brasília), e a sessão e
+    a preferência devolvem o fuso.
+  - Migration `0022_fuso_por_pessoa`.
+
+### Alterado
+
+- Os jobs `daily-digest` e `saved-search-alerts` rodam um fuso por vez, com o dia e a hora locais
+  de cada um.
+- A cópia de dados da LGPD passa ao formato 1.5, com o fuso da conta.
+
 ## [1.27.0] — 2026-09-16
 
 ### Adicionado

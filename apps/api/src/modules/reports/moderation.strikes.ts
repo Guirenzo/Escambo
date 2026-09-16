@@ -67,18 +67,4 @@ export async function strikeSummary(
   };
 }
 
-const BRT = new Intl.DateTimeFormat('pt-BR', {
-  timeZone: 'America/Sao_Paulo',
-  day: '2-digit',
-  month: '2-digit',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
-
-/** Data e hora de Brasília, como aparecem nos avisos: "29/09/2026 às 12:00". */
-export function brDateTime(d: Date): string {
-  const part = Object.fromEntries(BRT.formatToParts(d).map((p) => [p.type, p.value]));
-  return `${part.day}/${part.month}/${part.year} às ${part.hour}:${part.minute}`;
-}
+// A data nos avisos sai no fuso da pessoa: utils/timezone.formatDateTime (ADR 46).
