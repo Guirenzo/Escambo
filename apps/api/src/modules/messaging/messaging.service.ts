@@ -1,9 +1,10 @@
-import type { ChatAttachment, ChatHistory, ChatMessage } from '@escambo/types';
+import type { ChatAttachment, ChatHistory, ChatMessage, OffPlatformSignal } from '@escambo/types';
 import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
 import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
 import { notificationsService } from '../notifications/notifications.service';
 import { profilesRepository } from '../profiles/profiles.repository';
+import { reportsRepository } from '../reports/reports.repository';
 import { logger } from '../../config/logger';
 import {
   attachmentPath,
@@ -16,6 +17,7 @@ import {
   type AttachmentKind,
 } from './attachments.storage';
 import { messagingRepository, type MessageRow, type PurgeReason } from './messaging.repository';
+import { describeSignals, offPlatformSignals, parseSignals } from './off-platform';
 
 const HISTORY_LIMIT = 200;
 
@@ -68,6 +70,7 @@ function toMessage(row: MessageRow): ChatMessage {
     attachment: removedAt ? null : toAttachment(row),
     createdAt: new Date(row.created_at).toISOString(),
     removedAt,
+    signals: removedAt ? [] : parseSignals(row.off_platform),
   };
 }
 
@@ -146,6 +149,27 @@ function deliver(ctx: ConversationContext, uid: number, row: MessageRow): ChatMe
   return message;
 }
 
+/**
+ * Sinalização automática (ADR 45): a mensagem com sinal de negociação por fora entra na fila de
+ * denúncias sem denunciante, com o que foi achado. Melhor esforço: a mensagem já está gravada e
+ * chega às duas partes de qualquer jeito.
+ */
+async function flagOffPlatform(messageId: number, signals: OffPlatformSignal[]): Promise<void> {
+  if (signals.length === 0) return;
+  try {
+    await reportsRepository.create({
+      reporterId: null,
+      targetType: 'message',
+      targetId: messageId,
+      imageUrl: null,
+      reason: 'off_platform',
+      description: `Sinalizado automaticamente: ${describeSignals(signals)}.`,
+    });
+  } catch (err) {
+    logger.warn({ err, messageId }, 'sinalização automática não gravada');
+  }
+}
+
 export const messagingService = {
   /** Avisa a sala do contrato que a mensagem mudou: removida ou devolvida pela moderação (ADR 44). */
   async announceChange(messageId: number): Promise<void> {
@@ -172,11 +196,14 @@ export const messagingService = {
   /** Persiste uma mensagem de texto, transmite em tempo real e notifica a outra parte. */
   async send(contractId: number, uid: number, content: string): Promise<ChatMessage> {
     const ctx = await contextFor(contractId, uid);
+    const signals = offPlatformSignals(content);
     const row = await messagingRepository.insertMessage({
       conversationId: ctx.conversationId,
       senderId: uid,
       content,
+      signals,
     });
+    await flagOffPlatform(row.id, signals);
     return deliver(ctx, uid, row);
   },
 
@@ -201,13 +228,16 @@ export const messagingService = {
       );
     }
     const ctx = await contextFor(contractId, uid);
+    const text = caption?.trim() || null;
+    const signals = offPlatformSignals(text);
     const key = await saveAttachment(file.buffer, type);
     let row: MessageRow;
     try {
       row = await messagingRepository.insertMessage({
         conversationId: ctx.conversationId,
         senderId: uid,
-        content: caption?.trim() ? caption.trim() : null,
+        content: text,
+        signals,
         attachment: {
           kind: type.kind,
           key,
@@ -220,6 +250,7 @@ export const messagingService = {
       await removeAttachment(key);
       throw err;
     }
+    await flagOffPlatform(row.id, signals);
     return deliver(ctx, uid, row);
   },
 

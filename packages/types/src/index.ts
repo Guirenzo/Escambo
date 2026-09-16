@@ -197,6 +197,8 @@ export interface AdminReportGroup {
   lastReportedAt: string;
   reviewedAt: string | null;
   resolutionNote: string | null;
+  /** Tem denúncia automática da detecção de negociação por fora, sem denunciante (ADR 45). */
+  automatic: boolean;
 }
 
 export interface AdminReportActionRequest {
@@ -937,7 +939,12 @@ export interface ChatMessage {
   createdAt: string;
   /** Removida pela moderação (ADR 44): as partes veem o aviso, sem o texto nem o anexo. */
   removedAt: string | null;
+  /** Sinais de negociação por fora achados no texto (ADR 45); vazio quando limpa ou removida. */
+  signals: OffPlatformSignal[];
 }
+
+/** O que a detecção de negociação por fora achou numa mensagem (ADR 45). */
+export type OffPlatformSignal = 'pix' | 'phone' | 'email' | 'whatsapp' | 'off_platform';
 
 export interface ChatHistory {
   conversationId: number;

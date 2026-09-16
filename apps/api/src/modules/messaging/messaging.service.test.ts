@@ -22,6 +22,9 @@ vi.mock('../profiles/profiles.repository', () => ({
 vi.mock('../../config/realtime', () => ({
   realtime: { emitToContract: vi.fn() },
 }));
+vi.mock('../reports/reports.repository', () => ({
+  reportsRepository: { create: vi.fn() },
+}));
 // Detecção de tipo e nomes são puros (testados à parte); só o disco é simulado.
 vi.mock('./attachments.storage', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./attachments.storage')>()),
@@ -36,11 +39,13 @@ import { messagingRepository, type MessageRow } from './messaging.repository';
 import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
 import { notificationsService } from '../notifications/notifications.service';
 import { realtime } from '../../config/realtime';
+import { reportsRepository } from '../reports/reports.repository';
 import * as storage from './attachments.storage';
 
 const mRepo = vi.mocked(messagingRepository);
 const cRepo = vi.mocked(contractsRepository);
 const disk = vi.mocked(storage);
+const reports = vi.mocked(reportsRepository);
 
 const PNG = Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -131,6 +136,7 @@ describe('messagingService.history', () => {
       },
       createdAt: '2026-01-01T00:00:00.000Z',
       removedAt: null,
+      signals: [],
     });
   });
 });
@@ -147,6 +153,7 @@ describe('messagingService.send', () => {
       conversationId: 5,
       senderId: 20,
       content: 'resposta',
+      signals: [],
     });
     expect(realtime.emitToContract).toHaveBeenCalledWith(
       1,
@@ -158,6 +165,49 @@ describe('messagingService.send', () => {
       expect.objectContaining({ type: 'chat_message', data: { contractId: 1 } }),
     );
     expect(msg.content).toBe('resposta');
+  });
+
+  it('mensagem com Pix e telefone sai sinalizada e entra sozinha na fila de denúncias (ADR 45)', async () => {
+    cRepo.findById.mockResolvedValue(fakeContract());
+    mRepo.getOrCreate.mockResolvedValue(5);
+    const text = 'Me paga no pix: (47) 99999-0001';
+    mRepo.insertMessage.mockResolvedValue(
+      fakeMsg({ id: 3, sender_id: 20, content: text, off_platform: 'pix,phone' }),
+    );
+    reports.create.mockResolvedValue(9);
+
+    const msg = await messagingService.send(1, 20, text);
+
+    expect(mRepo.insertMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ signals: ['pix', 'phone'] }),
+    );
+    expect(reports.create).toHaveBeenCalledWith({
+      reporterId: null,
+      targetType: 'message',
+      targetId: 3,
+      imageUrl: null,
+      reason: 'off_platform',
+      description: 'Sinalizado automaticamente: Pix e telefone.',
+    });
+    expect(msg.signals).toEqual(['pix', 'phone']);
+    expect(realtime.emitToContract).toHaveBeenCalledWith(
+      1,
+      'message:new',
+      expect.objectContaining({ signals: ['pix', 'phone'] }),
+    );
+
+    // Mensagem limpa não vira denúncia; falha ao gravar a denúncia não derruba o envio.
+    vi.clearAllMocks();
+    cRepo.findById.mockResolvedValue(fakeContract());
+    mRepo.getOrCreate.mockResolvedValue(5);
+    mRepo.insertMessage.mockResolvedValue(fakeMsg({ id: 4, content: 'obrigado' }));
+    await messagingService.send(1, 10, 'obrigado');
+    expect(reports.create).not.toHaveBeenCalled();
+    mRepo.insertMessage.mockResolvedValue(
+      fakeMsg({ id: 5, content: 'chave pix', off_platform: 'pix' }),
+    );
+    reports.create.mockRejectedValue(new Error('db'));
+    expect((await messagingService.send(1, 10, 'chave pix')).signals).toEqual(['pix']);
   });
 });
 
@@ -225,6 +275,7 @@ describe('messagingService.sendAttachment (ADR 29)', () => {
       conversationId: 5,
       senderId: 20,
       content: 'olha o rascunho',
+      signals: [],
       attachment: {
         kind: 'image',
         key: '2026/09/01KEY.png',
@@ -332,7 +383,7 @@ describe('messagingService.attachment (download)', () => {
 });
 
 describe('notificationBody', () => {
-  const base = { id: 1, conversationId: 1, senderId: 1, createdAt: '', removedAt: null };
+  const base = { id: 1, conversationId: 1, senderId: 1, createdAt: '', removedAt: null, signals: [] };
   it('usa a legenda quando há; senão descreve o anexo', () => {
     expect(notificationBody({ ...base, type: 'text', content: 'oi', attachment: null })).toBe('oi');
     expect(

@@ -398,10 +398,11 @@ export const openapiDocument: Record<string, any> = {
 
     '/messaging/contracts/{id}': {
       get: op('Chat', 'Histórico do chat do contrato (partes)', { auth: true }),
-      post: op('Chat', 'Envia mensagem (persiste + broadcast Socket.IO)', {
-        auth: true,
-        responses: res201,
-      }),
+      post: op(
+        'Chat',
+        'Envia mensagem (persiste + broadcast Socket.IO). Texto com sinal de negociação por fora (chave Pix, CPF, telefone, e-mail, WhatsApp, "por fora") sai com signals para as duas partes e entra sozinho na fila de denúncias, sem ser barrado (ADR 45)',
+        { auth: true, responses: res201 },
+      ),
     },
     '/messaging/contracts/{id}/attachments': {
       post: op(
@@ -446,7 +447,7 @@ export const openapiDocument: Record<string, any> = {
     '/admin/reports': {
       get: op(
         'Admin',
-        'Fila de moderação: denúncias pendentes ou resolvidas (?status=pending|resolved), agrupadas por alvo e imagem',
+        'Fila de moderação: denúncias pendentes ou resolvidas (?status=pending|resolved), agrupadas por alvo e imagem; automatic marca o grupo com sinalização automática de negociação por fora (ADR 45)',
         { auth: true },
       ),
     },
