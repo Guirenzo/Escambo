@@ -5,6 +5,21 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.27.0] — 2026-09-16
+
+### Adicionado
+
+- **Aviso de negociação por fora no chat** (ADR 45). A API procura, em cada mensagem e legenda,
+  sinais de pagamento fora da plataforma: chave Pix e CPF, telefone, e-mail, WhatsApp e expressões
+  como "por fora" e "sem taxa".
+  - Quem digita vê o aviso antes de enviar, e a mensagem sai com o aviso para as duas partes
+    (`signals`), sem ser barrada.
+  - A mensagem entra sozinha na fila de denúncias como sinalização automática, sem denunciante,
+    com o que foi achado; a denúncia humana soma no mesmo grupo, e dispensar ou remover valem igual.
+    `AdminReportGroup.automatic`.
+  - Migration `0021_aviso_por_fora`: `messages.off_platform` e `content_reports.reporter_id`
+    aceitando NULL.
+
 ## [1.26.0] — 2026-09-15
 
 ### Adicionado

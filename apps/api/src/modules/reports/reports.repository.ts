@@ -11,7 +11,8 @@ import type { ImageTarget, TextTarget } from './reports.schema';
 
 export interface ContentReportRow extends RowDataPacket {
   id: number;
-  reporter_id: number;
+  /** NULL na denúncia automática da detecção de negociação por fora (ADR 45). */
+  reporter_id: number | null;
   target_type: string;
   target_id: number;
   /** Imagem denunciada como estava na hora (ADR 39); null para alvos que não são imagem. */
@@ -90,7 +91,7 @@ async function closeOpen(
 
 export const reportsRepository = {
   async create(d: {
-    reporterId: number;
+    reporterId: number | null;
     targetType: string;
     targetId: number;
     imageUrl: string | null;

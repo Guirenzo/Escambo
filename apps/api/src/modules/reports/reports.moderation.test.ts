@@ -167,6 +167,7 @@ describe('fila de moderação (ADR 39)', () => {
       label: 'Foto de perfil',
       owner: { id: 9, ulid: '01OWNER0000000000000000000', name: 'Bruno Costa' },
       status: 'pending',
+      automatic: false,
       reports: 2,
       descriptions: ['foto de outra pessoa'],
       firstReportedAt: '2026-09-15T11:00:00.000Z',
@@ -174,6 +175,31 @@ describe('fila de moderação (ADR 39)', () => {
     });
     expect(groups[1]).toMatchObject({ label: 'Serviço “Landing page”', imageLive: false });
     expect(groups[2]).toMatchObject({ imageUrl: OLD_MEDIA, imageLive: false, reports: 1 });
+  });
+
+  it('denúncia automática marca o grupo, sem denunciante (ADR 45)', async () => {
+    repo.listForModeration.mockResolvedValue([
+      row({
+        id: 6,
+        reporter_id: null,
+        target_type: 'message',
+        target_id: 8,
+        image_url: null,
+        reason: 'off_platform',
+        description: 'Sinalizado automaticamente: Pix.',
+      }),
+    ]);
+    repo.messagesByIds.mockResolvedValue([info({ id: 8, title: 'me paga no pix', image_url: null })]);
+
+    const [group] = await moderationService.listQueue('pending');
+
+    expect(group).toMatchObject({
+      label: 'Mensagem no chat',
+      excerpt: 'me paga no pix',
+      automatic: true,
+      reports: 1,
+      descriptions: ['Sinalizado automaticamente: Pix.'],
+    });
   });
 
   it('dispensar e resolver só fecham o grupo; decisão repetida é 409 e denúncia inexistente 404', async () => {

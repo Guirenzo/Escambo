@@ -6,6 +6,7 @@ import {
   Paperclip,
   Send,
   Star,
+  TriangleAlert,
 } from 'lucide-react';
 import {
   useEffect,
@@ -43,6 +44,7 @@ import { ContractActions } from '../contracts/ContractActions';
 import { DeadlineSection } from '../contracts/DeadlineSection';
 import { DisputeModal, DisputeSection } from '../contracts/DisputePanel';
 import { MilestonesSection } from '../contracts/MilestonesSection';
+import { describeSignals, offPlatformSignals } from '../../lib/offPlatform';
 import { useToast } from '../../lib/toast';
 
 /** Prazo da plataforma para aprovação tácita (platform_settings.tacit_approval_days). */
@@ -295,6 +297,9 @@ export function SalaContratoView({
   }
 
   const sending = send.isPending || sendFile.isPending;
+  // Aviso ao digitar (ADR 45): o mesmo detector da API, só para avisar antes de enviar.
+  const hints = useMemo(() => offPlatformSignals(draft), [draft]);
+  const capitalize = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -455,6 +460,12 @@ export function SalaContratoView({
                     <FileAttachment attachment={m.attachment} />
                   )}
                   {m.content && <span>{m.content}</span>}
+                  {m.signals.length > 0 && (
+                    <span className="bubble-flag" data-testid="off-platform-warning">
+                      <TriangleAlert size={12} aria-hidden="true" /> Fora do Escambo não há proteção
+                      do escrow
+                    </span>
+                  )}
                   <span className="muted tiny">{hm(m.createdAt)}</span>
                 </div>
               ))
@@ -462,6 +473,15 @@ export function SalaContratoView({
             <div ref={endRef} />
           </div>
           {pending && <PendingAttachment file={pending} onRemove={() => setPending(null)} />}
+          {hints.length > 0 && (
+            <p className="chat-hint off-platform" role="status" data-testid="off-platform-hint">
+              <TriangleAlert size={14} aria-hidden="true" />
+              <span>
+                {capitalize(describeSignals(hints))} na mensagem: pagamento fora do Escambo não tem
+                a proteção do escrow, e a mensagem vai para a moderação.
+              </span>
+            </p>
+          )}
           <form className="chat-input" onSubmit={submit}>
             <input
               ref={fileRef}

@@ -120,6 +120,7 @@ function toGroup(rows: ContentReportRow[], info: TargetInfoRow | undefined): Adm
     lastReportedAt: iso(latest.created_at),
     reviewedAt: latest.reviewed_at ? iso(latest.reviewed_at) : null,
     resolutionNote: latest.resolution_note,
+    automatic: rows.some((r) => r.reporter_id === null),
   };
 }
 

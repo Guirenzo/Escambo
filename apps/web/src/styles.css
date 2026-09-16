@@ -1160,6 +1160,30 @@ button.toggle.on {
 .chat-hint {
   margin: 6px 0 0;
 }
+/* Aviso de negociação por fora (ADR 45): ao digitar e na bolha. */
+.chat-hint.off-platform {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+.chat-hint.off-platform svg {
+  flex: none;
+  margin-top: 2px;
+}
+.bubble-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.85;
+}
 
 /* ---------- Anexos no chat (ADR 29) ---------- */
 .card.chat.dragging {
@@ -3400,6 +3424,10 @@ button.gallery-nav:hover:not(:disabled) {
   font-size: 0.72rem;
   font-weight: 600;
   white-space: nowrap;
+}
+.reason-tag.auto {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
 }
 
 /* ---------- Contestação e reincidência (ADR 41) ---------- */

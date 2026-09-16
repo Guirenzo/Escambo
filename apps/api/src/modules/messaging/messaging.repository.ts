@@ -1,5 +1,7 @@
+import type { OffPlatformSignal } from '@escambo/types';
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { pool } from '../../config/db';
+import { serializeSignals } from './off-platform';
 
 export interface ConversationRow extends RowDataPacket {
   id: number;
@@ -28,6 +30,8 @@ export interface MessageRow extends RowDataPacket {
   created_at: Date;
   /** Removida pela moderação (ADR 44). */
   removed_at?: Date | null;
+  /** Sinais de negociação por fora, "pix,phone" (ADR 45); NULL quando limpa. */
+  off_platform?: string | null;
 }
 
 /** Mensagem com o contrato da conversa, para avisar a sala quando ela muda. */
@@ -58,7 +62,7 @@ export interface NewAttachment {
 }
 
 const MESSAGE_COLUMNS = `id, conversation_id, sender_id, type, content, file_url, file_name, file_mime,
-       file_size_bytes, file_purged_at, file_purged_reason, created_at, removed_at`;
+       file_size_bytes, file_purged_at, file_purged_reason, created_at, removed_at, off_platform`;
 
 /** Normaliza o par (a<b) para casar com a unique key uq_conversation. */
 function orderPair(x: number, y: number): [number, number] {
@@ -112,17 +116,23 @@ export const messagingRepository = {
     return rows;
   },
 
-  /** Insere texto (attachment null) ou imagem/arquivo (content = legenda opcional). */
+  /**
+   * Insere texto (attachment null) ou imagem/arquivo (content = legenda opcional), com os sinais de
+   * negociação por fora achados no texto (ADR 45).
+   */
   async insertMessage(data: {
     conversationId: number;
     senderId: number;
     content: string | null;
+    signals: OffPlatformSignal[];
     attachment?: (NewAttachment & { kind: 'image' | 'file' }) | null;
   }): Promise<MessageRow> {
     const a = data.attachment ?? null;
     const [res] = await pool.query<ResultSetHeader>(
-      `INSERT INTO messages (conversation_id, sender_id, type, content, file_url, file_name, file_mime, file_size_bytes)
-       VALUES (:conversationId, :senderId, :type, :content, :fileKey, :fileName, :fileMime, :fileSize)`,
+      `INSERT INTO messages (conversation_id, sender_id, type, content, file_url, file_name, file_mime,
+                             file_size_bytes, off_platform)
+       VALUES (:conversationId, :senderId, :type, :content, :fileKey, :fileName, :fileMime, :fileSize,
+               :offPlatform)`,
       {
         conversationId: data.conversationId,
         senderId: data.senderId,
@@ -132,6 +142,7 @@ export const messagingRepository = {
         fileName: a?.name ?? null,
         fileMime: a?.mime ?? null,
         fileSize: a?.size ?? null,
+        offPlatform: serializeSignals(data.signals),
       },
     );
     await pool.query<ResultSetHeader>(

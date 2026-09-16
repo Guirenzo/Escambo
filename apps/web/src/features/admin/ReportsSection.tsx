@@ -265,6 +265,9 @@ export function ReportsSection() {
                             {r.count > 1 ? ` ×${r.count}` : ''}
                           </span>
                         ))}
+                        {g.automatic && (
+                          <span className="reason-tag auto">Sinalização automática</span>
+                        )}
                       </div>
                       {g.descriptions[0] && (
                         <div className="muted tiny clamp">{g.descriptions[0]}</div>
