@@ -52,3 +52,8 @@ export type ReportAction = z.infer<typeof reportActionParamSchema>['action'];
 export const reportActionBodySchema = z.object({
   note: z.string().trim().max(500).nullable().optional(),
 });
+
+/** Período do painel de saúde da moderação (ADR 47), em dias. */
+export const moderationHealthQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).default(30),
+});

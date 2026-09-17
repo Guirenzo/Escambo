@@ -526,6 +526,13 @@ export const openapiDocument: Record<string, any> = {
       ),
     },
     '/admin/metrics': { get: op('Admin', 'Métricas da plataforma', { auth: true }) },
+    '/admin/moderation/health': {
+      get: op(
+        'Admin',
+        'Saúde da moderação (ADR 47): fila e contestações esperando agora e, no período (?days=1..365, padrão 30), decisões com mediana e p90 do tempo até decidir, sinalizações automáticas por resultado e por sinal com o acerto, contestações mantidas e revertidas e remoções por tipo',
+        { auth: true },
+      ),
+    },
     '/admin/storage': {
       get: op('Admin', 'Uso do volume: anexos do chat, cópias LGPD, órfãos e último expurgo', {
         auth: true,

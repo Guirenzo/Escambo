@@ -2468,6 +2468,128 @@ button.toggle.on {
   }
 }
 
+/* ---------- Admin: saúde da moderação (ADR 47) ---------- */
+.health-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 6px 0 14px;
+}
+@media (max-width: 1000px) {
+  .health-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 480px) {
+  .health-kpis {
+    grid-template-columns: 1fr;
+  }
+}
+.health-kpis .kpi {
+  padding: 14px 16px;
+  box-shadow: none;
+}
+.health-kpis .kpi-value {
+  font-size: 1.5rem;
+}
+.health-bars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.breakdown {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+.breakdown-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 0.86rem;
+}
+/* Barra empilhada: segmentos finos, 2 px de respiro entre eles, pontas arredondadas. */
+.breakdown-bar {
+  display: flex;
+  gap: 2px;
+  height: 22px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.breakdown-bar.empty {
+  background: var(--border);
+}
+.breakdown-bar .seg {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.seg.action,
+.swatch.action {
+  background: var(--green);
+}
+.seg.dismissed,
+.swatch.dismissed {
+  background: var(--muted);
+}
+.seg.pending,
+.swatch.pending {
+  background: var(--amber);
+}
+.breakdown-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.breakdown-legend strong {
+  color: var(--text);
+}
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 3px;
+  vertical-align: -1px;
+}
+.health-signals .meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.health-signals .meter-bar {
+  display: block;
+  width: 96px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+.health-signals .meter-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--green);
+}
+@media (max-width: 480px) {
+  .health-signals .meter-bar {
+    width: 56px;
+  }
+}
+
 /* ---------- Admin: financeiro ---------- */
 .fin-controls {
   display: flex;
@@ -2700,6 +2822,10 @@ button.toggle.on {
   background: var(--amber-soft);
   color: var(--amber-ink);
   font-size: 0.9rem;
+}
+/* O endereço pode ser comprido: quebra em qualquer ponto em vez de alargar a tela no celular. */
+.verify-banner strong {
+  overflow-wrap: anywhere;
 }
 .verify-banner button.link {
   color: var(--amber-ink);

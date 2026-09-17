@@ -7,6 +7,8 @@ import {
   DIGEST_HOURS,
   digestHourLabel,
   displayName,
+  durationLabel,
+  percentLabel,
   dt,
   endOfDayIso,
   formatAvailability,
@@ -161,6 +163,26 @@ describe('horário de atendimento (ADR 34)', () => {
     ).toBe('seg, qua, sex · noite');
     expect(formatAvailability([0, 6], { '6': ['evening'] })).toBe('dom, sáb · horários variados');
     expect(formatAvailability([], { '1': ['morning'] })).toBe('');
+  });
+});
+
+describe('saúde da moderação (ADR 47)', () => {
+  it('tempo até decidir em minutos, horas ou dias; fração em porcentagem', () => {
+    expect(durationLabel(null)).toBe('—');
+    expect(durationLabel(0)).toBe('< 1 min');
+    expect(durationLabel(0.02)).toBe('1 min');
+    expect(durationLabel(0.6)).toBe('36 min');
+    expect(durationLabel(3.4)).toBe('3 h');
+    expect(durationLabel(47.4)).toBe('47 h');
+    expect(durationLabel(47.6)).toBe('2 d');
+    expect(durationLabel(52)).toBe('2 d 4 h');
+    expect(durationLabel(72)).toBe('3 d');
+    // Arredonda antes de dividir em dias: 71,6 h é "3 d", nunca "2 d 24 h".
+    expect(durationLabel(71.6)).toBe('3 d');
+    expect(durationLabel(71.4)).toBe('2 d 23 h');
+    expect(percentLabel(null)).toBe('—');
+    expect(percentLabel(0.667)).toBe('67%');
+    expect(percentLabel(1)).toBe('100%');
   });
 });
 

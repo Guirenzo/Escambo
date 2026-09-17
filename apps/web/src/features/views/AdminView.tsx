@@ -46,6 +46,7 @@ import { FinanceSection } from '../admin/FinanceSection';
 import { SettingsSection } from '../admin/SettingsSection';
 import { StorageSection } from '../admin/StorageSection';
 import { AppealsSection } from '../admin/AppealsSection';
+import { ModerationHealthSection } from '../admin/ModerationHealthSection';
 import { ReportsSection } from '../admin/ReportsSection';
 import { useToast } from '../../lib/toast';
 
@@ -466,6 +467,7 @@ export function AdminView() {
       <FinanceSection />
       <StorageSection />
       <SettingsSection />
+      <ModerationHealthSection />
       <ReportsSection />
       <AppealsSection />
 

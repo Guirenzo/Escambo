@@ -315,6 +315,52 @@ export interface AdminAppeal {
   ownerStrikes: number;
 }
 
+/** Saúde da moderação no painel (ADR 47): fila agora, e decisões, sinalizações e contestações num período. */
+export interface ModerationHealth {
+  windowDays: number;
+  queue: {
+    /** Denúncias pendentes ou em análise, contando cada denúncia. */
+    pending: number;
+    oldestPendingAt: string | null;
+    automaticPending: number;
+    /** Contas com denúncia de reincidência aberta (ADR 41). */
+    accountReviewsOpen: number;
+    appealsPending: number;
+    oldestAppealAt: string | null;
+  };
+  decisions: {
+    total: number;
+    dismissed: number;
+    actioned: number;
+    /** Horas entre a denúncia e a decisão, no período. */
+    medianHours: number | null;
+    p90Hours: number | null;
+  };
+  automatic: {
+    flagged: number;
+    pending: number;
+    dismissed: number;
+    actioned: number;
+    /** Removidas sobre decididas (0 a 1); null sem decisão. */
+    precision: number | null;
+    signals: {
+      signal: OffPlatformSignal;
+      flagged: number;
+      actioned: number;
+      dismissed: number;
+      precision: number | null;
+    }[];
+  };
+  appeals: {
+    decided: number;
+    upheld: number;
+    overturned: number;
+    medianHours: number | null;
+    overturnRate: number | null;
+  };
+  removals: { total: number; byType: { targetType: RemovalTarget; count: number }[] };
+}
+
 export interface AdminAppealDecisionRequest {
   note?: string | null;
 }

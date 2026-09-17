@@ -1,8 +1,10 @@
 import type { Request, Response } from 'express';
 import { adminRepository } from '../admin/admin.repository';
 import { auditService } from '../audit/audit.service';
+import { moderationHealthService } from './moderation.health';
 import { moderationService } from './reports.moderation';
 import {
+  moderationHealthQuerySchema,
   moderationQuerySchema,
   reportActionBodySchema,
   reportActionParamSchema,
@@ -14,6 +16,12 @@ const RECORDED_AS = {
   'remove-image': 'image_removed',
   'remove-content': 'content_removed',
 } as const;
+
+/** GET /api/admin/moderation/health — fila, tempo até decidir, acerto do detector e contestações (ADR 47). */
+export async function getModerationHealth(req: Request, res: Response): Promise<void> {
+  const { days } = moderationHealthQuerySchema.parse(req.query);
+  res.json(await moderationHealthService.report(days));
+}
 
 /** GET /api/admin/reports — fila de moderação agrupada por alvo e imagem (ADR 39). */
 export async function listReports(req: Request, res: Response): Promise<void> {
