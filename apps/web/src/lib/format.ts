@@ -5,6 +5,24 @@ export const brl = (v: number): string =>
 
 export const dt = (iso: string): string => new Date(iso).toLocaleDateString('pt-BR');
 
+/** "< 1 min", "35 min", "3 h", "2 d 4 h": tempo até decidir no painel de moderação (ADR 47); null é "—". */
+export function durationLabel(hours: number | null): string {
+  if (hours === null) return '—';
+  if (hours < 1) {
+    const minutes = Math.round(hours * 60);
+    return minutes < 1 ? '< 1 min' : `${minutes} min`;
+  }
+  const whole = Math.round(hours);
+  if (whole < 48) return `${whole} h`;
+  const days = Math.floor(whole / 24);
+  const rest = whole - days * 24;
+  return rest > 0 ? `${days} d ${rest} h` : `${days} d`;
+}
+
+/** Fração de 0 a 1 como "67%"; null é "—". */
+export const percentLabel = (ratio: number | null): string =>
+  ratio === null ? '—' : `${Math.round(ratio * 100)}%`;
+
 /** As horas que a pessoa pode escolher para o resumo do dia (ADR 42), de 0 a 23. */
 export const DIGEST_HOURS: readonly number[] = Array.from({ length: 24 }, (_, h) => h);
 

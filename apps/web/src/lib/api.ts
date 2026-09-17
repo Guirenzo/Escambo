@@ -52,6 +52,7 @@ import type {
   LoginRequest,
   MediaPurpose,
   MediaUpload,
+  ModerationHealth,
   MyProfiles,
   NotificationList,
   OpenDisputeRequest,
@@ -475,6 +476,9 @@ export const api = {
   // admin (mediação, métricas, moderação)
   adminMetrics: () => request<AdminMetrics>('/admin/metrics'),
   adminStorage: () => request<AdminStorage>('/admin/storage'),
+  /** Saúde da moderação no período (ADR 47). */
+  adminModerationHealth: (days: number) =>
+    request<ModerationHealth>(`/admin/moderation/health?days=${days}`),
   adminSettings: () => request<PlatformSetting[]>('/admin/settings'),
   adminUpdateSetting: (key: string, value: number | boolean) =>
     request<PlatformSetting>(`/admin/settings/${key}`, {

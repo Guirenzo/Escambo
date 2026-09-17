@@ -53,6 +53,7 @@ export const qk = {
   disputes: ['disputes'] as const,
   adminMetrics: ['adminMetrics'] as const,
   adminStorage: ['adminStorage'] as const,
+  moderationHealth: (days: number) => ['moderationHealth', days] as const,
   adminSettings: ['adminSettings'] as const,
   publicSettings: ['publicSettings'] as const,
   adminDisputes: ['adminDisputes'] as const,
@@ -532,6 +533,13 @@ export const useAdminMetrics = () =>
   useQuery({ queryKey: qk.adminMetrics, queryFn: () => api.adminMetrics() });
 export const useAdminStorage = () =>
   useQuery({ queryKey: qk.adminStorage, queryFn: () => api.adminStorage() });
+
+/** Saúde da moderação (ADR 47); recarrega quando a fila ou uma contestação muda. */
+export const useModerationHealth = (days: number) =>
+  useQuery({
+    queryKey: qk.moderationHealth(days),
+    queryFn: () => api.adminModerationHealth(days),
+  });
 export const useAdminSettings = () =>
   useQuery({ queryKey: qk.adminSettings, queryFn: () => api.adminSettings() });
 /** Comissão e prazos que a plataforma pratica agora (muda pelo painel admin). */
@@ -650,6 +658,7 @@ export function useAdminReportAction() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['adminReports'] });
       void qc.invalidateQueries({ queryKey: qk.adminStorage });
+      void qc.invalidateQueries({ queryKey: ['moderationHealth'] });
     },
   });
 }
@@ -701,6 +710,7 @@ export function useAdminAppealDecision() {
     }) => api.adminDecideAppeal(id, decision, { note }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['adminAppeals'] });
+      void qc.invalidateQueries({ queryKey: ['moderationHealth'] });
       void qc.invalidateQueries({ queryKey: ['adminReports'] });
     },
   });

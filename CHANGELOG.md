@@ -5,6 +5,20 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.29.0] — 2026-09-17
+
+### Adicionado
+
+- **Saúde da moderação no painel** (ADR 47). Uma seção só de leitura, com período de 7, 30 ou
+  90 dias: o que espera agora (denúncias, automáticas, contestações, contas em revisão), o tempo
+  até decidir (mediana e p90), as decisões da fila, as sinalizações automáticas por resultado e o
+  acerto por sinal, as contestações mantidas e revertidas e as remoções por tipo.
+  `GET /api/admin/moderation/health?days=`.
+
+### Corrigido
+
+- A faixa "Confirme seu e-mail" não alarga mais a tela no celular quando o endereço é comprido.
+
 ## [1.28.0] — 2026-09-16
 
 ### Adicionado
