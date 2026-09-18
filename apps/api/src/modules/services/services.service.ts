@@ -4,7 +4,8 @@ import { servicesRepository, type ServiceRow } from './services.repository';
 import type { CreateServiceInput, ListServicesInput, UpdateServiceInput } from './services.schema';
 import { parseDays } from '../profiles/profiles.service';
 import { settingsService } from '../settings/settings.service';
-import { currentSlot, isAvailableNow, parsePeriods } from '../profiles/availability';
+import { isAvailableNow, parsePeriods, slotsByZone } from '../profiles/availability';
+import { timezoneOf } from '../../utils/timezone';
 
 function toService(row: ServiceRow): Service {
   return {
@@ -37,7 +38,9 @@ function toService(row: ServiceRow): Service {
             isAvailable: Number(row.owner_is_available ?? 0) === 1,
             availableDays: parseDays(row.owner_available_days),
             availablePeriods: parsePeriods(row.owner_available_periods),
+            timezone: row.owner_timezone,
           }),
+          ownerTimezone: timezoneOf(row.owner_timezone),
         }
       : {}),
   };
@@ -92,7 +95,7 @@ export const servicesService = {
       minRating: input.minRating,
       day: input.day,
       period: input.period,
-      now: input.now ? currentSlot() : undefined,
+      now: input.now ? slotsByZone() : undefined,
       sort: input.sort,
       limit: input.limit,
       offset: (input.page - 1) * input.limit,

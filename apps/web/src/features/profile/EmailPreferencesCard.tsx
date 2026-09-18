@@ -30,10 +30,12 @@ const OPTIONS: { value: EmailFrequency; label: string; hint: (hour: string) => s
 /**
  * Como o usuário quer os e-mails de notificação (ADR 27), a hora do resumo do dia (ADR 42), que
  * vale para o e-mail diário e para as buscas salvas com alerta diário, e o fuso em que essa hora
- * e as datas dos avisos valem (ADR 46). O app não muda além disso.
+ * e as datas dos avisos valem (ADR 46); para freelancer, é também o fuso da agenda de
+ * atendimento (ADR 48). O app não muda além disso.
  */
 export function EmailPreferencesCard() {
   const { user, refreshUser } = useAuth();
+  const isFreelancer = user?.role === 'freelancer';
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const current = user?.emailFrequency ?? 'instant';
@@ -78,7 +80,9 @@ export function EmailPreferencesCard() {
     if (value === zone) return;
     void save(
       { timezone: value },
-      `Pronto: horário de ${timezoneLabel(value)} no resumo do dia e nos avisos.`,
+      isFreelancer
+        ? `Pronto: horário de ${timezoneLabel(value)} no resumo do dia, nos avisos e na sua agenda.`
+        : `Pronto: horário de ${timezoneLabel(value)} no resumo do dia e nos avisos.`,
     );
   }
 
@@ -145,7 +149,10 @@ export function EmailPreferencesCard() {
         </label>
         <span id="digest-hour-hint" className="muted tiny">
           Horário de {timezoneLabel(zone)}. Vale para o resumo por e-mail, para as buscas salvas com
-          alerta diário e para as datas nos avisos.
+          alerta diário
+          {isFreelancer
+            ? ', para as datas nos avisos e para os dias e períodos em que você atende.'
+            : ' e para as datas nos avisos.'}
         </span>
       </div>
     </section>

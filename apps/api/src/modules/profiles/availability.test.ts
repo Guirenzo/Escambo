@@ -1,21 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
-  brtClock,
+  clockIn,
   currentSlot,
   isAvailableNow,
   normalizePeriods,
   parsePeriods,
   periodAt,
+  slotsByZone,
 } from './availability';
 
-// 2026-09-14 é segunda-feira. Brasília = UTC-3.
+// 2026-09-14 é segunda-feira. Brasília = UTC−3, Manaus = UTC−4, Rio Branco = UTC−5, Noronha = UTC−2.
 const at = (isoUtc: string): Date => new Date(isoUtc);
 
-describe('relógio de Brasília e períodos (ADR 34)', () => {
-  it('brtClock converte do UTC, inclusive virando o dia para trás', () => {
-    expect(brtClock(at('2026-09-14T15:00:00Z'))).toEqual({ day: 1, hour: 12 });
-    // 01:30 UTC de terça = 22:30 de segunda em Brasília
-    expect(brtClock(at('2026-09-15T01:30:00Z'))).toEqual({ day: 1, hour: 22 });
+describe('relógio por fuso e períodos (ADR 34 e 48)', () => {
+  it('clockIn converte do UTC no fuso pedido, inclusive virando o dia para trás', () => {
+    expect(clockIn('America/Sao_Paulo', at('2026-09-14T15:00:00Z'))).toEqual({ day: 1, hour: 12 });
+    // 01:30 UTC de terça = 22:30 de segunda em Brasília, 21:30 em Manaus, 20:30 em Rio Branco
+    expect(clockIn('America/Sao_Paulo', at('2026-09-15T01:30:00Z'))).toEqual({ day: 1, hour: 22 });
+    expect(clockIn('America/Manaus', at('2026-09-15T01:30:00Z'))).toEqual({ day: 1, hour: 21 });
+    expect(clockIn('America/Rio_Branco', at('2026-09-15T01:30:00Z'))).toEqual({ day: 1, hour: 20 });
+    // 02:30 UTC de terça já é terça em Noronha (00:30)
+    expect(clockIn('America/Noronha', at('2026-09-15T02:30:00Z'))).toEqual({ day: 2, hour: 0 });
   });
 
   it('periodAt: manhã 6–12, tarde 12–18, noite 18–24; madrugada não é período', () => {
@@ -29,10 +34,26 @@ describe('relógio de Brasília e períodos (ADR 34)', () => {
     expect(periodAt(0)).toBeNull();
   });
 
-  it('currentSlot junta dia e período', () => {
+  it('currentSlot junta dia e período; sem fuso é Brasília', () => {
     expect(currentSlot(at('2026-09-14T13:00:00Z'))).toEqual({ day: 1, period: 'morning' });
     expect(currentSlot(at('2026-09-14T06:00:00Z'))).toEqual({ day: 1, period: null }); // 03h
     expect(currentSlot(at('2026-09-20T22:00:00Z'))).toEqual({ day: 0, period: 'evening' }); // dom 19h
+    // 15:30 UTC: 12:30 em Brasília (tarde), 11:30 em Manaus (manhã)
+    expect(currentSlot(at('2026-09-14T15:30:00Z'), 'America/Manaus')).toEqual({
+      day: 1,
+      period: 'morning',
+    });
+  });
+
+  it('slotsByZone dá o agora de cada fuso do país', () => {
+    // 10:30 UTC de segunda: 08:30 Noronha, 07:30 Brasília, 06:30 Cuiabá/Manaus, 05:30 Rio Branco
+    expect(slotsByZone(at('2026-09-14T10:30:00Z'))).toEqual({
+      'America/Noronha': { day: 1, period: 'morning' },
+      'America/Sao_Paulo': { day: 1, period: 'morning' },
+      'America/Cuiaba': { day: 1, period: 'morning' },
+      'America/Manaus': { day: 1, period: 'morning' },
+      'America/Rio_Branco': { day: 1, period: null },
+    });
   });
 });
 
@@ -65,9 +86,9 @@ describe('períodos por dia: leitura e normalização', () => {
 });
 
 describe('isAvailableNow', () => {
-  const MON_10H = at('2026-09-14T13:00:00Z'); // segunda, manhã
-  const MON_20H = at('2026-09-14T23:00:00Z'); // segunda, noite
-  const MON_03H = at('2026-09-14T06:00:00Z'); // segunda, madrugada
+  const MON_10H = at('2026-09-14T13:00:00Z'); // segunda, manhã em Brasília
+  const MON_20H = at('2026-09-14T23:00:00Z'); // segunda, noite em Brasília
+  const MON_03H = at('2026-09-14T06:00:00Z'); // segunda, madrugada em Brasília
   const weekdays = [1, 2, 3, 4, 5];
 
   it('dia marcado sem períodos vale o dia todo (menos de madrugada)', () => {
@@ -86,6 +107,26 @@ describe('isAvailableNow', () => {
     expect(isAvailableNow(a, MON_10H)).toBe(true);
     expect(isAvailableNow(a, MON_20H)).toBe(false);
     expect(isAvailableNow(a, at('2026-09-15T23:00:00Z'))).toBe(true); // terça 20h
+  });
+
+  it('a agenda vale no fuso do freelancer (ADR 48)', () => {
+    const mornings = {
+      isAvailable: true,
+      availableDays: weekdays,
+      availablePeriods: { '1': ['morning' as const] },
+    };
+    // 15:30 UTC: 12:30 em Brasília (tarde, fora), 11:30 em Manaus (manhã, dentro)
+    const t = at('2026-09-14T15:30:00Z');
+    expect(isAvailableNow(mornings, t)).toBe(false);
+    expect(isAvailableNow({ ...mornings, timezone: 'America/Manaus' }, t)).toBe(true);
+    expect(isAvailableNow({ ...mornings, timezone: 'America/Rio_Branco' }, t)).toBe(true);
+    // 09:30 UTC: 06:30 em Brasília (manhã), 04:30 em Rio Branco (madrugada)
+    const early = at('2026-09-14T09:30:00Z');
+    expect(isAvailableNow(mornings, early)).toBe(true);
+    expect(isAvailableNow({ ...mornings, timezone: 'America/Rio_Branco' }, early)).toBe(false);
+    // Fuso desconhecido ou nulo cai em Brasília.
+    expect(isAvailableNow({ ...mornings, timezone: 'Europe/Lisbon' }, t)).toBe(false);
+    expect(isAvailableNow({ ...mornings, timezone: null }, early)).toBe(true);
   });
 
   it('pausado, sem dias ou fora dos dias: não atende agora', () => {

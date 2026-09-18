@@ -205,7 +205,7 @@ test('busca por dia de atendimento: "quem atende sábado" só mostra quem marcou
   await expect(cards).toHaveCount(3);
 });
 
-test('busca por período do dia e "atende agora" (horário de Brasília)', async ({
+test('busca por período do dia e "atende agora" (freelancers no fuso padrão, Brasília)', async ({
   page,
   request,
 }) => {

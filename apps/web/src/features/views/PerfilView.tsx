@@ -15,6 +15,7 @@ import {
   usePutFreelancerProfile,
   useRespondReview,
 } from '../../lib/hooks';
+import { timezoneLabel } from '../../lib/timezones';
 import { useToast } from '../../lib/toast';
 import { EmailPreferencesCard } from '../profile/EmailPreferencesCard';
 import { ModeracaoCard } from '../profile/ModeracaoCard';
@@ -349,7 +350,8 @@ export function PerfilView() {
                       ))}
                     <span className="muted tiny">
                       Sem período marcado, vale o dia todo. Manhã 6h–12h, tarde 12h–18h, noite
-                      18h–24h (horário de Brasília).
+                      18h–24h no horário de {timezoneLabel(user?.timezone)}, o fuso da sua conta
+                      (muda em "E-mails do Escambo").
                     </span>
                   </div>
                 )}
