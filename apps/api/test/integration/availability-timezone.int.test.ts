@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { currentSlot, PERIODS } from '../../src/modules/profiles/availability';
@@ -53,7 +53,7 @@ const agenda = (f: Freela, periods: Record<string, string[]> | null) =>
     })
     .expect(200);
 
-async function publish(owner: Freela, title: string): Promise<void> {
+async function publish(owner: Freela, title: string, tag = TAG): Promise<void> {
   const cats = await request(app).get('/api/categories').expect(200);
   const list = (Array.isArray(cats.body) ? cats.body : cats.body.items) as { id: number }[];
   await request(app)
@@ -61,7 +61,7 @@ async function publish(owner: Freela, title: string): Promise<void> {
     .set(auth(owner.token))
     .send({
       categoryId: list[0]!.id,
-      title: `${TAG} ${title}`,
+      title: `${tag} ${title}`,
       description: 'Serviço usado para testar o atendimento no fuso do freelancer',
       priceType: 'fixed',
       price: 100,
@@ -74,11 +74,13 @@ interface Item {
   ownerAvailableNow: boolean;
   ownerTimezone: string;
 }
-const search = async (query = ''): Promise<Item[]> => {
-  const res = await request(app).get(`/api/services?q=${TAG}&limit=50${query}`).expect(200);
-  return (res.body.items as Item[]).filter((i) => i.title.startsWith(TAG));
+// Cada teste busca pelo próprio prefixo: serviços de um teste não casam com a busca do outro.
+const search = async (query = '', tag = TAG): Promise<Item[]> => {
+  const res = await request(app).get(`/api/services?q=${tag}&limit=50${query}`).expect(200);
+  return (res.body.items as Item[]).filter((i) => i.title.startsWith(`${tag} `));
 };
-const names = (items: Item[]): string[] => items.map((i) => i.title.slice(TAG.length + 1)).sort();
+const names = (items: Item[], tag = TAG): string[] =>
+  items.map((i) => i.title.slice(tag.length + 1)).sort();
 
 afterAll(async () => {
   await pool.end();
@@ -153,5 +155,39 @@ describe('Atendimento no fuso do freelancer (ADR 48)', () => {
     const nowAllDay = await search('&now=true');
     if (moved()) return;
     expect(names(nowAllDay)).toEqual(expectedNow);
+  });
+
+  it('com o relógio parado numa segunda às 15h30 UTC, cada fuso é comparado com o seu agora', async () => {
+    // 13h30 em Noronha e 12h30 em Brasília (tarde); 11h30 em Cuiabá e Manaus e 10h30 em Rio
+    // Branco (manhã). Dois grupos de fuso na mesma consulta: é o caminho do OR que a hora real
+    // só exercita perto de uma virada. Só o Date é parado; timers e rede seguem normais.
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-09-14T15:30:00Z') });
+    try {
+      const tag = `${TAG}relogio`;
+      const cases = [
+        ['acre-manha', 'America/Rio_Branco', 'morning', true],
+        ['acre-tarde', 'America/Rio_Branco', 'afternoon', false],
+        ['manaus-manha', 'America/Manaus', 'morning', true],
+        ['brasilia-manha', null, 'morning', false],
+        ['brasilia-tarde', null, 'afternoon', true],
+        ['noronha-tarde', 'America/Noronha', 'afternoon', true],
+      ] as const;
+      for (const [name, zone, period] of cases) {
+        const f = await freelancer(zone);
+        // Segunda (1) só no período do caso; os outros dias marcados valem o dia todo.
+        await agenda(f, { '1': [period] });
+        await publish(f, name, tag);
+      }
+      const expected = cases.filter((c) => c[3]).map((c) => c[0]);
+
+      expect(names(await search('&now=true', tag), tag)).toEqual([...expected].sort());
+      const all = await search('', tag);
+      const badge = Object.fromEntries(
+        all.map((i) => [i.title.slice(tag.length + 1), i.ownerAvailableNow]),
+      );
+      expect(badge).toEqual(Object.fromEntries(cases.map((c) => [c[0], c[3]])));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
