@@ -18,3 +18,13 @@ export const DEFAULT_TIMEZONE: BrazilTimezone = 'America/Sao_Paulo';
 /** "Manaus", como aparece nas frases: "horário de Manaus". */
 export const timezoneLabel = (zone: string | null | undefined): string =>
   TIMEZONE_OPTIONS.find((o) => o.value === zone)?.label ?? 'Brasília';
+
+/**
+ * " (horário de Manaus)" ao lado da agenda de alguém (ADR 48), só quando o fuso dele não é o de
+ * quem vê (quem não escolheu está em Brasília); vazio quando é o mesmo.
+ */
+export const zoneNote = (
+  zone: string | null | undefined,
+  viewerZone: string | null | undefined,
+): string =>
+  zone && zone !== (viewerZone ?? DEFAULT_TIMEZONE) ? ` (horário de ${timezoneLabel(zone)})` : '';

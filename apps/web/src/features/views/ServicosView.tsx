@@ -74,7 +74,7 @@ interface Filters {
   day: number;
   /** Período do dia (só com o dia escolhido); '' = qualquer. */
   period: '' | AvailabilityPeriod;
-  /** Só quem atende agora (Brasília). */
+  /** Só quem atende agora, no fuso de cada freelancer (ADR 48). */
   now: boolean;
   sort: Sort;
 }
@@ -328,12 +328,12 @@ export function ServicosView() {
         >
           <Heart size={16} /> Só favoritos{favIds.size ? ` (${favIds.size})` : ''}
         </Button>
-        {/* Atende agora (ADR 34): aceitando pedidos, no dia e no período de agora em Brasília */}
+        {/* Atende agora (ADR 34 e 48): aceitando pedidos, no dia e no período de agora no fuso de cada freelancer */}
         <Button
           variant="ghost"
           className={`toggle ${filters.now ? 'on' : ''}`}
           aria-pressed={filters.now}
-          title="Aceitando pedidos, no dia e no período de agora (horário de Brasília)"
+          title="Aceitando pedidos, no dia e no período de agora, no fuso de cada freelancer"
           onClick={() => setFilter({ now: !filters.now })}
         >
           <span className="now-dot" aria-hidden="true" /> Atende agora

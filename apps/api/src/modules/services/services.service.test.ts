@@ -149,7 +149,7 @@ describe('servicesService.list — dias em que o prestador atende (ADR 30)', () 
 describe('servicesService.list — período e atende agora (ADR 34)', () => {
   const base = { page: 1, limit: 20, radiusKm: 25, sort: 'relevance' as const };
 
-  it('período sem dia é 422; com dia repassa; now vira o dia e o período de Brasília', async () => {
+  it('período sem dia é 422; com dia repassa; now vira o agora de cada fuso (ADR 48)', async () => {
     repo.list.mockResolvedValue([]);
     await expect(servicesService.list({ ...base, period: 'morning' })).rejects.toMatchObject({
       statusCode: 422,
@@ -160,7 +160,10 @@ describe('servicesService.list — período e atende agora (ADR 34)', () => {
       expect.objectContaining({
         day: 1,
         period: 'evening',
-        now: expect.objectContaining({ day: expect.any(Number) }),
+        now: expect.objectContaining({
+          'America/Sao_Paulo': expect.objectContaining({ day: expect.any(Number) }),
+          'America/Rio_Branco': expect.objectContaining({ day: expect.any(Number) }),
+        }),
       }),
     );
   });

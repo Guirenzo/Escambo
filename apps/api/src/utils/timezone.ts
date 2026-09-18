@@ -58,6 +58,8 @@ export interface LocalParts {
   hour: number;
   minute: number;
   second: number;
+  /** Dia da semana no fuso (0 = domingo … 6 = sábado). */
+  weekday: number;
 }
 
 /** Data e hora do instante `at` no fuso, em números. */
@@ -73,6 +75,7 @@ export function localParts(zone: BrazilTimezone, at: Date): LocalParts {
     hour: p.hour!,
     minute: p.minute!,
     second: p.second!,
+    weekday: new Date(Date.UTC(p.year!, p.month! - 1, p.day!)).getUTCDay(),
   };
 }
 

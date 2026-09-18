@@ -5,6 +5,19 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.30.0] — 2026-09-17
+
+### Alterado
+
+- **Horário de atendimento no fuso do freelancer** (ADR 48). Os dias e períodos marcados no
+  perfil valem no fuso da conta (o mesmo do resumo diário), e não mais em Brasília: o selo
+  "atende agora" do card e do perfil público, e o filtro "Atende agora" da busca, comparam a
+  agenda de cada freelancer com o relógio de onde ele está. O card e o perfil público informam o
+  fuso da agenda (`ownerTimezone`, `timezone`) e o app mostra "(horário de Manaus)" ao lado dos
+  dias quando o fuso não é o de quem vê. O editor do perfil diz em que fuso os períodos valem, e
+  o cartão "E-mails do Escambo" avisa o freelancer de que o fuso também rege a agenda.
+- Demo: Diego Ramos atende de Manaus.
+
 ## [1.29.0] — 2026-09-17
 
 ### Adicionado

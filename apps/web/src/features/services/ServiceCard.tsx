@@ -5,7 +5,9 @@ import { Avatar } from '../../components/Avatar';
 import { Stars } from '../../components/Stars';
 import { Button } from '../../components/ui';
 import { brl, formatAvailability } from '../../lib/format';
+import { useAuth } from '../../lib/auth';
 import { usePublicSettings } from '../../lib/hooks';
+import { zoneNote } from '../../lib/timezones';
 
 /** Card de serviço da busca e do perfil público: quem presta, preço, distância, favorito e ações. */
 export function ServiceCard({
@@ -29,6 +31,7 @@ export function ServiceCard({
   onProposeBarter?: (s: Service) => void;
 }) {
   const barterEnabled = usePublicSettings().data?.barterEnabled ?? true;
+  const viewerZone = useAuth().user?.timezone;
   const favLabel = favorited ? 'Remover dos favoritos' : 'Favoritar';
   return (
     <div className="card service">
@@ -74,6 +77,7 @@ export function ServiceCard({
           {!!s.ownerAvailableDays?.length && (
             <span className="chip days" data-testid="owner-days">
               atende {formatAvailability(s.ownerAvailableDays, s.ownerAvailablePeriods)}
+              {zoneNote(s.ownerTimezone, viewerZone)}
             </span>
           )}
         </div>

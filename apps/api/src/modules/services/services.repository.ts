@@ -1,7 +1,8 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import type { AvailabilityPeriod } from '@escambo/types';
-import type { Slot } from '../profiles/availability';
+import type { Slot, ZoneSlots } from '../profiles/availability';
+import { DEFAULT_TIMEZONE } from '../../utils/timezone';
 
 export interface ServiceRow extends RowDataPacket {
   id: number;
@@ -27,6 +28,7 @@ export interface ServiceRow extends RowDataPacket {
   owner_available_days?: number[] | string | null;
   owner_available_periods?: unknown;
   owner_is_available?: number | null;
+  owner_timezone?: string | null;
 }
 
 export type ServiceSort =
@@ -46,8 +48,8 @@ export interface ServiceListFilters {
   minRating?: number;
   day?: number;
   period?: AvailabilityPeriod;
-  /** Dia e período de agora (Brasília) para "atende agora"; period null = madrugada. */
-  now?: Slot;
+  /** O agora de cada fuso do país (ADR 48) para "atende agora"; period null = madrugada lá. */
+  now?: ZoneSlots;
   /** Criados a partir de (inclusive) — janela dos alertas de busca salva (ADR 35). */
   createdFrom?: Date;
   /** Criados antes de (exclusive). */
@@ -96,7 +98,7 @@ const periodCondition = (path: string, period: string): string =>
   `(pf.available_periods IS NULL OR JSON_EXTRACT(pf.available_periods, :${path}) IS NULL OR JSON_CONTAINS(JSON_EXTRACT(pf.available_periods, :${path}), :${period}))`;
 
 /** Quem presta o serviço: nome e reputação (avg_rating/total_reviews são mantidos pelo módulo de reviews). */
-const OWNER_COLS = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, pf.available_days AS owner_available_days, pf.available_periods AS owner_available_periods, pf.is_available AS owner_is_available`;
+const OWNER_COLS = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, pf.available_days AS owner_available_days, pf.available_periods AS owner_available_periods, pf.is_available AS owner_is_available, u.timezone AS owner_timezone`;
 
 export const servicesRepository = {
   async create(data: {
@@ -127,7 +129,7 @@ export const servicesRepository = {
 
   async list(filters: ServiceListFilters): Promise<ServiceRow[]> {
     const where: string[] = ['s.deleted_at IS NULL', 's.is_active = 1'];
-    const params: Record<string, string | number | Date> = {};
+    const params: Record<string, string | number | Date | string[]> = {};
 
     if (filters.categoryId !== undefined) {
       where.push('s.category_id = :categoryId');
@@ -184,17 +186,29 @@ export const servicesRepository = {
       }
     }
     if (filters.now) {
-      if (!filters.now.period) {
-        where.push('1 = 0'); // madrugada: ninguém atende agora
+      // Cada freelancer é comparado com o agora do fuso dele (ADR 48). Os fusos que estão no
+      // mesmo dia e período viram um grupo; quem está de madrugada no seu fuso não atende.
+      const groups = new Map<string, { slot: Slot; zones: string[] }>();
+      for (const [zone, slot] of Object.entries(filters.now)) {
+        if (!slot.period) continue;
+        const key = `${slot.day}:${slot.period}`;
+        const group = groups.get(key) ?? { slot, zones: [] };
+        group.zones.push(zone);
+        groups.set(key, group);
+      }
+      if (groups.size === 0) {
+        where.push('1 = 0'); // madrugada no país inteiro: ninguém atende agora
       } else {
-        where.push('pf.is_available = 1');
-        where.push(
-          'pf.available_days IS NOT NULL AND JSON_CONTAINS(pf.available_days, :nowDayJson)',
-        );
-        where.push(periodCondition('nowPath', 'nowPeriodJson'));
-        params.nowDayJson = String(filters.now.day);
-        params.nowPath = `$."${filters.now.day}"`;
-        params.nowPeriodJson = JSON.stringify(filters.now.period);
+        where.push('pf.is_available = 1 AND pf.available_days IS NOT NULL');
+        const clauses = [...groups.values()].map(({ slot, zones }, i) => {
+          params[`nowZones${i}`] = zones;
+          params[`nowDayJson${i}`] = String(slot.day);
+          params[`nowPath${i}`] = `$."${slot.day}"`;
+          params[`nowPeriodJson${i}`] = JSON.stringify(slot.period);
+          return `(COALESCE(u.timezone, :defaultZone) IN (:nowZones${i}) AND JSON_CONTAINS(pf.available_days, :nowDayJson${i}) AND ${periodCondition(`nowPath${i}`, `nowPeriodJson${i}`)})`;
+        });
+        params.defaultZone = DEFAULT_TIMEZONE;
+        where.push(`(${clauses.join(' OR ')})`);
       }
     }
     const sort = filters.sort ?? 'relevance';

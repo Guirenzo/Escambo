@@ -166,16 +166,18 @@ const FREELANCERS = [
   {
     key: 'diego',
     email: 'diego@escambo.demo',
+    // Atende de Manaus (ADR 48): a agenda dele vale no fuso de lá, uma hora atrás de Brasília.
+    timezone: 'America/Manaus',
     profile: {
       availableDays: [0, 1, 2, 3, 4, 5, 6],
       fullName: 'Diego Ramos',
       avatarUrl: 'https://i.pravatar.cc/150?u=diego@escambo.demo',
       headline: 'Redator e SEO',
       bio: 'Conteúdo que ranqueia e converte.',
-      city: 'Curitiba',
-      state: 'PR',
-      latitude: -25.4284,
-      longitude: -49.2733,
+      city: 'Manaus',
+      state: 'AM',
+      latitude: -3.119,
+      longitude: -60.0217,
     },
     services: [
       {
@@ -801,6 +803,12 @@ async function main() {
       token: u.token,
       body: { ...f.profile, isAvailable: true },
     });
+    if (f.timezone) {
+      await call('PUT', '/notifications/preferences', {
+        token: u.token,
+        body: { timezone: f.timezone },
+      });
+    }
     await call('GET', '/wallet', { token: u.token });
     for (const s of f.services) svc[s.title] = await ensureService(u, s, categories);
     await ensurePortfolio(u, f.portfolio);

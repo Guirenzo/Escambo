@@ -59,9 +59,9 @@ export const listServicesSchema = z.object({
   // Dia da semana em que o prestador atende (0=domingo … 6=sábado). Quem não informou os
   // dias fica de fora quando há filtro: "atende sábado" é uma afirmação, não um palpite.
   day: z.coerce.number().int().min(0).max(6).optional(),
-  // Período do dia (Brasília) em que atende, junto com `day` (ADR 34). Dia sem períodos = o dia todo.
+  // Período do dia em que atende, junto com `day` (ADR 34), no fuso do freelancer. Dia sem períodos = o dia todo.
   period: z.enum(['morning', 'afternoon', 'evening']).optional(),
-  // Atende agora: aceitando pedidos, no dia e no período de agora em Brasília.
+  // Atende agora: aceitando pedidos, no dia e no período de agora no fuso de cada freelancer (ADR 48).
   now: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')

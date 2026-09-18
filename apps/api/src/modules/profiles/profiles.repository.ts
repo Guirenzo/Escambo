@@ -19,6 +19,8 @@ export interface FreelancerRow extends RowDataPacket {
   total_reviews: number;
   total_contracts: number;
   response_time_hours: number | string | null;
+  /** Fuso da conta (users.timezone); NULL = Brasília (ADR 46 e 48). */
+  timezone: string | null;
 }
 
 export interface PortfolioRow extends RowDataPacket {
@@ -200,9 +202,12 @@ export const profilesRepository = {
 
   async findFreelancerByUserId(userId: number): Promise<FreelancerRow | undefined> {
     const [rows] = await pool.query<FreelancerRow[]>(
-      `SELECT full_name, avatar_url, bio, headline, city, state, latitude, longitude,
-              is_available, available_days, available_periods, avg_rating, total_reviews, total_contracts, response_time_hours
-         FROM profiles_freelancer WHERE user_id = :userId LIMIT 1`,
+      `SELECT pf.full_name, pf.avatar_url, pf.bio, pf.headline, pf.city, pf.state, pf.latitude, pf.longitude,
+              pf.is_available, pf.available_days, pf.available_periods, pf.avg_rating, pf.total_reviews,
+              pf.total_contracts, pf.response_time_hours, u.timezone
+         FROM profiles_freelancer pf
+         JOIN users u ON u.id = pf.user_id
+        WHERE pf.user_id = :userId LIMIT 1`,
       { userId },
     );
     return rows[0];
@@ -220,7 +225,7 @@ export const profilesRepository = {
     const [rows] = await pool.query<PublicFreelancerRow[]>(
       `SELECT pf.full_name, pf.avatar_url, pf.bio, pf.headline, pf.city, pf.state,
               pf.latitude, pf.longitude, pf.is_available, pf.available_days, pf.available_periods,
-              pf.avg_rating, pf.total_reviews, pf.total_contracts, pf.response_time_hours,
+              pf.avg_rating, pf.total_reviews, pf.total_contracts, pf.response_time_hours, u.timezone,
               u.id AS user_id, u.ulid, COALESCE(ux.level, 1) AS level, COALESCE(ux.level_name, 'Iniciante') AS level_name
          FROM users u
          JOIN profiles_freelancer pf ON pf.user_id = u.id

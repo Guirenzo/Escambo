@@ -24,6 +24,7 @@ import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
 import { dtm, formatAvailability, formatHours } from '../../lib/format';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
+import { zoneNote } from '../../lib/timezones';
 import {
   useFavorites,
   useFreelancerReviews,
@@ -118,6 +119,7 @@ export function FreelancerView() {
                       <span className="muted tiny" data-testid="available-days">
                         <CalendarDays size={12} /> atende{' '}
                         {formatAvailability(p.availableDays, p.availablePeriods)}
+                        {zoneNote(p.timezone, user?.timezone)}
                       </span>
                     )}
                     {p.availableNow && (

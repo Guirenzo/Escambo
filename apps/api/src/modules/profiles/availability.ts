@@ -1,26 +1,26 @@
-import type { AvailabilityPeriod, AvailablePeriods } from '@escambo/types';
+import type { AvailabilityPeriod, AvailablePeriods, BrazilTimezone } from '@escambo/types';
+import { BRAZIL_TIMEZONES, DEFAULT_TIMEZONE, localParts, timezoneOf } from '../../utils/timezone';
 
 /**
- * Horário de atendimento (ADR 34). O freelancer marca os dias (available_days) e, por dia, os
- * períodos (available_periods); dia sem períodos = o dia todo. "Atende agora" é calculado no
- * horário de Brasília — a plataforma inteira fala nesse fuso (resumo diário, expurgo, prazos).
+ * Horário de atendimento (ADR 34 e 48). O freelancer marca os dias (available_days) e, por dia, os
+ * períodos (available_periods); dia sem períodos = o dia todo. Tudo vale no fuso da conta dele
+ * (users.timezone, Brasília para quem não escolheu): "atende agora" compara a agenda com o dia e
+ * o período de agora onde o freelancer está, não onde a plataforma está.
  */
 
 export const PERIODS: readonly AvailabilityPeriod[] = ['morning', 'afternoon', 'evening'];
 
-/** Horas de início (inclusive) e fim (exclusive) de cada período, em Brasília. */
+/** Horas de início (inclusive) e fim (exclusive) de cada período, no horário local. */
 export const PERIOD_HOURS: Record<AvailabilityPeriod, readonly [number, number]> = {
   morning: [6, 12],
   afternoon: [12, 18],
   evening: [18, 24],
 };
 
-const BRT_OFFSET_MS = 3 * 3_600_000; // o país não tem horário de verão
-
-/** Dia da semana (0 = domingo) e hora do dia em Brasília. */
-export function brtClock(now: Date): { day: number; hour: number } {
-  const brt = new Date(now.getTime() - BRT_OFFSET_MS);
-  return { day: brt.getUTCDay(), hour: brt.getUTCHours() };
+/** Dia da semana (0 = domingo) e hora do dia no fuso. */
+export function clockIn(zone: BrazilTimezone, now: Date): { day: number; hour: number } {
+  const p = localParts(zone, now);
+  return { day: p.weekday, hour: p.hour };
 }
 
 /** Período de uma hora (0–23); madrugada (0–6) não é período de atendimento. */
@@ -33,10 +33,19 @@ export interface Slot {
   period: AvailabilityPeriod | null;
 }
 
-/** Dia e período de agora, em Brasília. */
-export function currentSlot(now: Date = new Date()): Slot {
-  const { day, hour } = brtClock(now);
+/** Dia e período de agora no fuso (Brasília quando não se diz qual). */
+export function currentSlot(now: Date = new Date(), zone: BrazilTimezone = DEFAULT_TIMEZONE): Slot {
+  const { day, hour } = clockIn(zone, now);
   return { day, period: periodAt(hour) };
+}
+
+export type ZoneSlots = Record<BrazilTimezone, Slot>;
+
+/** O agora de cada fuso do país: a busca "atende agora" compara cada freelancer com o dele. */
+export function slotsByZone(now: Date = new Date()): ZoneSlots {
+  return Object.fromEntries(
+    BRAZIL_TIMEZONES.map((zone) => [zone, currentSlot(now, zone)]),
+  ) as ZoneSlots;
 }
 
 /** JSON da coluna (objeto, string ou NULL) → períodos por dia; o que não for válido some. */
@@ -85,11 +94,13 @@ export interface AvailabilityInput {
   isAvailable: boolean;
   availableDays: number[] | null;
   availablePeriods: AvailablePeriods | null;
+  /** Fuso da conta (users.timezone); ausente ou inválido = Brasília. */
+  timezone?: string | null;
 }
 
-/** Aceitando pedidos, atende hoje e está num período marcado (ou o dia é inteiro). */
+/** Aceitando pedidos, atende hoje e está num período marcado (ou o dia é inteiro), no fuso dele. */
 export function isAvailableNow(a: AvailabilityInput, now: Date = new Date()): boolean {
-  const { day, period } = currentSlot(now);
+  const { day, period } = currentSlot(now, timezoneOf(a.timezone));
   if (!a.isAvailable || !period || !a.availableDays?.includes(day)) return false;
   const today = a.availablePeriods?.[String(day)];
   return !today || today.includes(period);
