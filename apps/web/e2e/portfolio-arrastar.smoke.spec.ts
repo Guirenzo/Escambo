@@ -4,7 +4,8 @@ import { createUser, openAs, settled } from './helpers';
 /**
  * Arrastar para ordenar o portfólio (ADR 49): no computador com o mouse, no celular com toque de
  * verdade (eventos de toque do Chrome, não mouse). A linha solta vai para o lugar, a posição é
- * anunciada, a ordem fica no servidor e sai igual no perfil público. Esc cancela no meio.
+ * anunciada, a ordem fica no servidor e sai igual no perfil público. Esc cancela no meio, e um
+ * clique parado na alça perto da borda não rola a página nem muda a ordem.
  */
 
 interface Point {
@@ -106,7 +107,29 @@ test('portfólio: arrasta pela alça, com mouse ou toque; Esc cancela; a ordem s
     await page.mouse.up();
     await expect(row(cardapio)).not.toHaveClass(/is-dragging/);
     await expect(rows).toHaveText([vitrine, site, cardapio, logo]);
-    await expect.poll(() => row(cardapio).evaluate((el) => el.style.transform)).toBe('');
+    // Todas as linhas voltam, não só a arrastada: as que abriram espaço também.
+    const offsets = () =>
+      card
+        .locator('[data-testid^="portfolio-row-"]')
+        .evaluateAll((els) => els.map((el) => (el as HTMLElement).style.transform));
+    await expect.poll(offsets).toEqual(['', '', '', '']);
+
+    // Clique parado na alça perto da borda de baixo da janela: a página não rola sozinha e a
+    // ordem não muda. Antes do limiar de movimento, a rolagem automática já começava aqui.
+    await grip(site).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      window.scrollBy(0, r.top + r.height / 2 - (window.innerHeight - 20));
+    });
+    const edge = await centerOf(grip(site));
+    expect(edge.y).toBeGreaterThan(page.viewportSize()!.height - 56);
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+    await page.mouse.move(edge.x, edge.y);
+    await page.mouse.down();
+    await page.waitForTimeout(400);
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+    await expect(rows).toHaveText([vitrine, site, cardapio, logo]);
+    await expect.poll(offsets).toEqual(['', '', '', '']);
     expect(await serverOrder()).toEqual([vitrine, site, cardapio, logo]);
   }
 
