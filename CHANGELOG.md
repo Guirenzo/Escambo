@@ -5,6 +5,15 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.31.0] — 2026-09-18
+
+### Adicionado
+
+- **Arrastar para ordenar o portfólio** (ADR 49). Cada trabalho tem uma alça: com mouse, toque
+  ou caneta, a linha segue o ponteiro, as outras abrem espaço, a página rola sozinha perto da
+  borda e soltar grava a ordem na hora. Esc cancela. As setas de subir e descer continuam como o
+  caminho do teclado e do leitor de tela.
+
 ## [1.30.0] — 2026-09-17
 
 ### Alterado
