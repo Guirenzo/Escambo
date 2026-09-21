@@ -2283,12 +2283,19 @@ button.toggle.on {
   gap: 8px;
 }
 .portfolio-list li {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--r);
+  background: var(--surface);
+  /* as outras linhas deslizam para abrir espaço enquanto uma é arrastada (ADR 49) */
+  transition:
+    transform 180ms var(--ease),
+    box-shadow var(--t) var(--ease),
+    border-color var(--t) var(--ease);
 }
 .portfolio-list img,
 .portfolio-thumb {
@@ -2336,12 +2343,56 @@ button.toggle.on {
   opacity: 0.35;
   cursor: default;
 }
+/* Arrastar para ordenar (ADR 49): a alça começa o arraste; o resto da linha ainda rola a página no toque. */
+.portfolio-grip {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 40px;
+  margin-left: -4px;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.portfolio-grip:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.portfolio-list li.is-dragging {
+  z-index: 2;
+  border-color: var(--green);
+  box-shadow: var(--sh-md);
+  cursor: grabbing;
+  /* a linha arrastada segue o ponteiro sem atraso */
+  transition:
+    box-shadow var(--t) var(--ease),
+    border-color var(--t) var(--ease);
+}
+.portfolio-list li.is-dragging .portfolio-grip {
+  color: var(--green-ink);
+  cursor: grabbing;
+}
+body.is-dragging-list {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
 @media (max-width: 480px) {
   .portfolio-list li {
     gap: 8px;
   }
   .portfolio-pos {
     display: none;
+  }
+  /* alça mais larga no dedo */
+  .portfolio-grip {
+    width: 28px;
+    margin-left: -6px;
   }
   /* as setas empilhadas deixam mais largura para o título */
   .portfolio-move {

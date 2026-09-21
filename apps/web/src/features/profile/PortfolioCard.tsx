@@ -1,18 +1,20 @@
-import { ChevronDown, ChevronUp, Images, Link2, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, GripVertical, Images, Link2, Plus, Trash2 } from 'lucide-react';
 import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Button, Field, Input, QueryState } from '../../components/ui';
 import { usePortfolio, usePortfolioMutation } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { ImageUploadButton } from '../../components/ImageUploadButton';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
-import { moveItem, positionLabel } from '../../lib/reorder';
+import { moveItem, moveTo, positionLabel } from '../../lib/reorder';
+import { useDragSort } from '../../lib/useDragSort';
 
 const MAX_ITEMS = 12;
 
 /**
  * Portfólio do freelancer: trabalhos com imagem e/ou link, que aparecem no perfil público na ordem
  * daqui. As setas mudam a ordem na hora, devolvem o foco ao mesmo botão e anunciam a nova posição
- * (ADR 43).
+ * (ADR 43); com o ponteiro, dá para arrastar pela alça (ADR 49), e as setas continuam sendo o
+ * caminho do teclado e do leitor de tela.
  */
 export function PortfolioCard() {
   const toast = useToast();
@@ -25,6 +27,25 @@ export function PortfolioCard() {
   const count = portfolio.data?.length ?? 0;
   const [announce, setAnnounce] = useState('');
   const refocus = useRef<string | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const orderKey = (portfolio.data ?? []).map((i) => i.id).join(',');
+  const { dragging, handleProps } = useDragSort({
+    listRef,
+    orderKey,
+    onDrop: (from, to) => {
+      const items = portfolio.data ?? [];
+      const item = items[from];
+      if (!item) return;
+      setAnnounce(`${item.title} agora é o ${positionLabel(to, items.length)}.`);
+      reorder.mutate(
+        moveTo(items, from, to).map((i) => i.id),
+        {
+          onError: (er) =>
+            toast.error(er instanceof Error ? er.message : 'Não foi possível mudar a ordem'),
+        },
+      );
+    },
+  });
 
   // Mudar de lugar tira o item do DOM e o navegador perde o foco: ele volta ao mesmo botão.
   useLayoutEffect(() => {
@@ -94,8 +115,8 @@ export function PortfolioCard() {
       </div>
       {count > 1 && (
         <p className="muted tiny">
-          O perfil público mostra os trabalhos nesta ordem. Use as setas para trazer o mais forte
-          para o começo.
+          O perfil público mostra os trabalhos nesta ordem. Arraste pela alça ou use as setas para
+          trazer o mais forte para o começo.
         </p>
       )}
       <p className="sr-only portfolio-announce" aria-live="polite">
@@ -115,9 +136,29 @@ export function PortfolioCard() {
               antes de contratar.
             </p>
           ) : (
-            <ul className="portfolio-list" data-testid="portfolio-list">
+            <ul
+              ref={listRef}
+              className={`portfolio-list${dragging !== null ? ' is-sorting' : ''}`}
+              data-testid="portfolio-list"
+            >
               {items.map((i, index) => (
-                <li key={i.id} data-testid={`portfolio-row-${i.id}`}>
+                <li
+                  key={i.id}
+                  data-testid={`portfolio-row-${i.id}`}
+                  className={dragging === index ? 'is-dragging' : undefined}
+                >
+                  {items.length > 1 && (
+                    // Só para o ponteiro (mouse, toque, caneta): teclado e leitor de tela usam
+                    // as setas, que fazem o mesmo em um toque (WCAG 2.5.7).
+                    <span
+                      className="portfolio-grip"
+                      aria-hidden="true"
+                      title="Arraste para mudar a ordem"
+                      {...handleProps(index)}
+                    >
+                      <GripVertical size={16} />
+                    </span>
+                  )}
                   <span className="portfolio-pos" aria-hidden="true">
                     {index + 1}
                   </span>
