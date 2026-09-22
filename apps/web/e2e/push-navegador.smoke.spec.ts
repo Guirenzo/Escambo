@@ -20,6 +20,17 @@ const fakePushManager = `
     unsubscribe: async () => { window.__pushAssinado = false; return true; },
   };
   Object.defineProperty(window, 'PushManager', { value: function PushManager() {}, configurable: true });
+  // O Chromium da esteira desliga a API de notificações e responde "denied" mesmo com a permissão
+  // concedida ao site. A caixa de permissão do navegador não é nossa e não dá para dirigir daqui:
+  // o teste assume a resposta e prova o resto. Os estados "sem suporte" e "bloqueado" têm teste de
+  // unidade (pushStateOf).
+  Object.defineProperty(window, 'Notification', {
+    value: Object.assign(function Notification() {}, {
+      permission: 'granted',
+      requestPermission: async () => 'granted',
+    }),
+    configurable: true,
+  });
   const manager = {
     getSubscription: async () => (window.__pushAssinado ? subscription : null),
     subscribe: async () => { window.__pushAssinado = true; return subscription; },
@@ -42,8 +53,11 @@ test('avisos no navegador: liga o aparelho, envia teste e desliga', async ({
   page,
   request,
   context,
+  baseURL,
 }) => {
-  await context.grantPermissions(['notifications']);
+  // Sem a origem, a permissão vale para a página em branco onde o contexto começa, e o Chromium
+  // da esteira segue negando os avisos do app — o cartão mostraria "bloqueado" e nada seria testado.
+  await context.grantPermissions(['notifications'], { origin: baseURL });
   await page.addInitScript(fakePushManager);
   const user = await createUser(request, 'client');
   const headers = { Authorization: `Bearer ${user.token}` };
