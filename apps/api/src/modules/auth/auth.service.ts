@@ -6,6 +6,7 @@ import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { isBrazilTimezone, timezoneOf } from '../../utils/timezone';
+import { pushRepository } from '../notifications/push.repository';
 import { generateRefreshToken, hashToken } from '../../utils/tokens';
 import { mailService } from '../mail/mail.service';
 import { authRepository, type UserRow } from './auth.repository';
@@ -205,6 +206,8 @@ export const authService = {
     await authRepository.updatePassword(userId, passwordHash);
     await authRepository.markEmailVerified(userId); // quem redefine provou controlar o e-mail
     await sessionRepository.revokeAllForUser(userId);
+    // Quem redefine a senha pode estar tirando o acesso de um aparelho perdido: o push vai junto.
+    await pushRepository.removeAllForUser(userId);
   },
 
   async login(input: LoginInput, ctx: SessionContext = {}): Promise<AuthResponse> {
@@ -258,6 +261,8 @@ export const authService = {
     if (!user) {
       throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
     }
+    // O aparelho perdido para de receber os avisos junto com a sessão.
+    await pushRepository.removeAllForUser(user.id);
     return sessionRepository.revokeAllForUser(user.id);
   },
 

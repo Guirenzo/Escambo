@@ -249,6 +249,24 @@ export const openapiDocument: Record<string, any> = {
     '/contracts/{id}/cancel': {
       post: op('Contratações', 'Cancela (reembolso RN-025)', { auth: true }),
     },
+    '/notifications/push': {
+      get: op(
+        'Notificações',
+        'Chave VAPID, quantos aparelhos recebem avisos e, com ?endpoint=, se este aparelho é desta conta (ADR 52)',
+        { auth: true },
+      ),
+      post: op('Notificações', 'Liga os avisos neste aparelho (endpoint, p256dh, auth)', {
+        auth: true,
+        responses: { '201': { description: 'Criado' } },
+      }),
+      delete: op('Notificações', 'Desliga este aparelho (endpoint)', {
+        auth: true,
+        responses: { '204': { description: 'Sem conteúdo' } },
+      }),
+    },
+    '/notifications/push/test': {
+      post: op('Notificações', 'Aviso de teste para os aparelhos da conta', { auth: true }),
+    },
     '/notifications/preferences': {
       get: op(
         'Notificações',

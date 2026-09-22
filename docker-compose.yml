@@ -98,6 +98,11 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_SECURE: ${SMTP_SECURE:-false}
+      # Avisos push no navegador (ADR 52): na demo o par VAPID é gerado na subida.
+      PUSH_PROVIDER: ${PUSH_PROVIDER:-simulated}
+      PUSH_PUBLIC_KEY: ${PUSH_PUBLIC_KEY:-}
+      PUSH_PRIVATE_KEY: ${PUSH_PRIVATE_KEY:-}
+      PUSH_SUBJECT: ${PUSH_SUBJECT:-mailto:nao-responda@escambo.demo}
       DIGEST_HOUR: ${DIGEST_HOUR:-8}
       ATTACHMENT_PURGE_HOUR: ${ATTACHMENT_PURGE_HOUR:-4}
       # Rate limit por IP (padrões de produção). Para e2e/carga local, suba: LOGIN_RATE_LIMIT_MAX=1000

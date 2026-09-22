@@ -5,6 +5,19 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.34.0] — 2026-09-22
+
+### Adicionado
+
+- **Avisos no navegador** (ADR 52). Contratação, entrega, disputa, saque e os demais avisos que
+  já iam por e-mail passam a bater no aparelho, mesmo com a aba fechada. Liga-se aparelho por
+  aparelho no perfil, com aviso de teste, e o chat fica de fora para não virar barulho. A
+  entrega fica atrás de interface: simulada por padrão, Web Push de verdade com chaves VAPID
+  (obrigatórias nesse modo) e `off` para desligar o canal.
+- Sair de todos os aparelhos e redefinir a senha desligam os avisos junto com as sessões;
+  sair de uma sessão desliga o aparelho em que a pessoa está, e encerrar a conta apaga as
+  assinaturas na mesma transação que anonimiza os dados.
+
 ## [1.33.0] — 2026-09-22
 
 ### Adicionado

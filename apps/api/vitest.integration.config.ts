@@ -30,6 +30,7 @@ export default defineConfig({
       PAYMENTS_SIMULATE: 'true',
       PAYMENT_WEBHOOK_SECRET: 'segredo-do-webhook-de-integracao',
       MAIL_PROVIDER: 'simulated',
+      PUSH_PROVIDER: 'simulated',
       APP_URL: 'http://app.escambo.test',
     },
   },

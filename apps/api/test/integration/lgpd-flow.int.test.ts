@@ -183,6 +183,19 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       status: 'pending',
     });
 
+    // O aparelho do freelancer recebe avisos push: encerrar a conta apaga a assinatura junto
+    // (o usuário é anonimizado, não apagado, então o CASCADE da tabela nunca dispararia).
+    const pushEndpoint = `https://push.escambo.test/lgpd-${freelancer.id}`;
+    await request(app)
+      .post('/api/notifications/push')
+      .set(auth(freelancer.token))
+      .send({
+        endpoint: pushEndpoint,
+        p256dh: 'BChaveDoAparelhoQueSaiu000000000',
+        auth: 'segredo123',
+      })
+      .expect(201);
+
     // Admin conclui: conta anonimizada, token vigente bloqueado, login e refresh negados, perfil some.
     const done = await request(app)
       .post(`/api/admin/deletion-requests/${deletionId}/complete`)
@@ -194,6 +207,11 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       .post('/api/auth/login')
       .send({ email: freelancer.email, password: freelancer.password });
     expect(login.status).toBe(401); // e-mail não existe mais
+    const [pushRows] = await pool.query<unknown[]>(
+      'SELECT id FROM push_subscriptions WHERE endpoint = :endpoint',
+      { endpoint: pushEndpoint },
+    );
+    expect(pushRows).toHaveLength(0);
     await request(app).get(`/api/profiles/freelancer/${freelancerUlid}`).expect(404);
     const [users] = await pool.query<unknown[]>(
       `SELECT email, phone, password_hash, status, deleted_at FROM users WHERE id = :id`,

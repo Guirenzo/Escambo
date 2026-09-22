@@ -27,6 +27,13 @@ export default tseslint.config(
     },
   },
   {
+    // Service worker dos avisos (ADR 52): roda fora da página, com os globais dele.
+    files: ['apps/web/public/sw.js'],
+    languageOptions: {
+      globals: { self: 'readonly', URL: 'readonly' },
+    },
+  },
+  {
     // Scripts utilitários em Node puro (ESM): sem TypeScript, com os globais do runtime.
     files: ['scripts/**/*.mjs'],
     languageOptions: {

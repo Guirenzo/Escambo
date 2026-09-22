@@ -55,6 +55,9 @@ import type {
   ModerationHealth,
   MyProfiles,
   NotificationList,
+  PushSendResult,
+  PushStatus,
+  PushSubscriptionRequest,
   OpenDisputeRequest,
   Paginated,
   PlatformSetting,
@@ -410,6 +413,29 @@ export const api = {
   markNotificationRead: (id: number) =>
     request<void>(`/notifications/${id}/read`, { method: 'POST' }),
   emailPreference: () => request<EmailPreference>('/notifications/preferences'),
+  /**
+   * Avisos push (ADR 52): chave para assinar, quantos aparelhos desta conta recebem e, com o
+   * endpoint deste aparelho, se a assinatura dele é desta conta (o navegador pode guardar a de
+   * outra pessoa que usou a mesma máquina).
+   */
+  pushStatus: (endpoint?: string) =>
+    request<PushStatus>(
+      endpoint
+        ? `/notifications/push?endpoint=${encodeURIComponent(endpoint)}`
+        : '/notifications/push',
+    ),
+  pushSubscribe: (body: PushSubscriptionRequest) =>
+    request<{ devices: number }>('/notifications/push', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  pushUnsubscribe: (endpoint: string) =>
+    request<void>('/notifications/push', {
+      method: 'DELETE',
+      body: JSON.stringify({ endpoint }),
+    }),
+  pushTest: () =>
+    request<PushSendResult>('/notifications/push/test', { method: 'POST', body: '{}' }),
   /** Frequência dos e-mails e hora do resumo do dia (ADR 42): muda só o que vier. */
   updateEmailPreference: (body: UpdateEmailPreferenceRequest) =>
     request<EmailPreference>('/notifications/preferences', {

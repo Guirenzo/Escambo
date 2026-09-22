@@ -78,6 +78,11 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_SECURE: ${SMTP_SECURE:-false}
+      # Avisos push no navegador (ADR 52): webpush exige as duas chaves VAPID.
+      PUSH_PROVIDER: ${PUSH_PROVIDER:-simulated}
+      PUSH_PUBLIC_KEY: ${PUSH_PUBLIC_KEY:-}
+      PUSH_PRIVATE_KEY: ${PUSH_PRIVATE_KEY:-}
+      PUSH_SUBJECT: ${PUSH_SUBJECT:-mailto:nao-responda@${DOMAIN}}
       DIGEST_HOUR: ${DIGEST_HOUR:-8}
       ATTACHMENT_PURGE_HOUR: ${ATTACHMENT_PURGE_HOUR:-4}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}

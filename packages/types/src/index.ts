@@ -28,6 +28,28 @@ export interface PublicUser {
   timezoneChosen: boolean;
 }
 
+/** Avisos push no navegador (ADR 52): chave para assinar e aparelhos ligados nesta conta. */
+export interface PushStatus {
+  publicKey: string;
+  devices: number;
+  /** Este aparelho (o endpoint da consulta) recebe avisos desta conta? */
+  subscribed: boolean;
+}
+
+/** Assinatura de um aparelho, como o navegador entrega. */
+export interface PushSubscriptionRequest {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+/** Resultado de um envio: entregues, aparelhos que sumiram e tentativas perdidas. */
+export interface PushSendResult {
+  sent: number;
+  removed: number;
+  failed: number;
+}
+
 /** Fusos do Brasil que a conta pode escolher (ADR 46); sem horário de verão desde 2019. */
 export type BrazilTimezone =
   | 'America/Noronha'

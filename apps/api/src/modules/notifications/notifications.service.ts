@@ -9,6 +9,7 @@ import { logger } from '../../config/logger';
 import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
 import { timezoneOf } from '../../utils/timezone';
+import { pushService } from './push.service';
 import { authRepository } from '../auth/auth.repository';
 import { EMAILED_NOTIFICATION_TYPES, mailService, notificationLink } from '../mail/mail.service';
 import { notificationsRepository, type NotificationRow } from './notifications.repository';
@@ -87,6 +88,8 @@ export const notificationsService = {
       emailNotification(userId, params).catch((err) =>
         logger.warn({ err, type: params.type }, 'e-mail da notificação falhou'),
       );
+      // Aviso no navegador dos aparelhos ligados (ADR 52): mesmo tratamento do e-mail.
+      void pushService.notify(userId, { ...params, notificationId: id });
     } catch (err) {
       logger.warn({ err }, 'notify falhou');
     }
