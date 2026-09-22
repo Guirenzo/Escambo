@@ -2,7 +2,7 @@ import { Activity, Crosshair, Gavel, Inbox, Timer } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { ModerationHealth } from '@escambo/types';
 import { QueryState } from '../../components/ui';
-import { lineSegments, niceMax, scaleY, xAt } from '../../lib/chart';
+import { lineSegments, niceMax, scaleY, stackBar, xAt } from '../../lib/chart';
 import { dtm, durationLabel, percentLabel } from '../../lib/format';
 import { useModerationHealth } from '../../lib/hooks';
 
@@ -167,25 +167,17 @@ function HistoryCharts({ h }: { h: ModerationHealth }) {
           {hist.map((d, i) => {
             if (d.actioned + d.dismissed === 0) return null;
             const x = i * slot + (slot - barW) / 2;
-            const hUp = scaleY(d.actioned, barMax, PLOT);
-            const hDown = scaleY(d.dismissed, barMax, PLOT);
-            const gap = d.actioned > 0 && d.dismissed > 0 ? 1 : 0;
+            const bar = stackBar(d.actioned, d.dismissed, barMax, PLOT, 102);
             return (
               <g key={d.day}>
                 <title>{`${dm(d.day)}: ${d.actioned} com ação, ${d.dismissed} dispensadas${
                   d.flagged > 0 ? `, ${d.flagged} sinalizações automáticas` : ''
                 }`}</title>
-                {d.actioned > 0 && (
-                  <rect x={x} y={102 - hUp} width={barW} height={hUp} fill="var(--green)" />
+                {bar.up && (
+                  <rect x={x} y={bar.up.y} width={barW} height={bar.up.h} fill="var(--green)" />
                 )}
-                {d.dismissed > 0 && (
-                  <rect
-                    x={x}
-                    y={102 - hUp - gap - hDown}
-                    width={barW}
-                    height={hDown}
-                    fill="var(--muted)"
-                  />
+                {bar.down && (
+                  <rect x={x} y={bar.down.y} width={barW} height={bar.down.h} fill="var(--muted)" />
                 )}
               </g>
             );

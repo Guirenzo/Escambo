@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { moderationHealthService } from '../../src/modules/reports/moderation.health';
 import { fundWallet } from './wallet.helpers';
 
 /**
@@ -79,6 +80,9 @@ describe('Saúde da moderação (ADR 47)', () => {
       request(app).get(`/api/admin/moderation/health?${query}`).set(auth(token));
 
     const before = (await health(admin.token).expect(200)).body as Health;
+    // As colunas DATETIME guardam segundos inteiros: o corte fica alinhado ao segundo, senão uma
+    // decisão gravada no mesmo segundo, depois dele, seria guardada como anterior.
+    const cutoff = new Date(Math.floor(Date.now() / 1000) * 1000);
     expect(before.windowDays).toBe(30);
 
     // Duas sinalizações automáticas: uma dispensada (só telefone), uma removida (pix e telefone).
@@ -153,6 +157,16 @@ describe('Saúde da moderação (ADR 47)', () => {
     expect(after.history.reduce((sum, d) => sum + d.actioned + d.dismissed, 0)).toBe(
       after.decisions.total,
     );
+
+    // O período fecha no instante do relatório (v1.32.1): com o relógio de antes das decisões,
+    // nada do que foi gravado depois entra no total nem na série, e os dois continuam batendo.
+    const past = await moderationHealthService.report(30, cutoff);
+    expect(past.decisions.total).toBe(before.decisions.total);
+    expect(past.automatic.flagged).toBe(before.automatic.flagged);
+    expect(past.history.reduce((sum, d) => sum + d.actioned + d.dismissed, 0)).toBe(
+      past.decisions.total,
+    );
+    expect(past.history.reduce((sum, d) => sum + d.flagged, 0)).toBe(past.automatic.flagged);
 
     // A meta é parâmetro da plataforma: mudou, o painel devolve o novo valor na hora.
     await request(app)

@@ -45,7 +45,10 @@ export const ratio = (part: number, whole: number): number | null =>
 /** Segundos → horas com uma casa. */
 export const asHours = (seconds: number): number => Math.round((seconds / 3600) * 10) / 10;
 
-/** Dia ('AAAA-MM-DD') de um instante em Brasília, o mesmo fuso fixo do DAY_BRT. */
+/**
+ * Dia ('AAAA-MM-DD') de um instante em Brasília. Usa o fuso IANA, que é -03:00 fixo desde 2019
+ * (o Brasil não tem mais horário de verão): o mesmo dia que o DAY_BRT calcula no banco.
+ */
 export function dayKey(at: Date): string {
   const p = localParts(DEFAULT_TIMEZONE, at);
   return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
@@ -193,6 +196,9 @@ const hoursOf = (rows: SecondsRow[], q: number): number | null => {
 export const moderationHealthService = {
   async report(days: number, now: Date = new Date()): Promise<ModerationHealth> {
     const since = new Date(now.getTime() - days * DAY_MS);
+    // O período fecha no mesmo `now` da série: o que for gravado durante a consulta fica para a
+    // próxima, e a soma da série bate com o total por construção.
+    const window = { since, until: now };
     const [
       [queue],
       [appealQueue],
@@ -218,51 +224,54 @@ export const moderationHealthService = {
       pool.query<DayStatusCountRow[]>(
         `SELECT ${DAY_BRT('reviewed_at')} AS d, status, COUNT(*) AS n FROM content_reports
           WHERE status IN ('actioned', 'dismissed') AND reviewed_at >= :since
+            AND reviewed_at < :until
           GROUP BY d, status`,
-        { since },
+        window,
       ),
       pool.query<DaySecondsRow[]>(
         `SELECT ${DAY_BRT('reviewed_at')} AS d, TIMESTAMPDIFF(SECOND, created_at, reviewed_at) AS secs
            FROM content_reports
           WHERE status IN ('actioned', 'dismissed') AND reviewed_at >= :since
+            AND reviewed_at < :until
           ORDER BY reviewed_at DESC
           LIMIT ${SAMPLE_LIMIT}`,
-        { since },
+        window,
       ),
       pool.query<(AutomaticRow & RowDataPacket)[]>(
         `SELECT r.status, m.off_platform, COUNT(*) AS n
            FROM content_reports r
            LEFT JOIN messages m ON r.target_type = 'message' AND m.id = r.target_id
-          WHERE r.reporter_id IS NULL AND r.created_at >= :since
+          WHERE r.reporter_id IS NULL AND r.created_at >= :since AND r.created_at < :until
           GROUP BY r.status, m.off_platform`,
-        { since },
+        window,
       ),
       pool.query<DayCountRow[]>(
         `SELECT ${DAY_BRT('created_at')} AS d, COUNT(*) AS n FROM content_reports
-          WHERE reporter_id IS NULL AND created_at >= :since
+          WHERE reporter_id IS NULL AND created_at >= :since AND created_at < :until
           GROUP BY d`,
-        { since },
+        window,
       ),
       pool.query<StatusCountRow[]>(
         `SELECT status, COUNT(*) AS n FROM content_removals
           WHERE status IN ('upheld', 'overturned') AND appealed_at IS NOT NULL
-            AND decided_at >= :since
+            AND decided_at >= :since AND decided_at < :until
           GROUP BY status`,
-        { since },
+        window,
       ),
       pool.query<SecondsRow[]>(
         `SELECT TIMESTAMPDIFF(SECOND, appealed_at, decided_at) AS secs
            FROM content_removals
           WHERE status IN ('upheld', 'overturned') AND appealed_at IS NOT NULL
-            AND decided_at >= :since
+            AND decided_at >= :since AND decided_at < :until
           ORDER BY decided_at DESC
           LIMIT ${SAMPLE_LIMIT}`,
-        { since },
+        window,
       ),
       pool.query<RemovalTypeRow[]>(
         `SELECT target_type, COUNT(*) AS n FROM content_removals
-          WHERE removed_at >= :since GROUP BY target_type ORDER BY n DESC`,
-        { since },
+          WHERE removed_at >= :since AND removed_at < :until
+          GROUP BY target_type ORDER BY n DESC`,
+        window,
       ),
       settingsService.number('moderation_sla_hours'),
     ]);
