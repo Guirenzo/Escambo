@@ -5,6 +5,15 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.33.0] — 2026-09-22
+
+### Adicionado
+
+- **Fuso detectado pelo aparelho** (ADR 51). No cadastro, o fuso do navegador vai junto, e a
+  conta já nasce nele. Conta antiga que nunca escolheu fuso, com o aparelho em outro fuso do
+  Brasil, vê uma sugestão única ("usar o horário de Manaus?"), e qualquer resposta grava a
+  escolha. A sessão passa a trazer `timezoneChosen`, e o cadastro aceita `timezone`.
+
 ## [1.32.1] — 2026-09-22
 
 ### Corrigido

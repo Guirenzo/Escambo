@@ -5,7 +5,7 @@ import type { AuthResponse, PublicUser, RefreshResponse, UserRole } from '@escam
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
-import { DEFAULT_TIMEZONE, timezoneOf } from '../../utils/timezone';
+import { isBrazilTimezone, timezoneOf } from '../../utils/timezone';
 import { generateRefreshToken, hashToken } from '../../utils/tokens';
 import { mailService } from '../mail/mail.service';
 import { authRepository, type UserRow } from './auth.repository';
@@ -34,6 +34,7 @@ function toPublic(user: UserRow): PublicUser {
     emailFrequency: user.email_frequency ?? 'instant',
     digestHour: user.digest_hour ?? env.DIGEST_HOUR,
     timezone: timezoneOf(user.timezone),
+    timezoneChosen: isBrazilTimezone(user.timezone),
   };
 }
 
@@ -129,6 +130,7 @@ export const authService = {
       email: input.email,
       passwordHash,
       role,
+      timezone: input.timezone ?? null,
     });
 
     // Boas-vindas + confirmação de e-mail. Falha no e-mail não derruba o cadastro.
@@ -146,7 +148,8 @@ export const authService = {
       emailVerified: false,
       emailFrequency: 'instant',
       digestHour: env.DIGEST_HOUR,
-      timezone: DEFAULT_TIMEZONE,
+      timezone: timezoneOf(input.timezone),
+      timezoneChosen: input.timezone !== undefined,
     };
   },
 

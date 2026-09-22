@@ -3,6 +3,7 @@ import type { LoginRequest, PublicUser, RegisterRequest } from '@escambo/types';
 import { api, getRefreshToken, getToken, SESSION_EXPIRED_EVENT, setSession } from './api';
 import { disconnectSocket } from './socket';
 import { LEGAL_VERSION } from '../features/legal/content';
+import { browserBrazilZone } from './timezones';
 
 interface AuthState {
   user: PublicUser | null;
@@ -60,7 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function register(input: RegisterRequest): Promise<void> {
     setError(null);
     try {
-      await api.register(input);
+      // O fuso do aparelho vai junto (ADR 51): a conta já nasce no relógio de quem se cadastra.
+      const timezone = input.timezone ?? browserBrazilZone() ?? undefined;
+      await api.register(timezone ? { ...input, timezone } : input);
       await login({ email: input.email, password: input.password });
       // Consentimento LGPD com a versão vigente dos documentos (melhor esforço, não bloqueia).
       await Promise.all(

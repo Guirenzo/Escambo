@@ -48,11 +48,13 @@ export const authRepository = {
     email: string;
     passwordHash: string;
     role: string;
+    /** Fuso do aparelho no cadastro (ADR 51); null = padrão de Brasília, sem escolha. */
+    timezone?: string | null;
   }): Promise<number> {
     const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO users (ulid, email, password_hash, role, status)
-       VALUES (:ulid, :email, :passwordHash, :role, 'pending_verification')`,
-      data,
+      `INSERT INTO users (ulid, email, password_hash, role, status, timezone)
+       VALUES (:ulid, :email, :passwordHash, :role, 'pending_verification', :timezone)`,
+      { ...data, timezone: data.timezone ?? null },
     );
     return result.insertId;
   },

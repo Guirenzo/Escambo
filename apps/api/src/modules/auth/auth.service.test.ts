@@ -186,6 +186,7 @@ describe('authService.getByUlid', () => {
       emailFrequency: 'instant',
       digestHour: expect.any(Number),
       timezone: 'America/Sao_Paulo',
+      timezoneChosen: false,
     });
   });
 

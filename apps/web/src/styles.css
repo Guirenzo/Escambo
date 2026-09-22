@@ -2913,6 +2913,19 @@ body.is-dragging-list {
 .verify-banner strong {
   overflow-wrap: anywhere;
 }
+/* Sugestão de fuso (ADR 51): informação, não alerta; as duas respostas lado a lado. */
+.verify-banner.tz-banner {
+  background: var(--blue-soft);
+  color: var(--blue-ink);
+}
+.verify-banner.tz-banner button.link {
+  color: var(--blue-ink);
+}
+.tz-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
 .verify-banner button.link {
   color: var(--amber-ink);
   font-weight: 700;

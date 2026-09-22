@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BRAZIL_TIMEZONES } from '../../utils/timezone';
 
 /** Validação de entrada (RNF-015: schema em 100% das rotas). */
 
@@ -6,6 +7,8 @@ export const registerSchema = z.object({
   email: z.string().email('E-mail inválido'),
   password: z.string().min(8, 'A senha deve ter ao menos 8 caracteres'),
   role: z.enum(['client', 'freelancer', 'company']).default('client'),
+  /** Fuso detectado no aparelho (ADR 51); só os do Brasil. */
+  timezone: z.enum(BRAZIL_TIMEZONES).optional(),
 });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
