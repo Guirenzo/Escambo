@@ -19,7 +19,9 @@ import { displayName } from '../../lib/format';
 import { Avatar } from '../../components/Avatar';
 import { useNotifications, useProfilesMe } from '../../lib/hooks';
 import { useRealtimeNotifications } from '../../lib/realtime';
+import { browserBrazilZone } from '../../lib/timezones';
 import { useToast } from '../../lib/toast';
+import { TimezoneBanner } from './TimezoneBanner';
 
 /** Conta ainda sem e-mail confirmado: lembrete discreto com reenvio do link. */
 function VerifyEmailBanner({ email }: { email: string }) {
@@ -81,6 +83,10 @@ export function Shell() {
   const notifications = useNotifications();
   const unread = notifications.data?.unreadCount ?? 0;
   useRealtimeNotifications();
+  // Sugestão de fuso (ADR 51): só para conta que nunca escolheu e com o aparelho em outro fuso.
+  const [detected] = useState(browserBrazilZone);
+  const suggestZone =
+    user && !user.timezoneChosen && detected && detected !== user.timezone ? detected : null;
 
   return (
     <div className="app">
@@ -126,6 +132,7 @@ export function Shell() {
 
       <main className="main">
         {user && !user.emailVerified && <VerifyEmailBanner email={user.email} />}
+        {user && suggestZone && <TimezoneBanner user={user} detected={suggestZone} />}
         <Outlet />
       </main>
     </div>

@@ -71,6 +71,18 @@ export const openapiDocument: Record<string, any> = {
           email: { type: 'string', format: 'email' },
           password: { type: 'string', minLength: 8 },
           role: { type: 'string', enum: ['client', 'freelancer', 'company'] },
+          timezone: {
+            type: 'string',
+            enum: [
+              'America/Noronha',
+              'America/Sao_Paulo',
+              'America/Cuiaba',
+              'America/Manaus',
+              'America/Rio_Branco',
+            ],
+            description:
+              'Fuso do aparelho (ADR 51); sem ele a conta fica em Brasília e marcada como não escolhida (timezoneChosen)',
+          },
         },
         ['email', 'password'],
       ),

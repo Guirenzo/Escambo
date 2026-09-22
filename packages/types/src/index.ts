@@ -21,6 +21,11 @@ export interface PublicUser {
   digestHour: number;
   /** Fuso da conta (ADR 46): vale para a hora do resumo e para as datas nos avisos. */
   timezone: BrazilTimezone;
+  /**
+   * A conta escolheu o fuso (ou nasceu com o do aparelho, ADR 51). Falso = ainda no padrão de
+   * Brasília sem escolha: é quando o app sugere o fuso do aparelho, uma vez.
+   */
+  timezoneChosen: boolean;
 }
 
 /** Fusos do Brasil que a conta pode escolher (ADR 46); sem horário de verão desde 2019. */
@@ -79,6 +84,8 @@ export interface RegisterRequest {
   email: string;
   password: string;
   role?: Exclude<UserRole, 'admin'>;
+  /** Fuso do aparelho, quando é um dos do Brasil (ADR 51); sem ele, a conta fica em Brasília. */
+  timezone?: BrazilTimezone;
 }
 
 export interface LoginRequest {
