@@ -52,7 +52,8 @@ export default defineConfig({
         viewport: { width: 1440, height: 900 },
         deviceScaleFactor: 2,
         geolocation: { latitude: -26.3045, longitude: -48.8487 }, // Joinville
-        permissions: ['geolocation'],
+        // Notificações entram para o print do perfil não mostrar o cartão de push "bloqueado".
+        permissions: ['geolocation', 'notifications'],
       },
     },
   ],

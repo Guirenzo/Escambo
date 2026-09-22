@@ -12,6 +12,10 @@ vi.mock('./auth.repository', () => ({
     updateRole: vi.fn(),
   },
 }));
+vi.mock('../notifications/push.repository', () => ({
+  pushRepository: { removeAllForUser: vi.fn().mockResolvedValue(0) },
+}));
+
 vi.mock('./session.repository', () => ({
   sessionRepository: {
     create: vi.fn(),

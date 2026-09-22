@@ -20,6 +20,7 @@ import { useToast } from '../../lib/toast';
 import { EmailPreferencesCard } from '../profile/EmailPreferencesCard';
 import { ModeracaoCard } from '../profile/ModeracaoCard';
 import { PortfolioCard } from '../profile/PortfolioCard';
+import { PushCard } from '../profile/PushCard';
 import { PrivacidadeCard } from '../profile/PrivacidadeCard';
 import { ImageUploadButton } from '../../components/ImageUploadButton';
 
@@ -435,6 +436,7 @@ export function PerfilView() {
             <ModeracaoCard />
             {p.freelancer && <PortfolioCard />}
             <EmailPreferencesCard />
+            <PushCard />
             <PrivacidadeCard />
           </div>
         )}

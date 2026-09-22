@@ -17,6 +17,7 @@ export default defineConfig({
       JWT_SECRET: 'unit-test-secret-0123456789abcdef',
       ADMIN_EMAILS: 'root@escambo.test,@admin.escambo.test',
       MAIL_PROVIDER: 'off',
+      PUSH_PROVIDER: 'off',
       // Banco inexistente de propósito: teste unitário que tocar no MySQL (repository sem mock)
       // falha aqui, na máquina de quem escreveu, e não só no CI — que não tem banco neste job.
       DB_HOST: '127.0.0.1',

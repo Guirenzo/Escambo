@@ -3,7 +3,7 @@
 > **Versão:** 1.1.0  
 > **SGBD:** MySQL 8.0+  
 > **Encoding:** utf8mb4 / utf8mb4_unicode_ci  
-> **Total de tabelas:** 50  
+> **Total de tabelas:** 51  
 > **Atualizado em:** Junho de 2026
 
 > **Changelog 1.1.0 (Jun/2026):** correção da contagem (a v1.0.0 declarava 48 tabelas mas modelava 40);
@@ -992,7 +992,7 @@ CREATE TABLE notifications (
 ---
 
 ### `push_tokens`
-Tokens de dispositivos para push notification.
+Tokens de dispositivos para push notification. **Do desenho original e sem uso**: era para app nativo (um token por aparelho). O push do navegador (ADR 52) precisa do endpoint do serviço de push e das chaves de cifra do aparelho, e mora em `push_subscriptions`.
 
 ```sql
 CREATE TABLE push_tokens (
@@ -1007,6 +1007,28 @@ CREATE TABLE push_tokens (
   PRIMARY KEY (id),
   INDEX idx_pt_user (user_id),
   CONSTRAINT fk_pt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+### `push_subscriptions`
+Assinaturas de push do navegador (ADR 52, migration 0023). Uma linha por aparelho que aceitou receber: a assinatura é a preferência, não há coluna na conta. Sai quando a pessoa desliga ou quando o serviço de push recusa o endpoint (404/410).
+
+```sql
+CREATE TABLE push_subscriptions (
+  id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id      BIGINT UNSIGNED NOT NULL,
+  endpoint     VARCHAR(512)    NOT NULL,   -- endereço do serviço de push do navegador
+  p256dh       VARCHAR(255)    NOT NULL,   -- chave pública do aparelho (cifra da mensagem)
+  auth_key     VARCHAR(255)    NOT NULL,   -- segredo do aparelho
+  user_agent   VARCHAR(255)    NULL,
+  created_at   TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_sent_at TIMESTAMP       NULL,       -- última entrega aceita pelo serviço de push
+  last_error   VARCHAR(255)    NULL,
+
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_push_endpoint (endpoint),
+  KEY idx_push_user (user_id),
+  CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
@@ -1464,14 +1486,14 @@ CREATE TABLE barter_agreements (
 | 06 — Avaliações | `reviews`, `review_responses`, `review_criteria_scores` | 3 |
 | 07 — Chat | `conversations`, `messages` | 2 |
 | 08 — Gamificação | `badges`, `user_badges`, `user_xp`, `xp_transactions`, `missions`, `user_missions` | 6 |
-| 09 — Notificações | `notifications`, `push_tokens` | 2 |
+| 09 — Notificações | `notifications`, `push_subscriptions`, `push_tokens` (sem uso) | 3 |
 | 10 — Suporte e Mediação | `support_tickets`, `support_ticket_messages`, `disputes`, `content_reports` | 4 |
 | 11 — Impulsionamento | `boost_plans`, `boosts` | 2 |
 | 12 — Administração | `admin_actions`, `platform_settings` | 2 |
 | 13 — LGPD | `lgpd_consents`, `data_deletion_requests`, `data_export_requests`, `audit_logs` | 4 |
 | 14 — Relatórios | `report_snapshots` | 1 |
 | 15 — Troca de Serviços (Escambo) | `barter_agreements` | 1 |
-| **Total** | | **50 tabelas** |
+| **Total** | | **51 tabelas** |
 
 ### Notas de segurança e LGPD na modelagem
 

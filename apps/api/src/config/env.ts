@@ -95,6 +95,12 @@ const envSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
   // Validade dos links de confirmação de e-mail e de redefinição de senha.
+  // Avisos push no navegador (ADR 52): 'simulated' (padrão, nada sai da máquina), 'webpush'
+  // (Web Push de verdade com as chaves VAPID) ou 'off' (não envia nada).
+  PUSH_PROVIDER: z.enum(['simulated', 'webpush', 'off']).default('simulated'),
+  PUSH_PUBLIC_KEY: z.string().default(''),
+  PUSH_PRIVATE_KEY: z.string().default(''),
+  PUSH_SUBJECT: z.string().default('mailto:nao-responda@escambo.demo'),
   EMAIL_VERIFY_TTL_HOURS: z.coerce.number().int().positive().default(24),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(60),
   // Hora (Brasília, 0–23) a partir da qual o resumo diário de notificações é enviado.

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { LoginRequest, PublicUser, RegisterRequest } from '@escambo/types';
 import { api, getRefreshToken, getToken, SESSION_EXPIRED_EVENT, setSession } from './api';
 import { disconnectSocket } from './socket';
+import { currentSubscription, lastDeviceEndpoint, rememberDeviceEndpoint } from './push';
 import { LEGAL_VERSION } from '../features/legal/content';
 import { browserBrazilZone } from './timezones';
 
@@ -91,6 +92,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /** Sai: revoga o refresh token no servidor (melhor esforço) e limpa a sessão local. */
   function logout(): void {
     const refreshToken = getRefreshToken();
+    // Sair desliga os avisos deste aparelho (ADR 52): o pedido sai antes de a sessão ser apagada,
+    // e a assinatura do navegador cai junto para o aparelho não receber aviso de conta nenhuma.
+    const pushEndpoint = lastDeviceEndpoint();
+    if (pushEndpoint) void api.pushUnsubscribe(pushEndpoint).catch(() => undefined);
+    rememberDeviceEndpoint(null);
+    void currentSubscription()
+      .then((sub) => sub?.unsubscribe())
+      .catch(() => undefined);
     if (refreshToken) void api.logout(refreshToken).catch(() => undefined);
     setSession(null);
     disconnectSocket();

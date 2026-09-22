@@ -12,6 +12,10 @@ vi.mock('./auth.repository', () => ({
   },
 }));
 
+vi.mock('../notifications/push.repository', () => ({
+  pushRepository: { removeAllForUser: vi.fn().mockResolvedValue(0) },
+}));
+
 vi.mock('./session.repository', () => ({
   sessionRepository: {
     create: vi.fn(),
@@ -25,6 +29,7 @@ import { authService } from './auth.service';
 import { authRepository, type UserRow } from './auth.repository';
 import { sessionRepository, type SessionRow } from './session.repository';
 import { hashToken } from '../../utils/tokens';
+import { pushRepository } from '../notifications/push.repository';
 
 const repo = vi.mocked(authRepository);
 const sessions = vi.mocked(sessionRepository);
@@ -170,6 +175,8 @@ describe('authService.logout / logoutAll', () => {
     const count = await authService.logoutAll('01HZXULIDEXAMPLE0000000000');
     expect(count).toBe(3);
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(7);
+    // Sair de todos costuma ser aparelho perdido: os avisos no navegador caem junto (ADR 52).
+    expect(vi.mocked(pushRepository).removeAllForUser).toHaveBeenCalledWith(7);
   });
 });
 

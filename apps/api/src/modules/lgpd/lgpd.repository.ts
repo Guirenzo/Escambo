@@ -179,6 +179,10 @@ export const lgpdRepository = {
         await conn.rollback();
         return false;
       }
+      // Os aparelhos param de receber avisos: a conta encerrada não guarda assinatura de push.
+      await conn.query<ResultSetHeader>('DELETE FROM push_subscriptions WHERE user_id = :userId', {
+        userId,
+      });
       await conn.query<ResultSetHeader>(
         `UPDATE users
             SET email = CONCAT('removido+', id, '@anon.escambo.invalid'),
