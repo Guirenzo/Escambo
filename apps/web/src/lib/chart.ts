@@ -17,6 +17,36 @@ export const scaleY = (value: number, max: number, height: number): number =>
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
+export interface StackBar {
+  up: { y: number; h: number } | null;
+  down: { y: number; h: number } | null;
+}
+
+/**
+ * Barra empilhada de dois segmentos sobre a linha de base `base`, com `gap` de respiro entre
+ * eles tirado de dentro da pilha: a altura total é sempre proporcional à soma, então dias com o
+ * mesmo total têm a mesma altura e o dia de pico encosta no teto sem passar dele. Segmento que
+ * existe fica com pelo menos 1 de altura, para não sumir.
+ */
+export function stackBar(
+  up: number,
+  down: number,
+  max: number,
+  plot: number,
+  base: number,
+  gap = 1,
+): StackBar {
+  const total = scaleY(up + down, max, plot);
+  const both = up > 0 && down > 0;
+  const room = Math.max(total - (both ? gap : 0), 0);
+  const upH = up > 0 ? Math.max(room * (up / (up + down)), 1) : 0;
+  const downH = down > 0 ? Math.max(room - upH, 1) : 0;
+  return {
+    up: up > 0 ? { y: base - upH, h: upH } : null,
+    down: down > 0 ? { y: base - upH - (both ? gap : 0) - downH, h: downH } : null,
+  };
+}
+
 /** O x do ponto `i` numa série de `count` pontos espaçados por igual em `width`. */
 export const xAt = (i: number, count: number, width: number): number =>
   count > 1 ? round1(i * (width / (count - 1))) : round1(width / 2);

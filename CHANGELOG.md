@@ -5,6 +5,16 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.32.1] — 2026-09-22
+
+### Corrigido
+
+- Saúde da moderação: as consultas do período fecham no mesmo instante da série, então uma
+  decisão gravada durante a consulta não entra no total sem entrar na série. A soma da série
+  bate com o total por construção.
+- Gráfico de decisões por dia: o respiro entre os segmentos sai de dentro da barra. Dias com o
+  mesmo total têm a mesma altura, e o dia de pico não passa do teto do desenho.
+
 ## [1.32.0] — 2026-09-21
 
 ### Adicionado
