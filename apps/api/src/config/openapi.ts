@@ -529,7 +529,7 @@ export const openapiDocument: Record<string, any> = {
     '/admin/moderation/health': {
       get: op(
         'Admin',
-        'Saúde da moderação (ADR 47): fila e contestações esperando agora e, no período (?days=1..365, padrão 30), decisões com mediana e p90 do tempo até decidir, sinalizações automáticas por resultado e por sinal com o acerto, contestações mantidas e revertidas e remoções por tipo',
+        'Saúde da moderação (ADR 47): fila e contestações esperando agora e, no período (?days=1..365, padrão 30), decisões com mediana e p90 do tempo até decidir, sinalizações automáticas por resultado e por sinal com o acerto, contestações mantidas e revertidas e remoções por tipo, mais a série por dia (Brasília) e a meta de tempo (moderation_sla_hours, ADR 50)',
         { auth: true },
       ),
     },

@@ -52,6 +52,12 @@ test('painel de saúde da moderação: números, tabela de sinais e período', a
   await expect(signals.getByRole('row', { name: /^Pix / })).toBeVisible();
   await expect(signals.getByRole('row', { name: /^Negociar por fora / })).toBeVisible();
 
+  // Série por dia (ADR 50): os dois gráficos com resumo acessível e a meta desenhada.
+  const history = card.getByTestId('health-history');
+  await expect(history.getByRole('img', { name: /^Decisões por dia/ })).toBeVisible();
+  await expect(history.getByRole('img', { name: /meta de 24 h/ })).toBeVisible();
+  await expect(history.locator('svg text', { hasText: 'meta 24 h' })).toBeVisible();
+
   // O período muda a janela e continua mostrando a remoção de agora.
   await card.getByRole('tab', { name: '7 dias' }).click();
   await expect(card.getByRole('tab', { name: '7 dias' })).toHaveAttribute('aria-selected', 'true');
