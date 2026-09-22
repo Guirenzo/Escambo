@@ -15,6 +15,7 @@ export const SETTING_KEYS = [
   'strike_window_days',
   'strike_upload_block_days',
   'strike_review_threshold',
+  'moderation_sla_hours',
   'min_service_price',
   'min_withdrawal_amount',
   'barter_enabled',
@@ -123,6 +124,16 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     min: 2,
     max: 20,
     defaultValue: 3,
+  },
+  moderation_sla_hours: {
+    type: 'integer',
+    label: 'Meta da moderação',
+    description:
+      'Alvo de tempo entre a denúncia e a decisão da fila. O painel de saúde da moderação desenha a meta na série por dia e destaca a mediana que estourar (ADR 50).',
+    unit: 'horas',
+    min: 1,
+    max: 720,
+    defaultValue: 24,
   },
   min_service_price: {
     type: 'decimal',

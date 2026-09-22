@@ -315,7 +315,16 @@ export interface AdminAppeal {
   ownerStrikes: number;
 }
 
-/** Saúde da moderação no painel (ADR 47): fila agora, e decisões, sinalizações e contestações num período. */
+/** Um dia (Brasília) da série da saúde da moderação (ADR 50); dia sem nada vem zerado. */
+export interface ModerationHealthDay {
+  day: string;
+  actioned: number;
+  dismissed: number;
+  flagged: number;
+  medianHours: number | null;
+}
+
+/** Saúde da moderação no painel (ADR 47 e 50): fila agora e, num período, decisões, sinalizações, contestações e a série por dia. */
 export interface ModerationHealth {
   windowDays: number;
   queue: {
@@ -359,6 +368,10 @@ export interface ModerationHealth {
     overturnRate: number | null;
   };
   removals: { total: number; byType: { targetType: RemovalTarget; count: number }[] };
+  /** Meta de tempo até decidir (platform_settings.moderation_sla_hours), em horas. */
+  slaHours: number;
+  /** Do dia do começo do período ao de hoje (Brasília), sem buracos. */
+  history: ModerationHealthDay[];
 }
 
 export interface AdminAppealDecisionRequest {
@@ -514,6 +527,7 @@ export type PlatformSettingKey =
   | 'strike_window_days'
   | 'strike_upload_block_days'
   | 'strike_review_threshold'
+  | 'moderation_sla_hours'
   | 'min_service_price'
   | 'min_withdrawal_amount'
   | 'barter_enabled'

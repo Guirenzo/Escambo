@@ -2642,6 +2642,39 @@ body.is-dragging-list {
     width: 56px;
   }
 }
+/* Série por dia (ADR 50): dois gráficos pequenos com a mesma paleta de estado do painel. */
+.health-history {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.chart-mini {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+.chart-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 0.86rem;
+}
+.chart-mini svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* o ponto do último dia encosta na borda: deixa o círculo respirar */
+  overflow: visible;
+}
+.swatch.median {
+  background: var(--green-ink);
+}
+.swatch.meta {
+  background: var(--amber);
+}
 
 /* ---------- Admin: financeiro ---------- */
 .fin-controls {

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { asHours, median, quantile, ratio, tallyAutomatic } from './moderation.health';
+import {
+  asHours,
+  buildHistory,
+  dayKey,
+  listDays,
+  median,
+  quantile,
+  ratio,
+  tallyAutomatic,
+} from './moderation.health';
 
 describe('saúde da moderação (ADR 47)', () => {
   it('mediana e percentil com interpolação; vazio é null', () => {
@@ -49,5 +58,44 @@ describe('saúde da moderação (ADR 47)', () => {
       precision: null,
       signals: [],
     });
+  });
+});
+
+describe('série por dia (ADR 50)', () => {
+  it('dayKey e listDays contam no dia de Brasília, virando dia, mês e ano', () => {
+    expect(dayKey(new Date('2026-01-01T02:59:00Z'))).toBe('2025-12-31');
+    expect(dayKey(new Date('2026-01-01T03:00:00Z'))).toBe('2026-01-01');
+    expect(listDays(new Date('2026-09-19T12:00:00Z'), new Date('2026-09-21T12:00:00Z'))).toEqual([
+      '2026-09-19',
+      '2026-09-20',
+      '2026-09-21',
+    ]);
+    // 01:00 UTC ainda é o dia anterior em Brasília: a janela pega o pedaço do primeiro dia.
+    expect(listDays(new Date('2026-09-21T01:00:00Z'), new Date('2026-09-21T23:00:00Z'))).toEqual([
+      '2026-09-20',
+      '2026-09-21',
+    ]);
+  });
+
+  it('buildHistory preenche dia vazio com zero e faz a mediana do dia', () => {
+    const history = buildHistory(['2026-09-19', '2026-09-20', '2026-09-21'], {
+      decisions: [
+        { d: '2026-09-19', status: 'actioned', n: 2 },
+        { d: '2026-09-19', status: 'dismissed', n: '1' as unknown as number },
+        { d: '2026-09-21', status: 'actioned', n: 1 },
+        { d: '2026-09-01', status: 'actioned', n: 9 }, // fora dos dias listados: ignorado
+      ],
+      flagged: [{ d: '2026-09-21', n: 3 }],
+      seconds: [
+        { d: '2026-09-19', secs: 3600 },
+        { d: '2026-09-19', secs: 7200 },
+        { d: '2026-09-21', secs: 1800 },
+      ],
+    });
+    expect(history).toEqual([
+      { day: '2026-09-19', actioned: 2, dismissed: 1, flagged: 0, medianHours: 1.5 },
+      { day: '2026-09-20', actioned: 0, dismissed: 0, flagged: 0, medianHours: null },
+      { day: '2026-09-21', actioned: 1, dismissed: 0, flagged: 3, medianHours: 0.5 },
+    ]);
   });
 });

@@ -40,6 +40,14 @@ interface Health {
   };
   appeals: { decided: number; overturned: number; overturnRate: number | null };
   removals: { total: number; byType: { targetType: string; count: number }[] };
+  slaHours: number;
+  history: {
+    day: string;
+    actioned: number;
+    dismissed: number;
+    flagged: number;
+    medianHours: number | null;
+  }[];
 }
 
 afterAll(async () => {
@@ -130,6 +138,29 @@ describe('Saúde da moderação (ADR 47)', () => {
     expect(
       after.removals.byType.find((t) => t.targetType === 'message')!.count,
     ).toBeGreaterThanOrEqual(1);
+
+    // Série por dia (ADR 50): contínua, no dia de Brasília, com as decisões de agora na ponta
+    // (nos dois últimos dias, para não depender de rodar longe da meia-noite).
+    expect(after.slaHours).toBe(24);
+    expect(after.history.length).toBeGreaterThanOrEqual(30);
+    expect(after.history.length).toBeLessThanOrEqual(32);
+    expect(after.history.every((d) => /^\d{4}-\d{2}-\d{2}$/.test(d.day))).toBe(true);
+    const recent = after.history.slice(-2);
+    expect(recent.reduce((sum, d) => sum + d.actioned, 0)).toBeGreaterThanOrEqual(1);
+    expect(recent.reduce((sum, d) => sum + d.dismissed, 0)).toBeGreaterThanOrEqual(1);
+    expect(recent.reduce((sum, d) => sum + d.flagged, 0)).toBeGreaterThanOrEqual(2);
+    expect(recent.some((d) => d.medianHours !== null)).toBe(true);
+    expect(after.history.reduce((sum, d) => sum + d.actioned + d.dismissed, 0)).toBe(
+      after.decisions.total,
+    );
+
+    // A meta é parâmetro da plataforma: mudou, o painel devolve o novo valor na hora.
+    await request(app)
+      .put('/api/admin/settings/moderation_sla_hours')
+      .set(auth(admin.token))
+      .send({ value: 48 })
+      .expect(200);
+    expect(((await health(admin.token).expect(200)).body as Health).slaHours).toBe(48);
 
     // O período muda a janela; fora de 1 a 365 é 422; quem não é admin toma 403.
     expect(((await health(admin.token, 'days=7').expect(200)).body as Health).windowDays).toBe(7);

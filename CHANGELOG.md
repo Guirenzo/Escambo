@@ -5,6 +5,15 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.32.0] — 2026-09-21
+
+### Adicionado
+
+- **Série por dia na saúde da moderação** (ADR 50). O painel ganha dois gráficos do período:
+  decisões por dia (com ação e dispensadas) e a mediana do tempo até decidir, com a meta
+  desenhada. A meta é o novo parâmetro da plataforma `moderation_sla_hours` (padrão 24 h),
+  editável no painel; mediana acima da meta pinta o indicador de âmbar.
+
 ## [1.31.0] — 2026-09-18
 
 ### Adicionado

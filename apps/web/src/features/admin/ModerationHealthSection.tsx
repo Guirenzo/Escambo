@@ -2,6 +2,7 @@ import { Activity, Crosshair, Gavel, Inbox, Timer } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { ModerationHealth } from '@escambo/types';
 import { QueryState } from '../../components/ui';
+import { lineSegments, niceMax, scaleY, xAt } from '../../lib/chart';
 import { dtm, durationLabel, percentLabel } from '../../lib/format';
 import { useModerationHealth } from '../../lib/hooks';
 
@@ -113,6 +114,178 @@ function removalsSentence(h: ModerationHealth): string {
   return `${plural(h.removals.total, 'remoção', 'remoções')} no período: ${parts.join(', ')}.`;
 }
 
+/** '2026-09-21' → '21/09', como os dias aparecem nos gráficos. */
+const dm = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
+
+/**
+ * Série por dia (ADR 50): decisões empilhadas e a mediana do tempo até decidir contra a meta.
+ * SVG puro com a paleta de estado do painel; a identidade nunca é só cor (legenda, rótulos e
+ * dica por dia), e cada gráfico tem um resumo em texto para leitor de tela.
+ */
+function HistoryCharts({ h }: { h: ModerationHealth }) {
+  const hist = h.history;
+  if (hist.length < 2) return null;
+  const W = 320;
+  const PLOT = 88; // o desenho vai de y=14 (rótulo do topo) à linha de base em y=102
+  const first = dm(hist[0]!.day);
+  const last = dm(hist[hist.length - 1]!.day);
+
+  const totals = hist.map((d) => d.actioned + d.dismissed);
+  const barMax = Math.max(...totals);
+  const peakDay = hist[totals.indexOf(barMax)]!.day;
+  const slot = W / hist.length;
+  const barW = Math.max(1.5, slot * 0.7);
+
+  const medians = hist.map((d) => d.medianHours);
+  const known = medians.filter((v): v is number => v !== null);
+  const lineMax = niceMax(Math.max(h.slaHours, ...known));
+  const overMeta = known.filter((v) => v > h.slaHours).length;
+  const metaY = 14 + PLOT - scaleY(h.slaHours, lineMax, PLOT);
+
+  return (
+    <div className="health-history" data-testid="health-history">
+      <div className="chart-mini">
+        <div className="chart-head">
+          <strong>Decisões por dia</strong>
+          <span className="muted tiny">
+            {first} a {last}
+          </span>
+        </div>
+        <svg
+          viewBox="0 0 320 118"
+          role="img"
+          aria-label={`Decisões por dia, de ${first} a ${last}: ${h.decisions.total} no período${
+            barMax > 0 ? `, pico de ${barMax} em ${dm(peakDay)}` : ''
+          }.`}
+        >
+          {barMax > 0 && (
+            <text x={0} y={10} fontSize={9} fill="var(--muted)">
+              máx {barMax}
+            </text>
+          )}
+          <line x1={0} y1={102.5} x2={W} y2={102.5} stroke="var(--border)" />
+          {hist.map((d, i) => {
+            if (d.actioned + d.dismissed === 0) return null;
+            const x = i * slot + (slot - barW) / 2;
+            const hUp = scaleY(d.actioned, barMax, PLOT);
+            const hDown = scaleY(d.dismissed, barMax, PLOT);
+            const gap = d.actioned > 0 && d.dismissed > 0 ? 1 : 0;
+            return (
+              <g key={d.day}>
+                <title>{`${dm(d.day)}: ${d.actioned} com ação, ${d.dismissed} dispensadas${
+                  d.flagged > 0 ? `, ${d.flagged} sinalizações automáticas` : ''
+                }`}</title>
+                {d.actioned > 0 && (
+                  <rect x={x} y={102 - hUp} width={barW} height={hUp} fill="var(--green)" />
+                )}
+                {d.dismissed > 0 && (
+                  <rect
+                    x={x}
+                    y={102 - hUp - gap - hDown}
+                    width={barW}
+                    height={hDown}
+                    fill="var(--muted)"
+                  />
+                )}
+              </g>
+            );
+          })}
+          <text x={0} y={114} fontSize={9} fill="var(--muted)">
+            {first}
+          </text>
+          <text x={W} y={114} textAnchor="end" fontSize={9} fill="var(--muted)">
+            {last}
+          </text>
+        </svg>
+        <ul className="breakdown-legend">
+          <li>
+            <i className="swatch action" aria-hidden="true" />
+            Com ação <strong>{h.decisions.actioned}</strong>
+          </li>
+          <li>
+            <i className="swatch dismissed" aria-hidden="true" />
+            Dispensadas <strong>{h.decisions.dismissed}</strong>
+          </li>
+        </ul>
+      </div>
+
+      <div className="chart-mini">
+        <div className="chart-head">
+          <strong>Tempo até decidir</strong>
+          <span className="muted tiny">mediana do dia</span>
+        </div>
+        <svg
+          viewBox="0 0 320 118"
+          role="img"
+          aria-label={`Tempo até decidir por dia, mediana em horas, meta de ${h.slaHours} h: ${
+            known.length > 0
+              ? `${overMeta} de ${known.length} dias acima da meta.`
+              : 'nenhuma decisão no período.'
+          }`}
+        >
+          <text x={0} y={10} fontSize={9} fill="var(--muted)">
+            {lineMax} h
+          </text>
+          <line x1={0} y1={102.5} x2={W} y2={102.5} stroke="var(--border)" />
+          <line
+            x1={0}
+            y1={metaY}
+            x2={W}
+            y2={metaY}
+            stroke="var(--amber)"
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+          />
+          <text x={W} y={metaY - 4} textAnchor="end" fontSize={9} fill="var(--amber-ink)">
+            meta {h.slaHours} h
+          </text>
+          {lineSegments(medians, W, PLOT, lineMax).map((points) => (
+            <polyline
+              key={points}
+              points={points}
+              fill="none"
+              stroke="var(--green-ink)"
+              strokeWidth={2}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              transform="translate(0 14)"
+            />
+          ))}
+          {hist.map((d, i) =>
+            d.medianHours === null ? null : (
+              <g key={d.day}>
+                <title>{`${dm(d.day)}: mediana ${durationLabel(d.medianHours)}`}</title>
+                <circle
+                  cx={xAt(i, hist.length, W)}
+                  cy={14 + PLOT - scaleY(d.medianHours, lineMax, PLOT)}
+                  r={2.5}
+                  fill="var(--green-ink)"
+                />
+              </g>
+            ),
+          )}
+          <text x={0} y={114} fontSize={9} fill="var(--muted)">
+            {first}
+          </text>
+          <text x={W} y={114} textAnchor="end" fontSize={9} fill="var(--muted)">
+            {last}
+          </text>
+        </svg>
+        <ul className="breakdown-legend">
+          <li>
+            <i className="swatch median" aria-hidden="true" />
+            Mediana do dia
+          </li>
+          <li>
+            <i className="swatch meta" aria-hidden="true" />
+            Meta <strong>{durationLabel(h.slaHours)}</strong>
+          </li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Saúde da moderação (ADR 47): o que espera agora, quanto a fila demora para decidir, quanto a
  * sinalização automática acerta (e qual sinal erra mais) e como terminam as contestações. É o que
@@ -169,9 +342,14 @@ export function ModerationHealthSection() {
                   icon={<Timer size={18} />}
                   label="Tempo até decidir"
                   value={durationLabel(h.decisions.medianHours)}
+                  tone={
+                    h.decisions.medianHours !== null && h.decisions.medianHours > h.slaHours
+                      ? 'amber'
+                      : undefined
+                  }
                   hint={
                     h.decisions.total > 0
-                      ? `mediana · 90% em até ${durationLabel(h.decisions.p90Hours)} · ${plural(h.decisions.total, 'decisão', 'decisões')}`
+                      ? `mediana · meta ${durationLabel(h.slaHours)} · 90% em até ${durationLabel(h.decisions.p90Hours)} · ${plural(h.decisions.total, 'decisão', 'decisões')}`
                       : 'nenhuma decisão no período'
                   }
                 />
@@ -223,6 +401,8 @@ export function ModerationHealthSection() {
                   ]}
                 />
               </div>
+
+              <HistoryCharts h={h} />
 
               <p className="muted tiny">
                 {removalsSentence(h)}
