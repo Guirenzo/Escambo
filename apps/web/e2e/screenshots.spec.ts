@@ -219,4 +219,27 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     (await mine.json()) as { items: { id: number; extension: unknown }[] }
   ).items.find((c) => c.extension);
   if (withExtension) await shotAs(anaTok, `/contratos/${withExtension.id}`, '17-prazo');
+
+  // 18. Avisos no navegador (ADR 52): o cartão do perfil que liga o push naquele aparelho.
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      deviceScaleFactor: 2,
+      // O cartão lê a permissão do navegador: sem conceder, o print sairia com "bloqueado".
+      permissions: ['notifications'],
+    });
+    const p = await ctx.newPage();
+    await p.addInitScript(
+      (t) => window.localStorage.setItem('escambo_token', t),
+      await login('bruno@escambo.demo'),
+    );
+    await p.goto('/perfil');
+    await settled(p);
+    const card = p.getByTestId('push-card');
+    await card.scrollIntoViewIfNeeded();
+    await expect(card).toBeVisible();
+    await p.waitForTimeout(400);
+    await snap(p, '18-avisos-navegador');
+    await ctx.close();
+  }
 });
