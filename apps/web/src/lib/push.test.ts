@@ -28,6 +28,14 @@ describe('avisos push no navegador (ADR 52)', () => {
     expect(pushStateOf(true, 'default', false)).toBe('off');
   });
 
+  it('servidor com o canal desligado manda em tudo: a tela explica em vez de oferecer', () => {
+    expect(pushStateOf(true, 'granted', true, false)).toBe('server-off');
+    expect(pushStateOf(true, 'denied', false, false)).toBe('server-off');
+    expect(pushStateOf(false, 'default', false, false)).toBe('server-off');
+    // Com o canal ligado, nada muda em relação ao que já valia.
+    expect(pushStateOf(true, 'granted', true, true)).toBe('on');
+  });
+
   it('sameServerKey reconhece a assinatura feita com outra chave VAPID', () => {
     const chave = 'RXNjYW1ibw';
     expect(sameServerKey(urlBase64ToUint8Array(chave).buffer, chave)).toBe(true);

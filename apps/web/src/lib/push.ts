@@ -4,7 +4,7 @@
  */
 
 /** O que a tela mostra: cada estado tem uma frase e um botão diferentes. */
-export type PushState = 'unsupported' | 'denied' | 'on' | 'off';
+export type PushState = 'server-off' | 'unsupported' | 'denied' | 'on' | 'off';
 
 /** Chave VAPID em base64url (como a API devolve) no formato que o PushManager aceita. */
 export function urlBase64ToUint8Array(base64url: string): Uint8Array<ArrayBuffer> {
@@ -51,12 +51,18 @@ export function sameServerKey(current: ArrayBuffer | null | undefined, publicKey
   return actual.every((byte, i) => byte === expected[i]);
 }
 
-/** Estado a partir do que o navegador oferece e do que já está assinado neste aparelho. */
+/**
+ * Estado a partir do que o servidor manda, do que o navegador oferece e do que já está assinado
+ * neste aparelho. Servidor sem o canal ligado manda em tudo: nada que o navegador faça vai render
+ * aviso, então a tela explica em vez de oferecer.
+ */
 export function pushStateOf(
   supported: boolean,
   permission: NotificationPermission,
   subscribed: boolean,
+  serverOn = true,
 ): PushState {
+  if (!serverOn) return 'server-off';
   if (!supported) return 'unsupported';
   if (permission === 'denied') return 'denied';
   return subscribed ? 'on' : 'off';

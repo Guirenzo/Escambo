@@ -31,12 +31,14 @@ export function PushCard() {
       .catch(() => ({ devices: 0, publicKey: '', subscribed: false }));
     setDevices(status.devices);
     // "Ligado" é a assinatura deste navegador registrada nesta conta: um aparelho emprestado pode
-    // ter a assinatura de outra pessoa, e aí o certo é oferecer ligar, não desligar.
+    // ter a assinatura de outra pessoa, e aí o certo é oferecer ligar, não desligar. Sem chave
+    // pública, o canal está desligado no servidor.
     setState(
       pushStateOf(
         supported,
         supported ? Notification.permission : 'default',
         subscription !== null && status.subscribed,
+        status.publicKey !== '',
       ),
     );
   }, []);
@@ -108,6 +110,12 @@ export function PushCard() {
         </span>
       </div>
 
+      {state === 'server-off' && (
+        <p className="muted tiny">
+          Os avisos no navegador estão desligados neste servidor. As notificações aqui dentro e os
+          e-mails continuam funcionando normalmente.
+        </p>
+      )}
       {state === 'unsupported' && (
         <p className="muted tiny">
           Este navegador não recebe avisos do Escambo. Os e-mails e a lista de notificações
