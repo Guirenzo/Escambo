@@ -7,7 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from 'react';
-import { clamp, dropIndex, edgeSpeed, shiftFor } from './reorder';
+import { clamp, dropIndex, edgeSpeed, SETTLE_MS, shiftFor } from './reorder';
 
 /**
  * Arrastar para ordenar uma lista vertical (ADR 49), com Pointer Events: mouse, toque e caneta
@@ -24,8 +24,7 @@ import { clamp, dropIndex, edgeSpeed, shiftFor } from './reorder';
 
 /** Quanto o ponteiro anda antes de o arraste valer: um toque parado na alça não mexe em nada. */
 const THRESHOLD = 4;
-/** Se a ordem nova não chegar nesse tempo depois de soltar, as linhas voltam ao lugar. */
-const SETTLE_TIMEOUT = 1500;
+/** O tempo de espera da ordem nova mora em reorder.ts: o teclado (ADR 53) usa o mesmo. */
 
 interface Session {
   pointerId: number;
@@ -128,7 +127,7 @@ export function useDragSort({
         settle.current = null;
         for (const r of pending.rows) r.style.transform = '';
         releaseAfterSlide(row);
-      }, SETTLE_TIMEOUT);
+      }, SETTLE_MS);
       settle.current = pending;
       dropRef.current(s.from, s.to);
     } else {

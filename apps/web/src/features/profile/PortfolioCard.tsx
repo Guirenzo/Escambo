@@ -5,16 +5,18 @@ import { usePortfolio, usePortfolioMutation } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { ImageUploadButton } from '../../components/ImageUploadButton';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
-import { moveItem, moveTo, positionLabel } from '../../lib/reorder';
+import { dropLabel, moveItem, moveTo } from '../../lib/reorder';
 import { useDragSort } from '../../lib/useDragSort';
+import { useKeyboardSort } from '../../lib/useKeyboardSort';
 
 const MAX_ITEMS = 12;
 
 /**
  * Portfólio do freelancer: trabalhos com imagem e/ou link, que aparecem no perfil público na ordem
- * daqui. As setas mudam a ordem na hora, devolvem o foco ao mesmo botão e anunciam a nova posição
- * (ADR 43); com o ponteiro, dá para arrastar pela alça (ADR 49), e as setas continuam sendo o
- * caminho do teclado e do leitor de tela.
+ * daqui. Três caminhos para a mesma ordem: as setas mudam de uma vez, devolvem o foco ao mesmo
+ * botão e anunciam a nova posição (ADR 43); o ponteiro arrasta pela alça (ADR 49); e a alça
+ * também pega pelo teclado, move sem gravar e grava uma vez ao soltar (ADR 53). As setas seguem
+ * sendo a alternativa de um toque que a norma exige e o caminho garantido no leitor de tela.
  */
 export function PortfolioCard() {
   const toast = useToast();
@@ -28,23 +30,41 @@ export function PortfolioCard() {
   const [announce, setAnnounce] = useState('');
   const refocus = useRef<string | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
-  const orderKey = (portfolio.data ?? []).map((i) => i.id).join(',');
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const items = portfolio.data ?? [];
+  const orderKey = items.map((i) => i.id).join(',');
+  const saveOrder = (ids: number[]): void => {
+    reorder.mutate(ids, {
+      onError: (er) =>
+        toast.error(er instanceof Error ? er.message : 'Não foi possível mudar a ordem'),
+    });
+  };
   const { dragging, handleProps } = useDragSort({
     listRef,
     orderKey,
     onDrop: (from, to) => {
-      const items = portfolio.data ?? [];
       const item = items[from];
       if (!item) return;
-      setAnnounce(`${item.title} agora é o ${positionLabel(to, items.length)}.`);
-      reorder.mutate(
-        moveTo(items, from, to).map((i) => i.id),
-        {
-          onError: (er) =>
-            toast.error(er instanceof Error ? er.message : 'Não foi possível mudar a ordem'),
-        },
-      );
+      setAnnounce(dropLabel(item.title, to, items.length));
+      saveOrder(moveTo(items, from, to).map((i) => i.id));
     },
+  });
+  // Pegar e soltar pelo teclado (ADR 53): enquanto há pega, a lista mostrada é a prévia.
+  const {
+    order,
+    grabbedId,
+    busy,
+    cancel: cancelGrab,
+    handleProps: gripProps,
+  } = useKeyboardSort({
+    items,
+    listRef,
+    // A lista some da tela quando a consulta vira erro: aí a pega é abandonada na hora.
+    listOnScreen: !portfolio.error && items.length > 1,
+    blocked: dragging !== null,
+    rescueRef: titleRef,
+    onCommit: saveOrder,
+    onAnnounce: setAnnounce,
   });
 
   // Mudar de lugar tira o item do DOM e o navegador perde o foco: ele volta ao mesmo botão.
@@ -52,23 +72,20 @@ export function PortfolioCard() {
     const key = refocus.current;
     if (!key) return;
     refocus.current = null;
-    document.querySelector<HTMLButtonElement>(`[data-move="${key}"]`)?.focus();
+    const el = document.querySelector<HTMLButtonElement>(`[data-move="${key}"]`);
+    el?.focus({ preventScroll: true });
+    el?.closest('li')?.scrollIntoView({ block: 'nearest' });
   }, [portfolio.data]);
 
-  function move(index: number, step: -1 | 1): void {
-    const items = portfolio.data ?? [];
+  // Pelo id, e não pelo índice: durante uma prévia do teclado o índice da tela é o da prévia.
+  function move(id: number, step: -1 | 1): void {
+    const index = items.findIndex((i) => i.id === id);
     const item = items[index];
     const target = index + step;
     if (!item || target < 0 || target >= items.length) return;
     refocus.current = `${item.id}:${step < 0 ? 'up' : 'down'}`;
-    setAnnounce(`${item.title} agora é o ${positionLabel(target, items.length)}.`);
-    reorder.mutate(
-      moveItem(items, index, step).map((i) => i.id),
-      {
-        onError: (er) =>
-          toast.error(er instanceof Error ? er.message : 'Não foi possível mudar a ordem'),
-      },
-    );
+    setAnnounce(dropLabel(item.title, target, items.length));
+    saveOrder(moveItem(items, index, step).map((i) => i.id));
   }
 
   async function submit(e: FormEvent): Promise<void> {
@@ -106,7 +123,7 @@ export function PortfolioCard() {
   return (
     <section className="card wide" aria-labelledby="portfolio-title" data-testid="portfolio-card">
       <div className="card-head">
-        <h3 id="portfolio-title">
+        <h3 id="portfolio-title" ref={titleRef} tabIndex={-1}>
           <Images size={16} /> Portfólio
         </h3>
         <span className="muted tiny">
@@ -116,7 +133,10 @@ export function PortfolioCard() {
       {count > 1 && (
         <p className="muted tiny">
           O perfil público mostra os trabalhos nesta ordem. Arraste pela alça ou use as setas para
-          trazer o mais forte para o começo.
+          trazer o mais forte para o começo.{' '}
+          <span id="portfolio-ordem-dica">
+            Na alça: espaço pega, setas movem, espaço solta, Esc ou Tab cancela.
+          </span>
         </p>
       )}
       <p className="sr-only portfolio-announce" aria-live="polite">
@@ -136,28 +156,40 @@ export function PortfolioCard() {
               antes de contratar.
             </p>
           ) : (
-            <ul
-              ref={listRef}
-              className={`portfolio-list${dragging !== null ? ' is-sorting' : ''}`}
-              data-testid="portfolio-list"
-            >
-              {items.map((i, index) => (
+            <ul ref={listRef} className="portfolio-list" data-testid="portfolio-list">
+              {order.map((i, index) => (
                 <li
                   key={i.id}
                   data-testid={`portfolio-row-${i.id}`}
-                  className={dragging === index ? 'is-dragging' : undefined}
+                  className={
+                    grabbedId === i.id
+                      ? 'is-grabbed'
+                      : dragging === index
+                        ? 'is-dragging'
+                        : undefined
+                  }
                 >
-                  {items.length > 1 && (
-                    // Só para o ponteiro (mouse, toque, caneta): teclado e leitor de tela usam
-                    // as setas, que fazem o mesmo em um toque (WCAG 2.5.7).
-                    <span
-                      className="portfolio-grip"
-                      aria-hidden="true"
-                      title="Arraste para mudar a ordem"
-                      {...handleProps(index)}
+                  {order.length > 1 && (
+                    <button
+                      type="button"
+                      className="icon-btn portfolio-grip"
+                      aria-label={`Reordenar ${i.title}`}
+                      // A dica sai enquanto o item está na mão: a frase de pegar já disse as
+                      // teclas, e ela seria relida a cada seta.
+                      aria-describedby={grabbedId === i.id ? undefined : 'portfolio-ordem-dica'}
+                      {...gripProps(i)}
+                      onPointerDown={(e) => {
+                        // Com a prévia na tela, um arraste mediria a lista errada: o ponteiro
+                        // cancela a pega e não arrasta; o gesto seguinte arrasta.
+                        if (busy) {
+                          cancelGrab(e.currentTarget, true);
+                          return;
+                        }
+                        handleProps(index).onPointerDown(e);
+                      }}
                     >
                       <GripVertical size={16} />
-                    </span>
+                    </button>
                   )}
                   <span className="portfolio-pos" aria-hidden="true">
                     {index + 1}
@@ -183,15 +215,18 @@ export function PortfolioCard() {
                       </a>
                     )}
                   </div>
-                  {items.length > 1 && (
+                  {order.length > 1 && (
                     <div className="portfolio-move">
+                      {/* As setas leem a ordem gravada, não a prévia; durante uma pega elas saem
+                          de cena, porque mudariam a ordem por baixo do que está na tela. */}
                       <button
                         type="button"
                         className="icon-btn"
                         data-move={`${i.id}:up`}
                         aria-label={`Mover ${i.title} para cima`}
-                        aria-disabled={index === 0}
-                        onClick={() => move(index, -1)}
+                        aria-disabled={items.indexOf(i) === 0}
+                        disabled={busy}
+                        onClick={() => move(i.id, -1)}
                       >
                         <ChevronUp size={16} />
                       </button>
@@ -200,8 +235,9 @@ export function PortfolioCard() {
                         className="icon-btn"
                         data-move={`${i.id}:down`}
                         aria-label={`Mover ${i.title} para baixo`}
-                        aria-disabled={index === items.length - 1}
-                        onClick={() => move(index, 1)}
+                        aria-disabled={items.indexOf(i) === items.length - 1}
+                        disabled={busy}
+                        onClick={() => move(i.id, 1)}
                       >
                         <ChevronDown size={16} />
                       </button>
@@ -211,7 +247,7 @@ export function PortfolioCard() {
                     type="button"
                     className="icon-btn"
                     aria-label={`Remover ${i.title}`}
-                    disabled={remove.isPending}
+                    disabled={remove.isPending || busy}
                     onClick={() => void removeItem(i.id)}
                   >
                     <Trash2 size={16} />

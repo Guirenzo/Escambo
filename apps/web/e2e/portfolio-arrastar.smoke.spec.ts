@@ -77,8 +77,8 @@ test('portfólio: arrasta pela alça, com mouse ou toque; Esc cancela; a ordem s
     card.locator('[data-testid^="portfolio-row-"]', { hasText: title });
   const grip = (title: string) => row(title).locator('.portfolio-grip');
   await expect(rows).toHaveText([logo, site, cardapio, vitrine]);
-  // A alça é só para o ponteiro: teclado e leitor de tela seguem pelas setas.
-  await expect(grip(logo)).toHaveAttribute('aria-hidden', 'true');
+  // A mesma alça também pega pelo teclado (ADR 53), e o arraste por ponteiro segue igual.
+  await expect(grip(logo)).toHaveAttribute('aria-pressed', 'false');
 
   // A última vai para o começo: solta acima da lista, presa no topo.
   const top = (await list.boundingBox())!.y;

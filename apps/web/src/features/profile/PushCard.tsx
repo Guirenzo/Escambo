@@ -26,9 +26,11 @@ export function PushCard() {
   const refresh = useCallback(async (): Promise<void> => {
     const supported = pushSupported();
     const subscription = supported ? await currentSubscription() : null;
+    // Falha na consulta não é o mesmo que canal desligado: com publicKey nulo, o cartão segue
+    // oferecendo ligar (e o erro aparece na hora de ligar, dizendo a verdade).
     const status = await api
       .pushStatus(subscription?.endpoint)
-      .catch(() => ({ devices: 0, publicKey: '', subscribed: false }));
+      .catch(() => ({ devices: 0, publicKey: null, subscribed: false }));
     setDevices(status.devices);
     // "Ligado" é a assinatura deste navegador registrada nesta conta: um aparelho emprestado pode
     // ter a assinatura de outra pessoa, e aí o certo é oferecer ligar, não desligar. Sem chave
@@ -105,9 +107,11 @@ export function PushCard() {
         <h3 id="push-title">
           <BellRing size={16} /> Avisos no navegador
         </h3>
-        <span className="muted tiny" data-testid="push-devices">
-          {devices} aparelho{devices === 1 ? '' : 's'} ligado{devices === 1 ? '' : 's'}
-        </span>
+        {state !== 'server-off' && (
+          <span className="muted tiny" data-testid="push-devices">
+            {devices} aparelho{devices === 1 ? '' : 's'} ligado{devices === 1 ? '' : 's'}
+          </span>
+        )}
       </div>
 
       {state === 'server-off' && (

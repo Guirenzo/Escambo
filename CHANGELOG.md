@@ -5,6 +5,22 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.35.0] — 2026-09-22
+
+### Adicionado
+
+- **Ordenar o portfólio pelo teclado** (ADR 53). Na alça, espaço pega o trabalho, as setas
+  movem, espaço solta e Esc ou Tab cancelam. Enquanto o item está na mão a lista já mostra a
+  ordem nova, mas nada é gravado: soltar grava uma vez só, no lugar das onze gravações que
+  levar o último trabalho ao começo custava pelas setas. Cada passo é anunciado para quem usa
+  leitor de tela, e as setas de subir e descer continuam onde estavam.
+
+### Corrigido
+
+- Avisos no navegador com o canal desligado no servidor (`PUSH_PROVIDER=off`): o cartão do
+  perfil convidava a ligar e o aviso de teste dizia "nenhum aparelho ligado" com um aparelho
+  assinado. Agora não há chave pública nesse modo e o cartão explica a situação.
+
 ## [1.34.0] — 2026-09-22
 
 ### Adicionado
