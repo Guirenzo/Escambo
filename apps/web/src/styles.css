@@ -2343,7 +2343,9 @@ button.toggle.on {
   opacity: 0.35;
   cursor: default;
 }
-/* Arrastar para ordenar (ADR 49): a alça começa o arraste; o resto da linha ainda rola a página no toque. */
+/* Arrastar para ordenar (ADR 49): a alça começa o arraste; o resto da linha ainda rola a página
+   no toque. Ela é um <button class="icon-btn"> (ADR 53), que já zera fundo, borda e padding: aqui
+   fica só o tamanho da alça, que vale por vir depois no arquivo. */
 .portfolio-grip {
   display: grid;
   flex: none;
@@ -2359,9 +2361,19 @@ button.toggle.on {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-.portfolio-grip:hover {
-  background: var(--surface-2);
-  color: var(--text);
+/* O anel de foco global tem 2px de folga (button:focus-visible) e a alça tem margem negativa:
+   por fora, ele sangraria para cima da borda da linha. Aqui ele fica dentro da própria alça. */
+.portfolio-grip:focus-visible {
+  outline-offset: -1px;
+}
+/* Item na mão pelo teclado (ADR 53): mesmo realce do arraste, sem mexer em transição nenhuma —
+   este caminho não desloca linha, ele troca a ordem de verdade. */
+.portfolio-list li.is-grabbed {
+  border-color: var(--green);
+  box-shadow: var(--sh-md);
+}
+.portfolio-list li.is-grabbed .portfolio-grip {
+  color: var(--green-ink);
 }
 .portfolio-list li.is-dragging {
   z-index: 2;

@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cancelLabel,
   clamp,
   dropIndex,
+  dropLabel,
+  edgeLabel,
   edgeSpeed,
+  grabbedAt,
+  grabLabel,
+  keyTarget,
   moveItem,
+  moveLabel,
   moveTo,
   orderByIds,
   positionLabel,
   shiftFor,
+  stayLabel,
 } from './reorder';
 
 describe('ordem do portfólio (ADR 43)', () => {
@@ -90,5 +98,71 @@ describe('arrastar para ordenar (ADR 49)', () => {
     expect(edgeSpeed(800, 800)).toBe(14);
     expect(edgeSpeed(900, 800)).toBe(14);
     expect(edgeSpeed(-40, 800)).toBe(-14);
+  });
+});
+
+describe('pegar e soltar pelo teclado (ADR 53)', () => {
+  const lista = [
+    { id: 7, title: 'Logo' },
+    { id: 8, title: 'Site' },
+    { id: 9, title: 'Cardápio' },
+    { id: 10, title: 'Vitrine' },
+  ];
+
+  it('grabbedAt acha o item pelo id e prende o destino dentro da lista', () => {
+    expect(grabbedAt(lista, 9, 1)).toEqual({ from: 2, to: 1 });
+    // A lista pode encolher entre a tecla e o render: o destino nunca aponta para fora.
+    expect(grabbedAt(lista, 9, -3)).toEqual({ from: 2, to: 0 });
+    expect(grabbedAt(lista, 9, 40)).toEqual({ from: 2, to: 3 });
+  });
+
+  it('grabbedAt devolve null quando não há mais o que segurar', () => {
+    expect(grabbedAt(lista, 999, 0)).toBeNull(); // removido em outra aba
+    expect(grabbedAt([{ id: 7, title: 'Logo' }], 7, 0)).toBeNull(); // sobrou um: não há ordem
+    expect(grabbedAt([], 7, 0)).toBeNull();
+  });
+
+  it('keyTarget: setas andam um passo, Home e End vão às pontas, o resto não é nosso', () => {
+    expect(keyTarget(2, 4, 'ArrowUp')).toBe(1);
+    expect(keyTarget(2, 4, 'ArrowDown')).toBe(3);
+    expect(keyTarget(0, 4, 'ArrowUp')).toBe(0); // na ponta, fica
+    expect(keyTarget(3, 4, 'ArrowDown')).toBe(3);
+    expect(keyTarget(2, 4, 'Home')).toBe(0);
+    expect(keyTarget(2, 4, 'End')).toBe(3);
+    expect(keyTarget(0, 4, 'Tab')).toBeNull();
+    expect(keyTarget(0, 4, 'a')).toBeNull();
+    expect(keyTarget(0, 1, 'ArrowDown')).toBeNull(); // lista de um item não tem ordem
+  });
+
+  it('soltar no mesmo lugar não muda nada: moveTo é identidade', () => {
+    expect(moveTo(lista, 2, 2)).toEqual(lista);
+  });
+
+  it('as frases do mesmo momento são distintas entre si', () => {
+    // Região viva polida costuma não reanunciar texto idêntico: se duas frases coincidissem,
+    // a pessoa ouviria silêncio justamente onde algo mudou.
+    const frases = [
+      grabLabel('Site', 1, 4),
+      moveLabel(1, 4),
+      edgeLabel(0, 4),
+      edgeLabel(3, 4),
+      dropLabel('Site', 1, 4),
+      stayLabel('Site', 1, 4),
+      cancelLabel('Site', 1, 4),
+    ];
+    expect(new Set(frases).size).toBe(frases.length);
+  });
+
+  it('a frase de soltar é a mesma dos outros dois caminhos, palavra por palavra', () => {
+    // Setas (ADR 43), arraste (ADR 49) e teclado (ADR 53) falam pela mesma função.
+    expect(dropLabel('Site', 2, 4)).toBe('Site agora é o 3º de 4.');
+    expect(stayLabel('Site', 1, 4)).toBe('Site continua no 2º de 4.');
+    expect(cancelLabel('Site', 1, 4)).toBe('Cancelado. Site continua no 2º de 4.');
+    expect(grabLabel('Site', 1, 4)).toBe(
+      'Pegou Site, 2º de 4. Setas movem, espaço solta, Esc ou Tab cancela.',
+    );
+    expect(edgeLabel(0, 4)).toBe('Começo da lista. 1º de 4.');
+    expect(edgeLabel(3, 4)).toBe('Fim da lista. 4º de 4.');
+    expect(moveLabel(2, 4)).toBe('3º de 4.');
   });
 });

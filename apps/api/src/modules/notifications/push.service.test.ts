@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildPayload, PUSHED_NOTIFICATION_TYPES, pushUrl, trimBody } from './push.service';
+import {
+  buildPayload,
+  PUSHED_NOTIFICATION_TYPES,
+  pushService,
+  pushUrl,
+  trimBody,
+} from './push.service';
 import { isPushEndpointAllowed } from './push.endpoint';
 import { resultForStatus } from './push.provider';
 
@@ -83,6 +89,11 @@ describe('avisos push (ADR 52)', () => {
     expect(isPushEndpointAllowed('https://push.escambo.test/abc', false)).toBe(true);
     expect(isPushEndpointAllowed('https://127.0.0.1/abc', false)).toBe(false);
     expect(isPushEndpointAllowed('https://[::1]/abc', false)).toBe(false);
+  });
+
+  it('com o canal desligado não há chave pública: a tela explica em vez de oferecer', () => {
+    // vitest.config.ts fixa PUSH_PROVIDER='off' nos testes de unidade.
+    expect(pushService.publicKey()).toBe('');
   });
 
   it('os tipos que batem no aparelho são os mesmos do e-mail, sem o ruído do chat', () => {

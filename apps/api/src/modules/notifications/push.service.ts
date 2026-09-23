@@ -68,9 +68,12 @@ export function buildPayload(params: {
 }
 
 export const pushService = {
-  /** Chave pública para o navegador assinar; muda se o processo subir sem chaves fixas. */
+  /**
+   * Chave pública para o navegador assinar; muda se o processo subir sem chaves fixas. Com o canal
+   * desligado não há chave: a tela usa isso para explicar em vez de oferecer um botão sem efeito.
+   */
   publicKey(): string {
-    return vapidKeys().publicKey;
+    return env.PUSH_PROVIDER === 'off' ? '' : vapidKeys().publicKey;
   },
 
   async subscribe(

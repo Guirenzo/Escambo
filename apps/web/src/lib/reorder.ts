@@ -73,3 +73,61 @@ export function orderByIds<T extends { id: number }>(
 
 /** "2º de 5": a posição como é anunciada para quem usa leitor de tela. */
 export const positionLabel = (index: number, total: number): string => `${index + 1}º de ${total}`;
+
+/**
+ * Tempo que a prévia continua na tela depois de soltar, esperando a ordem nova chegar. É o mesmo
+ * do assentamento do arraste por ponteiro (ADR 49): soltar deve ter a mesma sensação nos dois
+ * caminhos, e num erro de gravação a prévia não pode ficar mentindo para sempre.
+ */
+export const SETTLE_MS = 1500;
+
+/* ---------------------------------------------------------------------------------------------
+ * Pegar e soltar pelo teclado (ADR 53). Aqui ficam as contas e as frases; o hook só as usa.
+ * ------------------------------------------------------------------------------------------- */
+
+/**
+ * Onde está a linha pega, procurada pelo id: o índice de origem na lista gravada e o destino
+ * preso dentro dela. Pelo id, e não pelo índice, porque durante a prévia o índice da tela é o da
+ * prévia. Devolve null quando o item sumiu (removido em outra aba) ou a lista ficou pequena
+ * demais para ter ordem: aí a pega é abandonada.
+ */
+export function grabbedAt<T extends { id: number }>(
+  list: readonly T[],
+  id: number,
+  to: number,
+): { from: number; to: number } | null {
+  const from = list.findIndex((item) => item.id === id);
+  if (from < 0 || list.length < 2) return null;
+  return { from, to: clamp(to, 0, list.length - 1) };
+}
+
+/** Para onde a tecla leva a linha pega, sempre dentro da lista; null para tecla que não é nossa. */
+export function keyTarget(to: number, total: number, key: string): number | null {
+  if (total < 2) return null;
+  if (key === 'ArrowUp') return clamp(to - 1, 0, total - 1);
+  if (key === 'ArrowDown') return clamp(to + 1, 0, total - 1);
+  if (key === 'Home') return 0;
+  if (key === 'End') return total - 1;
+  return null;
+}
+
+/*
+ * O que a pessoa ouve. Frases puras, para o teste cobrir o vocabulário sem DOM e garantir que
+ * dois momentos seguidos nunca produzem o mesmo texto: numa região viva polida, texto idêntico
+ * repetido costuma não ser reanunciado, e o silêncio seria lido como "não fez nada".
+ */
+export const grabLabel = (title: string, to: number, total: number): string =>
+  `Pegou ${title}, ${positionLabel(to, total)}. Setas movem, espaço solta, Esc ou Tab cancela.`;
+export const moveLabel = (to: number, total: number): string => `${positionLabel(to, total)}.`;
+export const edgeLabel = (to: number, total: number): string =>
+  `${to === 0 ? 'Começo' : 'Fim'} da lista. ${positionLabel(to, total)}.`;
+export const dropLabel = (title: string, to: number, total: number): string =>
+  `${title} agora é o ${positionLabel(to, total)}.`;
+export const stayLabel = (title: string, to: number, total: number): string =>
+  `${title} continua no ${positionLabel(to, total)}.`;
+export const cancelLabel = (title: string, to: number, total: number): string =>
+  `Cancelado. ${title} continua no ${positionLabel(to, total)}.`;
+/** A lista mudou por baixo da pega (item removido em outra aba, erro na tela). */
+export const LIST_CHANGED = 'A lista mudou. Nada foi movido.';
+/** Clique na alça não pega: diz onde está o caminho, em vez de calar. */
+export const GRIP_HINT = 'Pegue com espaço, ou use os botões de subir e descer.';
