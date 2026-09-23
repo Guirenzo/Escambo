@@ -220,6 +220,32 @@ test('gera os prints do README', async ({ page, request, browser }) => {
   ).items.find((c) => c.extension);
   if (withExtension) await shotAs(anaTok, `/contratos/${withExtension.id}`, '17-prazo');
 
+  // 19. Portfólio com um trabalho "na mão" pelo teclado (ADR 53): a linha destacada e a dica.
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      deviceScaleFactor: 2,
+    });
+    const p = await ctx.newPage();
+    await p.addInitScript(
+      (tk) => window.localStorage.setItem('escambo_token', tk),
+      await login('bruno@escambo.demo'),
+    );
+    await p.goto('/perfil');
+    await settled(p);
+    const card = p.getByTestId('portfolio-card');
+    await card.scrollIntoViewIfNeeded();
+    const grip = card.getByRole('button', { name: /^Reordenar / }).last();
+    await grip.focus();
+    await p.keyboard.press(' ');
+    await p.keyboard.press('ArrowUp');
+    await expect(card.locator('li.is-grabbed')).toBeVisible();
+    await p.waitForTimeout(400);
+    await snap(p, '19-portfolio-teclado');
+    await p.keyboard.press('Escape');
+    await ctx.close();
+  }
+
   // 18. Avisos no navegador (ADR 52): o cartão do perfil que liga o push naquele aparelho.
   {
     const ctx = await browser.newContext({
