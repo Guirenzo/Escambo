@@ -23,7 +23,9 @@ async function registerAndLogin(
 ): Promise<Actor> {
   const email = `int_lgpd_${role}_${Date.now()}_${seq++}@${domain}`;
   const password = 'senha-integracao-123';
-  const reg = await request(app).post('/api/auth/register').send({ email, password, role });
+  const reg = await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role });
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status).toBe(200);
@@ -88,7 +90,16 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       buscasSalvas: { name: string; query: string; alert_frequency: string }[];
       moderacao: unknown[];
     };
-    expect(data.formato).toBe('escambo-export/1.5');
+    expect(data.formato).toBe('escambo-export/1.6');
+    // Formato 1.6 (ADR 54): "todos os seus dados" inclui as assinaturas de aviso, as sessões, os
+    // registros de segurança e os e-mails enviados — sessão e cadastro já deixam rastro aqui.
+    expect(data).toHaveProperty('avisosNoNavegador');
+    expect(Array.isArray((data as { sessoes?: unknown[] }).sessoes)).toBe(true);
+    expect((data as { sessoes: unknown[] }).sessoes.length).toBeGreaterThan(0);
+    expect(
+      (data as { registrosDeSeguranca: unknown[] }).registrosDeSeguranca.length,
+    ).toBeGreaterThan(0);
+    expect(data).toHaveProperty('emailsEnviados');
     // Imagens removidas pela moderação e contestações entram no formato 1.2 (ADR 41).
     expect(data.moderacao).toEqual([]);
     expect(data.titular.email).toBe(user.email);

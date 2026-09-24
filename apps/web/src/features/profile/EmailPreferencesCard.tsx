@@ -149,7 +149,7 @@ export function EmailPreferencesCard() {
         </label>
         <span id="digest-hour-hint" className="muted tiny">
           Horário de {timezoneLabel(zone)}. Vale para o resumo por e-mail, para as buscas salvas com
-          alerta diário
+          alerta diário, para o silêncio dos avisos no navegador
           {isFreelancer
             ? ', para as datas nos avisos e para os dias e períodos em que você atende.'
             : ' e para as datas nos avisos.'}

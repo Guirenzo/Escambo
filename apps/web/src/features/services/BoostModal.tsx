@@ -28,16 +28,24 @@ export function BoostModal({ service, onClose }: { service: Service; onClose: ()
   return (
     <Modal title={`Impulsionar: ${service.title}`} onClose={onClose}>
       <p className="muted">
-        Seu serviço vai pro topo da busca pelo período do plano. Você paga com créditos Escambo — tem{' '}
-        <b>{credits}</b> disponíveis.
+        Seu serviço vai pro topo da busca pelo período do plano. Você paga com créditos Escambo —
+        tem <b>{credits}</b> disponíveis.
       </p>
-      <QueryState isLoading={plans.isLoading} error={plans.error} data={plans.data} onRetry={() => void plans.refetch()}>
+      <QueryState
+        isLoading={plans.isLoading}
+        error={plans.error}
+        data={plans.data}
+        onRetry={() => void plans.refetch()}
+      >
         {(list) => (
           <div className="plan-grid" role="radiogroup" aria-label="Plano de impulsionamento">
             {list.map((p) => {
               const ok = credits >= p.costCredits;
               return (
-                <label key={p.id} className={`radio-card ${planId === p.id ? 'on' : ''} ${ok ? '' : 'off'}`}>
+                <label
+                  key={p.id}
+                  className={`radio-card ${planId === p.id ? 'on' : ''} ${ok ? '' : 'off'}`}
+                >
                   <input
                     type="radio"
                     name="plan"

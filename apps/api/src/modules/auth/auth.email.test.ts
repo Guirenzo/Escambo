@@ -12,6 +12,13 @@ vi.mock('./auth.repository', () => ({
     updateRole: vi.fn(),
   },
 }));
+
+vi.mock('../lgpd/lgpd.repository', () => ({
+  lgpdRepository: { recordConsent: vi.fn().mockResolvedValue(undefined) },
+}));
+vi.mock('../audit/audit.service', () => ({
+  auditService: { log: vi.fn().mockResolvedValue(undefined) },
+}));
 vi.mock('../notifications/push.repository', () => ({
   pushRepository: { removeAllForUser: vi.fn().mockResolvedValue(0) },
 }));
@@ -38,6 +45,7 @@ import { tokensRepository } from './tokens.repository';
 import { mailService } from '../mail/mail.service';
 import { hashToken } from '../../utils/tokens';
 
+const CTX = { ip: '127.0.0.1', userAgent: 'vitest' };
 const repo = vi.mocked(authRepository);
 const sessions = vi.mocked(sessionRepository);
 const tokens = vi.mocked(tokensRepository);
@@ -64,11 +72,15 @@ describe('cadastro envia o e-mail de confirmação', () => {
   it('cria token de uso único (só o hash vai ao banco) e manda o link com ele', async () => {
     repo.findByEmail.mockResolvedValue(undefined);
     repo.create.mockResolvedValue(7);
-    const created = await authService.register({
-      email: 'ana@escambo.test',
-      password: 'senha-forte-123',
-      role: 'client',
-    });
+    const created = await authService.register(
+      {
+        email: 'ana@escambo.test',
+        password: 'senha-forte-123',
+        role: 'client',
+        legalAccepted: true as const,
+      },
+      CTX,
+    );
     expect(created.emailVerified).toBe(false);
     expect(tokens.invalidateOpen).toHaveBeenCalledWith('verify_email', 7);
     const [purpose, userId, storedHash, expiresAt] = tokens.create.mock.calls[0]!;
@@ -86,11 +98,15 @@ describe('cadastro envia o e-mail de confirmação', () => {
     repo.create.mockResolvedValue(8);
     tokens.create.mockRejectedValueOnce(new Error('banco fora'));
     await expect(
-      authService.register({
-        email: 'x@escambo.test',
-        password: 'senha-forte-123',
-        role: 'client',
-      }),
+      authService.register(
+        {
+          email: 'x@escambo.test',
+          password: 'senha-forte-123',
+          role: 'client',
+          legalAccepted: true as const,
+        },
+        CTX,
+      ),
     ).resolves.toMatchObject({ id: 8 });
   });
 });

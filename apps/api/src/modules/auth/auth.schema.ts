@@ -9,6 +9,13 @@ export const registerSchema = z.object({
   role: z.enum(['client', 'freelancer', 'company']).default('client'),
   /** Fuso detectado no aparelho (ADR 51); só os do Brasil. */
   timezone: z.enum(BRAZIL_TIMEZONES).optional(),
+  /**
+   * O gesto de aceitar os Termos e a Política, no cadastro (RN-071, ADR 54): é o que a API grava
+   * como consentimento, na versão vigente. Sem ele, não há conta.
+   */
+  legalAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'É preciso aceitar os Termos de Uso e a Política de Privacidade' }),
+  }),
 });
 export type RegisterInput = z.infer<typeof registerSchema>;
 

@@ -57,7 +57,8 @@ export const boostsService = {
       throw new HttpError(403, 'Você só pode impulsionar os seus serviços', 'forbidden');
     }
     const plan = await boostsRepository.findPlan(planId);
-    if (!plan) throw new HttpError(404, 'Plano de impulsionamento não encontrado', 'plan_not_found');
+    if (!plan)
+      throw new HttpError(404, 'Plano de impulsionamento não encontrado', 'plan_not_found');
 
     const cost = costCreditsOf(Number(plan.price));
     const id = await boostsRepository.purchase({

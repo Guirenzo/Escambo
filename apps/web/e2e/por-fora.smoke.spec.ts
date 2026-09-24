@@ -46,7 +46,9 @@ test('mensagem com pix e whatsapp: aviso ao digitar, aviso na bolha das duas par
   await openAs(page, freelancer, `/contratos/${contractId}`);
   await settled(page);
   await expect(
-    page.locator('.bubble.theirs', { hasText: `por fora ${tag}` }).getByTestId('off-platform-warning'),
+    page
+      .locator('.bubble.theirs', { hasText: `por fora ${tag}` })
+      .getByTestId('off-platform-warning'),
   ).toBeVisible();
 
   // Na fila do admin a mensagem aparece como sinalização automática, com o motivo.

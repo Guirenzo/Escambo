@@ -26,7 +26,10 @@ async function registerAndLogin(
 ): Promise<Actor> {
   const email = `int_digest_${role}_${Date.now()}_${seq++}@${domain}`;
   const password = 'senha-integracao-123';
-  await request(app).post('/api/auth/register').send({ email, password, role }).expect(201);
+  await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role })
+    .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   return { id: login.body.user.id, token: login.body.accessToken };
 }
@@ -85,6 +88,7 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
       emailFrequency: 'instant',
       digestHour: env.DIGEST_HOUR,
       timezone: 'America/Sao_Paulo',
+      quietHours: null,
     });
     await request(app)
       .put('/api/notifications/preferences')
@@ -147,7 +151,7 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
       request(app).put('/api/notifications/preferences').set(auth(a.token)).send(body);
 
     expect((await put(early, { emailFrequency: 'daily', digestHour: 6 }).expect(200)).body).toEqual(
-      { emailFrequency: 'daily', digestHour: 6, timezone: 'America/Sao_Paulo' },
+      { emailFrequency: 'daily', digestHour: 6, timezone: 'America/Sao_Paulo', quietHours: null },
     );
     // Fuso da pessoa (ADR 46): 08:00 de Manaus é 09:00 de Brasília.
     expect(
@@ -158,7 +162,12 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
           timezone: 'America/Manaus',
         }).expect(200)
       ).body,
-    ).toEqual({ emailFrequency: 'daily', digestHour: 8, timezone: 'America/Manaus' });
+    ).toEqual({
+      emailFrequency: 'daily',
+      digestHour: 8,
+      timezone: 'America/Manaus',
+      quietHours: null,
+    });
     await put(standard, { emailFrequency: 'daily' }).expect(200);
     await put(late, { emailFrequency: 'daily' }).expect(200);
     // Só a hora, num segundo pedido: a frequência fica e a sessão já mostra.
@@ -166,6 +175,7 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
       emailFrequency: 'daily',
       digestHour: 21,
       timezone: 'America/Sao_Paulo',
+      quietHours: null,
     });
     const me = await request(app).get('/api/auth/me').set(auth(late.token));
     expect(me.body).toMatchObject({ emailFrequency: 'daily', digestHour: 21 });
@@ -207,6 +217,7 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
       emailFrequency: 'daily',
       digestHour: env.DIGEST_HOUR,
       timezone: 'America/Sao_Paulo',
+      quietHours: null,
     });
   });
 });

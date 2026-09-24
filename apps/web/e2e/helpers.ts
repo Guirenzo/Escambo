@@ -43,7 +43,9 @@ export async function createUser(
   opts: { profile?: boolean; email?: string } = {},
 ): Promise<TestUser> {
   const email = opts.email ?? `e2e-${role}-${unique()}@escambo.test`;
-  await api(request, 'post', '/auth/register', { data: { email, password: PASSWORD, role } });
+  await api(request, 'post', '/auth/register', {
+    data: { email, password: PASSWORD, role, legalAccepted: true },
+  });
   const auth = await api<{ accessToken: string; user: { id: number } }>(
     request,
     'post',

@@ -11,12 +11,42 @@ vi.mock('../../lib/auth', () => ({
 vi.mock('../../lib/api', () => ({
   api: {
     leaderboard: vi.fn().mockResolvedValue([
-      { rank: 1, userUlid: 'u-marina', name: 'Marina Alves', totalXp: 2600, level: 4, levelName: 'Especialista' },
-      { rank: 2, userUlid: 'u-bruno', name: 'Bruno Costa', totalXp: 1400, level: 3, levelName: 'Profissional' },
-      { rank: 3, userUlid: 'u-rafael', name: 'Rafael Souza', totalXp: 950, level: 3, levelName: 'Profissional' },
-      { rank: 4, userUlid: 'u-carla', name: 'Carla Dias', totalXp: 520, level: 2, levelName: 'Aprendiz' },
+      {
+        rank: 1,
+        userUlid: 'u-marina',
+        name: 'Marina Alves',
+        totalXp: 2600,
+        level: 4,
+        levelName: 'Especialista',
+      },
+      {
+        rank: 2,
+        userUlid: 'u-bruno',
+        name: 'Bruno Costa',
+        totalXp: 1400,
+        level: 3,
+        levelName: 'Profissional',
+      },
+      {
+        rank: 3,
+        userUlid: 'u-rafael',
+        name: 'Rafael Souza',
+        totalXp: 950,
+        level: 3,
+        levelName: 'Profissional',
+      },
+      {
+        rank: 4,
+        userUlid: 'u-carla',
+        name: 'Carla Dias',
+        totalXp: 520,
+        level: 2,
+        levelName: 'Aprendiz',
+      },
     ]),
-    gamification: vi.fn().mockResolvedValue({ rank: 3, totalXp: 950, level: 3, levelName: 'Profissional' }),
+    gamification: vi
+      .fn()
+      .mockResolvedValue({ rank: 3, totalXp: 950, level: 3, levelName: 'Profissional' }),
   },
 }));
 

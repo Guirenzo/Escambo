@@ -6,7 +6,12 @@ import { Spinner } from './ui';
 export function RequireAuth() {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) return <div className="splash"><Spinner /></div>;
+  if (loading)
+    return (
+      <div className="splash">
+        <Spinner />
+      </div>
+    );
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   return <Outlet />;
 }

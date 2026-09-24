@@ -186,7 +186,9 @@ export const lgpdRepository = {
       await conn.query<ResultSetHeader>(
         `UPDATE users
             SET email = CONCAT('removido+', id, '@anon.escambo.invalid'),
-                phone = NULL, password_hash = NULL, status = 'banned', deleted_at = NOW()
+                phone = NULL, password_hash = NULL, status = 'banned', deleted_at = NOW(),
+                email_frequency = 'instant', digest_hour = NULL, timezone = NULL,
+                push_quiet_start = NULL, push_quiet_end = NULL, push_quiet_summary_id = NULL
           WHERE id = :userId`,
         { userId },
       );

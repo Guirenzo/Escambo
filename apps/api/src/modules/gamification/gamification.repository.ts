@@ -71,13 +71,23 @@ export const gamificationRepository = {
       await conn.query<ResultSetHeader>(
         `INSERT INTO xp_transactions (user_id, amount, reason, reference_id)
          VALUES (:userId, :delta, :reason, :referenceId)`,
-        { userId: params.userId, delta: params.delta, reason: params.reason, referenceId: params.referenceId },
+        {
+          userId: params.userId,
+          delta: params.delta,
+          reason: params.reason,
+          referenceId: params.referenceId,
+        },
       );
       await conn.query<ResultSetHeader>(
         `UPDATE user_xp
             SET total_xp = total_xp + :delta, level = :level, level_name = :levelName
           WHERE user_id = :userId`,
-        { delta: params.delta, level: params.level, levelName: params.levelName, userId: params.userId },
+        {
+          delta: params.delta,
+          level: params.level,
+          levelName: params.levelName,
+          userId: params.userId,
+        },
       );
       await conn.commit();
     } catch (err) {

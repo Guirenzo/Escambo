@@ -22,7 +22,7 @@ async function registerFreelancer(availableDays: number[] | null): Promise<Actor
   const password = 'senha-integracao-123';
   await request(app)
     .post('/api/auth/register')
-    .send({ email, password, role: 'freelancer' })
+    .send({ legalAccepted: true, email, password, role: 'freelancer' })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   const actor = { id: login.body.user.id as number, token: login.body.accessToken as string };

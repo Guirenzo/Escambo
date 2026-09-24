@@ -252,7 +252,7 @@ export const openapiDocument: Record<string, any> = {
     '/notifications/push': {
       get: op(
         'Notificações',
-        'Chave VAPID, quantos aparelhos recebem avisos e, com ?endpoint=, se este aparelho é desta conta (ADR 52)',
+        'Chave VAPID, quantos aparelhos recebem avisos, com ?endpoint= se este aparelho é desta conta (ADR 52), e held: avisos retidos pelo silêncio que o resumo vai cobrir (ADR 54)',
         { auth: true },
       ),
       post: op(
@@ -283,7 +283,7 @@ export const openapiDocument: Record<string, any> = {
     '/notifications/preferences': {
       get: op(
         'Notificações',
-        'Preferência de e-mail (instant | daily | off), hora do resumo do dia (digestHour, 0 a 23; sem escolha, a hora padrão) e fuso da conta (timezone, um dos fusos do Brasil; sem escolha, America/Sao_Paulo)',
+        'Preferências de aviso: e-mail (instant | daily | off), hora do resumo do dia (digestHour, 0 a 23; sem escolha, a hora padrão), fuso da conta (timezone, um dos fusos do Brasil; sem escolha, America/Sao_Paulo) e a janela de silêncio do push (quietHours {start, end} em horas cheias no fuso da conta, ou null; ADR 54)',
         { auth: true },
       ),
       put: op(

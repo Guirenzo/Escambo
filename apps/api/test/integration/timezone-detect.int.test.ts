@@ -34,9 +34,13 @@ afterAll(async () => {
 describe('Fuso detectado no cadastro (ADR 51)', () => {
   it('cadastro com o fuso do aparelho já nasce escolhido; sem fuso, fica em Brasília e não escolhido', async () => {
     const manaus = email();
-    const created = await request(app)
-      .post('/api/auth/register')
-      .send({ email: manaus, password, role: 'freelancer', timezone: 'America/Manaus' });
+    const created = await request(app).post('/api/auth/register').send({
+      legalAccepted: true,
+      email: manaus,
+      password,
+      role: 'freelancer',
+      timezone: 'America/Manaus',
+    });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     expect(created.body).toMatchObject({ timezone: 'America/Manaus', timezoneChosen: true });
     const a = await login(manaus);
@@ -47,7 +51,7 @@ describe('Fuso detectado no cadastro (ADR 51)', () => {
     const semFuso = email();
     const plain = await request(app)
       .post('/api/auth/register')
-      .send({ email: semFuso, password, role: 'client' })
+      .send({ legalAccepted: true, email: semFuso, password, role: 'client' })
       .expect(201);
     expect(plain.body).toMatchObject({ timezone: 'America/Sao_Paulo', timezoneChosen: false });
     const b = await login(semFuso);
@@ -56,13 +60,16 @@ describe('Fuso detectado no cadastro (ADR 51)', () => {
     // Fuso de fora da lista do Brasil é recusado, como na preferência.
     await request(app)
       .post('/api/auth/register')
-      .send({ email: email(), password, timezone: 'Europe/Lisbon' })
+      .send({ legalAccepted: true, email: email(), password, timezone: 'Europe/Lisbon' })
       .expect(422);
   });
 
   it('manter Brasília pela preferência marca como escolhido; null volta a não escolhido', async () => {
     const address = email();
-    await request(app).post('/api/auth/register').send({ email: address, password }).expect(201);
+    await request(app)
+      .post('/api/auth/register')
+      .send({ legalAccepted: true, email: address, password })
+      .expect(201);
     const { token } = await login(address);
     const put = (timezone: string | null) =>
       request(app)

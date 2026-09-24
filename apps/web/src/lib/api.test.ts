@@ -51,7 +51,9 @@ describe('api client', () => {
   it('lança com a mensagem do backend quando a resposta é erro', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({ message: 'Deu ruim' }) }),
+      vi
+        .fn()
+        .mockResolvedValue({ ok: false, status: 400, json: async () => ({ message: 'Deu ruim' }) }),
     );
     await expect(api.wallet()).rejects.toThrow('Deu ruim');
   });

@@ -136,6 +136,9 @@ CREATE TABLE users (
   email_frequency   ENUM('instant', 'daily', 'off') NOT NULL DEFAULT 'instant', -- e-mail por evento, resumo diário ou só o essencial (migration 0010)
   digest_hour       TINYINT UNSIGNED NULL,                    -- hora do resumo do dia, 0 a 23 no fuso da conta; NULL = DIGEST_HOUR (migration 0019)
   timezone          VARCHAR(40)     NULL,                     -- fuso IANA do Brasil; NULL = America/Sao_Paulo (migration 0022, ADR 46; agenda de atendimento lida nele, ADR 48)
+  push_quiet_start  TINYINT UNSIGNED NULL,                    -- "não perturbe": início da janela de silêncio do push, hora cheia no fuso da conta (migration 0024, ADR 54)
+  push_quiet_end    TINYINT UNSIGNED NULL,                    -- fim (exclusivo); NULL nos dois = desligado; início > fim cruza a meia-noite; CHECK recusa meia janela e início = fim
+  push_quiet_summary_id BIGINT UNSIGNED NULL,                -- marca d'água do resumo ao fim do silêncio: avisos retidos até este id já foram resumidos (ou descartados ao desligar)
   last_digest_at    DATETIME    NULL,                          -- último resumo diário (trava de um por dia)
   phone_verified_at DATETIME    NULL,
   last_login_at     DATETIME    NULL,
@@ -979,10 +982,12 @@ CREATE TABLE notifications (
   is_read     TINYINT(1)      NOT NULL DEFAULT 0,
   read_at     DATETIME        NULL,
   sent_at     DATETIME        NULL,
+  push_held_at DATETIME       NULL,                    -- o push deste aviso não saiu por causa do silêncio (ADR 54); é a "fila" do resumo, sem tabela nova
   created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   PRIMARY KEY (id),
   INDEX idx_notif_user   (user_id),
+  INDEX idx_notif_push_held (user_id, push_held_at),
   INDEX idx_notif_read   (is_read),
   INDEX idx_notif_type   (type),
   CONSTRAINT fk_notif_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

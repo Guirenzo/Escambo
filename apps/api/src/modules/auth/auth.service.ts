@@ -7,6 +7,10 @@ import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { isBrazilTimezone, timezoneOf } from '../../utils/timezone';
 import { pushRepository } from '../notifications/push.repository';
+import { quietWindowOf } from '../notifications/quiet-hours';
+import { lgpdRepository } from '../lgpd/lgpd.repository';
+import { CURRENT_LEGAL_VERSION } from '../lgpd/legal-versions';
+import { auditService } from '../audit/audit.service';
 import { generateRefreshToken, hashToken } from '../../utils/tokens';
 import { mailService } from '../mail/mail.service';
 import { authRepository, type UserRow } from './auth.repository';
@@ -36,7 +40,14 @@ function toPublic(user: UserRow): PublicUser {
     digestHour: user.digest_hour ?? env.DIGEST_HOUR,
     timezone: timezoneOf(user.timezone),
     timezoneChosen: isBrazilTimezone(user.timezone),
+    quietHours: quietWindowOf(user.push_quiet_start, user.push_quiet_end),
   };
+}
+
+/** IP e navegador de quem fez a requisição: a prova do consentimento (LGPD art. 8 §2). */
+export interface RequestContext {
+  ip: string | null;
+  userAgent: string | null;
 }
 
 const appLink = (path: string): string => `${env.APP_URL.replace(/\/$/, '')}${path}`;
@@ -115,7 +126,7 @@ function assertActive(user: { status: string; deleted_at?: Date | null }): void 
 
 /** Regras de negócio de autenticação (RF-001 a RF-004, RNF-013). */
 export const authService = {
-  async register(input: RegisterInput): Promise<PublicUser> {
+  async register(input: RegisterInput, ctx: RequestContext): Promise<PublicUser> {
     const existing = await authRepository.findByEmail(input.email);
     if (existing) {
       throw new HttpError(409, 'E-mail já cadastrado', 'email_taken'); // RN-001
@@ -134,6 +145,33 @@ export const authService = {
       timezone: input.timezone ?? null,
     });
 
+    // O aceite dos Termos e da Política vira registro na versão vigente, com IP e navegador
+    // (ADR 54). Gravado pelo servidor, e não pelo cliente: toda conta nasce com a trilha. Falha
+    // aqui não derruba o cadastro — a faixa de atualização da política cura na próxima entrada.
+    for (const type of ['terms_of_use', 'privacy_policy'] as const) {
+      const version = CURRENT_LEGAL_VERSION[type];
+      try {
+        await lgpdRepository.recordConsent({
+          userId: id,
+          type,
+          version,
+          accepted: true,
+          ip: ctx.ip,
+          userAgent: ctx.userAgent,
+        });
+        void auditService.log({
+          userId: id,
+          action: 'lgpd_consent',
+          entityType: 'consent',
+          newValue: { type, version, accepted: true },
+          ip: ctx.ip,
+          userAgent: ctx.userAgent,
+        });
+      } catch (err) {
+        logger.warn({ err, userId: id, type }, 'consentimento do cadastro não gravado');
+      }
+    }
+
     // Boas-vindas + confirmação de e-mail. Falha no e-mail não derruba o cadastro.
     try {
       await sendVerification({ id, email: input.email });
@@ -151,6 +189,7 @@ export const authService = {
       digestHour: env.DIGEST_HOUR,
       timezone: timezoneOf(input.timezone),
       timezoneChosen: input.timezone !== undefined,
+      quietHours: null,
     };
   },
 

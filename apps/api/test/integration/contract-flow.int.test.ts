@@ -17,7 +17,9 @@ let seq = 0;
 async function registerAndLogin(role: 'client' | 'freelancer'): Promise<Actor> {
   const email = `int_${role}_${Date.now()}_${seq++}@escambo.test`;
   const password = 'senha-integracao-123';
-  const reg = await request(app).post('/api/auth/register').send({ email, password, role });
+  const reg = await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role });
   expect(reg.status, `register ${role}: ${JSON.stringify(reg.body)}`).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status, `login ${role}: ${JSON.stringify(login.body)}`).toBe(200);
@@ -47,15 +49,12 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
     expect(w0.body).toMatchObject({ balance: 0, balancePending: 0 });
 
     // Cliente contrata: price 1000 → fee 150 (15%), net 850.
-    const created = await request(app)
-      .post('/api/contracts')
-      .set(auth(client.token))
-      .send({
-        freelancerId: freelancer.id,
-        title: 'Landing page institucional',
-        description: 'Página one-page responsiva com formulário de contato',
-        price: 1000,
-      });
+    const created = await request(app).post('/api/contracts').set(auth(client.token)).send({
+      freelancerId: freelancer.id,
+      title: 'Landing page institucional',
+      description: 'Página one-page responsiva com formulário de contato',
+      price: 1000,
+    });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     const contractId = created.body.id as number;
     expect(created.body).toMatchObject({ status: 'pending', platformFee: 150, freelancerNet: 850 });
@@ -64,7 +63,9 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
     expect(c0.body).toMatchObject({ balance: 0, balancePending: 1000 });
 
     // Freelancer aceita → valor líquido entra em escrow (balance_pending).
-    const acc = await request(app).post(`/api/contracts/${contractId}/accept`).set(auth(freelancer.token));
+    const acc = await request(app)
+      .post(`/api/contracts/${contractId}/accept`)
+      .set(auth(freelancer.token));
     expect(acc.status, JSON.stringify(acc.body)).toBe(200);
     expect(acc.body.status).toBe('accepted');
     const w1 = await request(app).get('/api/wallet').set(auth(freelancer.token));
@@ -88,7 +89,9 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
     expect(del.body.status).toBe('delivered');
 
     // Cliente aprova → escrow liberado (pending → balance) + XP de conclusão.
-    const approved = await request(app).post(`/api/contracts/${contractId}/approve`).set(auth(client.token));
+    const approved = await request(app)
+      .post(`/api/contracts/${contractId}/approve`)
+      .set(auth(client.token));
     expect(approved.status, JSON.stringify(approved.body)).toBe(200);
     expect(approved.body.status).toBe('completed');
     const w2 = await request(app).get('/api/wallet').set(auth(freelancer.token));
@@ -111,15 +114,12 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
     const freelancer = await registerAndLogin('freelancer');
     await fundWallet(app, client.token, 500);
 
-    const created = await request(app)
-      .post('/api/contracts')
-      .set(auth(client.token))
-      .send({
-        freelancerId: freelancer.id,
-        title: 'App mobile MVP',
-        description: 'MVP com login social e listagem paginada',
-        price: 500,
-      });
+    const created = await request(app).post('/api/contracts').set(auth(client.token)).send({
+      freelancerId: freelancer.id,
+      title: 'App mobile MVP',
+      description: 'MVP com login social e listagem paginada',
+      price: 500,
+    });
     const id = created.body.id as number;
 
     await request(app).post(`/api/contracts/${id}/accept`).set(auth(freelancer.token)).expect(200);
@@ -144,15 +144,12 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
     const outsider = await registerAndLogin('client');
     await fundWallet(app, client.token, 300);
 
-    const created = await request(app)
-      .post('/api/contracts')
-      .set(auth(client.token))
-      .send({
-        freelancerId: freelancer.id,
-        title: 'Consultoria SEO',
-        description: 'Auditoria técnica e plano de ação de SEO',
-        price: 300,
-      });
+    const created = await request(app).post('/api/contracts').set(auth(client.token)).send({
+      freelancerId: freelancer.id,
+      title: 'Consultoria SEO',
+      description: 'Auditoria técnica e plano de ação de SEO',
+      price: 300,
+    });
     const id = created.body.id as number;
 
     // Cliente não pode aceitar (ação exclusiva do freelancer).
@@ -165,15 +162,12 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
 
   it('rejeita contratar a si mesmo (RN self_contract)', async () => {
     const freelancer = await registerAndLogin('freelancer');
-    const res = await request(app)
-      .post('/api/contracts')
-      .set(auth(freelancer.token))
-      .send({
-        freelancerId: freelancer.id,
-        title: 'Serviço para mim mesmo',
-        description: 'Não deveria ser permitido pela regra de negócio',
-        price: 100,
-      });
+    const res = await request(app).post('/api/contracts').set(auth(freelancer.token)).send({
+      freelancerId: freelancer.id,
+      title: 'Serviço para mim mesmo',
+      description: 'Não deveria ser permitido pela regra de negócio',
+      price: 100,
+    });
     expect(res.status).toBe(400);
   });
 });

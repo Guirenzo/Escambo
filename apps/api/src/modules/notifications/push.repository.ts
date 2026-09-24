@@ -20,16 +20,29 @@ export const pushRepository = {
     endpoint: string;
     p256dh: string;
     auth: string;
-    userAgent: string | null;
   }): Promise<void> {
+    // O navegador do aparelho (user_agent) não é mais gravado: nunca foi lido (ADR 54).
     await pool.query<ResultSetHeader>(
-      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth_key, user_agent)
-       VALUES (:userId, :endpoint, :p256dh, :auth, :userAgent)
+      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth_key)
+       VALUES (:userId, :endpoint, :p256dh, :auth)
        ON DUPLICATE KEY UPDATE
-         user_id = :userId, p256dh = :p256dh, auth_key = :auth, user_agent = :userAgent,
-         last_error = NULL`,
+         user_id = :userId, p256dh = :p256dh, auth_key = :auth, last_error = NULL`,
       d,
     );
+  },
+
+  /**
+   * Apaga assinaturas sem nenhum aviso aceito pelo serviço de push há `days` dias (ADR 54): é o
+   * teto de retenção que a Política de Privacidade promete, para aparelho descartado ou permissão
+   * revogada só no navegador, que nunca devolvem 404/410.
+   */
+  async removeStale(days: number): Promise<number> {
+    const [res] = await pool.query<ResultSetHeader>(
+      `DELETE FROM push_subscriptions
+        WHERE COALESCE(last_sent_at, created_at) < DATE_SUB(NOW(), INTERVAL :days DAY)`,
+      { days },
+    );
+    return res.affectedRows;
   },
 
   async listForUser(userId: number): Promise<PushSubscriptionRow[]> {

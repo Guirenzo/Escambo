@@ -2932,6 +2932,45 @@ body.is-dragging-list {
   gap: 8px;
   margin-top: 10px;
 }
+/* "Não perturbe" (ADR 54): um bloco dentro do cartão de avisos, no molde do pref-hour. */
+.push-quiet {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+}
+.push-quiet legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.push-quiet-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.push-quiet-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.push-quiet-range select {
+  width: auto;
+  min-width: 96px;
+}
+/* Histórico de versões dos documentos legais (ADR 54). */
+.legal-history {
+  padding-left: 18px;
+}
+.legal-history li {
+  margin-bottom: 8px;
+}
 
 /* Sugestão de fuso (ADR 51): informação, não alerta; as duas respostas lado a lado. */
 .verify-banner.tz-banner {

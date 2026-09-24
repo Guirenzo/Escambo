@@ -3,7 +3,16 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { QueryState } from './index';
 
-const base = { isEmpty: (d: string[]) => d.length === 0, children: (d: string[]) => <ul>{d.map((x) => <li key={x}>{x}</li>)}</ul> };
+const base = {
+  isEmpty: (d: string[]) => d.length === 0,
+  children: (d: string[]) => (
+    <ul>
+      {d.map((x) => (
+        <li key={x}>{x}</li>
+      ))}
+    </ul>
+  ),
+};
 
 describe('QueryState (estados padrão do kit)', () => {
   it('carregando → skeleton', () => {
@@ -13,7 +22,15 @@ describe('QueryState (estados padrão do kit)', () => {
 
   it('erro → mensagem + botão de tentar de novo que chama onRetry', async () => {
     const onRetry = vi.fn();
-    render(<QueryState isLoading={false} error={new Error('Deu ruim')} data={undefined} onRetry={onRetry} {...base} />);
+    render(
+      <QueryState
+        isLoading={false}
+        error={new Error('Deu ruim')}
+        data={undefined}
+        onRetry={onRetry}
+        {...base}
+      />,
+    );
     expect(screen.getByRole('alert')).toHaveTextContent('Deu ruim');
     await userEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     expect(onRetry).toHaveBeenCalledOnce();

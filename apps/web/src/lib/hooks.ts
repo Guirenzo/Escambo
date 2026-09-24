@@ -459,7 +459,9 @@ export function useCreateReport() {
   return useMutation({ mutationFn: (body: CreateContentReportRequest) => api.createReport(body) });
 }
 
-export const useConsents = () => useQuery({ queryKey: qk.consents, queryFn: () => api.consents() });
+/** Uma consulta por carga do app: o Shell e o Perfil dividem, e quem grava invalida. */
+export const useConsents = () =>
+  useQuery({ queryKey: qk.consents, queryFn: () => api.consents(), staleTime: Infinity });
 export const useExportRequests = () =>
   useQuery({ queryKey: qk.exportRequests, queryFn: () => api.exportRequests() });
 export const useDeletionRequests = () =>

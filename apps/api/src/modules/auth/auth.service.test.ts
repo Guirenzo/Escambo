@@ -12,6 +12,13 @@ vi.mock('./auth.repository', () => ({
   },
 }));
 
+vi.mock('../lgpd/lgpd.repository', () => ({
+  lgpdRepository: { recordConsent: vi.fn().mockResolvedValue(undefined) },
+}));
+vi.mock('../audit/audit.service', () => ({
+  auditService: { log: vi.fn().mockResolvedValue(undefined) },
+}));
+
 vi.mock('../notifications/push.repository', () => ({
   pushRepository: { removeAllForUser: vi.fn().mockResolvedValue(0) },
 }));
@@ -30,7 +37,10 @@ import { authRepository, type UserRow } from './auth.repository';
 import { sessionRepository, type SessionRow } from './session.repository';
 import { hashToken } from '../../utils/tokens';
 import { pushRepository } from '../notifications/push.repository';
+import { lgpdRepository } from '../lgpd/lgpd.repository';
+import { CURRENT_LEGAL_VERSION } from '../lgpd/legal-versions';
 
+const CTX = { ip: '127.0.0.1', userAgent: 'vitest' };
 const repo = vi.mocked(authRepository);
 const sessions = vi.mocked(sessionRepository);
 
@@ -73,14 +83,36 @@ describe('authService.register', () => {
     repo.findByEmail.mockResolvedValue(undefined);
     repo.create.mockResolvedValue(1);
 
-    const user = await authService.register({
-      email: 'novo@exemplo.com',
-      password: 'senha12345',
-      role: 'client',
-    });
+    const user = await authService.register(
+      {
+        email: 'novo@exemplo.com',
+        password: 'senha12345',
+        role: 'client',
+        legalAccepted: true as const,
+      },
+      CTX,
+    );
 
     expect(user).toMatchObject({ email: 'novo@exemplo.com', role: 'client' });
     expect(user.ulid).toHaveLength(26);
+    // O aceite do cadastro vira dois consentimentos na versão vigente, com IP e navegador (ADR 54).
+    expect(vi.mocked(lgpdRepository).recordConsent).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(lgpdRepository).recordConsent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 1,
+        type: 'privacy_policy',
+        version: CURRENT_LEGAL_VERSION.privacy_policy,
+        accepted: true,
+        ip: CTX.ip,
+        userAgent: CTX.userAgent,
+      }),
+    );
+    expect(vi.mocked(lgpdRepository).recordConsent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'terms_of_use',
+        version: CURRENT_LEGAL_VERSION.terms_of_use,
+      }),
+    );
 
     const createArg = repo.create.mock.calls[0]![0];
     expect(createArg.passwordHash).not.toBe('senha12345');
@@ -90,7 +122,15 @@ describe('authService.register', () => {
   it('rejeita e-mail já cadastrado (409)', async () => {
     repo.findByEmail.mockResolvedValue(fakeUser());
     await expect(
-      authService.register({ email: 'rafael@exemplo.com', password: 'senha12345', role: 'client' }),
+      authService.register(
+        {
+          email: 'rafael@exemplo.com',
+          password: 'senha12345',
+          role: 'client',
+          legalAccepted: true as const,
+        },
+        CTX,
+      ),
     ).rejects.toMatchObject({ statusCode: 409 });
     expect(repo.create).not.toHaveBeenCalled();
   });
@@ -194,6 +234,7 @@ describe('authService.getByUlid', () => {
       digestHour: expect.any(Number),
       timezone: 'America/Sao_Paulo',
       timezoneChosen: false,
+      quietHours: null,
     });
   });
 

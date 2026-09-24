@@ -976,6 +976,7 @@ Cada regra possui:
 | RN-073 | LGPD | Anonimização após 24 meses inativo | UC-11 |
 | RN-074 | LGPD | Coleta de dados mínimos | UC-01 |
 | RN-075 | Segurança | CPF e senha criptografados | UC-01, UC-06 |
+| RN-076 | LGPD | Comunicação de alteração da Política de Privacidade: faixa com destaque ao entrar, aceitar/não aceitar registrados por versão (art. 8 §6, art. 9) | UC-01 |
 
 ---
 

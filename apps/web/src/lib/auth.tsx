@@ -3,7 +3,6 @@ import type { LoginRequest, PublicUser, RegisterRequest } from '@escambo/types';
 import { api, getRefreshToken, getToken, SESSION_EXPIRED_EVENT, setSession } from './api';
 import { disconnectSocket } from './socket';
 import { currentSubscription, lastDeviceEndpoint, rememberDeviceEndpoint } from './push';
-import { LEGAL_VERSION } from '../features/legal/content';
 import { browserBrazilZone } from './timezones';
 
 interface AuthState {
@@ -64,16 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // O fuso do aparelho vai junto (ADR 51): a conta já nasce no relógio de quem se cadastra.
       const timezone = input.timezone ?? browserBrazilZone() ?? undefined;
+      // O aceite vai no próprio cadastro e a API grava o consentimento na versão vigente (ADR 54):
+      // toda conta nasce com a trilha, sem depender de uma segunda requisição do cliente.
       await api.register(timezone ? { ...input, timezone } : input);
       await login({ email: input.email, password: input.password });
-      // Consentimento LGPD com a versão vigente dos documentos (melhor esforço, não bloqueia).
-      await Promise.all(
-        (['terms_of_use', 'privacy_policy'] as const).map((type) =>
-          api
-            .recordConsent({ type, version: LEGAL_VERSION, accepted: true })
-            .catch(() => undefined),
-        ),
-      );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao cadastrar');
       throw e;

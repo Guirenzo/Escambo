@@ -15,13 +15,18 @@ export interface UserRow extends RowDataPacket {
   digest_hour?: number | null;
   /** Fuso da conta (ADR 46); null segue Brasília. */
   timezone?: string | null;
+  /** Janela de silêncio dos avisos no navegador (ADR 54), horas no fuso da conta; null = desligado. */
+  push_quiet_start?: number | null;
+  push_quiet_end?: number | null;
+  /** Marca d'água do resumo ao fim do silêncio: retidos até este id já foram tratados. */
+  push_quiet_summary_id?: number | null;
 }
 
 /** Camada de acesso a dados da tabela `users`. */
 export const authRepository = {
   async findByEmail(email: string): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone FROM users WHERE email = :email LIMIT 1',
+      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_summary_id FROM users WHERE email = :email LIMIT 1',
       { email },
     );
     return rows[0];
@@ -29,7 +34,7 @@ export const authRepository = {
 
   async findByUlid(ulid: string): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone FROM users WHERE ulid = :ulid LIMIT 1',
+      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_summary_id FROM users WHERE ulid = :ulid LIMIT 1',
       { ulid },
     );
     return rows[0];
@@ -37,7 +42,7 @@ export const authRepository = {
 
   async findById(id: number): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone FROM users WHERE id = :id LIMIT 1',
+      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_summary_id FROM users WHERE id = :id LIMIT 1',
       { id },
     );
     return rows[0];
@@ -84,18 +89,32 @@ export const authRepository = {
       emailFrequency?: 'instant' | 'daily' | 'off';
       digestHour?: number | null;
       timezone?: string | null;
+      /** Janela inteira ou null (desliga); nunca meia janela (ADR 54). */
+      quietHours?: { start: number; end: number } | null;
     },
   ): Promise<void> {
     const sets: string[] = [];
     if (change.emailFrequency !== undefined) sets.push('email_frequency = :emailFrequency');
     if (change.digestHour !== undefined) sets.push('digest_hour = :digestHour');
     if (change.timezone !== undefined) sets.push('timezone = :timezone');
+    if (change.quietHours !== undefined) {
+      sets.push('push_quiet_start = :quietStart, push_quiet_end = :quietEnd');
+      // Desligar descarta o que ficou retido: nada bate retroativamente (a pessoa está no app).
+      // Trocar as horas ou o fuso não mexe na marca: o já retido continua valendo para o resumo.
+      if (change.quietHours === null) {
+        sets.push(
+          'push_quiet_summary_id = (SELECT COALESCE(MAX(n.id), 0) FROM notifications n WHERE n.user_id = users.id)',
+        );
+      }
+    }
     if (sets.length === 0) return;
     await pool.query<ResultSetHeader>(`UPDATE users SET ${sets.join(', ')} WHERE id = :id`, {
       id,
       emailFrequency: change.emailFrequency ?? null,
       digestHour: change.digestHour ?? null,
       timezone: change.timezone ?? null,
+      quietStart: change.quietHours?.start ?? null,
+      quietEnd: change.quietHours?.end ?? null,
     });
   },
 

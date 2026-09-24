@@ -21,7 +21,12 @@ describe('computeEscamboScore', () => {
       totalContracts: 30,
       responseTimeHours: 1,
     });
-    expect(s.breakdown).toEqual({ quality: 100, experience: 100, socialProof: 100, responsiveness: 100 });
+    expect(s.breakdown).toEqual({
+      quality: 100,
+      experience: 100,
+      socialProof: 100,
+      responsiveness: 100,
+    });
     expect(s.score).toBe(100);
     expect(s.tier).toBe('elite');
   });
@@ -40,15 +45,31 @@ describe('computeEscamboScore', () => {
 
   it('responsividade: <=1h máxima, >=48h zero (com clamp)', () => {
     const base = { avgRating: 0, totalReviews: 0, totalContracts: 0 };
-    expect(computeEscamboScore({ ...base, responseTimeHours: 1 }).breakdown.responsiveness).toBe(100);
-    expect(computeEscamboScore({ ...base, responseTimeHours: 48 }).breakdown.responsiveness).toBe(0);
-    expect(computeEscamboScore({ ...base, responseTimeHours: 100 }).breakdown.responsiveness).toBe(0);
+    expect(computeEscamboScore({ ...base, responseTimeHours: 1 }).breakdown.responsiveness).toBe(
+      100,
+    );
+    expect(computeEscamboScore({ ...base, responseTimeHours: 48 }).breakdown.responsiveness).toBe(
+      0,
+    );
+    expect(computeEscamboScore({ ...base, responseTimeHours: 100 }).breakdown.responsiveness).toBe(
+      0,
+    );
   });
 
   it('qualidade só conta com avaliações (sem reviews = neutro 50)', () => {
-    const semReviews = computeEscamboScore({ avgRating: 5, totalReviews: 0, totalContracts: 0, responseTimeHours: null });
+    const semReviews = computeEscamboScore({
+      avgRating: 5,
+      totalReviews: 0,
+      totalContracts: 0,
+      responseTimeHours: null,
+    });
     expect(semReviews.breakdown.quality).toBe(50); // ignora avgRating sem lastro
-    const comReviews = computeEscamboScore({ avgRating: 5, totalReviews: 3, totalContracts: 0, responseTimeHours: null });
+    const comReviews = computeEscamboScore({
+      avgRating: 5,
+      totalReviews: 3,
+      totalContracts: 0,
+      responseTimeHours: null,
+    });
     expect(comReviews.breakdown.quality).toBe(100);
   });
 });
