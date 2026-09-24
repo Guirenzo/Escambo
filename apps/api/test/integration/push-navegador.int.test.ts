@@ -86,10 +86,14 @@ describe('Avisos push no navegador (ADR 52)', () => {
       body: 'Alguém quer contratar você',
       data: { contractId: 123 },
     });
+    // Os aparelhos são marcados um depois do outro: espera os dois, não só o primeiro.
     await expect
-      .poll(async () => (await lastSent(celular.endpoint)) !== null, { timeout: 5000 })
+      .poll(
+        async () =>
+          (await lastSent(celular.endpoint)) !== null && (await lastSent(note.endpoint)) !== null,
+        { timeout: 5000 },
+      )
       .toBe(true);
-    expect(await lastSent(note.endpoint)).not.toBeNull();
 
     // Tipo de ruído (chat) não bate no aparelho: a marca não muda.
     const before = await lastSent(note.endpoint);
