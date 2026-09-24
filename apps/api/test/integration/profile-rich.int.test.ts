@@ -18,7 +18,10 @@ let seq = 0;
 async function registerAndLogin(role: 'client' | 'freelancer'): Promise<Actor> {
   const email = `int_rich_${role}_${Date.now()}_${seq++}@escambo.test`;
   const password = 'senha-integracao-123';
-  await request(app).post('/api/auth/register').send({ email, password, role }).expect(201);
+  await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role })
+    .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   return { id: login.body.user.id, ulid: login.body.user.ulid, token: login.body.accessToken };
 }

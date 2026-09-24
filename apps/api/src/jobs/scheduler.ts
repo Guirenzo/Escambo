@@ -6,7 +6,9 @@ import { runExpireExports } from './expire-exports';
 import { runExpireProposals } from './expire-proposals';
 import { runOverdueContracts } from './overdue-contracts';
 import { runPurgeAttachments } from './purge-attachments';
+import { runPurgePushSubscriptions } from './purge-push-subscriptions';
 import { runPurgeQuarantine } from './purge-quarantine';
+import { runQuietPushSummary } from './quiet-push-summary';
 import { runSavedSearchAlerts } from './saved-search-alerts';
 import { runTacitApproval } from './tacit-approval';
 
@@ -29,11 +31,13 @@ export const JOBS: Job[] = [
   { name: 'expire-proposals', run: runExpireProposals },
   { name: 'overdue-contracts', run: runOverdueContracts },
   { name: 'daily-digest', run: () => runDailyDigest() },
+  { name: 'quiet-push-summary', run: () => runQuietPushSummary() },
   { name: 'expire-deposits', run: runExpireDeposits },
   { name: 'expire-exports', run: runExpireExports },
   { name: 'purge-attachments', run: () => runPurgeAttachments() },
   { name: 'purge-quarantine', run: () => runPurgeQuarantine() },
   { name: 'saved-search-alerts', run: () => runSavedSearchAlerts() },
+  { name: 'purge-push-subscriptions', run: runPurgePushSubscriptions },
 ];
 
 let timer: NodeJS.Timeout | null = null;

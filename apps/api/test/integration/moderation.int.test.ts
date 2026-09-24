@@ -28,7 +28,7 @@ async function registerAndLogin(
   const email = `mod_${role}_${Date.now()}_${seq++}@${domain}`;
   const reg = await request(app)
     .post('/api/auth/register')
-    .send({ email, password: PASSWORD, role });
+    .send({ legalAccepted: true, email, password: PASSWORD, role });
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password: PASSWORD });
   expect(login.status).toBe(200);

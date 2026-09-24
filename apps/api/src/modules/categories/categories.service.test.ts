@@ -3,7 +3,13 @@ import { buildTree } from './categories.service';
 import type { CategoryRow } from './categories.repository';
 
 const row = (id: number, parentId: number | null, name: string): CategoryRow =>
-  ({ id, parent_id: parentId, name, slug: name.toLowerCase(), icon_url: null }) as unknown as CategoryRow;
+  ({
+    id,
+    parent_id: parentId,
+    name,
+    slug: name.toLowerCase(),
+    icon_url: null,
+  }) as unknown as CategoryRow;
 
 describe('buildTree', () => {
   it('agrupa subcategorias sob suas raízes', () => {

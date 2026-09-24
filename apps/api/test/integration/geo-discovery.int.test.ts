@@ -10,8 +10,14 @@ const PASS = 'senha-integracao-123';
 let seq = 0;
 async function loginNewFreelancer(): Promise<string> {
   const email = `geo_${Date.now()}_${seq++}@escambo.test`;
-  await request(app).post('/api/auth/register').send({ email, password: PASS, role: 'freelancer' }).expect(201);
-  const login = await request(app).post('/api/auth/login').send({ email, password: PASS }).expect(200);
+  await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password: PASS, role: 'freelancer' })
+    .expect(201);
+  const login = await request(app)
+    .post('/api/auth/login')
+    .send({ email, password: PASS })
+    .expect(200);
   return login.body.accessToken;
 }
 
@@ -25,7 +31,13 @@ async function freelancerWith(lat: number, lng: number, title: string): Promise<
   await request(app)
     .post('/api/services')
     .set(auth(token))
-    .send({ categoryId: 10, title, description: 'Serviço local de teste com descrição', priceType: 'fixed', price: 100 })
+    .send({
+      categoryId: 10,
+      title,
+      description: 'Serviço local de teste com descrição',
+      priceType: 'fixed',
+      price: 100,
+    })
     .expect(201);
 }
 
@@ -51,7 +63,9 @@ describe('Descoberta local (geo)', () => {
     await freelancerWith(-23.5505, -46.6333, 'Encanador Sao Paulo'); // ~430 km
 
     // Raio de 50 km ao redor de Joinville: só o local aparece.
-    const near = await request(app).get(`/api/services?lat=${JOINVILLE.lat}&lng=${JOINVILLE.lng}&radiusKm=50`);
+    const near = await request(app).get(
+      `/api/services?lat=${JOINVILLE.lat}&lng=${JOINVILLE.lng}&radiusKm=50`,
+    );
     expect(near.status).toBe(200);
     const titlesNear = (near.body.items as { title: string }[]).map((s) => s.title);
     expect(titlesNear).toContain('Encanador Joinville');
@@ -62,9 +76,13 @@ describe('Descoberta local (geo)', () => {
     expect(jv?.distanceKm).toBeLessThan(5);
 
     // Raio de 500 km (cap do schema): abrange São Paulo, com o mais próximo primeiro.
-    const wide = await request(app).get(`/api/services?lat=${JOINVILLE.lat}&lng=${JOINVILLE.lng}&radiusKm=500`);
+    const wide = await request(app).get(
+      `/api/services?lat=${JOINVILLE.lat}&lng=${JOINVILLE.lng}&radiusKm=500`,
+    );
     expect(wide.status).toBe(200);
     const titlesWide = (wide.body.items as { title: string }[]).map((s) => s.title);
-    expect(titlesWide.indexOf('Encanador Joinville')).toBeLessThan(titlesWide.indexOf('Encanador Sao Paulo'));
+    expect(titlesWide.indexOf('Encanador Joinville')).toBeLessThan(
+      titlesWide.indexOf('Encanador Sao Paulo'),
+    );
   });
 });

@@ -383,7 +383,14 @@ describe('messagingService.attachment (download)', () => {
 });
 
 describe('notificationBody', () => {
-  const base = { id: 1, conversationId: 1, senderId: 1, createdAt: '', removedAt: null, signals: [] };
+  const base = {
+    id: 1,
+    conversationId: 1,
+    senderId: 1,
+    createdAt: '',
+    removedAt: null,
+    signals: [],
+  };
   it('usa a legenda quando há; senão descreve o anexo', () => {
     expect(notificationBody({ ...base, type: 'text', content: 'oi', attachment: null })).toBe('oi');
     expect(

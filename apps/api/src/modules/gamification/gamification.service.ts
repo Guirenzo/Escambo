@@ -1,9 +1,4 @@
-import type {
-  GamificationProfile,
-  LeaderboardEntry,
-  LevelProgress,
-  XpEvent,
-} from '@escambo/types';
+import type { GamificationProfile, LeaderboardEntry, LevelProgress, XpEvent } from '@escambo/types';
 import { gamificationRepository, type FreelancerStatsRow } from './gamification.repository';
 
 /** Tabela de níveis (RN-052). */
@@ -30,7 +25,8 @@ export function levelProgress(totalXp: number): LevelProgress {
   const nextMin = next ? next.min : null;
   const xpIntoLevel = totalXp - current.min;
   const span = nextMin !== null ? nextMin - current.min : 0;
-  const percent = nextMin !== null && span > 0 ? Math.min(100, Math.round((xpIntoLevel / span) * 100)) : 100;
+  const percent =
+    nextMin !== null && span > 0 ? Math.min(100, Math.round((xpIntoLevel / span) * 100)) : 100;
   return {
     level: current.level,
     levelName: current.name,

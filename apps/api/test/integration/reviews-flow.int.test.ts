@@ -22,7 +22,9 @@ let seq = 0;
 async function registerAndLogin(role: 'client' | 'freelancer'): Promise<Actor> {
   const email = `rev_${role}_${Date.now()}_${seq++}@escambo.test`;
   const password = 'senha-integracao-123';
-  const reg = await request(app).post('/api/auth/register').send({ email, password, role });
+  const reg = await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role });
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status, JSON.stringify(login.body)).toBe(200);
@@ -95,15 +97,12 @@ describe('Avaliações (reviews) — fecham o ciclo da contratação', () => {
     expect(svc.status, JSON.stringify(svc.body)).toBe(201);
 
     // Contrato ainda pendente não pode ser avaliado.
-    const pending = await request(app)
-      .post('/api/contracts')
-      .set(auth(client.token))
-      .send({
-        freelancerId: freelancer.id,
-        title: 'Ainda pendente',
-        description: 'Não concluída ainda.',
-        price: 100,
-      });
+    const pending = await request(app).post('/api/contracts').set(auth(client.token)).send({
+      freelancerId: freelancer.id,
+      title: 'Ainda pendente',
+      description: 'Não concluída ainda.',
+      price: 100,
+    });
     expect(pending.status).toBe(201);
     const early = await request(app)
       .post('/api/reviews')

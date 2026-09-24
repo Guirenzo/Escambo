@@ -19,24 +19,20 @@ export const OFF_PLATFORM_LABEL: Record<OffPlatformSignal, string> = {
 };
 
 /** Sem acento e em minúsculas: "Transferência" e "transferencia" caem na mesma regra. */
-const plain = (text: string): string =>
-  text
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase();
+const plain = (text: string): string => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-const VERBS = '(?:paga|pagar|pague|pagando|manda|mandar|mande|envia|enviar|faz|fazer|transfere|transferir)';
-const PIX =
-  new RegExp(
-    [
-      String.raw`\bchave\s*(?:do\s*|de\s*)?pix\b`,
-      String.raw`\bpix\b[^.\n!?]{0,25}\b(?:chave|direto|por fora|pra mim|para mim|no meu|na minha|do meu|da minha)\b`,
-      String.raw`\b${VERBS}\b[^.\n!?]{0,25}\bpix\b`,
-      String.raw`\bcpf\b`,
-      String.raw`(?<!\d)\d{3}\.\d{3}\.\d{3}-\d{2}(?!\d)`,
-      String.raw`\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`,
-    ].join('|'),
-  );
+const VERBS =
+  '(?:paga|pagar|pague|pagando|manda|mandar|mande|envia|enviar|faz|fazer|transfere|transferir)';
+const PIX = new RegExp(
+  [
+    String.raw`\bchave\s*(?:do\s*|de\s*)?pix\b`,
+    String.raw`\bpix\b[^.\n!?]{0,25}\b(?:chave|direto|por fora|pra mim|para mim|no meu|na minha|do meu|da minha)\b`,
+    String.raw`\b${VERBS}\b[^.\n!?]{0,25}\bpix\b`,
+    String.raw`\bcpf\b`,
+    String.raw`(?<!\d)\d{3}\.\d{3}\.\d{3}-\d{2}(?!\d)`,
+    String.raw`\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`,
+  ].join('|'),
+);
 const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
 const WHATSAPP = /\bwhats\s?app\b|\bwhats\b|\bwpp\b|\bzap\b|\bzapzap\b|wa\.me\//;
 const OFF_PLATFORM =

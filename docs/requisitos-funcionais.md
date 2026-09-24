@@ -156,7 +156,7 @@
 | RF-076 | Administração | O painel administrativo deve exibir métricas gerais de usuários, contratos, receita e tickets em tempo real | Alta | Pendente |
 | RF-077 | Administração | O administrador deve poder suspender, banir ou reativar qualquer conta da plataforma | Alta | Pendente |
 | RF-078 | Administração | O administrador deve poder configurar parâmetros da plataforma (taxa, prazo de saque, manutenção) sem deploy | Média | Pendente |
-| RF-079 | LGPD | O sistema deve registrar o consentimento explícito do usuário nos termos de uso e política de privacidade no cadastro | Alta | Pendente |
+| RF-079 | LGPD | O sistema deve registrar o consentimento explícito do usuário nos termos de uso e política de privacidade no cadastro | Alta | Implementado |
 | RF-080 | LGPD | O usuário deve poder solicitar a exclusão definitiva de seus dados pessoais da plataforma | Alta | Pendente |
 | RF-081 | Relatórios | O sistema deve gerar snapshots periódicos (diário, semanal, mensal) de métricas de uso e receita | Média | Pendente |
 | RF-082 | Relatórios | O painel do freelancer deve exibir gráfico de ganhos por período | Média | Pendente |

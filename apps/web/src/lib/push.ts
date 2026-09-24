@@ -3,6 +3,29 @@
  * aviso; aqui ficam o registro, a assinatura e as contas puras que os testes cobrem.
  */
 
+/**
+ * A janela de silêncio (ADR 54), espelho de apps/api/src/modules/notifications/quiet-hours.ts:
+ * mudou lá, muda aqui. Só informativo — quem decide reter é o servidor.
+ */
+export interface QuietWindow {
+  start: number;
+  end: number;
+}
+
+/** [start, end): 22 → 7 silencia de 22:00 a 06:59; início maior que o fim cruza a meia-noite. */
+export function inQuietWindow(hour: number, window: QuietWindow | null): boolean {
+  if (!window) return false;
+  const { start, end } = window;
+  return start < end ? hour >= start && hour < end : hour >= start || hour < end;
+}
+
+/** Hora cheia (0 a 23) de agora no fuso da conta. */
+export function hourNowIn(timeZone: string, now: Date = new Date()): number {
+  return Number(
+    new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' }).format(now),
+  );
+}
+
 /** O que a tela mostra: cada estado tem uma frase e um botão diferentes. */
 export type PushState = 'server-off' | 'unsupported' | 'denied' | 'on' | 'off';
 

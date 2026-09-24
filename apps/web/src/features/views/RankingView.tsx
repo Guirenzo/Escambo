@@ -25,7 +25,13 @@ export function RankingView() {
       <PageHeader
         title="Ranking"
         subtitle="Os freelancers com mais XP na plataforma. Conclua contratos e ganhe badges para subir."
-        action={me.data?.rank != null ? <Chip kind="level"><Trophy size={12} /> Você é #{me.data.rank}</Chip> : undefined}
+        action={
+          me.data?.rank != null ? (
+            <Chip kind="level">
+              <Trophy size={12} /> Você é #{me.data.rank}
+            </Chip>
+          ) : undefined
+        }
       />
 
       <QueryState

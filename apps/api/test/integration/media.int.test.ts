@@ -86,7 +86,10 @@ let seq = 0;
 async function actor(role: 'client' | 'freelancer'): Promise<{ token: string }> {
   const email = `int_media_${role}_${Date.now()}_${seq++}@escambo.test`;
   const password = 'senha-integracao-123';
-  await request(app).post('/api/auth/register').send({ email, password, role }).expect(201);
+  await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role })
+    .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
   return { token: login.body.accessToken as string };
 }

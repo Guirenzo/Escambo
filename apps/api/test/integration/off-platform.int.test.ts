@@ -23,7 +23,10 @@ let seq = 0;
 async function actor(role: 'client' | 'freelancer', domain = 'escambo.test'): Promise<Actor> {
   const email = `int_porfora_${role}_${Date.now()}_${seq++}@${domain}`;
   const password = 'senha-integracao-123';
-  await request(app).post('/api/auth/register').send({ email, password, role }).expect(201);
+  await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role })
+    .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
@@ -64,7 +67,10 @@ describe('Aviso de negociação por fora (ADR 45)', () => {
     expect(contract.status, JSON.stringify(contract.body)).toBe(201);
     const contractId = contract.body.id as number;
     const send = (a: Actor, content: string) =>
-      request(app).post(`/api/messaging/contracts/${contractId}`).set(auth(a.token)).send({ content });
+      request(app)
+        .post(`/api/messaging/contracts/${contractId}`)
+        .set(auth(a.token))
+        .send({ content });
 
     const clean = await send(client, 'Oi! Já fiz o depósito no Escambo, pode aceitar a proposta.');
     expect([200, 201], JSON.stringify(clean.body)).toContain(clean.status);
@@ -80,7 +86,9 @@ describe('Aviso de negociação por fora (ADR 45)', () => {
 
     // As duas partes veem os sinais no histórico; a legenda de um anexo segue a mesma regra.
     for (const who of [client, freelancer]) {
-      const h = await request(app).get(`/api/messaging/contracts/${contractId}`).set(auth(who.token));
+      const h = await request(app)
+        .get(`/api/messaging/contracts/${contractId}`)
+        .set(auth(who.token));
       expect(h.status).toBe(200);
       const messages = h.body.messages as Message[];
       expect(messages.find((m) => m.id === messageId)!.signals).toEqual([
@@ -114,7 +122,9 @@ describe('Aviso de negociação por fora (ADR 45)', () => {
     });
     expect(queue.some((g) => g.targetId === (clean.body as Message).id)).toBe(false);
     expect(
-      queue.find((g) => g.targetType === 'message' && g.targetId === (captioned.body as Message).id),
+      queue.find(
+        (g) => g.targetType === 'message' && g.targetId === (captioned.body as Message).id,
+      ),
     ).toMatchObject({ automatic: true, descriptions: ['Sinalizado automaticamente: Pix.'] });
     const [rows] = await pool.query(
       'SELECT reporter_id FROM content_reports WHERE target_type = ? AND target_id = ?',
@@ -125,7 +135,9 @@ describe('Aviso de negociação por fora (ADR 45)', () => {
     // Ninguém "fez" a denúncia automática; a humana soma no mesmo grupo.
     for (const who of [client, freelancer]) {
       const mine = await request(app).get('/api/reports').set(auth(who.token)).expect(200);
-      expect((mine.body as { targetId: number }[]).some((r) => r.targetId === messageId)).toBe(false);
+      expect((mine.body as { targetId: number }[]).some((r) => r.targetId === messageId)).toBe(
+        false,
+      );
     }
     await request(app)
       .post('/api/reports')
@@ -135,10 +147,12 @@ describe('Aviso de negociação por fora (ADR 45)', () => {
     const again = (
       await request(app).get('/api/admin/reports?status=pending').set(auth(admin.token)).expect(200)
     ).body as Group[];
-    expect(again.find((g) => g.targetType === 'message' && g.targetId === messageId)).toMatchObject({
-      automatic: true,
-      reports: 2,
-    });
+    expect(again.find((g) => g.targetType === 'message' && g.targetId === messageId)).toMatchObject(
+      {
+        automatic: true,
+        reports: 2,
+      },
+    );
 
     // A remoção pela fila (ADR 44) funciona a partir da denúncia automática.
     const removed = await request(app)
@@ -147,7 +161,9 @@ describe('Aviso de negociação por fora (ADR 45)', () => {
       .send({ note: 'Pagamento por fora.' });
     expect(removed.status, JSON.stringify(removed.body)).toBe(200);
     expect(removed.body).toMatchObject({ reports: 2, removalId: expect.any(Number) });
-    const after = await request(app).get(`/api/messaging/contracts/${contractId}`).set(auth(client.token));
+    const after = await request(app)
+      .get(`/api/messaging/contracts/${contractId}`)
+      .set(auth(client.token));
     const gone = (after.body.messages as Message[]).find((m) => m.id === messageId)!;
     expect(gone).toMatchObject({ content: '', signals: [] });
     expect(gone.removedAt).toEqual(expect.any(String));

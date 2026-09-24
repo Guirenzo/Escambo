@@ -42,10 +42,19 @@ describe('creditsService', () => {
   });
 
   it('listTransactions mapeia o ledger e pagina', async () => {
-    repo.listTransactions.mockResolvedValue([fakeTx(), fakeTx({ id: 2, amount: '-40', reason: 'escrow_hold', contract_id: 9 })]);
+    repo.listTransactions.mockResolvedValue([
+      fakeTx(),
+      fakeTx({ id: 2, amount: '-40', reason: 'escrow_hold', contract_id: 9 }),
+    ]);
     const r = await creditsService.listTransactions(7, 2, 20);
     expect(r.page).toBe(2);
-    expect(r.items[0]).toMatchObject({ id: 1, amount: 100, balanceAfter: 100, reason: 'welcome', contractId: null });
+    expect(r.items[0]).toMatchObject({
+      id: 1,
+      amount: 100,
+      balanceAfter: 100,
+      reason: 'welcome',
+      contractId: null,
+    });
     expect(r.items[1]).toMatchObject({ id: 2, amount: -40, reason: 'escrow_hold', contractId: 9 });
     expect(repo.listTransactions).toHaveBeenCalledWith(7, 20, 20); // offset = (page-1)*limit
   });

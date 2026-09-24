@@ -16,7 +16,13 @@ const DIMS: { key: keyof ScoreBreakdown; label: string }[] = [
 ];
 
 /** Selo do Escambo Score (0-100 + faixa); `detailed` mostra o breakdown por dimensão. */
-export function ScoreBadge({ score, detailed = false }: { score: EscamboScore; detailed?: boolean }) {
+export function ScoreBadge({
+  score,
+  detailed = false,
+}: {
+  score: EscamboScore;
+  detailed?: boolean;
+}) {
   return (
     <div className={`score score-${score.tier}`} title={`Escambo Score ${score.score}/100`}>
       <div className="score-head">

@@ -15,7 +15,7 @@ function context(req: Request) {
 
 export async function register(req: Request, res: Response): Promise<void> {
   const input = registerSchema.parse(req.body);
-  const user = await authService.register(input);
+  const user = await authService.register(input, context(req));
   res.status(201).json(user);
 }
 

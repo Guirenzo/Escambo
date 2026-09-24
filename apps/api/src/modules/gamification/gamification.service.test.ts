@@ -29,7 +29,8 @@ import {
 const repo = vi.mocked(gamificationRepository);
 const xp = (
   o: Partial<{ user_id: number; total_xp: number; level: number; level_name: string }> = {},
-): XpRow => ({ user_id: 1, total_xp: 0, level: 1, level_name: 'Iniciante', ...o }) as unknown as XpRow;
+): XpRow =>
+  ({ user_id: 1, total_xp: 0, level: 1, level_name: 'Iniciante', ...o }) as unknown as XpRow;
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -99,7 +100,12 @@ describe('evaluateBadges (engine por critério)', () => {
     } as unknown as FreelancerStatsRow);
     repo.listBadges.mockResolvedValue([] as unknown as UserBadgeRow[]);
     repo.listActiveBadges.mockResolvedValue([
-      { id: 2, slug: 'top-rated', xp_reward: 200, criteria: { reviews_min: 50, avg_rating_min: 4.5 } },
+      {
+        id: 2,
+        slug: 'top-rated',
+        xp_reward: 200,
+        criteria: { reviews_min: 50, avg_rating_min: 4.5 },
+      },
       { id: 3, slug: 'fast-delivery', xp_reward: 100, criteria: { on_time_deliveries: 20 } },
     ] as unknown as BadgeCatalogRow[]);
     repo.awardBadge.mockResolvedValue(true);
@@ -120,7 +126,12 @@ describe('evaluateBadges (engine por critério)', () => {
     } as unknown as FreelancerStatsRow);
     repo.listBadges.mockResolvedValue([] as unknown as UserBadgeRow[]);
     repo.listActiveBadges.mockResolvedValue([
-      { id: 2, slug: 'top-rated', xp_reward: 200, criteria: { reviews_min: 50, avg_rating_min: 4.5 } },
+      {
+        id: 2,
+        slug: 'top-rated',
+        xp_reward: 200,
+        criteria: { reviews_min: 50, avg_rating_min: 4.5 },
+      },
     ] as unknown as BadgeCatalogRow[]);
 
     await gamificationService.evaluateBadges(1);

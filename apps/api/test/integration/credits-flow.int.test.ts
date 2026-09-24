@@ -7,10 +7,15 @@ const app = createApp();
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
 
 let seq = 0;
-async function registerAndLogin(role: 'client' | 'freelancer'): Promise<{ id: number; token: string }> {
+async function registerAndLogin(
+  role: 'client' | 'freelancer',
+): Promise<{ id: number; token: string }> {
   const email = `cred_${role}_${Date.now()}_${seq++}@escambo.test`;
   const password = 'senha-integracao-123';
-  await request(app).post('/api/auth/register').send({ email, password, role }).expect(201);
+  await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role })
+    .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
@@ -41,18 +46,19 @@ describe('Créditos Escambo (time-bank) — fluxo ponta a ponta', () => {
     await wallet(client.token); // 100 créditos
     await wallet(freelancer.token); // 100 créditos
 
-    const created = await request(app)
-      .post('/api/contracts')
-      .set(auth(client.token))
-      .send({
-        freelancerId: freelancer.id,
-        title: 'Aula de violão (créditos)',
-        description: 'Troco aula de violão por créditos Escambo',
-        price: 40,
-        paymentMode: 'credits',
-      });
+    const created = await request(app).post('/api/contracts').set(auth(client.token)).send({
+      freelancerId: freelancer.id,
+      title: 'Aula de violão (créditos)',
+      description: 'Troco aula de violão por créditos Escambo',
+      price: 40,
+      paymentMode: 'credits',
+    });
     expect(created.status).toBe(201);
-    expect(created.body).toMatchObject({ paymentMode: 'credits', platformFee: 0, freelancerNet: 40 });
+    expect(created.body).toMatchObject({
+      paymentMode: 'credits',
+      platformFee: 0,
+      freelancerNet: 40,
+    });
     const id = created.body.id as number;
 
     // Aceite: 40 créditos saem do cliente e ficam pendentes para o freelancer.

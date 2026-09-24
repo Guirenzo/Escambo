@@ -38,7 +38,7 @@ export function LoginForm() {
     setLoading(true);
     try {
       if (mode === 'login') await login({ email, password });
-      else await register({ email, password, role });
+      else await register({ email, password, role, legalAccepted: true });
     } catch {
       /* erro exibido pelo contexto */
     } finally {

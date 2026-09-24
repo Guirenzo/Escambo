@@ -26,6 +26,17 @@ export interface PublicUser {
    * Brasília sem escolha: é quando o app sugere o fuso do aparelho, uma vez.
    */
   timezoneChosen: boolean;
+  /** Janela de silêncio dos avisos no navegador (ADR 54); null = desligado. */
+  quietHours: QuietHours | null;
+}
+
+/**
+ * "Não perturbe" (ADR 54): horas cheias no fuso da conta, [start, end); start maior que end cruza
+ * a meia-noite (22 → 7). Início igual ao fim não é uma janela.
+ */
+export interface QuietHours {
+  start: number;
+  end: number;
 }
 
 /** Avisos push no navegador (ADR 52): chave para assinar e aparelhos ligados nesta conta. */
@@ -34,6 +45,8 @@ export interface PushStatus {
   devices: number;
   /** Este aparelho (o endpoint da consulta) recebe avisos desta conta? */
   subscribed: boolean;
+  /** Avisos retidos pelo silêncio, ainda por ver, que o resumo ao fim da janela vai cobrir. */
+  held: number;
 }
 
 /** Assinatura de um aparelho, como o navegador entrega. */
@@ -67,6 +80,8 @@ export interface EmailPreference {
   digestHour: number;
   /** Fuso da conta; quem nunca escolheu fica em Brasília (ADR 46). */
   timezone: BrazilTimezone;
+  /** Janela de silêncio dos avisos no navegador (ADR 54); null = desligado. */
+  quietHours: QuietHours | null;
 }
 
 /** Muda só o que vier; `null` na hora ou no fuso volta ao padrão da plataforma. */
@@ -74,6 +89,8 @@ export interface UpdateEmailPreferenceRequest {
   emailFrequency?: EmailFrequency;
   digestHour?: number | null;
   timezone?: BrazilTimezone | null;
+  /** Objeto inteiro ou null (desliga); nunca meia janela (ADR 54). */
+  quietHours?: QuietHours | null;
 }
 
 export interface ForgotPasswordRequest {
@@ -108,6 +125,8 @@ export interface RegisterRequest {
   role?: Exclude<UserRole, 'admin'>;
   /** Fuso do aparelho, quando é um dos do Brasil (ADR 51); sem ele, a conta fica em Brasília. */
   timezone?: BrazilTimezone;
+  /** O aceite dos Termos e da Política: a API grava o consentimento na versão vigente (ADR 54). */
+  legalAccepted: true;
 }
 
 export interface LoginRequest {

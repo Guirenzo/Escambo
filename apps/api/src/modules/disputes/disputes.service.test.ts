@@ -20,8 +20,17 @@ import { contractsRepository, type ContractRow } from '../contracts/contracts.re
 const disputes = vi.mocked(disputesRepository);
 const contracts = vi.mocked(contractsRepository);
 
-const contractRow = (o: Partial<{ client_id: number; freelancer_id: number; status: string }> = {}): ContractRow =>
-  ({ id: 1, client_id: 1, freelancer_id: 2, freelancer_net: '850.00', status: 'delivered', ...o }) as unknown as ContractRow;
+const contractRow = (
+  o: Partial<{ client_id: number; freelancer_id: number; status: string }> = {},
+): ContractRow =>
+  ({
+    id: 1,
+    client_id: 1,
+    freelancer_id: 2,
+    freelancer_net: '850.00',
+    status: 'delivered',
+    ...o,
+  }) as unknown as ContractRow;
 
 const disputeRow = (o: Partial<{ id: number; status: string }> = {}): DisputeRow =>
   ({
@@ -38,7 +47,11 @@ const disputeRow = (o: Partial<{ id: number; status: string }> = {}): DisputeRow
     ...o,
   }) as unknown as DisputeRow;
 
-const input = { contractId: 1, reason: 'quality' as const, description: 'a entrega veio incompleta' };
+const input = {
+  contractId: 1,
+  reason: 'quality' as const,
+  description: 'a entrega veio incompleta',
+};
 
 beforeEach(() => vi.clearAllMocks());
 

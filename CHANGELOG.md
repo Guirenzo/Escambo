@@ -5,6 +5,40 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.36.0] — 2026-09-24
+
+### Adicionado
+
+- **"Não perturbe" nos avisos do navegador** (ADR 54). No cartão de avisos do Perfil, uma janela
+  de silêncio em horas cheias, no fuso da conta: durante ela nenhum aparelho recebe push, e ao
+  fim chega um aviso só com o que ficou por ver (o próprio aviso, se foi um; um resumo com os
+  títulos, se foram vários). Notificações no app e e-mails não mudam; o aviso de teste sai na
+  hora mesmo no silêncio.
+- **Política de Privacidade 1.3**, com versão por documento e histórico na página: passa a
+  descrever os avisos no navegador (a assinatura de cada aparelho e o serviço de push, fora do
+  Brasil, que a entrega), o fuso detectado no cadastro, as preferências de aviso e a retenção.
+  Quem respondeu a uma versão antiga vê uma faixa no topo do app, com resumo, link e as
+  respostas "Li e aceito" e "Não aceito", registradas nos consentimentos.
+- O cadastro grava os consentimentos no servidor, na versão vigente, com IP e navegador (o
+  corpo exige `legalAccepted: true`); ligar e desligar os avisos em um aparelho ficam na trilha
+  de auditoria, só com o host do serviço de push.
+
+### Alterado
+
+- Cópia de dados no formato 1.6: as assinaturas de aviso dos aparelhos (segredo como impressão),
+  o horário de silêncio e os avisos retidos, as sessões, os registros de segurança e os e-mails
+  enviados.
+- O TTL do Web Push acaba no próximo início de silêncio (entre 15 minutos e 12 horas).
+- Assinaturas de push sem nenhum aviso aceito há 180 dias são apagadas por job.
+
+### Removido
+
+- O navegador do aparelho (`user_agent`) deixou de ser guardado junto da assinatura de push, e o
+  que existia foi apagado (migration 0025).
+
+> Os tratamentos dos ADRs 51 e 52 (fuso do aparelho no cadastro, avisos no navegador) entraram
+> no ar em 22/09 sob a Política 1.2; a 1.3 fecha essa lacuna.
+
 ## [1.35.0] — 2026-09-22
 
 ### Adicionado

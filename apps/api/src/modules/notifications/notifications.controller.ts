@@ -9,7 +9,14 @@ import {
   pushSubscriptionSchema,
 } from './notifications.schema';
 import { notificationsService } from './notifications.service';
-import { buildPayload, pushService } from './push.service';
+import { pushService } from './push.service';
+import { auditService } from '../audit/audit.service';
+
+/** IP e navegador da requisição: a prova de quem ligou ou desligou os avisos (LGPD art. 8 §2). */
+const ctx = (req: Request) => ({
+  ip: req.ip ?? null,
+  userAgent: req.headers['user-agent'] ?? null,
+});
 
 export async function getNotifications(req: Request, res: Response): Promise<void> {
   const { page, limit } = listNotificationsSchema.parse(req.query);
@@ -44,15 +51,23 @@ export async function getPushStatus(req: Request, res: Response): Promise<void> 
     devices: await pushService.devices(req.user!.uid),
     // Com o endpoint deste aparelho, diz se a assinatura dele é desta conta (ADR 52).
     subscribed: endpoint ? await pushService.subscribed(req.user!.uid, endpoint) : false,
+    // Avisos retidos pelo silêncio, que o resumo ao fim da janela vai cobrir (ADR 54).
+    held: await pushService.held(req.user!.uid),
   });
 }
 
 /** POST /notifications/push — liga os avisos neste aparelho (reassinar atualiza as chaves). */
 export async function subscribePush(req: Request, res: Response): Promise<void> {
   const sub = pushSubscriptionSchema.parse(req.body);
-  await pushService.subscribe(req.user!.uid, {
-    ...sub,
-    userAgent: req.get('user-agent')?.slice(0, 255) ?? null,
+  await pushService.subscribe(req.user!.uid, sub);
+  // Consentimento dado aparelho por aparelho (ADR 54): fica a trilha com o serviço de push (só o
+  // host), nunca o endereço inteiro, e ela sobrevive ao apagamento da assinatura.
+  void auditService.log({
+    userId: req.user!.uid,
+    action: 'push_subscribed',
+    entityType: 'push_subscription',
+    newValue: { host: new URL(sub.endpoint).hostname },
+    ...ctx(req),
   });
   res.status(201).json({ devices: await pushService.devices(req.user!.uid) });
 }
@@ -62,20 +77,19 @@ export async function unsubscribePush(req: Request, res: Response): Promise<void
   const { endpoint } = pushEndpointSchema.parse(req.body);
   const removed = await pushService.unsubscribe(req.user!.uid, endpoint);
   if (!removed) throw new HttpError(404, 'Aparelho não encontrado', 'push_not_found');
+  void auditService.log({
+    userId: req.user!.uid,
+    action: 'push_unsubscribed',
+    entityType: 'push_subscription',
+    newValue: { host: new URL(endpoint).hostname },
+    ...ctx(req),
+  });
   res.status(204).send();
 }
 
 /** POST /notifications/push/test — manda um aviso de teste para os aparelhos da conta. */
 export async function testPush(req: Request, res: Response): Promise<void> {
-  const result = await pushService.send(
-    req.user!.uid,
-    buildPayload({
-      type: 'push_test',
-      title: 'Tudo certo!',
-      body: 'É assim que os avisos do Escambo vão chegar neste aparelho.',
-    }),
-  );
-  res.json(result);
+  res.json(await pushService.sendTest(req.user!.uid));
 }
 
 export async function readAllNotifications(req: Request, res: Response): Promise<void> {

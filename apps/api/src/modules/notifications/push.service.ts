@@ -1,9 +1,17 @@
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { pushRepository } from './push.repository';
-import { activePushProvider, vapidKeys, type PushPayload } from './push.provider';
+import {
+  activePushProvider,
+  vapidKeys,
+  type PushPayload,
+  type PushSendOptions,
+} from './push.provider';
 import { EMAILED_NOTIFICATION_TYPES } from '../mail/mail.service';
 import { authRepository } from '../auth/auth.repository';
+import { notificationsRepository } from './notifications.repository';
+import { hourIn, timezoneOf } from '../../utils/timezone';
+import { inQuietWindow, pushTtlSeconds, quietWindowOf } from './quiet-hours';
 
 /**
  * Avisos push no navegador (ADR 52): a assinatura de cada aparelho é a preferência, e o envio
@@ -67,6 +75,23 @@ export function buildPayload(params: {
   };
 }
 
+/**
+ * O push único do fim do silêncio quando ficou mais de um aviso (ADR 54): título fixo, corpo com
+ * os primeiros títulos, etiqueta fixa (um resumo substitui o anterior no aparelho).
+ */
+export function quietSummaryPayload(items: readonly { title: string }[]): PushPayload {
+  const titles = items
+    .slice(0, 3)
+    .map((i) => i.title)
+    .join(' · ');
+  return {
+    title: 'Enquanto você estava em silêncio',
+    body: trimBody(`${items.length} avisos ficaram por ver: ${titles}`),
+    url: '/notificacoes',
+    tag: 'quiet_summary',
+  };
+}
+
 export const pushService = {
   /**
    * Chave pública para o navegador assinar; muda se o processo subir sem chaves fixas. Com o canal
@@ -78,9 +103,9 @@ export const pushService = {
 
   async subscribe(
     userId: number,
-    sub: { endpoint: string; p256dh: string; auth: string; userAgent?: string | null },
+    sub: { endpoint: string; p256dh: string; auth: string },
   ): Promise<void> {
-    await pushRepository.upsert({ userId, ...sub, userAgent: sub.userAgent ?? null });
+    await pushRepository.upsert({ userId, ...sub });
   },
 
   async unsubscribe(userId: number, endpoint: string): Promise<boolean> {
@@ -104,6 +129,7 @@ export const pushService = {
   async send(
     userId: number,
     payload: PushPayload,
+    opts: PushSendOptions = {},
   ): Promise<{ sent: number; removed: number; failed: number }> {
     if (env.PUSH_PROVIDER === 'off') return { sent: 0, removed: 0, failed: 0 };
     const provider = activePushProvider();
@@ -115,6 +141,7 @@ export const pushService = {
       const result = await provider.send(
         { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth_key },
         payload,
+        opts,
       );
       if (result === 'sent') {
         sent += 1;
@@ -140,6 +167,7 @@ export const pushService = {
       data?: Record<string, unknown> | null;
       notificationId?: number;
     },
+    now: Date = new Date(),
   ): Promise<void> {
     if (env.PUSH_PROVIDER === 'off') return;
     try {
@@ -147,9 +175,50 @@ export const pushService = {
       // Conta encerrada não recebe aviso nenhum, como já vale para o e-mail.
       const user = await authRepository.findById(userId);
       if (!user || user.deleted_at) return;
-      await this.send(userId, buildPayload(params));
+      const zone = timezoneOf(user.timezone);
+      const window = quietWindowOf(user.push_quiet_start, user.push_quiet_end);
+      // "Não perturbe" (ADR 54): dentro da janela o push não sai. A notificação fica marcada
+      // como retida e o resumo ao fim da janela cobre; in-app, socket e e-mail já saíram.
+      // Uma decisão só, no instante do evento: 21:59:59 sai, 22:00:00 fica.
+      if (inQuietWindow(hourIn(zone, now), window)) {
+        if (params.notificationId) {
+          await notificationsRepository.markPushHeld(params.notificationId, now);
+        }
+        logger.debug({ userId, type: params.type }, 'push retido pela janela de silêncio');
+        return;
+      }
+      await this.send(userId, buildPayload(params), {
+        ttlSeconds: pushTtlSeconds(zone, window, now),
+      });
     } catch (err) {
       logger.warn({ err, type: params.type }, 'push da notificação falhou');
     }
+  },
+
+  /**
+   * Aviso de teste: fura o silêncio de propósito (é a pessoa apertando um botão olhando a tela),
+   * mas não fura o de um aparelho offline horas depois — o TTL acaba no próximo início.
+   */
+  async sendTest(
+    userId: number,
+    now: Date = new Date(),
+  ): Promise<{ sent: number; removed: number; failed: number }> {
+    const user = await authRepository.findById(userId);
+    const zone = timezoneOf(user?.timezone);
+    const window = quietWindowOf(user?.push_quiet_start, user?.push_quiet_end);
+    return this.send(
+      userId,
+      buildPayload({
+        type: 'push_test',
+        title: 'Tudo certo!',
+        body: 'É assim que os avisos do Escambo vão chegar neste aparelho.',
+      }),
+      { ttlSeconds: pushTtlSeconds(zone, window, now) },
+    );
+  },
+
+  /** Avisos retidos pelo silêncio, ainda por ver, que o resumo vai cobrir (ADR 54). */
+  held(userId: number): Promise<number> {
+    return notificationsRepository.countHeld(userId);
   },
 };

@@ -28,12 +28,16 @@ export function bounds(from: string, to: string): { fromUtc: Date; toUtc: Date }
 }
 
 /** Período padrão: últimos 30 dias (por dia) ou últimos 6 meses (por mês), até hoje. */
-export function defaultRange(granularity: FinanceGranularity, now: Date = new Date()): {
+export function defaultRange(
+  granularity: FinanceGranularity,
+  now: Date = new Date(),
+): {
   from: string;
   to: string;
 } {
   const to = todayBrt(now);
-  if (granularity === 'day') return { from: isoDate(new Date(new Date(to).getTime() - 29 * DAY_MS)), to };
+  if (granularity === 'day')
+    return { from: isoDate(new Date(new Date(to).getTime() - 29 * DAY_MS)), to };
   const [y, m] = to.split('-').map(Number);
   const start = new Date(Date.UTC(y!, m! - 1 - 5, 1));
   return { from: isoDate(start), to };
@@ -45,7 +49,11 @@ function resolve(q: FinanceQuery): { from: string; to: string; fromUtc: Date; to
   const to = q.to ?? def.to;
   const { fromUtc, toUtc } = bounds(from, to);
   if (Number.isNaN(fromUtc.getTime()) || Number.isNaN(toUtc.getTime()) || fromUtc >= toUtc) {
-    throw new HttpError(400, 'Período inválido: a data inicial precisa ser até a final', 'invalid_range');
+    throw new HttpError(
+      400,
+      'Período inválido: a data inicial precisa ser até a final',
+      'invalid_range',
+    );
   }
   if ((toUtc.getTime() - fromUtc.getTime()) / DAY_MS > MAX_DAYS) {
     throw new HttpError(400, `Período máximo de ${MAX_DAYS} dias`, 'range_too_long');

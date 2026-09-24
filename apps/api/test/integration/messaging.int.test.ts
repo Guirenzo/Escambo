@@ -8,15 +8,24 @@ const app = createApp();
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
 
 let seq = 0;
-async function registerAndLogin(role: 'client' | 'freelancer'): Promise<{ id: number; token: string }> {
+async function registerAndLogin(
+  role: 'client' | 'freelancer',
+): Promise<{ id: number; token: string }> {
   const email = `msg_${role}_${Date.now()}_${seq++}@escambo.test`;
   const password = 'senha-integracao-123';
-  await request(app).post('/api/auth/register').send({ email, password, role }).expect(201);
+  await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role })
+    .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 
-async function makeContract(): Promise<{ client: { id: number; token: string }; freelancer: { id: number; token: string }; contractId: number }> {
+async function makeContract(): Promise<{
+  client: { id: number; token: string };
+  freelancer: { id: number; token: string };
+  contractId: number;
+}> {
   const client = await registerAndLogin('client');
   const freelancer = await registerAndLogin('freelancer');
   await fundWallet(app, client.token, 400);
@@ -42,7 +51,9 @@ describe('Chat do contrato (REST + persistência)', () => {
     const { client, freelancer, contractId } = await makeContract();
 
     // Histórico começa vazio, com a outra parte resolvida.
-    const empty = await request(app).get(`/api/messaging/contracts/${contractId}`).set(auth(client.token));
+    const empty = await request(app)
+      .get(`/api/messaging/contracts/${contractId}`)
+      .set(auth(client.token));
     expect(empty.status).toBe(200);
     expect(empty.body.messages).toHaveLength(0);
     expect(empty.body.otherPartyId).toBe(freelancer.id);
@@ -53,7 +64,10 @@ describe('Chat do contrato (REST + persistência)', () => {
       .set(auth(client.token))
       .send({ content: 'Olá! Pode começar essa semana?' });
     expect(m1.status).toBe(201);
-    expect(m1.body).toMatchObject({ senderId: client.id, content: 'Olá! Pode começar essa semana?' });
+    expect(m1.body).toMatchObject({
+      senderId: client.id,
+      content: 'Olá! Pode começar essa semana?',
+    });
 
     await request(app)
       .post(`/api/messaging/contracts/${contractId}`)
@@ -62,9 +76,13 @@ describe('Chat do contrato (REST + persistência)', () => {
       .expect(201);
 
     // Ambos veem as duas mensagens, em ordem, na mesma conversa.
-    const hist = await request(app).get(`/api/messaging/contracts/${contractId}`).set(auth(freelancer.token));
+    const hist = await request(app)
+      .get(`/api/messaging/contracts/${contractId}`)
+      .set(auth(freelancer.token));
     expect(hist.status).toBe(200);
-    const contents = (hist.body.messages as { content: string; senderId: number }[]).map((m) => m.content);
+    const contents = (hist.body.messages as { content: string; senderId: number }[]).map(
+      (m) => m.content,
+    );
     expect(contents).toEqual(['Olá! Pode começar essa semana?', 'Posso sim, começo amanhã.']);
     expect(hist.body.conversationId).toBe(m1.body.conversationId);
   });
@@ -73,7 +91,10 @@ describe('Chat do contrato (REST + persistência)', () => {
     const { contractId } = await makeContract();
     const outsider = await registerAndLogin('client');
 
-    await request(app).get(`/api/messaging/contracts/${contractId}`).set(auth(outsider.token)).expect(403);
+    await request(app)
+      .get(`/api/messaging/contracts/${contractId}`)
+      .set(auth(outsider.token))
+      .expect(403);
     await request(app)
       .post(`/api/messaging/contracts/${contractId}`)
       .set(auth(outsider.token))

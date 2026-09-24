@@ -17,10 +17,12 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { displayName } from '../../lib/format';
 import { Avatar } from '../../components/Avatar';
-import { useNotifications, useProfilesMe } from '../../lib/hooks';
+import { useConsents, useNotifications, useProfilesMe } from '../../lib/hooks';
 import { useRealtimeNotifications } from '../../lib/realtime';
 import { browserBrazilZone } from '../../lib/timezones';
 import { useToast } from '../../lib/toast';
+import { pickBanner } from './banners';
+import { LegalUpdateBanner } from './LegalUpdateBanner';
 import { TimezoneBanner } from './TimezoneBanner';
 
 /** Conta ainda sem e-mail confirmado: lembrete discreto com reenvio do link. */
@@ -83,10 +85,11 @@ export function Shell() {
   const notifications = useNotifications();
   const unread = notifications.data?.unreadCount ?? 0;
   useRealtimeNotifications();
-  // Sugestão de fuso (ADR 51): só para conta que nunca escolheu e com o aparelho em outro fuso.
+  // Uma faixa por vez no topo (ADR 54): atualização da política, sugestão de fuso (ADR 51) ou
+  // e-mail não confirmado, nessa ordem.
   const [detected] = useState(browserBrazilZone);
-  const suggestZone =
-    user && !user.timezoneChosen && detected && detected !== user.timezone ? detected : null;
+  const consents = useConsents();
+  const banner = pickBanner(user, consents.data, detected);
 
   return (
     <div className="app">
@@ -131,8 +134,13 @@ export function Shell() {
       </aside>
 
       <main className="main">
-        {user && !user.emailVerified && <VerifyEmailBanner email={user.email} />}
-        {user && suggestZone && <TimezoneBanner user={user} detected={suggestZone} />}
+        {user && banner === 'legal' && consents.data && (
+          <LegalUpdateBanner consents={consents.data} />
+        )}
+        {user && banner === 'timezone' && detected && (
+          <TimezoneBanner user={user} detected={detected} />
+        )}
+        {user && banner === 'verify-email' && <VerifyEmailBanner email={user.email} />}
         <Outlet />
       </main>
     </div>

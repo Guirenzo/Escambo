@@ -25,7 +25,7 @@ async function freelancer(profile: Record<string, unknown>): Promise<Freela> {
   const password = 'senha-integracao-123';
   await request(app)
     .post('/api/auth/register')
-    .send({ email, password, role: 'freelancer' })
+    .send({ legalAccepted: true, email, password, role: 'freelancer' })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
   const token = login.body.accessToken as string;

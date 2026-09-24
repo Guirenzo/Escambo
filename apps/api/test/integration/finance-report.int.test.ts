@@ -26,7 +26,9 @@ async function registerAndLogin(
 ): Promise<Actor> {
   const email = `int_fin_${role}_${Date.now()}_${seq++}@${domain}`;
   const password = 'senha-integracao-123';
-  const reg = await request(app).post('/api/auth/register').send({ email, password, role });
+  const reg = await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role });
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status).toBe(200);
@@ -74,15 +76,12 @@ describe('Relatório financeiro do admin', () => {
     // sem prazo → 50% de reembolso ao cliente (50) e a plataforma retém 50% da taxa (7,50).
     await fundWallet(app, client.token, 300);
     const propose = async (title: string, price: number) => {
-      const res = await request(app)
-        .post('/api/contracts')
-        .set(auth(client.token))
-        .send({
-          freelancerId: freelancer.id,
-          title,
-          description: 'Contratação do teste financeiro',
-          price,
-        });
+      const res = await request(app).post('/api/contracts').set(auth(client.token)).send({
+        freelancerId: freelancer.id,
+        title,
+        description: 'Contratação do teste financeiro',
+        price,
+      });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
       return res.body.id as number;
     };

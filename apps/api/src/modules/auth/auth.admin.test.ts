@@ -10,6 +10,13 @@ vi.mock('./auth.repository', () => ({
     updateRole: vi.fn(),
   },
 }));
+
+vi.mock('../lgpd/lgpd.repository', () => ({
+  lgpdRepository: { recordConsent: vi.fn().mockResolvedValue(undefined) },
+}));
+vi.mock('../audit/audit.service', () => ({
+  auditService: { log: vi.fn().mockResolvedValue(undefined) },
+}));
 vi.mock('./session.repository', () => ({
   sessionRepository: {
     create: vi.fn(),
@@ -22,6 +29,7 @@ vi.mock('./session.repository', () => ({
 import { authRepository, type UserRow } from './auth.repository';
 import { authService, isAdminEmail } from './auth.service';
 
+const CTX = { ip: '127.0.0.1', userAgent: 'vitest' };
 const repo = vi.mocked(authRepository);
 
 // ADMIN_EMAILS do ambiente de teste: 'root@escambo.test,@admin.escambo.test' (vitest.config.ts)
@@ -40,11 +48,15 @@ describe('promoção a admin por ADMIN_EMAILS', () => {
     repo.findByEmail.mockResolvedValue(undefined);
     repo.create.mockResolvedValue(10);
 
-    const user = await authService.register({
-      email: 'ops@admin.escambo.test',
-      password: 'senha-forte-123',
-      role: 'client',
-    });
+    const user = await authService.register(
+      {
+        email: 'ops@admin.escambo.test',
+        password: 'senha-forte-123',
+        role: 'client',
+        legalAccepted: true as const,
+      },
+      CTX,
+    );
 
     expect(user.role).toBe('admin');
     expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ role: 'admin' }));
@@ -53,11 +65,15 @@ describe('promoção a admin por ADMIN_EMAILS', () => {
   it('cadastro fora da lista mantém o papel pedido', async () => {
     repo.findByEmail.mockResolvedValue(undefined);
     repo.create.mockResolvedValue(11);
-    const user = await authService.register({
-      email: 'alguem@escambo.test',
-      password: 'senha-forte-123',
-      role: 'freelancer',
-    });
+    const user = await authService.register(
+      {
+        email: 'alguem@escambo.test',
+        password: 'senha-forte-123',
+        role: 'freelancer',
+        legalAccepted: true as const,
+      },
+      CTX,
+    );
     expect(user.role).toBe('freelancer');
     expect(repo.updateRole).not.toHaveBeenCalled();
   });

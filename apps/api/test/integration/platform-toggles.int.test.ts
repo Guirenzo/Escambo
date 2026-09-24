@@ -21,7 +21,10 @@ async function registerAndLogin(
     ? `toggles_admin_${Date.now()}_${seq++}@admin.escambo.test`
     : `toggles_${role}_${Date.now()}_${seq++}@escambo.test`;
   const password = 'senha-integracao-123';
-  await request(app).post('/api/auth/register').send({ email, password, role }).expect(201);
+  await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role })
+    .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
@@ -111,16 +114,13 @@ describe('Chaves restantes de platform_settings', () => {
     const freelancer = await registerAndLogin('freelancer');
     const categoryId = await firstCategoryId();
     const create = (price: number) =>
-      request(app)
-        .post('/api/services')
-        .set(auth(freelancer.token))
-        .send({
-          categoryId,
-          title: 'Preço mínimo',
-          description: 'Serviço para testar o preço mínimo',
-          priceType: 'fixed',
-          price,
-        });
+      request(app).post('/api/services').set(auth(freelancer.token)).send({
+        categoryId,
+        title: 'Preço mínimo',
+        description: 'Serviço para testar o preço mínimo',
+        priceType: 'fixed',
+        price,
+      });
     try {
       await put(admin.token, 'min_service_price', 25).expect(200);
       const low = await create(15);

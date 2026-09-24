@@ -19,7 +19,11 @@ export const creditsService = {
     await creditsRepository.grantWelcomeIfNew(userId, env.CREDITS_WELCOME_BONUS);
   },
 
-  async listTransactions(userId: number, page: number, limit: number): Promise<Paginated<CreditTransaction>> {
+  async listTransactions(
+    userId: number,
+    page: number,
+    limit: number,
+  ): Promise<Paginated<CreditTransaction>> {
     const rows = await creditsRepository.listTransactions(userId, limit, (page - 1) * limit);
     return { items: rows.map(toTransaction), page, limit };
   },

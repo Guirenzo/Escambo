@@ -280,7 +280,9 @@ async function ensureVerified(user, admin) {
 
 async function ensureAccount(email, role) {
   try {
-    await call('POST', '/auth/register', { body: { email, password: PASSWORD, role } });
+    await call('POST', '/auth/register', {
+      body: { email, password: PASSWORD, role, legalAccepted: true },
+    });
     log(`criada   ${email}`);
   } catch (err) {
     if (!(err instanceof ApiError) || err.status !== 409) throw err;

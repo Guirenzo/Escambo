@@ -12,10 +12,12 @@ import { env } from '../../config/env';
  * as imagens removidas pela moderação, com a contestação e a decisão (ADR 41). Formato 1.3: a
  * preferência de e-mail e a hora do resumo do dia entram nos dados do titular (ADR 42). Formato
  * 1.4: o texto das avaliações e mensagens removidas pela moderação (ADR 44). Formato 1.5: o fuso
- * da conta (ADR 46).
+ * da conta (ADR 46). Formato 1.6: as assinaturas de aviso dos aparelhos (o segredo como
+ * impressão), o horário de silêncio e os avisos retidos, as sessões, os registros de segurança e
+ * os e-mails enviados — sem eles, "todos os seus dados" não era verdade (ADR 54).
  */
 
-export const EXPORT_FORMAT_VERSION = '1.5';
+export const EXPORT_FORMAT_VERSION = '1.6';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -26,7 +28,7 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
   const p = { userId };
   const [user] = await q(
     `SELECT ulid, email, phone, role, status, email_verified_at, email_frequency, digest_hour, timezone,
-            last_login_at, created_at
+            push_quiet_start, push_quiet_end, last_digest_at, last_login_at, created_at
        FROM users WHERE id = :userId`,
     p,
   );
@@ -146,8 +148,34 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     p,
   );
   const notifications = await q(
-    `SELECT id, type, title, body, is_read, created_at
+    `SELECT id, type, title, body, is_read, created_at, push_held_at AS push_retido_em
        FROM notifications WHERE user_id = :userId ORDER BY id`,
+    p,
+  );
+  // Avisos no navegador (ADR 52/54): endpoint e chave pública são o que o próprio navegador mostra;
+  // o segredo (auth_key) sai como impressão — prova que existe sem copiar para um arquivo que
+  // fica 7 dias no disco. O navegador do aparelho não é mais guardado (migration 0025).
+  const pushSubscriptions = await q(
+    `SELECT id, endpoint, p256dh, LEFT(SHA2(auth_key, 256), 16) AS auth_key_impressao,
+            created_at, last_sent_at, last_error
+       FROM push_subscriptions WHERE user_id = :userId ORDER BY id`,
+    p,
+  );
+  // Os "técnicos" que a política declara: sessões, registros de segurança (sem old/new_value, que
+  // podem citar terceiros) e os e-mails que a plataforma mandou (o texto; o HTML duplica).
+  const sessions = await q(
+    `SELECT id, ip_address, user_agent, created_at, expires_at, revoked_at
+       FROM user_sessions WHERE user_id = :userId ORDER BY id`,
+    p,
+  );
+  const securityLog = await q(
+    `SELECT id, action, entity_type, entity_id, ip_address, user_agent, created_at
+       FROM audit_logs WHERE user_id = :userId ORDER BY id`,
+    p,
+  );
+  const emails = await q(
+    `SELECT id, to_email, subject, template, text_body, status, provider, error, sent_at, created_at
+       FROM email_outbox WHERE user_id = :userId ORDER BY id`,
     p,
   );
   const lgpdRequests = await q(
@@ -185,6 +213,10 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     favoritos: favorites,
     buscasSalvas: savedSearches,
     notificacoes: notifications,
+    avisosNoNavegador: pushSubscriptions,
+    sessoes: sessions,
+    registrosDeSeguranca: securityLog,
+    emailsEnviados: emails,
     solicitacoesLgpd: lgpdRequests,
   };
 }

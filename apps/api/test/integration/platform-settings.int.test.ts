@@ -21,7 +21,10 @@ async function registerAndLogin(
     ? `settings_admin_${Date.now()}_${seq++}@admin.escambo.test`
     : `settings_${role}_${Date.now()}_${seq++}@escambo.test`;
   const password = 'senha-integracao-123';
-  await request(app).post('/api/auth/register').send({ email, password, role }).expect(201);
+  await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role })
+    .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
   return { id: login.body.user.id, token: login.body.accessToken, email };
 }

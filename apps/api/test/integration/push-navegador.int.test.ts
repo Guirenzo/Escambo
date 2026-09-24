@@ -17,7 +17,10 @@ let seq = 0;
 
 async function actor(): Promise<{ id: number; token: string }> {
   const email = `int_push_${Date.now()}_${seq++}@escambo.test`;
-  await request(app).post('/api/auth/register').send({ email, password }).expect(201);
+  await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password })
+    .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
   return { id: login.body.user.id, token: login.body.accessToken };
 }

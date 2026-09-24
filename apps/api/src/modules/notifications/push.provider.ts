@@ -39,9 +39,16 @@ export type PushResult = 'sent' | 'gone' | 'failed';
 export const resultForStatus = (status: number | undefined): PushResult =>
   status === 404 || status === 410 || status === 401 || status === 403 ? 'gone' : 'failed';
 
+/** Quanto tempo o serviço de push pode segurar o aviso para um aparelho offline (ADR 54). */
+export interface PushSendOptions {
+  ttlSeconds?: number;
+}
+
+export const PUSH_TTL_MAX_SECONDS = 12 * 60 * 60;
+
 export interface PushProvider {
   readonly name: 'simulated' | 'webpush';
-  send(target: PushTarget, payload: PushPayload): Promise<PushResult>;
+  send(target: PushTarget, payload: PushPayload, opts?: PushSendOptions): Promise<PushResult>;
 }
 
 let keys: { publicKey: string; privateKey: string } | null = null;
@@ -80,7 +87,7 @@ export const simulatedPushProvider: PushProvider = {
 
 export const webPushProvider: PushProvider = {
   name: 'webpush',
-  async send(target, payload) {
+  async send(target, payload, opts) {
     const { publicKey, privateKey } = vapidKeys();
     try {
       await webpush.sendNotification(
@@ -88,7 +95,7 @@ export const webPushProvider: PushProvider = {
         JSON.stringify(payload),
         {
           vapidDetails: { subject: env.PUSH_SUBJECT, publicKey, privateKey },
-          TTL: 12 * 60 * 60,
+          TTL: opts?.ttlSeconds ?? PUSH_TTL_MAX_SECONDS,
         },
       );
       return 'sent';

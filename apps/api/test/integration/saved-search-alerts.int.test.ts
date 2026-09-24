@@ -26,7 +26,10 @@ let seq = 0;
 async function actor(role: 'client' | 'freelancer'): Promise<Actor> {
   const email = `int_alerta_${role}_${Date.now()}_${seq++}@escambo.test`;
   const password = 'senha-integracao-123';
-  await request(app).post('/api/auth/register').send({ email, password, role }).expect(201);
+  await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role })
+    .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
   const a = { id: login.body.user.id as number, token: login.body.accessToken as string };
   if (role === 'freelancer') {

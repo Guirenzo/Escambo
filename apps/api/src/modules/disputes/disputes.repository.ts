@@ -201,7 +201,12 @@ export const disputesRepository = {
       await conn.query<ResultSetHeader>(
         `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
          VALUES (:contractId, :adminId, 'disputed', :status, :note)`,
-        { contractId: p.contractId, adminId: p.adminId, status: p.contractFinalStatus, note: `Disputa resolvida: ${p.resolution}` },
+        {
+          contractId: p.contractId,
+          adminId: p.adminId,
+          status: p.contractFinalStatus,
+          note: `Disputa resolvida: ${p.resolution}`,
+        },
       );
 
       await conn.query<ResultSetHeader>(

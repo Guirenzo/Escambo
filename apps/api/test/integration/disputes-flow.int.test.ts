@@ -27,7 +27,9 @@ async function registerAndLogin(
 ): Promise<Actor> {
   const email = `disp_${role}_${Date.now()}_${seq++}@${domain}`;
   const password = 'senha-integracao-123';
-  const reg = await request(app).post('/api/auth/register').send({ email, password, role });
+  const reg = await request(app)
+    .post('/api/auth/register')
+    .send({ legalAccepted: true, email, password, role });
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status).toBe(200);
@@ -88,14 +90,11 @@ describe('Disputas e mediação (admin)', () => {
       .set(auth(stranger.token))
       .send({ contractId, reason: 'quality', description: 'Não sou parte disso.' });
     expect(foreign.status).toBe(403);
-    const opened = await request(app)
-      .post('/api/disputes')
-      .set(auth(client.token))
-      .send({
-        contractId,
-        reason: 'quality',
-        description: 'A entrega não corresponde ao combinado.',
-      });
+    const opened = await request(app).post('/api/disputes').set(auth(client.token)).send({
+      contractId,
+      reason: 'quality',
+      description: 'A entrega não corresponde ao combinado.',
+    });
     expect(opened.status, JSON.stringify(opened.body)).toBe(201);
     expect(opened.body).toMatchObject({ contractId, reason: 'quality', status: 'open' });
     const disputeId = opened.body.id as number;
