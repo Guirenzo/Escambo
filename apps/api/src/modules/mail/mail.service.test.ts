@@ -41,6 +41,23 @@ describe('templates', () => {
     expect(n.html).toContain('Abrir no Escambo');
   });
 
+  it('relatório da moderação leva os parágrafos prontos e o botão do painel (ADR 55)', () => {
+    const m = renderEmail('moderation_report', {
+      title: 'Moderação: ontem (23/09) a fila passou da meta de 24 h',
+      paragraphs: [
+        'Ontem (23/09) entraram 4 denúncias & a fila decidiu 3.',
+        'Agora a fila está vazia.',
+      ],
+      link: 'http://app.escambo.test/admin#health-title',
+    });
+    expect(m.subject).toBe('Moderação: ontem (23/09) a fila passou da meta de 24 h');
+    expect(m.text).toContain('entraram 4 denúncias & a fila decidiu 3.');
+    expect(m.text).toContain('http://app.escambo.test/admin#health-title');
+    expect(m.html).toContain('denúncias &amp; a fila');
+    expect(m.html).toContain('Ver painel');
+    expect(m.html).toContain('href="http://app.escambo.test/admin#health-title"');
+  });
+
   it('resumo diário lista cada novidade e leva para as notificações', () => {
     const mail = renderEmail('digest', {
       items: [
@@ -108,6 +125,50 @@ describe('mailService.send', () => {
       mailService.send({ userId: 1, to: 'a@b.c', template: 'notification', vars: { title: 'x' } }),
     ).resolves.toBe(11);
     expect(repo.markFailed).toHaveBeenCalledWith(11, 'SMTP 535');
+  });
+
+  it('deliver diz se o provedor aceitou; send é o atalho que devolve só o id (ADR 55)', async () => {
+    provider.mockReturnValue(fake(vi.fn().mockResolvedValue(undefined)));
+    await expect(
+      mailService.deliver({
+        userId: 1,
+        to: 'a@b.c',
+        template: 'notification',
+        vars: { title: 'x' },
+      }),
+    ).resolves.toEqual({ id: 11, delivered: true });
+    provider.mockReturnValue(fake(vi.fn().mockRejectedValue(new Error('SMTP 535'))));
+    await expect(
+      mailService.deliver({
+        userId: 1,
+        to: 'a@b.c',
+        template: 'notification',
+        vars: { title: 'x' },
+      }),
+    ).resolves.toEqual({ id: 11, delivered: false });
+    provider.mockReturnValue(null);
+    await expect(
+      mailService.deliver({
+        userId: 1,
+        to: 'a@b.c',
+        template: 'notification',
+        vars: { title: 'x' },
+      }),
+    ).resolves.toEqual({ id: null, delivered: false });
+  });
+
+  it('provedor aceitou e a caixa de saída falhou ao marcar: é entrega, não falha (ADR 55)', async () => {
+    provider.mockReturnValue(fake(vi.fn().mockResolvedValue(undefined)));
+    repo.markSent.mockRejectedValueOnce(new Error('conexão caiu'));
+    await expect(
+      mailService.deliver({
+        userId: 1,
+        to: 'a@b.c',
+        template: 'notification',
+        vars: { title: 'x' },
+      }),
+    ).resolves.toEqual({ id: 11, delivered: true });
+    expect(repo.markFailed).not.toHaveBeenCalled();
   });
 
   it('provedor desligado: não registra nem envia', async () => {

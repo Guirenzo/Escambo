@@ -26,6 +26,7 @@ export default defineConfig({
       DB_NAME: process.env.TEST_DB_NAME ?? 'escambo_test',
       JWT_SECRET: 'integration-test-secret-key-0123456789',
       ADMIN_EMAILS: '@admin.escambo.test',
+      DIGEST_HOUR: '8',
       BCRYPT_SALT_ROUNDS: '12',
       PAYMENTS_SIMULATE: 'true',
       PAYMENT_WEBHOOK_SECRET: 'segredo-do-webhook-de-integracao',

@@ -5,6 +5,7 @@ import { asyncHandler } from '../../utils/async-handler';
 import { appealImage, decideAppeal, listAppeals } from '../reports/appeals.controller';
 import {
   actOnReport,
+  exportModerationHealthCsv,
   getModerationHealth,
   listReports,
 } from '../reports/reports.moderation.controller';
@@ -43,6 +44,7 @@ adminRoutes.put('/settings/:key', asyncHandler(updateSetting));
 adminRoutes.get('/finance', asyncHandler(getFinance));
 adminRoutes.get('/finance/export.csv', asyncHandler(exportFinanceCsv));
 adminRoutes.get('/moderation/health', asyncHandler(getModerationHealth));
+adminRoutes.get('/moderation/health/export.csv', asyncHandler(exportModerationHealthCsv));
 adminRoutes.get('/reports', asyncHandler(listReports));
 adminRoutes.post('/reports/:id/:action', asyncHandler(actOnReport));
 adminRoutes.get('/appeals', asyncHandler(listAppeals));

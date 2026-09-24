@@ -565,6 +565,10 @@ button:focus-visible {
   outline: 3px solid rgba(13, 92, 58, 0.3);
   outline-offset: 2px;
 }
+/* Destino de âncora que recebe foco por script (ADR 55): não é controle, não ganha anel. */
+[tabindex='-1']:focus:not(:focus-visible) {
+  outline: none;
+}
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;

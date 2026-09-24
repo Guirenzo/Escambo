@@ -12,6 +12,7 @@ import {
 import { useToast } from '../../lib/toast';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { saveBlob } from '../../lib/download';
 
 const CONSENT_LABEL: Record<string, string> = {
   terms_of_use: 'Termos de Uso',
@@ -76,14 +77,7 @@ export function PrivacidadeCard() {
     setDownloading(id);
     try {
       const { blob, fileName } = await api.downloadExport(id);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      saveBlob(blob, fileName);
       void exports.refetch();
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Erro ao baixar');

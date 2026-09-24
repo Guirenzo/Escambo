@@ -103,7 +103,8 @@ const envSchema = z.object({
   PUSH_SUBJECT: z.string().default('mailto:nao-responda@escambo.demo'),
   EMAIL_VERIFY_TTL_HOURS: z.coerce.number().int().positive().default(24),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(60),
-  // Hora (Brasília, 0–23) a partir da qual o resumo diário de notificações é enviado.
+  // Hora (Brasília, 0–23) a partir da qual saem as coisas diárias: o resumo de notificações, o
+  // alerta das buscas salvas e o relatório da meta da moderação aos admins (ADR 55).
   DIGEST_HOUR: z.coerce.number().int().min(0).max(23).default(8),
   // Hora (Brasília, 0–23) a partir da qual o expurgo diário de anexos do chat roda (ADR 31).
   ATTACHMENT_PURGE_HOUR: z.coerce.number().int().min(0).max(23).default(4),

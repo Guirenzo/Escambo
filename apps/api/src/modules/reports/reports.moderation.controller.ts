@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { adminRepository } from '../admin/admin.repository';
 import { auditService } from '../audit/audit.service';
+import { moderationCsvFileName, moderationHistoryCsv } from './moderation.csv';
 import { moderationHealthService } from './moderation.health';
 import { moderationService } from './reports.moderation';
 import {
@@ -21,6 +22,29 @@ const RECORDED_AS = {
 export async function getModerationHealth(req: Request, res: Response): Promise<void> {
   const { days } = moderationHealthQuerySchema.parse(req.query);
   res.json(await moderationHealthService.report(days));
+}
+
+/**
+ * GET /api/admin/moderation/health/export.csv — a série por dia em CSV (ADR 55), em dias inteiros
+ * de Brasília; a exportação fica nas ações do admin, como a do ledger.
+ */
+export async function exportModerationHealthCsv(req: Request, res: Response): Promise<void> {
+  const { days } = moderationHealthQuerySchema.parse(req.query);
+  const series = await moderationHealthService.history(days);
+  const csv = moderationHistoryCsv(series);
+  const fileName = moderationCsvFileName(series.history);
+  const first = series.history[0]?.day ?? '';
+  const last = series.history[series.history.length - 1]?.day ?? '';
+  await adminRepository.recordAction(
+    req.user!.uid,
+    'moderation_health_exported',
+    'moderation',
+    null,
+    `${days} dias · ${first} → ${last}`,
+  );
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  res.send(csv);
 }
 
 /** GET /api/admin/reports — fila de moderação agrupada por alvo e imagem (ADR 39). */

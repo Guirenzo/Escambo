@@ -16,6 +16,7 @@ export const SETTING_KEYS = [
   'strike_upload_block_days',
   'strike_review_threshold',
   'moderation_sla_hours',
+  'moderation_sla_report_enabled',
   'min_service_price',
   'min_withdrawal_amount',
   'barter_enabled',
@@ -129,11 +130,21 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     type: 'integer',
     label: 'Meta da moderação',
     description:
-      'Alvo de tempo entre a denúncia e a decisão da fila. O painel de saúde da moderação desenha a meta na série por dia e destaca a mediana que estourar (ADR 50).',
+      'Alvo de tempo entre a denúncia e a decisão da fila. O painel de saúde da moderação desenha a meta na série por dia e destaca a mediana que estourar (ADR 50). O relatório diário avisa os admins por e-mail quando ela estoura (ADR 55).',
     unit: 'horas',
     min: 1,
     max: 720,
     defaultValue: 24,
+  },
+  moderation_sla_report_enabled: {
+    type: 'boolean',
+    label: 'Relatório da meta da moderação',
+    description:
+      'Ligado: uma vez por dia, a partir da hora do resumo diário (DIGEST_HOUR, padrão 8h de Brasília), a API confere o dia anterior e a fila; se a mediana de ontem passou da meta ou alguma denúncia espera há mais que a meta, cada admin recebe um e-mail com os números e o link do painel — no máximo um por dia, só quando estoura, com até duas novas tentativas no mesmo dia se o envio falhar (job moderation-sla-report). Contas em revisão por reincidência não contam. Desligado: o painel continua destacando o estouro.',
+    unit: '',
+    min: 0,
+    max: 1,
+    defaultValue: true,
   },
   min_service_price: {
     type: 'decimal',

@@ -1,4 +1,4 @@
-import type { RowDataPacket } from 'mysql2';
+import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 
 export interface SettingRow extends RowDataPacket {
@@ -42,6 +42,38 @@ export const settingsRepository = {
        ON DUPLICATE KEY UPDATE value = :value, updated_by = :updatedBy`,
       { key, value, type, updatedBy },
     );
+  },
+
+  /**
+   * Grava só se o valor atual for `expected` (null = a chave não existe): a trava de jobs que podem
+   * rodar em duas instâncias (ADR 54 e 55). Devolve se esta chamada foi a que gravou.
+   */
+  async setIf(
+    key: string,
+    value: string,
+    expected: string | null,
+    type: 'string' | 'integer' | 'decimal' | 'boolean' | 'json' = 'json',
+  ): Promise<boolean> {
+    if (expected === null) {
+      // INSERT puro: a chave duplicada é a outra instância que chegou antes. ON DUPLICATE KEY
+      // UPDATE não serve aqui: com o CLIENT_FOUND_ROWS que o mysql2 liga por padrão, a linha que já
+      // existia também conta 1 em affectedRows, e as duas instâncias achariam que ganharam.
+      try {
+        await pool.query(
+          `INSERT INTO platform_settings (key_name, value, type) VALUES (:key, :value, :type)`,
+          { key, value, type },
+        );
+        return true;
+      } catch (err) {
+        if ((err as { code?: string }).code === 'ER_DUP_ENTRY') return false;
+        throw err;
+      }
+    }
+    const [res] = await pool.query<ResultSetHeader>(
+      `UPDATE platform_settings SET value = :value WHERE key_name = :key AND value = :expected`,
+      { key, value, expected },
+    );
+    return res.affectedRows > 0;
   },
 
   /** Linhas de várias chaves, com o e-mail de quem mudou por último (painel admin). */

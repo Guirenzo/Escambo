@@ -572,7 +572,14 @@ export const openapiDocument: Record<string, any> = {
     '/admin/moderation/health': {
       get: op(
         'Admin',
-        'Saúde da moderação (ADR 47): fila e contestações esperando agora e, no período (?days=1..365, padrão 30), decisões com mediana e p90 do tempo até decidir, sinalizações automáticas por resultado e por sinal com o acerto, contestações mantidas e revertidas e remoções por tipo, mais a série por dia (Brasília) e a meta de tempo (moderation_sla_hours, ADR 50)',
+        'Saúde da moderação (ADR 47): fila e contestações esperando agora (com quantas denúncias já passaram da meta, ADR 55) e, no período (?days=1..365, padrão 30), decisões com mediana e p90 do tempo até decidir, sinalizações automáticas por resultado e por sinal com o acerto, contestações mantidas e revertidas e remoções por tipo, mais a série por dia (Brasília), a meta de tempo (moderation_sla_hours, ADR 50) e o estado do relatório diário por e-mail',
+        { auth: true },
+      ),
+    },
+    '/admin/moderation/health/export.csv': {
+      get: op(
+        'Admin',
+        'Série por dia da saúde da moderação em CSV (ADR 55): os últimos ?days=1..365 dias inteiros de Brasília mais hoje — denúncias recebidas, sinalizações automáticas, decididas com ação e dispensadas, mediana de horas, meta e se passou dela; ponto e vírgula, vírgula decimal, BOM',
         { auth: true },
       ),
     },

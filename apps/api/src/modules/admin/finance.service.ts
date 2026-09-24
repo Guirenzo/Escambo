@@ -1,4 +1,5 @@
 import type { AdminFinanceReport, FinanceBucket, FinanceGranularity } from '@escambo/types';
+import { csvDocument, ptDecimal } from '../../utils/csv';
 import { HttpError } from '../../utils/http-error';
 import { financeRepository, type LedgerExportRow } from './finance.repository';
 
@@ -72,12 +73,8 @@ const empty = (bucket: string): FinanceBucket => ({
   gmv: 0,
 });
 
-/** Número em formato pt-BR para o CSV (vírgula decimal, sem separador de milhar). */
-const ptNumber = (v: string | number): string => Number(v).toFixed(2).replace('.', ',');
-const csvCell = (v: string | number | null): string => {
-  const s = v == null ? '' : String(v);
-  return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
+/** Valores em reais no CSV: duas casas e vírgula decimal. */
+const ptNumber = (v: string | number): string => ptDecimal(v, 2);
 
 export const financeService = {
   async report(q: FinanceQuery): Promise<AdminFinanceReport> {
@@ -141,8 +138,7 @@ export function toCsv(rows: LedgerExportRow[]): string {
     'pagamento_id',
     'saque_id',
   ];
-  const lines = rows.map((r) =>
-    [
+  const lines = rows.map((r) => [
       r.id,
       new Date(r.created_at).toISOString(),
       r.user_email,
@@ -154,9 +150,6 @@ export function toCsv(rows: LedgerExportRow[]): string {
       r.contract_id,
       r.payment_id,
       r.withdrawal_id,
-    ]
-      .map(csvCell)
-      .join(';'),
-  );
-  return '\uFEFF' + [header.join(';'), ...lines].join('\r\n') + '\r\n';
+    ]);
+  return csvDocument(header, lines);
 }

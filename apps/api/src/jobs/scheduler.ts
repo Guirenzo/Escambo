@@ -4,6 +4,7 @@ import { runExpireDeposits } from './expire-deposits';
 import { runDailyDigest } from './daily-digest';
 import { runExpireExports } from './expire-exports';
 import { runExpireProposals } from './expire-proposals';
+import { runModerationSlaReport } from './moderation-sla-report';
 import { runOverdueContracts } from './overdue-contracts';
 import { runPurgeAttachments } from './purge-attachments';
 import { runPurgePushSubscriptions } from './purge-push-subscriptions';
@@ -31,6 +32,7 @@ export const JOBS: Job[] = [
   { name: 'expire-proposals', run: runExpireProposals },
   { name: 'overdue-contracts', run: runOverdueContracts },
   { name: 'daily-digest', run: () => runDailyDigest() },
+  { name: 'moderation-sla-report', run: () => runModerationSlaReport() },
   { name: 'quiet-push-summary', run: () => runQuietPushSummary() },
   { name: 'expire-deposits', run: runExpireDeposits },
   { name: 'expire-exports', run: runExpireExports },

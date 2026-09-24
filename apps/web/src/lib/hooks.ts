@@ -551,7 +551,10 @@ export const usePublicSettings = () =>
     queryFn: () => api.publicSettings(),
     staleTime: 5 * 60_000,
   });
-/** Muda um parâmetro; recarrega o painel, o armazenamento (retenção) e os públicos (taxa). */
+/**
+ * Muda um parâmetro; recarrega o painel, o armazenamento (retenção), os públicos (taxa) e a saúde
+ * da moderação (meta e chave do relatório diário, ADR 55).
+ */
 export function useUpdateSetting() {
   const qc = useQueryClient();
   return useMutation({
@@ -561,6 +564,7 @@ export function useUpdateSetting() {
       for (const key of [qk.adminSettings, qk.adminStorage, qk.publicSettings]) {
         void qc.invalidateQueries({ queryKey: key });
       }
+      void qc.invalidateQueries({ queryKey: ['moderationHealth'] });
     },
   });
 }

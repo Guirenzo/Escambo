@@ -18,6 +18,8 @@ export default defineConfig({
       ADMIN_EMAILS: 'root@escambo.test,@admin.escambo.test',
       MAIL_PROVIDER: 'off',
       PUSH_PROVIDER: 'off',
+      // Os relógios dos testes de job (resumo diário, relatório da moderação) contam com as 8h.
+      DIGEST_HOUR: '8',
       // Banco inexistente de propósito: teste unitário que tocar no MySQL (repository sem mock)
       // falha aqui, na máquina de quem escreveu, e não só no CI — que não tem banco neste job.
       DB_HOST: '127.0.0.1',
