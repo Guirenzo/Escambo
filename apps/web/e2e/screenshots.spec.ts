@@ -246,6 +246,36 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     await ctx.close();
   }
 
+  // 20. "Não perturbe" (ADR 54): o cartão de avisos com a janela de silêncio ligada.
+  {
+    const brunoTok = await login('bruno@escambo.demo');
+    const pref = await request.put('/api/notifications/preferences', {
+      headers: { Authorization: `Bearer ${brunoTok}` },
+      data: { quietHours: { start: 22, end: 7 } },
+    });
+    expect(pref.ok(), await pref.text()).toBeTruthy();
+    const ctx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      deviceScaleFactor: 2,
+      permissions: ['notifications'],
+    });
+    const p = await ctx.newPage();
+    await p.addInitScript((tk) => window.localStorage.setItem('escambo_token', tk), brunoTok);
+    await p.goto('/perfil');
+    await settled(p);
+    const quiet = p.getByTestId('push-quiet');
+    await quiet.scrollIntoViewIfNeeded();
+    await expect(quiet).toBeVisible();
+    await p.waitForTimeout(400);
+    await snap(p, '20-nao-perturbe');
+    await ctx.close();
+    // A demo volta ao padrão: a janela é só do print.
+    await request.put('/api/notifications/preferences', {
+      headers: { Authorization: `Bearer ${brunoTok}` },
+      data: { quietHours: null },
+    });
+  }
+
   // 18. Avisos no navegador (ADR 52): o cartão do perfil que liga o push naquele aparelho.
   {
     const ctx = await browser.newContext({
