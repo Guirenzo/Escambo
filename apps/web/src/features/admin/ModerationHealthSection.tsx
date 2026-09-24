@@ -1,10 +1,13 @@
-import { Activity, Crosshair, Gavel, Inbox, Timer } from 'lucide-react';
+import { Activity, Crosshair, Download, Gavel, Inbox, Timer } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { ModerationHealth } from '@escambo/types';
-import { QueryState } from '../../components/ui';
+import { Button, QueryState } from '../../components/ui';
+import { api } from '../../lib/api';
 import { lineSegments, niceMax, scaleY, stackBar, xAt } from '../../lib/chart';
+import { saveBlob } from '../../lib/download';
 import { dtm, durationLabel, percentLabel } from '../../lib/format';
 import { useModerationHealth } from '../../lib/hooks';
+import { useToast } from '../../lib/toast';
 
 const PERIODS = [7, 30, 90] as const;
 type Period = (typeof PERIODS)[number];
@@ -112,6 +115,33 @@ function removalsSentence(h: ModerationHealth): string {
     return plural(t.count, one, many);
   });
   return `${plural(h.removals.total, 'remoção', 'remoções')} no período: ${parts.join(', ')}.`;
+}
+
+/**
+ * O que o relatório diário da meta (ADR 55) está fazendo, numa frase: onde está desligado (e
+ * onde ligar), ou a que horas sai e o que a última conferência do dia decidiu e entregou.
+ */
+export function reportStatusLine(r: ModerationHealth['dailyReport']): string {
+  if (r.mailProvider === 'off') {
+    return 'Relatório diário da meta: sem e-mail na API (MAIL_PROVIDER=off); o painel continua destacando o estouro.';
+  }
+  if (!r.enabled) {
+    return 'Relatório diário da meta: desligado nos parâmetros da plataforma.';
+  }
+  const head = `Relatório diário da meta: a partir das ${r.hour}h de Brasília, por e-mail aos admins, só quando estoura${
+    r.mailProvider === 'simulated' ? ' (provedor simulado: fica na caixa de saída)' : ''
+  }.`;
+  const last = r.last;
+  if (!last) return `${head} Ainda não conferiu.`;
+  const when = `Última conferência ${dtm(last.at)}:`;
+  if (!last.breached) return `${head} ${when} dentro da meta de ${last.slaHours} h.`;
+  if (last.delivered > 0) {
+    return `${head} ${when} meta de ${last.slaHours} h estourada, e-mail enviado a ${last.delivered} de ${plural(last.recipients, 'admin', 'admins')}.`;
+  }
+  if (last.recipients === 0) {
+    return `${head} ${when} meta de ${last.slaHours} h estourada e nenhum admin no banco para avisar.`;
+  }
+  return `${head} ${when} meta de ${last.slaHours} h estourada e nenhum e-mail aceito pelo provedor (${plural(last.attempts, 'tentativa', 'tentativas')} de 3).`;
 }
 
 /** '2026-09-21' → '21/09', como os dias aparecem nos gráficos. */
@@ -285,7 +315,23 @@ function HistoryCharts({ h }: { h: ModerationHealth }) {
  */
 export function ModerationHealthSection() {
   const [days, setDays] = useState<Period>(30);
+  const [exporting, setExporting] = useState(false);
   const health = useModerationHealth(days);
+  const toast = useToast();
+
+  /** A série do período em CSV (ADR 55), baixada com o token: a rota é autenticada. */
+  async function exportCsv(): Promise<void> {
+    setExporting(true);
+    try {
+      const { blob, fileName } = await api.downloadModerationCsv(days);
+      saveBlob(blob, fileName);
+      toast.success('CSV da moderação baixado.');
+    } catch (er) {
+      toast.error(er instanceof Error ? er.message : 'Não foi possível exportar');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <section className="card wide" aria-labelledby="health-title" data-testid="moderation-health">
@@ -293,19 +339,29 @@ export function ModerationHealthSection() {
         <h3 id="health-title">
           <Activity size={16} /> Saúde da moderação
         </h3>
-        <div className="tabs tabs-mini" role="tablist" aria-label="Período">
-          {PERIODS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              role="tab"
-              aria-selected={days === p}
-              className={days === p ? 'active' : ''}
-              onClick={() => setDays(p)}
-            >
-              {p} dias
-            </button>
-          ))}
+        <div className="fin-controls">
+          <div className="tabs tabs-mini" role="tablist" aria-label="Período">
+            {PERIODS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                role="tab"
+                aria-selected={days === p}
+                className={days === p ? 'active' : ''}
+                onClick={() => setDays(p)}
+              >
+                {p} dias
+              </button>
+            ))}
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void exportCsv()}
+            disabled={exporting}
+          >
+            <Download size={14} /> {exporting ? 'Exportando…' : 'Exportar CSV'}
+          </Button>
         </div>
       </div>
       <QueryState
@@ -326,7 +382,11 @@ export function ModerationHealthSection() {
                   tone={h.queue.pending > 0 ? 'amber' : undefined}
                   hint={
                     h.queue.oldestPendingAt
-                      ? `mais antiga desde ${dtm(h.queue.oldestPendingAt)} · ${plural(h.queue.automaticPending, 'automática', 'automáticas')}`
+                      ? `mais antiga desde ${dtm(h.queue.oldestPendingAt)} · ${plural(h.queue.automaticPending, 'automática', 'automáticas')}${
+                          h.queue.overSlaPending > 0
+                            ? ` · ${h.queue.overSlaPending} ${h.queue.overSlaPending === 1 ? 'passou' : 'passaram'} da meta`
+                            : ''
+                        }`
                       : 'a fila está vazia'
                   }
                 />
@@ -400,6 +460,9 @@ export function ModerationHealthSection() {
                 {removalsSentence(h)}
                 {h.queue.accountReviewsOpen > 0 &&
                   ` ${plural(h.queue.accountReviewsOpen, 'conta', 'contas')} em revisão por reincidência.`}
+              </p>
+              <p className="muted tiny" data-testid="health-report">
+                {reportStatusLine(h.dailyReport)}
               </p>
 
               {h.automatic.signals.length > 0 && (

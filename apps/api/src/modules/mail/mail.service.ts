@@ -86,7 +86,8 @@ export const mailService = {
   /**
    * Renderiza, registra na caixa de saída e entrega pelo provedor ativo. Melhor esforço:
    * nunca lança (um e-mail que falhou não pode derrubar um cadastro ou um pagamento).
-   * Devolve o id na caixa de saída, ou null se o envio está desligado.
+   * Devolve o id na caixa de saída, ou null se o envio está desligado. Quem precisa saber se o
+   * provedor aceitou usa `deliver`: o id existe mesmo quando o envio falhou.
    */
   async send(params: {
     userId: number | null;
@@ -94,9 +95,20 @@ export const mailService = {
     template: MailTemplate;
     vars: TemplateVars;
   }): Promise<number | null> {
+    return (await this.deliver(params)).id;
+  },
+
+  /** Como `send`, dizendo também se o provedor aceitou a mensagem (ADR 55). */
+  async deliver(params: {
+    userId: number | null;
+    to: string;
+    template: MailTemplate;
+    vars: TemplateVars;
+  }): Promise<{ id: number | null; delivered: boolean }> {
     const provider = activeMailProvider();
-    if (!provider) return null;
+    if (!provider) return { id: null, delivered: false };
     let id: number | null = null;
+    let delivered = false;
     try {
       const mail = renderEmail(params.template, params.vars);
       id = await mailRepository.create({
@@ -110,15 +122,27 @@ export const mailService = {
       });
       try {
         await provider.send({ to: params.to, ...mail });
-        await mailRepository.markSent(id);
+        delivered = true;
       } catch (err) {
         logger.warn({ err, to: params.to, template: params.template }, 'envio de e-mail falhou');
         await mailRepository.markFailed(id, err instanceof Error ? err.message : String(err));
       }
+      // O provedor aceitou: é entrega, mesmo que a caixa de saída não consiga registrar (senão
+      // quem reenvia em falha — o relatório da moderação — mandaria de novo o que já saiu).
+      if (delivered) {
+        try {
+          await mailRepository.markSent(id);
+        } catch (err) {
+          logger.warn(
+            { err, template: params.template },
+            'e-mail enviado, mas não marcado como enviado',
+          );
+        }
+      }
     } catch (err) {
       logger.warn({ err, template: params.template }, 'não foi possível registrar o e-mail');
     }
-    return id;
+    return { id, delivered };
   },
 
   async listRecent(limit: number, userId: number | null): Promise<AdminEmail[]> {

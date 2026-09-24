@@ -110,7 +110,7 @@ export interface AdminEmail {
   userId: number | null;
   to: string;
   subject: string;
-  template: 'verify_email' | 'password_reset' | 'notification' | 'digest';
+  template: 'verify_email' | 'password_reset' | 'notification' | 'digest' | 'moderation_report';
   text: string;
   status: 'queued' | 'sent' | 'failed';
   provider: string;
@@ -366,6 +366,8 @@ export interface AdminAppeal {
 /** Um dia (Brasília) da série da saúde da moderação (ADR 50); dia sem nada vem zerado. */
 export interface ModerationHealthDay {
   day: string;
+  /** Denúncias criadas no dia, humanas e automáticas (ADR 55). */
+  received: number;
   actioned: number;
   dismissed: number;
   flagged: number;
@@ -384,6 +386,8 @@ export interface ModerationHealth {
     accountReviewsOpen: number;
     appealsPending: number;
     oldestAppealAt: string | null;
+    /** Denúncias de conteúdo esperando há mais que a meta agora (revisões de conta não contam; ADR 55). */
+    overSlaPending: number;
   };
   decisions: {
     total: number;
@@ -420,6 +424,29 @@ export interface ModerationHealth {
   slaHours: number;
   /** Do dia do começo do período ao de hoje (Brasília), sem buracos. */
   history: ModerationHealthDay[];
+  /** O relatório diário por e-mail aos admins (ADR 55): chave, hora, provedor e a última conferência. */
+  dailyReport: {
+    enabled: boolean;
+    hour: number;
+    mailProvider: 'simulated' | 'smtp' | 'off';
+    last: ModerationSlaReportState | null;
+  };
+}
+
+/** A marca do relatório diário da meta (ADR 55): o que a última conferência do dia decidiu e entregou. */
+export interface ModerationSlaReportState {
+  /** Dia de Brasília da conferência. */
+  day: string;
+  /** ISO da última tentativa. */
+  at: string;
+  breached: boolean;
+  slaHours: number;
+  /** Admins encontrados no banco. */
+  recipients: number;
+  /** E-mails que o provedor aceitou. */
+  delivered: number;
+  /** Rodadas de envio no dia. */
+  attempts: number;
 }
 
 export interface AdminAppealDecisionRequest {
@@ -576,6 +603,7 @@ export type PlatformSettingKey =
   | 'strike_upload_block_days'
   | 'strike_review_threshold'
   | 'moderation_sla_hours'
+  | 'moderation_sla_report_enabled'
   | 'min_service_price'
   | 'min_withdrawal_amount'
   | 'barter_enabled'

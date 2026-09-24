@@ -5,6 +5,30 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.37.0] — 2026-09-24
+
+### Adicionado
+
+- **Série da saúde da moderação em CSV** (ADR 55). No painel admin, "Exportar CSV" baixa a série
+  do período escolhido em dias inteiros de Brasília: denúncias recebidas, sinalizações automáticas,
+  decididas com ação e dispensadas, mediana de horas, meta e se passou dela. Ponto e vírgula,
+  vírgula decimal e BOM, como o ledger; o nome do arquivo leva as pontas da série; a exportação
+  fica nas ações do admin.
+- **Relatório diário da meta da moderação.** Uma vez por dia, a partir da hora do resumo diário,
+  a API confere o dia anterior e a fila; se a mediana de ontem passou da meta ou alguma denúncia
+  espera há mais que a meta, cada admin recebe um e-mail com os números e o link do painel — só
+  agregados, no máximo um por dia, com novas tentativas se o envio falhar. A chave "Relatório da
+  meta da moderação", nos parâmetros da plataforma, desliga.
+- O painel diz quantas denúncias passaram da meta e o que o relatório diário está fazendo
+  (hora, provedor, última conferência); a série por dia passa a trazer as denúncias recebidas.
+
+### Alterado
+
+- Entrar pelo link de um e-mail com âncora (`/admin#health-title`) volta para a âncora depois do
+  login, e o painel rola até ela e põe o foco no título quando termina de carregar.
+- Um só caminho de download por âncora temporária para anexo do chat, ledger, série da
+  moderação e cópia de dados.
+
 ## [1.36.0] — 2026-09-24
 
 ### Adicionado

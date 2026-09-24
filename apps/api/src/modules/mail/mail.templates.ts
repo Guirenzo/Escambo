@@ -2,7 +2,8 @@ import { env } from '../../config/env';
 
 /** Templates de e-mail em PT-BR: texto puro + HTML simples com a marca (sem imagens externas). */
 
-export type MailTemplate = 'verify_email' | 'password_reset' | 'notification' | 'digest';
+export type MailTemplate =
+  'verify_email' | 'password_reset' | 'notification' | 'digest' | 'moderation_report';
 
 export interface RenderedMail {
   subject: string;
@@ -21,6 +22,8 @@ export interface TemplateVars {
   cta?: string;
   /** Itens do resumo diário. */
   items?: { title: string; body: string | null; link: string }[];
+  /** Parágrafos prontos (relatório da moderação, ADR 55). */
+  paragraphs?: string[];
 }
 
 const esc = (s: string): string =>
@@ -92,6 +95,16 @@ export function renderEmail(template: MailTemplate, vars: TemplateVars): Rendere
         subject: `${title} no Escambo`,
         text: textOf(title, paragraphs, link),
         html: layout(title, paragraphs, { label: 'Ver notificações', link }),
+      };
+    }
+    case 'moderation_report': {
+      const title = vars.title ?? 'Relatório da moderação';
+      const paragraphs = vars.paragraphs ?? [];
+      const link = vars.link ?? `${env.APP_URL.replace(/\/$/, '')}/admin`;
+      return {
+        subject: title,
+        text: textOf(title, paragraphs, link),
+        html: layout(title, paragraphs, { label: 'Ver painel', link }),
       };
     }
     case 'notification': {

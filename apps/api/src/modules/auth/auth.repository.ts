@@ -118,6 +118,20 @@ export const authRepository = {
     });
   },
 
+  /**
+   * Quem recebe avisos ao papel de admin (ADR 55): quem consegue entrar como admin — o mesmo corte
+   * de assertActive. Inclui quem ainda não confirmou o e-mail, que é o estado do primeiro admin de
+   * todo deploy. Sem LIMIT: admins são poucos por natureza.
+   */
+  async listAdmins(): Promise<{ id: number; email: string }[]> {
+    const [rows] = await pool.query<(RowDataPacket & { id: number; email: string })[]>(
+      `SELECT id, email FROM users
+        WHERE role = 'admin' AND deleted_at IS NULL AND status NOT IN ('suspended', 'banned')
+        ORDER BY id`,
+    );
+    return rows.map((r) => ({ id: r.id, email: r.email }));
+  },
+
   async updateRole(id: number, role: string): Promise<void> {
     await pool.query<ResultSetHeader>(`UPDATE users SET role = :role WHERE id = :id`, { id, role });
   },

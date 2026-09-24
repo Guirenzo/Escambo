@@ -8,7 +8,8 @@ import { fundWallet } from './wallet.helpers';
 /**
  * Saúde da moderação (ADR 47) contra o MySQL real: duas mensagens sinalizadas, uma dispensada e
  * uma removida, a remoção contestada e revertida. O painel conta a fila, o tempo até decidir, o
- * acerto por sinal e as contestações; só admin lê, e o período é validado.
+ * acerto por sinal e as contestações; só admin lê, e o período é validado. A série sai em CSV em dias
+ * inteiros e a fila diz quantas passaram da meta (ADR 55).
  */
 
 const app = createApp();
@@ -33,7 +34,13 @@ async function actor(role: 'client' | 'freelancer', domain = 'escambo.test'): Pr
 
 interface Health {
   windowDays: number;
-  queue: { pending: number; automaticPending: number; appealsPending: number };
+  queue: {
+    pending: number;
+    automaticPending: number;
+    appealsPending: number;
+    accountReviewsOpen: number;
+    overSlaPending: number;
+  };
   decisions: { total: number; dismissed: number; actioned: number; medianHours: number | null };
   automatic: {
     flagged: number;
@@ -47,11 +54,13 @@ interface Health {
   slaHours: number;
   history: {
     day: string;
+    received: number;
     actioned: number;
     dismissed: number;
     flagged: number;
     medianHours: number | null;
   }[];
+  dailyReport: { enabled: boolean; hour: number; mailProvider: string; last: unknown };
 }
 
 afterAll(async () => {
@@ -156,6 +165,7 @@ describe('Saúde da moderação (ADR 47)', () => {
     expect(recent.reduce((sum, d) => sum + d.actioned, 0)).toBeGreaterThanOrEqual(1);
     expect(recent.reduce((sum, d) => sum + d.dismissed, 0)).toBeGreaterThanOrEqual(1);
     expect(recent.reduce((sum, d) => sum + d.flagged, 0)).toBeGreaterThanOrEqual(2);
+    expect(recent.reduce((sum, d) => sum + d.received, 0)).toBeGreaterThanOrEqual(2);
     expect(recent.some((d) => d.medianHours !== null)).toBe(true);
     expect(after.history.reduce((sum, d) => sum + d.actioned + d.dismissed, 0)).toBe(
       after.decisions.total,
@@ -171,13 +181,92 @@ describe('Saúde da moderação (ADR 47)', () => {
     );
     expect(past.history.reduce((sum, d) => sum + d.flagged, 0)).toBe(past.automatic.flagged);
 
+    // Quantas passaram da meta agora (ADR 55): uma sinalização esperando há três dias conta com a
+    // meta em 24 h e em 48 h, e sai da conta com a meta em 100 h. Revisões de conta não contam.
+    const stale = await send('Pix por fora de novo: (47) 99999-0003');
+    await pool.query(
+      `UPDATE content_reports SET created_at = DATE_SUB(NOW(), INTERVAL 72 HOUR)
+        WHERE target_type = 'message' AND target_id = :id`,
+      { id: stale },
+    );
+    const at24 = (await health(admin.token).expect(200)).body as Health;
+    expect(at24.queue.overSlaPending).toBeGreaterThanOrEqual(1);
+    expect(at24.queue.overSlaPending).toBeLessThanOrEqual(at24.queue.pending);
+    expect(at24.dailyReport).toMatchObject({ enabled: true, mailProvider: 'simulated' });
+    expect(at24.dailyReport.hour).toBeGreaterThanOrEqual(0);
+    // Uma conta em revisão por reincidência (ADR 41) há três dias fica aberta de propósito: entra
+    // em "contas em revisão", não em "passou da meta".
+    const [review] = await pool.query<import('mysql2').ResultSetHeader>(
+      `INSERT INTO content_reports (reporter_id, target_type, target_id, reason, description, status, created_at)
+       VALUES (NULL, 'user', :id, 'other', 'Reincidência: terceira remoção', 'pending', DATE_SUB(NOW(), INTERVAL 72 HOUR))`,
+      { id: freelancer.id },
+    );
+    const withReview = (await health(admin.token).expect(200)).body as Health;
+    expect(withReview.queue.overSlaPending).toBe(at24.queue.overSlaPending);
+    expect(withReview.queue.accountReviewsOpen).toBe(at24.queue.accountReviewsOpen + 1);
+    await pool.query(`DELETE FROM content_reports WHERE id = :id`, { id: review.insertId });
+    // Denúncia humana contra um perfil, sem descrição (opcional no formulário), esperando há três
+    // dias: é denúncia de conteúdo e passou da meta — descrição nula não a transforma em revisão.
+    const [human] = await pool.query<import('mysql2').ResultSetHeader>(
+      `INSERT INTO content_reports (reporter_id, target_type, target_id, reason, description, status, created_at)
+       VALUES (:reporter, 'user', :id, 'spam', NULL, 'pending', DATE_SUB(NOW(), INTERVAL 72 HOUR))`,
+      { reporter: client.id, id: freelancer.id },
+    );
+    const withHuman = (await health(admin.token).expect(200)).body as Health;
+    expect(withHuman.queue.overSlaPending).toBe(at24.queue.overSlaPending + 1);
+    expect(withHuman.queue.accountReviewsOpen).toBe(at24.queue.accountReviewsOpen);
+    await pool.query(`DELETE FROM content_reports WHERE id = :id`, { id: human.insertId });
+
     // A meta é parâmetro da plataforma: mudou, o painel devolve o novo valor na hora.
-    await request(app)
-      .put('/api/admin/settings/moderation_sla_hours')
+    const setSla = (value: number) =>
+      request(app)
+        .put('/api/admin/settings/moderation_sla_hours')
+        .set(auth(admin.token))
+        .send({ value })
+        .expect(200);
+    await setSla(48);
+    const at48 = (await health(admin.token).expect(200)).body as Health;
+    expect(at48.slaHours).toBe(48);
+    expect(at48.queue.overSlaPending).toBeGreaterThanOrEqual(1);
+    await setSla(100);
+    const at100 = (await health(admin.token).expect(200)).body as Health;
+    expect(at100.queue.overSlaPending).toBeLessThan(at48.queue.overSlaPending);
+    await setSla(24);
+
+    // CSV da série (ADR 55): 7 dias inteiros de Brasília mais hoje, nome pelas pontas, a linha de
+    // hoje com o que entrou agora; a exportação fica nas ações do admin; só admin; período validado.
+    const csv = await request(app)
+      .get('/api/admin/moderation/health/export.csv?days=7')
       .set(auth(admin.token))
-      .send({ value: 48 })
       .expect(200);
-    expect(((await health(admin.token).expect(200)).body as Health).slaHours).toBe(48);
+    expect(csv.headers['content-type']).toMatch(/^text\/csv/);
+    expect(csv.headers['content-disposition']).toMatch(
+      /^attachment; filename="escambo-moderacao-\d{4}-\d{2}-\d{2}_\d{4}-\d{2}-\d{2}\.csv"$/,
+    );
+    const lines = (csv.text as string).split('\r\n');
+    expect(lines[0]).toBe(
+      '\uFEFFdia;denuncias_recebidas;sinalizacoes_automaticas;decididas_com_acao;dispensadas;decididas_total;mediana_horas;meta_horas;acima_da_meta',
+    );
+    expect(lines).toHaveLength(10);
+    const today = lines[8]!.split(';');
+    expect(today[0]).toBe(after.history[after.history.length - 1]!.day);
+    expect(Number(today[1])).toBeGreaterThanOrEqual(2);
+    expect(Number(today[2])).toBeGreaterThanOrEqual(2);
+    expect(today[7]).toBe('24');
+    const [[exported]] = await pool.query<import('mysql2').RowDataPacket[]>(
+      `SELECT description FROM admin_actions
+        WHERE admin_id = :id AND action = 'moderation_health_exported' ORDER BY id DESC LIMIT 1`,
+      { id: admin.id },
+    );
+    expect(exported?.description).toMatch(/^7 dias · \d{4}-\d{2}-\d{2} → \d{4}-\d{2}-\d{2}$/);
+    await request(app)
+      .get('/api/admin/moderation/health/export.csv?days=7')
+      .set(auth(client.token))
+      .expect(403);
+    await request(app)
+      .get('/api/admin/moderation/health/export.csv?days=0')
+      .set(auth(admin.token))
+      .expect(422);
 
     // O período muda a janela; fora de 1 a 365 é 422; quem não é admin toma 403.
     expect(((await health(admin.token, 'days=7').expect(200)).body as Health).windowDays).toBe(7);

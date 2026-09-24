@@ -1,5 +1,13 @@
-import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
-import { RequireAuth } from './components/RequireAuth';
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+} from 'react-router-dom';
+import { backTo, RequireAuth } from './components/RequireAuth';
 import { Spinner } from './components/ui';
 import { NotFoundView } from './features/views/NotFoundView';
 import {
@@ -25,16 +33,20 @@ import { RouteAnnouncer } from './lib/title';
 import './styles.css';
 import { MaintenanceGate } from './components/MaintenanceGate';
 
-/** /login: se já autenticado, vai para a home. */
+/**
+ * /login: se já autenticado, volta para onde a guarda mandou (só caminhos do próprio app, nunca
+ * `//outro-site`), ou para a home.
+ */
 function LoginRoute() {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading)
     return (
       <div className="splash">
         <Spinner />
       </div>
     );
-  if (user) return <Navigate to="/" replace />;
+  if (user) return <Navigate to={backTo(location.state)} replace />;
   return <LoginForm />;
 }
 

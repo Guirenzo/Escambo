@@ -525,6 +525,13 @@ export const api = {
       'escambo-ledger.csv',
       'exportar o ledger',
     ),
+  /** Baixa a série por dia da saúde da moderação em CSV, em dias inteiros de Brasília (ADR 55). */
+  downloadModerationCsv: (days: number) =>
+    fetchBlob(
+      `/admin/moderation/health/export.csv?days=${days}`,
+      'escambo-moderacao.csv',
+      'exportar a série',
+    ),
   adminDisputes: () => request<Dispute[]>('/admin/disputes'),
   adminResolveDispute: (id: number, body: ResolveDisputeRequest) =>
     request<Dispute>(`/admin/disputes/${id}/resolve`, {

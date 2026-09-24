@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { FinanceBucket, FinanceGranularity } from '@escambo/types';
 import { Button, EmptyState, QueryState } from '../../components/ui';
 import { api } from '../../lib/api';
+import { saveBlob } from '../../lib/download';
 import { addDays, brl, dateInputValue } from '../../lib/format';
 import { useAdminFinance } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
@@ -66,12 +67,7 @@ export function FinanceSection() {
     setExporting(true);
     try {
       const { blob, fileName } = await api.downloadFinanceCsv(q);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
+      saveBlob(blob, fileName);
       toast.success('CSV do ledger baixado.');
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Não foi possível exportar');

@@ -77,7 +77,7 @@ describe('série por dia (ADR 50)', () => {
     ]);
   });
 
-  it('buildHistory preenche dia vazio com zero e faz a mediana do dia', () => {
+  it('buildHistory preenche dia vazio com zero, soma o que entrou no dia e faz a mediana do dia', () => {
     const history = buildHistory(['2026-09-19', '2026-09-20', '2026-09-21'], {
       decisions: [
         { d: '2026-09-19', status: 'actioned', n: 2 },
@@ -85,7 +85,11 @@ describe('série por dia (ADR 50)', () => {
         { d: '2026-09-21', status: 'actioned', n: 1 },
         { d: '2026-09-01', status: 'actioned', n: 9 }, // fora dos dias listados: ignorado
       ],
-      flagged: [{ d: '2026-09-21', n: 3 }],
+      byDay: [
+        { d: '2026-09-19', n: 4, flagged: 0 },
+        { d: '2026-09-21', n: 5, flagged: 3 },
+        { d: '2026-09-21', n: '2' as unknown as number, flagged: '1' as unknown as number },
+      ],
       seconds: [
         { d: '2026-09-19', secs: 3600 },
         { d: '2026-09-19', secs: 7200 },
@@ -93,9 +97,9 @@ describe('série por dia (ADR 50)', () => {
       ],
     });
     expect(history).toEqual([
-      { day: '2026-09-19', actioned: 2, dismissed: 1, flagged: 0, medianHours: 1.5 },
-      { day: '2026-09-20', actioned: 0, dismissed: 0, flagged: 0, medianHours: null },
-      { day: '2026-09-21', actioned: 1, dismissed: 0, flagged: 3, medianHours: 0.5 },
+      { day: '2026-09-19', received: 4, actioned: 2, dismissed: 1, flagged: 0, medianHours: 1.5 },
+      { day: '2026-09-20', received: 0, actioned: 0, dismissed: 0, flagged: 0, medianHours: null },
+      { day: '2026-09-21', received: 7, actioned: 1, dismissed: 0, flagged: 4, medianHours: 0.5 },
     ]);
   });
 });

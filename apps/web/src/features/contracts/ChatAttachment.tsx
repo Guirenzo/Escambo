@@ -2,6 +2,7 @@ import { Download, FileArchive, FileText, FileX, Paperclip, X } from 'lucide-rea
 import { useEffect, useState } from 'react';
 import type { AttachmentPurgeReason, ChatAttachment as Attachment } from '@escambo/types';
 import { api } from '../../lib/api';
+import { saveBlob } from '../../lib/download';
 import { formatBytes } from '../../lib/format';
 import { useAttachmentBlob } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
@@ -12,19 +13,6 @@ export const ATTACHMENT_ACCEPT =
 /** Limite padrão da API (UPLOAD_MAX_MB); acima disso nem tenta enviar. */
 export const MAX_ATTACHMENT_MB = 10;
 export const MAX_ATTACHMENT_BYTES = MAX_ATTACHMENT_MB * 1024 * 1024;
-
-/** Dispara o download de um blob com o nome dado (âncora temporária). */
-export function saveBlob(blob: Blob, name: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
 
 const PURGED_LABEL: Record<AttachmentPurgeReason, string> = {
   retention: 'removido pela política de retenção',

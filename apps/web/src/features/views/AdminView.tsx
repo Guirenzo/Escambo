@@ -42,6 +42,7 @@ import {
   useResolveDispute,
 } from '../../lib/hooks';
 import { usePageTitle } from '../../lib/title';
+import { useScrollToHashWhenSettled } from '../../lib/useScrollToHash';
 import { FinanceSection } from '../admin/FinanceSection';
 import { SettingsSection } from '../admin/SettingsSection';
 import { StorageSection } from '../admin/StorageSection';
@@ -303,6 +304,8 @@ const EMAIL_TEMPLATE_LABEL: Record<string, string> = {
   verify_email: 'Confirmação de e-mail',
   password_reset: 'Redefinição de senha',
   notification: 'Aviso',
+  digest: 'Resumo diário',
+  moderation_report: 'Relatório da moderação',
 };
 
 /** Conteúdo (texto) de um e-mail da caixa de saída — links clicáveis para a demo. */
@@ -334,6 +337,7 @@ function EmailModal({ email, onClose }: { email: AdminEmail; onClose: () => void
 /** Painel do administrador: métricas, fila de mediação, fila de saques, pedidos LGPD e e-mails. */
 export function AdminView() {
   usePageTitle('Administração');
+  useScrollToHashWhenSettled();
   const metrics = useAdminMetrics();
   const disputes = useAdminDisputes();
   const [scope, setScope] = useState<'open' | 'all'>('open');

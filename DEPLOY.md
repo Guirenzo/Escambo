@@ -88,6 +88,12 @@ A ordem é `db` (healthy) → `migrate` (baseline + migrations + seed do catálo
 > Para operar sem um SMTP no começo, use `MAIL_PROVIDER=simulated`: os e-mails ficam na caixa de saída do
 > painel admin (com os links de confirmação e de redefinição de senha), e nada é enviado.
 
+> O relatório diário da meta da moderação (ADR 55) vai por e-mail a **toda conta admin** que consegue entrar,
+> a partir das `DIGEST_HOUR` de Brasília, só quando a meta estoura — inclusive antes de o e-mail ser
+> confirmado. Com o provedor simulado ele fica na caixa de saída; a linha "Relatório diário da meta" no
+> cartão de saúde da moderação diz o que ele está fazendo, e a chave "Relatório da meta da moderação" nos
+> parâmetros da plataforma o desliga.
+
 ## 3. Atualizar e voltar atrás
 
 Cada merge em `main` com CI verde publica uma imagem nova. Atualizar é puxar e subir; o job de migrations
