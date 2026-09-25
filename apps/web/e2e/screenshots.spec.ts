@@ -276,6 +276,24 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     });
   }
 
+  // 21. Saúde da moderação (ADR 55): aberta pelo link do e-mail do relatório diário, que rola até o
+  // cartão — período, "Exportar CSV", quantas passaram da meta e a linha do relatório.
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      deviceScaleFactor: 2,
+    });
+    const p = await ctx.newPage();
+    await p.addInitScript((tk) => window.localStorage.setItem('escambo_token', tk), adminTok);
+    await p.goto('/admin#health-title');
+    await settled(p);
+    await expect(p.locator('#health-title')).toBeFocused();
+    await expect(p.getByTestId('health-report')).toBeVisible();
+    await p.waitForTimeout(400);
+    await snap(p, '21-saude-moderacao');
+    await ctx.close();
+  }
+
   // 18. Avisos no navegador (ADR 52): o cartão do perfil que liga o push naquele aparelho.
   {
     const ctx = await browser.newContext({
