@@ -2,6 +2,7 @@ import type {
   EmailPreference,
   Notification,
   NotificationList,
+  QuietPassCategory,
   UpdateEmailPreferenceRequest,
 } from '@escambo/types';
 import { env } from '../../config/env';
@@ -10,10 +11,22 @@ import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
 import { timezoneOf } from '../../utils/timezone';
 import { pushService } from './push.service';
-import { quietWindowOf } from './quiet-hours';
+import { quietPassOf, quietWindowOf } from './quiet-hours';
 import { authRepository } from '../auth/auth.repository';
 import { EMAILED_NOTIFICATION_TYPES, mailService, notificationLink } from '../mail/mail.service';
 import { notificationsRepository, type NotificationRow } from './notifications.repository';
+
+/** O título cabe em notifications.title (VARCHAR(150)). */
+export const NOTIFICATION_TITLE_MAX = 150;
+
+/**
+ * Corta o título na coluna, com reticência: um título que carrega o nome da contratação ("Prazo
+ * estourado: …", ADR 56; "Marco atrasado: …") não pode derrubar a notificação inteira.
+ */
+export const clipTitle = (title: string): string =>
+  title.length <= NOTIFICATION_TITLE_MAX
+    ? title
+    : `${title.slice(0, NOTIFICATION_TITLE_MAX - 1).trimEnd()}…`;
 
 /** Notificações relevantes também vão por e-mail (melhor esforço, fora do caminho da resposta). */
 async function emailNotification(
@@ -57,16 +70,22 @@ export function toNotification(r: NotificationRow): Notification {
 }
 
 export const notificationsService = {
-  /** Cria uma notificação in-app. Best-effort: usada em hooks de evento, nunca lança. */
+  /**
+   * Cria uma notificação in-app. Best-effort: usada em hooks de evento, nunca lança. `passCategory`
+   * é só para o push (ADR 56): não é gravada, não vai no socket nem no e-mail.
+   */
   async notify(
     userId: number,
-    params: {
+    input: {
       type: string;
       title: string;
       body?: string | null;
       data?: Record<string, unknown> | null;
     },
+    opts: { passCategory?: QuietPassCategory } = {},
   ): Promise<void> {
+    // O mesmo título, cortado, no banco, no socket, no e-mail e no push.
+    const params = { ...input, title: clipTitle(input.title) };
     try {
       const id = await notificationsRepository.create({
         userId,
@@ -90,7 +109,11 @@ export const notificationsService = {
         logger.warn({ err, type: params.type }, 'e-mail da notificação falhou'),
       );
       // Aviso no navegador dos aparelhos ligados (ADR 52): mesmo tratamento do e-mail.
-      void pushService.notify(userId, { ...params, notificationId: id });
+      void pushService.notify(userId, {
+        ...params,
+        notificationId: id,
+        ...(opts.passCategory ? { passCategory: opts.passCategory } : {}),
+      });
     } catch (err) {
       logger.warn({ err }, 'notify falhou');
     }
@@ -122,6 +145,7 @@ export const notificationsService = {
       digestHour: user?.digest_hour ?? env.DIGEST_HOUR,
       timezone: timezoneOf(user?.timezone),
       quietHours: quietWindowOf(user?.push_quiet_start, user?.push_quiet_end),
+      quietPass: quietPassOf(user?.push_quiet_pass),
     };
   },
 

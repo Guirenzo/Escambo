@@ -1,7 +1,7 @@
 import { ArrowLeftRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { usePageTitle } from '../../lib/title';
-import { dt } from '../../lib/format';
+import { dayLabel } from '../../lib/format';
 import { LEGAL, LEGAL_CHANGES, LEGAL_UPDATED, LEGAL_VERSIONS, type LegalKind } from './content';
 
 /**
@@ -23,7 +23,7 @@ export function LegalView({ kind }: { kind: LegalKind }) {
       </Link>
       <h1>{doc.title}</h1>
       <p className="muted tiny">
-        Versão {LEGAL_VERSIONS[kind]} · atualizada em {LEGAL_UPDATED[kind]} ·{' '}
+        Versão {LEGAL_VERSIONS[kind]} · atualizada em {dayLabel(LEGAL_UPDATED[kind])} ·{' '}
         <Link to={`/${other}`}>{LEGAL[other].title}</Link>
       </p>
       <p className="legal-note">
@@ -45,7 +45,7 @@ export function LegalView({ kind }: { kind: LegalKind }) {
           {history.map((c) => (
             <li key={c.version}>
               <strong>
-                {c.version} · {dt(c.date)}
+                {c.version} · {dayLabel(c.date)}
               </strong>{' '}
               {c.summary}
             </li>

@@ -24,7 +24,12 @@ vi.mock('./push.provider', async (importOriginal) => {
   };
 });
 vi.mock('../mail/mail.service', () => ({
-  EMAILED_NOTIFICATION_TYPES: new Set(['contract_proposal']),
+  EMAILED_NOTIFICATION_TYPES: new Set([
+    'contract_proposal',
+    'contract_overdue',
+    'deadline_extension_declined',
+    'contract_revision',
+  ]),
 }));
 
 import { env } from '../../config/env';
@@ -44,7 +49,11 @@ const send = (provider as unknown as { __send: ReturnType<typeof vi.fn> }).__sen
  * fica marcada como retida; fora dela sai com o TTL até o próximo silêncio. O provedor de unidade
  * é 'off' por padrão (vitest.config.ts), então cada teste liga o simulado.
  */
-const conta = (quiet: { start: number; end: number } | null, timezone = 'America/Sao_Paulo') => ({
+const conta = (
+  quiet: { start: number; end: number } | null,
+  timezone = 'America/Sao_Paulo',
+  pass: string | null = null,
+) => ({
   id: 7,
   ulid: 'u7',
   email: 'a@escambo.test',
@@ -55,6 +64,7 @@ const conta = (quiet: { start: number; end: number } | null, timezone = 'America
   timezone,
   push_quiet_start: quiet?.start ?? null,
   push_quiet_end: quiet?.end ?? null,
+  push_quiet_pass: pass,
 });
 
 const aparelho = {
@@ -92,7 +102,7 @@ describe('push dentro e fora do silêncio (ADR 54)', () => {
     await pushService.notify(7, aviso, new Date('2026-09-15T10:00:00Z')); // 07:00 em Brasília
     expect(notifs.markPushHeld).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0]?.[2]).toEqual({ ttlSeconds: 12 * 3600 });
+    expect(send.mock.calls[0]?.[2]).toStrictEqual({ ttlSeconds: 12 * 3600 });
   });
 
   it('o fuso da conta manda: o mesmo instante em Manaus ainda é 06:00, e fica retido', async () => {
@@ -105,14 +115,14 @@ describe('push dentro e fora do silêncio (ADR 54)', () => {
   it('sem janela, sai com o teto de 12 horas', async () => {
     users.findById.mockResolvedValue(conta(null) as never);
     await pushService.notify(7, aviso, new Date('2026-09-15T01:00:00Z'));
-    expect(send.mock.calls[0]?.[2]).toEqual({ ttlSeconds: 12 * 3600 });
+    expect(send.mock.calls[0]?.[2]).toStrictEqual({ ttlSeconds: 12 * 3600 });
   });
 
   it('o aviso de teste fura o silêncio, mas leva o TTL até o próximo início', async () => {
     users.findById.mockResolvedValue(conta({ start: 22, end: 7 }) as never);
     const r = await pushService.sendTest(7, new Date('2026-09-14T18:00:00Z')); // 15:00 em Brasília
     expect(r.sent).toBe(1);
-    expect(send.mock.calls[0]?.[2]).toEqual({ ttlSeconds: 7 * 3600 });
+    expect(send.mock.calls[0]?.[2]).toStrictEqual({ ttlSeconds: 7 * 3600 });
   });
 
   it('canal desligado ou conta encerrada: nem retém, nem envia', async () => {
@@ -145,5 +155,94 @@ describe('push dentro e fora do silêncio (ADR 54)', () => {
     expect(p.url).toBe('/notificacoes');
     expect(p.tag).toBe('quiet_summary');
     expect(p.body.length).toBeLessThanOrEqual(120);
+  });
+});
+
+/** O que a pessoa deixa sair no silêncio (ADR 56): o prazo vencido num trabalho que ela entrega. */
+describe('push no silêncio com a escolha da pessoa (ADR 56)', () => {
+  const prazo = {
+    type: 'contract_overdue',
+    title: 'Prazo estourado: Vídeo',
+    body: 'Até 26/09/2026 às 00:03: entregue ou peça a extensão (uma vez), senão a mediação abre sozinha.',
+    data: { contractId: 3 },
+    notificationId: 41,
+    passCategory: 'deadline' as const,
+  };
+  const noite = new Date('2026-09-15T01:00:00Z'); // 22:00 em Brasília
+
+  it('prazo liberado às 22:00 sai na hora: sem marca de retido, prioridade alta, 12 h e etiqueta própria', async () => {
+    users.findById.mockResolvedValue(
+      conta({ start: 22, end: 7 }, 'America/Sao_Paulo', 'deadline') as never,
+    );
+    await pushService.notify(7, prazo, noite);
+    expect(notifs.markPushHeld).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]?.[2]).toStrictEqual({ ttlSeconds: 12 * 3600, urgency: 'high' });
+    expect(send.mock.calls[0]?.[1]).toMatchObject({ tag: 'contract_overdue:3:n41' });
+  });
+
+  it('prazo com a pessoa sem escolha (NULL) ou que escolheu nada fica retido', async () => {
+    for (const pass of [null, '']) {
+      vi.clearAllMocks();
+      users.findById.mockResolvedValue(
+        conta({ start: 22, end: 7 }, 'America/Sao_Paulo', pass) as never,
+      );
+      await pushService.notify(7, prazo, noite);
+      expect(notifs.markPushHeld).toHaveBeenCalledWith(41, noite);
+      expect(send).not.toHaveBeenCalled();
+    }
+  });
+
+  it('categoria afirmada num tipo fora do mapa (proposta) fica retida', async () => {
+    users.findById.mockResolvedValue(
+      conta({ start: 22, end: 7 }, 'America/Sao_Paulo', 'deadline') as never,
+    );
+    await pushService.notify(7, { ...aviso, passCategory: 'deadline' }, noite);
+    expect(notifs.markPushHeld).toHaveBeenCalledWith(41, noite);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('tipo que não vira push, mesmo com categoria, não sai', async () => {
+    users.findById.mockResolvedValue(
+      conta({ start: 22, end: 7 }, 'America/Sao_Paulo', 'deadline') as never,
+    );
+    await pushService.notify(7, { ...prazo, type: 'message_received' }, noite);
+    expect(notifs.markPushHeld).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('fora da janela, o prazo liberado sai com 12 h, prioridade normal e a etiqueta de sempre', async () => {
+    users.findById.mockResolvedValue(
+      conta({ start: 22, end: 7 }, 'America/Sao_Paulo', 'deadline') as never,
+    );
+    await pushService.notify(7, prazo, new Date('2026-09-15T00:50:00Z')); // 21:50
+    expect(send.mock.calls[0]?.[2]).toStrictEqual({ ttlSeconds: 12 * 3600 });
+    expect(send.mock.calls[0]?.[1]).toMatchObject({ tag: 'contract_overdue:3' });
+  });
+
+  it('duas recusas liberadas da mesma contratação saem com etiquetas diferentes (alerta de novo)', async () => {
+    users.findById.mockResolvedValue(
+      conta({ start: 22, end: 7 }, 'America/Sao_Paulo', 'deadline') as never,
+    );
+    const recusa = { ...prazo, type: 'deadline_extension_declined' };
+    await pushService.notify(7, { ...recusa, notificationId: 50 }, noite);
+    await pushService.notify(7, { ...recusa, notificationId: 51 }, noite);
+    const tags = send.mock.calls.map((c) => (c[1] as { tag: string }).tag);
+    expect(tags).toEqual([
+      'deadline_extension_declined:3:n50',
+      'deadline_extension_declined:3:n51',
+    ]);
+  });
+
+  it('o resumo põe os de prazo primeiro, na ordem de chegada dentro de cada grupo, e conta todos', () => {
+    const p = quietSummaryPayload([
+      { title: 'Nova proposta', type: 'contract_proposal' },
+      { title: 'Alerta de busca', type: 'saved_search_match' },
+      { title: 'Prazo estourado: Vídeo', type: 'contract_overdue' },
+      { title: 'Extensão recusada: Logo', type: 'deadline_extension_declined' },
+    ]);
+    expect(p.body).toBe(
+      '4 avisos ficaram por ver: Prazo estourado: Vídeo · Extensão recusada: Logo · Nova proposta',
+    );
   });
 });

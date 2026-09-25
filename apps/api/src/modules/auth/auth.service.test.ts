@@ -235,6 +235,7 @@ describe('authService.getByUlid', () => {
       timezone: 'America/Sao_Paulo',
       timezoneChosen: false,
       quietHours: null,
+      quietPass: null,
     });
   });
 

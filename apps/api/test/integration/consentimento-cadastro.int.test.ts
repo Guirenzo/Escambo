@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { CURRENT_LEGAL_VERSION } from '../../src/modules/lgpd/legal-versions';
 
 /**
  * O consentimento nasce no cadastro, gravado pelo servidor na versão vigente, com IP e navegador
@@ -37,7 +38,10 @@ describe('consentimento no cadastro (ADR 54)', () => {
       ]),
     );
     expect(byType.terms_of_use).toMatchObject({ version: '1.2', accepted: true });
-    expect(byType.privacy_policy).toMatchObject({ version: '1.3', accepted: true });
+    expect(byType.privacy_policy).toMatchObject({
+      version: CURRENT_LEGAL_VERSION.privacy_policy,
+      accepted: true,
+    });
 
     const [rows] = await pool.query<({ user_agent: string | null } & { length: number })[]>(
       `SELECT c.user_agent FROM lgpd_consents c JOIN users u ON u.id = c.user_id
@@ -58,7 +62,11 @@ describe('consentimento no cadastro (ADR 54)', () => {
     await request(app)
       .post('/api/lgpd/consents')
       .set('Authorization', `Bearer ${token}`)
-      .send({ type: 'privacy_policy', version: '1.3', accepted: false })
+      .send({
+        type: 'privacy_policy',
+        version: CURRENT_LEGAL_VERSION.privacy_policy,
+        accepted: false,
+      })
       .expect(201);
   });
 });

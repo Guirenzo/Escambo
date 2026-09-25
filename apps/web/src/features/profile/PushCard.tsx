@@ -1,6 +1,6 @@
 import { BellRing, MoonStar } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import type { QuietHours } from '@escambo/types';
+import type { QuietHours, QuietPassCategory, UpdateEmailPreferenceRequest } from '@escambo/types';
 import { Button } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -17,6 +17,7 @@ import {
 } from '../../lib/push';
 import { timezoneLabel } from '../../lib/timezones';
 import { useToast } from '../../lib/toast';
+import { passPhrase, QUIET_PASS_DEFAULT, QUIET_PASS_ORDER, QUIET_PASS_TEXT } from './quietPass';
 
 /** A janela sugerida ao ligar o "não perturbe": a noite. */
 const DEFAULT_QUIET: QuietHours = { start: 22, end: 7 };
@@ -36,7 +37,12 @@ export function PushCard() {
   const [held, setHeld] = useState(0);
   const [busy, setBusy] = useState(false);
   const [savingQuiet, setSavingQuiet] = useState(false);
+  /** Só quem entrega trabalho vê a escolha do que sai no silêncio (ADR 56). */
+  const [deliversWork, setDeliversWork] = useState(false);
   const quiet = user?.quietHours ?? null;
+  /** O que sai mesmo no silêncio; null = nunca escolheu, que vale como nada (ADR 56). */
+  const pass = user?.quietPass ?? null;
+  const passOn = pass ?? [];
   const zone = user?.timezone ?? 'America/Sao_Paulo';
   const quietNow = inQuietWindow(hourNowIn(zone), quiet);
 
@@ -45,11 +51,16 @@ export function PushCard() {
     const subscription = supported ? await currentSubscription() : null;
     // Falha na consulta não é o mesmo que canal desligado: com publicKey nulo, o cartão segue
     // oferecendo ligar (e o erro aparece na hora de ligar, dizendo a verdade).
-    const status = await api
-      .pushStatus(subscription?.endpoint)
-      .catch(() => ({ devices: 0, publicKey: null, subscribed: false, held: 0 }));
+    const status = await api.pushStatus(subscription?.endpoint).catch(() => ({
+      devices: 0,
+      publicKey: null,
+      subscribed: false,
+      held: 0,
+      deliversWork: false,
+    }));
     setDevices(status.devices);
     setHeld(status.held);
+    setDeliversWork(status.deliversWork);
     // "Ligado" é a assinatura deste navegador registrada nesta conta: um aparelho emprestado pode
     // ter a assinatura de outra pessoa, e aí o certo é oferecer ligar, não desligar. Sem chave
     // pública, o canal está desligado no servidor.
@@ -119,17 +130,26 @@ export function PushCard() {
     }
   }
 
-  /** "Não perturbe" (ADR 54): grava a janela inteira ou null, como o cartão de e-mails grava. */
-  async function saveQuiet(next: QuietHours | null, done: string): Promise<void> {
+  /**
+   * "Não perturbe" (ADR 54) e o que sai durante ele (ADR 56): grava a parte que mudou, como o
+   * cartão de e-mails grava, e relê a sessão.
+   */
+  async function savePush(
+    build:
+      | { change: UpdateEmailPreferenceRequest; done: string }
+      | (() => Promise<{ change: UpdateEmailPreferenceRequest; done: string }>),
+    fail: string,
+  ): Promise<void> {
     if (savingQuiet) return;
     setSavingQuiet(true);
     try {
-      await api.updateEmailPreference({ quietHours: next });
+      const { change, done } = typeof build === 'function' ? await build() : build;
+      await api.updateEmailPreference(change);
       await refreshUser();
       await refresh();
       toast.success(done);
     } catch (er) {
-      toast.error(er instanceof Error ? er.message : 'Não foi possível salvar o silêncio');
+      toast.error(er instanceof Error ? er.message : fail);
     } finally {
       setSavingQuiet(false);
     }
@@ -140,23 +160,61 @@ export function PushCard() {
 
   function toggleQuiet(on: boolean): void {
     if (on === (quiet !== null)) return;
-    void saveQuiet(
-      on ? DEFAULT_QUIET : null,
-      on
-        ? `Pronto: silêncio ${range(DEFAULT_QUIET)}, horário de ${timezoneLabel(zone)}. Ao fim chega um aviso só com o que ficou por ver.`
-        : 'Pronto: os avisos voltam a bater a qualquer hora.',
-    );
+    if (!on) {
+      void savePush(
+        { change: { quietHours: null }, done: 'Pronto: os avisos voltam a bater a qualquer hora.' },
+        'Não foi possível salvar o silêncio',
+      );
+      return;
+    }
+    // Quem entrega trabalho e nunca escolheu liga com o prazo vencido marcado (ADR 56): a caixa
+    // aparece marcada logo abaixo, e a mensagem diz isso. Escolha já feita não é trocada — lida do
+    // que está gravado, não da sessão deste aparelho, que pode ser de antes de uma escolha feita em
+    // outro.
+    void savePush(async () => {
+      const saved = deliversWork ? (await api.emailPreference()).quietPass : pass;
+      const applyDefault = deliversWork && saved === null;
+      const next = applyDefault ? QUIET_PASS_DEFAULT : (saved ?? []);
+      const p = deliversWork ? passPhrase(next) : null;
+      return {
+        change: {
+          quietHours: DEFAULT_QUIET,
+          ...(applyDefault ? { quietPass: [...QUIET_PASS_DEFAULT] } : {}),
+        },
+        done: `Pronto: silêncio ${range(DEFAULT_QUIET)}, horário de ${timezoneLabel(zone)}. Ao fim chega um aviso só com o que ficou por ver${p ? `; ${p} (dá para desmarcar logo abaixo)` : ''}.`,
+      };
+    }, 'Não foi possível salvar o silêncio');
   }
 
   function chooseQuiet(part: 'start' | 'end', hour: number): void {
     if (!quiet || quiet[part] === hour) return;
     const next = { ...quiet, [part]: hour };
-    void saveQuiet(next, `Pronto: silêncio ${range(next)}, horário de ${timezoneLabel(zone)}.`);
+    void savePush(
+      {
+        change: { quietHours: next },
+        done: `Pronto: silêncio ${range(next)}, horário de ${timezoneLabel(zone)}.`,
+      },
+      'Não foi possível salvar o silêncio',
+    );
+  }
+
+  /** Marca ou desmarca uma categoria do que sai no silêncio (ADR 56); grava o conjunto inteiro. */
+  function choosePass(c: QuietPassCategory, on: boolean): void {
+    if (!quiet || passOn.includes(c) === on) return;
+    const next = QUIET_PASS_ORDER.filter((x) => (x === c ? on : passOn.includes(x)));
+    void savePush(
+      {
+        change: { quietPass: next },
+        done: on ? QUIET_PASS_TEXT[c].on : QUIET_PASS_TEXT[c].off(digestHourLabel(quiet.end)),
+      },
+      'Não foi possível salvar o que sai no silêncio',
+    );
   }
 
   // Sem aparelho e sem janela não há o que silenciar; com janela gravada por outro aparelho, o
   // bloco aparece para poder desligar — inclusive num navegador sem suporte a push.
   const showQuiet = state !== 'server-off' && (devices > 0 || quiet !== null);
+  const showPass = quiet !== null && deliversWork;
   const heldLabel = `${held} ${plural(held, 'aviso', 'avisos')}`;
   const quietStatus = !quiet
     ? null
@@ -209,8 +267,9 @@ export function PushCard() {
             Contratações, entregas, disputas e saques chegam neste aparelho, mesmo com a aba
             fechada. Vale só para ele; ligue em cada aparelho que você usa. Conversas do chat não
             entram, para não virar barulho. Os avisos passam pelo serviço de push do seu navegador
-            (Google, Mozilla, Microsoft ou Apple), fora do Brasil, que recebe só o endereço deste
-            aparelho e o aviso cifrado. Ligar é autorizar isso para este aparelho; desligar apaga a
+            (Google, Mozilla, Microsoft ou Apple), fora do Brasil, que recebe o endereço deste
+            aparelho e o aviso cifrado, com a hora, o tamanho, o prazo de guarda e a prioridade de
+            entrega de cada um. Ligar é autorizar isso para este aparelho; desligar apaga a
             assinatura na hora.
           </p>
           <div className="push-actions">
@@ -282,9 +341,34 @@ export function PushCard() {
           )}
           <span id="push-quiet-hint" className="muted tiny">
             {quiet
-              ? `Horário de ${timezoneLabel(zone)} (o fuso se troca no cartão E-mails do Escambo). ${range(quiet).replace(/^das/, 'Das')} nenhum aparelho desta conta recebe aviso; a partir das ${digestHourLabel(quiet.end)} chega um aviso só com o que ficou por ver. As notificações aqui dentro e os e-mails não mudam, e o aviso de teste sai na hora, mesmo no silêncio.`
-              : 'Escolha um horário em que nenhum aparelho desta conta recebe aviso. Ao fim dele chega um aviso só com o que ficou por ver; as notificações aqui dentro e os e-mails não mudam.'}
+              ? `Horário de ${timezoneLabel(zone)} (o fuso se troca no cartão E-mails do Escambo). ${range(quiet).replace(/^das/, 'Das')} os avisos ficam guardados${showPass ? ', menos o que estiver marcado logo abaixo' : ''}; a partir das ${digestHourLabel(quiet.end)} chega um aviso só com o que ficou por ver, com os avisos de prazo primeiro. As notificações aqui dentro e os e-mails não mudam, e o aviso de teste sai na hora. O não perturbe do próprio aparelho vale por cima deste.`
+              : 'Escolha um horário em que os avisos ficam guardados. Ao fim dele chega um aviso só com o que ficou por ver; as notificações aqui dentro e os e-mails não mudam.'}
           </span>
+          {showPass && (
+            <fieldset
+              className="push-quiet-pass"
+              data-testid="push-quiet-pass"
+              disabled={savingQuiet}
+            >
+              <legend>Mesmo no silêncio, sai na hora</legend>
+              {QUIET_PASS_ORDER.map((c) => (
+                <div key={c} className="push-quiet-pass-item">
+                  <label className="push-quiet-toggle">
+                    <input
+                      type="checkbox"
+                      checked={passOn.includes(c)}
+                      aria-describedby={`push-quiet-pass-${c}-hint`}
+                      onChange={(e) => choosePass(c, e.target.checked)}
+                    />
+                    <span>{QUIET_PASS_TEXT[c].label}</span>
+                  </label>
+                  <span id={`push-quiet-pass-${c}-hint`} className="muted tiny">
+                    {QUIET_PASS_TEXT[c].hint}
+                  </span>
+                </div>
+              ))}
+            </fieldset>
+          )}
         </fieldset>
       )}
     </section>

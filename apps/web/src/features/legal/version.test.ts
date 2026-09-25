@@ -22,7 +22,7 @@ describe('versões dos documentos legais (ADR 54)', () => {
         expect(compareVersions(mine[i - 1]!.version, mine[i]!.version)).toBeGreaterThan(0);
       }
     }
-    expect(LEGAL_VERSIONS.privacidade).toBe('1.3');
+    expect(LEGAL_VERSIONS.privacidade).toBe('1.4');
     expect(LEGAL_VERSIONS.termos).toBe('1.2');
   });
 
@@ -34,13 +34,13 @@ describe('versões dos documentos legais (ADR 54)', () => {
 
   it('legalAckPending: sem registro ou em versão antiga está pendente; aceito ou recusado na vigente não', () => {
     expect(legalAckPending([], 'privacidade')).toBe(true);
-    expect(legalAckPending([consent('privacy_policy', '1.2')], 'privacidade')).toBe(true);
-    expect(legalAckPending([consent('privacy_policy', '1.3')], 'privacidade')).toBe(false);
-    expect(legalAckPending([consent('privacy_policy', '1.3', false)], 'privacidade')).toBe(false);
+    expect(legalAckPending([consent('privacy_policy', '1.3')], 'privacidade')).toBe(true);
+    expect(legalAckPending([consent('privacy_policy', '1.4')], 'privacidade')).toBe(false);
+    expect(legalAckPending([consent('privacy_policy', '1.4', false)], 'privacidade')).toBe(false);
     // Vale o registro mais recente (a lista vem da mais nova para a mais antiga).
     expect(
       legalAckPending(
-        [consent('privacy_policy', '1.3'), consent('privacy_policy', '1.2')],
+        [consent('privacy_policy', '1.4'), consent('privacy_policy', '1.3')],
         'privacidade',
       ),
     ).toBe(false);
@@ -50,13 +50,25 @@ describe('versões dos documentos legais (ADR 54)', () => {
 
   it('changesSince: só o que veio depois da versão respondida; sem resposta, só a vigente', () => {
     expect(answeredVersion([consent('privacy_policy', '1.1')], 'privacidade')).toBe('1.1');
-    expect(changesSince('privacidade', '1.1').map((c) => c.version)).toEqual(['1.3', '1.2']);
-    expect(changesSince('privacidade', '1.2').map((c) => c.version)).toEqual(['1.3']);
-    expect(changesSince('privacidade', null).map((c) => c.version)).toEqual(['1.3']);
+    expect(changesSince('privacidade', '1.1').map((c) => c.version)).toEqual(['1.4', '1.3', '1.2']);
+    expect(changesSince('privacidade', '1.2').map((c) => c.version)).toEqual(['1.4', '1.3']);
+    expect(changesSince('privacidade', '1.3').map((c) => c.version)).toEqual(['1.4']);
+    expect(changesSince('privacidade', null).map((c) => c.version)).toEqual(['1.4']);
     expect(changesSince('termos', '1.2')).toEqual([]);
   });
 
-  it('a política 1.3 diz o que o push guarda, com quem compartilha e por quanto tempo', () => {
+  it('a política 1.4 diz o que sai no silêncio, sem prometer silêncio absoluto (ADR 56)', () => {
+    const texto = LEGAL.privacidade.sections.flatMap((s) => s.paragraphs).join('\n');
+    expect(texto).toContain('o que você escolher deixar sair mesmo durante ele');
+    expect(texto).toContain('prioridade alta');
+    expect(texto).toContain('prazo de guarda');
+    expect(texto).toContain('com avisos que saíram antes de o silêncio começar');
+    expect(texto).not.toContain('nenhum aviso bate');
+    expect(texto).not.toContain('não bater no aparelho durante o silêncio');
+    expect(texto).toContain('As versões anteriores à 1.3');
+  });
+
+  it('a política diz o que o push guarda, com quem compartilha e por quanto tempo', () => {
     const texto = LEGAL.privacidade.sections.flatMap((s) => s.paragraphs).join('\n');
     expect(texto).toContain('fora do Brasil');
     expect(texto).toContain('horário de silêncio');

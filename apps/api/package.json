@@ -1,6 +1,6 @@
 {
   "name": "@escambo/api",
-  "version": "1.37.0",
+  "version": "1.38.0",
   "private": true,
   "description": "API backend do Escambo — Node + Express + TypeScript",
   "license": "MIT",

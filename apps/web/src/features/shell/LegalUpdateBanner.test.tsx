@@ -33,22 +33,23 @@ beforeEach(() => {
   recordConsent.mockResolvedValue(undefined);
 });
 
-/** A faixa da Política 1.3 (ADR 54): resume, aponta o texto e registra a resposta. */
+/** A faixa da Política vigente (ADR 54 e 56): resume, aponta o texto e registra a resposta. */
 describe('LegalUpdateBanner', () => {
   it('resume o que mudou desde a versão respondida e leva ao histórico', () => {
-    render(wrap(<LegalUpdateBanner consents={[consent('1.2')]} />));
+    render(wrap(<LegalUpdateBanner consents={[consent('1.3')]} />));
     const region = screen.getByRole('region', { name: 'Atualização da Política de Privacidade' });
-    expect(region).toHaveTextContent('versão 1.3');
-    expect(region).toHaveTextContent('avisos no navegador');
-    expect(region).not.toHaveTextContent('Cópia de dados baixável'); // isso é da 1.2, já respondida
+    expect(region).toHaveTextContent('versão 1.4');
+    expect(region).toHaveTextContent('o que sai mesmo durante o silêncio');
+    expect(region).not.toHaveTextContent('Seção nova sobre alterações'); // isso é da 1.3, já respondida
     const link = screen.getByRole('link', { name: 'Ler a política' });
     expect(link).toHaveAttribute('href', '/privacidade#historico');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
-  it('quem está na 1.1 ouve também o resumo da 1.2', () => {
+  it('quem está na 1.1 ouve também o resumo da 1.2 e da 1.3', () => {
     render(wrap(<LegalUpdateBanner consents={[consent('1.1')]} />));
     expect(screen.getByRole('region')).toHaveTextContent('Cópia de dados baixável');
+    expect(screen.getByRole('region')).toHaveTextContent('Seção nova sobre alterações');
   });
 
   it('"Li e aceito" registra a versão nova como aceita', async () => {
@@ -57,7 +58,7 @@ describe('LegalUpdateBanner', () => {
     await user.click(screen.getByRole('button', { name: 'Li e aceito' }));
     expect(recordConsent).toHaveBeenCalledWith({
       type: 'privacy_policy',
-      version: '1.3',
+      version: '1.4',
       accepted: true,
     });
     expect(await screen.findByText(/fica registrada nos seus consentimentos/)).toBeInTheDocument();
@@ -69,10 +70,10 @@ describe('LegalUpdateBanner', () => {
     await user.click(screen.getByRole('button', { name: 'Não aceito' }));
     expect(recordConsent).toHaveBeenCalledWith({
       type: 'privacy_policy',
-      version: '1.3',
+      version: '1.4',
       accepted: false,
     });
-    expect(await screen.findByText(/desligar os avisos no navegador/)).toBeInTheDocument();
+    expect(await screen.findByText(/escolher o que sai no silêncio/)).toBeInTheDocument();
   });
 
   it('erro ao registrar: avisa e a faixa continua', async () => {

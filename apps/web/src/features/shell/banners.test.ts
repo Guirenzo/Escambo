@@ -13,9 +13,10 @@ const user = (o: Partial<PublicUser> = {}): PublicUser => ({
   timezone: 'America/Sao_Paulo',
   timezoneChosen: true,
   quietHours: null,
+  quietPass: null,
   ...o,
 });
-const ok: Consent[] = [{ type: 'privacy_policy', version: '1.3', accepted: true, at: '' }];
+const ok: Consent[] = [{ type: 'privacy_policy', version: '1.4', accepted: true, at: '' }];
 const velho: Consent[] = [{ type: 'privacy_policy', version: '1.2', accepted: true, at: '' }];
 
 /** Uma faixa por vez no topo do app (ADR 54): legal, depois fuso, depois e-mail. */

@@ -1,3 +1,4 @@
+import { DEADLINE_ACTIVE_STATUSES } from './deadline-grace';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { applyWalletEffect, type WalletEffect } from '../wallet/wallet.ledger';
@@ -34,9 +35,9 @@ export interface ContractRow extends RowDataPacket {
   overdue_notified_at: Date | null;
 }
 
-/** Status em que o prazo de entrega está correndo. */
-export const DEADLINE_ACTIVE_STATUSES = ['accepted', 'in_progress', 'revision_requested'] as const;
-const DEADLINE_ACTIVE = `('accepted', 'in_progress', 'revision_requested')`;
+/** Status em que o prazo de entrega está correndo (fonte única em deadline-grace, ADR 56). */
+export { DEADLINE_ACTIVE_STATUSES };
+const DEADLINE_ACTIVE = `(${DEADLINE_ACTIVE_STATUSES.map((s) => `'${s}'`).join(', ')})`;
 
 export interface HistoryRow extends RowDataPacket {
   old_status: string | null;

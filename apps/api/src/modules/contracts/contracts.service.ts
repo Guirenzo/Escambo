@@ -31,6 +31,17 @@ import {
 import { reviewsRepository } from '../reviews/reviews.repository';
 import { toReview } from '../reviews/reviews.service';
 import { settingsService } from '../settings/settings.service';
+import { settingsRepository } from '../settings/settings.repository';
+import { userZone } from '../auth/user-zone';
+import { formatDate, formatDateTime } from '../../utils/timezone';
+import { DEFAULT_DEADLINE_GRACE_HOURS, graceState } from './deadline-grace';
+import {
+  extensionDeclinedNotice,
+  overdueClientNotice,
+  overdueFreelancerNotice,
+  revisionNotice,
+  type DeadlineFacts,
+} from './deadline-notices';
 import type {
   CreateContractInput,
   DeliverInput,
@@ -645,24 +656,84 @@ export const contractsService = {
     return toContract(await loadOr404(id));
   },
 
-  /** Job RN-029, fase 1: avisa as duas partes uma única vez que o prazo estourou. */
-  async notifyOverdue(row: ContractRow, graceHours: number): Promise<boolean> {
+  /**
+   * Job RN-029, fase 1: avisa as duas partes uma única vez que o prazo estourou. A carência
+   * começa agora; cada aviso diz até quando, no fuso de quem lê. O de quem entrega pode sair
+   * durante o "não perturbe" de quem marcou (ADR 56); o do cliente espera.
+   */
+  async notifyOverdue(
+    row: ContractRow,
+    graceHours: number,
+    now: Date = new Date(),
+  ): Promise<boolean> {
     const ok = await contractsRepository.markOverdueNotified(row.id);
     if (!ok) return false;
-    const deadline = brDate(row.deadline_at!);
-    void notificationsService.notify(row.freelancer_id, {
-      type: 'contract_overdue',
-      title: 'Prazo de entrega estourado',
-      body: `${row.title}: o prazo era ${deadline}. Registre a entrega ou peça extensão${row.deadline_extended_at ? '' : ' (uma vez)'}; sem isso em ${graceHours}h a mediação é aberta automaticamente.`,
-      data: { contractId: row.id },
+    const endsAt = new Date(now.getTime() + graceHours * 3_600_000);
+    const deadlineAt = new Date(row.deadline_at!);
+    const [freelancerZone, clientZone] = await Promise.all([
+      userZone(row.freelancer_id),
+      userZone(row.client_id),
+    ]);
+    const facts = (zone: typeof freelancerZone): DeadlineFacts & { limit: string } => ({
+      contractId: row.id,
+      title: row.title,
+      deadline: formatDate(deadlineAt, zone),
+      extensionFree: row.deadline_extended_at === null,
+      byMilestones: hasMilestones(row),
+      limit: formatDateTime(endsAt, zone),
     });
-    void notificationsService.notify(row.client_id, {
-      type: 'contract_overdue',
-      title: 'Prazo de entrega estourado',
-      body: `${row.title}: o prazo era ${deadline} e não houve entrega. Sem entrega nem extensão em ${graceHours}h, a mediação do Escambo é aberta automaticamente.`,
-      data: { contractId: row.id },
-    });
+    const mine = overdueFreelancerNotice(facts(freelancerZone));
+    void notificationsService.notify(
+      row.freelancer_id,
+      mine.params,
+      mine.passCategory ? { passCategory: mine.passCategory } : {},
+    );
+    void notificationsService.notify(row.client_id, overdueClientNotice(facts(clientZone)).params);
     return true;
+  },
+
+  /**
+   * Revisão pedida ou extensão recusada (ADR 56): com a carência da RN-029 correndo, o aviso diz
+   * até quando dá para agir, no fuso de quem entrega, e pode sair no silêncio se ele deixou. Mesma
+   * leitura da carência que o job (settingsRepository, sem cache). Nunca lança: sem a carência, vai
+   * o aviso de sempre, que espera o silêncio.
+   */
+  async notifyFreelancerDeadline(
+    kind: 'revision' | 'extension_declined',
+    contract: Contract,
+    now: Date = new Date(),
+  ): Promise<void> {
+    const build = kind === 'revision' ? revisionNotice : extensionDeclinedNotice;
+    const facts = (zone: Parameters<typeof formatDate>[1]): DeadlineFacts => ({
+      contractId: contract.id,
+      title: contract.title,
+      deadline: contract.deadlineAt ? formatDate(new Date(contract.deadlineAt), zone) : '',
+      extensionFree: contract.deadlineExtendedAt === null,
+      byMilestones: contract.hasMilestones,
+    });
+    try {
+      const [graceHours, zone] = await Promise.all([
+        settingsRepository.getNumber('deadline_grace_hours', DEFAULT_DEADLINE_GRACE_HOURS),
+        userZone(contract.freelancerId),
+      ]);
+      const grace = graceState(contract, graceHours, now);
+      const limit = grace.phase === 'running' ? formatDateTime(grace.endsAt, zone) : null;
+      const n = build({ ...facts(zone), grace, limit });
+      await notificationsService.notify(
+        contract.freelancerId,
+        n.params,
+        n.passCategory ? { passCategory: n.passCategory } : {},
+      );
+    } catch (err) {
+      logger.warn(
+        { err, contractId: contract.id, kind },
+        'aviso de prazo sem a carência: vai no texto de sempre e espera o silêncio',
+      );
+      await notificationsService.notify(
+        contract.freelancerId,
+        build({ ...facts('America/Sao_Paulo'), grace: { phase: 'idle' }, limit: null }).params,
+      );
+    }
   },
 
   /** Job RN-029, fase 2: passada a carência, a plataforma abre a disputa (congela o escrow). */

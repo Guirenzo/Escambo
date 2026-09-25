@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { detectType, type DetectedType } from '../messaging/attachments.storage';
-import { formatDateTime, timezoneOf } from '../../utils/timezone';
-import { authRepository } from '../auth/auth.repository';
+import { formatDateTime } from '../../utils/timezone';
+import { userZone } from '../auth/user-zone';
 import { strikeSummary } from '../reports/moderation.strikes';
 import { mediaBlocklist } from './media.blocklist';
 import { fingerprint, processUpload } from './media.image';
@@ -28,7 +28,7 @@ const WEBP: DetectedType = { mime: 'image/webp', ext: 'webp', kind: 'image', nam
 export async function uploadMedia(req: Request, res: Response): Promise<void> {
   const { uploadsBlockedUntil } = await strikeSummary(req.user!.uid);
   if (uploadsBlockedUntil) {
-    const zone = timezoneOf((await authRepository.findById(req.user!.uid))?.timezone);
+    const zone = await userZone(req.user!.uid);
     throw new HttpError(
       403,
       `Envio de imagens bloqueado até ${formatDateTime(new Date(uploadsBlockedUntil), zone)} por imagens removidas pela moderação`,

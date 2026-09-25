@@ -361,7 +361,7 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Disputas |
-| **Descrição** | Se o prazo de entrega estoura sem registro de entrega e sem extensão aprovada, o sistema cria automaticamente um ticket de suporte com prioridade **Alta** e notifica ambas as partes. Implementado como **disputa aberta pela plataforma** (motivo "prazo", em nome do cliente) pelo job `overdue-contracts`: aviso às duas partes ao vencer e, `deadline_grace_hours` (padrão 24) depois, sem entrega nem extensão aprovada, a mediação assume e o escrow congela |
+| **Descrição** | Se o prazo de entrega estoura sem registro de entrega e sem extensão aprovada, o sistema cria automaticamente um ticket de suporte com prioridade **Alta** e notifica ambas as partes. Implementado como **disputa aberta pela plataforma** (motivo "prazo", em nome do cliente) pelo job `overdue-contracts`: aviso às duas partes ao vencer e, `deadline_grace_hours` (padrão 24) depois, sem entrega nem extensão aprovada, a mediação assume e o escrow congela. O aviso a quem entrega, e a recusa de extensão ou o pedido de revisão enquanto a carência corre, dizem a hora-limite no fuso dele e podem sair durante o "não perturbe" se ele deixou (RN-077, ADR 56); o aviso ao cliente espera |
 | **Impacto** | Garante que nenhuma contratação fique em estado indefinido |
 | **UC Relacionado** | UC-05, UC-10 |
 
@@ -897,6 +897,17 @@ Cada regra possui:
 
 ---
 
+### RN-077 — O que sai durante o "não perturbe"
+
+| Campo | Detalhe |
+|---|---|
+| **Categoria** | Notificações |
+| **Descrição** | Durante a janela de silêncio da conta, nenhum aviso no navegador sai, exceto o aviso de teste e as categorias que a própria pessoa marcou, dentro de uma lista fechada mantida pela plataforma. Hoje a lista tem uma categoria, "Prazo vencido num trabalho que você entrega": o aviso de prazo estourado a quem entrega quando há o que fazer (RN-029) e, com a carência correndo e ao menos 15 minutos para agir, a extensão recusada (RN-028) e a revisão pedida. Quem nunca escolheu não tem nada saindo; ao ligar o silêncio, quem entrega trabalho vê a opção marcada. O que não sai fica para o aviso do fim do silêncio, com os de prazo primeiro. Uma categoria só entra se a espera tira de quem recebe algo que não volta e se ele consegue agir |
+| **Impacto** | Quem entrega não perde horas da carência dormindo, e ninguém é acordado pelo que não escolheu |
+| **UC Relacionado** | UC-02, UC-05 |
+
+---
+
 ## 10. Tabela Consolidada
 
 | ID | Categoria | Descrição Resumida | UC |
@@ -977,6 +988,7 @@ Cada regra possui:
 | RN-074 | LGPD | Coleta de dados mínimos | UC-01 |
 | RN-075 | Segurança | CPF e senha criptografados | UC-01, UC-06 |
 | RN-076 | LGPD | Comunicação de alteração da Política de Privacidade: faixa com destaque ao entrar, aceitar/não aceitar registrados por versão (art. 8 §6, art. 9) | UC-01 |
+| RN-077 | Notificações | O que sai durante o "não perturbe": lista fechada da plataforma, escolha da pessoa (hoje, prazo vencido num trabalho que você entrega) | UC-02, UC-05 |
 
 ---
 

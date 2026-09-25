@@ -59,6 +59,7 @@ describe('preferência de e-mail (ADR 27)', () => {
       digestHour: env.DIGEST_HOUR,
       timezone: 'America/Sao_Paulo',
       quietHours: null,
+      quietPass: null,
     });
 
     users.findById.mockResolvedValue(user('off', 20));
@@ -69,6 +70,7 @@ describe('preferência de e-mail (ADR 27)', () => {
       digestHour: 20,
       timezone: 'America/Sao_Paulo',
       quietHours: null,
+      quietPass: null,
     });
     expect(users.setEmailPreference).toHaveBeenCalledWith(7, {
       emailFrequency: 'off',

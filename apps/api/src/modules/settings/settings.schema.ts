@@ -70,7 +70,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     type: 'integer',
     label: 'Carência do prazo',
     description:
-      'Depois do aviso de prazo estourado, sem entrega nem extensão aprovada, a plataforma abre a disputa em nome do cliente (RN-029, job overdue-contracts).',
+      'Depois do aviso de prazo estourado, sem entrega nem extensão aprovada, a plataforma abre a disputa em nome do cliente (RN-029, job overdue-contracts). Quem entrega e deixou sair o prazo vencido no "não perturbe" recebe o aviso na hora; quem não deixou só o vê ao fim do silêncio, então uma carência menor que uma noite pode passar inteira dormindo (ADR 56).',
     unit: 'horas',
     min: 1,
     max: 168,

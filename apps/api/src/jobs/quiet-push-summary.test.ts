@@ -110,7 +110,7 @@ describe('resumo ao fim do silêncio (ADR 54)', () => {
       tag: 'contract_proposal:9',
     });
     // TTL até as 22:00: das 07:30 são 14,5 h, presas ao teto de 12.
-    expect(push.send.mock.calls[0]?.[2]).toEqual({ ttlSeconds: 12 * 3600 });
+    expect(push.send.mock.calls[0]?.[2]).toStrictEqual({ ttlSeconds: 12 * 3600 });
   });
 
   it('vários retidos viram um resumo só, e a marca é o maior id', async () => {

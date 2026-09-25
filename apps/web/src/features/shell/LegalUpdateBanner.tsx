@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { Consent } from '@escambo/types';
 import { api } from '../../lib/api';
-import { dt } from '../../lib/format';
+import { dayLabel } from '../../lib/format';
 import { qk } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { LEGAL_UPDATED, LEGAL_VERSIONS } from '../legal/content';
@@ -31,7 +31,7 @@ export function LegalUpdateBanner({ consents }: { consents: readonly Consent[] }
       toast.success(
         accepted
           ? `Pronto: a versão ${version} fica registrada nos seus consentimentos, no Perfil.`
-          : 'Registrado. Você pode desligar os avisos no navegador e trocar o fuso no Perfil, ou pedir a exclusão da conta lá mesmo.',
+          : 'Registrado. No Perfil você pode desligar os avisos no navegador, escolher o que sai no silêncio e trocar o fuso, ou pedir a exclusão da conta.',
       );
     } catch {
       toast.error('Não foi possível registrar agora; a faixa volta na próxima vez.');
@@ -49,7 +49,7 @@ export function LegalUpdateBanner({ consents }: { consents: readonly Consent[] }
       <ShieldCheck size={16} aria-hidden="true" />
       <span>
         A <strong>Política de Privacidade</strong> mudou (versão {version},{' '}
-        {dt(LEGAL_UPDATED.privacidade)}):{' '}
+        {dayLabel(LEGAL_UPDATED.privacidade)}):{' '}
         {changes.map((c) => c.summary).join(' Antes disso, na versão anterior: ')}
       </span>
       <span className="tz-actions">

@@ -34,11 +34,20 @@ vi.mock('../disputes/disputes.repository', () => ({
 vi.mock('../notifications/notifications.service', () => ({
   notificationsService: { notify: vi.fn().mockResolvedValue(undefined) },
 }));
+vi.mock('../auth/user-zone', () => ({
+  userZone: vi.fn().mockResolvedValue('America/Sao_Paulo'),
+}));
+vi.mock('../settings/settings.repository', () => ({
+  settingsRepository: { getNumber: vi.fn().mockResolvedValue(24) },
+}));
 
 import { contractsService } from './contracts.service';
 import { contractsRepository, type ContractRow } from './contracts.repository';
 import { disputesRepository } from '../disputes/disputes.repository';
 import { notificationsService } from '../notifications/notifications.service';
+import { userZone } from '../auth/user-zone';
+import { settingsRepository } from '../settings/settings.repository';
+import type { Contract } from '@escambo/types';
 
 const repo = vi.mocked(contractsRepository);
 const disputes = vi.mocked(disputesRepository);
@@ -228,7 +237,10 @@ describe('prazo estourado (RN-029)', () => {
 
     expect(await contractsService.notifyOverdue(r, 24)).toBe(true);
     expect(notify).toHaveBeenCalledTimes(2);
-    expect(notify).toHaveBeenCalledWith(2, expect.objectContaining({ type: 'contract_overdue' }));
+    // Só a cópia de quem entrega pode sair no "não perturbe" (ADR 56); a do cliente vai sem opções.
+    expect(notify).toHaveBeenCalledWith(2, expect.objectContaining({ type: 'contract_overdue' }), {
+      passCategory: 'deadline',
+    });
     expect(notify).toHaveBeenCalledWith(1, expect.objectContaining({ type: 'contract_overdue' }));
 
     expect(await contractsService.notifyOverdue(r, 24)).toBe(false);
@@ -256,5 +268,113 @@ describe('prazo estourado (RN-029)', () => {
 
     expect(await contractsService.openOverdueDispute(r, 24)).toBeNull();
     expect(notify).toHaveBeenCalledTimes(2);
+  });
+});
+
+/** Os avisos de prazo com hora-limite no fuso de quem lê e a categoria do silêncio (ADR 56). */
+describe('avisos de prazo com hora-limite (ADR 56)', () => {
+  const zone = vi.mocked(userZone);
+  const grace = vi.mocked(settingsRepository.getNumber);
+  const NOW = new Date('2026-09-26T03:03:00Z'); // 00:03 em Brasília
+
+  it('prazo estourado: cada cópia no fuso de quem lê; por marcos com a extensão usada não sai no silêncio', async () => {
+    repo.markOverdueNotified.mockResolvedValue(true);
+    zone.mockImplementation(async (id: number) =>
+      id === 2 ? 'America/Manaus' : 'America/Sao_Paulo',
+    );
+    await contractsService.notifyOverdue(
+      row({ deadline_at: new Date('2026-09-26T02:59:59Z') }),
+      24,
+      NOW,
+    );
+    const [freela, cliente] = [notify.mock.calls[0]!, notify.mock.calls[1]!];
+    expect(freela[1].body).toBe(
+      'Até 26/09/2026 às 23:03: entregue ou peça a extensão (uma vez), senão a mediação abre sozinha. O prazo era 25/09/2026.',
+    );
+    expect(freela[2]).toEqual({ passCategory: 'deadline' });
+    expect(cliente[1].body).toContain('até 27/09/2026 às 00:03');
+    expect(cliente[1].body).toContain('O prazo era 25/09/2026');
+    expect(cliente).toHaveLength(2);
+
+    notify.mockClear();
+    zone.mockResolvedValue('America/Sao_Paulo');
+    await contractsService.notifyOverdue(
+      row({
+        has_milestones: 1,
+        deadline_extended_at: new Date(),
+        deadline_at: new Date('2026-09-26T02:59:59Z'),
+      }),
+      24,
+      NOW,
+    );
+    expect(notify.mock.calls[0]![1].body).toContain('Sem extensão possível');
+    expect(notify.mock.calls[0]![2]).toEqual({});
+  });
+
+  const contract = (o: Partial<Contract> = {}): Contract =>
+    ({
+      id: 1,
+      clientId: 1,
+      freelancerId: 2,
+      title: 'Vídeo institucional',
+      status: 'revision_requested',
+      deadlineAt: '2026-09-25T02:59:59.000Z',
+      overdueNotifiedAt: '2026-09-25T03:00:00.000Z',
+      deadlineExtendedAt: null,
+      hasMilestones: false,
+      extension: null,
+      ...o,
+    }) as Contract;
+
+  it('revisão com a carência correndo: hora-limite e categoria; lida a carência do painel', async () => {
+    zone.mockResolvedValue('America/Sao_Paulo');
+    grace.mockResolvedValue(24);
+    await contractsService.notifyFreelancerDeadline(
+      'revision',
+      contract(),
+      new Date('2026-09-25T20:00:00Z'),
+    );
+    expect(grace).toHaveBeenCalledWith('deadline_grace_hours', 24);
+    expect(notify).toHaveBeenCalledWith(
+      2,
+      expect.objectContaining({
+        type: 'contract_revision',
+        title: 'Revisão pedida: Vídeo institucional',
+        body: expect.stringMatching(/^Prazo vencido\. Até 26\/09\/2026 às 00:00:/),
+      }),
+      { passCategory: 'deadline' },
+    );
+  });
+
+  it('recusa com o prazo no futuro: o aviso de sempre, sem categoria', async () => {
+    zone.mockResolvedValue('America/Sao_Paulo');
+    await contractsService.notifyFreelancerDeadline(
+      'extension_declined',
+      contract({
+        status: 'in_progress',
+        deadlineAt: '2026-10-10T02:59:59.000Z',
+        overdueNotifiedAt: null,
+      }),
+      new Date('2026-09-25T20:00:00Z'),
+    );
+    expect(notify).toHaveBeenCalledWith(
+      2,
+      expect.objectContaining({ title: 'Extensão de prazo recusada' }),
+      {},
+    );
+  });
+
+  it('a leitura da carência falha: vai o texto de sempre, sem categoria, e nada lança', async () => {
+    grace.mockRejectedValueOnce(new Error('db fora'));
+    await expect(
+      contractsService.notifyFreelancerDeadline(
+        'revision',
+        contract(),
+        new Date('2026-09-25T20:00:00Z'),
+      ),
+    ).resolves.toBeUndefined();
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify.mock.calls[0]![1]).toMatchObject({ title: 'Revisão solicitada' });
+    expect(notify.mock.calls[0]).toHaveLength(2);
   });
 });

@@ -104,4 +104,19 @@ export const pushRepository = {
       { id, error: error.slice(0, 255) },
     );
   },
+
+  /**
+   * A conta entrega trabalho (ADR 56): papel freelancer, algum serviço, ou alguma contratação como
+   * freelancer (uma troca faz de quem contrata alguém que também entrega).
+   */
+  async deliversWork(userId: number): Promise<boolean> {
+    const [rows] = await pool.query<(RowDataPacket & { d: number })[]>(
+      `SELECT (u.role = 'freelancer'
+               OR EXISTS (SELECT 1 FROM services s WHERE s.user_id = u.id)
+               OR EXISTS (SELECT 1 FROM contracts c WHERE c.freelancer_id = u.id)) AS d
+         FROM users u WHERE u.id = :userId`,
+      { userId },
+    );
+    return Number(rows[0]?.d ?? 0) === 1;
+  },
 };

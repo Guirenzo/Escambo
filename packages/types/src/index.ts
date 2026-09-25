@@ -28,7 +28,18 @@ export interface PublicUser {
   timezoneChosen: boolean;
   /** Janela de silêncio dos avisos no navegador (ADR 54); null = desligado. */
   quietHours: QuietHours | null;
+  /**
+   * O que sai mesmo durante o silêncio (ADR 56); null = nunca escolheu (vale como nada);
+   * [] = escolheu que nada sai.
+   */
+  quietPass: QuietPassCategory[] | null;
 }
+
+/**
+ * O que pode sair durante o silêncio (ADR 56): lista fechada da plataforma; a pessoa escolhe.
+ * deadline = prazo vencido num trabalho que a pessoa entrega, com a mediação automática contando.
+ */
+export type QuietPassCategory = 'deadline';
 
 /**
  * "Não perturbe" (ADR 54): horas cheias no fuso da conta, [start, end); start maior que end cruza
@@ -47,6 +58,11 @@ export interface PushStatus {
   subscribed: boolean;
   /** Avisos retidos pelo silêncio, ainda por ver, que o resumo ao fim da janela vai cobrir. */
   held: number;
+  /**
+   * A conta entrega trabalho (papel freelancer, algum serviço ou contratação como freelancer): só
+   * ela vê a escolha do que sai no silêncio (ADR 56).
+   */
+  deliversWork: boolean;
 }
 
 /** Assinatura de um aparelho, como o navegador entrega. */
@@ -82,6 +98,8 @@ export interface EmailPreference {
   timezone: BrazilTimezone;
   /** Janela de silêncio dos avisos no navegador (ADR 54); null = desligado. */
   quietHours: QuietHours | null;
+  /** O que sai mesmo durante o silêncio (ADR 56); null = nunca escolheu (vale como nada). */
+  quietPass: QuietPassCategory[] | null;
 }
 
 /** Muda só o que vier; `null` na hora ou no fuso volta ao padrão da plataforma. */
@@ -91,6 +109,8 @@ export interface UpdateEmailPreferenceRequest {
   timezone?: BrazilTimezone | null;
   /** Objeto inteiro ou null (desliga); nunca meia janela (ADR 54). */
   quietHours?: QuietHours | null;
+  /** O conjunto inteiro do que sai durante o silêncio (ADR 56); [] = nada sai. */
+  quietPass?: QuietPassCategory[];
 }
 
 export interface ForgotPasswordRequest {

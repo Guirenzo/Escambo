@@ -1,6 +1,7 @@
 import webpush from 'web-push';
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
+import { PUSH_TTL_MAX_SECONDS } from './quiet-hours';
 
 /**
  * Entrega de push atrás de interface, no mesmo desenho do e-mail e do gateway de pagamento
@@ -42,9 +43,13 @@ export const resultForStatus = (status: number | undefined): PushResult =>
 /** Quanto tempo o serviço de push pode segurar o aviso para um aparelho offline (ADR 54). */
 export interface PushSendOptions {
   ttlSeconds?: number;
+  /**
+   * Prioridade de entrega (RFC 8030 §5.3). Só o aviso que sai durante o silêncio vai com 'high',
+   * para o serviço de push não esperar o aparelho sair da economia de bateria (ADR 56). Não passa
+   * pelo "não perturbe" do sistema. Sem pedido, a chave nem vai e o serviço recebe 'normal'.
+   */
+  urgency?: 'high';
 }
-
-export const PUSH_TTL_MAX_SECONDS = 12 * 60 * 60;
 
 export interface PushProvider {
   readonly name: 'simulated' | 'webpush';
@@ -76,9 +81,13 @@ export function vapidKeys(): { publicKey: string; privateKey: string } {
 
 export const simulatedPushProvider: PushProvider = {
   name: 'simulated',
-  async send(target, payload) {
+  async send(target, payload, opts) {
     logger.info(
-      { endpoint: target.endpoint.slice(0, 60), title: payload.title },
+      {
+        endpoint: target.endpoint.slice(0, 60),
+        title: payload.title,
+        urgency: opts?.urgency ?? 'normal',
+      },
       'push (simulado) entregue',
     );
     return 'sent';
@@ -96,6 +105,7 @@ export const webPushProvider: PushProvider = {
         {
           vapidDetails: { subject: env.PUSH_SUBJECT, publicKey, privateKey },
           TTL: opts?.ttlSeconds ?? PUSH_TTL_MAX_SECONDS,
+          ...(opts?.urgency ? { urgency: opts.urgency } : {}),
         },
       );
       return 'sent';
