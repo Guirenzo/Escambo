@@ -23,6 +23,7 @@ export function useScrollToHashWhenSettled(): void {
     const el = document.getElementById(decodeURIComponent(hash.slice(1)));
     if (!el) return;
     done.current = true;
+    el.setAttribute('data-hash-target', ''); // folga no topo e sem anel (styles.css)
     el.scrollIntoView({ block: 'start' });
     if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
     el.focus({ preventScroll: true });

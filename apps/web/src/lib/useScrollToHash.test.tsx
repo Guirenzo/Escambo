@@ -60,6 +60,7 @@ describe('useScrollToHashWhenSettled', () => {
     expect(scroll).toHaveBeenCalledTimes(1);
     expect(scroll.mock.contexts[0]).toBe(title);
     expect(title).toHaveAttribute('tabindex', '-1');
+    expect(title).toHaveAttribute('data-hash-target');
     expect(title).toHaveFocus();
   });
 

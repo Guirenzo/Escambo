@@ -565,8 +565,12 @@ button:focus-visible {
   outline: 3px solid rgba(13, 92, 58, 0.3);
   outline-offset: 2px;
 }
-/* Destino de âncora que recebe foco por script (ADR 55): não é controle, não ganha anel. */
-[tabindex='-1']:focus:not(:focus-visible) {
+/* Destino de âncora que recebe foco pelo link (ADR 55): é título, não controle — sem anel, e com
+   folga no topo para o cartão aparecer inteiro ao rolar. */
+[data-hash-target] {
+  scroll-margin-top: 40px;
+}
+[data-hash-target]:focus {
   outline: none;
 }
 button:disabled {
