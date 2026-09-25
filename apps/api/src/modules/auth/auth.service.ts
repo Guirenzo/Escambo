@@ -7,7 +7,7 @@ import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { isBrazilTimezone, timezoneOf } from '../../utils/timezone';
 import { pushRepository } from '../notifications/push.repository';
-import { quietWindowOf } from '../notifications/quiet-hours';
+import { quietPassOf, quietWindowOf } from '../notifications/quiet-hours';
 import { lgpdRepository } from '../lgpd/lgpd.repository';
 import { CURRENT_LEGAL_VERSION } from '../lgpd/legal-versions';
 import { auditService } from '../audit/audit.service';
@@ -41,6 +41,7 @@ function toPublic(user: UserRow): PublicUser {
     timezone: timezoneOf(user.timezone),
     timezoneChosen: isBrazilTimezone(user.timezone),
     quietHours: quietWindowOf(user.push_quiet_start, user.push_quiet_end),
+    quietPass: quietPassOf(user.push_quiet_pass),
   };
 }
 
@@ -190,6 +191,7 @@ export const authService = {
       timezone: timezoneOf(input.timezone),
       timezoneChosen: input.timezone !== undefined,
       quietHours: null,
+      quietPass: null,
     };
   },
 

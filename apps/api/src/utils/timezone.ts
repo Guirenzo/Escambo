@@ -95,6 +95,13 @@ export function startOfTodayIn(zone: BrazilTimezone, at: Date): Date {
   return new Date(Date.UTC(p.year, p.month - 1, p.day) - offsetMinutes(zone, at) * 60_000);
 }
 
+/** Data no fuso, como aparece nos avisos: "29/09/2026" (ADR 46 e 56). */
+export function formatDate(at: Date, zone: BrazilTimezone): string {
+  const p = localParts(zone, at);
+  const two = (n: number): string => String(n).padStart(2, '0');
+  return `${two(p.day)}/${two(p.month)}/${p.year}`;
+}
+
 /** Data e hora no fuso, como aparecem nos avisos: "29/09/2026 às 12:00". */
 export function formatDateTime(at: Date, zone: BrazilTimezone): string {
   const p = localParts(zone, at);

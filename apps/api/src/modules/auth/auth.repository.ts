@@ -1,3 +1,4 @@
+import type { QuietPassCategory } from '@escambo/types';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 
@@ -18,6 +19,8 @@ export interface UserRow extends RowDataPacket {
   /** Janela de silêncio dos avisos no navegador (ADR 54), horas no fuso da conta; null = desligado. */
   push_quiet_start?: number | null;
   push_quiet_end?: number | null;
+  /** O SET como o mysql2 devolve ('deadline', ''); NULL = nunca escolheu (ADR 56). */
+  push_quiet_pass?: string | null;
   /** Marca d'água do resumo ao fim do silêncio: retidos até este id já foram tratados. */
   push_quiet_summary_id?: number | null;
 }
@@ -26,7 +29,7 @@ export interface UserRow extends RowDataPacket {
 export const authRepository = {
   async findByEmail(email: string): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_summary_id FROM users WHERE email = :email LIMIT 1',
+      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_pass, push_quiet_summary_id FROM users WHERE email = :email LIMIT 1',
       { email },
     );
     return rows[0];
@@ -34,7 +37,7 @@ export const authRepository = {
 
   async findByUlid(ulid: string): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_summary_id FROM users WHERE ulid = :ulid LIMIT 1',
+      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_pass, push_quiet_summary_id FROM users WHERE ulid = :ulid LIMIT 1',
       { ulid },
     );
     return rows[0];
@@ -42,7 +45,7 @@ export const authRepository = {
 
   async findById(id: number): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_summary_id FROM users WHERE id = :id LIMIT 1',
+      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_pass, push_quiet_summary_id FROM users WHERE id = :id LIMIT 1',
       { id },
     );
     return rows[0];
@@ -91,6 +94,8 @@ export const authRepository = {
       timezone?: string | null;
       /** Janela inteira ou null (desliga); nunca meia janela (ADR 54). */
       quietHours?: { start: number; end: number } | null;
+      /** O conjunto inteiro do que sai no silêncio (ADR 56); o servidor nunca inventa o padrão. */
+      quietPass?: QuietPassCategory[];
     },
   ): Promise<void> {
     const sets: string[] = [];
@@ -107,6 +112,8 @@ export const authRepository = {
         );
       }
     }
+    // Ligar ou desligar a janela não mexe na escolha do que sai durante ela (ADR 56).
+    if (change.quietPass !== undefined) sets.push('push_quiet_pass = :quietPass');
     if (sets.length === 0) return;
     await pool.query<ResultSetHeader>(`UPDATE users SET ${sets.join(', ')} WHERE id = :id`, {
       id,
@@ -115,6 +122,7 @@ export const authRepository = {
       timezone: change.timezone ?? null,
       quietStart: change.quietHours?.start ?? null,
       quietEnd: change.quietHours?.end ?? null,
+      quietPass: change.quietPass?.join(',') ?? null,
     });
   },
 

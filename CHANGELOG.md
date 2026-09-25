@@ -5,6 +5,39 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.38.0] — 2026-09-25
+
+### Adicionado
+
+- **O que sai mesmo no silêncio** (ADR 56). No "não perturbe" do cartão Avisos no navegador, quem
+  entrega trabalho escolhe se o prazo vencido sai na hora quando ainda dá para evitar a mediação
+  automática: o aviso de prazo estourado (salvo numa contratação por marcos com a extensão já
+  usada, em que não há o que fazer), a extensão recusada e a revisão pedida com a carência
+  correndo. Esses avisos saem com prioridade alta no serviço de push e sem substituir o aviso anterior
+  da mesma contratação. A opção vem marcada quando você liga o silêncio sem nunca ter escolhido;
+  quem já estava com ele ligado continua sem nada saindo até marcar. Todo o resto espera o fim do silêncio, e o não
+  perturbe do próprio aparelho continua valendo por cima.
+- Os avisos de prazo dizem a hora-limite no seu fuso ("até 26/09/2026 às 00:03"), em vez de
+  "em 24h", e a data do prazo também no seu fuso.
+
+### Alterado
+
+- No aviso do fim do silêncio, os avisos de prazo vêm primeiro.
+- Um aviso que pode sair no silêncio, enviado pouco antes dele, fica até 12 horas no serviço de
+  push (antes, 15 minutos).
+- **Política de Privacidade 1.4**, com faixa para quem respondeu a 1.3, e cópia de dados no
+  formato 1.7. As datas dos documentos legais aparecem no dia certo (antes, a faixa e o histórico
+  mostravam o dia anterior). O texto de ligar os avisos num aparelho passa a dizer tudo o que o serviço de push
+  recebe.
+- A descrição de "Carência do prazo" no painel diz como ela conversa com o silêncio.
+- A documentação da API passa a descrever `quietHours` e `quietPass` no
+  `PUT /notifications/preferences` e `deliversWork` no `GET /notifications/push`.
+
+### Corrigido
+
+- O aviso de prazo estourado oferecia pedir extensão mesmo quando ela já tinha sido usada, e
+  "registrar a entrega" numa contratação por marcos, que é entregue marco a marco.
+
 ## [1.37.0] — 2026-09-24
 
 ### Adicionado

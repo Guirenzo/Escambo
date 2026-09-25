@@ -161,6 +161,8 @@
 | RF-081 | Relatórios | O sistema deve gerar snapshots periódicos (diário, semanal, mensal) de métricas de uso e receita | Média | Pendente |
 | RF-082 | Relatórios | O painel do freelancer deve exibir gráfico de ganhos por período | Média | Pendente |
 
+> ℹ️ RF-069: "crítico" aqui é o que vale uma batida no aparelho (os tipos que também vão por e-mail, ADR 52); mensagens do chat ficam fora para não virar barulho. "O que não pode esperar" durante o horário de silêncio é outra coisa, escolhida pela pessoa (RN-077, ADR 56).
+
 ---
 
 ## Módulo 15 — Troca de Serviços (Escambo)

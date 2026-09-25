@@ -10,8 +10,9 @@ import {
 import { EMAILED_NOTIFICATION_TYPES } from '../mail/mail.service';
 import { authRepository } from '../auth/auth.repository';
 import { notificationsRepository } from './notifications.repository';
-import { hourIn, timezoneOf } from '../../utils/timezone';
-import { inQuietWindow, pushTtlSeconds, quietWindowOf } from './quiet-hours';
+import { timezoneOf } from '../../utils/timezone';
+import type { QuietPassCategory } from '@escambo/types';
+import { pushTiming, pushTtlSeconds, quietPassOf, quietWindowOf } from './quiet-hours';
 
 /**
  * Avisos push no navegador (ADR 52): a assinatura de cada aparelho é a preferência, e o envio
@@ -20,6 +21,64 @@ import { inQuietWindow, pushTtlSeconds, quietWindowOf } from './quiet-hours';
 
 /** Tipos que valem uma batida no aparelho: os mesmos do e-mail (ADR 27), sem o ruído do dia a dia. */
 export const PUSHED_NOTIFICATION_TYPES = EMAILED_NOTIFICATION_TYPES;
+
+/**
+ * Categoria com que cada tipo PODE sair durante o silêncio (ADR 56); null = nunca sai. Todos os
+ * tipos que viram push, nem um a mais: tipo novo sem classificação quebra o teste. Quem emite
+ * afirma a categoria depois de olhar papel e estado; aqui só se confere o par.
+ * Critério para entrar (as três): o sistema age sozinho, sem volta, sobre dinheiro ou contrato de
+ * quem recebe; quem recebe consegue evitar pelo celular, em minutos; e esperar o fim da janela
+ * tira dele parte do tempo para agir.
+ */
+export const QUIET_PASS_BY_TYPE: Readonly<Record<string, QuietPassCategory | null>> = {
+  contract_overdue: 'deadline',
+  deadline_extension_declined: 'deadline',
+  contract_revision: 'deadline',
+  contract_proposal: null,
+  contract_accepted: null,
+  contract_rejected: null,
+  contract_delivered: null,
+  contract_completed: null,
+  contract_cancelled: null,
+  contract_expired: null,
+  deadline_extension_requested: null,
+  deadline_extension_accepted: null,
+  milestone_delivered: null,
+  milestone_approved: null,
+  milestone_revision: null,
+  milestone_overdue: null,
+  saved_search_match: null,
+  dispute_opened: null,
+  dispute_resolved: null,
+  barter_proposed: null,
+  barter_accepted: null,
+  barter_completed: null,
+  barter_disputed: null,
+  deposit_confirmed: null,
+  withdrawal_completed: null,
+  withdrawal_failed: null,
+  export_ready: null,
+  deletion_rejected: null,
+  review_received: null,
+  content_removed: null,
+  appeal_decided: null,
+};
+
+/** A categoria afirmada vale para este tipo? Qualquer outra coisa (inclusive chaves do protótipo) não. */
+export function passCategoryFor(
+  type: string,
+  claimed: QuietPassCategory | null | undefined,
+): QuietPassCategory | null {
+  return claimed != null &&
+    Object.hasOwn(QUIET_PASS_BY_TYPE, type) &&
+    QUIET_PASS_BY_TYPE[type] === claimed
+    ? claimed
+    : null;
+}
+
+/** Tipo que anuncia prazo: vem primeiro no resumo do fim do silêncio (ADR 56). */
+const announcesDeadline = (type: string | undefined): boolean =>
+  type != null && Object.hasOwn(QUIET_PASS_BY_TYPE, type) && QUIET_PASS_BY_TYPE[type] !== null;
 
 /** Para onde a notificação leva quando a pessoa toca no aviso. */
 export function pushUrl(type: string, data: Record<string, unknown> | null | undefined): string {
@@ -51,22 +110,28 @@ const TARGET_KEYS = [
   'removalId',
 ] as const;
 
-export function buildPayload(params: {
-  type: string;
-  title: string;
-  body?: string | null;
-  data?: Record<string, unknown> | null;
-  /** Id da notificação in-app: vira a etiqueta quando o aviso não tem assunto próprio. */
-  notificationId?: number;
-}): PushPayload {
+export function buildPayload(
+  params: {
+    type: string;
+    title: string;
+    body?: string | null;
+    data?: Record<string, unknown> | null;
+    /** Id da notificação in-app: vira a etiqueta quando o aviso não tem assunto próprio. */
+    notificationId?: number;
+  },
+  opts: { ownTag?: boolean } = {},
+): PushPayload {
   const target = TARGET_KEYS.map((key) => params.data?.[key]).find(
     (value) => typeof value === 'number' || typeof value === 'string',
   );
-  // Sem assunto, cada aviso fica com etiqueta própria: um não apaga o outro no aparelho.
+  // Sem assunto, cada aviso fica com etiqueta própria: um não apaga o outro no aparelho. O que sai
+  // durante o silêncio (ADR 56) também: o mesmo tipo se repete na mesma contratação (nova recusa,
+  // nova revisão), e trocar um aviso de mesma etiqueta não alerta de novo no Chrome nem no Firefox
+  // (renotify só o Chrome respeita, e exigiria um service worker novo).
+  const subject = target != null ? `${params.type}:${String(target)}` : null;
+  const own = `n${params.notificationId ?? 0}`;
   const tag =
-    target != null
-      ? `${params.type}:${String(target)}`
-      : `${params.type}:n${params.notificationId ?? 0}`;
+    subject === null ? `${params.type}:${own}` : opts.ownTag ? `${subject}:${own}` : subject;
   return {
     title: params.title,
     body: trimBody(params.body),
@@ -77,10 +142,18 @@ export function buildPayload(params: {
 
 /**
  * O push único do fim do silêncio quando ficou mais de um aviso (ADR 54): título fixo, corpo com
- * os primeiros títulos, etiqueta fixa (um resumo substitui o anterior no aparelho).
+ * os primeiros títulos, etiqueta fixa (um resumo substitui o anterior no aparelho). Os tipos de
+ * prazo vêm primeiro (ADR 56) — inclusive os que não pedem ação —, na ordem de chegada dentro de
+ * cada grupo: o aviso das 00:03 não some atrás de alertas das 22 h.
  */
-export function quietSummaryPayload(items: readonly { title: string }[]): PushPayload {
-  const titles = items
+export function quietSummaryPayload(
+  items: readonly { title: string; type?: string }[],
+): PushPayload {
+  const ordered = [
+    ...items.filter((i) => announcesDeadline(i.type)),
+    ...items.filter((i) => !announcesDeadline(i.type)),
+  ];
+  const titles = ordered
     .slice(0, 3)
     .map((i) => i.title)
     .join(' · ');
@@ -166,6 +239,8 @@ export const pushService = {
       body?: string | null;
       data?: Record<string, unknown> | null;
       notificationId?: number;
+      /** Categoria afirmada por quem emite (ADR 56); só vale se o par (tipo, categoria) está no mapa. */
+      passCategory?: QuietPassCategory;
     },
     now: Date = new Date(),
   ): Promise<void> {
@@ -177,27 +252,50 @@ export const pushService = {
       if (!user || user.deleted_at) return;
       const zone = timezoneOf(user.timezone);
       const window = quietWindowOf(user.push_quiet_start, user.push_quiet_end);
-      // "Não perturbe" (ADR 54): dentro da janela o push não sai. A notificação fica marcada
-      // como retida e o resumo ao fim da janela cobre; in-app, socket e e-mail já saíram.
-      // Uma decisão só, no instante do evento: 21:59:59 sai, 22:00:00 fica.
-      if (inQuietWindow(hourIn(zone, now), window)) {
+      const category = passCategoryFor(params.type, params.passCategory);
+      if (params.passCategory != null && category === null) {
+        logger.warn(
+          { type: params.type, passCategory: params.passCategory },
+          'categoria fora da lista do ADR 56 para este tipo: vai como aviso comum',
+        );
+      }
+      // "Não perturbe" (ADR 54) com o que a pessoa deixa sair (ADR 56): uma decisão só, aqui, no
+      // instante do evento. Dentro da janela, o que não foi liberado fica marcado como retido e o
+      // resumo ao fim cobre; in-app, socket e e-mail já saíram. 21:59:59 sai, 22:00:00 fica.
+      const timing = pushTiming({
+        zone,
+        window,
+        now,
+        category,
+        allowed: quietPassOf(user.push_quiet_pass) ?? [],
+      });
+      if (timing.hold) {
         if (params.notificationId) {
           await notificationsRepository.markPushHeld(params.notificationId, now);
         }
         logger.debug({ userId, type: params.type }, 'push retido pela janela de silêncio');
         return;
       }
-      await this.send(userId, buildPayload(params), {
-        ttlSeconds: pushTtlSeconds(zone, window, now),
-      });
+      if (timing.breaksQuiet) {
+        // Sai no silêncio por escolha da pessoa: prioridade alta e etiqueta própria. Nunca recebe
+        // push_held_at, então não conta no cartão nem volta no resumo.
+        logger.debug({ userId, type: params.type }, 'push saiu no silêncio por escolha da pessoa');
+        await this.send(userId, buildPayload(params, { ownTag: true }), {
+          ttlSeconds: timing.ttlSeconds,
+          urgency: 'high',
+        });
+        return;
+      }
+      await this.send(userId, buildPayload(params), { ttlSeconds: timing.ttlSeconds });
     } catch (err) {
       logger.warn({ err, type: params.type }, 'push da notificação falhou');
     }
   },
 
   /**
-   * Aviso de teste: fura o silêncio de propósito (é a pessoa apertando um botão olhando a tela),
-   * mas não fura o de um aparelho offline horas depois — o TTL acaba no próximo início.
+   * Aviso de teste: fura o silêncio de propósito (ADR 54: é a pessoa apertando um botão olhando a
+   * tela), independente da escolha do ADR 56; mas não fura o de um aparelho offline horas depois —
+   * o TTL acaba no próximo início. Nunca vai com prioridade alta.
    */
   async sendTest(
     userId: number,
@@ -220,5 +318,10 @@ export const pushService = {
   /** Avisos retidos pelo silêncio, ainda por ver, que o resumo vai cobrir (ADR 54). */
   held(userId: number): Promise<number> {
     return notificationsRepository.countHeld(userId);
+  },
+
+  /** A conta entrega trabalho? Só ela vê a escolha do que sai no silêncio (ADR 56). */
+  deliversWork(userId: number): Promise<boolean> {
+    return pushRepository.deliversWork(userId);
   },
 };

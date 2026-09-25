@@ -90,7 +90,12 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       buscasSalvas: { name: string; query: string; alert_frequency: string }[];
       moderacao: unknown[];
     };
-    expect(data.formato).toBe('escambo-export/1.6');
+    expect(data.formato).toBe('escambo-export/1.7');
+    // Formato 1.7 (ADR 56): o que a pessoa deixa sair no silêncio; nunca escolheu = null.
+    expect((data as { titular: Record<string, unknown> }).titular).toHaveProperty(
+      'push_quiet_pass',
+      null,
+    );
     // Formato 1.6 (ADR 54): "todos os seus dados" inclui as assinaturas de aviso, as sessões, os
     // registros de segurança e os e-mails enviados — sessão e cadastro já deixam rastro aqui.
     expect(data).toHaveProperty('avisosNoNavegador');
@@ -206,6 +211,11 @@ describe('LGPD: direitos do titular processados de verdade', () => {
         auth: 'segredo123',
       })
       .expect(201);
+    await request(app)
+      .put('/api/notifications/preferences')
+      .set(auth(freelancer.token))
+      .send({ quietHours: { start: 22, end: 7 }, quietPass: ['deadline'] })
+      .expect(200);
 
     // Admin conclui: conta anonimizada, token vigente bloqueado, login e refresh negados, perfil some.
     const done = await request(app)
@@ -225,7 +235,7 @@ describe('LGPD: direitos do titular processados de verdade', () => {
     expect(pushRows).toHaveLength(0);
     await request(app).get(`/api/profiles/freelancer/${freelancerUlid}`).expect(404);
     const [users] = await pool.query<unknown[]>(
-      `SELECT email, phone, password_hash, status, deleted_at FROM users WHERE id = :id`,
+      `SELECT email, phone, password_hash, status, deleted_at, push_quiet_pass FROM users WHERE id = :id`,
       { id: freelancer.id },
     );
     expect(
@@ -241,6 +251,8 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       email: `removido+${freelancer.id}@anon.escambo.invalid`,
       password_hash: null,
       status: 'banned',
+      // A escolha do que sai no silêncio volta a nunca escolhida (ADR 56).
+      push_quiet_pass: null,
     });
     await request(app)
       .post(`/api/admin/deletion-requests/${deletionId}/complete`)

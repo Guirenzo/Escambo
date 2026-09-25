@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { env } from '../../config/env';
 import { isPushEndpointAllowed } from './push.endpoint';
 import { BRAZIL_TIMEZONES } from '../../utils/timezone';
+import { QUIET_PASS_CATEGORIES } from './quiet-hours';
 
 /** Janela de silêncio dos avisos no navegador (ADR 54): objeto inteiro ou null, nunca meia janela. */
 const quietHoursSchema = z
@@ -14,8 +15,19 @@ const quietHoursSchema = z
   });
 
 /**
- * Preferências de aviso (ADR 27, 42, 46 e 54): frequência dos e-mails, hora do resumo, fuso e a
- * janela de silêncio do push. É um PUT parcial: pelo menos um dos quatro.
+ * O que sai durante o silêncio (ADR 56): o conjunto inteiro, sem repetição, gravado na ordem da
+ * lista. null não é aceito: não existe "voltar a nunca ter escolhido".
+ */
+const quietPassSchema = z
+  .array(z.enum(QUIET_PASS_CATEGORIES))
+  .refine((l) => new Set(l).size === l.length, {
+    message: 'Categoria repetida no que sai durante o silêncio',
+  })
+  .transform((l) => QUIET_PASS_CATEGORIES.filter((c) => l.includes(c)));
+
+/**
+ * Preferências de aviso (ADR 27, 42, 46, 54 e 56): frequência dos e-mails, hora do resumo, fuso,
+ * a janela de silêncio do push e o que sai durante ela. É um PUT parcial: pelo menos um dos cinco.
  */
 export const emailPreferenceSchema = z
   .object({
@@ -26,15 +38,19 @@ export const emailPreferenceSchema = z
     timezone: z.enum(BRAZIL_TIMEZONES).nullable().optional(),
     /** Horas cheias no fuso da conta, [start, end); null desliga (ADR 54). */
     quietHours: quietHoursSchema.nullable().optional(),
+    /** O que sai mesmo durante o silêncio (ADR 56); [] = nada. */
+    quietPass: quietPassSchema.optional(),
   })
   .refine(
     (b) =>
       b.emailFrequency !== undefined ||
       b.digestHour !== undefined ||
       b.timezone !== undefined ||
-      b.quietHours !== undefined,
+      b.quietHours !== undefined ||
+      b.quietPass !== undefined,
     {
-      message: 'Informe a frequência dos e-mails, a hora do resumo, o fuso ou a janela de silêncio',
+      message:
+        'Informe a frequência dos e-mails, a hora do resumo, o fuso, a janela de silêncio ou o que sai durante ela',
     },
   );
 

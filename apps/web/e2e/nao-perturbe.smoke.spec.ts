@@ -1,18 +1,20 @@
 import { expect, test } from '@playwright/test';
-import { createService, createUser, openAs, settled, topUp } from './helpers';
+import { createService, createUser, openAs, settled, topUp, type TestUser } from './helpers';
 
 /**
  * "Não perturbe" nos avisos do navegador (ADR 54), com o PushManager de mentira do teste de push:
  * ligar o silêncio pelo cartão, trocar a hora, ver o aviso ficar guardado durante a janela e
  * desligar. A prova de "não enviou" e do resumo ao fim da janela fica na integração (o e2e não
- * roda os jobs). Desktop e mobile.
+ * roda os jobs). O que sai mesmo no silêncio (ADR 56): vem marcado para quem entrega trabalho,
+ * desmarcar persiste, a conta de antes escolhe e quem só contrata não vê — o caminho que sai de
+ * fato é provado na integração (quiet-pass.int.test.ts). Desktop e mobile.
  */
 
 const FAKE_ENDPOINT = 'https://push.exemplo.test/e2e-silencio';
 
-const fakePushManager = `
+const fakePushManager = (endpoint = FAKE_ENDPOINT) => `
   const subscription = {
-    endpoint: ${JSON.stringify(FAKE_ENDPOINT)},
+    endpoint: ${JSON.stringify(endpoint)},
     toJSON() {
       return { endpoint: this.endpoint, keys: { p256dh: 'BChaveFalsaDeTeste000', auth: 'authFalso0' } };
     },
@@ -44,13 +46,14 @@ test('não perturbe: liga pelo cartão, guarda o aviso durante a janela e deslig
   baseURL,
 }) => {
   await context.grantPermissions(['notifications'], { origin: baseURL });
-  await page.addInitScript(fakePushManager);
+  await page.addInitScript(fakePushManager());
   const freelancer = await createUser(request, 'freelancer');
   const client = await createUser(request, 'client');
   const headers = { Authorization: `Bearer ${freelancer.token}` };
   const prefs = async () =>
     (await (await request.get('/api/notifications/preferences', { headers })).json()) as {
       quietHours: { start: number; end: number } | null;
+      quietPass: string[] | null;
       timezone: string;
     };
   const held = async (): Promise<number> =>
@@ -77,6 +80,9 @@ test('não perturbe: liga pelo cartão, guarda o aviso durante a janela e deslig
   await quiet.getByRole('checkbox', { name: 'Silenciar os avisos num horário' }).click();
   await expect(page.locator('.toast', { hasText: 'silêncio das 22:00 às 07:00' })).toBeVisible();
   await expect.poll(async () => (await prefs()).quietHours).toEqual({ start: 22, end: 7 });
+  // Quem entrega trabalho liga com o prazo vencido marcado (ADR 56), e a mensagem diz isso.
+  await expect(page.locator('.toast', { hasText: 'sai na hora' })).toBeVisible();
+  await expect.poll(async () => (await prefs()).quietPass).toEqual(['deadline']);
   await expect(quiet).toContainText('(do dia seguinte)');
 
   // Trocar o fim persiste, e o começo não oferece a hora do fim.
@@ -121,8 +127,117 @@ test('não perturbe: liga pelo cartão, guarda o aviso durante a janela e deslig
   await expect(page.getByTestId('push-quiet-now')).toContainText('1 aviso guardado');
 
   // Desligar descarta o guardado e volta a bater a qualquer hora.
-  await page.getByTestId('push-quiet').getByRole('checkbox').click();
+  await page
+    .getByTestId('push-quiet')
+    .getByRole('checkbox', { name: 'Silenciar os avisos num horário' })
+    .click();
   await expect(page.locator('.toast', { hasText: 'voltam a bater a qualquer hora' })).toBeVisible();
   await expect.poll(async () => (await prefs()).quietHours).toBeNull();
   await expect.poll(held).toBe(0);
+});
+
+/** Liga os avisos pelo cartão, num aparelho de mentira só desta pessoa. */
+async function withDevice(
+  page: import('@playwright/test').Page,
+  user: TestUser,
+  baseURL: string | undefined,
+): Promise<void> {
+  await page.context().grantPermissions(['notifications'], { origin: baseURL });
+  await page.addInitScript(fakePushManager(`https://push.exemplo.test/e2e-passa-${user.id}`));
+  await openAs(page, user, '/perfil');
+  await settled(page);
+  const card = page.getByTestId('push-card');
+  await card.scrollIntoViewIfNeeded();
+  await card.getByRole('button', { name: 'Ligar avisos neste aparelho' }).click();
+  await expect(card.getByTestId('push-devices')).toContainText('1 aparelho ligado');
+}
+
+const quietPassOf = async (request: import('@playwright/test').APIRequestContext, user: TestUser) =>
+  (
+    (await (
+      await request.get('/api/notifications/preferences', {
+        headers: { Authorization: `Bearer ${user.token}` },
+      })
+    ).json()) as { quietPass: string[] | null }
+  ).quietPass;
+
+test('o que sai no silêncio: vem marcado para quem entrega, e desmarcar persiste', async ({
+  page,
+  request,
+  baseURL,
+  isMobile,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  await withDevice(page, freelancer, baseURL);
+  const quiet = page.getByTestId('push-quiet');
+  await quiet.getByRole('checkbox', { name: 'Silenciar os avisos num horário' }).click();
+  const grupo = page.getByTestId('push-quiet-pass');
+  const caixa = grupo.getByRole('checkbox', {
+    name: 'Prazo vencido num trabalho que você entrega',
+  });
+  await expect(caixa).toBeChecked();
+  await expect(grupo).toContainText('prioridade alta');
+  if (isMobile) {
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+  }
+
+  await caixa.click();
+  await expect(
+    page.locator('.toast', { hasText: 'também espera, e vem primeiro no aviso das' }),
+  ).toBeVisible();
+  await expect.poll(() => quietPassOf(request, freelancer)).toEqual([]);
+  await page.reload();
+  await settled(page);
+  await expect(
+    page
+      .getByTestId('push-quiet-pass')
+      .getByRole('checkbox', { name: 'Prazo vencido num trabalho que você entrega' }),
+  ).not.toBeChecked();
+});
+
+test('o que sai no silêncio: a conta de antes vê a opção desmarcada e escolhe', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  await withDevice(page, freelancer, baseURL);
+  // A janela gravada sem escolha: é como ficou quem ligou o silêncio sob a Política 1.3.
+  const res = await request.put('/api/notifications/preferences', {
+    headers: { Authorization: `Bearer ${freelancer.token}` },
+    data: { quietHours: { start: 22, end: 7 } },
+  });
+  expect(res.ok(), await res.text()).toBeTruthy();
+  await page.reload();
+  await settled(page);
+  const caixa = page
+    .getByTestId('push-quiet-pass')
+    .getByRole('checkbox', { name: 'Prazo vencido num trabalho que você entrega' });
+  await expect(caixa).not.toBeChecked();
+  await expect(page.getByTestId('push-quiet')).toContainText(
+    'menos o que estiver marcado logo abaixo',
+  );
+  await caixa.click();
+  await expect(page.locator('.toast', { hasText: 'sai na hora, mesmo no silêncio' })).toBeVisible();
+  await expect.poll(() => quietPassOf(request, freelancer)).toEqual(['deadline']);
+});
+
+test('o que sai no silêncio: quem só contrata não vê a escolha', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  const client = await createUser(request, 'client');
+  await withDevice(page, client, baseURL);
+  await page
+    .getByTestId('push-quiet')
+    .getByRole('checkbox', { name: 'Silenciar os avisos num horário' })
+    .click();
+  const toast = page.locator('.toast', { hasText: 'silêncio das 22:00 às 07:00' });
+  await expect(toast).toBeVisible();
+  await expect(toast).not.toContainText('sai na hora');
+  await expect(page.getByTestId('push-quiet-pass')).toHaveCount(0);
+  await expect.poll(() => quietPassOf(request, client)).toBeNull();
 });

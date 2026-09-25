@@ -1,3 +1,4 @@
+import { quietPassOf } from '../notifications/quiet-hours';
 import { createReadStream } from 'node:fs';
 import { mkdir, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -14,10 +15,12 @@ import { env } from '../../config/env';
  * 1.4: o texto das avaliações e mensagens removidas pela moderação (ADR 44). Formato 1.5: o fuso
  * da conta (ADR 46). Formato 1.6: as assinaturas de aviso dos aparelhos (o segredo como
  * impressão), o horário de silêncio e os avisos retidos, as sessões, os registros de segurança e
- * os e-mails enviados — sem eles, "todos os seus dados" não era verdade (ADR 54).
+ * os e-mails enviados — sem eles, "todos os seus dados" não era verdade (ADR 54). Formato 1.7: o
+ * que a pessoa deixa sair durante o silêncio (push_quiet_pass: lista, ou null quando nunca
+ * escolheu; ADR 56).
  */
 
-export const EXPORT_FORMAT_VERSION = '1.6';
+export const EXPORT_FORMAT_VERSION = '1.7';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -28,7 +31,7 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
   const p = { userId };
   const [user] = await q(
     `SELECT ulid, email, phone, role, status, email_verified_at, email_frequency, digest_hour, timezone,
-            push_quiet_start, push_quiet_end, last_digest_at, last_login_at, created_at
+            push_quiet_start, push_quiet_end, push_quiet_pass, last_digest_at, last_login_at, created_at
        FROM users WHERE id = :userId`,
     p,
   );
@@ -191,7 +194,7 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
   return {
     formato: `escambo-export/${EXPORT_FORMAT_VERSION}`,
     exportadoEm: new Date().toISOString(),
-    titular: { id: userId, ...(user ?? {}) },
+    titular: { id: userId, ...(user ?? {}), push_quiet_pass: quietPassOf(user?.push_quiet_pass) },
     perfis: { freelancer: freelancer ?? null, cliente: client ?? null },
     consentimentos: consents,
     servicos: services,

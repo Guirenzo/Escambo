@@ -138,6 +138,7 @@ CREATE TABLE users (
   timezone          VARCHAR(40)     NULL,                     -- fuso IANA do Brasil; NULL = America/Sao_Paulo (migration 0022, ADR 46; agenda de atendimento lida nele, ADR 48)
   push_quiet_start  TINYINT UNSIGNED NULL,                    -- "não perturbe": início da janela de silêncio do push, hora cheia no fuso da conta (migration 0024, ADR 54)
   push_quiet_end    TINYINT UNSIGNED NULL,                    -- fim (exclusivo); NULL nos dois = desligado; início > fim cruza a meia-noite; CHECK recusa meia janela e início = fim
+  push_quiet_pass   SET('deadline') NULL,                     -- o que sai durante o silêncio, escolha da pessoa numa lista fechada (migration 0026, ADR 56); NULL = nunca escolheu (vale como nada); '' = nada
   push_quiet_summary_id BIGINT UNSIGNED NULL,                -- marca d'água do resumo ao fim do silêncio: avisos retidos até este id já foram resumidos (ou descartados ao desligar)
   last_digest_at    DATETIME    NULL,                          -- último resumo diário (trava de um por dia)
   phone_verified_at DATETIME    NULL,

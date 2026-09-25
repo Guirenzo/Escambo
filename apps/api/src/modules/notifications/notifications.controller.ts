@@ -40,7 +40,19 @@ export async function getEmailPreference(req: Request, res: Response): Promise<v
  */
 export async function updateEmailPreference(req: Request, res: Response): Promise<void> {
   const change = emailPreferenceSchema.parse(req.body);
-  res.json(await notificationsService.setEmailPreference(req.user!.uid, change));
+  const saved = await notificationsService.setEmailPreference(req.user!.uid, change);
+  // O que sai no silêncio muda o que vai ao serviço de push (prioridade alta, ADR 56): fica a
+  // trilha de quando e de onde a pessoa escolheu, como ao ligar um aparelho (art. 8 §2).
+  if (change.quietPass !== undefined) {
+    void auditService.log({
+      userId: req.user!.uid,
+      action: 'push_quiet_pass_changed',
+      entityType: 'user',
+      newValue: { quietPass: change.quietPass },
+      ...ctx(req),
+    });
+  }
+  res.json(saved);
 }
 
 /** GET /notifications/push — chave pública para assinar e quantos aparelhos já recebem (ADR 52). */
@@ -53,6 +65,8 @@ export async function getPushStatus(req: Request, res: Response): Promise<void> 
     subscribed: endpoint ? await pushService.subscribed(req.user!.uid, endpoint) : false,
     // Avisos retidos pelo silêncio, que o resumo ao fim da janela vai cobrir (ADR 54).
     held: await pushService.held(req.user!.uid),
+    // Só quem entrega trabalho vê a escolha do que sai no silêncio (ADR 56).
+    deliversWork: await pushService.deliversWork(req.user!.uid),
   });
 }
 

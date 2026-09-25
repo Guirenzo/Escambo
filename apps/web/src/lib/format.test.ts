@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  dayLabel,
   BARTER_STATUS_LABEL,
   brl,
   dateInputValue,
@@ -20,6 +21,13 @@ import {
   spreadDates,
   STATUS_LABEL,
 } from './format';
+
+describe('dayLabel', () => {
+  it('mostra o dia da data sem hora como está, sem cair no dia anterior pelo UTC', () => {
+    expect(dayLabel('2026-09-25')).toBe('25/09/2026');
+    expect(dayLabel('2026-01-01')).toBe('01/01/2026');
+  });
+});
 
 describe('format', () => {
   it('brl formata valores em reais (pt-BR)', () => {

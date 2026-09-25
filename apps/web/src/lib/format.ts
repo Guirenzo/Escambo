@@ -5,6 +5,15 @@ export const brl = (v: number): string =>
 
 export const dt = (iso: string): string => new Date(iso).toLocaleDateString('pt-BR');
 
+/**
+ * "2026-09-25" → "25/09/2026", sem passar por Date: uma data sem hora é lida como meia-noite UTC
+ * e, em qualquer fuso do Brasil, `dt` mostraria o dia anterior (datas dos documentos legais).
+ */
+export const dayLabel = (isoDay: string): string => {
+  const [y, m, d] = isoDay.slice(0, 10).split('-');
+  return `${d}/${m}/${y}`;
+};
+
 /** "< 1 min", "35 min", "3 h", "2 d 4 h": tempo até decidir no painel de moderação (ADR 47); null é "—". */
 export function durationLabel(hours: number | null): string {
   if (hours === null) return '—';

@@ -10,7 +10,7 @@ import { buildExport, EXPORT_FORMAT_VERSION } from './lgpd.export';
 const query = vi.mocked(pool.query);
 
 /**
- * A cópia de dados no formato 1.6 (ADR 54): o que entra, e o que não pode entrar. O banco é
+ * A cópia de dados no formato 1.7 (ADR 54 e 56): o que entra, e o que não pode entrar. O banco é
  * mockado: o que se prova é o SQL que a exportação manda e as chaves do arquivo.
  */
 beforeEach(() => {
@@ -20,10 +20,10 @@ beforeEach(() => {
 
 const sqlSent = (): string[] => query.mock.calls.map((c) => String(c[0]));
 
-describe('cópia de dados 1.6 (ADR 54)', () => {
+describe('cópia de dados 1.7 (ADR 54 e 56)', () => {
   it('declara o formato novo e as seções novas, mesmo vazias', async () => {
     const out = await buildExport(7);
-    expect(EXPORT_FORMAT_VERSION).toBe('1.6');
+    expect(EXPORT_FORMAT_VERSION).toBe('1.7');
     expect(out).toHaveProperty('avisosNoNavegador', []);
     expect(out).toHaveProperty('sessoes', []);
     expect(out).toHaveProperty('registrosDeSeguranca', []);
@@ -34,11 +34,24 @@ describe('cópia de dados 1.6 (ADR 54)', () => {
     await buildExport(7);
     const sql = sqlSent();
     expect(sql.find((s) => s.includes('FROM users WHERE id'))).toContain(
-      'push_quiet_start, push_quiet_end',
+      'push_quiet_start, push_quiet_end, push_quiet_pass',
     );
     expect(sql.find((s) => s.includes('FROM notifications WHERE'))).toContain(
       'push_held_at AS push_retido_em',
     );
+  });
+
+  it('o titular traz o que deixa sair no silêncio como lista, ou null se nunca escolheu (ADR 56)', async () => {
+    const titular = async (pass: string | null) => {
+      query.mockImplementation((async (sql: string) =>
+        sql.includes('FROM users WHERE id')
+          ? [[{ email: 'a@escambo.test', push_quiet_pass: pass }], []]
+          : [[], []]) as never);
+      return ((await buildExport(7)) as { titular: Record<string, unknown> }).titular;
+    };
+    expect((await titular('deadline')).push_quiet_pass).toEqual(['deadline']);
+    expect((await titular('')).push_quiet_pass).toEqual([]);
+    expect((await titular(null)).push_quiet_pass).toBeNull();
   });
 
   it('a assinatura sai com o segredo como impressão, nunca cru, e sem o navegador', async () => {

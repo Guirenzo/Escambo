@@ -98,11 +98,8 @@ export async function requestRevisionContract(req: Request, res: Response): Prom
   const { id } = contractIdSchema.parse(req.params);
   const { note } = noteSchema.parse(req.body);
   const contract = await contractsService.requestRevision(id, uid(req), note ?? null);
-  void notificationsService.notify(contract.freelancerId, {
-    type: 'contract_revision',
-    title: 'Revisão solicitada',
-    data: { contractId: contract.id },
-  });
+  // Com o prazo vencido e a carência correndo, o aviso diz até quando (ADR 56).
+  void contractsService.notifyFreelancerDeadline('revision', contract);
   res.json(contract);
 }
 
@@ -125,16 +122,17 @@ export async function resolveExtension(req: Request, res: Response): Promise<voi
   const { id, decision } = extensionDecisionSchema.parse(req.params);
   const accept = decision === 'accept';
   const contract = await contractsService.resolveExtension(id, uid(req), accept);
-  void notificationsService.notify(contract.freelancerId, {
-    type: accept ? 'deadline_extension_accepted' : 'deadline_extension_declined',
-    title: accept
-      ? `Extensão aceita: novo prazo ${contract.deadlineAt ? brDate(contract.deadlineAt) : ''}`
-      : 'Extensão de prazo recusada',
-    body: accept
-      ? `${contract.title}: o prazo foi estendido (única extensão da contratação).`
-      : `${contract.title}: o prazo original continua valendo.`,
-    data: { contractId: contract.id },
-  });
+  if (accept) {
+    void notificationsService.notify(contract.freelancerId, {
+      type: 'deadline_extension_accepted',
+      title: `Extensão aceita: novo prazo ${contract.deadlineAt ? brDate(contract.deadlineAt) : ''}`,
+      body: `${contract.title}: o prazo foi estendido (única extensão da contratação).`,
+      data: { contractId: contract.id },
+    });
+  } else {
+    // A recusa com o prazo vencido e a carência correndo diz até quando dá para agir (ADR 56).
+    void contractsService.notifyFreelancerDeadline('extension_declined', contract);
+  }
   res.json(contract);
 }
 

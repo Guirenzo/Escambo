@@ -252,7 +252,7 @@ export const openapiDocument: Record<string, any> = {
     '/notifications/push': {
       get: op(
         'Notificações',
-        'Chave VAPID, quantos aparelhos recebem avisos, com ?endpoint= se este aparelho é desta conta (ADR 52), e held: avisos retidos pelo silêncio que o resumo vai cobrir (ADR 54)',
+        'Chave VAPID, quantos aparelhos recebem avisos, com ?endpoint= se este aparelho é desta conta (ADR 52), held: avisos retidos pelo silêncio que o resumo vai cobrir (ADR 54), e deliversWork: a conta entrega trabalho e vê a escolha do que sai no silêncio (ADR 56)',
         { auth: true },
       ),
       post: op(
@@ -283,12 +283,12 @@ export const openapiDocument: Record<string, any> = {
     '/notifications/preferences': {
       get: op(
         'Notificações',
-        'Preferências de aviso: e-mail (instant | daily | off), hora do resumo do dia (digestHour, 0 a 23; sem escolha, a hora padrão), fuso da conta (timezone, um dos fusos do Brasil; sem escolha, America/Sao_Paulo) e a janela de silêncio do push (quietHours {start, end} em horas cheias no fuso da conta, ou null; ADR 54)',
+        'Preferências de aviso: e-mail (instant | daily | off), hora do resumo do dia (digestHour, 0 a 23; sem escolha, a hora padrão), fuso da conta (timezone, um dos fusos do Brasil; sem escolha, America/Sao_Paulo), a janela de silêncio do push (quietHours {start, end} em horas cheias no fuso da conta, ou null; ADR 54) e o que sai durante ela (quietPass: lista de categorias — hoje só "deadline", o prazo vencido num trabalho que a pessoa entrega; [] = nada; null = nunca escolheu, que vale como nada; ADR 56)',
         { auth: true },
       ),
       put: op(
         'Notificações',
-        'Muda a frequência dos e-mails, a hora do resumo do dia e/ou o fuso da conta; hora e fuso valem para o e-mail diário, para os alertas diários das buscas salvas e para as datas nos avisos (null volta ao padrão)',
+        'Muda qualquer parte das preferências de aviso: frequência dos e-mails, hora do resumo do dia, fuso da conta (hora e fuso valem para o e-mail diário, para os alertas diários das buscas salvas e para as datas nos avisos; null volta ao padrão), janela de silêncio (quietHours inteiro, ou null para desligar) e o que sai durante ela (quietPass, o conjunto inteiro)',
         {
           auth: true,
           body: obj({
@@ -304,6 +304,20 @@ export const openapiDocument: Record<string, any> = {
                 'America/Rio_Branco',
               ],
               nullable: true,
+            },
+            quietHours: {
+              type: 'object',
+              nullable: true,
+              required: ['start', 'end'],
+              properties: {
+                start: { type: 'integer', minimum: 0, maximum: 23 },
+                end: { type: 'integer', minimum: 0, maximum: 23 },
+              },
+            },
+            quietPass: {
+              type: 'array',
+              uniqueItems: true,
+              items: { type: 'string', enum: ['deadline'] },
             },
           }),
         },

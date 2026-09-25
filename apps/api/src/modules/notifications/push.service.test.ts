@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPayload,
+  passCategoryFor,
   PUSHED_NOTIFICATION_TYPES,
   pushService,
   pushUrl,
+  QUIET_PASS_BY_TYPE,
   trimBody,
 } from './push.service';
 import { isPushEndpointAllowed } from './push.endpoint';
@@ -100,5 +102,48 @@ describe('avisos push (ADR 52)', () => {
     expect(PUSHED_NOTIFICATION_TYPES.has('contract_proposal')).toBe(true);
     expect(PUSHED_NOTIFICATION_TYPES.has('dispute_opened')).toBe(true);
     expect(PUSHED_NOTIFICATION_TYPES.has('message_received')).toBe(false);
+  });
+});
+
+/** O que pode sair durante o silêncio (ADR 56): todos os tipos classificados, e o par conferido. */
+describe('o que sai no silêncio (ADR 56)', () => {
+  it('o mapa classifica todos os tipos que viram push, nem um a mais', () => {
+    expect(Object.keys(QUIET_PASS_BY_TYPE).sort()).toEqual([...PUSHED_NOTIFICATION_TYPES].sort());
+  });
+
+  it('só três tipos podem sair, todos pela categoria de prazo', () => {
+    const podem = Object.entries(QUIET_PASS_BY_TYPE).filter(([, c]) => c !== null);
+    expect(podem.map(([t]) => t).sort()).toEqual([
+      'contract_overdue',
+      'contract_revision',
+      'deadline_extension_declined',
+    ]);
+    expect(new Set(podem.map(([, c]) => c))).toEqual(new Set(['deadline']));
+  });
+
+  it('passCategoryFor aceita só o par do mapa', () => {
+    expect(passCategoryFor('contract_overdue', 'deadline')).toBe('deadline');
+    expect(passCategoryFor('contract_proposal', 'deadline')).toBeNull();
+    expect(passCategoryFor('message_received', 'deadline')).toBeNull();
+    for (const t of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      expect(passCategoryFor(t, 'deadline')).toBeNull();
+    }
+    expect(passCategoryFor('contract_overdue', null)).toBeNull();
+    expect(passCategoryFor('contract_overdue', undefined)).toBeNull();
+  });
+
+  it('etiqueta própria: tipo:alvo:nID; sem assunto, tipo:nID; sem a opção, igual a antes', () => {
+    const p = { type: 'deadline_extension_declined', title: 't', data: { contractId: 3 } };
+    expect(buildPayload({ ...p, notificationId: 41 }, { ownTag: true }).tag).toBe(
+      'deadline_extension_declined:3:n41',
+    );
+    expect(buildPayload({ ...p, notificationId: 42 }, { ownTag: true }).tag).toBe(
+      'deadline_extension_declined:3:n42',
+    );
+    expect(buildPayload({ ...p, notificationId: 41 }).tag).toBe('deadline_extension_declined:3');
+    expect(
+      buildPayload({ type: 'contract_overdue', title: 't', notificationId: 5 }, { ownTag: true })
+        .tag,
+    ).toBe('contract_overdue:n5');
   });
 });

@@ -1,10 +1,10 @@
-import type { BrazilTimezone } from '@escambo/types';
-import { startOfTodayIn } from '../../utils/timezone';
+import type { BrazilTimezone, QuietPassCategory } from '@escambo/types';
+import { hourIn, startOfTodayIn } from '../../utils/timezone';
 
 /**
  * "Não perturbe" nos avisos do navegador (ADR 54): a janela de silêncio da conta, em horas cheias
- * do fuso da própria conta (ADR 46). Só contas puras: quem decide o que fazer com o aviso é o
- * serviço de push.
+ * do fuso da própria conta (ADR 46), e o que a pessoa deixa sair durante ela (ADR 56). Só contas
+ * puras: quem decide o que fazer com o aviso é o serviço de push.
  */
 
 /** Janela de silêncio: de `start` (inclusive) a `end` (exclusive), horas de 0 a 23. */
@@ -63,6 +63,45 @@ export function pushTtlSeconds(
   const next = today > now.getTime() ? today : today + 86_400_000;
   const until = Math.ceil((next - now.getTime()) / 1000);
   return Math.min(PUSH_TTL_MAX_SECONDS, Math.max(PUSH_TTL_MIN_SECONDS, until));
+}
+
+/**
+ * Lista fechada do que pode sair no silêncio (ADR 56). Espelho do SET da migration 0026 (a
+ * integração compara com o information_schema) e do Record de textos da tela. Categoria nova
+ * exige ADR, versão da Política de Privacidade e membro novo NO FIM do SET.
+ */
+export const QUIET_PASS_CATEGORIES = ['deadline'] as const satisfies readonly QuietPassCategory[];
+
+/** O SET do banco como lista canônica: NULL = nunca escolheu; '' = nada; desconhecido some. */
+export function quietPassOf(raw: string | null | undefined): QuietPassCategory[] | null {
+  if (raw == null) return null;
+  const parts = raw.split(',');
+  return QUIET_PASS_CATEGORIES.filter((c) => parts.includes(c));
+}
+
+export type PushTiming = { hold: true } | { hold: false; ttlSeconds: number; breaksQuiet: boolean };
+
+/**
+ * A decisão do push no instante do evento (ADR 54 e 56). Dentro da janela só sai o que tem
+ * categoria E foi liberado pela pessoa; o resto fica retido para o resumo. O liberado pode chegar
+ * durante o silêncio por escolha dela, então o TTL dele não acaba no início da janela (fecha o piso
+ * de 15 min de um aviso das 21:50).
+ */
+export function pushTiming(p: {
+  zone: BrazilTimezone;
+  window: QuietWindow | null;
+  now: Date;
+  category: QuietPassCategory | null;
+  allowed: readonly QuietPassCategory[];
+}): PushTiming {
+  const allowed = p.category !== null && p.allowed.includes(p.category);
+  const quiet = inQuietWindow(hourIn(p.zone, p.now), p.window);
+  if (quiet && !allowed) return { hold: true };
+  return {
+    hold: false,
+    ttlSeconds: allowed ? PUSH_TTL_MAX_SECONDS : pushTtlSeconds(p.zone, p.window, p.now),
+    breaksQuiet: quiet, // aqui, quiet implica allowed
+  };
 }
 
 /** "22:00 às 07:00", como a janela aparece nos textos. */

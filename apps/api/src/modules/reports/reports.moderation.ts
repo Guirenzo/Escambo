@@ -1,3 +1,4 @@
+import { userZone } from '../auth/user-zone';
 import type {
   AdminReportActionResult,
   AdminReportGroup,
@@ -7,8 +8,7 @@ import type {
   StrikeSummary,
 } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
-import { formatDateTime, timezoneOf } from '../../utils/timezone';
-import { authRepository } from '../auth/auth.repository';
+import { formatDateTime } from '../../utils/timezone';
 import { fingerprint } from '../media/media.image';
 import { mediaKeyFromUrl } from '../media/media.paths';
 import { deleteMediaImage, quarantineMediaImage, readMediaFile } from '../media/media.storage';
@@ -44,8 +44,7 @@ const REASON_TEXT: Record<string, string> = {
 const iso = (d: Date): string => new Date(d).toISOString();
 
 /** Fuso da conta, para as datas do aviso saírem na hora dela (ADR 46). */
-const zoneOf = async (userId: number) =>
-  timezoneOf((await authRepository.findById(userId))?.timezone);
+const zoneOf = userZone;
 
 function labelFor(type: string, info: TargetInfoRow | undefined): string {
   switch (type) {

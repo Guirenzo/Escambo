@@ -2,6 +2,7 @@ import { logger } from '../config/logger';
 import { contractsRepository } from '../modules/contracts/contracts.repository';
 import { contractsService } from '../modules/contracts/contracts.service';
 import { milestonesRepository } from '../modules/contracts/milestones.repository';
+import { DEFAULT_DEADLINE_GRACE_HOURS } from '../modules/contracts/deadline-grace';
 import { settingsRepository } from '../modules/settings/settings.repository';
 
 /**
@@ -14,7 +15,7 @@ import { settingsRepository } from '../modules/settings/settings.repository';
  *     sem disputa: quem manda na mediação é o prazo da contratação.
  */
 
-export const DEFAULT_DEADLINE_GRACE_HOURS = 24;
+export { DEFAULT_DEADLINE_GRACE_HOURS } from '../modules/contracts/deadline-grace';
 
 export interface OverdueContractsResult {
   graceHours: number;

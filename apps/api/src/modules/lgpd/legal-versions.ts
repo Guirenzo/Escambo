@@ -9,12 +9,12 @@ export type LegalDocument = 'terms_of_use' | 'privacy_policy';
 
 export const PUBLISHED_LEGAL_VERSIONS: Record<LegalDocument, readonly string[]> = {
   terms_of_use: ['1.0', '1.1', '1.2'],
-  privacy_policy: ['1.0', '1.1', '1.2', '1.3'],
+  privacy_policy: ['1.0', '1.1', '1.2', '1.3', '1.4'],
 };
 
 export const CURRENT_LEGAL_VERSION: Record<LegalDocument, string> = {
   terms_of_use: '1.2',
-  privacy_policy: '1.3',
+  privacy_policy: '1.4',
 };
 
 export const isLegalDocument = (type: string): type is LegalDocument =>

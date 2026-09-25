@@ -8,10 +8,10 @@
  */
 export type LegalKind = 'termos' | 'privacidade';
 
-export const LEGAL_VERSIONS: Record<LegalKind, string> = { termos: '1.2', privacidade: '1.3' };
+export const LEGAL_VERSIONS: Record<LegalKind, string> = { termos: '1.2', privacidade: '1.4' };
 export const LEGAL_UPDATED: Record<LegalKind, string> = {
   termos: '2026-09-09',
-  privacidade: '2026-09-24',
+  privacidade: '2026-09-25',
 };
 
 export interface LegalChange {
@@ -23,6 +23,13 @@ export interface LegalChange {
 
 /** Histórico de versões, da mais nova para a mais antiga, por documento. */
 export const LEGAL_CHANGES: LegalChange[] = [
+  {
+    doc: 'privacidade',
+    version: '1.4',
+    date: '2026-09-25',
+    summary:
+      'No "não perturbe" dos avisos no navegador, você pode escolher o que sai mesmo durante o silêncio. Hoje há uma escolha só: o prazo vencido num trabalho que você entrega, enquanto ainda dá tempo de evitar a mediação automática. Quem entrega trabalho e liga o silêncio a partir de agora encontra a opção já marcada; quem já estava com o silêncio ligado continua sem nada saindo até marcá-la no Perfil. Os avisos que saem durante o silêncio vão ao serviço de push com prioridade alta, e a política passa a dizer também o prazo de guarda de cada aviso. A cópia dos seus dados passa a trazer a sua escolha.',
+  },
   {
     doc: 'privacidade',
     version: '1.3',
@@ -135,24 +142,24 @@ export const LEGAL: Record<LegalKind, LegalDoc> = {
         title: '1. Dados que coletamos',
         paragraphs: [
           'Conta: e-mail, senha (guardada como hash) e o fuso horário da conta — no cadastro, o fuso que o seu navegador informa, quando é um dos fusos do Brasil; você pode trocá-lo no Perfil a qualquer momento. Perfil: nome, cidade, estado, foto, apresentação e, se você autorizar, localização aproximada para a busca "perto de mim". Uso: contratações, mensagens do chat, avaliações, disputas, movimentações de carteira e créditos.',
-          'Técnicos: endereço IP e navegador em eventos de segurança (login, consentimento, moderação), para auditoria.',
-          'Preferências de aviso: como você quer os e-mails (a cada evento, resumo diário ou só o essencial), a hora do resumo do dia e, se você ligar o "não perturbe", o horário em que nenhum aviso bate no navegador dos seus aparelhos. Durante o silêncio, cada aviso que ficou por entregar recebe uma marca com a hora, usada só para o aviso único que chega ao fim do silêncio.',
+          'Técnicos: endereço IP e navegador em eventos de segurança (login, consentimento, moderação e a escolha do que sai durante o silêncio), para auditoria.',
+          'Preferências de aviso: como você quer os e-mails (a cada evento, resumo diário ou só o essencial), a hora do resumo do dia e, se você ligar o "não perturbe", o horário de silêncio dos avisos no navegador dos seus aparelhos e o que você escolher deixar sair mesmo durante ele (hoje há uma escolha só: o prazo vencido num trabalho que você entrega; ela já vem marcada quando quem entrega trabalho liga o silêncio, e pode ser desmarcada a qualquer momento; quem ligou o silêncio antes desta versão só a tem se marcar). Durante o silêncio, cada aviso que ficou por entregar recebe uma marca com a hora, usada só para o aviso único que chega ao fim do silêncio.',
           'Avisos no navegador: quando você liga os avisos em um aparelho, guardamos a assinatura que o navegador dele cria: o endereço do aparelho no serviço de push do navegador, as duas chaves que cifram cada aviso para aquele aparelho, a data em que foi ligado, a data do último aviso aceito pelo serviço de push e, se a última tentativa de envio falhou, uma marca disso. Junto da assinatura não guardamos o nome nem a versão do navegador; o endereço do serviço de push indica qual navegador é. Nada disso é coletado se você não ligar os avisos.',
         ],
       },
       {
         title: '2. Para que usamos',
         paragraphs: [
-          'Para operar a plataforma (contratar, pagar, conversar, mediar), calcular a reputação, avisar você sobre o que acontece nas suas contratações — aqui dentro, por e-mail e, nos aparelhos em que você ligou, por aviso no navegador, respeitando o horário de silêncio que escolher —, mostrar horas e datas no seu fuso, e manter a segurança e a conformidade legal.',
+          'Para operar a plataforma (contratar, pagar, conversar, mediar), calcular a reputação, avisar você sobre o que acontece nas suas contratações — aqui dentro, por e-mail e, nos aparelhos em que você ligou, por aviso no navegador, respeitando o horário de silêncio e o que você deixar sair durante ele —, mostrar horas e datas no seu fuso, e manter a segurança e a conformidade legal.',
           'Não vendemos dados pessoais nem usamos seus dados para publicidade de terceiros.',
-          'A assinatura de push serve só para entregar avisos no aparelho que você ligou. O fuso e as preferências de aviso servem para mandar o resumo do dia na sua hora, escrever as datas no seu horário e não bater no aparelho durante o silêncio.',
+          'A assinatura de push serve só para entregar avisos no aparelho que você ligou. O fuso e as preferências de aviso servem para mandar o resumo do dia na sua hora, escrever as datas no seu horário e, durante o silêncio, só bater no aparelho com o que você deixou sair, com o aviso de teste que você mesmo pedir ou, se o aparelho estava sem conexão, com avisos que saíram antes de o silêncio começar, de você ligá-lo ou de mudar o horário.',
         ],
       },
       {
         title: '3. Compartilhamento',
         paragraphs: [
           'Seu nome, foto, cidade, avaliações e Score ficam visíveis para outros usuários no seu perfil público e nos seus serviços. Seus dados de contato não são exibidos. Compartilhamos dados apenas com provedores necessários para operar (hospedagem, envio de e-mail e, se você ligar os avisos, o serviço de push do seu navegador) e quando exigido por lei.',
-          'Os avisos no navegador passam pelo serviço de push que o seu navegador usa (o do Google, da Mozilla, da Microsoft ou da Apple; navegadores como Brave, Opera e Samsung Internet usam o do Google). Esses serviços ficam fora do Brasil: ao ligar os avisos em um aparelho você autoriza essa transferência, que se limita ao endereço da assinatura daquele aparelho, ao horário e ao tamanho de cada aviso e ao aviso cifrado, guardado por eles até a entrega ou por no máximo 12 horas. O serviço de push não recebe seu nome, seu e-mail nem o conteúdo do aviso, que só o seu aparelho consegue ler. Esse compartilhamento só existe nos aparelhos em que você ligou os avisos e termina quando você os desliga.',
+          'Os avisos no navegador passam pelo serviço de push que o seu navegador usa (o do Google, da Mozilla, da Microsoft ou da Apple; navegadores como Brave, Opera e Samsung Internet usam o do Google). Esses serviços ficam fora do Brasil: ao ligar os avisos em um aparelho você autoriza essa transferência, que se limita ao endereço da assinatura daquele aparelho; ao horário, ao tamanho, ao prazo de guarda e à prioridade de entrega de cada aviso; e ao aviso cifrado, guardado por eles até a entrega ou até o fim do prazo de guarda, de no máximo 12 horas. A prioridade é a normal, menos nos avisos que saem durante o seu silêncio porque você escolheu deixá-los sair: esses vão com prioridade alta, para o serviço de push não esperar o aparelho sair da economia de bateria. O serviço de push não recebe seu nome, seu e-mail nem o conteúdo do aviso, que só o seu aparelho consegue ler. Esse compartilhamento só existe nos aparelhos em que você ligou os avisos e termina quando você os desliga.',
         ],
       },
       {
@@ -175,7 +182,7 @@ export const LEGAL: Record<LegalKind, LegalDoc> = {
         paragraphs: [
           'Podemos atualizar esta política quando a plataforma passar a tratar dados novos, a usá-los para outra finalidade ou a compartilhá-los com alguém novo. A versão vigente e a data aparecem no topo, e o histórico no fim desta página resume o que mudou em cada versão.',
           'Quem já tem conta é avisado dentro da plataforma, com destaque, ao entrar: uma faixa no topo resume a mudança, leva ao texto completo e oferece aceitar ou não aceitar a versão nova. A resposta fica registrada nos seus consentimentos, no Perfil, com a versão, a data, o endereço IP e o navegador usados. Não aceitar não encerra a conta: os recursos que dependem de uma escolha sua, como os avisos no navegador, só tratam dados depois que você os liga e podem ser desligados a qualquer momento; se ainda assim não concordar, você pode pedir a exclusão da conta.',
-          'As versões anteriores a esta descreviam a plataforma antes dos avisos no navegador e do fuso detectado no cadastro, que entraram no ar em 22/09/2026; esta versão passa a cobri-los, e a informação sobre o navegador do aparelho, guardada nesse intervalo, foi apagada.',
+          'As versões anteriores à 1.3 descreviam a plataforma antes dos avisos no navegador e do fuso detectado no cadastro, que entraram no ar em 22/09/2026; a 1.3 passou a cobri-los, e a informação sobre o navegador do aparelho, guardada nesse intervalo, foi apagada.',
         ],
       },
       {
