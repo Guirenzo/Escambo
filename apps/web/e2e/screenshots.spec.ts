@@ -246,12 +246,13 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     await ctx.close();
   }
 
-  // 20. "Não perturbe" (ADR 54): o cartão de avisos com a janela de silêncio ligada.
+  // 20. "Não perturbe" (ADR 54 e 56): a janela de silêncio ligada e o que sai mesmo nela.
   {
     const brunoTok = await login('bruno@escambo.demo');
     const pref = await request.put('/api/notifications/preferences', {
       headers: { Authorization: `Bearer ${brunoTok}` },
-      data: { quietHours: { start: 22, end: 7 } },
+      // Com o prazo vencido marcado (ADR 56): o grupo novo aparece no print.
+      data: { quietHours: { start: 22, end: 7 }, quietPass: ['deadline'] },
     });
     expect(pref.ok(), await pref.text()).toBeTruthy();
     const ctx = await browser.newContext({
