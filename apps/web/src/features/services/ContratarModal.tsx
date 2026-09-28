@@ -179,9 +179,11 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
             required
           />
         </Field>
-        <span className="muted tiny">
-          Sugerido pelo serviço: {suggestedDays} dia{suggestedDays === 1 ? '' : 's'}. O freelancer
-          pode pedir uma extensão, que só vale com o seu aceite.
+        <span className="muted tiny" data-testid="deadline-hint">
+          Sugerido pelo serviço: {suggestedDays} dia{suggestedDays === 1 ? '' : 's'}. Vale até 23:59
+          do dia. Sem entrega até lá, a partir das 9h do dia seguinte o Escambo avisa vocês dois e
+          você pode cancelar com reembolso integral. O freelancer pode pedir extensão, que só vale
+          com o seu aceite.
         </span>
 
         <div className="radio-row" role="radiogroup" aria-label="Forma de pagamento">

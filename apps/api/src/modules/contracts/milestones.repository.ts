@@ -1,6 +1,8 @@
+import type { BrazilTimezone } from '@escambo/types';
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { pool } from '../../config/db';
 import { applyWalletEffect } from '../wallet/wallet.ledger';
+import { CLOSE_PENDING_EXTENSION, rn029Eligible, zoneOf } from './deadline-sql';
 
 /**
  * Escrow por marcos (RN-069): o valor inteiro fica retido no aceite; cada marco aprovado
@@ -20,13 +22,15 @@ export interface MilestoneRow extends RowDataPacket {
   due_at: Date | null;
   overdue_notified_at: Date | null;
   delivered_at: Date | null;
+  /** Aprovação tácita do marco entregue (RN-024), gravada na entrega (ADR 57). */
+  approval_due_at: Date | null;
   delivery_note: string | null;
   revision_note: string | null;
   released_at: Date | null;
   created_at: Date;
 }
 
-/** Marco financiado com prazo vencido, com o que a notificação precisa. */
+/** Marco financiado nunca entregue com o prazo vencido, com o que a notificação precisa. */
 export interface OverdueMilestoneRow extends RowDataPacket {
   id: number;
   contract_id: number;
@@ -35,14 +39,17 @@ export interface OverdueMilestoneRow extends RowDataPacket {
   client_id: number;
   freelancer_id: number;
   contract_title: string;
+  freelancer_timezone: string | null;
+  client_timezone: string | null;
 }
 
-/** Marco entregue há mais de N dias sem resposta (aprovação tácita). */
+/** Marco entregue com a aprovação tácita vencida. */
 export interface DueMilestoneRow extends RowDataPacket {
   id: number;
   contract_id: number;
   client_id: number;
   freelancer_id: number;
+  approval_due_at: Date;
 }
 
 export interface MilestoneSpec {
@@ -55,8 +62,8 @@ export interface MilestoneSpec {
 }
 
 const COLS = `id, contract_id, title, description, amount, freelancer_net, sort_order, status,
-              due_at, overdue_notified_at, delivered_at, delivery_note, revision_note, released_at,
-              created_at`;
+              due_at, overdue_notified_at, delivered_at, approval_due_at, delivery_note,
+              revision_note, released_at, created_at`;
 
 /**
  * Libera créditos do escrow (pendente → disponível) do freelancer, com linha no ledger de
@@ -166,7 +173,9 @@ export const milestonesRepository = {
   },
 
   /**
-   * Freelancer entrega um marco financiado. Contrato 'accepted' vai para 'in_progress'.
+   * Freelancer entrega um marco financiado. Contrato 'accepted' vai para 'in_progress'. Grava a
+   * hora da aprovação tácita do marco (ADR 57) e, se não sobrou marco nunca entregue, encerra o
+   * pedido de extensão pendente: a RN-029 não alcança mais a contratação.
    * Retorna false se o marco não estava 'funded' (corrida / estado inválido).
    */
   async deliver(p: {
@@ -174,6 +183,8 @@ export const milestonesRepository = {
     milestoneId: number;
     changedBy: number;
     message: string;
+    now: Date;
+    approvalDueAt: Date;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -185,9 +196,16 @@ export const milestonesRepository = {
       }
       const [upd] = await conn.query<ResultSetHeader>(
         `UPDATE contract_milestones
-            SET status = 'delivered', delivered_at = NOW(), delivery_note = :message
+            SET status = 'delivered', delivered_at = :now,
+                approval_due_at = :approvalDueAt, delivery_note = :message
           WHERE id = :id AND contract_id = :contractId AND status = 'funded'`,
-        { id: p.milestoneId, contractId: p.contractId, message: p.message },
+        {
+          id: p.milestoneId,
+          contractId: p.contractId,
+          message: p.message,
+          now: p.now,
+          approvalDueAt: p.approvalDueAt,
+        },
       );
       if (upd.affectedRows === 0) {
         await conn.rollback();
@@ -203,6 +221,11 @@ export const milestonesRepository = {
           { contractId: p.contractId },
         );
       }
+      await conn.query<ResultSetHeader>(
+        `UPDATE contracts c SET ${CLOSE_PENDING_EXTENSION('c')}
+          WHERE c.id = :contractId AND c.extension_status = 'pending' AND NOT ${rn029Eligible('c')}`,
+        { contractId: p.contractId, now: p.now },
+      );
       await history(
         conn,
         p.contractId,
@@ -233,6 +256,9 @@ export const milestonesRepository = {
     /** Dinheiro (R$ do escrow) ou créditos Escambo (time-bank, sem taxa). */
     mode: 'cash' | 'credits';
     note: string | null;
+    now: Date;
+    /** Aprovação tácita: só se a hora gravada no marco já passou deste instante. */
+    dueBy?: Date | null;
   }): Promise<{ ok: boolean; completed: boolean; net: number; title: string }> {
     const conn = await pool.getConnection();
     try {
@@ -244,8 +270,10 @@ export const milestonesRepository = {
       }
       const [rows] = await conn.query<MilestoneRow[]>(
         `SELECT ${COLS} FROM contract_milestones
-          WHERE id = :id AND contract_id = :contractId AND status = 'delivered' FOR UPDATE`,
-        { id: p.milestoneId, contractId: p.contractId },
+          WHERE id = :id AND contract_id = :contractId AND status = 'delivered'
+            AND (:dueBy IS NULL OR (approval_due_at IS NOT NULL AND approval_due_at <= :dueBy))
+          FOR UPDATE`,
+        { id: p.milestoneId, contractId: p.contractId, dueBy: p.dueBy ?? null },
       );
       const m = rows[0];
       if (!m) {
@@ -255,8 +283,8 @@ export const milestonesRepository = {
       const net =
         p.mode === 'credits' ? Math.round(Number(m.freelancer_net)) : Number(m.freelancer_net);
       await conn.query<ResultSetHeader>(
-        `UPDATE contract_milestones SET status = 'released', released_at = NOW() WHERE id = :id`,
-        { id: m.id },
+        `UPDATE contract_milestones SET status = 'released', released_at = :now WHERE id = :id`,
+        { id: m.id, now: p.now },
       );
       const paid =
         p.mode === 'credits'
@@ -290,8 +318,9 @@ export const milestonesRepository = {
       );
       if (completed) {
         await conn.query<ResultSetHeader>(
-          `UPDATE contracts SET status = 'completed', completed_at = NOW() WHERE id = :contractId`,
-          { contractId: p.contractId },
+          `UPDATE contracts c SET c.status = 'completed', c.completed_at = :now, ${CLOSE_PENDING_EXTENSION('c')}
+            WHERE c.id = :contractId`,
+          { contractId: p.contractId, now: p.now },
         );
       } else if (status === 'accepted') {
         await conn.query<ResultSetHeader>(
@@ -322,7 +351,7 @@ export const milestonesRepository = {
       const status = await contractStatus(conn, p.contractId);
       const [upd] = await conn.query<ResultSetHeader>(
         `UPDATE contract_milestones
-            SET status = 'funded', revision_note = :note
+            SET status = 'funded', revision_note = :note, approval_due_at = NULL
           WHERE id = :id AND contract_id = :contractId AND status = 'delivered'`,
         { id: p.milestoneId, contractId: p.contractId, note: p.note },
       );
@@ -352,47 +381,78 @@ export const milestonesRepository = {
     }
   },
 
-  /** Marcos entregues sem resposta do cliente há mais de `days` dias (aprovação tácita). */
-  /** Marcos financiados com prazo vencido e ninguém avisado, em contratos ativos (RN-069/RN-029). */
-  async findOverdueUnnoticed(): Promise<OverdueMilestoneRow[]> {
+  /**
+   * Marcos financiados NUNCA entregues com o prazo vencido e ninguém avisado, em contratos ativos,
+   * com quem entrega num fuso em que é dia (RN-069, ADR 57). Marco que voltou para revisão guarda
+   * `delivered_at` e não entra: foi entregue.
+   */
+  async findOverdueUnnoticed(now: Date, zones: BrazilTimezone[]): Promise<OverdueMilestoneRow[]> {
+    if (zones.length === 0) return [];
     const [rows] = await pool.query<OverdueMilestoneRow[]>(
       `SELECT m.id, m.contract_id, m.title, m.due_at, c.client_id, c.freelancer_id,
-              c.title AS contract_title
+              c.title AS contract_title, fu.timezone AS freelancer_timezone,
+              cu.timezone AS client_timezone
          FROM contract_milestones m
          JOIN contracts c ON c.id = m.contract_id
+         JOIN users fu ON fu.id = c.freelancer_id
+         JOIN users cu ON cu.id = c.client_id
         WHERE m.status = 'funded'
+          AND m.delivered_at IS NULL
           AND m.due_at IS NOT NULL
-          AND m.due_at < NOW()
+          AND m.due_at < :now
           AND m.overdue_notified_at IS NULL
           AND c.status IN ('accepted', 'in_progress')
-        ORDER BY m.id ASC
+          AND ${zoneOf('fu.timezone')} IN (:zones)
+        ORDER BY m.due_at ASC, m.id ASC
         LIMIT 200`,
+      { now, zones },
     );
     return rows;
   },
 
-  /** Marca o aviso de atraso do marco; false se outra instância do job já marcou. */
-  async markOverdueNotified(id: number): Promise<boolean> {
+  /** Marca o aviso de atraso do marco; false se outra instância já marcou ou se ele foi entregue. */
+  async markOverdueNotified(id: number, now: Date): Promise<boolean> {
     const [res] = await pool.query<ResultSetHeader>(
-      `UPDATE contract_milestones SET overdue_notified_at = NOW()
-        WHERE id = :id AND overdue_notified_at IS NULL AND status = 'funded'`,
-      { id },
+      `UPDATE contract_milestones SET overdue_notified_at = :now
+        WHERE id = :id AND overdue_notified_at IS NULL AND status = 'funded' AND delivered_at IS NULL`,
+      { id, now },
     );
     return res.affectedRows > 0;
   },
 
-  async findDeliveredOlderThan(days: number): Promise<DueMilestoneRow[]> {
+  /** RN-024 por marco: aprovação tácita vencida, com o cliente num fuso em que é dia. */
+  async findApprovalDue(now: Date, zones: BrazilTimezone[]): Promise<DueMilestoneRow[]> {
+    if (zones.length === 0) return [];
     const [rows] = await pool.query<DueMilestoneRow[]>(
-      `SELECT m.id, m.contract_id, c.client_id, c.freelancer_id
+      `SELECT m.id, m.contract_id, c.client_id, c.freelancer_id, m.approval_due_at
          FROM contract_milestones m
          JOIN contracts c ON c.id = m.contract_id
+         JOIN users cu ON cu.id = c.client_id
         WHERE m.status = 'delivered'
-          AND m.delivered_at < DATE_SUB(NOW(), INTERVAL :days DAY)
+          AND m.approval_due_at IS NOT NULL AND m.approval_due_at <= :now
           AND c.status IN ('accepted', 'in_progress')
-        ORDER BY m.id ASC
+          AND ${zoneOf('cu.timezone')} IN (:zones)
+        ORDER BY m.approval_due_at ASC, m.id ASC
         LIMIT 200`,
-      { days },
+      { now, zones },
     );
     return rows;
+  },
+
+  /** Títulos dos marcos, entregues ou não: o aviso de atraso e a descrição da disputa listam. */
+  async titlesByDelivery(contractId: number): Promise<{ delivered: string[]; missing: string[] }> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT title, status, delivered_at FROM contract_milestones
+        WHERE contract_id = :contractId AND status <> 'cancelled'
+        ORDER BY sort_order ASC, id ASC`,
+      { contractId },
+    );
+    const delivered: string[] = [];
+    const missing: string[] = [];
+    for (const r of rows) {
+      if (r.status === 'funded' && r.delivered_at === null) missing.push(String(r.title));
+      else delivered.push(String(r.title));
+    }
+    return { delivered, missing };
   },
 };

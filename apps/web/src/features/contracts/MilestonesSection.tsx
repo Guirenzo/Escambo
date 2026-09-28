@@ -1,6 +1,8 @@
 import { CalendarClock, CheckCircle2, Flag, PackageCheck, RotateCcw } from 'lucide-react';
 import type { ContractWithHistory, Milestone } from '@escambo/types';
 import { Button } from '../../components/ui';
+import { useAuth } from '../../lib/auth';
+import { momentText } from '../../lib/deadline';
 import { brl, deadlineInfo, dt, dtm, MILESTONE_STATUS_LABEL } from '../../lib/format';
 import { useMilestoneAction } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
@@ -28,6 +30,7 @@ export function MilestonesSection({
   contract: ContractWithHistory;
   myId: number;
 }) {
+  const { user } = useAuth();
   const toast = useToast();
   const act = useMilestoneAction(contract.id);
   const list = contract.milestones;
@@ -105,6 +108,7 @@ export function MilestonesSection({
                   <div className="muted tiny" data-testid={`milestone-due-${m.id}`}>
                     <CalendarClock size={12} /> até {dt(m.dueAt)}
                     {m.status === 'funded' &&
+                      !m.deliveredAt &&
                       open &&
                       (() => {
                         const info = deadlineInfo(m.dueAt);
@@ -125,6 +129,11 @@ export function MilestonesSection({
                   <div className="muted tiny">
                     <PackageCheck size={12} /> {m.deliveryNote}
                     {m.deliveredAt ? ` · ${dtm(m.deliveredAt)}` : ''}
+                  </div>
+                )}
+                {m.status === 'delivered' && m.approvalDueAt && (
+                  <div className="muted tiny" data-testid={`milestone-approval-${m.id}`}>
+                    aprovação automática a partir de {momentText(m.approvalDueAt, user?.timezone)}
                   </div>
                 )}
                 {m.revisionNote && m.status === 'funded' && (

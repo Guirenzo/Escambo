@@ -14,7 +14,7 @@
 | **Descrição** | O que o sistema deve fazer |
 | **Prioridade** | `Alta` — essencial para o MVP / `Média` — importante mas não bloqueante / `Baixa` — desejável |
 | **Módulo** | Módulo funcional ao qual o requisito pertence |
-| **Status** | `Pendente` / `Em desenvolvimento` / `Concluído` |
+| **Status** | `Pendente` / `Em desenvolvimento` / `Parcial` (a nota ℹ️ diz o que falta) / `Implementado` |
 
 ---
 
@@ -80,9 +80,13 @@
 | RF-035 | O freelancer deve poder registrar a entrega do serviço com mensagem e arquivos anexos | Alta | Pendente |
 | RF-036 | O cliente deve poder confirmar a conclusão ou solicitar revisão após a entrega | Alta | Pendente |
 | RF-037 | O sistema deve liberar o pagamento ao freelancer somente após a conclusão confirmada pelo cliente | Alta | Pendente |
-| RF-038 | O sistema deve permitir cancelamento de contratação com política de reembolso definida | Média | Pendente |
-| RF-039 | O sistema deve notificar ambas as partes a cada mudança de status na contratação | Alta | Pendente |
+| RF-038 | O sistema deve permitir cancelamento de contratação com política de reembolso definida | Média | Implementado |
+| RF-039 | O sistema deve notificar ambas as partes a cada mudança de status na contratação | Alta | Parcial |
 | RF-040 | O sistema deve exibir histórico completo de contratações no painel do usuário | Alta | Pendente |
+
+> ℹ️ RF-038: a política é a da RN-025, numa conta só que a Sala mostra antes de confirmar e que a liquidação repete; se o valor mudar no meio, nada se move. O freelancer também pode desistir, e tudo o que está em garantia volta ao cliente (ADR 57).
+
+> ℹ️ RF-039: cada mudança avisa quem não agiu, e o que acontece sozinho (prazo vencido, disputa automática, proposta ou pedido de extensão sem resposta) avisa as duas partes; o cancelamento diz à outra parte o que aconteceu com o dinheiro dela (ADR 57). Falta a aprovação tácita (RN-024), da contratação e do marco, que ainda não avisa ninguém: o aviso às duas partes fica para o ADR 58.
 
 ---
 

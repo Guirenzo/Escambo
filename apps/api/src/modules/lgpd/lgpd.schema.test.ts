@@ -22,7 +22,11 @@ describe('recordConsentSchema', () => {
     expect(
       recordConsentSchema.safeParse({ type: 'terms_of_use', version: '1.3', accepted: true })
         .success,
-    ).toBe(false); // os Termos estão na 1.2
+    ).toBe(true); // Termos 1.3: prazos de dia e cancelamento com valores (ADR 57)
+    expect(
+      recordConsentSchema.safeParse({ type: 'terms_of_use', version: '1.4', accepted: true })
+        .success,
+    ).toBe(false);
   });
 
   it('os outros tipos de consentimento não têm lista de versões', () => {

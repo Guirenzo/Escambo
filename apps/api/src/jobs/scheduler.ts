@@ -10,6 +10,7 @@ import { runPurgeAttachments } from './purge-attachments';
 import { runPurgePushSubscriptions } from './purge-push-subscriptions';
 import { runPurgeQuarantine } from './purge-quarantine';
 import { runQuietPushSummary } from './quiet-push-summary';
+import { runRepairDeadlines } from './repair-deadlines';
 import { runSavedSearchAlerts } from './saved-search-alerts';
 import { runTacitApproval } from './tacit-approval';
 
@@ -27,10 +28,15 @@ export interface Job {
   run: () => Promise<unknown>;
 }
 
+/**
+ * A ordem importa: o reparo dos prazos vem antes de quem os lê (ADR 57); as sanções de prazo
+ * vêm antes do resumo diário, para o que aconteceu às 9h entrar no resumo de quem escolheu 9h.
+ */
 export const JOBS: Job[] = [
-  { name: 'tacit-approval', run: runTacitApproval },
-  { name: 'expire-proposals', run: runExpireProposals },
-  { name: 'overdue-contracts', run: runOverdueContracts },
+  { name: 'repair-deadlines', run: () => runRepairDeadlines() },
+  { name: 'tacit-approval', run: () => runTacitApproval() },
+  { name: 'expire-proposals', run: () => runExpireProposals() },
+  { name: 'overdue-contracts', run: () => runOverdueContracts() },
   { name: 'daily-digest', run: () => runDailyDigest() },
   { name: 'moderation-sla-report', run: () => runModerationSlaReport() },
   { name: 'quiet-push-summary', run: () => runQuietPushSummary() },

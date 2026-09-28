@@ -18,8 +18,9 @@
 7. [RN-51 a RN-60 — Gamificação](#7-rn-51-a-rn-60--gamificação)
 8. [RN-61 a RN-65 — Suporte e Disputas](#8-rn-61-a-rn-65--suporte-e-disputas)
 9. [RN-66 a RN-70 — Troca, Pacotes e Confiança](#81-rn-66-a-rn-70--troca-pacotes-e-confiança)
-10. [RN-71 a RN-80 — Conformidade e LGPD](#9-rn-71-a-rn-80--conformidade-e-lgpd)
+10. [RN-71 a RN-80 — Conformidade, LGPD, avisos e prazos](#9-rn-71-a-rn-80--conformidade-lgpd-avisos-e-prazos)
 11. [Tabela Consolidada](#10-tabela-consolidada)
+12. [Matriz de situação (ADR 57)](#11-matriz-de-situação-adr-57)
 
 ---
 
@@ -33,6 +34,10 @@ Cada regra possui:
 - **Descrição** — a regra em linguagem precisa
 - **Impacto** — consequência do não cumprimento
 - **Casos de Uso relacionados**
+- **Situação** — nas regras revistas contra o código (a partir do ADR 57): implementada, parcial, não implementada ou corrigida no texto; a [matriz da seção 11](#11-matriz-de-situação-adr-57) reúne essas regras
+- **Origem** — quando a regra nasceu de uma decisão registrada em `docs/decisoes.md`
+
+O documento reúne **78 regras**, de RN-001 a RN-078.
 
 ---
 
@@ -273,9 +278,10 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Contratações |
-| **Descrição** | O freelancer tem **72 horas** para aceitar, recusar ou contra-propor após o recebimento de uma proposta. Após esse prazo, a proposta expira automaticamente e o cliente é notificado. Implementado pelo job `expire-proposals` (`platform_settings.proposal_expiry_hours`, padrão 72): a proposta é encerrada com a nota do motivo e a reserva da carteira volta ao cliente |
-| **Impacto** | Garante agilidade no processo e libera o cliente para buscar outro profissional |
+| **Descrição** | O freelancer tem até a hora de validade da proposta para aceitar ou recusar (a contra-proposta é a RN-030, ainda não implementada). A validade é **gravada na criação**: **72 horas** depois (`platform_settings.proposal_expiry_hours`, padrão 72) ou, se o prazo de entrega vier antes, o último instante de dia antes dele, e nunca entre 20h30 e 9h no fuso do freelancer (passa para as 9h seguintes, RN-078). Com menos de 1 hora para responder, a proposta nem é criada. O aviso da proposta diz até quando responder, e a Sala mostra a mesma hora. Proposta vencida, ou com o prazo de entrega já passado, **não pode ser aceita**. Sem resposta até a hora gravada, o job `expire-proposals` encerra a proposta com a nota do motivo, a reserva da carteira volta ao cliente e os dois são avisados; o job só age com o fuso do freelancer de dia. Mudar o painel vale para as propostas criadas depois |
+| **Impacto** | Garante agilidade no processo e libera o cliente para buscar outro profissional; a hora avisada é a cumprida |
 | **UC Relacionado** | UC-05 |
+| **Situação** | Implementada (ADR 57) |
 
 ---
 
@@ -298,6 +304,7 @@ Cada regra possui:
 | **Descrição** | O cliente pode solicitar **até 2 revisões** por contratação sem custo adicional. Revisões além desse limite devem ser negociadas diretamente entre as partes via chat |
 | **Impacto** | Protege o freelancer de revisões ilimitadas sem remuneração adicional |
 | **UC Relacionado** | UC-05 |
+| **Situação** | Não implementada (revista no ADR 57): hoje o cliente pode pedir revisão sem limite de rodadas. O fluxo não depende dela: a revisão não abre disputa automática (RN-029), então repetir revisões não leva a contratação à mediação sozinha |
 
 ---
 
@@ -306,9 +313,10 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Contratações |
-| **Descrição** | Se o cliente não se manifestar sobre a entrega em **5 dias úteis**, o sistema considera a entrega **automaticamente aprovada** e libera o pagamento ao freelancer |
+| **Descrição** | Se o cliente não aprovar, não pedir revisão nem abrir disputa até a hora gravada na entrega, o sistema considera a entrega **automaticamente aprovada** e libera o pagamento ao freelancer. A hora é **5 dias corridos** depois da entrega (`platform_settings.tacit_approval_days`, padrão 5), gravada a cada entrega, dita no aviso da entrega e na Sala, e nunca cai entre 20h30 e 9h no fuso do cliente (passa para as 9h seguintes, RN-078). Vale por marco: cada marco entregue tem a própria hora (RN-069). O job `tacit-approval` só age com o fuso do cliente de dia; mudar o painel vale para as entregas registradas depois |
 | **Impacto** | Protege o freelancer de clientes que ignoram a entrega indefinidamente |
 | **UC Relacionado** | UC-05, UC-06 |
+| **Situação** | Implementada (ADR 57). Corrigida no texto: dizia "5 dias úteis", mas o código sempre contou dias corridos, e os Termos de Uso sempre disseram "5 dias" |
 
 ---
 
@@ -317,9 +325,10 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Cancelamentos |
-| **Descrição** | A política de reembolso segue o status da contratação no momento do cancelamento: **Pendente** → reembolso de 100% / **Em andamento (< 50% do prazo)** → reembolso de 50% / **Em andamento (≥ 50% do prazo)** → sem reembolso / **Entregue** → sem reembolso (abre disputa) |
-| **Impacto** | Política clara e transparente para ambas as partes |
+| **Descrição** | O valor do cancelamento sai de uma conta só (`cancelTerms`), a mesma que a Sala mostra e que liquida. **Proposta (antes do aceite)** → o cliente retira a proposta e a reserva volta inteira; o freelancer usa "Recusar" / **Freelancer desiste depois do aceite** → tudo o que está em garantia volta ao cliente (RN-026) / **Cliente, contratação sem prazo** → reembolso de 50% / **Cliente, prazo vencido sem nenhuma entrega** (por marcos, com algum marco financiado nunca entregue) → reembolso de 100% a partir do aviso de atraso da RN-029 (o gravado, ou as 9h previstas no fuso de quem entrega se o job ainda não rodou); antes do aviso, o cancelamento espera, e o app diz a hora / **Cliente, prazo vencido com um pedido de extensão esperando resposta** → responder ao pedido antes de cancelar / **Cliente, antes do prazo** → reembolso de 50% se passou menos da metade do tempo entre o **aceite** e o prazo, sem reembolso se passou mais / **Créditos Escambo** → os créditos em garantia voltam inteiros ao cliente / **Por marcos** → a conta vale sobre o que ainda está em garantia (o já liberado não volta), e um marco entregue em aberto, esperando o cliente ou em revisão, trava o cancelamento / **Entregue ou em revisão** → não se cancela: aprovar, pedir revisão ou abrir disputa. A taxa segue a proporção do reembolso (RN-039). O app mostra os valores antes de confirmar, e o pedido leva o valor visto: se ele mudou nesse meio-tempo (o prazo venceu, um marco foi entregue), nada se move e a Sala mostra o novo. A outra parte é avisada (`contract_cancelled`) do que aconteceu com o dinheiro dela. A carência da RN-029 protege quem entrega contra a disputa automática, não contra o cancelamento do cliente |
+| **Impacto** | Política clara e transparente para ambas as partes: ninguém cancela sem ver o valor, quem desiste não fica com o escrow e o cliente de um atraso sem entrega recebe tudo de volta |
 | **UC Relacionado** | UC-05, UC-06 |
+| **Situação** | Implementada (ADR 57) |
 
 ---
 
@@ -331,6 +340,7 @@ Cada regra possui:
 | **Descrição** | Cancelamentos iniciados pelo freelancer após aceite da proposta são registrados no histórico público do perfil. **3 ou mais cancelamentos nos últimos 60 dias** resultam em alerta automático no perfil e revisão pela equipe |
 | **Impacto** | Desincentiva cancelamentos oportunistas |
 | **UC Relacionado** | UC-05 |
+| **Situação** | Parcial (ADR 57). Implementado em parte: a desistência depois do aceite devolve ao cliente tudo o que está em garantia, fica na linha do tempo e avisa o cliente. O histórico público e o alerta por 3 cancelamentos em 60 dias seguem pendentes |
 
 ---
 
@@ -350,9 +360,10 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Contratações |
-| **Descrição** | O prazo de entrega pode ser estendido **apenas uma vez** por contratação, mediante solicitação do freelancer e **aceite explícito do cliente** pelo app. Implementado: o freelancer pede pela Sala (novo prazo e motivo), o cliente aceita ou recusa; a aceitação troca o prazo, registra na linha do tempo e trava a segunda extensão (a recusa não a gasta) |
-| **Impacto** | Evita extensões unilaterais que prejudicam o cliente |
+| **Descrição** | O freelancer pode pedir a extensão do prazo de entrega pela Sala (nova data e motivo) **até 2 vezes** por contratação, e **só 1 pedido pode ser aceito**, sempre com **aceite explícito do cliente** pelo app. Só vale **antes da primeira entrega** (por marcos, enquanto algum marco financiado nunca foi entregue), com um pedido de cada vez e nunca depois do fim da carência da RN-029. O cliente responde até a hora dita no pedido: 48 horas depois (valor fixo no código), levadas para as 9h se caírem de noite no fuso dele, e nunca depois do último instante de dia 12 horas antes da data pedida; se sobrariam menos de 6 horas para decidir, o pedido nem é registrado (a data está perto demais). Sem resposta até essa hora, o pedido **expira e vale como recusa**, com aviso às duas partes. O aceite troca o prazo, fica na linha do tempo e zera o aviso de atraso e a carência. Enquanto o pedido espera, a disputa automática espera (a carência pausa); depois da recusa ou da expiração, a carência volta de onde parou, com piso de **12 horas de relógio e 6 horas de dia** (de 9h a 20h30) a partir da decisão. Entrega, cancelamento, disputa e conclusão encerram o pedido pendente. A decisão confere o número do pedido: a recusa e a expiração do mesmo pedido nunca passam as duas |
+| **Impacto** | Evita extensões unilaterais que prejudicam o cliente e pedidos repetidos, ou ignorados, que adiariam a disputa automática sem limite |
 | **UC Relacionado** | UC-05 |
+| **Situação** | Implementada (ADR 57) |
 
 ---
 
@@ -361,9 +372,10 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Disputas |
-| **Descrição** | Se o prazo de entrega estoura sem registro de entrega e sem extensão aprovada, o sistema cria automaticamente um ticket de suporte com prioridade **Alta** e notifica ambas as partes. Implementado como **disputa aberta pela plataforma** (motivo "prazo", em nome do cliente) pelo job `overdue-contracts`: aviso às duas partes ao vencer e, `deadline_grace_hours` (padrão 24) depois, sem entrega nem extensão aprovada, a mediação assume e o escrow congela. O aviso a quem entrega, e a recusa de extensão ou o pedido de revisão enquanto a carência corre, dizem a hora-limite no fuso dele e podem sair durante o "não perturbe" se ele deixou (RN-077, ADR 56); o aviso ao cliente espera |
-| **Impacto** | Garante que nenhuma contratação fique em estado indefinido |
+| **Descrição** | Se o prazo de entrega vence sem **nenhuma entrega** (por marcos, com algum marco financiado nunca entregue) e sem extensão aceita, o job `overdue-contracts` avisa as duas partes, uma vez, a partir das **9h** depois do prazo no fuso de quem entrega (a mesma hora que a Sala mostra antes). O aviso grava o fim da **carência** (`platform_settings.deadline_grace_hours`, padrão 24 horas depois do aviso), que nunca cai entre 20h30 e 9h (passa para as 9h, RN-078) e é dito nos dois avisos, cada um no fuso de quem lê; mudar o painel vale para os avisos dados depois. Passada essa hora, ainda sem entrega, sem extensão aceita e sem pedido esperando resposta (RN-028), a plataforma **abre a disputa** (motivo "prazo", em nome do cliente), a mediação assume e o escrow congela (RN-038). A partir do aviso, o cliente pode cancelar com **reembolso integral** (RN-025). Depois da primeira entrega (por marcos, quando todo marco financiado já foi entregue), o prazo não abre mais disputa sozinho, mesmo que a entrega volte para revisão. Só o aviso a quem entrega pode sair durante o "não perturbe" (RN-077); o do cliente espera |
+| **Impacto** | Nenhuma contratação sem entrega fica em estado indefinido; depois da entrega, o desfecho é das partes |
 | **UC Relacionado** | UC-05, UC-10 |
+| **Situação** | Implementada (ADR 57) |
 
 ---
 
@@ -470,14 +482,15 @@ Cada regra possui:
 
 ---
 
-### RN-039 — Comissão não reembolsável em cancelamento tardio
+### RN-039 — Taxa dividida na proporção do reembolso
 
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Pagamentos |
-| **Descrição** | Em cancelamentos após o início do serviço (status "Em andamento"), a taxa da plataforma é retida integralmente, independentemente do valor reembolsado ao cliente |
-| **Impacto** | Cobre o custo operacional da transação já iniciada |
+| **Descrição** | Em cancelamento depois do aceite, a taxa da plataforma é dividida na mesma proporção do reembolso (ADR 15): com reembolso integral, a taxa volta inteira ao cliente. O cliente recebe a fração do **preço** (com a parte proporcional da taxa), o freelancer fica com o restante do **líquido** e a plataforma retém só a parte proporcional da taxa: com reembolso de 50%, metade da taxa; sem reembolso, a taxa inteira. A decisão de uma disputa segue a mesma conta. Contratações em créditos Escambo não têm taxa |
+| **Impacto** | Quem é reembolsado não paga taxa sobre o que voltou para ele, e o dinheiro fecha em qualquer caminho (cliente + freelancer + taxa = preço) |
 | **UC Relacionado** | UC-05, UC-06 |
+| **Situação** | Corrigida no texto (ADR 57): a regra dizia que a taxa ficava retida integralmente depois do início do serviço, o que divergia do código desde o ADR 15 |
 
 ---
 
@@ -743,6 +756,7 @@ Cada regra possui:
 | **Descrição** | Um ticket de disputa financeira só pode ser aberto após **48h do registro da entrega sem resolução** entre as partes via chat |
 | **Impacto** | Incentiva resolução direta antes da intervenção administrativa |
 | **UC Relacionado** | UC-10 |
+| **Situação** | Não implementada (revista no ADR 57): hoje a disputa manual pode ser aberta a qualquer momento em `accepted`, `in_progress`, `delivered` e `revision_requested`, sem espera de 48 h |
 
 ---
 
@@ -821,9 +835,10 @@ Cada regra possui:
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Pagamentos |
-| **Descrição** | Contratos divididos em marcos têm **cada marco financiado e liberado individualmente**. A soma dos marcos deve ser igual ao valor total do contrato. A aprovação de um marco libera apenas o valor daquele marco. Vale em dinheiro e em créditos Escambo (marcos inteiros, sem taxa). Cada marco pode ter o próprio prazo (opcional; no futuro, em ordem e nunca depois do prazo da contratação): marco em escrow com prazo vencido avisa as duas partes uma vez — a mediação automática continua sendo pelo prazo da contratação (RN-029) |
+| **Descrição** | Contratos divididos em marcos têm **cada marco financiado e liberado individualmente**. A soma dos marcos deve ser igual ao valor total do contrato. A aprovação de um marco libera apenas o valor daquele marco. Vale em dinheiro e em créditos Escambo (marcos inteiros, sem taxa). Cada marco pode ter o próprio prazo (opcional; no futuro, em ordem e nunca depois do prazo da contratação): marco em escrow com prazo vencido avisa as duas partes uma vez — a mediação automática continua sendo pelo prazo da contratação (RN-029). Marco entregue conta como entrega para a RN-029 mesmo que volte para revisão. O aviso de marco atrasado vale só para marco nunca entregue, a partir das 9h no fuso de quem entrega. A tácita de cada marco tem hora gravada na entrega do marco (RN-024). Não se cancela com marco entregue em aberto, esperando o cliente ou em revisão (RN-025) |
 | **Impacto** | Reduz o risco das duas partes em projetos longos e de maior valor |
 | **UC Relacionado** | UC-06 |
+| **Situação** | Implementada (prazos, tácita e cancelamento por marco revistos no ADR 57) |
 
 ---
 
@@ -838,7 +853,7 @@ Cada regra possui:
 
 ---
 
-## 9. RN-71 a RN-80 — Conformidade e LGPD
+## 9. RN-71 a RN-80 — Conformidade, LGPD, avisos e prazos
 
 ---
 
@@ -897,14 +912,40 @@ Cada regra possui:
 
 ---
 
+### RN-076 — Comunicação de alteração dos documentos legais
+
+| Campo | Detalhe |
+|---|---|
+| **Categoria** | LGPD |
+| **Descrição** | Quando a Política de Privacidade ou os Termos de Uso mudam, quem ainda não respondeu à versão vigente vê, ao entrar, uma **faixa com destaque** que resume o que mudou desde a versão que respondeu e leva ao texto completo. A resposta é registrada por versão, no mesmo consentimento do cadastro, e encerra a faixa em todos os aparelhos; se o registro falhar, a faixa volta na próxima vez. Na Política, a faixa pede **aceitar ou não aceitar** (art. 8 §6, art. 9). Nos Termos (desde a 1.3), a faixa é **informativa**: não há "Não aceito", porque a seção 7 diz que o uso continuado vale como aceite, e quem não concorda pode pedir a exclusão da conta no Perfil. Uma faixa por vez: a da Política vem antes da dos Termos |
+| **Impacto** | Ninguém segue sob um documento que mudou sem ter sido avisado, e cada resposta fica registrada com a versão |
+| **UC Relacionado** | UC-01 |
+| **Situação** | Implementada: Política (ADR 54) e Termos de Uso 1.3 (ADR 57) |
+
+---
+
 ### RN-077 — O que sai durante o "não perturbe"
 
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Notificações |
-| **Descrição** | Durante a janela de silêncio da conta, nenhum aviso no navegador sai, exceto o aviso de teste e as categorias que a própria pessoa marcou, dentro de uma lista fechada mantida pela plataforma. Hoje a lista tem uma categoria, "Prazo vencido num trabalho que você entrega": o aviso de prazo estourado a quem entrega quando há o que fazer (RN-029) e, com a carência correndo e ao menos 15 minutos para agir, a extensão recusada (RN-028) e a revisão pedida. Quem nunca escolheu não tem nada saindo; ao ligar o silêncio, quem entrega trabalho vê a opção marcada. O que não sai fica para o aviso do fim do silêncio, com os de prazo primeiro. Uma categoria só entra se a espera tira de quem recebe algo que não volta e se ele consegue agir |
+| **Descrição** | Durante a janela de silêncio da conta, nenhum aviso no navegador sai, exceto o aviso de teste e as categorias que a própria pessoa marcou, dentro de uma lista fechada mantida pela plataforma. Hoje a lista tem uma categoria, "Prazo vencido num trabalho que você entrega": o aviso de prazo estourado a quem entrega (RN-029). A extensão recusada e a revisão pedida saíram da lista no ADR 57: depois de uma recusa ou expiração sobram sempre pelo menos 6 horas de dia até a disputa (RN-028), e depois da entrega não há carência (RN-029). Quem nunca escolheu não tem nada saindo; ao ligar o silêncio, quem entrega trabalho vê a opção marcada. O que não sai fica para o aviso do fim do silêncio, com os de prazo primeiro. Uma categoria só entra se a espera tira de quem recebe algo que não volta e se ele consegue agir |
 | **Impacto** | Quem entrega não perde horas da carência dormindo, e ninguém é acordado pelo que não escolheu |
 | **UC Relacionado** | UC-02, UC-05 |
+| **Situação** | Implementada (ADR 56, estreitada pelo ADR 57) |
+
+---
+
+### RN-078 — Prazos de dia
+
+| Campo | Detalhe |
+|---|---|
+| **Categoria** | Contratações |
+| **Descrição** | Todo prazo que tira um direito tem a hora gravada quando a contagem começa, e ela nunca cai entre 20h30 e 9h no fuso de quem é afetado (passa para as 9h). Nenhum job age sobre prazo com esse fuso de noite (entre 21h e 9h). A hora vale como foi dita: mudar o painel vale para o que começar depois. Hoje, os instantes gravados são quatro: a validade da proposta (RN-021, fuso do freelancer), a aprovação tácita da entrega e de cada marco (RN-024, fuso do cliente), a resposta a um pedido de extensão (RN-028, fuso do cliente) e o fim da carência do prazo (RN-029, fuso de quem entrega). A outra parte, que não sofre a sanção, pode receber a cópia de um aviso mais cedo no fuso dela (a partir das 6h). As contratações que já estavam em andamento recebem essas horas pelo job `repair-deadlines`, com as mesmas contas da API |
+| **Impacto** | Nenhuma sanção por prazo cai de madrugada, e a hora avisada é a hora cumprida |
+| **UC Relacionado** | UC-05 |
+| **Situação** | Implementada |
+| **Origem** | ADR 57 |
 
 ---
 
@@ -932,15 +973,15 @@ Cada regra possui:
 | RN-018 | Serviços | Máximo 10 tags por serviço | UC-03 |
 | RN-019 | Busca | Ranqueamento: boost → nota → proximidade | UC-04 |
 | RN-020 | Contratações | Proposta única por par ativo | UC-04 |
-| RN-021 | Contratações | Aceite em até 72h ou proposta expira | UC-05 |
+| RN-021 | Contratações | Proposta vale 72h (ou até o prazo de entrega), com hora gravada de dia; vencida não se aceita | UC-05 |
 | RN-022 | Contratações | Histórico de status imutável | UC-05 |
 | RN-023 | Contratações | Máximo 2 revisões gratuitas | UC-05 |
-| RN-024 | Contratações | Aprovação tácita em 5 dias úteis | UC-05 |
-| RN-025 | Cancelamentos | Reembolso proporcional ao status | UC-05 |
+| RN-024 | Contratações | Aprovação tácita em 5 dias corridos, hora gravada na entrega | UC-05 |
+| RN-025 | Cancelamentos | Reembolso pela etapa, com o valor na tela antes de confirmar; atraso sem entrega devolve tudo | UC-05 |
 | RN-026 | Contratações | 3 cancelamentos em 60 dias gera alerta | UC-05 |
 | RN-027 | Contratações | Contratação mínima R$ 10,00 | UC-04 |
-| RN-028 | Contratações | Extensão de prazo uma vez com aceite | UC-05 |
-| RN-029 | Disputas | Prazo estourado gera ticket automático | UC-05 |
+| RN-028 | Contratações | Até 2 pedidos de extensão, 1 aceito, só com trabalho nunca entregue; sem resposta, expira | UC-05 |
+| RN-029 | Disputas | Prazo vencido sem entrega: aviso a partir das 9h, carência gravada e disputa automática | UC-05 |
 | RN-030 | Contratações | Máximo 3 rodadas de contra-proposta | UC-05 |
 | RN-031 | Pagamentos | Taxa da plataforma: 15% | UC-06 |
 | RN-032 | Pagamentos | Escrow obrigatório antes do início | UC-06 |
@@ -950,7 +991,7 @@ Cada regra possui:
 | RN-036 | Pagamentos | Reembolso no método original | UC-06 |
 | RN-037 | Pagamentos | 3 tentativas automáticas em falha | UC-06 |
 | RN-038 | Disputas | Saldo bloqueado durante disputa | UC-06 |
-| RN-039 | Pagamentos | Comissão não reembolsável após início | UC-05, UC-06 |
+| RN-039 | Pagamentos | Taxa dividida na proporção do reembolso | UC-05, UC-06 |
 | RN-040 | Auditoria | Histórico financeiro imutável | UC-06 |
 | RN-041 | Avaliações | Avaliação vinculada a contrato concluído | UC-07 |
 | RN-042 | Avaliações | Uma avaliação por contrato, sem edição | UC-07 |
@@ -987,8 +1028,31 @@ Cada regra possui:
 | RN-073 | LGPD | Anonimização após 24 meses inativo | UC-11 |
 | RN-074 | LGPD | Coleta de dados mínimos | UC-01 |
 | RN-075 | Segurança | CPF e senha criptografados | UC-01, UC-06 |
-| RN-076 | LGPD | Comunicação de alteração da Política de Privacidade: faixa com destaque ao entrar, aceitar/não aceitar registrados por versão (art. 8 §6, art. 9) | UC-01 |
-| RN-077 | Notificações | O que sai durante o "não perturbe": lista fechada da plataforma, escolha da pessoa (hoje, prazo vencido num trabalho que você entrega) | UC-02, UC-05 |
+| RN-076 | LGPD | Comunicação de alteração da Política de Privacidade e dos Termos de Uso: faixa com destaque ao entrar, resposta registrada por versão; a Política pede aceitar/não aceitar (art. 8 §6, art. 9), a dos Termos é informativa (uso continuado vale como aceite) | UC-01 |
+| RN-077 | Notificações | O que sai durante o "não perturbe": lista fechada da plataforma, escolha da pessoa (hoje, o aviso de prazo estourado a quem entrega) | UC-02, UC-05 |
+| RN-078 | Contratações | Prazos de dia: hora gravada, nunca entre 20h30 e 9h no fuso de quem é afetado; nenhum job age de noite | UC-05 |
+
+---
+
+## 11. Matriz de situação (ADR 57)
+
+Regras revistas contra o código na v1.39.0 (ADR 57). Os arquivos da API ficam em `apps/api/src/` (as contratações em `modules/contracts/`), e os do web em `apps/web/src/features/`.
+
+| RN | Situação | Onde | ADR |
+|---|---|---|---|
+| RN-021 | Implementada | `contracts.service.ts` (criação e aceite da proposta), `jobs/expire-proposals.ts` | 57 |
+| RN-023 | Não implementada | Nenhum limite de revisões; a revisão não abre disputa automática | 57 |
+| RN-024 | Implementada; "dias úteis" corrigido para dias corridos | `contracts.service.ts` (entrega e marco), `jobs/tacit-approval.ts` | 57 |
+| RN-025 | Implementada | `cancel-policy.ts` (`cancelTerms`), `contracts.service.ts` (cancelamento), `contracts/CancelModal.tsx` | 57 |
+| RN-026 | Parcial | Desistência em `cancel-policy.ts` e aviso `contract_cancelled` em `deadline-notices.ts`; histórico público e alerta pendentes | 57 |
+| RN-028 | Implementada | `deadline-grace.ts`, `contracts.service.ts` (pedido e decisão), `jobs/overdue-contracts.ts` (expiração) | 57 |
+| RN-029 | Implementada | `deadline-sql.ts` (`rn029Eligible`), `deadline-grace.ts`, `jobs/overdue-contracts.ts` | 57 |
+| RN-039 | Corrigida no texto | `cancel-policy.ts` (`cashSettlement`), `modules/admin/admin.service.ts` (decisão de disputa) | 15, 57 |
+| RN-062 | Não implementada | `modules/disputes/disputes.repository.ts` (status em que a disputa abre) | 57 |
+| RN-069 | Implementada | `deadline-sql.ts`, `jobs/overdue-contracts.ts` (marco atrasado), `jobs/tacit-approval.ts` | 57 |
+| RN-076 | Implementada | `shell/LegalUpdateBanner.tsx`, `shell/banners.ts`, `legal/content.ts` | 54, 57 |
+| RN-077 | Implementada | `modules/notifications/push.service.ts`, `deadline-notices.ts` | 56, 57 |
+| RN-078 | Implementada | `utils/human-hours.ts`, `jobs/repair-deadlines.ts`, migrations 0027 e 0028 | 57 |
 
 ---
 

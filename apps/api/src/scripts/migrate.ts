@@ -1,6 +1,8 @@
 import mysql from 'mysql2/promise';
+import { pool } from '../config/db';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
+import { runRepairDeadlines } from '../jobs/repair-deadlines';
 import {
   appliedMigrations,
   ensureMigrationsTable,
@@ -44,8 +46,16 @@ async function main(): Promise<void> {
     if (await seedReferenceIfEmpty(conn)) {
       logger.info('Seed de referência carregado (catálogo estava vazio)');
     }
+    // Prazos (ADR 57): as contratações em andamento ganham as horas gravadas antes de a API nova
+    // subir. O reparo também roda em toda rodada dos jobs, então uma falha aqui não barra o deploy.
+    try {
+      logger.info({ reparo: await runRepairDeadlines() }, 'Prazos reparados');
+    } catch (err) {
+      logger.warn({ err }, 'Reparo dos prazos falhou; a próxima rodada dos jobs tenta de novo');
+    }
   } finally {
     await conn.end();
+    await pool.end();
   }
 }
 

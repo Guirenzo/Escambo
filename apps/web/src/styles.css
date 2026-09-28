@@ -1519,6 +1519,10 @@ button.toggle.on {
   place-items: center;
   padding: 20px;
 }
+/* O diálogo recebe o foco ao abrir (para o leitor de tela); o contorno fica nos controles. */
+.modal:focus {
+  outline: none;
+}
 .modal {
   width: 100%;
   max-width: 540px;
@@ -2259,6 +2263,47 @@ button.toggle.on {
 .deadline-text-soon {
   color: var(--amber-ink);
   font-weight: 600;
+}
+.deadline-text-paused {
+  color: var(--blue-ink);
+  font-weight: 600;
+}
+/* ADR 57: pedido esperando o cliente e prazo cumprido (houve entrega). */
+.pill.deadline-paused {
+  background: var(--blue-soft);
+  color: var(--blue-ink);
+}
+.pill.deadline-met {
+  background: var(--green-soft);
+  color: var(--green-ink);
+}
+.deadline-plan {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+}
+/* Cancelamento: os valores antes de confirmar (ADR 57). */
+.cancel-quote {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  background: var(--blue-soft);
+  color: var(--blue-ink);
+}
+.cancel-quote dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: right;
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 /* ---------- Perfil: dias de atendimento e portfólio ---------- */

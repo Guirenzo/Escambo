@@ -40,15 +40,74 @@ import {
   MAX_ATTACHMENT_MB,
   PendingAttachment,
 } from '../contracts/ChatAttachment';
+import { CancelModal } from '../contracts/CancelModal';
 import { ContractActions } from '../contracts/ContractActions';
 import { DeadlineSection } from '../contracts/DeadlineSection';
 import { DisputeModal, DisputeSection } from '../contracts/DisputePanel';
 import { MilestonesSection } from '../contracts/MilestonesSection';
 import { describeSignals, offPlatformSignals } from '../../lib/offPlatform';
+import { momentText, untilLabel } from '../../lib/deadline';
 import { useToast } from '../../lib/toast';
 
-/** Prazo da plataforma para aprovação tácita (platform_settings.tacit_approval_days). */
-const TACIT_APPROVAL_DAYS = 5;
+/** Valor da contratação na unidade dela ("R$ 200,00" ou "30 créditos"). */
+const valueOf = (c: ContractWithHistory, v: number): string =>
+  c.paymentMode === 'credits' ? `${Math.round(v)} créditos` : brl(v);
+
+/**
+ * Até quando cada lado age (ADR 57), com a hora gravada pela API no fuso de quem lê: a aprovação
+ * automática da entrega e a validade da proposta.
+ */
+function DueNotice({
+  contract: c,
+  myId,
+  zone,
+}: {
+  contract: ContractWithHistory;
+  myId: number;
+  zone: string | null | undefined;
+}) {
+  const isClient = c.clientId === myId;
+  const isFreelancer = c.freelancerId === myId;
+  if (c.status === 'delivered' && c.approvalDueAt && (isClient || isFreelancer)) {
+    const when = momentText(c.approvalDueAt, zone);
+    const barter = c.paymentMode === 'barter';
+    return (
+      <p className="notice" data-testid="approval-due">
+        <Hourglass size={14} />{' '}
+        {isClient
+          ? `Entrega registrada. Aprove, peça revisão ou abra disputa até ${when}; depois disso a entrega é aprovada automaticamente${
+              barter ? ' e conta para fechar a troca.' : ' e o pagamento é liberado ao freelancer.'
+            }`
+          : `Entrega registrada. Sem resposta do cliente até ${when}, ela é aprovada automaticamente${
+              barter ? '.' : ` e ${valueOf(c, c.freelancerNet)} é liberado para você.`
+            }`}
+      </p>
+    );
+  }
+  if (c.status === 'pending' && c.proposalExpiresAt && (isClient || isFreelancer)) {
+    const when = momentText(c.proposalExpiresAt, zone);
+    const left = new Date(c.proposalExpiresAt).getTime() - Date.now();
+    if (isFreelancer) {
+      const toDeadline = c.deadlineAt ? new Date(c.deadlineAt).getTime() - Date.now() : null;
+      return (
+        <p className={`notice${left < 24 * 3_600_000 ? ' danger' : ''}`} data-testid="proposal-due">
+          <Hourglass size={14} /> Responda até {when}: aceite ou recuse.
+          {toDeadline !== null && toDeadline > 0
+            ? ` Se aceitar agora, você terá ${untilLabel(toDeadline)} até o prazo.`
+            : ''}
+        </p>
+      );
+    }
+    return (
+      <p className="notice" data-testid="proposal-due">
+        <Hourglass size={14} /> O freelancer tem até {when} para responder; sem resposta, a proposta
+        se encerra
+        {c.paymentMode === 'cash' ? ' e o valor reservado volta para a sua carteira.' : '.'}
+      </p>
+    );
+  }
+  return null;
+}
 
 const MODE_LABEL: Record<string, string> = {
   cash: 'Dinheiro',
@@ -225,6 +284,7 @@ export function SalaContratoView({
   const [connected, setConnected] = useState(false);
   const [draft, setDraft] = useState('');
   const [disputeOpen, setDisputeOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [pending, setPending] = useState<File | null>(null); // anexo escolhido, ainda não enviado
   const [dragging, setDragging] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -340,17 +400,13 @@ export function SalaContratoView({
               contract={c}
               exclude={['review']}
               onDispute={() => setDisputeOpen(true)}
+              onCancel={() => setCancelOpen(true)}
             />
           </div>
         )}
       </div>
 
-      {c?.status === 'delivered' && c.clientId === myId && (
-        <p className="notice">
-          <Hourglass size={14} /> Entrega registrada. Aprove ou peça revisão; sem resposta em{' '}
-          {TACIT_APPROVAL_DAYS} dias a entrega é aprovada automaticamente e o valor liberado.
-        </p>
-      )}
+      {c && <DueNotice contract={c} myId={myId} zone={user?.timezone} />}
 
       <div className="sala">
         <div className="stack">
@@ -525,6 +581,7 @@ export function SalaContratoView({
         </section>
       </div>
       {c && disputeOpen && <DisputeModal contract={c} onClose={() => setDisputeOpen(false)} />}
+      {c && cancelOpen && <CancelModal contract={c} onClose={() => setCancelOpen(false)} />}
     </div>
   );
 }

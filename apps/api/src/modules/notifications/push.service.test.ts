@@ -111,14 +111,14 @@ describe('o que sai no silêncio (ADR 56)', () => {
     expect(Object.keys(QUIET_PASS_BY_TYPE).sort()).toEqual([...PUSHED_NOTIFICATION_TYPES].sort());
   });
 
-  it('só três tipos podem sair, todos pela categoria de prazo', () => {
+  it('só o aviso de atraso pode sair, pela categoria de prazo (ADR 57 estreitou o ADR 56)', () => {
     const podem = Object.entries(QUIET_PASS_BY_TYPE).filter(([, c]) => c !== null);
-    expect(podem.map(([t]) => t).sort()).toEqual([
-      'contract_overdue',
-      'contract_revision',
-      'deadline_extension_declined',
-    ]);
-    expect(new Set(podem.map(([, c]) => c))).toEqual(new Set(['deadline']));
+    expect(podem).toEqual([['contract_overdue', 'deadline']]);
+    // a recusa e a expiração do pedido dão pelo menos 6 h de dia; a revisão não tem carência
+    expect(QUIET_PASS_BY_TYPE.deadline_extension_declined).toBeNull();
+    expect(QUIET_PASS_BY_TYPE.deadline_extension_expired).toBeNull();
+    expect(QUIET_PASS_BY_TYPE.contract_revision).toBeNull();
+    expect(passCategoryFor('deadline_extension_declined', 'deadline')).toBeNull();
   });
 
   it('passCategoryFor aceita só o par do mapa', () => {

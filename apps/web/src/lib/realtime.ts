@@ -20,7 +20,13 @@ export function useRealtimeNotifications(): void {
     const socket = getSocket();
     const onNotification = (n: Notification): void => {
       void qc.invalidateQueries({ queryKey: qk.notifications });
-      if (n.type.startsWith('contract_') || n.type.startsWith('milestone_')) {
+      // ADR 57: os avisos de extensão e de disputa também mudam a Sala.
+      if (
+        n.type.startsWith('contract_') ||
+        n.type.startsWith('milestone_') ||
+        n.type.startsWith('deadline_') ||
+        n.type.startsWith('dispute_')
+      ) {
         void qc.invalidateQueries({ queryKey: qk.contracts });
         void qc.invalidateQueries({ queryKey: ['contract'] });
         void qc.invalidateQueries({ queryKey: qk.wallet });

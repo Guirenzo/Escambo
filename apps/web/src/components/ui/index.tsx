@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowLeftRight, Inbox, X } from 'lucide-react';
-import { useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -163,7 +163,14 @@ export function QueryState<T>({
   return <>{children(data)}</>;
 }
 
-/** Diálogo modal simples (fecha no backdrop ou no ✕). */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Diálogo modal (fecha no backdrop, no ✕ ou com Esc). Ao abrir, o foco vai para o diálogo (o
+ * leitor de tela anuncia o título), a menos que um campo dele já tenha pedido o foco; o Tab fica
+ * dentro dele; ao fechar, o foco volta para quem abriu, se ele ainda estiver na tela.
+ */
 export function Modal({
   title,
   onClose,
@@ -175,13 +182,57 @@ export function Modal({
 }) {
   // O título dá nome ao diálogo para leitores de tela (e para getByRole('dialog', { name })).
   const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return undefined;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!dialog.contains(document.activeElement)) dialog.focus();
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const list = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (list.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = list[0]!;
+      const last = list[list.length - 1]!;
+      const active = document.activeElement;
+      if (!dialog.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && (active === first || active === dialog)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      if (opener && document.contains(opener)) opener.focus();
+    };
+  }, []);
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <div
+        ref={dialogRef}
         className="modal card"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">

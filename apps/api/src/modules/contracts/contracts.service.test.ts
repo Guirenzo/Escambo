@@ -1,7 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../settings/settings.service', () => ({
-  settingsService: { feeRate: vi.fn().mockResolvedValue(0.15) },
+  settingsService: {
+    feeRate: vi.fn().mockResolvedValue(0.15),
+    number: vi.fn().mockResolvedValue(24),
+  },
+}));
+vi.mock('../settings/settings.repository', () => ({
+  settingsRepository: { getNumber: vi.fn().mockResolvedValue(72) },
+}));
+vi.mock('../notifications/notifications.service', () => ({
+  notificationsService: { notify: vi.fn().mockResolvedValue(undefined) },
+}));
+vi.mock('../auth/user-zone', () => ({
+  userZone: vi.fn().mockResolvedValue('America/Sao_Paulo'),
+}));
+vi.mock('./milestones.repository', () => ({
+  milestonesRepository: {
+    listForContract: vi.fn().mockResolvedValue([]),
+    escrowRemaining: vi.fn().mockResolvedValue(null),
+    titlesByDelivery: vi.fn().mockResolvedValue({ delivered: [], missing: [] }),
+  },
 }));
 
 vi.mock('./contracts.repository', () => ({
@@ -24,6 +43,7 @@ vi.mock('../gamification/gamification.service', () => ({
 
 import { cashSettlement, contractsService } from './contracts.service';
 import { contractsRepository, type ContractRow, type HistoryRow } from './contracts.repository';
+import { notificationsService } from '../notifications/notifications.service';
 
 // getById anexa a avaliação do contrato; sem banco no teste unitário, vem vazia.
 vi.mock('../reviews/reviews.repository', () => ({
@@ -46,6 +66,8 @@ type FakeFields = Partial<{
   status: string;
   payment_mode: string;
   deadline_at: Date | null;
+  accepted_at: Date | null;
+  overdue_notified_at: Date | null;
   created_at: Date;
 }>;
 
@@ -291,9 +313,82 @@ describe('cancel (RN-025)', () => {
     );
   });
 
-  it('409 ao cancelar após a entrega', async () => {
+  it('409 ao cancelar após a entrega, com a mensagem do que fazer', async () => {
     repo.findById.mockResolvedValue(fakeRow({ client_id: 1, status: 'delivered' }));
-    await expect(contractsService.cancel(1, 1)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(contractsService.cancel(1, 1)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'invalid_transition',
+      message: 'Depois da entrega não se cancela: aprove, peça revisão ou abra uma disputa.',
+    });
+  });
+
+  it('o freelancer que desiste devolve tudo ao cliente e o cliente é avisado (RN-026)', async () => {
+    repo.findById.mockResolvedValue(
+      fakeRow({ client_id: 1, freelancer_id: 2, status: 'accepted', accepted_at: new Date() }),
+    );
+    repo.transition.mockResolvedValue(true);
+    const r = await contractsService.cancel(1, 2);
+    expect(r).toMatchObject({ stage: 'withdrawal', by: 'freelancer', refundClient: 1000 });
+    expect(repo.transition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        closePendingExtension: true,
+        walletEffects: [
+          { userId: 2, pendingDelta: -850, balanceDelta: 0, reason: 'escrow_refund' },
+          { userId: 1, pendingDelta: 0, balanceDelta: 1000, reason: 'refund' },
+        ],
+      }),
+    );
+    expect(vi.mocked(notificationsService.notify)).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        type: 'contract_cancelled',
+        title: 'O freelancer desistiu: Landing page',
+      }),
+      {},
+    );
+  });
+
+  it('prazo vencido sem entrega, depois do aviso: o cliente recebe tudo (antes recebia 0%)', async () => {
+    const hour = 3_600_000;
+    repo.findById.mockResolvedValue(
+      fakeRow({
+        client_id: 1,
+        status: 'accepted',
+        accepted_at: new Date(Date.now() - 100 * hour),
+        deadline_at: new Date(Date.now() - 30 * hour),
+        overdue_notified_at: new Date(Date.now() - 20 * hour),
+      }),
+    );
+    repo.transition.mockResolvedValue(true);
+    const r = await contractsService.cancel(1, 1);
+    expect(r).toMatchObject({ stage: 'overdue', refundPercentage: 100, refundClient: 1000 });
+    expect(repo.transition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        note: 'Reembolso: 100% (prazo vencido sem entrega)',
+        walletEffects: [
+          { userId: 2, pendingDelta: -850, balanceDelta: 0, reason: 'escrow_refund' },
+          { userId: 1, pendingDelta: 0, balanceDelta: 1000, reason: 'refund' },
+        ],
+      }),
+    );
+  });
+
+  it('o valor visto na tela é conferido: mudou, 409 e nada se move', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ client_id: 1, status: 'pending' }));
+    await expect(contractsService.cancel(1, 1, { expectedRefund: 500 })).rejects.toMatchObject({
+      code: 'cancel_quote_changed',
+    });
+    expect(repo.transition).not.toHaveBeenCalled();
+  });
+
+  it('a gravação repete o que a leitura viu (prazo, aviso e pedido de extensão)', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ client_id: 1, status: 'pending' }));
+    repo.transition.mockResolvedValue(true);
+    await contractsService.cancel(1, 1, { expectedRefund: 1000 });
+    const call = repo.transition.mock.calls[0]![0];
+    expect(call.guard?.sql).toContain('c.deadline_at <=> :gDeadline');
+    expect(call.guard?.sql).toContain('c.extension_requests = :gExtRequests');
+    expect(call.guard?.params).toMatchObject({ gDeadline: null, gNotice: null, gExtRequests: 0 });
   });
 });
 

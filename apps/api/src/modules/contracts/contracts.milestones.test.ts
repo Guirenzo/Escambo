@@ -1,7 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../settings/settings.service', () => ({
-  settingsService: { feeRate: vi.fn().mockResolvedValue(0.15) },
+  settingsService: {
+    feeRate: vi.fn().mockResolvedValue(0.15),
+    number: vi.fn().mockResolvedValue(24),
+  },
+}));
+vi.mock('../settings/settings.repository', () => ({
+  settingsRepository: { getNumber: vi.fn().mockResolvedValue(5) },
+}));
+vi.mock('../notifications/notifications.service', () => ({
+  notificationsService: { notify: vi.fn().mockResolvedValue(undefined) },
+}));
+vi.mock('../auth/user-zone', () => ({
+  userZone: vi.fn().mockResolvedValue('America/Sao_Paulo'),
 }));
 
 vi.mock('./contracts.repository', () => ({
@@ -21,6 +33,7 @@ vi.mock('./milestones.repository', () => ({
     deliver: vi.fn(),
     approve: vi.fn(),
     requestRevision: vi.fn(),
+    titlesByDelivery: vi.fn().mockResolvedValue({ delivered: [], missing: [] }),
   },
 }));
 vi.mock('../wallet/wallet.service', () => ({
@@ -33,6 +46,8 @@ vi.mock('../reviews/reviews.repository', () => ({
   reviewsRepository: { findByContractIdWithResponse: vi.fn().mockResolvedValue(undefined) },
 }));
 
+import { setClockForTests } from '../../utils/clock';
+import { notificationsService } from '../notifications/notifications.service';
 import { contractsService } from './contracts.service';
 import { contractsRepository, type ContractRow } from './contracts.repository';
 import { milestonesRepository } from './milestones.repository';
@@ -156,13 +171,29 @@ describe('entrega e aprovação por marco', () => {
   it('freelancer entrega; cliente aprova → libera só aquele líquido; último conclui e dá XP', async () => {
     repo.findById.mockResolvedValue(row({ status: 'in_progress' }));
     ms.deliver.mockResolvedValue(true);
-    await contractsService.deliverMilestone(1, 7, 2, 'Layout no Figma');
+    // terça 18:20 em Brasília + 5 dias = domingo 18:20 (de dia): a aprovação tácita fica lá
+    setClockForTests(new Date('2026-10-06T21:20:00Z'), { frozen: true });
+    try {
+      await contractsService.deliverMilestone(1, 7, 2, 'Layout no Figma');
+    } finally {
+      setClockForTests(null);
+    }
     expect(ms.deliver).toHaveBeenCalledWith({
       contractId: 1,
       milestoneId: 7,
       changedBy: 2,
       message: 'Layout no Figma',
+      now: new Date('2026-10-06T21:20:00Z'),
+      approvalDueAt: new Date('2026-10-11T21:20:00Z'),
     });
+    expect(vi.mocked(notificationsService.notify)).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        type: 'milestone_delivered',
+        body: 'Aprove ou peça revisão até dom, 11/10 às 18:20; depois disso, o marco é aprovado automaticamente. Mensagem: Layout no Figma',
+      }),
+      {},
+    );
 
     ms.approve.mockResolvedValueOnce({ ok: true, completed: false, net: 283.33, title: 'Layout' });
     const first = await contractsService.approveMilestone(1, 7, 1);
@@ -201,12 +232,30 @@ describe('entrega e aprovação por marco', () => {
 
   it('aprovação tácita de marco só em contrato aberto', async () => {
     repo.findById.mockResolvedValue(row({ status: 'completed' }));
-    expect(await contractsService.approveMilestoneTacitly(1, 7, 5)).toBe(false);
+    expect(
+      await contractsService.approveMilestoneTacitly({
+        id: 7,
+        contract_id: 1,
+        client_id: 1,
+        freelancer_id: 2,
+        approval_due_at: new Date(),
+      } as never),
+    ).toBe(false);
     expect(ms.approve).not.toHaveBeenCalled();
   });
 });
 
 describe('cancelamento por marcos liquida só o que ainda não foi liberado', () => {
+  it('com marco entregue esperando o cliente, não cancela (ADR 57)', async () => {
+    repo.findById.mockResolvedValue({
+      ...row({ status: 'in_progress' }),
+      delivered_awaiting: 1,
+    } as never);
+    ms.escrowRemaining.mockResolvedValue({ price: 400, net: 340 });
+    await expect(contractsService.cancel(1, 1)).rejects.toMatchObject({ code: 'milestone_open' });
+    expect(repo.transition).not.toHaveBeenCalled();
+  });
+
   it('50% do restante volta ao cliente; marcos abertos ficam cancelados', async () => {
     repo.findById.mockResolvedValue(row({ status: 'in_progress' }));
     ms.escrowRemaining.mockResolvedValue({ price: 400, net: 340 }); // 600 já liberados
@@ -216,6 +265,10 @@ describe('cancelamento por marcos liquida só o que ainda não foi liberado', ()
     expect(repo.transition).toHaveBeenCalledWith(
       expect.objectContaining({
         milestonesTo: { from: ['pending', 'funded', 'delivered'], to: 'cancelled' },
+        guard: expect.objectContaining({
+          sql: expect.stringContaining('= :gEscrowCents'),
+          params: expect.objectContaining({ gEscrowCents: 40000 }),
+        }),
         walletEffects: [
           { userId: 2, pendingDelta: -340, balanceDelta: 170, reason: 'escrow_release' },
           { userId: 1, pendingDelta: 0, balanceDelta: 200, reason: 'refund' },

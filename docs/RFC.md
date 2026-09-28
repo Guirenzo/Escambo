@@ -19,10 +19,10 @@ Guilherme Renzo
 Abril de 2026
 
 **Revisão:**
-Junho de 2026
+Setembro de 2026
 
 **Versão:**
-2.2
+2.3
 
 **Repositório:**
 https://github.com/Guirenzo/Escambo
@@ -40,6 +40,7 @@ MIT — Open Source
 | 2.0 | Abr/2026 | Documentação completa: requisitos, personas, casos de uso, arquitetura C4, mockups |
 | 2.1 | Jun/2026 | Revisão após avaliação da banca: linha declarada como Web App (mobile movido para Fase 2); benchmark ampliado para três plataformas com fontes rastreáveis; correção da análise de mercado (Workana cobra do cliente); plano técnico de CI/CD, testes (TDD), análise estática e observabilidade detalhado; seção de instalação/deploy adicionada; padronização dos números entre RFC e README; ajuste de tom para registro acadêmico |
 | 2.2 | Jun/2026 | Introdução da **troca de serviços (escambo)** como diferencial central, em modo híbrido (dinheiro + troca, com *torna*); banco ampliado para **50 tabelas em 15 módulos**; +8 RFs (total **90**) e +2 RNFs (total **42**) de confiança e segurança — pacotes de serviço, marcos de escrow, disputas como entidade própria, denúncias, 2FA e portabilidade LGPD; preenchimento das regras RN-066 a RN-070 (total **75**); correção das contagens divergentes e dos caminhos de instalação (`apps/api`, `apps/web`); inclusão do texto da LICENSE MIT |
+| 2.3 | Set/2026 | Fluxos alternativos alinhados aos prazos da v1.39.0 (ADR 57): aprovação tácita em **5 dias corridos** (e não úteis); cancelamento com a desistência do freelancer (devolve tudo ao cliente), reembolso integral no atraso sem entrega a partir do aviso, a metade do prazo contada do aceite e a confirmação com os valores na tela; disputa por prazo aberta pela plataforma depois do aviso das 9h e da carência, direto na mediação, sem ticket de suporte; contagem das regras de negócio atualizada (total **78**); nota de que as Figuras 3 a 5 são da v2.2 |
 
 ---
 
@@ -330,12 +331,12 @@ As principais regras que o sistema deve respeitar, independentemente da interfac
 - Perfis de freelancer sem foto, bio e categoria preenchidas não aparecem nos resultados de busca
 - O pagamento deve ser retido em escrow antes do início do serviço: o freelancer não começa sem garantia
 - A taxa da plataforma é de 15% sobre o valor bruto da contratação, cobrada do freelancer
-- O cliente tem 5 dias úteis para aprovar ou solicitar revisão após a entrega; depois disso, a aprovação é automática
+- O cliente tem 5 dias corridos para aprovar ou solicitar revisão após a entrega; depois disso, a aprovação é automática
 - Avaliações só podem ser feitas após uma contratação com status "Concluído", evitando avaliação falsa
 - XP nunca é perdido por inatividade: o freelancer pode voltar sem perder a progressão
 - O saque mínimo é de R$ 20,00, com prazo de até 1 dia útil via PIX
 
-> A lista completa com as 75 regras de negócio está em [`docs/regras-de-negocio.md`](./regras-de-negocio.md).
+> A lista completa com as 78 regras de negócio está em [`docs/regras-de-negocio.md`](./regras-de-negocio.md).
 
 ### 2.6 Fora do Escopo
 
@@ -418,13 +419,15 @@ Esses cenários são importantes porque definem como a plataforma deve agir quan
 
 #### Cancelamento com reembolso
 
-O fluxo de cancelamento define como o sistema deve se comportar quando uma contratação é interrompida antes da conclusão. A regra de reembolso varia de acordo com o momento em que o cancelamento acontece.
+O fluxo de cancelamento define como o sistema deve se comportar quando uma contratação é interrompida antes da conclusão. A regra de reembolso varia de acordo com o momento em que o cancelamento acontece e com quem cancela.
 
-Se o cancelamento ocorrer antes do aceite do freelancer, o cliente recebe reembolso total. Caso o serviço já esteja em andamento, o percentual de reembolso depende do prazo já decorrido. Após a entrega, o cancelamento não gera reembolso automático e o sistema encaminha a situação para disputa.
+Se o cancelamento ocorrer antes do aceite do freelancer, o cliente recebe reembolso total. Depois do aceite, se o freelancer desistir, tudo o que está em garantia volta ao cliente. Se o cliente cancelar antes do prazo, o percentual de reembolso depende de quanto do tempo entre o aceite e o prazo já passou. Se o prazo vencer sem nenhuma entrega, o cliente recebe reembolso integral a partir do aviso de atraso. Após a entrega, não há cancelamento: o cliente aprova, pede revisão ou abre uma disputa. Em todos os casos, o sistema mostra quanto volta para cada parte antes da confirmação, e a outra parte é avisada do cancelamento.
 
 **Figura 3 — Fluxo alternativo de cancelamento com reembolso.**
 
 <img width="935" alt="Fluxo alternativo de cancelamento com reembolso" src="https://github.com/user-attachments/assets/2cf5548a-c852-4865-9549-68ef74da2084" />
+
+> As figuras são da v2.2; onde divergem, vale o texto.
 
 
 As regras de cancelamento são:
@@ -433,35 +436,53 @@ As regras de cancelamento são:
 Antes do aceite:
     → Reembolso total
 
-Em andamento, com menos de 50% do prazo decorrido:
+Depois do aceite, o freelancer desiste:
+    → Tudo o que está em garantia volta ao cliente
+
+Cliente cancela antes do prazo, com menos de 50% do tempo entre o aceite e o prazo decorrido:
     → Reembolso de 50%
 
-Em andamento, com 50% ou mais do prazo decorrido:
+Cliente cancela antes do prazo, com 50% ou mais do tempo entre o aceite e o prazo decorrido:
     → Sem reembolso
 
-Após a entrega:
-    → Sem reembolso automático
-    → Abre ticket de disputa
+Cliente cancela uma contratação sem prazo definido:
+    → Reembolso de 50%
+
+Cliente cancela com o prazo vencido sem nenhuma entrega, a partir do aviso de atraso:
+    → Reembolso total
+
+Contratação em créditos Escambo:
+    → Os créditos em garantia voltam inteiros ao cliente
+
+Após a entrega (ou com um marco entregue esperando resposta ou em revisão):
+    → Não se cancela
+    → O cliente aprova, pede revisão ou abre uma disputa
+
+Em todos os casos:
+    → O sistema mostra os valores de cada parte antes da confirmação
+    → A outra parte é avisada do cancelamento
 ```
 
 #### Aprovação tácita
 
 A aprovação tácita existe para evitar que uma contratação fique parada indefinidamente quando o freelancer já realizou a entrega e o cliente não responde dentro do prazo estabelecido.
 
-Após o freelancer registrar a entrega, o cliente tem 5 dias úteis para aprovar o serviço ou solicitar uma revisão. Se não houver manifestação dentro desse período, o sistema entende que a entrega foi aceita e aprova automaticamente a contratação.
+Após o freelancer registrar a entrega, o cliente tem 5 dias corridos para aprovar o serviço ou solicitar uma revisão. A hora-limite fica gravada na entrega e aparece no aviso; se ela cairia entre 20h30 e 9h no horário do cliente, passa para as 9h. Se não houver manifestação dentro desse período, o sistema entende que a entrega foi aceita e aprova automaticamente a contratação.
 
 Com isso, o pagamento é liberado ao freelancer e o contrato é encerrado como concluído.
 
-**Figura 4 — Fluxo alternativo de aprovação tácita após 5 dias úteis.**
+**Figura 4 — Fluxo alternativo de aprovação tácita após 5 dias corridos.**
 
-<img width="700" alt="Fluxo alternativo de aprovação tácita após 5 dias úteis" src="https://github.com/user-attachments/assets/71b5f315-4090-4e12-9289-f0a5147edd75" />
+<img width="700" alt="Fluxo alternativo de aprovação tácita após 5 dias corridos" src="https://github.com/user-attachments/assets/71b5f315-4090-4e12-9289-f0a5147edd75" />
+
+> As figuras são da v2.2; onde divergem, vale o texto.
 
 
 O comportamento da aprovação tácita é:
 
 ```text
 Freelancer registra a entrega
-    → Sistema inicia contagem de 5 dias úteis
+    → Sistema inicia contagem de 5 dias corridos
     → Cliente pode aprovar ou solicitar revisão
     → Se o cliente não se manifestar no prazo
     → Sistema aprova automaticamente
@@ -470,7 +491,7 @@ Freelancer registra a entrega
 
 #### Disputa
 
-O fluxo de disputa ocorre quando existe algum problema na execução do serviço, especialmente quando o prazo é ultrapassado sem que o freelancer registre a entrega. Nesse caso, o sistema cria automaticamente um ticket de suporte com prioridade alta.
+O fluxo de disputa ocorre quando existe algum problema na execução do serviço, especialmente quando o prazo é ultrapassado sem que o freelancer registre nenhuma entrega. Nesse caso, o sistema avisa as duas partes a partir das 9h e, passada a carência sem entrega nem extensão aceita, abre a disputa (mediação). A carência (hoje, 24 horas) é contada do aviso, e a hora em que a disputa abre fica gravada e é dita no próprio aviso. Depois da entrega (por marcos, de todos os marcos), o prazo não abre mais disputa sozinho: o desfecho fica com as partes.
 
 A abertura da disputa permite que a situação seja analisada com base no histórico da contratação, nas mensagens trocadas no chat, nos prazos combinados e nos registros da plataforma. Tanto o cliente quanto o freelancer são notificados para acompanhar o processo.
 
@@ -480,16 +501,19 @@ Esse fluxo é importante para garantir mais segurança e transparência para os 
 
 <img width="700" alt="Fluxo alternativo de disputa por prazo estourado sem entrega" src="https://github.com/user-attachments/assets/6dcc2b67-05e0-4887-8ebc-b61668e2e0cb" />
 
+> As figuras são da v2.2; onde divergem, vale o texto.
+
 
 O comportamento do fluxo de disputa é:
 
 ```text
 Prazo do serviço é ultrapassado
-    → Sistema verifica que não houve entrega registrada
-    → Sistema cria ticket de suporte automaticamente
-    → Ticket recebe prioridade Alta
-    → Cliente e freelancer são notificados
-    → Suporte analisa o histórico da contratação
+    → Sistema verifica que não houve nenhuma entrega registrada
+    → A partir das 9h, no horário de quem entrega, cliente e freelancer são avisados
+    → Carência corre a partir do aviso, com a hora-limite dita nele
+    → Sem entrega nem extensão aceita, sistema abre a disputa em nome do cliente
+    → Escrow fica congelado
+    → Mediação analisa o histórico da contratação
 ```
 
 ---
@@ -1163,7 +1187,7 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 - **Apêndice A** — Modelagem completa do banco de dados: [`docs/modelagem-banco.md`](./modelagem-banco.md)
 - **Apêndice B** — Lista completa de requisitos funcionais (90 RFs): [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md)
 - **Apêndice C** — Lista completa de requisitos não funcionais (42 RNFs): [`docs/requisitos-nao-funcionais.md`](./requisitos-nao-funcionais.md)
-- **Apêndice D** — Regras de negócio (75 RNs): [`docs/regras-de-negocio.md`](./regras-de-negocio.md)
+- **Apêndice D** — Regras de negócio (78 RNs): [`docs/regras-de-negocio.md`](./regras-de-negocio.md)
 - **Apêndice E** — Personas detalhadas: [`docs/personas.md`](./personas.md)
 - **Apêndice F** — Casos de uso completos: [`docs/casos-de-uso.md`](./casos-de-uso.md)
 - **Apêndice G** — Benchmarking e estado da arte: [`docs/benchmarking.md`](./benchmarking.md)
@@ -1232,4 +1256,4 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 
 ---
 
-*RFC — Escambo v2.2 — PAC Extensionista VII — Católica SC — 2026 — Guilherme Renzo*
+*RFC — Escambo v2.3 — PAC Extensionista VII — Católica SC — 2026 — Guilherme Renzo*

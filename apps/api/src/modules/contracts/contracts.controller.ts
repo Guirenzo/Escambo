@@ -2,16 +2,18 @@ import type { Request, Response } from 'express';
 import { auditService } from '../audit/audit.service';
 import { notificationsService } from '../notifications/notifications.service';
 import {
+  cancelBodySchema,
   contractIdSchema,
   createContractSchema,
   deliverSchema,
   listContractsSchema,
+  extensionDecisionBodySchema,
   extensionDecisionSchema,
   extensionSchema,
   milestoneParamsSchema,
   noteSchema,
 } from './contracts.schema';
-import { brDate, contractsService } from './contracts.service';
+import { contractsService } from './contracts.service';
 
 const uid = (req: Request): number => req.user!.uid;
 const audit = (req: Request) => ({
@@ -22,12 +24,6 @@ const audit = (req: Request) => ({
 export async function createContract(req: Request, res: Response): Promise<void> {
   const input = createContractSchema.parse(req.body);
   const contract = await contractsService.create(uid(req), input);
-  void notificationsService.notify(contract.freelancerId, {
-    type: 'contract_proposal',
-    title: 'Nova proposta de contratação',
-    body: contract.title,
-    data: { contractId: contract.id },
-  });
   res.status(201).json(contract);
 }
 
@@ -66,13 +62,8 @@ export async function rejectContract(req: Request, res: Response): Promise<void>
 export async function deliverContract(req: Request, res: Response): Promise<void> {
   const { id } = contractIdSchema.parse(req.params);
   const input = deliverSchema.parse(req.body);
-  const contract = await contractsService.deliver(id, uid(req), input);
-  void notificationsService.notify(contract.clientId, {
-    type: 'contract_delivered',
-    title: 'A entrega foi registrada',
-    data: { contractId: contract.id },
-  });
-  res.json(contract);
+  // O aviso ao cliente sai do service, com a hora da aprovação automática (ADR 57).
+  res.json(await contractsService.deliver(id, uid(req), input));
 }
 
 export async function approveContract(req: Request, res: Response): Promise<void> {
@@ -97,10 +88,7 @@ export async function approveContract(req: Request, res: Response): Promise<void
 export async function requestRevisionContract(req: Request, res: Response): Promise<void> {
   const { id } = contractIdSchema.parse(req.params);
   const { note } = noteSchema.parse(req.body);
-  const contract = await contractsService.requestRevision(id, uid(req), note ?? null);
-  // Com o prazo vencido e a carência correndo, o aviso diz até quando (ADR 56).
-  void contractsService.notifyFreelancerDeadline('revision', contract);
-  res.json(contract);
+  res.json(await contractsService.requestRevision(id, uid(req), note ?? null));
 }
 
 // ---------- Prazos (RN-028) ----------
@@ -108,32 +96,17 @@ export async function requestRevisionContract(req: Request, res: Response): Prom
 export async function requestExtension(req: Request, res: Response): Promise<void> {
   const { id } = contractIdSchema.parse(req.params);
   const input = extensionSchema.parse(req.body);
-  const contract = await contractsService.requestExtension(id, uid(req), input);
-  void notificationsService.notify(contract.clientId, {
-    type: 'deadline_extension_requested',
-    title: 'Pedido de extensão de prazo',
-    body: `${contract.title}: novo prazo proposto ${brDate(input.deadlineAt)} — ${input.reason}`,
-    data: { contractId: contract.id },
-  });
-  res.json(contract);
+  // O aviso ao cliente sai do service, com a hora para responder (ADR 57).
+  res.json(await contractsService.requestExtension(id, uid(req), input));
 }
 
 export async function resolveExtension(req: Request, res: Response): Promise<void> {
   const { id, decision } = extensionDecisionSchema.parse(req.params);
-  const accept = decision === 'accept';
-  const contract = await contractsService.resolveExtension(id, uid(req), accept);
-  if (accept) {
-    void notificationsService.notify(contract.freelancerId, {
-      type: 'deadline_extension_accepted',
-      title: `Extensão aceita: novo prazo ${contract.deadlineAt ? brDate(contract.deadlineAt) : ''}`,
-      body: `${contract.title}: o prazo foi estendido (única extensão da contratação).`,
-      data: { contractId: contract.id },
-    });
-  } else {
-    // A recusa com o prazo vencido e a carência correndo diz até quando dá para agir (ADR 56).
-    void contractsService.notifyFreelancerDeadline('extension_declined', contract);
-  }
-  res.json(contract);
+  const { seq } = extensionDecisionBodySchema.parse(req.body ?? {});
+  // Aceite e recusa avisam quem entrega pelo service (a recusa diz até quando agir, ADR 57).
+  res.json(
+    await contractsService.resolveExtension(id, uid(req), decision === 'accept', seq ?? null),
+  );
 }
 
 // ---------- Escrow por marcos (RN-069) ----------
@@ -141,20 +114,8 @@ export async function resolveExtension(req: Request, res: Response): Promise<voi
 export async function deliverMilestone(req: Request, res: Response): Promise<void> {
   const { id, milestoneId } = milestoneParamsSchema.parse(req.params);
   const input = deliverSchema.parse(req.body);
-  const contract = await contractsService.deliverMilestone(
-    id,
-    milestoneId,
-    uid(req),
-    input.message,
-  );
-  const m = contract.milestones.find((x) => x.id === milestoneId);
-  void notificationsService.notify(contract.clientId, {
-    type: 'milestone_delivered',
-    title: `Marco entregue: ${m?.title ?? 'marco'}`,
-    body: input.message,
-    data: { contractId: contract.id, milestoneId },
-  });
-  res.json(contract);
+  // O aviso ao cliente sai do service, com a hora da aprovação automática do marco (ADR 57).
+  res.json(await contractsService.deliverMilestone(id, milestoneId, uid(req), input.message));
 }
 
 export async function approveMilestone(req: Request, res: Response): Promise<void> {
@@ -202,13 +163,20 @@ export async function requestMilestoneRevision(req: Request, res: Response): Pro
 
 export async function cancelContract(req: Request, res: Response): Promise<void> {
   const { id } = contractIdSchema.parse(req.params);
-  const result = await contractsService.cancel(id, uid(req));
+  const body = cancelBodySchema.parse(req.body ?? {});
+  const result = await contractsService.cancel(id, uid(req), body);
   void auditService.log({
     userId: uid(req),
     action: 'contract_cancelled',
     entityType: 'contract',
     entityId: id,
-    newValue: { refundPercentage: result.refundPercentage },
+    newValue: {
+      by: result.by,
+      stage: result.stage,
+      refundPercentage: result.refundPercentage,
+      refundClient: result.refundClient,
+      releaseFreelancer: result.releaseFreelancer,
+    },
     ...audit(req),
   });
   res.json(result);

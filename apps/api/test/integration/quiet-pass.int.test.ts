@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { runOverdueContracts } from '../../src/jobs/overdue-contracts';
@@ -11,21 +11,28 @@ import {
   type PushSendOptions,
 } from '../../src/modules/notifications/push.provider';
 import { QUIET_PASS_CATEGORIES } from '../../src/modules/notifications/quiet-hours';
-import { hourIn } from '../../src/utils/timezone';
+import { addHumanHours, isHumanInstant } from '../../src/utils/human-hours';
+import { formatDate, formatDue, hourIn } from '../../src/utils/timezone';
+import { DAY, fromNow, HOUR, isoFromNow, now, startDaytimeClock, stopClock } from './clock.helpers';
 import { fundWallet } from './wallet.helpers';
 
 /**
- * O que sai durante o "não perturbe" (ADR 56) contra o MySQL real, com o provedor simulado
- * espionado: a escolha na conta (nula até a pessoa escolher, o banco fechando a lista), o prazo
- * estourado que sai na hora só para quem entrega e marcou (pelo job de verdade), a recusa e a
- * revisão que só saem com a carência correndo, e o resumo do fim do silêncio sem o que já saiu e
- * com os de prazo primeiro. O tempo é "andado" no banco (deadline_at, overdue_notified_at).
+ * O que sai durante o "não perturbe" (ADR 56, estreitado pelo ADR 57) contra o MySQL real, com o
+ * provedor simulado espionado: a escolha na conta (nula até a pessoa escolher, o banco fechando a
+ * lista), o aviso de atraso que sai na hora só na cópia de quem entrega e marcou (pelo job de
+ * verdade), a recusa do pedido de extensão e a revisão que nunca furam o silêncio (sobram sempre
+ * horas de dia para agir, e depois da entrega o prazo não cobra), e o resumo do fim do silêncio sem
+ * o que já saiu e com os de prazo primeiro.
+ * Dois relógios: o silêncio e o push usam a hora REAL (a janela do helper `silenced` cerca o agora
+ * de verdade); os jobs e os services de prazo usam o relógio do fluxo, às 12:00 de Brasília (dia nos
+ * 5 fusos). O tempo do prazo é "andado" no banco com instantes relativos a esse relógio.
  */
 
 const app = createApp();
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
 const password = 'senha-integracao-123';
-const DAY = 86_400_000;
+const BRASILIA = 'America/Sao_Paulo';
+const MINUTE = 60_000;
 let seq = 0;
 
 interface Actor {
@@ -70,12 +77,6 @@ async function silenced(a: Actor, quietPass?: string[]): Promise<Actor> {
   return { ...a, endpoint };
 }
 
-const iso = (msFromNow: number): string => {
-  const d = new Date(Date.now() + msFromNow);
-  d.setMilliseconds(0);
-  return d.toISOString();
-};
-
 async function contractFor(client: Actor, freelancer: Actor): Promise<number> {
   const res = await request(app)
     .post('/api/contracts')
@@ -85,7 +86,7 @@ async function contractFor(client: Actor, freelancer: Actor): Promise<number> {
       title: `Logo ${seq++}`,
       description: 'Contratação do teste do que sai no silêncio',
       price: 50,
-      deadlineAt: iso(5 * DAY),
+      deadlineAt: isoFromNow(5 * DAY),
     });
   expect(res.status, JSON.stringify(res.body)).toBe(201);
   await request(app)
@@ -148,7 +149,30 @@ async function held(n: NotifRow): Promise<boolean> {
 const callsTo = (endpoint: string) =>
   spy.mock.calls.filter((c) => (c[0] as { endpoint: string }).endpoint === endpoint);
 
+/** A chamada ao provedor que levou esta notificação (a etiqueta termina em `:n<id>`). */
+const callFor = (n: NotifRow) =>
+  spy.mock.calls.find((c) => (c[1] as PushPayload).tag.endsWith(`:n${n.id}`));
+
+interface DeadlineCols {
+  deadline_at: Date;
+  overdue_notified_at: Date | null;
+  grace_ends_at: Date | null;
+  extension_resolved_at: Date | null;
+}
+/** As colunas de prazo da contratação como estão no banco. */
+async function deadlineCols(id: number): Promise<DeadlineCols> {
+  const [[row]] = (await pool.query(
+    `SELECT deadline_at, overdue_notified_at, grace_ends_at, extension_resolved_at
+       FROM contracts WHERE id = :id`,
+    { id },
+  )) as unknown as [[DeadlineCols]];
+  return row;
+}
+
 let spy: ReturnType<typeof vi.spyOn<typeof simulatedPushProvider, 'send'>>;
+beforeAll(() => {
+  startDaytimeClock();
+});
 beforeEach(() => {
   spy = vi.spyOn(simulatedPushProvider, 'send');
 });
@@ -156,10 +180,11 @@ afterEach(() => {
   spy.mockRestore();
 });
 afterAll(async () => {
+  stopClock();
   await pool.end();
 });
 
-describe('O que sai durante o silêncio (ADR 56)', () => {
+describe('O que sai durante o silêncio (ADR 56 e 57)', () => {
   it('a escolha nasce nula, só muda por pedido explícito, fica na trilha e o banco fecha a lista', async () => {
     const freela = await actor('freelancer');
     const cliente = await actor('client');
@@ -257,26 +282,34 @@ describe('O que sai durante o silêncio (ADR 56)', () => {
     expect((await push(trocaDoLadoDeLa)).deliversWork).toBe(true);
   });
 
-  it('prazo estourado de madrugada, pelo job real: sai na hora só para quem entrega e marcou', async () => {
+  it('prazo vencido, pelo job real de dia: sai na hora só para quem entrega e marcou', async () => {
     const cliente = await silenced(await actor('client'), ['deadline']);
     const marcou = await silenced(await actor('freelancer'), ['deadline']);
     const daVersaoAnterior = await silenced(await actor('freelancer')); // NULL: nada sai
     await fundWallet(app, cliente.token, 200);
     const a = await contractFor(cliente, marcou);
     const b = await contractFor(cliente, daVersaoAnterior);
-    await pool.query(
-      `UPDATE contracts SET deadline_at = DATE_SUB(NOW(), INTERVAL 2 HOUR) WHERE id IN (:a, :b)`,
-      { a, b },
-    );
-    const run = await runOverdueContracts();
+    await pool.query('UPDATE contracts SET deadline_at = :deadline WHERE id IN (:a, :b)', {
+      a,
+      b,
+      deadline: fromNow(-2 * HOUR),
+    });
+    // O job age no relógio do fluxo (de dia); o silêncio das três contas é o da hora real.
+    const run = await runOverdueContracts(now());
     expect(run.notified).toEqual(expect.arrayContaining([a, b]));
+    const { grace_ends_at: graceEndsAt } = await deadlineCols(a);
+    expect(graceEndsAt).not.toBeNull();
 
-    // Quem entrega e marcou: sai na hora, prioridade alta, 12 h, etiqueta própria, sem marca.
+    // Quem entrega e marcou: sai na hora, prioridade alta, 12 h, etiqueta própria, sem marca. O
+    // corpo começa pelo que importa: até quando (a hora gravada, no fuso dela) e o que fazer.
     const saiu = await latest(marcou.id, 'contract_overdue', a);
     expect(await held(saiu)).toBe(false);
     expect(saiu.title).toMatch(/^Prazo estourado: /);
     expect(saiu.body).toMatch(
-      /^Até \d{2}\/\d{2}\/\d{4} às \d{2}:\d{2}: entregue ou peça a extensão/,
+      /^Até (dom|seg|ter|qua|qui|sex|sáb), \d{2}\/\d{2} às \d{2}:\d{2}: entregue ou peça a extensão/,
+    );
+    expect(saiu.body?.startsWith(`Até ${formatDue(new Date(graceEndsAt!), BRASILIA)}: `)).toBe(
+      true,
     );
     const [target, payload, opts] = callsTo(marcou.endpoint).at(-1)!;
     expect(target).toBeTruthy();
@@ -346,16 +379,16 @@ describe('O que sai durante o silêncio (ADR 56)', () => {
     );
   });
 
-  it('extensão recusada: sai só com a carência correndo e tempo para agir; sem aviso ainda, um toque só', async () => {
+  it('extensão recusada: nunca fura o silêncio, nem com a carência correndo; sem aviso ainda, quem sai é o aviso de atraso', async () => {
     const cliente = await actor('client');
     const freela = await silenced(await actor('freelancer'), ['deadline']);
-    await fundWallet(app, cliente.token, 400);
+    await fundWallet(app, cliente.token, 300);
     const pede = (id: number) =>
       request(app)
         .post(`/api/contracts/${id}/extension`)
         .set(auth(freela.token))
         .send({
-          deadlineAt: iso(12 * DAY),
+          deadlineAt: isoFromNow(12 * DAY),
           reason: 'O material do cliente chegou depois do combinado',
         })
         .expect(200);
@@ -373,54 +406,59 @@ describe('O que sai durante o silêncio (ADR 56)', () => {
     expect(nx.title).toBe('Extensão de prazo recusada');
     expect(await held(nx)).toBe(true);
 
-    // Prazo vencido, aviso de atraso há 23 h: sobra 1 h, sai na hora com a hora-limite.
+    // Prazo vencido e aviso de atraso há 23 h 50 min: a carência acabaria em 10 min. A recusa
+    // devolve a carência com o piso de 12 h de relógio e 6 h de dia a partir dela, então sobra
+    // tempo para agir de manhã: o aviso espera o silêncio, mesmo para quem marcou.
     const y = await contractFor(cliente, freela);
-    await pede(y);
     await pool.query(
-      `UPDATE contracts SET deadline_at = DATE_SUB(NOW(), INTERVAL 30 HOUR),
-              overdue_notified_at = DATE_SUB(NOW(), INTERVAL 23 HOUR) WHERE id = :id`,
-      { id: y },
-    );
-    await recusa(y);
-    const ny = await latest(freela.id, 'deadline_extension_declined', y);
-    expect(ny.title).toMatch(/^Extensão recusada: /);
-    expect(ny.body).toMatch(/^Prazo vencido\. Até /);
-    expect(await held(ny)).toBe(false);
-    expect(callsTo(freela.endpoint).at(-1)![2]).toStrictEqual({
-      ttlSeconds: 12 * 3600,
-      urgency: 'high',
-    });
-
-    // Aviso há 23 h 50 min: acordar não muda o desfecho a tempo; avisa sem acordar.
-    const z = await contractFor(cliente, freela);
-    await pede(z);
-    await pool.query(
-      `UPDATE contracts SET deadline_at = DATE_SUB(NOW(), INTERVAL 30 HOUR),
-              overdue_notified_at = DATE_SUB(NOW(), INTERVAL 1430 MINUTE) WHERE id = :id`,
-      { id: z },
-    );
-    await recusa(z);
-    const nz = await latest(freela.id, 'deadline_extension_declined', z);
-    expect(nz.body).toContain('a carência acaba em minutos');
-    expect(await held(nz)).toBe(true);
-
-    // Prazo vencido com o pedido pendente e sem aviso ainda: a recusa espera; o aviso de atraso da
-    // rodada seguinte é que sai — um toque só.
-    const w = await contractFor(cliente, freela);
-    await pede(w);
-    await pool.query(
-      `UPDATE contracts SET deadline_at = DATE_SUB(NOW(), INTERVAL 2 HOUR) WHERE id = :id`,
+      `UPDATE contracts SET deadline_at = :deadline, overdue_notified_at = :notice,
+              grace_ends_at = :ends WHERE id = :id`,
       {
-        id: w,
+        id: y,
+        deadline: fromNow(-30 * HOUR),
+        notice: fromNow(-(23 * HOUR + 50 * MINUTE)),
+        ends: fromNow(10 * MINUTE),
       },
     );
+    await pede(y);
+    await recusa(y);
+    const cy = await deadlineCols(y);
+    const decidedAt = new Date(cy.extension_resolved_at!);
+    const endsY = new Date(cy.grace_ends_at!);
+    expect(endsY.getTime()).toBeGreaterThanOrEqual(decidedAt.getTime() + 12 * HOUR);
+    expect(endsY.getTime()).toBeGreaterThanOrEqual(addHumanHours(decidedAt, 6, BRASILIA).getTime());
+    expect(isHumanInstant(endsY, BRASILIA)).toBe(true);
+    const ny = await latest(freela.id, 'deadline_extension_declined', y);
+    expect(ny.title).toMatch(/^Extensão recusada: Logo \d+$/);
+    expect(ny.body).toBe(
+      `Prazo vencido. Até ${formatDue(endsY, BRASILIA)}: entregue ou peça a extensão, senão a disputa abre sozinha. O prazo era ${formatDate(new Date(cy.deadline_at), BRASILIA)}. Você ainda pode fazer mais um pedido.`,
+    );
+    expect(await held(ny)).toBe(true);
+    expect(callFor(ny)).toBeUndefined();
+
+    // Prazo vencido com o pedido pendente e sem aviso ainda: a recusa espera o silêncio e não grava
+    // carência; o aviso de atraso da rodada seguinte é que sai na hora — um toque só.
+    const w = await contractFor(cliente, freela);
+    await pool.query('UPDATE contracts SET deadline_at = :deadline WHERE id = :id', {
+      id: w,
+      deadline: fromNow(-2 * HOUR),
+    });
+    await pede(w);
     await recusa(w);
-    expect(await held(await latest(freela.id, 'deadline_extension_declined', w))).toBe(true);
-    expect((await runOverdueContracts()).notified).toContain(w);
-    expect(await held(await latest(freela.id, 'contract_overdue', w))).toBe(false);
+    const nw = await latest(freela.id, 'deadline_extension_declined', w);
+    expect(nw.title).toMatch(/^Extensão recusada: Logo \d+$/);
+    expect(nw.body).toMatch(
+      /^Sem entrega nem extensão aceita, a disputa abre a partir de .+; o aviso de atraso sai a partir de /,
+    );
+    expect(await held(nw)).toBe(true);
+    expect((await deadlineCols(w)).grace_ends_at).toBeNull();
+    expect((await runOverdueContracts(now())).notified).toContain(w);
+    const aviso = await latest(freela.id, 'contract_overdue', w);
+    expect(await held(aviso)).toBe(false);
+    expect(callFor(aviso)?.[2]).toStrictEqual({ ttlSeconds: 12 * 3600, urgency: 'high' });
   });
 
-  it('revisão com o prazo vencido: sai com a carência correndo; sem aviso ainda, quem sai é o aviso de atraso', async () => {
+  it('revisão depois de entrega atrasada, com a carência esgotada: aviso simples retido e nenhuma disputa (ADR 57)', async () => {
     const cliente = await actor('client');
     const freela = await silenced(await actor('freelancer'), ['deadline']);
     await fundWallet(app, cliente.token, 200);
@@ -437,38 +475,60 @@ describe('O que sai durante o silêncio (ADR 56)', () => {
         .send({ note: 'Falta a versão em fundo escuro' })
         .expect(200);
 
-    // Entrega atrasada dentro da carência, revisão com 4 h de carência: sai com a hora-limite.
+    // Prazo vencido e aviso de atraso dado: a entrega sai atrasada, ainda dentro da carência.
     const r1 = await contractFor(cliente, freela);
     await pool.query(
-      `UPDATE contracts SET deadline_at = DATE_SUB(NOW(), INTERVAL 30 HOUR),
-              overdue_notified_at = DATE_SUB(NOW(), INTERVAL 20 HOUR) WHERE id = :id`,
-      { id: r1 },
-    );
-    await entrega(r1);
-    await revisao(r1);
-    const n1 = await latest(freela.id, 'contract_revision', r1);
-    expect(n1.title).toMatch(/^Revisão pedida: /);
-    expect(await held(n1)).toBe(false);
-
-    // Entrega antes do prazo e revisão depois dele, sem aviso de atraso: a revisão espera, e o
-    // aviso de atraso da rodada seguinte sai.
-    const r2 = await contractFor(cliente, freela);
-    await entrega(r2);
-    await pool.query(
-      `UPDATE contracts SET deadline_at = DATE_SUB(NOW(), INTERVAL 2 HOUR) WHERE id = :id`,
+      `UPDATE contracts SET deadline_at = :deadline, overdue_notified_at = :notice,
+              grace_ends_at = :ends WHERE id = :id`,
       {
-        id: r2,
+        id: r1,
+        deadline: fromNow(-30 * HOUR),
+        notice: fromNow(-20 * HOUR),
+        ends: fromNow(4 * HOUR),
       },
     );
+    await entrega(r1);
+    // A hora gravada da carência passa com a entrega esperando o cliente; aí ele pede revisão.
+    await pool.query('UPDATE contracts SET grace_ends_at = :ends WHERE id = :id', {
+      id: r1,
+      ends: fromNow(-HOUR),
+    });
+    await revisao(r1);
+    const n1 = await latest(freela.id, 'contract_revision', r1);
+    expect(n1.title).toMatch(/^Revisão pedida: Logo \d+$/);
+    expect(n1.body).toBe('Falta a versão em fundo escuro');
+    // Depois da entrega o prazo não cobra mais: a revisão não tem hora-limite e espera o silêncio.
+    expect(await held(n1)).toBe(true);
+    expect(callFor(n1)).toBeUndefined();
+
+    // E a carência esgotada não vira disputa sem chance de reação.
+    const run = await runOverdueContracts(now());
+    expect(run.zones.length).toBeGreaterThan(0);
+    expect(run.disputed).not.toContain(r1);
+    expect(run.notified).not.toContain(r1);
+    const c1 = await request(app).get(`/api/contracts/${r1}`).set(auth(freela.token)).expect(200);
+    expect(c1.body.status).toBe('revision_requested');
+    expect(c1.body.deadline.state).toBe('met');
+    const [[disputes]] = (await pool.query(
+      'SELECT COUNT(*) AS n FROM disputes WHERE contract_id = :id',
+      { id: r1 },
+    )) as unknown as [[{ n: number }]];
+    expect(Number(disputes.n)).toBe(0);
+
+    // Entrega antes do prazo e revisão depois dele, sem aviso de atraso: a revisão espera o
+    // silêncio, e a rodada seguinte não avisa atraso (a entrega já veio).
+    const r2 = await contractFor(cliente, freela);
+    await entrega(r2);
+    await pool.query('UPDATE contracts SET deadline_at = :deadline WHERE id = :id', {
+      id: r2,
+      deadline: fromNow(-2 * HOUR),
+    });
     await revisao(r2);
     const n2 = await latest(freela.id, 'contract_revision', r2);
-    expect(n2.title).toBe('Revisão solicitada');
+    expect(n2.title).toMatch(/^Revisão pedida: Logo \d+$/);
     expect(await held(n2)).toBe(true);
-    expect((await runOverdueContracts()).notified).toContain(r2);
-    expect(await held(await latest(freela.id, 'contract_overdue', r2))).toBe(false);
+    const next = await runOverdueContracts(now());
+    expect(next.notified).not.toContain(r2);
+    expect(next.disputed).not.toContain(r2);
   });
-
-  it.todo(
-    'revisão depois de entrega atrasada com a carência esgotada não deveria abrir disputa sem chance de reação (próximo ADR, prazos)',
-  );
 });

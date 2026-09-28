@@ -5,6 +5,77 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.39.0] — 2026-09-28
+
+### Adicionado
+
+- **Cancelar mostra o valor antes de confirmar** (ADR 57). Na Sala, "Cancelar" abre um quadro com
+  quanto volta para você e quanto fica com o freelancer, calculado pela mesma conta que liquida; se
+  o valor mudar entre abrir e confirmar (o prazo venceu, um marco foi entregue), nada se move e a
+  Sala mostra o valor novo.
+- **O freelancer pode desistir** de uma contratação aceita: tudo o que está em garantia volta ao
+  cliente, a desistência fica na linha do tempo e o cliente é avisado.
+- A outra parte passa a ser avisada de todo cancelamento, com o que aconteceu com o dinheiro dela.
+- **Horas na Sala**, no seu fuso: até quando responder a uma proposta; até quando aprovar uma
+  entrega ou um marco antes da aprovação automática; quando sai o aviso de prazo vencido e a partir
+  de quando a disputa automática abre; até quando o cliente responde a um pedido de extensão.
+- Aviso de pedido de extensão sem resposta, às duas partes.
+- Termos de Uso 1.3, com faixa para quem aceitou a 1.2 (informativa: continuar usando vale como
+  aceite).
+
+### Alterado
+
+- **Nada automático por prazo acontece de madrugada.** O aviso de prazo vencido sai a partir das 9h
+  do dia seguinte, no horário de quem entrega, e a disputa automática abre a partir da hora dita no
+  aviso. A aprovação automática, a validade da proposta e o prazo para responder a um pedido de
+  extensão também ficam gravados, nunca entre 20h30 e 9h no horário de quem é afetado (passam para
+  as 9h). Mudar esses tempos no painel vale para o que começar depois.
+- **O prazo só abre disputa sozinho enquanto há trabalho nunca entregue.** Na entrega única, a
+  primeira entrega encerra a cobrança (a revisão não a reabre); por marcos, ela acaba quando todos os
+  marcos foram entregues. Contratações em revisão e por marcos com tudo entregue saem da disputa
+  automática; o desfecho é aprovar, pedir revisão ou abrir disputa. O aviso de marco atrasado vale só para marco nunca
+  entregue.
+- **Extensão de prazo:** até 2 pedidos por contratação, e só 1 pode ser aceito, enquanto há
+  trabalho nunca entregue. O cliente tem até
+  48 horas para responder (nunca de madrugada, e antes da data pedida); sem resposta, o pedido expira
+  e vale o prazo atual. Enquanto o cliente decide, a disputa automática espera; depois de uma recusa
+  ou expiração, quem entrega tem sempre pelo menos 6 horas de dia para agir. Pedidos pendentes de
+  antes desta versão contam como o primeiro e expiram 48 horas depois da atualização.
+- **Cancelamento pelo cliente:** com o prazo vencido sem nenhuma entrega, a partir do aviso, devolve
+  tudo (antes, 0%). A "metade do prazo" que decide entre 50% e 0% passa a contar do aceite, e não da
+  proposta. Com um marco entregue esperando resposta ou em revisão, a contratação não se cancela. Em
+  revisão, o botão "Cancelar" some (a API já recusava).
+- Proposta com o prazo de entrega já vencido não pode ser aceita; o freelancer vê só "Recusar".
+- Só o aviso de prazo vencido a quem entrega sai durante o "não perturbe" (ADR 56 estreitado): a
+  recusa de extensão e a revisão pedida esperam o fim do silêncio; a recusa e a expiração de um
+  pedido vêm primeiro no resumo.
+- Os avisos de prazo, entrega, marco entregue, proposta e extensão dizem a hora-limite no seu fuso.
+- As descrições de "Aprovação tácita", "Validade da proposta" e "Carência do prazo" no painel dizem
+  que a hora fica gravada; a aprovação tácita é em dias corridos (como os Termos já diziam).
+- A API: `GET /contracts/:id` traz `deadline`, `approvalDueAt`, `proposalExpiresAt`,
+  `cancellation` e `extension.respondBy/seq`; `POST /contracts/:id/cancel` aceita
+  `expectedRefund`; a decisão da extensão aceita `seq`; códigos de erro novos na documentação.
+- `JOBS_INTERVAL_MS` tem teto de 30 minutos.
+
+### Corrigido
+
+- A revisão pedida depois de uma entrega atrasada abria disputa na rodada seguinte.
+- O cliente lia "não houve entrega" depois de uma entrega.
+- A contratação por marcos com tudo entregue recebia o aviso de atraso e ia para disputa.
+- Pedidos de extensão repetidos, ou ignorados, seguravam a disputa sem limite.
+- O freelancer podia cancelar pela API e ficar com parte do escrow.
+- Mudar a carência no painel encurtava a de quem já tinha sido avisado.
+- A disputa automática podia abrir numa contratação recém-entregue.
+- A extensão podia ser aceita com a data vencida, ou depois da conclusão.
+- A linha do tempo da disputa não dizia o status anterior.
+- Os avisos de extensão e de disputa não atualizavam a Sala aberta.
+
+**Nota de transição:** quem já estava na carência ou esperando a aprovação automática no deploy
+termina na hora já prometida, levada para as 9h se ela cairia de noite. As disputas automáticas já
+abertas numa contratação com entrega não mudam sozinhas: o `DEPLOY.md` traz a consulta para o admin
+resolvê-las pela mediação. Por alguns segundos no deploy, a versão anterior ainda pode abrir disputa
+numa contratação em revisão.
+
 ## [1.38.0] — 2026-09-25
 
 ### Adicionado

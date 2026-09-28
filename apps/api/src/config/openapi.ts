@@ -113,6 +113,23 @@ export const openapiDocument: Record<string, any> = {
         },
         ['freelancerId', 'title', 'description', 'price'],
       ),
+      CancelContract: obj({
+        expectedRefund: {
+          type: 'number',
+          minimum: 0,
+          description:
+            'Reembolso ao cliente que a tela mostrou (cancellation.refundClient). Diferente do calculado agora: 409 cancel_quote_changed',
+        },
+      }),
+      ExtensionDecision: obj({
+        seq: {
+          type: 'integer',
+          minimum: 0,
+          maximum: 2,
+          description:
+            'Número do pedido que o cliente viu (extension.seq). Outro pedido no lugar: 409 extension_changed',
+        },
+      }),
       CreateBarter: obj(
         {
           receiverId: { type: 'integer' },
@@ -237,9 +254,19 @@ export const openapiDocument: Record<string, any> = {
         responses: res201,
       }),
     },
-    '/contracts/{id}': { get: op('Contratações', 'Detalhe + histórico', { auth: true }) },
+    '/contracts/{id}': {
+      get: op(
+        'Contratações',
+        'Detalhe + histórico, com o prazo (deadline: state, noticeAt, mediationAt, extensionRequestsLeft), approvalDueAt, proposalExpiresAt, extension.respondBy/seq e cancellation: o que cancelar (cliente) ou desistir (freelancer) faria agora (ADR 57)',
+        { auth: true },
+      ),
+    },
     '/contracts/{id}/accept': {
-      post: op('Contratações', 'Freelancer aceita (financia escrow)', { auth: true }),
+      post: op(
+        'Contratações',
+        'Freelancer aceita (financia escrow). 409 deadline_passed (prazo de entrega vencido) ou proposal_expired (validade gravada vencida)',
+        { auth: true },
+      ),
     },
     '/contracts/{id}/reject': { post: op('Contratações', 'Freelancer recusa', { auth: true }) },
     '/contracts/{id}/deliver': { post: op('Contratações', 'Registra entrega', { auth: true }) },
@@ -247,7 +274,11 @@ export const openapiDocument: Record<string, any> = {
       post: op('Contratações', 'Cliente aprova (libera escrow)', { auth: true }),
     },
     '/contracts/{id}/cancel': {
-      post: op('Contratações', 'Cancela (reembolso RN-025)', { auth: true }),
+      post: op(
+        'Contratações',
+        'Cancela (cliente) ou desiste (freelancer), RN-025/RN-026 (ADR 57): a desistência devolve tudo ao cliente; prazo vencido sem entrega, a partir do aviso, também. 409 cancel_quote_changed, wait_notice, extension_pending_answer, milestone_open, use_reject, invalid_transition',
+        { auth: true, body: { $ref: '#/components/schemas/CancelContract' } },
+      ),
     },
     '/notifications/push': {
       get: op(
@@ -334,14 +365,18 @@ export const openapiDocument: Record<string, any> = {
       get: op('Admin', 'Ledger de R$ do período em CSV', { auth: true }),
     },
     '/contracts/{id}/extension': {
-      post: op('Contratações', 'Freelancer pede a única extensão de prazo (RN-028)', {
-        auth: true,
-      }),
+      post: op(
+        'Contratações',
+        'Freelancer pede extensão de prazo (RN-028, ADR 57): até 2 pedidos, 1 aceito, só enquanto há trabalho nunca entregue; o cliente responde até extension.respondBy. 409 extension_limit, extension_used, extension_pending, extension_after_delivery, grace_over; 400 invalid_deadline, extension_too_close',
+        { auth: true },
+      ),
     },
     '/contracts/{id}/extension/{decision}': {
-      post: op('Contratações', 'Cliente aceita (accept) ou recusa (decline) a extensão', {
-        auth: true,
-      }),
+      post: op(
+        'Contratações',
+        'Cliente aceita (accept) ou recusa (decline) o pedido que viu. 409 extension_changed, extension_expired, extension_stale, no_pending_extension',
+        { auth: true, body: { $ref: '#/components/schemas/ExtensionDecision' } },
+      ),
     },
     '/contracts/{id}/milestones/{milestoneId}/deliver': {
       post: op('Contratações', 'Marco: freelancer entrega (RN-069)', { auth: true }),

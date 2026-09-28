@@ -108,3 +108,15 @@ export function formatDateTime(at: Date, zone: BrazilTimezone): string {
   const two = (n: number): string => String(n).padStart(2, '0');
   return `${two(p.day)}/${two(p.month)}/${p.year} às ${two(p.hour)}:${two(p.minute)}`;
 }
+
+const WEEKDAY = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'] as const;
+
+/**
+ * Hora-limite de um prazo, no fuso de quem lê e vai agir (ADR 57): "sex, 02/10 às 09:00". O dia
+ * da semana ajuda a situar; o ano sai porque esses instantes ficam a dias de distância.
+ */
+export function formatDue(at: Date, zone: BrazilTimezone): string {
+  const p = localParts(zone, at);
+  const two = (n: number): string => String(n).padStart(2, '0');
+  return `${WEEKDAY[p.weekday]}, ${two(p.day)}/${two(p.month)} às ${two(p.hour)}:${two(p.minute)}`;
+}

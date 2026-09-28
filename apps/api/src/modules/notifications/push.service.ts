@@ -29,11 +29,15 @@ export const PUSHED_NOTIFICATION_TYPES = EMAILED_NOTIFICATION_TYPES;
  * Critério para entrar (as três): o sistema age sozinho, sem volta, sobre dinheiro ou contrato de
  * quem recebe; quem recebe consegue evitar pelo celular, em minutos; e esperar o fim da janela
  * tira dele parte do tempo para agir.
+ * ADR 57: só o aviso de atraso a quem entrega continua. A revisão não tem mais carência (depois
+ * da entrega o prazo não cobra), e a recusa ou a expiração do pedido dão sempre pelo menos 6 h de
+ * dia até a disputa: nenhum dos dois tira tempo de quem dorme.
  */
 export const QUIET_PASS_BY_TYPE: Readonly<Record<string, QuietPassCategory | null>> = {
   contract_overdue: 'deadline',
-  deadline_extension_declined: 'deadline',
-  contract_revision: 'deadline',
+  deadline_extension_declined: null,
+  deadline_extension_expired: null,
+  contract_revision: null,
   contract_proposal: null,
   contract_accepted: null,
   contract_rejected: null,
@@ -76,9 +80,20 @@ export function passCategoryFor(
     : null;
 }
 
-/** Tipo que anuncia prazo: vem primeiro no resumo do fim do silêncio (ADR 56). */
+/**
+ * Tipos que falam de um prazo correndo contra quem lê, mesmo sem furar o silêncio (ADR 57): a
+ * recusa e a expiração do pedido dizem até quando agir.
+ */
+const DEADLINE_SUMMARY_TYPES = new Set([
+  'deadline_extension_declined',
+  'deadline_extension_expired',
+]);
+
+/** Tipo que anuncia prazo: vem primeiro no resumo do fim do silêncio (ADR 56 e 57). */
 const announcesDeadline = (type: string | undefined): boolean =>
-  type != null && Object.hasOwn(QUIET_PASS_BY_TYPE, type) && QUIET_PASS_BY_TYPE[type] !== null;
+  type != null &&
+  ((Object.hasOwn(QUIET_PASS_BY_TYPE, type) && QUIET_PASS_BY_TYPE[type] !== null) ||
+    DEADLINE_SUMMARY_TYPES.has(type));
 
 /** Para onde a notificação leva quando a pessoa toca no aviso. */
 export function pushUrl(type: string, data: Record<string, unknown> | null | undefined): string {

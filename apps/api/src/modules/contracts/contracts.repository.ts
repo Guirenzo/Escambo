@@ -1,7 +1,10 @@
-import { DEADLINE_ACTIVE_STATUSES } from './deadline-grace';
+import type { BrazilTimezone } from '@escambo/types';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
+import { clock } from '../../utils/clock';
 import { applyWalletEffect, type WalletEffect } from '../wallet/wallet.ledger';
+import { MAX_EXTENSION_REQUESTS } from './deadline-grace';
+import { CLOSE_PENDING_EXTENSION, rn029Eligible, zoneOf } from './deadline-sql';
 import { milestonesRepository, type MilestoneSpec } from './milestones.repository';
 
 export interface ContractRow extends RowDataPacket {
@@ -25,19 +28,32 @@ export interface ContractRow extends RowDataPacket {
   created_at: Date;
   has_review?: number; // 1 se o cliente já avaliou (subquery nas consultas de leitura)
   has_milestones?: number; // 1 se o contrato é por marcos (RN-069)
-  // Prazos (RN-028 / RN-029)
-  extension_status: 'none' | 'pending' | 'accepted' | 'declined';
+  // Prazos (RN-021, RN-024, RN-028, RN-029; ADR 57)
+  extension_status: 'none' | 'pending' | 'accepted' | 'declined' | 'expired' | 'closed';
+  extension_requests: number;
   extension_deadline_at: Date | null;
   extension_reason: string | null;
   extension_requested_at: Date | null;
+  extension_respond_by: Date | null;
   extension_resolved_at: Date | null;
   deadline_extended_at: Date | null;
   overdue_notified_at: Date | null;
+  grace_ends_at: Date | null;
+  approval_due_at: Date | null;
+  proposal_expires_at: Date | null;
+  // Calculados nas leituras (CONTRACT_COLS)
+  total_milestones?: number;
+  /** Marcos financiados nunca entregues. */
+  undelivered_milestones?: number;
+  /** Marcos entregues esperando o cliente. */
+  delivered_awaiting?: number;
+  /** Marcos entregues que voltaram para revisão. */
+  in_revision?: number;
+  deliveries_count?: number;
+  first_delivered_at?: Date | null;
+  freelancer_timezone?: string | null;
+  client_timezone?: string | null;
 }
-
-/** Status em que o prazo de entrega está correndo (fonte única em deadline-grace, ADR 56). */
-export { DEADLINE_ACTIVE_STATUSES };
-const DEADLINE_ACTIVE = `(${DEADLINE_ACTIVE_STATUSES.map((s) => `'${s}'`).join(', ')})`;
 
 export interface HistoryRow extends RowDataPacket {
   old_status: string | null;
@@ -46,10 +62,35 @@ export interface HistoryRow extends RowDataPacket {
   created_at: Date;
 }
 
-/** O cliente já avaliou? Uma avaliação por contrato (RN-042). */
-const HAS_REVIEW = `EXISTS(SELECT 1 FROM reviews r WHERE r.contract_id = c.id)`;
-/** Contrato por marcos (RN-069)? */
-const HAS_MILESTONES = `EXISTS(SELECT 1 FROM contract_milestones m WHERE m.contract_id = c.id)`;
+/**
+ * Toda leitura de contratação traz, além das colunas, o que o prazo e o cancelamento precisam
+ * saber (ADR 57): avaliação, marcos por situação, entregas e os fusos ATUAIS das partes.
+ */
+const CONTRACT_COLS = `c.*,
+  EXISTS(SELECT 1 FROM reviews r WHERE r.contract_id = c.id) AS has_review,
+  EXISTS(SELECT 1 FROM contract_milestones m WHERE m.contract_id = c.id) AS has_milestones,
+  (SELECT COUNT(*) FROM contract_milestones mt WHERE mt.contract_id = c.id) AS total_milestones,
+  (SELECT COUNT(*) FROM contract_milestones mu WHERE mu.contract_id = c.id
+      AND mu.status = 'funded' AND mu.delivered_at IS NULL) AS undelivered_milestones,
+  (SELECT COUNT(*) FROM contract_milestones ma WHERE ma.contract_id = c.id
+      AND ma.status = 'delivered') AS delivered_awaiting,
+  (SELECT COUNT(*) FROM contract_milestones mr WHERE mr.contract_id = c.id
+      AND mr.status = 'funded' AND mr.delivered_at IS NOT NULL) AS in_revision,
+  (SELECT COUNT(*) FROM deliveries dc WHERE dc.contract_id = c.id) AS deliveries_count,
+  COALESCE((SELECT MIN(dd.created_at) FROM deliveries dd WHERE dd.contract_id = c.id),
+           (SELECT MIN(md.delivered_at) FROM contract_milestones md WHERE md.contract_id = c.id))
+    AS first_delivered_at,
+  (SELECT uf.timezone FROM users uf WHERE uf.id = c.freelancer_id) AS freelancer_timezone,
+  (SELECT uc.timezone FROM users uc WHERE uc.id = c.client_id) AS client_timezone`;
+
+/** Guarda da disputa automática (RN-029, fase 2): o que a leitura viu, repetido na gravação. */
+export const OVERDUE_DISPUTE_GUARD = `AND ${rn029Eligible('c')}
+  AND c.overdue_notified_at IS NOT NULL
+  AND c.grace_ends_at IS NOT NULL AND c.grace_ends_at <= :now
+  AND c.extension_status <> 'pending'`;
+
+/** Pedidos já feitos, contando o pedido que uma linha de antes do ADR 57 mostra (contador zerado). */
+const REQUESTS_USED = `GREATEST(c.extension_requests, c.extension_status IN ('pending', 'accepted', 'declined'))`;
 
 export const contractsRepository = {
   async create(data: {
@@ -64,6 +105,8 @@ export const contractsRepository = {
     freelancerNet: number;
     paymentMode: 'cash' | 'credits';
     deadlineAt: string | null;
+    /** RN-021: até quando o freelancer responde (gravado, ADR 57); null na troca. */
+    proposalExpiresAt: Date | null;
     /**
      * Cash: o valor da proposta sai do saldo disponível do cliente e fica RESERVADO
      * (balance_pending) na mesma transação do INSERT. Retorna null se não há saldo.
@@ -80,9 +123,9 @@ export const contractsRepository = {
       await conn.beginTransaction();
       const [res] = await conn.query<ResultSetHeader>(
         `INSERT INTO contracts
-           (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, payment_mode, deadline_at)
+           (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, payment_mode, deadline_at, proposal_expires_at)
          VALUES
-           (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, :platformFee, :freelancerNet, :paymentMode, :deadlineAt)`,
+           (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, :platformFee, :freelancerNet, :paymentMode, :deadlineAt, :proposalExpiresAt)`,
         row,
       );
       const id = res.insertId;
@@ -120,7 +163,7 @@ export const contractsRepository = {
 
   async findById(id: number): Promise<ContractRow | undefined> {
     const [rows] = await pool.query<ContractRow[]>(
-      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones FROM contracts c WHERE c.id = :id LIMIT 1`,
+      `SELECT ${CONTRACT_COLS} FROM contracts c WHERE c.id = :id LIMIT 1`,
       { id },
     );
     return rows[0];
@@ -128,7 +171,7 @@ export const contractsRepository = {
 
   async listForUser(userId: number, limit: number, offset: number): Promise<ContractRow[]> {
     const [rows] = await pool.query<ContractRow[]>(
-      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones FROM contracts c
+      `SELECT ${CONTRACT_COLS} FROM contracts c
         WHERE c.client_id = :userId OR c.freelancer_id = :userId
         ORDER BY c.created_at DESC
         LIMIT ${limit} OFFSET ${offset}`,
@@ -137,145 +180,194 @@ export const contractsRepository = {
     return rows;
   },
 
-  /**
-   * Entregas sem resposta do cliente há mais de `days` dias (aprovação tácita).
-   * A data da entrega é a última entrada 'delivered' no histórico do contrato.
-   */
-  async findDeliveredOlderThan(days: number): Promise<ContractRow[]> {
+  /** RN-024: entregas únicas cuja aprovação tácita venceu, com o cliente num fuso em que é dia. */
+  async findApprovalDue(now: Date, zones: BrazilTimezone[]): Promise<ContractRow[]> {
+    if (zones.length === 0) return [];
     const [rows] = await pool.query<ContractRow[]>(
-      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones
+      `SELECT ${CONTRACT_COLS}
          FROM contracts c
+         JOIN users cu ON cu.id = c.client_id
         WHERE c.status = 'delivered'
-          AND (SELECT MAX(h.created_at) FROM contract_status_history h
-                WHERE h.contract_id = c.id AND h.new_status = 'delivered')
-              < DATE_SUB(NOW(), INTERVAL :days DAY)
-        ORDER BY c.id ASC
+          AND c.approval_due_at IS NOT NULL AND c.approval_due_at <= :now
+          AND ${zoneOf('cu.timezone')} IN (:zones)
+        ORDER BY c.approval_due_at ASC, c.id ASC
         LIMIT 200`,
-      { days },
+      { now, zones },
     );
     return rows;
   },
 
-  /** Propostas sem resposta do freelancer há mais de `hours` horas (RN-021). Troca não expira. */
-  async findPendingOlderThan(hours: number): Promise<ContractRow[]> {
+  /** RN-021: propostas vencidas, com o freelancer num fuso em que é dia. Troca não expira. */
+  async findProposalsDue(now: Date, zones: BrazilTimezone[]): Promise<ContractRow[]> {
+    if (zones.length === 0) return [];
     const [rows] = await pool.query<ContractRow[]>(
-      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones
+      `SELECT ${CONTRACT_COLS}
          FROM contracts c
+         JOIN users fu ON fu.id = c.freelancer_id
         WHERE c.status = 'pending'
           AND c.barter_agreement_id IS NULL
-          AND c.created_at < DATE_SUB(NOW(), INTERVAL :hours HOUR)
-        ORDER BY c.id ASC
+          AND c.proposal_expires_at IS NOT NULL AND c.proposal_expires_at <= :now
+          AND ${zoneOf('fu.timezone')} IN (:zones)
+        ORDER BY c.proposal_expires_at ASC, c.id ASC
         LIMIT 200`,
-      { hours },
+      { now, zones },
     );
     return rows;
   },
 
-  /** Prazo vencido e ninguém avisado ainda (RN-029, fase 1). Pedido de extensão pendente segura. */
-  async findOverdueUnnoticed(): Promise<ContractRow[]> {
+  /**
+   * RN-029, fase 1: trabalho nunca entregue com o prazo vencido e ninguém avisado, com quem entrega
+   * num fuso em que é dia. Pedido de extensão pendente segura. O job ainda confere no Node que o
+   * aviso previsto (as 9h depois do prazo) já chegou.
+   */
+  async findOverdueUnnoticed(now: Date, zones: BrazilTimezone[]): Promise<ContractRow[]> {
+    if (zones.length === 0) return [];
     const [rows] = await pool.query<ContractRow[]>(
-      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones
+      `SELECT ${CONTRACT_COLS}
          FROM contracts c
-        WHERE c.status IN ${DEADLINE_ACTIVE}
-          AND c.deadline_at IS NOT NULL
-          AND c.deadline_at < NOW()
+         JOIN users fu ON fu.id = c.freelancer_id
+        WHERE ${rn029Eligible('c')}
+          AND c.deadline_at < :now
           AND c.overdue_notified_at IS NULL
           AND c.extension_status <> 'pending'
-        ORDER BY c.id ASC
+          AND ${zoneOf('fu.timezone')} IN (:zones)
+        ORDER BY c.deadline_at ASC, c.id ASC
         LIMIT 200`,
+      { now, zones },
     );
     return rows;
   },
 
-  /** Avisados há mais de `graceHours` horas e ainda sem entrega nem extensão (RN-029, fase 2). */
-  async findOverdueBeyondGrace(graceHours: number): Promise<ContractRow[]> {
-    const [rows] = await pool.query<ContractRow[]>(
-      `SELECT c.*, ${HAS_REVIEW} AS has_review, ${HAS_MILESTONES} AS has_milestones
-         FROM contracts c
-        WHERE c.status IN ${DEADLINE_ACTIVE}
-          AND c.deadline_at IS NOT NULL
-          AND c.deadline_at < NOW()
-          AND c.overdue_notified_at IS NOT NULL
-          AND c.overdue_notified_at < DATE_SUB(NOW(), INTERVAL :graceHours HOUR)
-          AND c.extension_status <> 'pending'
-        ORDER BY c.id ASC
-        LIMIT 200`,
-      { graceHours },
-    );
-    return rows;
-  },
-
-  /** Marca o aviso de prazo estourado; false se outra instância do job já marcou. */
-  async markOverdueNotified(id: number): Promise<boolean> {
+  /**
+   * Marca o aviso e grava o fim da carência; false se outra instância já avisou ou se a
+   * contratação mudou (entrega, pedido, extensão aceita) entre a leitura e aqui.
+   */
+  async markOverdueNotified(p: {
+    id: number;
+    deadlineAt: Date;
+    now: Date;
+    graceEndsAt: Date;
+  }): Promise<boolean> {
     const [res] = await pool.query<ResultSetHeader>(
-      `UPDATE contracts SET overdue_notified_at = NOW()
-        WHERE id = :id AND overdue_notified_at IS NULL AND status IN ${DEADLINE_ACTIVE}`,
-      { id },
+      `UPDATE contracts c
+          SET c.overdue_notified_at = :now, c.grace_ends_at = :graceEndsAt
+        WHERE c.id = :id
+          AND c.overdue_notified_at IS NULL
+          AND c.deadline_at = :deadlineAt
+          AND c.extension_status <> 'pending'
+          AND ${rn029Eligible('c')}`,
+      p,
     );
     return res.affectedRows > 0;
+  },
+
+  /** RN-029, fase 2: carência gravada vencida, ainda sem entrega nem pedido, quem entrega de dia. */
+  async findGraceEnded(now: Date, zones: BrazilTimezone[]): Promise<ContractRow[]> {
+    if (zones.length === 0) return [];
+    const [rows] = await pool.query<ContractRow[]>(
+      `SELECT ${CONTRACT_COLS}
+         FROM contracts c
+         JOIN users fu ON fu.id = c.freelancer_id
+        WHERE c.status IN ('accepted', 'in_progress')
+          ${OVERDUE_DISPUTE_GUARD}
+          AND ${zoneOf('fu.timezone')} IN (:zones)
+        ORDER BY c.grace_ends_at ASC, c.id ASC
+        LIMIT 200`,
+      { now, zones },
+    );
+    return rows;
+  },
+
+  /** RN-028: pedidos sem resposta até a hora dita, com o cliente num fuso em que é dia. */
+  async findExtensionsToExpire(now: Date, zones: BrazilTimezone[]): Promise<ContractRow[]> {
+    if (zones.length === 0) return [];
+    const [rows] = await pool.query<ContractRow[]>(
+      `SELECT ${CONTRACT_COLS}
+         FROM contracts c
+         JOIN users cu ON cu.id = c.client_id
+        WHERE c.extension_status = 'pending'
+          AND c.extension_respond_by IS NOT NULL AND c.extension_respond_by <= :now
+          AND ${zoneOf('cu.timezone')} IN (:zones)
+        ORDER BY c.extension_respond_by ASC, c.id ASC
+        LIMIT 200`,
+      { now, zones },
+    );
+    return rows;
   },
 
   /**
    * Registra o pedido de extensão (RN-028). O WHERE repete as regras do service para a
-   * concorrência: nunca fica um segundo pedido pendente nem um pedido depois da extensão usada.
+   * concorrência: nada entregue, nenhuma extensão aceita, nenhum pedido pendente, menos de 2
+   * pedidos e a carência (se houver) ainda aberta. O contador vem PRIMEIRO no SET: a atribuição
+   * seguinte já muda o status que ele lê.
    */
-  async requestExtension(p: { id: number; deadlineAt: string; reason: string }): Promise<boolean> {
+  async requestExtension(p: {
+    id: number;
+    deadlineAt: Date;
+    reason: string;
+    now: Date;
+    respondBy: Date;
+  }): Promise<boolean> {
     const [res] = await pool.query<ResultSetHeader>(
-      `UPDATE contracts
-          SET extension_status = 'pending',
-              extension_deadline_at = :deadlineAt,
-              extension_reason = :reason,
-              extension_requested_at = NOW(),
-              extension_resolved_at = NULL
-        WHERE id = :id
-          AND status IN ${DEADLINE_ACTIVE}
-          AND deadline_at IS NOT NULL
-          AND deadline_extended_at IS NULL
-          AND extension_status <> 'pending'`,
-      { id: p.id, deadlineAt: new Date(p.deadlineAt), reason: p.reason },
+      `UPDATE contracts c
+          SET c.extension_requests = ${REQUESTS_USED} + 1,
+              c.extension_status = 'pending',
+              c.extension_deadline_at = :deadlineAt,
+              c.extension_reason = :reason,
+              c.extension_requested_at = :now,
+              c.extension_respond_by = :respondBy,
+              c.extension_resolved_at = NULL
+        WHERE c.id = :id
+          AND ${rn029Eligible('c')}
+          AND c.deadline_extended_at IS NULL
+          AND c.extension_status <> 'pending'
+          AND ${REQUESTS_USED} < ${MAX_EXTENSION_REQUESTS}
+          AND (c.grace_ends_at IS NULL OR c.grace_ends_at > :now)`,
+      p,
     );
     return res.affectedRows > 0;
   },
 
   /**
-   * Cliente decide o pedido pendente. Aceitar troca o prazo, trava novas extensões, zera o
-   * aviso de atraso (o prazo novo recomeça a contagem) e deixa a mudança na linha do tempo.
+   * O cliente aceita o pedido que viu (`seq`): o prazo muda, trava novas extensões, zera o aviso
+   * e a carência (o prazo novo recomeça a contagem) e deixa a mudança na linha do tempo.
    */
-  async resolveExtension(p: {
+  async acceptExtension(p: {
     id: number;
-    accept: boolean;
+    seq: number | null;
+    now: Date;
     changedBy: number;
     status: string;
-    note: string | null;
+    note: string;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
       const [res] = await conn.query<ResultSetHeader>(
-        p.accept
-          ? `UPDATE contracts
-                SET deadline_at = extension_deadline_at,
-                    deadline_extended_at = NOW(),
-                    extension_status = 'accepted',
-                    extension_resolved_at = NOW(),
-                    overdue_notified_at = NULL
-              WHERE id = :id AND extension_status = 'pending'`
-          : `UPDATE contracts
-                SET extension_status = 'declined', extension_resolved_at = NOW()
-              WHERE id = :id AND extension_status = 'pending'`,
-        { id: p.id },
+        `UPDATE contracts c
+            SET c.deadline_at = c.extension_deadline_at,
+                c.deadline_extended_at = :now,
+                c.extension_resolved_at = :now,
+                c.extension_status = 'accepted',
+                c.overdue_notified_at = NULL,
+                c.grace_ends_at = NULL
+          WHERE c.id = :id
+            AND c.extension_status = 'pending'
+            AND (:seq IS NULL OR c.extension_requests = :seq)
+            AND (c.extension_respond_by IS NULL OR c.extension_respond_by > :now)
+            AND c.extension_deadline_at > :now
+            AND ${rn029Eligible('c')}`,
+        { id: p.id, seq: p.seq, now: p.now },
       );
       if (res.affectedRows === 0) {
         await conn.rollback();
         return false;
       }
-      if (p.accept) {
-        await conn.query<ResultSetHeader>(
-          `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
-           VALUES (:id, :changedBy, :status, :status, :note)`,
-          { id: p.id, changedBy: p.changedBy, status: p.status, note: p.note },
-        );
-      }
+      await conn.query<ResultSetHeader>(
+        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
+         VALUES (:id, :changedBy, :status, :status, :note)`,
+        { id: p.id, changedBy: p.changedBy, status: p.status, note: p.note },
+      );
       await conn.commit();
       return true;
     } catch (err) {
@@ -284,6 +376,36 @@ export const contractsRepository = {
     } finally {
       conn.release();
     }
+  },
+
+  /**
+   * Recusa (o cliente) ou expiração (o job) do pedido pendente. As duas disputam a mesma linha
+   * pelo `extension_status = 'pending'`: exatamente uma passa. Com o aviso de atraso dado, grava
+   * o novo fim da carência (graceAfterDecision).
+   */
+  async settleExtension(p: {
+    id: number;
+    seq: number | null;
+    outcome: 'declined' | 'expired';
+    now: Date;
+    graceEndsAt: Date | null;
+  }): Promise<boolean> {
+    const timing =
+      p.outcome === 'expired'
+        ? 'c.extension_respond_by IS NOT NULL AND c.extension_respond_by <= :now'
+        : '(c.extension_respond_by IS NULL OR c.extension_respond_by > :now)';
+    const [res] = await pool.query<ResultSetHeader>(
+      `UPDATE contracts c
+          SET c.extension_resolved_at = :now,
+              c.extension_status = :outcome,
+              c.grace_ends_at = COALESCE(:graceEndsAt, c.grace_ends_at)
+        WHERE c.id = :id
+          AND c.extension_status = 'pending'
+          AND (:seq IS NULL OR c.extension_requests = :seq)
+          AND ${timing}`,
+      p,
+    );
+    return res.affectedRows > 0;
   },
 
   async listHistory(contractId: number): Promise<HistoryRow[]> {
@@ -310,6 +432,15 @@ export const contractsRepository = {
     to: string;
     note: string | null;
     timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at';
+    /** O instante gravado (padrão: o relógio do fluxo). */
+    now?: Date;
+    /**
+     * Condições extras no WHERE (`AND ...`, alias `c`), com os parâmetros: a gravação repete o
+     * que a leitura viu (ADR 57). Sem a condição, false (o service responde 409).
+     */
+    guard?: { sql: string; params?: Record<string, unknown> };
+    /** Encerra o pedido de extensão pendente ('closed'): a contratação saiu da vez de quem entrega. */
+    closePendingExtension?: boolean;
     /**
      * Movimentos de carteira em R$ (cliente e/ou freelancer) aplicados na MESMA transação do
      * status, com guarda de saldo e linha no extrato (wallet_transactions).
@@ -329,10 +460,19 @@ export const contractsRepository = {
     try {
       await conn.beginTransaction();
 
-      const tsSet = params.timestampColumn ? `, ${params.timestampColumn} = NOW()` : '';
+      const sets = ['c.status = :to'];
+      if (params.timestampColumn) sets.push(`c.${params.timestampColumn} = :now`);
+      if (params.closePendingExtension) sets.push(CLOSE_PENDING_EXTENSION('c'));
       const [res] = await conn.query<ResultSetHeader>(
-        `UPDATE contracts SET status = :to${tsSet} WHERE id = :id AND status = :from`,
-        { to: params.to, id: params.id, from: params.from },
+        `UPDATE contracts c SET ${sets.join(', ')}
+          WHERE c.id = :id AND c.status = :from ${params.guard?.sql ?? ''}`,
+        {
+          ...params.guard?.params,
+          to: params.to,
+          id: params.id,
+          from: params.from,
+          now: params.now ?? clock.now(),
+        },
       );
 
       if (res.affectedRows === 0) {
@@ -414,21 +554,28 @@ export const contractsRepository = {
     }
   },
 
-  /** Registra a entrega e transiciona para `delivered` na mesma transação. */
+  /**
+   * Registra a entrega e transiciona para `delivered` na mesma transação, gravando a hora da
+   * aprovação tácita (RN-024) e encerrando o pedido de extensão pendente (a vez agora é do cliente).
+   */
   async deliver(params: {
     id: number;
     changedBy: number;
     from: string;
     message: string;
     files: string[] | null;
+    now: Date;
+    approvalDueAt: Date;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
 
       const [res] = await conn.query<ResultSetHeader>(
-        `UPDATE contracts SET status = 'delivered' WHERE id = :id AND status = :from`,
-        { id: params.id, from: params.from },
+        `UPDATE contracts c
+            SET c.status = 'delivered', c.approval_due_at = :approvalDueAt, ${CLOSE_PENDING_EXTENSION('c')}
+          WHERE c.id = :id AND c.status = :from`,
+        { id: params.id, from: params.from, now: params.now, approvalDueAt: params.approvalDueAt },
       );
       if (res.affectedRows === 0) {
         await conn.rollback();
@@ -436,11 +583,13 @@ export const contractsRepository = {
       }
 
       await conn.query<ResultSetHeader>(
-        `INSERT INTO deliveries (contract_id, message, files) VALUES (:id, :message, :files)`,
+        `INSERT INTO deliveries (contract_id, message, files, delivered_at, created_at)
+         VALUES (:id, :message, :files, :now, :now)`,
         {
           id: params.id,
           message: params.message,
           files: params.files ? JSON.stringify(params.files) : null,
+          now: params.now,
         },
       );
       await conn.query<ResultSetHeader>(

@@ -10,14 +10,16 @@ import {
 } from './helpers';
 
 /**
- * Prazos (RN-028): a cliente contrata com prazo (sugerido pelo serviço), a Sala mostra quanto
- * falta, o freelancer pede a única extensão, a cliente aceita e o prazo muda — com a mudança na
- * linha do tempo e o "faltam N dias" no Início. Desktop e mobile.
+ * Prazos (RN-028, ADR 57): a cliente contrata com prazo (sugerido pelo serviço) e o modal diz o que
+ * acontece se ele vencer; a Sala mostra quanto falta; o freelancer pede extensão (até 2 pedidos,
+ * só um aceito), a cliente vê até quando responder e recusa; o freelancer pede de novo, a cliente
+ * aceita e o prazo muda, com a mudança na linha do tempo e o "faltam N dias" no Início. Desktop e
+ * mobile.
  */
 
 const h = (t: string) => ({ Authorization: `Bearer ${t}` });
 
-test('contratar com prazo, pedir extensão e aceitar: o prazo muda uma vez só', async ({
+test('contratar com prazo, pedir extensão duas vezes (recusa, depois aceite): o prazo muda uma vez só', async ({
   page,
   request,
 }) => {
@@ -36,6 +38,9 @@ test('contratar com prazo, pedir extensão e aceitar: o prazo muda uma vez só',
   await card.getByRole('button', { name: 'Contratar' }).click();
   const modal = page.getByRole('dialog');
   await expect(modal.getByLabel('Prazo de entrega')).toHaveValue(inputDatePlus(3));
+  await expect(modal.getByTestId('deadline-hint')).toContainText(
+    'a partir das 9h do dia seguinte o Escambo avisa vocês dois',
+  );
   await modal.getByLabel('Prazo de entrega').fill(inputDatePlus(5));
   await modal.getByRole('button', { name: 'Enviar proposta' }).click();
   await expect(page).toHaveURL(/\/contratos\/\d+$/);
@@ -51,14 +56,44 @@ test('contratar com prazo, pedir extensão e aceitar: o prazo muda uma vez só',
   await openAs(page, freelancer, `/contratos/${contractId}`);
   await settled(page);
   await expect(page.getByTestId('deadline-state')).toHaveText('faltam 5 dias');
+  await expect(page.getByTestId('extension-left')).toHaveText(
+    'até 2 pedidos; só um pode ser aceito',
+  );
+  const pedir = async (days: number, reason: string) => {
+    await page.getByRole('button', { name: 'Pedir extensão de prazo' }).click();
+    const ext = page.getByRole('dialog');
+    await ext.getByLabel(/Novo prazo/).fill(inputDatePlus(days));
+    await ext.getByLabel('Motivo (o cliente lê)').fill(reason);
+    await ext.getByRole('button', { name: 'Enviar pedido' }).click();
+    await expect(
+      page.locator('.toast', { hasText: 'Pedido enviado. O cliente tem até' }),
+    ).toBeVisible();
+    await expect(page.getByTestId('extension-request')).toContainText('aguardando o cliente até');
+    await expect(page.getByRole('button', { name: 'Pedir extensão de prazo' })).toHaveCount(0);
+  };
   await page.getByRole('button', { name: 'Pedir extensão de prazo' }).click();
-  const ext = page.getByRole('dialog');
-  await ext.getByLabel('Novo prazo').fill(inputDatePlus(12));
-  await ext.getByLabel('Motivo (o cliente lê)').fill('O material chegou depois do combinado');
-  await ext.getByRole('button', { name: 'Enviar pedido' }).click();
-  await expect(page.locator('.toast', { hasText: 'Pedido enviado' })).toBeVisible();
-  await expect(page.getByTestId('extension-request')).toContainText('aguardando o cliente');
-  await expect(page.getByRole('button', { name: 'Pedir extensão de prazo' })).toHaveCount(0);
+  await expect(page.getByTestId('extension-rules')).toContainText('(resta 2)');
+  await page.getByRole('dialog').getByRole('button', { name: 'Fechar' }).click();
+  await pedir(9, 'Preciso de mais alguns dias para os ajustes');
+
+  // Cliente vê até quando responder e recusa: vale o prazo atual.
+  await openAs(page, client, `/contratos/${contractId}`);
+  await settled(page);
+  await expect(page.getByTestId('extension-respond-by')).toContainText('Responda até');
+  await page.getByTestId('extension-request').getByRole('button', { name: 'Recusar' }).click();
+  await expect(
+    page.locator('.toast', { hasText: 'Extensão recusada; vale o prazo atual.' }),
+  ).toBeVisible();
+  await expect(page.getByTestId('extension-outcome')).toContainText('recusado; vale o prazo atual');
+
+  // Freelancer: resta 1 pedido; pede de novo.
+  await openAs(page, freelancer, `/contratos/${contractId}`);
+  await settled(page);
+  await expect(page.getByTestId('extension-outcome')).toContainText(
+    'Você ainda pode fazer mais um pedido.',
+  );
+  await expect(page.getByTestId('extension-left')).toHaveText('resta 1 pedido');
+  await pedir(12, 'O material chegou depois do combinado');
 
   // Cliente lê o motivo e aceita: prazo novo, registro na linha do tempo, extensão gasta.
   await openAs(page, client, `/contratos/${contractId}`);
@@ -68,7 +103,7 @@ test('contratar com prazo, pedir extensão e aceitar: o prazo muda uma vez só',
   await req.getByRole('button', { name: 'Aceitar novo prazo' }).click();
   await expect(page.locator('.toast', { hasText: 'Prazo estendido' })).toBeVisible();
   await expect(page.getByTestId('deadline-date')).toHaveText(brDatePlus(12));
-  await expect(page.getByTestId('deadline')).toContainText('única extensão usada');
+  await expect(page.getByTestId('deadline')).toContainText('extensão usada');
   await expect(page.locator('.timeline')).toContainText('Prazo estendido de');
 
   // Freelancer não pode pedir de novo; o Início mostra o prazo novo correndo.

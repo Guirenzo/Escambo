@@ -535,6 +535,18 @@ CREATE TABLE contracts (
   barter_agreement_id BIGINT UNSIGNED NULL,            -- preenchido quando o contrato faz parte de uma troca
   status         ENUM('pending', 'accepted', 'rejected', 'in_progress', 'delivered', 'revision_requested', 'completed', 'cancelled', 'disputed') NOT NULL DEFAULT 'pending',
   deadline_at    DATETIME        NULL,
+  extension_status ENUM('none', 'pending', 'accepted', 'declined', 'expired', 'closed') NOT NULL DEFAULT 'none', -- último pedido de extensão (RN-028, migration 0008); 'expired' = sem resposta até extension_respond_by, vale como recusa; 'closed' = encerrado porque a contratação saiu da vez de quem entrega (migration 0027, ADR 57)
+  extension_requests     TINYINT UNSIGNED NOT NULL DEFAULT 0, -- pedidos feitos: até 2, só 1 aceito; é também o número do pedido no compare-and-set da decisão (migration 0027)
+  extension_deadline_at  DATETIME     NULL,             -- prazo pedido; vira deadline_at se o cliente aceitar (migration 0008)
+  extension_reason       VARCHAR(500) NULL,             -- motivo do pedido (migration 0008)
+  extension_requested_at DATETIME     NULL,             -- migration 0008
+  extension_respond_by   DATETIME     NULL,             -- até quando o cliente responde: 48 h, entre 9h e 20h30 no fuso dele e antes da data pedida (migration 0027)
+  extension_resolved_at  DATETIME     NULL,             -- aceite, recusa, expiração ou encerramento do pedido (migration 0008)
+  deadline_extended_at   DATETIME     NULL,             -- preenchido no aceite: trava outro aceite (migration 0008)
+  overdue_notified_at    DATETIME     NULL,             -- aviso de prazo vencido sem entrega às duas partes (RN-029, migration 0008); zerado só no aceite da extensão
+  grace_ends_at          DATETIME     NULL,             -- fim da carência, gravado no aviso: a hora avisada é a cumprida (migration 0027)
+  approval_due_at        DATETIME     NULL,             -- aprovação tácita da entrega única (RN-024), gravada na entrega (migration 0027)
+  proposal_expires_at    DATETIME     NULL,             -- validade da proposta (RN-021), gravada na criação (migration 0027)
   accepted_at    DATETIME        NULL,
   completed_at   DATETIME        NULL,
   cancelled_at   DATETIME        NULL,
@@ -547,6 +559,12 @@ CREATE TABLE contracts (
   INDEX idx_contract_service    (service_id),
   INDEX idx_contract_status     (status),
   INDEX idx_contract_barter     (barter_agreement_id),
+  INDEX idx_contract_status_created   (status, created_at),          -- varredura dos jobs de prazo (migration 0008)
+  INDEX idx_contract_status_deadline  (status, deadline_at),         -- migration 0008
+  INDEX idx_contract_status_grace     (status, grace_ends_at),       -- migration 0027
+  INDEX idx_contract_status_approval  (status, approval_due_at),     -- migration 0027
+  INDEX idx_contract_status_proposal  (status, proposal_expires_at), -- migration 0027
+  INDEX idx_contract_extension_respond (extension_status, extension_respond_by), -- migration 0027
   CONSTRAINT fk_contract_client     FOREIGN KEY (client_id)     REFERENCES users(id),
   CONSTRAINT fk_contract_freelancer FOREIGN KEY (freelancer_id) REFERENCES users(id),
   CONSTRAINT fk_contract_service    FOREIGN KEY (service_id)    REFERENCES services(id) ON DELETE SET NULL
@@ -556,6 +574,12 @@ CREATE TABLE contracts (
 > A FK de `contracts.barter_agreement_id → barter_agreements(id)` é adicionada por `ALTER TABLE`
 > **depois** da criação de `barter_agreements` (ver Módulo 15), porque as duas tabelas se referenciam
 > mutuamente. Em `cash` (padrão), a coluna fica `NULL`.
+
+> Prazos (ADR 57): `grace_ends_at`, `approval_due_at`, `proposal_expires_at` e `extension_respond_by`
+> são gravados quando a contagem começa e caem entre 9h e 20h30 no fuso de quem é afetado (o que cairia
+> fora passa para as 9h seguintes). As migrations 0027 e 0028 só mudam o esquema: as contratações que
+> já estavam em andamento são preenchidas pelo job `repair-deadlines`, e os leitores toleram as colunas
+> nulas do legado.
 
 ---
 
@@ -614,6 +638,9 @@ CREATE TABLE contract_milestones (
   sort_order  TINYINT UNSIGNED NOT NULL DEFAULT 0,
   status      ENUM('pending', 'funded', 'delivered', 'approved', 'released', 'cancelled') NOT NULL DEFAULT 'pending',
   due_at      DATETIME        NULL,
+  overdue_notified_at DATETIME NULL,                   -- aviso de marco atrasado, uma vez, só para marco nunca entregue (migration 0009)
+  delivered_at    DATETIME    NULL,                    -- última entrega; continua preenchida se o marco voltar para revisão (migration 0006)
+  approval_due_at DATETIME    NULL,                    -- aprovação tácita do marco, gravada na entrega; a revisão zera (migration 0028, ADR 57)
   released_at DATETIME        NULL,
   created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -621,6 +648,8 @@ CREATE TABLE contract_milestones (
   PRIMARY KEY (id),
   INDEX idx_milestone_contract (contract_id),
   INDEX idx_milestone_status   (status),
+  INDEX idx_milestone_status_due      (status, due_at),          -- migration 0009
+  INDEX idx_milestone_status_approval (status, approval_due_at), -- migration 0028
   CONSTRAINT fk_milestone_contract FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
