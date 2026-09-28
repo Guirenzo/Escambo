@@ -317,4 +317,30 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     await snap(p, '18-avisos-navegador');
     await ctx.close();
   }
+
+  // 22. Cancelar mostra o valor antes (ADR 57): a cliente abre "Cancelar" numa contratação aceita.
+  {
+    const anaToken = await login('cliente@escambo.demo');
+    const list = await request.get('/api/contracts?limit=100', {
+      headers: { Authorization: `Bearer ${anaToken}` },
+    });
+    const aceita = (
+      (await list.json()) as { items: { id: number; title: string; status: string }[] }
+    ).items.find((c) => c.title === 'Motion graphics 15s' && c.status === 'accepted');
+    if (aceita) {
+      const ctx = await browser.newContext({
+        viewport: { width: 1440, height: 900 },
+        deviceScaleFactor: 2,
+      });
+      const p = await ctx.newPage();
+      await p.addInitScript((t) => window.localStorage.setItem('escambo_token', t), anaToken);
+      await p.goto(`/contratos/${aceita.id}`);
+      await settled(p);
+      await p.getByRole('button', { name: 'Cancelar', exact: true }).click();
+      await expect(p.getByTestId('cancel-modal')).toBeVisible();
+      await p.waitForTimeout(400);
+      await snap(p, '22-cancelar');
+      await ctx.close();
+    }
+  }
 });

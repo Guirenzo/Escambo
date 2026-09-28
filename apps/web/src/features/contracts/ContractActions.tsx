@@ -15,19 +15,22 @@ const TONE: Record<ContractAction['tone'], 'primary' | 'secondary' | 'danger'> =
 
 /**
  * Botões de ação de uma contratação para o usuário logado (aceitar, entregar, aprovar,
- * pedir revisão, cancelar, avaliar, abrir disputa). Mesma lógica na tabela do Início e na Sala.
- * Avaliar e abrir disputa acontecem na Sala: fora dela, os botões levam para lá.
+ * pedir revisão, cancelar ou desistir, avaliar, abrir disputa). Mesma lógica na tabela do Início
+ * e na Sala. Avaliar, abrir disputa e cancelar acontecem na Sala (o cancelamento mostra o valor
+ * antes de confirmar, ADR 57): fora dela, os botões levam para lá.
  */
 export function ContractActions({
   contract,
   size = 'normal',
   exclude = [],
   onDispute,
+  onCancel,
 }: {
   contract: Contract;
   size?: 'mini' | 'normal';
   exclude?: ContractActionKey[];
   onDispute?: () => void;
+  onCancel?: () => void;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -50,6 +53,11 @@ export function ContractActions({
       else navigate(`/contratos/${contract.id}`);
       return;
     }
+    if (a.key === 'cancel') {
+      if (onCancel) onCancel();
+      else navigate(`/contratos/${contract.id}`);
+      return;
+    }
     let text = '';
     if (a.prompt) {
       text = (window.prompt(a.prompt) ?? '').trim();
@@ -58,7 +66,8 @@ export function ContractActions({
     try {
       if (a.key === 'deliver') await deliver.mutateAsync({ id: contract.id, message: text });
       else if (a.key === 'revision') await revision.mutateAsync({ id: contract.id, note: text });
-      else await act.mutateAsync({ id: contract.id, action: a.key });
+      else if (a.key === 'accept' || a.key === 'reject' || a.key === 'approve')
+        await act.mutateAsync({ id: contract.id, action: a.key });
       toast.success(
         a.key === 'approve'
           ? 'Entrega aprovada. Valor liberado para o freelancer.'

@@ -1,5 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
+import { clock } from '../../utils/clock';
+import { CLOSE_PENDING_EXTENSION } from '../contracts/deadline-sql';
 import { applyWalletEffect } from '../wallet/wallet.ledger';
 
 export interface DisputeRow extends RowDataPacket {
@@ -16,24 +18,40 @@ export interface DisputeRow extends RowDataPacket {
 }
 
 const OPEN_STATUSES = "('open', 'under_review', 'awaiting_parties')";
-const DISPUTABLE = "('accepted', 'in_progress', 'delivered', 'revision_requested')";
+const DISPUTABLE_STATUSES = ['accepted', 'in_progress', 'delivered', 'revision_requested'];
 
 export const disputesRepository = {
-  /** Abre a disputa e coloca o contrato em 'disputed' (bloqueia o escrow — RN-038), atômico. */
-  async create(d: {
-    ulid: string;
-    contractId: number;
-    openedBy: number;
-    reason: string;
-    description: string;
-  }): Promise<number | null> {
+  /**
+   * Abre a disputa e coloca o contrato em 'disputed' (bloqueia o escrow — RN-038), atômico. O
+   * status anterior vai para a linha do tempo, e um pedido de extensão pendente se encerra. A
+   * disputa automática (RN-029) passa `guard`: a gravação repete o que o job leu (ADR 57).
+   */
+  async create(
+    d: {
+      ulid: string;
+      contractId: number;
+      openedBy: number;
+      reason: string;
+      description: string;
+    },
+    opts: { guard?: string; now?: Date } = {},
+  ): Promise<number | null> {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
-      const [upd] = await conn.query<ResultSetHeader>(
-        `UPDATE contracts SET status = 'disputed'
-          WHERE id = :contractId AND status IN ${DISPUTABLE}`,
+      const [current] = await conn.query<RowDataPacket[]>(
+        `SELECT status FROM contracts WHERE id = :contractId FOR UPDATE`,
         { contractId: d.contractId },
+      );
+      const oldStatus = current[0]?.status as string | undefined;
+      if (!oldStatus || !DISPUTABLE_STATUSES.includes(oldStatus)) {
+        await conn.rollback();
+        return null;
+      }
+      const [upd] = await conn.query<ResultSetHeader>(
+        `UPDATE contracts c SET c.status = 'disputed', ${CLOSE_PENDING_EXTENSION('c')}
+          WHERE c.id = :contractId AND c.status = :oldStatus ${opts.guard ?? ''}`,
+        { contractId: d.contractId, oldStatus, now: opts.now ?? clock.now() },
       );
       if (upd.affectedRows === 0) {
         await conn.rollback();
@@ -46,8 +64,8 @@ export const disputesRepository = {
       );
       await conn.query<ResultSetHeader>(
         `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
-         VALUES (:contractId, :openedBy, NULL, 'disputed', 'Disputa aberta')`,
-        { contractId: d.contractId, openedBy: d.openedBy },
+         VALUES (:contractId, :openedBy, :oldStatus, 'disputed', 'Disputa aberta')`,
+        { contractId: d.contractId, openedBy: d.openedBy, oldStatus },
       );
       await conn.commit();
       return res.insertId;

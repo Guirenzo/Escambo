@@ -16,10 +16,17 @@ const user = (o: Partial<PublicUser> = {}): PublicUser => ({
   quietPass: null,
   ...o,
 });
-const ok: Consent[] = [{ type: 'privacy_policy', version: '1.4', accepted: true, at: '' }];
+const ok: Consent[] = [
+  { type: 'privacy_policy', version: '1.4', accepted: true, at: '' },
+  { type: 'terms_of_use', version: '1.3', accepted: true, at: '' },
+];
+const termosVelhos: Consent[] = [
+  { type: 'privacy_policy', version: '1.4', accepted: true, at: '' },
+  { type: 'terms_of_use', version: '1.2', accepted: true, at: '' },
+];
 const velho: Consent[] = [{ type: 'privacy_policy', version: '1.2', accepted: true, at: '' }];
 
-/** Uma faixa por vez no topo do app (ADR 54): legal, depois fuso, depois e-mail. */
+/** Uma faixa por vez no topo do app (ADR 54 e 57): Política, Termos, fuso, e-mail. */
 describe('pickBanner', () => {
   it('sem sessão, nada', () => {
     expect(pickBanner(null, ok, 'America/Manaus')).toBeNull();
@@ -30,6 +37,13 @@ describe('pickBanner', () => {
       pickBanner(user({ emailVerified: false, timezoneChosen: false }), velho, 'America/Manaus'),
     ).toBe('legal');
     expect(pickBanner(user(), [], null)).toBe('legal');
+  });
+
+  it('Termos pendentes vêm depois da Política e antes do fuso', () => {
+    expect(pickBanner(user({ timezoneChosen: false }), termosVelhos, 'America/Manaus')).toBe(
+      'terms',
+    );
+    expect(pickBanner(user(), [velho[0]!, termosVelhos[1]!], null)).toBe('legal');
   });
 
   it('consentimentos ainda não carregados (ou com erro): a faixa legal cala nesta carga', () => {

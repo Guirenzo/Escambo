@@ -19,6 +19,7 @@ export const EMAILED_NOTIFICATION_TYPES = new Set([
   'deadline_extension_requested',
   'deadline_extension_accepted',
   'deadline_extension_declined',
+  'deadline_extension_expired',
   'milestone_delivered',
   'milestone_approved',
   'milestone_revision',

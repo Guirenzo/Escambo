@@ -135,6 +135,8 @@ describe('settingsService (ADR 32/33)', () => {
       platformFeePercentage: 15,
       tacitApprovalDays: 5,
       proposalExpiryHours: 72,
+      deadlineGraceHours: 24,
+      extensionResponseHours: 48,
       minServicePrice: 10,
       minWithdrawalAmount: 20,
       barterEnabled: true,

@@ -114,6 +114,125 @@ anterior continua funcionando sobre o schema mais novo. Guarde a tag que está n
 curl -s https://SEU_DOMINIO/api/health | grep -o '"commit":"[^"]*"'
 ```
 
+### Atualizar para a 1.39.0 (prazos, ADR 57)
+
+A 1.39.0 muda como os prazos das contratações contam e traz duas migrations, a 0027 e a 0028, com um
+reparo no fim do `migrate` que preenche as horas das contratações em andamento. A atualização é a de
+sempre (`pull` e `up -d`); os passos abaixo são as conferências em volta dela.
+
+**1. Antes: fotografia do banco.** Consultas só de leitura, no console do MySQL (tabela da seção 5).
+Mesmo sem alterar nada, é o banco de produção: mostre o comando a quem responde pelo deploy e espere
+o ok antes de rodar. Anote os números para comparar no passo 3.
+
+```sql
+-- contratações já avisadas do atraso, por status (em revisão, saem da disputa automática)
+SELECT status, COUNT(*) FROM contracts WHERE overdue_notified_at IS NOT NULL GROUP BY status;
+-- pedidos de extensão pendentes: há quantas horas foram feitos e se a data pedida está perto
+SELECT id, status, TIMESTAMPDIFF(HOUR, extension_requested_at, NOW()) AS horas,
+       extension_deadline_at < NOW() + INTERVAL 12 HOUR AS data_perto
+  FROM contracts WHERE extension_status = 'pending';
+-- entregas e marcos esperando o cliente (ganham a hora da aprovação tácita)
+SELECT COUNT(*) FROM contracts WHERE status = 'delivered';
+SELECT COUNT(*) FROM contract_milestones WHERE status = 'delivered';
+```
+
+Os pedidos pendentes passam a contar como o primeiro dos dois, e o cliente tem até 48 h a partir do
+deploy para responder (nunca de madrugada, e antes da data pedida); os com `data_perto = 1` (data
+pedida perto ou passada) expiram na primeira rodada de dia, e os de contratações que já saíram da vez
+de quem entrega (em revisão, por exemplo) são encerrados (`closed`).
+
+**2. O deploy.** Os mesmos comandos de sempre:
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+O job `migrate` aplica a 0027 (contratações: cinco colunas, dois valores novos no status do pedido
+de extensão e quatro índices) e a 0028 (marcos: a hora da aprovação tácita e um índice), um ALTER
+cada, e no fim roda o reparo dos prazos; a API nova só sobe depois dele. Por alguns segundos a API
+antiga ainda está no ar sobre o esquema novo: o que ela gravar nesse intervalo o reparo acerta na
+primeira rodada dos jobs da API nova, mas uma disputa aberta por ela não volta sozinha (passo 4).
+`JOBS_INTERVAL_MS` passa a ter teto de 30 min: se você o define fora do compose com valor maior, o
+`migrate` e a API nova recusam o valor e não sobem.
+
+**3. Depois: conferir o reparo.**
+
+```bash
+docker compose -f docker-compose.prod.yml logs migrate | grep 'Prazos reparados'
+curl -s https://SEU_DOMINIO/api/health   # "version":"1.39.0"
+```
+
+A linha traz, em `reparo`, quantas linhas cada caso preencheu. `graceEnds` (carências em curso, que
+terminam na hora já prometida, levada para as 9h se cairia de noite) deve bater com as linhas
+`accepted` e `in_progress` da primeira consulta do passo 1; `approvalDue` e `milestoneApprovalDue`,
+com as contagens de `delivered`; `respondBy` mais `closedExtensions`, com os pedidos pendentes (salvo
+o que mudou no intervalo). Se no lugar dela aparecer "Reparo dos prazos falhou", a API tenta de novo
+na primeira rodada dos jobs. No console do MySQL, as quatro consultas abaixo precisam dar 0:
+
+```sql
+SELECT COUNT(*) FROM contracts WHERE status = 'delivered' AND approval_due_at IS NULL;
+SELECT COUNT(*) FROM contracts WHERE extension_status = 'pending' AND extension_respond_by IS NULL;
+SELECT COUNT(*) FROM contracts WHERE status IN ('accepted','in_progress') AND overdue_notified_at IS NOT NULL AND grace_ends_at IS NULL;
+SELECT COUNT(*) FROM contracts WHERE status = 'pending' AND barter_agreement_id IS NULL AND proposal_expires_at IS NULL;
+```
+
+O reparo trata até 200 linhas por caso a cada rodada: se alguma der mais que 0, espere uma rodada
+dos jobs e rode de novo; se não baixar, veja o log da API (`"job":"repair-deadlines"`).
+
+**4. Disputas automáticas abertas por engano.** A regra nova não mexe em disputa já aberta. Esta
+consulta, só de leitura, lista as disputas automáticas por prazo ainda não resolvidas numa
+contratação que já tinha entrega antes da disputa, ou, por marcos, sem nenhum marco financiado
+nunca entregue — as que a 1.39.0 não teria aberto. Não há correção automática: o admin resolve cada
+uma pela fila de mediação do painel (liberar, devolver ou dividir), olhando a linha do tempo. Rode
+de novo alguns minutos depois do deploy, para pegar alguma que a API antiga tenha aberto na troca.
+
+```sql
+SELECT d.id, d.contract_id, d.created_at
+  FROM disputes d JOIN contracts c ON c.id = d.contract_id
+ WHERE d.reason = 'deadline' AND d.status <> 'resolved'
+   AND d.description LIKE 'Aberta automaticamente%'
+   AND ( EXISTS (SELECT 1 FROM deliveries x WHERE x.contract_id = c.id AND x.created_at < d.created_at)
+      OR ( EXISTS (SELECT 1 FROM contract_milestones m WHERE m.contract_id = c.id)
+           AND NOT EXISTS (SELECT 1 FROM contract_milestones m
+                            WHERE m.contract_id = c.id AND m.status = 'funded' AND m.delivered_at IS NULL) ) );
+```
+
+**5. Jobs desligados.** O reparo roda também em toda rodada dos jobs. O compose de produção deixa os
+jobs ligados; se em outra instalação `JOBS_ENABLED=false` em todas as instâncias da API, rode os jobs
+uma vez depois do deploy (`npm run jobs:run`; no container, o comando abaixo) ou espere o cron
+externo que os roda:
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm --no-deps api node dist/scripts/run-jobs.js
+```
+
+**6. Voltar para a 1.38.0** é seguro: `IMAGE_TAG=1.38.0` e `up -d`, como acima. A API antiga ignora
+as colunas novas; um pedido de extensão `expired` ou `closed` aparece para ela como status
+desconhecido, e o web antigo não mostra nada dele. As migrations são só para frente: a 0027 e a 0028
+continuam aplicadas, e o `migrate` da 1.38.0 não as desfaz. Com a versão antiga voltam as regras
+antigas de prazo.
+
+**7. Voltar de novo para a 1.39.0 depois de a 1.38.0 ter ficado no ar** pede um passo antes do
+deploy. A 1.38.0 grava entregas, pedidos de extensão e avisos sem mexer nas horas que a 1.39.0 guarda
+(`approval_due_at`, `extension_respond_by`, `grace_ends_at`) nem no contador de pedidos. O reparo só
+preenche o que está vazio, então essas horas ficariam velhas: uma entrega refeita na 1.38.0 seria
+aprovada pela hora da entrega anterior, um pedido feito nela expiraria na hora, e um aviso novo teria
+a carência do aviso antigo. Com o backup feito, esvazie as horas das contratações que a 1.38.0 tocou
+(`@desde` = quando a 1.38.0 voltou ao ar, em UTC) e deixe o reparo do `migrate` recalcular:
+
+```sql
+SET @desde = '2026-10-01 12:00:00';
+UPDATE contracts SET approval_due_at = NULL WHERE status = 'delivered';
+UPDATE contract_milestones SET approval_due_at = NULL WHERE status = 'delivered';
+UPDATE contracts SET extension_requests = LEAST(extension_requests + 1, 2), extension_respond_by = NULL
+ WHERE extension_status = 'pending' AND extension_requested_at >= @desde;
+UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
+```
+
+As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
+a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
+
 ## 4. Backup e restauração
 
 `scripts/backup-db.sh` faz um `mysqldump --single-transaction` **dentro** do container do banco (não expõe
@@ -166,7 +285,8 @@ docker compose -f docker-compose.prod.yml start api
 | Atualizar MySQL/Caddy      | `docker compose -f docker-compose.prod.yml pull && up -d` (imagens oficiais, mesmas majors) |
 
 - **Jobs em background** (aprovação tácita, expiração de depósitos e de cópias LGPD) rodam dentro da API a
-  cada 5 min (`JOBS_ENABLED`, `JOBS_INTERVAL_MS`). Com mais de uma réplica da API, deixe ligado em uma só.
+  cada 5 min (`JOBS_ENABLED`, `JOBS_INTERVAL_MS`, no máximo 30 min). Com mais de uma réplica da API, deixe
+  ligado em uma só.
 - **Rate limit** por IP usa o IP real do usuário: o compose já configura `TRUST_PROXY=2` (Caddy → nginx → API).
 - **Pagamentos:** não existe gateway real ainda (ADR 15). Em produção `PAYMENTS_SIMULATE=false`: depósitos só
   se confirmam pelo webhook (`PAYMENT_WEBHOOK_SECRET`). Num piloto sem dinheiro de verdade, `true` libera o

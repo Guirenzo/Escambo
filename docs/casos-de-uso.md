@@ -287,7 +287,9 @@
 7. Sistema notifica o cliente
 8. Cliente analisa a entrega
    ├── Aprova → status "Concluído" → pagamento liberado
-   └── Solicita revisão → freelancer refaz e entrega novamente
+   ├── Solicita revisão → freelancer entrega de novo
+   │   (com o trabalho entregue — por marcos, todos os marcos —, o prazo não abre mais disputa sozinho)
+   └── Não responde até a hora dita no aviso da entrega → aprovação automática (RN-024)
 9. Sistema registra o histórico completo
 ```
 
@@ -299,27 +301,51 @@
   3. Cliente aceita, recusa ou negocia novamente
 
 [FA-02] Cancelamento pelo cliente
-  1. Cliente solicita cancelamento com motivo
-  2. Sistema aplica política de reembolso conforme status
-     ├── Antes do aceite → reembolso total
-     ├── Em andamento → reembolso parcial (conforme regra configurada)
-     └── Após entrega → sem reembolso (abre ticket de disputa)
+  1. Cliente toca em "Cancelar" na Sala (o cancelamento não pede motivo)
+  2. O app mostra os valores antes de confirmar: quanto volta para ele e quanto fica
+     com o freelancer, pela política da RN-025
+     ├── Antes do aceite → a reserva volta inteira
+     ├── Sem prazo → reembolso de 50%
+     ├── Antes do prazo, com menos da metade do tempo entre o aceite e o prazo → 50%
+     ├── Antes do prazo, com mais da metade → sem reembolso
+     ├── Prazo vencido sem nenhuma entrega → 100%, a partir do aviso de atraso (FE-01)
+     ├── Prazo vencido com pedido de extensão pendente → responder ao pedido antes
+     ├── Marco entregue esperando resposta ou em revisão → não cancela
+     └── Depois da entrega → não cancela: aprovar, pedir revisão ou abrir disputa (FE-02)
+  3. Cliente confirma; se o valor mudou no meio (o prazo venceu, um marco foi
+     entregue), nada se move e a Sala mostra o valor novo
+  4. Sistema liquida o escrow pela mesma conta e avisa o freelancer do que
+     aconteceu com o dinheiro dele
+     └── Por marcos, só o que ainda não foi liberado; em créditos, voltam inteiros;
+         numa troca, nada se move aqui e a troca segue o próprio fluxo
 
-[FA-03] Cancelamento pelo freelancer
-  1. Freelancer cancela com justificativa
-  2. Sistema reembolsa cliente integralmente
-  3. Cancela impacta negativamente a reputação do freelancer
+[FA-03] Cancelamento pelo freelancer (desistência)
+  1. Freelancer toca em "Desistir" na Sala: a desistência não pede motivo
+     └── Antes do aceite, ele usa "Recusar"; depois da entrega, ou com marco
+         entregue em aberto, não se desiste
+  2. O app mostra o valor antes de confirmar
+  3. Sistema devolve ao cliente tudo o que está em garantia, registra a
+     desistência na linha do tempo e avisa o cliente
+  4. O alerta de reputação da RN-026 segue pendente
 ```
 
 ### Fluxos de Exceção
 ```
 [FE-01] Prazo estourado sem entrega
-  → Sistema notifica ambas as partes
-  → Freelancer pode solicitar extensão de prazo com justificativa
-  → Cliente pode aceitar ou abrir disputa
+  → Sistema avisa as duas partes a partir das 9h do dia seguinte, no fuso de quem entrega
+  → O cliente pode cancelar com reembolso integral (FA-02) ou esperar
+  → Sem entrega nem extensão aceita até a hora dita no aviso (hoje, 24 h depois dele),
+    a disputa abre sozinha (FE-02)
+  → Enquanto há trabalho nunca entregue, o freelancer pode pedir extensão com motivo: até 2 pedidos,
+    só 1 aceito; o cliente responde até a hora dita no pedido (hoje, 48 h) e, sem resposta,
+    o pedido expira e vale o prazo atual
+  → Enquanto o cliente decide, a disputa automática espera; depois da recusa ou da
+    expiração, quem entrega tem pelo menos 6 h de dia para agir
+  → Nada automático por prazo acontece entre 21h e 9h no fuso de quem é afetado
 
 [FE-02] Disputa aberta
-  → Ticket de suporte criado automaticamente (UC-10)
+  → Contratação congelada e disputa na fila de mediação do admin (a automática, do FE-01,
+    é aberta pela plataforma em nome do cliente)
   → Administrador intervém e emite resolução vinculante
 ```
 

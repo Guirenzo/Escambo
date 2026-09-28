@@ -658,6 +658,10 @@ export interface PublicSettings {
   minServicePrice: number;
   minWithdrawalAmount: number;
   barterEnabled: boolean;
+  /** Carência da RN-029: do aviso de atraso até a disputa automática (ADR 57). */
+  deadlineGraceHours: number;
+  /** Horas que o cliente tem para responder a um pedido de extensão (RN-028, ADR 57). */
+  extensionResponseHours: number;
   /** Ligado: a API responde 503 para quem não é admin; o app mostra a tela de manutenção. */
   maintenanceMode: boolean;
 }
@@ -1005,9 +1009,19 @@ export interface Contract {
   overdueNotifiedAt: string | null;
   /** Último pedido de extensão de prazo, se houve. */
   extension: ContractExtension | null;
+  /** O prazo agora: de quem é a vez, quando sai o aviso e quando abre a disputa (ADR 57). */
+  deadline: ContractDeadline;
+  /** Entrega única registrada: a partir de quando ela é aprovada automaticamente (RN-024). */
+  approvalDueAt: string | null;
+  /** Proposta: até quando o freelancer responde (RN-021). */
+  proposalExpiresAt: string | null;
 }
 
-export type ExtensionStatus = 'pending' | 'accepted' | 'declined';
+/**
+ * 'expired': o cliente não respondeu até `respondBy` (vale como recusa). 'closed': a contratação
+ * saiu da vez de quem entrega (entrega, cancelamento, disputa) com o pedido ainda aberto.
+ */
+export type ExtensionStatus = 'pending' | 'accepted' | 'declined' | 'expired' | 'closed';
 
 /** Pedido de extensão de prazo feito pelo freelancer (RN-028). */
 export interface ContractExtension {
@@ -1017,6 +1031,32 @@ export interface ContractExtension {
   reason: string;
   requestedAt: string;
   resolvedAt: string | null;
+  /** Até quando o cliente responde; depois disso o pedido expira. */
+  respondBy: string | null;
+  /** Número do pedido (1 ou 2): vai na decisão, para o cliente decidir o pedido que viu. */
+  seq: number;
+}
+
+/**
+ * Estado do prazo (ADR 57): 'running' correndo; 'due' vencido, aviso ainda não saiu; 'grace' aviso
+ * dado, carência correndo; 'paused' pedido de extensão esperando o cliente; 'met' não há mais o
+ * que cobrar (houve entrega); 'proposal' ainda não aceita; 'closed' encerrada; 'none' sem prazo.
+ */
+export type DeadlineState =
+  'none' | 'proposal' | 'running' | 'due' | 'grace' | 'paused' | 'met' | 'closed';
+
+export interface ContractDeadline {
+  state: DeadlineState;
+  /** Quando o aviso de atraso sai (running/due: previsto) ou saiu (grace/paused). */
+  noticeAt: string | null;
+  /** A partir de quando a disputa automática abre (running/due: previsto; grace: gravado). */
+  mediationAt: string | null;
+  /** Pedidos de extensão que ainda cabem (até 2, só um aceito; nenhum depois da entrega). */
+  extensionRequestsLeft: number;
+  undeliveredMilestones: number;
+  totalMilestones: number;
+  /** A primeira entrega (ou o primeiro marco entregue): dali em diante o prazo não abre disputa. */
+  firstDeliveredAt: string | null;
 }
 
 export type MilestoneStatus =
@@ -1036,6 +1076,8 @@ export interface Milestone {
   deliveryNote: string | null;
   revisionNote: string | null;
   releasedAt: string | null;
+  /** Marco entregue: a partir de quando ele é aprovado automaticamente (RN-024). */
+  approvalDueAt: string | null;
 }
 
 export interface MilestoneInput {
@@ -1058,6 +1100,8 @@ export interface ContractWithHistory extends Contract {
   milestones: Milestone[];
   /** Avaliação do cliente (com a resposta do freelancer, se houver). */
   review: Review | null;
+  /** O que cancelar (cliente) ou desistir (freelancer) faria agora; null quando não se aplica. */
+  cancellation: CancelTerms | null;
 }
 
 export interface CreateContractRequest {
@@ -1078,9 +1122,48 @@ export interface ExtensionRequest {
   reason: string;
 }
 
+/**
+ * Etapa do cancelamento (RN-025, ADR 57): 'proposal' antes do aceite; 'withdrawal' o freelancer
+ * desiste; 'overdue' prazo vencido sem entrega, a partir do aviso; 'early'/'late' antes ou depois da
+ * metade do tempo entre o aceite e o prazo; 'no_deadline' sem prazo; 'credits' em créditos; 'barter'
+ * contratação de uma troca.
+ */
+export type CancelStage =
+  'proposal' | 'withdrawal' | 'overdue' | 'early' | 'late' | 'no_deadline' | 'credits' | 'barter';
+
+/** O cancelamento calculado antes de confirmar: a tela mostra, o POST confere e liquida o mesmo. */
+export interface CancelTerms {
+  allowed: boolean;
+  by: 'client' | 'freelancer';
+  stage: CancelStage | null;
+  refundPercentage: number;
+  /** Quanto volta ao cliente (R$; créditos na etapa 'credits'). */
+  refundClient: number;
+  /** Quanto fica com o freelancer (R$ líquido). */
+  releaseFreelancer: number;
+  unit: 'BRL' | 'credits' | 'none';
+  /** Código do erro quando não dá agora (ex.: 'wait_notice', 'milestone_open'). */
+  code: string | null;
+  message: string | null;
+  /** 'wait_notice': a partir de quando cancelar devolve tudo. */
+  availableAt: string | null;
+  /** 'late': quando sai o aviso de atraso, a partir do qual cancelar devolve tudo. */
+  noticeAt: string | null;
+}
+
+export interface CancelRequest {
+  /** O reembolso que a pessoa viu na tela; se mudou, a API responde 409 cancel_quote_changed. */
+  expectedRefund?: number;
+}
+
 export interface CancelResult {
   status: ContractStatus;
   refundPercentage: number;
+  stage: CancelStage;
+  by: 'client' | 'freelancer';
+  refundClient: number;
+  releaseFreelancer: number;
+  unit: 'BRL' | 'credits' | 'none';
 }
 
 // --- Chat em tempo real (mensagens do contrato) ---

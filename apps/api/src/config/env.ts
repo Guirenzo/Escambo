@@ -53,10 +53,12 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  // Até 30 min: os instantes de prazo gravados vão até 20:29 e os jobs só agem até 20:59 (ADR 57).
   JOBS_INTERVAL_MS: z.coerce
     .number()
     .int()
     .positive()
+    .max(30 * 60_000)
     .default(5 * 60_000),
 
   // Pagamentos (depósitos na carteira). Só existe o gateway simulado neste estágio:

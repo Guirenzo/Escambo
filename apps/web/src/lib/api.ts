@@ -1,4 +1,6 @@
 import type {
+  CancelRequest,
+  CancelResult,
   AdminAppeal,
   AdminAppealDecisionRequest,
   AdminAppealDecisionResult,
@@ -341,10 +343,20 @@ export const api = {
   contractDetail: (id: number) => request<ContractWithHistory>(`/contracts/${id}`),
   requestExtension: (id: number, body: { deadlineAt: string; reason: string }) =>
     request<Contract>(`/contracts/${id}/extension`, { method: 'POST', body: JSON.stringify(body) }),
-  resolveExtension: (id: number, decision: 'accept' | 'decline') =>
-    request<Contract>(`/contracts/${id}/extension/${decision}`, { method: 'POST' }),
-  contractAction: (id: number, action: 'accept' | 'reject' | 'approve' | 'cancel') =>
+  /** Decide o pedido que a pessoa viu (`seq`): trocado no meio, 409 extension_changed (ADR 57). */
+  resolveExtension: (id: number, decision: 'accept' | 'decline', seq?: number) =>
+    request<Contract>(`/contracts/${id}/extension/${decision}`, {
+      method: 'POST',
+      body: JSON.stringify(seq === undefined ? {} : { seq }),
+    }),
+  contractAction: (id: number, action: 'accept' | 'reject' | 'approve') =>
     request<Contract>(`/contracts/${id}/${action}`, { method: 'POST' }),
+  /** Cancelar ou desistir com o reembolso que a tela mostrou (ADR 57): mudou, 409. */
+  cancelContract: (id: number, body: CancelRequest) =>
+    request<CancelResult>(`/contracts/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   requestRevision: (id: number, note: string) =>
     request<Contract>(`/contracts/${id}/request-revision`, {
       method: 'POST',

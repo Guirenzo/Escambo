@@ -1,5 +1,6 @@
 import type { PlatformSetting, PublicSettings } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
+import { EXTENSION_RESPONSE_HOURS } from '../contracts/deadline-grace';
 import { settingsRepository } from './settings.repository';
 import { SETTING_DEFS, SETTING_KEYS, type SettingKey } from './settings.schema';
 
@@ -125,19 +126,23 @@ export const settingsService = {
 
   /** O que o app precisa saber sem ser admin (taxa, prazos, mínimos, manutenção, trocas). */
   async publicSettings(): Promise<PublicSettings> {
-    const [fee, tacit, expiry, minService, minWithdrawal, barter, maintenance] = await Promise.all([
-      this.number('platform_fee_percentage'),
-      this.number('tacit_approval_days'),
-      this.number('proposal_expiry_hours'),
-      this.number('min_service_price'),
-      this.number('min_withdrawal_amount'),
-      this.flag('barter_enabled'),
-      this.flag('maintenance_mode'),
-    ]);
+    const [fee, tacit, expiry, grace, minService, minWithdrawal, barter, maintenance] =
+      await Promise.all([
+        this.number('platform_fee_percentage'),
+        this.number('tacit_approval_days'),
+        this.number('proposal_expiry_hours'),
+        this.number('deadline_grace_hours'),
+        this.number('min_service_price'),
+        this.number('min_withdrawal_amount'),
+        this.flag('barter_enabled'),
+        this.flag('maintenance_mode'),
+      ]);
     return {
       platformFeePercentage: fee,
       tacitApprovalDays: tacit,
       proposalExpiryHours: expiry,
+      deadlineGraceHours: grace,
+      extensionResponseHours: EXTENSION_RESPONSE_HOURS,
       minServicePrice: minService,
       minWithdrawalAmount: minWithdrawal,
       barterEnabled: barter,

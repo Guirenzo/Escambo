@@ -79,9 +79,69 @@ test('política vigente: faixa para quem está na versão anterior, aceite regis
   );
   await expect(consents.locator('li').first()).toContainText('aceito em');
 
-  // Os Termos não mudaram: a página pública continua na 1.2.
+  // Termos 1.3 (ADR 57): a conta nova já nasce nela, então não há faixa dos Termos.
+  await expect(page.getByTestId('terms-banner')).toHaveCount(0);
   await page.goto('/termos');
-  await expect(page.getByText(/Versão 1\.2 · atualizada em 09\/09\/2026/)).toBeVisible();
+  await expect(page.getByText(/Versão 1\.3 · atualizada em 28\/09\/2026/)).toBeVisible();
+});
+
+test('termos 1.3: faixa informativa para quem aceitou a 1.2, depois da Política e sem "Não aceito"', async ({
+  page,
+  request,
+}) => {
+  const user = await createUser(request, 'client');
+  const headers = { Authorization: `Bearer ${user.token}` };
+  for (const data of [
+    { type: 'terms_of_use', version: '1.2', accepted: true },
+    { type: 'privacy_policy', version: '1.3', accepted: true },
+  ]) {
+    const r = await request.post('/api/lgpd/consents', { headers, data });
+    expect(r.ok(), await r.text()).toBeTruthy();
+  }
+
+  // Uma faixa por vez: a Política primeiro.
+  await openAs(page, user, '/');
+  await settled(page);
+  await expect(page.getByTestId('legal-banner')).toBeVisible();
+  await expect(page.getByTestId('terms-banner')).toHaveCount(0);
+  await page.getByTestId('legal-banner').getByRole('button', { name: 'Li e aceito' }).click();
+  await expect(page.getByTestId('legal-banner')).toHaveCount(0);
+
+  // Depois, os Termos: o que mudou, que o uso continuado vale como aceite, e só "Li e aceito".
+  const banner = page.getByRole('region', { name: 'Atualização dos Termos de Uso' });
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText('versão 1.3');
+  await expect(banner).toContainText(
+    'a disputa automática só vale enquanto há trabalho nunca entregue',
+  );
+  await expect(banner).toContainText('Continuar usando o Escambo vale como aceite (seção 7)');
+  await expect(banner.getByRole('button', { name: 'Não aceito' })).toHaveCount(0);
+  const axe = await new AxeBuilder({ page })
+    .include('[data-testid="terms-banner"]')
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze();
+  expect(
+    axe.violations
+      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+      .map((v) => v.id),
+  ).toEqual([]);
+  await banner.getByRole('button', { name: 'Li e aceito' }).click();
+  await expect(
+    page.locator('.toast', { hasText: 'a versão 1.3 dos Termos fica registrada' }),
+  ).toBeVisible();
+  await expect(page.getByTestId('terms-banner')).toHaveCount(0);
+  await page.reload();
+  await settled(page);
+  await expect(page.getByTestId('terms-banner')).toHaveCount(0);
+  const list = (await (await request.get('/api/lgpd/consents', { headers })).json()) as {
+    type: string;
+    version: string;
+    accepted: boolean;
+  }[];
+  expect(list.find((c) => c.type === 'terms_of_use')).toMatchObject({
+    version: '1.3',
+    accepted: true,
+  });
 });
 
 test('política vigente: "Não aceito" também registra e encerra a faixa', async ({

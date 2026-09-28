@@ -25,6 +25,9 @@ export type Party = 'client' | 'freelancer' | 'none';
 export const DISPUTABLE_STATUSES = ['accepted', 'in_progress', 'delivered', 'revision_requested'];
 
 const DISPUTE: ContractAction = { key: 'dispute', label: 'Abrir disputa', tone: 'danger' };
+/** O cliente cancela; o freelancer desiste (ADR 57): tudo em garantia volta ao cliente. */
+const CANCEL: ContractAction = { key: 'cancel', label: 'Cancelar', tone: 'danger' };
+const WITHDRAW: ContractAction = { key: 'cancel', label: 'Desistir', tone: 'danger' };
 
 export function partyOf(c: Pick<Contract, 'clientId' | 'freelancerId'>, userId: number): Party {
   if (c.clientId === userId) return 'client';
@@ -33,42 +36,49 @@ export function partyOf(c: Pick<Contract, 'clientId' | 'freelancerId'>, userId: 
 }
 
 export function contractActions(
-  c: Pick<Contract, 'clientId' | 'freelancerId' | 'status' | 'hasReview' | 'hasMilestones'>,
+  c: Pick<
+    Contract,
+    'clientId' | 'freelancerId' | 'status' | 'hasReview' | 'hasMilestones' | 'deadlineAt'
+  >,
   userId: number,
+  now: number = Date.now(),
 ): ContractAction[] {
   const party = partyOf(c, userId);
   if (party === 'none') return [];
 
   // Por marcos (RN-069): entrega e aprovação acontecem marco a marco, na Sala.
   if (c.hasMilestones && (c.status === 'accepted' || c.status === 'in_progress')) {
-    return party === 'freelancer'
-      ? [DISPUTE]
-      : [{ key: 'cancel', label: 'Cancelar', tone: 'danger' }, DISPUTE];
+    return party === 'freelancer' ? [WITHDRAW, DISPUTE] : [CANCEL, DISPUTE];
   }
 
+  const deliver = (label: string): ContractAction => ({
+    key: 'deliver',
+    label,
+    tone: 'primary',
+    prompt: 'Mensagem da entrega (o que foi feito, onde está):',
+  });
+
   switch (c.status) {
-    case 'pending':
+    case 'pending': {
+      // Com o prazo de entrega já vencido, a proposta não se aceita (ADR 57): só recusar.
+      const expired = c.deadlineAt !== null && new Date(c.deadlineAt).getTime() <= now;
+      const reject: ContractAction = { key: 'reject', label: 'Recusar', tone: 'danger' };
       return party === 'freelancer'
-        ? [
-            { key: 'accept', label: 'Aceitar', tone: 'primary' },
-            { key: 'reject', label: 'Recusar', tone: 'danger' },
-          ]
+        ? expired
+          ? [reject]
+          : [{ key: 'accept', label: 'Aceitar', tone: 'primary' }, reject]
         : [{ key: 'cancel', label: 'Cancelar proposta', tone: 'danger' }];
+    }
 
     case 'accepted':
     case 'in_progress':
-    case 'revision_requested':
       return party === 'freelancer'
-        ? [
-            {
-              key: 'deliver',
-              label: c.status === 'revision_requested' ? 'Entregar revisão' : 'Registrar entrega',
-              tone: 'primary',
-              prompt: 'Mensagem da entrega (o que foi feito, onde está):',
-            },
-            DISPUTE,
-          ]
-        : [{ key: 'cancel', label: 'Cancelar', tone: 'danger' }, DISPUTE];
+        ? [deliver('Registrar entrega'), WITHDRAW, DISPUTE]
+        : [CANCEL, DISPUTE];
+
+    // Depois da entrega não se cancela (ADR 57): o cliente aprova, pede revisão ou disputa.
+    case 'revision_requested':
+      return party === 'freelancer' ? [deliver('Entregar revisão'), DISPUTE] : [DISPUTE];
 
     case 'delivered':
       return party === 'client'

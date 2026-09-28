@@ -135,7 +135,10 @@ export function Shell() {
 
       <main className="main">
         {user && banner === 'legal' && consents.data && (
-          <LegalUpdateBanner consents={consents.data} />
+          <LegalUpdateBanner kind="privacidade" consents={consents.data} />
+        )}
+        {user && banner === 'terms' && consents.data && (
+          <LegalUpdateBanner kind="termos" consents={consents.data} />
         )}
         {user && banner === 'timezone' && detected && (
           <TimezoneBanner user={user} detected={detected} />

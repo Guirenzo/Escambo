@@ -350,7 +350,7 @@ function endOfDayInDays(days) {
 /** Pedido de extensão de prazo do freelancer (RN-028), uma vez; o cliente decide na Sala. */
 async function ensureExtensionRequest(freelancer, contract, days, reason) {
   const detail = await call('GET', `/contracts/${contract.id}`, { token: freelancer.token });
-  const active = ['accepted', 'in_progress', 'revision_requested'].includes(detail.status);
+  const active = ['accepted', 'in_progress'].includes(detail.status); // só antes da entrega (ADR 57)
   if (!active || detail.extension || detail.deadlineExtendedAt || !detail.deadlineAt) {
     log(
       `  extensão de prazo do #${contract.id}: nada a fazer (${detail.extension?.status ?? detail.status})`,

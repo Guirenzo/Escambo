@@ -8,9 +8,9 @@
  */
 export type LegalKind = 'termos' | 'privacidade';
 
-export const LEGAL_VERSIONS: Record<LegalKind, string> = { termos: '1.2', privacidade: '1.4' };
+export const LEGAL_VERSIONS: Record<LegalKind, string> = { termos: '1.3', privacidade: '1.4' };
 export const LEGAL_UPDATED: Record<LegalKind, string> = {
-  termos: '2026-09-09',
+  termos: '2026-09-28',
   privacidade: '2026-09-25',
 };
 
@@ -51,6 +51,13 @@ export const LEGAL_CHANGES: LegalChange[] = [
       'Acompanhou a carteira pré-paga: movimentações de carteira e créditos nos dados de uso.',
   },
   { doc: 'privacidade', version: '1.0', date: '2026-09-09', summary: 'Primeira versão.' },
+  {
+    doc: 'termos',
+    version: '1.3',
+    date: '2026-09-28',
+    summary:
+      'Prazos: nada automático acontece de madrugada (o aviso de prazo vencido e a disputa automática saem a partir das 9h, na hora dita no aviso), a disputa automática só vale enquanto há trabalho nunca entregue, e o freelancer pode pedir extensão até duas vezes, com hora para o cliente responder. Cancelamento com o valor na tela antes de confirmar: a desistência do freelancer e o prazo vencido sem entrega devolvem tudo ao cliente.',
+  },
   {
     doc: 'termos',
     version: '1.2',
@@ -101,21 +108,22 @@ export const LEGAL: Record<LegalKind, LegalDoc> = {
       {
         title: '3. Contratações, carteira, escrow e taxa',
         paragraphs: [
-          'A carteira é pré-paga: o cliente deposita via PIX e, ao enviar uma proposta em dinheiro, o valor é reservado do saldo na hora. Se o freelancer recusar ou o cliente cancelar antes do aceite, a reserva volta integralmente. No aceite, o valor líquido fica retido (escrow) e é liberado ao freelancer quando o cliente aprova a entrega. A plataforma cobra 15% sobre o valor da contratação em dinheiro; contratações em créditos Escambo não têm taxa.',
-          'Cancelamentos após o aceite e decisões de disputa devolvem ao cliente a fração do valor definida pela política ou pela mediação, e liberam ao freelancer a fração correspondente do líquido. Saques são solicitados na carteira, processados pela equipe e, se não puderem ser pagos, estornados ao saldo; o titular pode cancelar um saque ainda não processado.',
-          'Se o cliente não responder a uma entrega em 5 dias, ela é aprovada automaticamente (aprovação tácita). O cliente pode, antes disso, pedir revisão ou abrir uma disputa.',
+          'A carteira é pré-paga: o cliente deposita via PIX e, ao enviar uma proposta em dinheiro, o valor é reservado do saldo na hora. Se o freelancer recusar ou o cliente cancelar antes do aceite, a reserva volta integralmente. No aceite, o valor líquido fica retido (escrow) e é liberado ao freelancer quando o cliente aprova a entrega. A plataforma cobra uma taxa sobre o valor da contratação em dinheiro (hoje, 15%); contratações em créditos Escambo não têm taxa.',
+          'Cancelamentos: antes do aceite, a reserva volta inteira. Depois do aceite, se o freelancer desistir, tudo o que está em garantia volta ao cliente. Se o cliente cancelar antes do prazo, recebe metade do valor quando menos da metade do tempo entre o aceite e o prazo passou, e nada quando passou mais da metade; sem prazo definido, recebe metade. Com o prazo vencido sem nenhuma entrega, a partir do aviso do Escambo, o cliente recebe tudo de volta. O app mostra os valores antes de confirmar. Entrega registrada não se cancela: vai para aprovação, revisão ou disputa. Nas contratações por marcos, o cancelamento espera a resposta a um marco entregue e só devolve o que ainda não foi liberado. Em créditos Escambo, os créditos em garantia voltam inteiros. Decisões de disputa devolvem ao cliente a fração definida pela mediação e liberam ao freelancer a fração correspondente do líquido. Saques são solicitados na carteira, processados pela equipe e, se não puderem ser pagos, estornados ao saldo; o titular pode cancelar um saque ainda não processado.',
+          'Se o cliente não responder a uma entrega até a hora informada no aviso da entrega (hoje, 5 dias corridos depois), ela é aprovada automaticamente (aprovação tácita). Antes disso, o cliente pode pedir revisão ou abrir uma disputa.',
+          'O prazo de entrega vale até 23:59 do dia escolhido. Se ele vencer sem nenhuma entrega, as duas partes são avisadas a partir das 9h do dia seguinte, no horário de quem entrega. Sem entrega nem extensão aceita até a hora informada nesse aviso (hoje, 24 horas depois), a disputa abre sozinha em nome do cliente e a mediação do Escambo decide sobre o valor. O prazo só abre disputa sozinho enquanto há trabalho nunca entregue: na entrega única, até a primeira entrega; por marcos, enquanto algum marco não foi entregue. O freelancer pode pedir extensão até duas vezes, e só uma pode ser aceita; o cliente responde até a hora informada no pedido (hoje, 48 horas), e sem resposta o pedido expira. Nenhuma ação automática por prazo acontece entre 21h e 9h no horário de quem é afetado: ela passa para as 9h seguintes.',
         ],
       },
       {
         title: '4. Trocas de serviço (escambo)',
         paragraphs: [
-          'Uma troca gera dois contratos recíprocos, cada um com o fluxo normal de entrega e aprovação. Quando os valores não batem, a diferença (torna) é paga em dinheiro por quem recebe o serviço mais valioso: o valor é reservado da carteira ao propor ou ao aceitar, fica retido enquanto os dois lados entregam e é liberado ao outro lado, descontada a taxa de 15% sobre a torna, quando ambos aprovam. Recusa, cancelamento ou disputa devolvem a reserva.',
+          'Uma troca gera dois contratos recíprocos, cada um com o fluxo normal de entrega e aprovação. Quando os valores não batem, a diferença (torna) é paga em dinheiro por quem recebe o serviço mais valioso: o valor é reservado da carteira ao propor ou ao aceitar, fica retido enquanto os dois lados entregam e é liberado ao outro lado, descontada a taxa da plataforma (hoje, 15%) sobre a torna, quando ambos aprovam. Recusa, cancelamento ou disputa devolvem a reserva.',
         ],
       },
       {
         title: '5. Disputas e mediação',
         paragraphs: [
-          'Qualquer parte pode abrir uma disputa numa contratação em andamento ou entregue. A contratação fica congelada e a equipe de mediação decide, com base no histórico da sala, se o valor em escrow é liberado ao freelancer, devolvido ao cliente ou dividido. A decisão é registrada e comunicada às partes.',
+          'Qualquer parte pode abrir uma disputa numa contratação em andamento ou entregue. A contratação fica congelada e a equipe de mediação decide, com base no histórico da sala, se o valor em escrow é liberado ao freelancer, devolvido ao cliente ou dividido. A decisão é registrada e comunicada às partes. A plataforma também abre a disputa em nome do cliente quando o prazo vence sem nenhuma entrega (seção 3).',
         ],
       },
       {

@@ -117,7 +117,7 @@ export const useProfilesMe = () =>
   useQuery({ queryKey: qk.profiles, queryFn: () => api.profilesMe() });
 
 // ---------- Mutations (invalidam o que mudou) ----------
-type ContractAction = 'accept' | 'reject' | 'approve' | 'cancel';
+type ContractAction = 'accept' | 'reject' | 'approve';
 
 export function useContractAction() {
   const qc = useQueryClient();
@@ -129,6 +129,23 @@ export function useContractAction() {
       void qc.invalidateQueries({ queryKey: qk.contract(id) });
       void qc.invalidateQueries({ queryKey: qk.wallet });
       void qc.invalidateQueries({ queryKey: qk.gamification });
+    },
+  });
+}
+
+/**
+ * Cancelar (cliente) ou desistir (freelancer) com o valor que o modal mostrou (ADR 57). Devolve
+ * o que foi liquidado, para o aviso; 409 cancel_quote_changed recarrega a contratação.
+ */
+export function useCancelContract() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, expectedRefund }: { id: number; expectedRefund?: number }) =>
+      api.cancelContract(id, expectedRefund === undefined ? {} : { expectedRefund }),
+    onSettled: (_d, _e, { id }) => {
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: qk.contract(id) });
+      void qc.invalidateQueries({ queryKey: qk.wallet });
     },
   });
 }
@@ -151,7 +168,8 @@ export function useRequestExtension() {
   return useMutation({
     mutationFn: ({ id, deadlineAt, reason }: { id: number; deadlineAt: string; reason: string }) =>
       api.requestExtension(id, { deadlineAt, reason }),
-    onSuccess: (_d, { id }) => {
+    // Também no erro (ADR 57): um 409 quer dizer que a Sala está velha e precisa recarregar.
+    onSettled: (_d, _e, { id }) => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.contract(id) });
     },
@@ -161,9 +179,17 @@ export function useRequestExtension() {
 export function useResolveExtension() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, decision }: { id: number; decision: 'accept' | 'decline' }) =>
-      api.resolveExtension(id, decision),
-    onSuccess: (_d, { id }) => {
+    mutationFn: ({
+      id,
+      decision,
+      seq,
+    }: {
+      id: number;
+      decision: 'accept' | 'decline';
+      seq?: number;
+    }) => api.resolveExtension(id, decision, seq),
+    // Também no erro: com o pedido trocado ou expirado (409), a Sala recarrega o pedido atual.
+    onSettled: (_d, _e, { id }) => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.contract(id) });
     },

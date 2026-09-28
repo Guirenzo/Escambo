@@ -1,6 +1,8 @@
 import { ulid } from 'ulid';
 import type {
   CancelResult,
+  CancelStage,
+  CancelTerms,
   Contract,
   ContractStatus,
   ContractStatusHistoryEntry,
@@ -11,7 +13,16 @@ import type {
   PaymentMode,
 } from '@escambo/types';
 import { logger } from '../../config/logger';
+import { clock } from '../../utils/clock';
 import { HttpError } from '../../utils/http-error';
+import { floorSecond, humanize, lastHumanAtOrBefore } from '../../utils/human-hours';
+import {
+  DEFAULT_TIMEZONE,
+  formatDate,
+  formatDateTime,
+  formatDue,
+  timezoneOf,
+} from '../../utils/timezone';
 import { barterService } from '../barter/barter.service';
 import { disputesRepository } from '../disputes/disputes.repository';
 import { notificationsService } from '../notifications/notifications.service';
@@ -20,11 +31,12 @@ import type { WalletEffect } from '../wallet/wallet.ledger';
 import { walletService } from '../wallet/wallet.service';
 import {
   contractsRepository,
-  DEADLINE_ACTIVE_STATUSES,
+  OVERDUE_DISPUTE_GUARD,
   type ContractRow,
 } from './contracts.repository';
 import {
   milestonesRepository,
+  type DueMilestoneRow,
   type MilestoneRow,
   type OverdueMilestoneRow,
 } from './milestones.repository';
@@ -33,33 +45,82 @@ import { toReview } from '../reviews/reviews.service';
 import { settingsService } from '../settings/settings.service';
 import { settingsRepository } from '../settings/settings.repository';
 import { userZone } from '../auth/user-zone';
-import { formatDate, formatDateTime } from '../../utils/timezone';
-import { DEFAULT_DEADLINE_GRACE_HOURS, graceState } from './deadline-grace';
+import { cancelTerms, money, type CancelInput } from './cancel-policy';
 import {
+  DEFAULT_DEADLINE_GRACE_HOURS,
+  DEFAULT_PROPOSAL_EXPIRY_HOURS,
+  DEFAULT_TACIT_APPROVAL_DAYS,
+  MAX_EXTENSION_REQUESTS,
+  deadlineView,
+  extensionRequestsLeft,
+  extensionRequestsUsed,
+  extensionRespondBy,
+  graceAfterDecision,
+  noticeGraceEnd,
+  overdueNoticeAt,
+  projectedNoticeAt,
+  owesDelivery,
+} from './deadline-grace';
+import { openDeliveredMilestone } from './deadline-sql';
+import {
+  autoDisputeDescription,
+  autoDisputeNotice,
+  cancelledNotice,
+  deliveredNotice,
+  extensionAcceptedNotice,
   extensionDeclinedNotice,
+  extensionExpiredClientNotice,
+  extensionExpiredFreelancerNotice,
+  extensionRequestedNotice,
+  milestoneDeliveredNotice,
+  milestoneOverdueNotices,
   overdueClientNotice,
   overdueFreelancerNotice,
+  proposalExpiredNotices,
+  proposalNotice,
   revisionNotice,
-  type DeadlineFacts,
+  type DecisionFacts,
+  type DeadlineNotice,
+  type OverdueFacts,
 } from './deadline-notices';
 import type {
+  CancelBody,
   CreateContractInput,
   DeliverInput,
   ExtensionInput,
   ListContractsInput,
 } from './contracts.schema';
 
+export { cashSettlement } from './cancel-policy';
+
+const H = 3_600_000;
+const DAY = 24 * H;
+/** A proposta precisa dar ao freelancer pelo menos isso para responder (ADR 57). */
+const MIN_PROPOSAL_WINDOW_MS = H;
+
 const iso = (d: Date | string | null | undefined): string | null =>
   d ? new Date(d).toISOString() : null;
+const date = (d: Date | string | null | undefined): Date | null => (d ? new Date(d) : null);
 
 /** Data curta em horário de Brasília, para notas e notificações ("15/09/2026"). */
 export const brDate = (d: Date | string): string =>
   new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
-/** Arredonda em centavos, meio centavo para cima, sem cair no 28333.4999… do ponto flutuante. */
-const money = (v: number): number => Math.sign(v) * (Math.round(Math.abs(v) * 100 + 1e-6) / 100);
+/** O que a leitura de uma contratação precisa além da linha: o instante e a carência vigente. */
+interface ViewCtx {
+  now: Date;
+  graceHours: number;
+}
 
-function toContract(row: ContractRow): Contract {
+async function viewCtx(): Promise<ViewCtx> {
+  return { now: clock.now(), graceHours: await settingsService.number('deadline_grace_hours') };
+}
+
+const freelancerZoneOf = (row: ContractRow) => timezoneOf(row.freelancer_timezone);
+const clientZoneOf = (row: ContractRow) => timezoneOf(row.client_timezone);
+
+function toContract(row: ContractRow, ctx: ViewCtx): Contract {
+  const d = deadlineView(row, { ...ctx, zone: freelancerZoneOf(row) });
   return {
     id: row.id,
     ulid: row.ulid,
@@ -87,8 +148,21 @@ function toContract(row: ContractRow): Contract {
             reason: row.extension_reason ?? '',
             requestedAt: iso(row.extension_requested_at) ?? new Date(row.created_at).toISOString(),
             resolvedAt: iso(row.extension_resolved_at),
+            respondBy: iso(row.extension_respond_by),
+            seq: Number(row.extension_requests ?? 0),
           }
         : null,
+    deadline: {
+      state: d.state,
+      noticeAt: iso(d.noticeAt),
+      mediationAt: iso(d.mediationAt),
+      extensionRequestsLeft: d.extensionRequestsLeft,
+      undeliveredMilestones: d.undeliveredMilestones,
+      totalMilestones: d.totalMilestones,
+      firstDeliveredAt: iso(d.firstDeliveredAt),
+    },
+    approvalDueAt: row.status === 'delivered' ? iso(row.approval_due_at) : null,
+    proposalExpiresAt: row.status === 'pending' ? iso(row.proposal_expires_at) : null,
   };
 }
 
@@ -106,10 +180,15 @@ function toMilestone(m: MilestoneRow): Milestone {
     deliveryNote: m.delivery_note,
     revisionNote: m.revision_note,
     releasedAt: m.released_at ? new Date(m.released_at).toISOString() : null,
+    approvalDueAt: m.status === 'delivered' ? iso(m.approval_due_at) : null,
   };
 }
 
 const hasMilestones = (row: ContractRow): boolean => Boolean(Number(row.has_milestones ?? 0));
+
+/** Por marcos, algum marco já foi entregue: nenhum texto pode dizer "sem entrega". */
+const partialDelivery = (row: ContractRow): boolean =>
+  hasMilestones(row) && Number(row.undelivered_milestones ?? 0) < Number(row.total_milestones ?? 0);
 
 /** Contrato por marcos não usa entrega/aprovação únicas: cada marco tem as suas. */
 function assertSingleDelivery(row: ContractRow): void {
@@ -134,6 +213,11 @@ async function loadOr404(id: number): Promise<ContractRow> {
   return row;
 }
 
+/** A contratação como a API devolve, relida depois de uma mudança. */
+async function load(id: number): Promise<Contract> {
+  return toContract(await loadOr404(id), await viewCtx());
+}
+
 function assertParty(row: ContractRow, uid: number): void {
   if (row.client_id !== uid && row.freelancer_id !== uid) {
     throw new HttpError(403, 'Você não participa desta contratação', 'forbidden');
@@ -152,35 +236,6 @@ function assertStatus(row: ContractRow, allowed: ContractStatus[]): void {
   }
 }
 
-/** Política de reembolso ao cancelar (RN-025). */
-function refundPercentage(row: ContractRow): number {
-  if (row.status === 'pending') return 100;
-  if (!row.deadline_at) return 50;
-  const created = new Date(row.created_at).getTime();
-  const deadline = new Date(row.deadline_at).getTime();
-  if (deadline <= created) return 0;
-  const elapsed = (Date.now() - created) / (deadline - created);
-  return elapsed < 0.5 ? 50 : 0;
-}
-
-/**
- * Liquidação do escrow em R$ quando a contratação NÃO chega ao fim combinado (cancelamento
- * após o aceite, disputa): cada parcela (preço, líquido, taxa) é dividida na mesma proporção.
- * O cliente recebe `refundPct`% do PREÇO (inclui a parte proporcional da taxa) e o freelancer
- * fica com o restante do LÍQUIDO; a plataforma retém só a parte proporcional da taxa.
- */
-export function cashSettlement(
-  price: number,
-  net: number,
-  refundPct: number,
-): { refundClient: number; releaseFreelancer: number } {
-  const pct = Math.min(100, Math.max(0, refundPct));
-  return {
-    refundClient: money((price * pct) / 100),
-    releaseFreelancer: money((net * (100 - pct)) / 100),
-  };
-}
-
 /** Efeitos em R$ da devolução ao cliente do valor RESERVADO na proposta (recusa/cancelamento em pending). */
 function releaseHoldEffects(row: ContractRow): WalletEffect[] {
   if (row.payment_mode !== 'cash') return [];
@@ -188,26 +243,24 @@ function releaseHoldEffects(row: ContractRow): WalletEffect[] {
   return [{ userId: row.client_id, pendingDelta: -price, balanceDelta: price, reason: 'refund' }];
 }
 
-async function applyTransition(params: {
-  id: number;
-  changedBy: number;
-  from: string;
-  to: string;
-  note: string | null;
-  timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at';
-  walletEffects?: WalletEffect[];
-  milestonesTo?: { from: string[]; to: string };
-  creditsEffects?: {
-    userId: number;
-    pendingDelta: number;
-    balanceDelta: number;
-    reason?: string;
-  }[];
-}): Promise<void> {
+async function applyTransition(
+  params: Parameters<typeof contractsRepository.transition>[0],
+): Promise<void> {
   const ok = await contractsRepository.transition(params);
   if (!ok) {
     throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
   }
+}
+
+/** Envia sem esperar e sem derrubar quem emitiu (a transição já foi gravada). */
+function send(userId: number, n: DeadlineNotice): void {
+  void Promise.resolve(
+    notificationsService.notify(
+      userId,
+      n.params,
+      n.passCategory ? { passCategory: n.passCategory } : {},
+    ),
+  ).catch((err: unknown) => logger.warn({ err, type: n.params.type }, 'aviso de prazo falhou'));
 }
 
 /**
@@ -218,6 +271,7 @@ async function completeDelivered(
   row: ContractRow,
   changedBy: number,
   note: string | null,
+  opts: { now: Date; guard?: { sql: string } },
 ): Promise<void> {
   const isBarter = row.payment_mode === 'barter';
   const isCredits = row.payment_mode === 'credits';
@@ -248,6 +302,8 @@ async function completeDelivered(
     to: 'completed',
     note,
     timestampColumn: 'completed_at',
+    now: opts.now,
+    guard: opts.guard,
     ...releaseEffect,
   });
   await afterCompleted(row);
@@ -269,17 +325,117 @@ async function afterCompleted(row: ContractRow): Promise<void> {
   }
 }
 
+/** O cancelamento calculado para `by` agora, com o escrow em jogo (por marcos, o que falta). */
+async function quote(
+  row: ContractRow,
+  by: 'client' | 'freelancer',
+  now: Date,
+): Promise<{ terms: CancelTerms; price: number; net: number; credits: number }> {
+  const remaining = hasMilestones(row) ? await milestonesRepository.escrowRemaining(row.id) : null;
+  const price = remaining ? remaining.price : Number(row.price);
+  const net = remaining ? remaining.net : Number(row.freelancer_net);
+  const credits = remaining ? Math.round(remaining.net) : creditsOf(row);
+  const input: CancelInput = {
+    by,
+    status: row.status,
+    paymentMode: row.payment_mode,
+    owes: owesDelivery(row),
+    deadlineAt: date(row.deadline_at),
+    acceptedAt: date(row.accepted_at),
+    createdAt: new Date(row.created_at),
+    noticeAt: projectedNoticeAt(row, freelancerZoneOf(row)),
+    extensionPending: row.extension_status === 'pending',
+    deliveredAwaiting: Number(row.delivered_awaiting ?? 0),
+    inRevision: Number(row.in_revision ?? 0),
+    freelancerZone: freelancerZoneOf(row),
+    viewerZone: by === 'client' ? clientZoneOf(row) : freelancerZoneOf(row),
+    now,
+    price,
+    net,
+    credits,
+  };
+  return { terms: cancelTerms(input), price, net, credits };
+}
+
+const CANCEL_NOTE: Record<CancelStage, string> = {
+  proposal: 'proposta cancelada antes do aceite',
+  withdrawal: 'o freelancer desistiu',
+  overdue: 'prazo vencido sem entrega',
+  early: 'menos da metade do tempo até o prazo',
+  late: 'mais da metade do tempo até o prazo',
+  no_deadline: 'contratação sem prazo',
+  credits: 'créditos em garantia',
+  barter: 'contratação de troca',
+};
+
+/** O que falta a quem entrega, para os textos (títulos dos marcos nunca entregues). */
+async function workOf(row: ContractRow): Promise<{
+  byMilestones: boolean;
+  delivered: string[];
+  missing: string[];
+}> {
+  if (!hasMilestones(row)) return { byMilestones: false, delivered: [], missing: [] };
+  return { byMilestones: true, ...(await milestonesRepository.titlesByDelivery(row.id)) };
+}
+
+/** Onde o prazo está depois de decidido um pedido, no fuso de quem entrega, para o aviso. */
+async function decisionFacts(row: ContractRow, now: Date): Promise<DecisionFacts> {
+  const fz = freelancerZoneOf(row);
+  const graceHours = await settingsRepository.getNumber(
+    'deadline_grace_hours',
+    DEFAULT_DEADLINE_GRACE_HOURS,
+  );
+  const v = deadlineView(row, { now, graceHours, zone: fz });
+  const work = await workOf(row);
+  const phase = v.state === 'grace' ? 'grace' : v.state === 'due' ? 'due' : 'future';
+  return {
+    contractId: row.id,
+    title: row.title,
+    deadline: row.deadline_at ? formatDate(new Date(row.deadline_at), fz) : '',
+    byMilestones: work.byMilestones,
+    missing: work.missing,
+    requestsLeft: extensionRequestsLeft(row),
+    phase,
+    limit: phase === 'grace' && v.mediationAt ? formatDue(v.mediationAt, fz) : null,
+    noticeAt: phase === 'due' && v.noticeAt ? formatDue(v.noticeAt, fz) : null,
+    mediationAt: phase === 'due' && v.mediationAt ? formatDue(v.mediationAt, fz) : null,
+  };
+}
+
 export const contractsService = {
   async create(clientId: number, input: CreateContractInput): Promise<Contract> {
     if (input.freelancerId === clientId) {
       throw new HttpError(400, 'Você não pode contratar a si mesmo', 'self_contract');
     }
+    const now = clock.now();
     // Contratos em créditos (time-bank) são P2P e não cobram taxa da plataforma.
     const isCredits = input.paymentMode === 'credits';
     // RN-031: comissão vigente (platform_settings), gravada no contrato — mudar depois não altera.
     const feeRate = await settingsService.feeRate();
     const platformFee = isCredits ? 0 : money(input.price * feeRate);
     const freelancerNet = money(input.price - platformFee);
+
+    // RN-021 (ADR 57): a validade é gravada agora, no fuso de quem responde: as horas do painel,
+    // nunca depois do último instante de dia antes do prazo de entrega.
+    const fz = await userZone(input.freelancerId);
+    const expiryHours = await settingsRepository.getNumber(
+      'proposal_expiry_hours',
+      DEFAULT_PROPOSAL_EXPIRY_HOURS,
+    );
+    const deadline = input.deadlineAt ? floorSecond(new Date(input.deadlineAt)) : null;
+    let expiresAt = humanize(new Date(now.getTime() + expiryHours * H), fz);
+    if (deadline) {
+      const lastBefore = lastHumanAtOrBefore(deadline, fz);
+      if (lastBefore.getTime() < expiresAt.getTime()) expiresAt = lastBefore;
+    }
+    expiresAt = floorSecond(expiresAt);
+    if (deadline && expiresAt.getTime() - now.getTime() < MIN_PROPOSAL_WINDOW_MS) {
+      throw new HttpError(
+        400,
+        'O prazo de entrega está perto demais para o freelancer responder: escolha uma data a partir de amanhã.',
+        'deadline_too_soon',
+      );
+    }
 
     // Cash (carteira pré-paga, como no iFood): o valor sai do saldo do cliente e fica reservado
     // já na proposta; volta integralmente se o freelancer recusar ou o cliente cancelar antes do
@@ -316,7 +472,8 @@ export const contractsService = {
       platformFee,
       freelancerNet,
       paymentMode: isCredits ? 'credits' : 'cash',
-      deadlineAt: input.deadlineAt ?? null,
+      deadlineAt: deadline ? deadline.toISOString() : null,
+      proposalExpiresAt: expiresAt,
       hold: isCredits ? null : { userId: clientId, amount: input.price },
       milestones,
     });
@@ -328,7 +485,17 @@ export const contractsService = {
       );
     }
 
-    return toContract(await loadOr404(id));
+    const contract = await load(id);
+    send(
+      input.freelancerId,
+      proposalNotice({
+        contractId: id,
+        title: contract.title,
+        deadline: deadline ? formatDate(deadline, fz) : null,
+        respondBy: formatDue(expiresAt, fz),
+      }),
+    );
+    return contract;
   },
 
   async listMine(uid: number, input: ListContractsInput): Promise<Paginated<Contract>> {
@@ -337,12 +504,14 @@ export const contractsService = {
       input.limit,
       (input.page - 1) * input.limit,
     );
-    return { items: rows.map(toContract), page: input.page, limit: input.limit };
+    const ctx = await viewCtx();
+    return { items: rows.map((r) => toContract(r, ctx)), page: input.page, limit: input.limit };
   },
 
   async getById(id: number, uid: number): Promise<ContractWithHistory> {
     const row = await loadOr404(id);
     assertParty(row, uid);
+    const ctx = await viewCtx();
     const history = await contractsRepository.listHistory(id);
     const entries: ContractStatusHistoryEntry[] = history.map((h) => ({
       previousStatus: h.old_status as ContractStatus | null,
@@ -355,13 +524,37 @@ export const contractsService = {
     const milestones = hasMilestones(row)
       ? (await milestonesRepository.listForContract(id)).map(toMilestone)
       : [];
-    return { ...toContract(row), history: entries, review, milestones };
+    const cancellable = ['pending', 'accepted', 'in_progress'].includes(row.status);
+    const cancellation = cancellable
+      ? (await quote(row, row.client_id === uid ? 'client' : 'freelancer', ctx.now)).terms
+      : null;
+    return { ...toContract(row, ctx), history: entries, review, milestones, cancellation };
   },
 
   async accept(id: number, uid: number): Promise<Contract> {
     const row = await loadOr404(id);
     assertFreelancer(row, uid); // RF-032
     assertStatus(row, ['pending']);
+    const now = clock.now();
+    if (row.deadline_at && new Date(row.deadline_at).getTime() <= now.getTime()) {
+      throw new HttpError(
+        409,
+        'O prazo desta proposta já passou: recuse, e o cliente pode enviar outra com nova data.',
+        'deadline_passed',
+      );
+    }
+    if (row.proposal_expires_at && new Date(row.proposal_expires_at).getTime() <= now.getTime()) {
+      throw new HttpError(
+        409,
+        'Esta proposta expirou: o prazo para responder acabou. O cliente pode enviar outra.',
+        'proposal_expired',
+      );
+    }
+    // A hora avisada é a cumprida: o aceite não passa depois da validade nem do prazo.
+    const guard = {
+      sql: `AND (c.proposal_expires_at IS NULL OR c.proposal_expires_at > :now)
+            AND (c.deadline_at IS NULL OR c.deadline_at > :now)`,
+    };
 
     // Time-bank: os créditos saem do cliente e ficam pendentes para o freelancer.
     if (row.payment_mode === 'credits') {
@@ -375,6 +568,8 @@ export const contractsService = {
         to: 'accepted',
         note: null,
         timestampColumn: 'accepted_at',
+        now,
+        guard,
         milestonesTo: { from: ['pending'], to: 'funded' }, // marcos financiados no aceite
         creditsEffects: [
           { userId: row.client_id, pendingDelta: 0, balanceDelta: -credits, reason: 'escrow_hold' },
@@ -393,7 +588,7 @@ export const contractsService = {
           'insufficient_credits',
         );
       }
-      return toContract(await loadOr404(id));
+      return load(id);
     }
 
     // Cash: o valor reservado do cliente paga a contratação; o líquido entra em escrow
@@ -406,6 +601,8 @@ export const contractsService = {
       to: 'accepted',
       note: null,
       timestampColumn: 'accepted_at',
+      now,
+      guard,
       milestonesTo: { from: ['pending'], to: 'funded' }, // marcos financiados no aceite
       walletEffects: [
         {
@@ -422,7 +619,7 @@ export const contractsService = {
         },
       ],
     });
-    return toContract(await loadOr404(id));
+    return load(id);
   },
 
   async reject(id: number, uid: number): Promise<Contract> {
@@ -438,23 +635,44 @@ export const contractsService = {
       walletEffects: releaseHoldEffects(row), // o valor reservado volta ao cliente
       milestonesTo: MILESTONES_CANCEL,
     });
-    return toContract(await loadOr404(id));
+    return load(id);
   },
 
+  /**
+   * Entrega única: grava a hora da aprovação tácita (RN-024) no fuso do cliente, levada para as
+   * 9h se cairia de noite, e o aviso ao cliente já diz até quando ele responde.
+   */
   async deliver(id: number, uid: number, input: DeliverInput): Promise<Contract> {
     const row = await loadOr404(id);
     assertFreelancer(row, uid); // RF-035
     assertSingleDelivery(row);
     assertStatus(row, ['accepted', 'in_progress', 'revision_requested']);
+    const now = clock.now();
+    const cz = clientZoneOf(row);
+    const days = await settingsRepository.getNumber(
+      'tacit_approval_days',
+      DEFAULT_TACIT_APPROVAL_DAYS,
+    );
+    const approvalDueAt = floorSecond(humanize(new Date(now.getTime() + days * DAY), cz));
     const ok = await contractsRepository.deliver({
       id,
       changedBy: uid,
       from: row.status,
       message: input.message,
       files: input.files ?? null,
+      now,
+      approvalDueAt,
     });
     if (!ok) throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
-    return toContract(await loadOr404(id));
+    send(
+      row.client_id,
+      deliveredNotice({
+        contractId: id,
+        title: row.title,
+        approvalDue: formatDue(approvalDueAt, cz),
+      }),
+    );
+    return load(id);
   },
 
   async approve(id: number, uid: number): Promise<Contract> {
@@ -462,23 +680,29 @@ export const contractsService = {
     assertClient(row, uid); // RF-036/037: só o cliente aprova
     assertSingleDelivery(row);
     assertStatus(row, ['delivered']);
-    await completeDelivered(row, uid, null);
-    return toContract(await loadOr404(id));
+    await completeDelivered(row, uid, null, { now: clock.now() });
+    return load(id);
   },
 
   /**
-   * Aprovação tácita: entrega sem resposta do cliente por `days` dias é aprovada em nome dele
-   * (job em background). Libera o escrow com a MESMA transação da aprovação manual.
+   * Aprovação tácita (job): entrega sem resposta do cliente até a hora gravada na entrega é
+   * aprovada em nome dele. Libera o escrow com a MESMA transação da aprovação manual, e a guarda
+   * repete a hora: uma revisão seguida de nova entrega no meio grava outra.
    */
-  async approveTacitly(id: number, days: number): Promise<Contract> {
+  async approveTacitly(id: number, now: Date = clock.now()): Promise<Contract> {
     const row = await loadOr404(id);
     assertStatus(row, ['delivered']);
+    const due = row.approval_due_at ? new Date(row.approval_due_at) : now;
     await completeDelivered(
       row,
       row.client_id,
-      `Aprovação tácita: sem resposta do cliente em ${days} dias`,
+      `Aprovação tácita: sem resposta do cliente até ${formatDateTime(due, DEFAULT_TIMEZONE)} (horário de Brasília, RN-024)`,
+      {
+        now,
+        guard: { sql: 'AND c.approval_due_at IS NOT NULL AND c.approval_due_at <= :now' },
+      },
     );
-    return toContract(await loadOr404(id));
+    return load(id);
   },
 
   async requestRevision(id: number, uid: number, note: string | null): Promise<Contract> {
@@ -487,29 +711,49 @@ export const contractsService = {
     assertSingleDelivery(row);
     assertStatus(row, ['delivered']);
     await applyTransition({ id, changedBy: uid, from: row.status, to: 'revision_requested', note });
-    return toContract(await loadOr404(id));
+    // Depois da entrega o prazo não cobra mais (R-VEZ): o aviso é simples, sem hora-limite.
+    send(row.freelancer_id, revisionNotice({ contractId: id, title: row.title, note }));
+    return load(id);
   },
 
-  async cancel(id: number, uid: number): Promise<CancelResult> {
+  /**
+   * Cancelar (cliente) ou desistir (freelancer), RN-025 e RN-026 (ADR 57). O valor sai de
+   * `cancelTerms`, a mesma conta que a Sala mostra; `expectedRefund` é o que a pessoa viu, e a
+   * gravação repete o que a leitura viu (prazo, aviso, pedido de extensão e, por marcos, o escrow
+   * e nenhum marco entregue em aberto): se algo mudou no meio, 409 e nada se move.
+   */
+  async cancel(id: number, uid: number, body: CancelBody = {}): Promise<CancelResult> {
     const row = await loadOr404(id);
     assertParty(row, uid);
-    assertStatus(row, ['pending', 'accepted', 'in_progress']); // RN-025; após entrega vira disputa
-    const refund = refundPercentage(row);
-    // Troca não tem escrow por-contrato; o estorno da torna é tratado no nível da troca.
-    const isBarter = row.payment_mode === 'barter';
-    const isCredits = row.payment_mode === 'credits';
-    const escrowFunded = !isBarter && (row.status === 'accepted' || row.status === 'in_progress');
-    // Por marcos, só o que ainda não foi liberado está em jogo.
-    const remaining = hasMilestones(row) ? await milestonesRepository.escrowRemaining(id) : null;
-    const price = remaining ? remaining.price : Number(row.price);
-    const net = remaining ? remaining.net : Number(row.freelancer_net);
-    // Créditos por marcos: só o que ainda não foi liberado volta ao cliente.
-    const credits = remaining ? Math.round(remaining.net) : creditsOf(row);
-    let refundEffect = {};
-    if (row.status === 'pending') {
+    const by = row.client_id === uid ? 'client' : 'freelancer';
+    const now = clock.now();
+    const { terms, price, net, credits } = await quote(row, by, now);
+    if (!terms.allowed || !terms.stage) {
+      throw new HttpError(
+        409,
+        terms.message ?? 'Não é possível cancelar agora',
+        terms.code ?? 'invalid_transition',
+      );
+    }
+    if (
+      body.expectedRefund !== undefined &&
+      Math.abs(body.expectedRefund - terms.refundClient) > 0.005
+    ) {
+      throw new HttpError(
+        409,
+        'O valor do cancelamento mudou desde que você abriu: confira de novo.',
+        'cancel_quote_changed',
+      );
+    }
+    const stage = terms.stage;
+    let refundEffect: Pick<
+      Parameters<typeof contractsRepository.transition>[0],
+      'walletEffects' | 'creditsEffects'
+    > = {};
+    if (stage === 'proposal') {
       // Antes do aceite só existe a reserva do cliente (cash): volta integralmente.
       refundEffect = { walletEffects: releaseHoldEffects(row) };
-    } else if (escrowFunded && isCredits) {
+    } else if (terms.unit === 'credits') {
       refundEffect = {
         creditsEffects: [
           {
@@ -521,34 +765,59 @@ export const contractsService = {
           { userId: row.client_id, pendingDelta: 0, balanceDelta: credits, reason: 'refund' },
         ],
       };
-    } else if (escrowFunded) {
-      // Cash após o aceite: o escrow é liquidado na proporção da política (RN-025).
-      const { refundClient, releaseFreelancer } = cashSettlement(price, net, refund);
+    } else if (terms.unit === 'BRL') {
+      // Cash após o aceite: o escrow é liquidado na proporção da etapa (RN-025).
       const walletEffects: WalletEffect[] = [
         {
           userId: row.freelancer_id,
           pendingDelta: -net,
-          balanceDelta: releaseFreelancer,
-          reason: releaseFreelancer > 0 ? 'escrow_release' : 'escrow_refund',
+          balanceDelta: terms.releaseFreelancer,
+          reason: terms.releaseFreelancer > 0 ? 'escrow_release' : 'escrow_refund',
         },
       ];
-      if (refundClient > 0) {
+      if (terms.refundClient > 0) {
         walletEffects.push({
           userId: row.client_id,
           pendingDelta: 0,
-          balanceDelta: refundClient,
+          balanceDelta: terms.refundClient,
           reason: 'refund',
         });
       }
       refundEffect = { walletEffects };
+    }
+    const guard: string[] = [
+      'AND c.deadline_at <=> :gDeadline',
+      'AND c.overdue_notified_at <=> :gNotice',
+      'AND c.extension_status = :gExtStatus',
+      'AND c.extension_requests = :gExtRequests',
+    ];
+    if (hasMilestones(row)) {
+      guard.push(
+        `AND NOT ${openDeliveredMilestone('c')}`,
+        `AND ROUND(COALESCE((SELECT SUM(mg.amount) FROM contract_milestones mg
+             WHERE mg.contract_id = c.id AND mg.status IN ('pending', 'funded', 'delivered')), 0) * 100)
+             = :gEscrowCents`,
+      );
     }
     await applyTransition({
       id,
       changedBy: uid,
       from: row.status,
       to: 'cancelled',
-      note: `Reembolso: ${refund}%`,
+      note: `Reembolso: ${terms.refundPercentage}% (${CANCEL_NOTE[stage]})`,
       timestampColumn: 'cancelled_at',
+      now,
+      closePendingExtension: true,
+      guard: {
+        sql: guard.join('\n'),
+        params: {
+          gDeadline: date(row.deadline_at),
+          gNotice: date(row.overdue_notified_at),
+          gExtStatus: row.extension_status,
+          gExtRequests: Number(row.extension_requests ?? 0),
+          gEscrowCents: Math.round(price * 100),
+        },
+      },
       milestonesTo: MILESTONES_CANCEL,
       ...refundEffect,
     });
@@ -559,18 +828,58 @@ export const contractsService = {
         logger.warn({ err }, 'troca (onLinkedContractCancelled) falhou');
       }
     }
-    return { status: 'cancelled', refundPercentage: refund };
+    // A outra parte fica sabendo (RF-039), com o que aconteceu com o dinheiro dela.
+    send(
+      by === 'client' ? row.freelancer_id : row.client_id,
+      cancelledNotice({
+        contractId: id,
+        title: row.title,
+        by,
+        stage,
+        partial: partialDelivery(row),
+        unit: terms.unit,
+        refundClient: terms.refundClient,
+        releaseFreelancer: terms.releaseFreelancer,
+      }),
+    );
+    return {
+      status: 'cancelled',
+      refundPercentage: terms.refundPercentage,
+      stage,
+      by,
+      refundClient: terms.refundClient,
+      releaseFreelancer: terms.releaseFreelancer,
+      unit: terms.unit,
+    };
   },
 
-  // ---------- Prazos (RN-021, RN-028, RN-029) ----------
+  // ---------- Prazos (RN-021, RN-028, RN-029; ADR 57) ----------
 
-  /** Freelancer pede a única extensão de prazo da contratação (RN-028); o cliente decide. */
+  /**
+   * Freelancer pede extensão de prazo (RN-028): até 2 pedidos, só um aceito, e só enquanto há
+   * trabalho nunca entregue. O cliente tem até `respond_by` para responder; sem resposta, expira.
+   */
   async requestExtension(id: number, uid: number, input: ExtensionInput): Promise<Contract> {
     const row = await loadOr404(id);
     assertFreelancer(row, uid);
-    assertStatus(row, [...DEADLINE_ACTIVE_STATUSES]);
+    const now = clock.now();
+    if (row.status === 'delivered' || row.status === 'revision_requested') {
+      throw new HttpError(
+        409,
+        'Com o trabalho já entregue, o prazo não abre mais disputa sozinho: combine a nova data pelo chat.',
+        'extension_after_delivery',
+      );
+    }
+    assertStatus(row, ['accepted', 'in_progress']);
     if (!row.deadline_at) {
       throw new HttpError(409, 'Esta contratação não tem prazo de entrega definido', 'no_deadline');
+    }
+    if (!owesDelivery(row)) {
+      throw new HttpError(
+        409,
+        'Com o trabalho já entregue, o prazo não abre mais disputa sozinho: combine a nova data pelo chat.',
+        'extension_after_delivery',
+      );
     }
     if (row.deadline_extended_at) {
       throw new HttpError(
@@ -586,23 +895,82 @@ export const contractsService = {
         'extension_pending',
       );
     }
-    const proposed = new Date(input.deadlineAt).getTime();
-    if (proposed <= new Date(row.deadline_at).getTime() || proposed <= Date.now()) {
+    if (extensionRequestsUsed(row) >= MAX_EXTENSION_REQUESTS) {
+      throw new HttpError(
+        409,
+        `Os ${MAX_EXTENSION_REQUESTS} pedidos de extensão desta contratação já foram feitos.`,
+        'extension_limit',
+      );
+    }
+    if (row.grace_ends_at && new Date(row.grace_ends_at).getTime() <= now.getTime()) {
+      throw new HttpError(
+        409,
+        'O tempo para entregar ou pedir extensão acabou: a disputa abre na próxima rodada. Fale com o cliente pelo chat.',
+        'grace_over',
+      );
+    }
+    const proposed = floorSecond(new Date(input.deadlineAt));
+    if (
+      proposed.getTime() <= new Date(row.deadline_at).getTime() ||
+      proposed.getTime() <= now.getTime()
+    ) {
       throw new HttpError(
         400,
         'O novo prazo precisa ser depois do prazo atual e no futuro',
         'invalid_deadline',
       );
     }
-    const ok = await contractsRepository.requestExtension({ id, ...input });
+    const cz = clientZoneOf(row);
+    const respondBy = extensionRespondBy({ requestedAt: now, proposed, zone: cz });
+    if (!respondBy) {
+      throw new HttpError(
+        400,
+        `O novo prazo está perto demais para o cliente decidir a tempo: escolha uma data a partir de ${formatDate(new Date(now.getTime() + 2 * DAY), freelancerZoneOf(row))}.`,
+        'extension_too_close',
+      );
+    }
+    const ok = await contractsRepository.requestExtension({
+      id,
+      deadlineAt: proposed,
+      reason: input.reason,
+      now,
+      respondBy,
+    });
     if (!ok) throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
-    return toContract(await loadOr404(id));
+    send(
+      row.client_id,
+      extensionRequestedNotice({
+        contractId: id,
+        title: row.title,
+        respondBy: formatDue(respondBy, cz),
+        proposed: formatDate(proposed, cz),
+        reason: input.reason,
+      }),
+    );
+    return load(id);
   },
 
-  /** Cliente aceita (o prazo muda, de uma vez só) ou recusa o pedido pendente. */
-  async resolveExtension(id: number, uid: number, accept: boolean): Promise<Contract> {
+  /**
+   * Cliente aceita (o prazo muda, de uma vez só) ou recusa o pedido que viu (`seq`). Recusar
+   * com o aviso de atraso dado devolve a carência de onde parou, com piso de 12 h e 6 h de dia.
+   */
+  async resolveExtension(
+    id: number,
+    uid: number,
+    accept: boolean,
+    seq: number | null = null,
+  ): Promise<Contract> {
     const row = await loadOr404(id);
     assertClient(row, uid);
+    const now = clock.now();
+    const cz = clientZoneOf(row);
+    if (row.extension_status === 'expired' && row.extension_respond_by) {
+      throw new HttpError(
+        409,
+        `O prazo para responder a este pedido acabou ${formatDue(new Date(row.extension_respond_by), cz)}; ele expirou.`,
+        'extension_expired',
+      );
+    }
     if (row.extension_status !== 'pending' || !row.extension_deadline_at) {
       throw new HttpError(
         409,
@@ -610,175 +978,258 @@ export const contractsService = {
         'no_pending_extension',
       );
     }
-    const note = accept
-      ? `Prazo estendido de ${brDate(row.deadline_at!)} para ${brDate(row.extension_deadline_at)} (RN-028): ${row.extension_reason ?? ''}`
-      : null;
-    const ok = await contractsRepository.resolveExtension({
+    if (seq !== null && seq !== Number(row.extension_requests ?? 0)) {
+      throw new HttpError(
+        409,
+        'O pedido de extensão mudou desde que você abriu: confira de novo.',
+        'extension_changed',
+      );
+    }
+    if (row.extension_respond_by && new Date(row.extension_respond_by).getTime() <= now.getTime()) {
+      throw new HttpError(
+        409,
+        `O prazo para responder a este pedido acabou ${formatDue(new Date(row.extension_respond_by), cz)}; ele expirou.`,
+        'extension_expired',
+      );
+    }
+    const fz = freelancerZoneOf(row);
+    if (accept) {
+      if (new Date(row.extension_deadline_at).getTime() <= now.getTime()) {
+        throw new HttpError(
+          409,
+          'A data pedida já passou. Recuse o pedido e combine uma nova data pelo chat.',
+          'extension_stale',
+        );
+      }
+      const ok = await contractsRepository.acceptExtension({
+        id,
+        seq,
+        now,
+        changedBy: uid,
+        status: row.status,
+        note: `Prazo estendido de ${brDate(row.deadline_at!)} para ${brDate(row.extension_deadline_at)} (RN-028): ${row.extension_reason ?? ''}`,
+      });
+      if (!ok) throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
+      send(
+        row.freelancer_id,
+        extensionAcceptedNotice({
+          contractId: id,
+          title: row.title,
+          deadline: formatDate(new Date(row.extension_deadline_at), fz),
+        }),
+      );
+      return load(id);
+    }
+    const graceHours = await settingsRepository.getNumber(
+      'deadline_grace_hours',
+      DEFAULT_DEADLINE_GRACE_HOURS,
+    );
+    const ok = await contractsRepository.settleExtension({
       id,
-      accept,
-      changedBy: uid,
-      status: row.status,
-      note,
+      seq,
+      outcome: 'declined',
+      now,
+      graceEndsAt: graceAfterDecision({
+        noticeAt: date(row.overdue_notified_at),
+        graceEndsAt: date(row.grace_ends_at),
+        requestedAt: date(row.extension_requested_at),
+        decidedAt: now,
+        graceHours,
+        zone: fz,
+      }),
     });
     if (!ok) throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
-    return toContract(await loadOr404(id));
+    const fresh = await loadOr404(id);
+    send(row.freelancer_id, extensionDeclinedNotice(await decisionFacts(fresh, now)));
+    return toContract(fresh, await viewCtx());
   },
 
   /**
-   * Job RN-021: proposta sem resposta do freelancer expira. Mesmo caminho do cancelamento antes
-   * do aceite — a reserva da carteira volta inteira ao cliente — registrado em nome do cliente.
+   * Job RN-028 (ADR 57): o cliente não respondeu até a hora dita, e o pedido expira como recusa.
+   * A carência (se o aviso já saiu) volta de onde parou, com o mesmo piso da recusa. Disputa a
+   * linha com a recusa: exatamente uma passa.
    */
-  async expireProposal(id: number, hours: number): Promise<Contract> {
+  async expireExtension(row: ContractRow, graceHours: number, now: Date): Promise<boolean> {
+    const fz = freelancerZoneOf(row);
+    const ok = await contractsRepository.settleExtension({
+      id: row.id,
+      seq: Number(row.extension_requests ?? 0),
+      outcome: 'expired',
+      now,
+      graceEndsAt: graceAfterDecision({
+        noticeAt: date(row.overdue_notified_at),
+        graceEndsAt: date(row.grace_ends_at),
+        requestedAt: date(row.extension_requested_at),
+        decidedAt: now,
+        graceHours,
+        zone: fz,
+      }),
+    });
+    if (!ok) return false;
+    const fresh = await loadOr404(row.id);
+    const respondBy = new Date(row.extension_respond_by!);
+    send(
+      row.freelancer_id,
+      extensionExpiredFreelancerNotice({
+        ...(await decisionFacts(fresh, now)),
+        respondBy: formatDue(respondBy, fz),
+      }),
+    );
+    const cz = clientZoneOf(row);
+    send(
+      row.client_id,
+      extensionExpiredClientNotice({
+        contractId: row.id,
+        title: row.title,
+        respondBy: formatDue(respondBy, cz),
+        proposed: formatDate(new Date(row.extension_deadline_at!), cz),
+        deadline: formatDate(new Date(row.deadline_at!), cz),
+      }),
+    );
+    return true;
+  },
+
+  /**
+   * Job RN-021: proposta sem resposta até a hora gravada expira. Mesmo caminho do cancelamento
+   * antes do aceite — a reserva da carteira volta inteira ao cliente — em nome do cliente.
+   */
+  async expireProposal(id: number, now: Date = clock.now()): Promise<Contract> {
     const row = await loadOr404(id);
     assertStatus(row, ['pending']);
+    const expiresAt = row.proposal_expires_at ? new Date(row.proposal_expires_at) : now;
     await applyTransition({
       id,
       changedBy: row.client_id,
       from: 'pending',
       to: 'cancelled',
-      note: `Proposta expirada: sem resposta do freelancer em ${hours}h (RN-021)`,
+      note: `Proposta expirada: sem resposta do freelancer até ${formatDateTime(expiresAt, DEFAULT_TIMEZONE)} (horário de Brasília, RN-021)`,
       timestampColumn: 'cancelled_at',
+      now,
+      guard: { sql: 'AND c.proposal_expires_at IS NOT NULL AND c.proposal_expires_at <= :now' },
       walletEffects: releaseHoldEffects(row),
       milestonesTo: MILESTONES_CANCEL,
     });
-    void notificationsService.notify(row.client_id, {
-      type: 'contract_expired',
-      title: 'Sua proposta expirou sem resposta',
-      body: `${row.title}: o freelancer não respondeu em ${hours}h. O valor reservado voltou para a sua carteira.`,
-      data: { contractId: id },
+    const n = proposalExpiredNotices({
+      contractId: id,
+      title: row.title,
+      cash: row.payment_mode === 'cash',
+      untilClient: formatDue(expiresAt, clientZoneOf(row)),
+      untilFreelancer: formatDue(expiresAt, freelancerZoneOf(row)),
     });
-    void notificationsService.notify(row.freelancer_id, {
-      type: 'contract_expired',
-      title: 'Uma proposta expirou',
-      body: `${row.title}: sem resposta em ${hours}h, a proposta foi encerrada (RN-021).`,
-      data: { contractId: id },
-    });
-    return toContract(await loadOr404(id));
+    send(row.client_id, n.client);
+    send(row.freelancer_id, n.freelancer);
+    return load(id);
   },
 
   /**
-   * Job RN-029, fase 1: avisa as duas partes uma única vez que o prazo estourou. A carência
-   * começa agora; cada aviso diz até quando, no fuso de quem lê. O de quem entrega pode sair
-   * durante o "não perturbe" de quem marcou (ADR 56); o do cliente espera.
+   * Job RN-029, fase 1: avisa as duas partes, uma única vez, que o prazo venceu sem nenhuma
+   * entrega. Só a partir das 9h (no fuso atual de quem entrega) depois do prazo, a mesma hora que
+   * a Sala previa; o fim da carência é gravado agora e dito nos dois avisos, cada um no seu fuso.
+   * O de quem entrega pode sair durante o "não perturbe" de quem marcou (ADR 56); o do cliente
+   * espera.
    */
   async notifyOverdue(
     row: ContractRow,
     graceHours: number,
-    now: Date = new Date(),
+    now: Date = clock.now(),
   ): Promise<boolean> {
-    const ok = await contractsRepository.markOverdueNotified(row.id);
+    if (!row.deadline_at) return false;
+    const fz = freelancerZoneOf(row);
+    const deadlineAt = new Date(row.deadline_at);
+    if (projectedNoticeAt(row, fz)!.getTime() > now.getTime()) return false;
+    const noticeAt = floorSecond(now);
+    const graceEndsAt = noticeGraceEnd(row, noticeAt, graceHours, fz);
+    const ok = await contractsRepository.markOverdueNotified({
+      id: row.id,
+      deadlineAt,
+      now: noticeAt,
+      graceEndsAt,
+    });
     if (!ok) return false;
-    const endsAt = new Date(now.getTime() + graceHours * 3_600_000);
-    const deadlineAt = new Date(row.deadline_at!);
-    const [freelancerZone, clientZone] = await Promise.all([
-      userZone(row.freelancer_id),
-      userZone(row.client_id),
-    ]);
-    const facts = (zone: typeof freelancerZone): DeadlineFacts & { limit: string } => ({
+    const work = await workOf(row);
+    const cz = clientZoneOf(row);
+    const facts = (zone: typeof fz): OverdueFacts => ({
       contractId: row.id,
       title: row.title,
       deadline: formatDate(deadlineAt, zone),
-      extensionFree: row.deadline_extended_at === null,
-      byMilestones: hasMilestones(row),
-      limit: formatDateTime(endsAt, zone),
+      limit: formatDue(graceEndsAt, zone),
+      byMilestones: work.byMilestones,
+      missing: work.missing,
+      requestsLeft: extensionRequestsLeft(row),
+      extensionAccepted: row.deadline_extended_at !== null,
+      cancelOpen: Number(row.delivered_awaiting ?? 0) + Number(row.in_revision ?? 0) === 0,
+      delivered: work.delivered.length,
+      total: work.delivered.length + work.missing.length,
     });
-    const mine = overdueFreelancerNotice(facts(freelancerZone));
-    void notificationsService.notify(
-      row.freelancer_id,
-      mine.params,
-      mine.passCategory ? { passCategory: mine.passCategory } : {},
-    );
-    void notificationsService.notify(row.client_id, overdueClientNotice(facts(clientZone)).params);
+    send(row.freelancer_id, overdueFreelancerNotice(facts(fz)));
+    send(row.client_id, overdueClientNotice(facts(cz)));
     return true;
   },
 
   /**
-   * Revisão pedida ou extensão recusada (ADR 56): com a carência da RN-029 correndo, o aviso diz
-   * até quando dá para agir, no fuso de quem entrega, e pode sair no silêncio se ele deixou. Mesma
-   * leitura da carência que o job (settingsRepository, sem cache). Nunca lança: sem a carência, vai
-   * o aviso de sempre, que espera o silêncio.
+   * Job RN-029, fase 2: na hora gravada no aviso, ainda sem entrega nem extensão aceita, a
+   * plataforma abre a disputa (congela o escrow). A gravação repete a leitura: uma entrega, um
+   * pedido ou uma extensão aceita no meio impedem a disputa.
    */
-  async notifyFreelancerDeadline(
-    kind: 'revision' | 'extension_declined',
-    contract: Contract,
-    now: Date = new Date(),
-  ): Promise<void> {
-    const build = kind === 'revision' ? revisionNotice : extensionDeclinedNotice;
-    const facts = (zone: Parameters<typeof formatDate>[1]): DeadlineFacts => ({
-      contractId: contract.id,
-      title: contract.title,
-      deadline: contract.deadlineAt ? formatDate(new Date(contract.deadlineAt), zone) : '',
-      extensionFree: contract.deadlineExtendedAt === null,
-      byMilestones: contract.hasMilestones,
-    });
-    try {
-      const [graceHours, zone] = await Promise.all([
-        settingsRepository.getNumber('deadline_grace_hours', DEFAULT_DEADLINE_GRACE_HOURS),
-        userZone(contract.freelancerId),
-      ]);
-      const grace = graceState(contract, graceHours, now);
-      const limit = grace.phase === 'running' ? formatDateTime(grace.endsAt, zone) : null;
-      const n = build({ ...facts(zone), grace, limit });
-      await notificationsService.notify(
-        contract.freelancerId,
-        n.params,
-        n.passCategory ? { passCategory: n.passCategory } : {},
-      );
-    } catch (err) {
-      logger.warn(
-        { err, contractId: contract.id, kind },
-        'aviso de prazo sem a carência: vai no texto de sempre e espera o silêncio',
-      );
-      await notificationsService.notify(
-        contract.freelancerId,
-        build({ ...facts('America/Sao_Paulo'), grace: { phase: 'idle' }, limit: null }).params,
-      );
-    }
-  },
-
-  /** Job RN-029, fase 2: passada a carência, a plataforma abre a disputa (congela o escrow). */
-  async openOverdueDispute(row: ContractRow, graceHours: number): Promise<number | null> {
-    const disputeId = await disputesRepository.create({
-      ulid: ulid(),
-      contractId: row.id,
-      openedBy: row.client_id,
-      reason: 'deadline',
-      description: `Aberta automaticamente pela plataforma: o prazo de entrega (${brDate(row.deadline_at!)}) estourou há mais de ${graceHours}h sem entrega nem extensão aprovada (RN-029). A mediação decide sobre o valor em escrow.`,
-    });
+  async openOverdueDispute(row: ContractRow, now: Date = clock.now()): Promise<number | null> {
+    const work = await workOf(row);
+    const graceEndsAt = new Date(row.grace_ends_at!);
+    const disputeId = await disputesRepository.create(
+      {
+        ulid: ulid(),
+        contractId: row.id,
+        openedBy: row.client_id,
+        reason: 'deadline',
+        description: autoDisputeDescription({
+          deadline: formatDate(new Date(row.deadline_at!), DEFAULT_TIMEZONE),
+          noticeAt: formatDateTime(new Date(row.overdue_notified_at!), DEFAULT_TIMEZONE),
+          limit: formatDateTime(graceEndsAt, DEFAULT_TIMEZONE),
+          delivered: work.byMilestones ? work.delivered : null,
+          missing: work.byMilestones ? work.missing : null,
+        }),
+      },
+      { guard: OVERDUE_DISPUTE_GUARD, now },
+    );
     if (disputeId === null) return null;
-    for (const userId of [row.client_id, row.freelancer_id]) {
-      void notificationsService.notify(userId, {
-        type: 'dispute_opened',
-        title: 'Disputa aberta automaticamente: prazo estourado',
-        body: `${row.title}: sem entrega nem extensão ${graceHours}h após o aviso, a mediação do Escambo assumiu (RN-029).`,
-        data: { contractId: row.id, disputeId },
-      });
+    for (const [userId, zone] of [
+      [row.client_id, clientZoneOf(row)],
+      [row.freelancer_id, freelancerZoneOf(row)],
+    ] as const) {
+      send(
+        userId,
+        autoDisputeNotice({
+          contractId: row.id,
+          disputeId,
+          title: row.title,
+          limit: formatDue(graceEndsAt, zone),
+          partial: work.delivered.length > 0,
+        }),
+      );
     }
     return disputeId;
   },
 
   /**
-   * Job: marco financiado com prazo vencido — avisa as duas partes uma vez. Não abre disputa:
-   * a mediação automática é pelo prazo da contratação (RN-029); o marco atrasado é o sinal
-   * para entregar ou combinar pelo chat.
+   * Job: marco financiado nunca entregue com o prazo vencido — avisa as duas partes uma vez, a
+   * partir das 9h no fuso de quem entrega. Não abre disputa: a mediação automática é pelo prazo
+   * da contratação (RN-029); o marco atrasado é o sinal para entregar ou combinar pelo chat.
    */
-  async notifyMilestoneOverdue(m: OverdueMilestoneRow): Promise<boolean> {
-    const ok = await milestonesRepository.markOverdueNotified(m.id);
+  async notifyMilestoneOverdue(m: OverdueMilestoneRow, now: Date = clock.now()): Promise<boolean> {
+    const fz = timezoneOf(m.freelancer_timezone);
+    const due = new Date(m.due_at);
+    if (overdueNoticeAt(due, fz).getTime() > now.getTime()) return false;
+    const ok = await milestonesRepository.markOverdueNotified(m.id, floorSecond(now));
     if (!ok) return false;
-    const due = brDate(m.due_at);
-    const data = { contractId: m.contract_id, milestoneId: m.id };
-    void notificationsService.notify(m.freelancer_id, {
-      type: 'milestone_overdue',
-      title: `Marco atrasado: ${m.title}`,
-      body: `${m.contract_title}: o prazo deste marco era ${due}. Entregue o marco ou combine com o cliente pelo chat.`,
-      data,
+    const n = milestoneOverdueNotices({
+      contractId: m.contract_id,
+      milestoneId: m.id,
+      title: m.title,
+      contractTitle: m.contract_title,
+      dueFreelancer: formatDate(due, fz),
+      dueClient: formatDate(due, timezoneOf(m.client_timezone)),
     });
-    void notificationsService.notify(m.client_id, {
-      type: 'milestone_overdue',
-      title: `Marco atrasado: ${m.title}`,
-      body: `${m.contract_title}: o prazo deste marco era ${due} e não houve entrega. O prazo da contratação continua valendo para a mediação automática.`,
-      data,
-    });
+    send(m.freelancer_id, n.freelancer);
+    send(m.client_id, n.client);
     return true;
   },
 
@@ -794,15 +1245,36 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertFreelancer(row, uid);
     assertStatus(row, ['accepted', 'in_progress']);
+    const now = clock.now();
+    const cz = clientZoneOf(row);
+    const days = await settingsRepository.getNumber(
+      'tacit_approval_days',
+      DEFAULT_TACIT_APPROVAL_DAYS,
+    );
+    const approvalDueAt = floorSecond(humanize(new Date(now.getTime() + days * DAY), cz));
     const ok = await milestonesRepository.deliver({
       contractId: id,
       milestoneId,
       changedBy: uid,
       message,
+      now,
+      approvalDueAt,
     });
     if (!ok)
       throw new HttpError(409, 'Este marco não está aguardando entrega', 'invalid_transition');
-    return this.getById(id, uid);
+    const contract = await this.getById(id, uid);
+    const m = contract.milestones.find((x) => x.id === milestoneId);
+    send(
+      row.client_id,
+      milestoneDeliveredNotice({
+        contractId: id,
+        milestoneId,
+        milestone: m?.title ?? 'marco',
+        approvalDue: formatDue(approvalDueAt, cz),
+        message,
+      }),
+    );
+    return contract;
   },
 
   /** Cliente aprova um marco entregue: libera só aquele líquido; o último conclui o contrato. */
@@ -827,6 +1299,7 @@ export const contractsService = {
       freelancerId: row.freelancer_id,
       mode: row.payment_mode === 'credits' ? 'credits' : 'cash',
       note: null,
+      now: clock.now(),
     });
     if (!r.ok)
       throw new HttpError(409, 'Este marco não está aguardando aprovação', 'invalid_transition');
@@ -840,17 +1313,19 @@ export const contractsService = {
     };
   },
 
-  /** Aprovação tácita de um marco entregue sem resposta (job). */
-  async approveMilestoneTacitly(id: number, milestoneId: number, days: number): Promise<boolean> {
-    const row = await loadOr404(id);
+  /** Aprovação tácita de um marco entregue, na hora gravada na entrega (job). */
+  async approveMilestoneTacitly(m: DueMilestoneRow, now: Date = clock.now()): Promise<boolean> {
+    const row = await loadOr404(m.contract_id);
     if (row.status !== 'accepted' && row.status !== 'in_progress') return false;
     const r = await milestonesRepository.approve({
-      contractId: id,
-      milestoneId,
+      contractId: m.contract_id,
+      milestoneId: m.id,
       changedBy: row.client_id,
       freelancerId: row.freelancer_id,
       mode: row.payment_mode === 'credits' ? 'credits' : 'cash',
-      note: `Aprovação tácita: sem resposta do cliente em ${days} dias`,
+      note: `Aprovação tácita: sem resposta do cliente até ${formatDateTime(new Date(m.approval_due_at), DEFAULT_TIMEZONE)} (horário de Brasília)`,
+      now,
+      dueBy: now,
     });
     if (r.ok && r.completed) await afterCompleted(row);
     return r.ok;

@@ -220,18 +220,22 @@ describe('push no silêncio com a escolha da pessoa (ADR 56)', () => {
     expect(send.mock.calls[0]?.[1]).toMatchObject({ tag: 'contract_overdue:3' });
   });
 
-  it('duas recusas liberadas da mesma contratação saem com etiquetas diferentes (alerta de novo)', async () => {
+  it('dois atrasos liberados da mesma contratação (extensão aceita no meio) saem com etiquetas diferentes', async () => {
     users.findById.mockResolvedValue(
       conta({ start: 22, end: 7 }, 'America/Sao_Paulo', 'deadline') as never,
     );
-    const recusa = { ...prazo, type: 'deadline_extension_declined' };
-    await pushService.notify(7, { ...recusa, notificationId: 50 }, noite);
-    await pushService.notify(7, { ...recusa, notificationId: 51 }, noite);
+    await pushService.notify(7, { ...prazo, notificationId: 50 }, noite);
+    await pushService.notify(7, { ...prazo, notificationId: 51 }, noite);
     const tags = send.mock.calls.map((c) => (c[1] as { tag: string }).tag);
-    expect(tags).toEqual([
-      'deadline_extension_declined:3:n50',
-      'deadline_extension_declined:3:n51',
-    ]);
+    expect(tags).toEqual(['contract_overdue:3:n50', 'contract_overdue:3:n51']);
+  });
+
+  it('a recusa do pedido não fura mais o silêncio, mesmo afirmando a categoria (ADR 57)', async () => {
+    users.findById.mockResolvedValue(
+      conta({ start: 22, end: 7 }, 'America/Sao_Paulo', 'deadline') as never,
+    );
+    await pushService.notify(7, { ...prazo, type: 'deadline_extension_declined' }, noite);
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('o resumo põe os de prazo primeiro, na ordem de chegada dentro de cada grupo, e conta todos', () => {

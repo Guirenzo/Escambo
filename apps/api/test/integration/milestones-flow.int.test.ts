@@ -5,6 +5,7 @@ import { pool } from '../../src/config/db';
 import { runTacitApproval } from '../../src/jobs/tacit-approval';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
+import { fromNow, HOUR, now, startDaytimeClock, stopClock } from './clock.helpers';
 
 const app = createApp();
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
@@ -57,11 +58,13 @@ async function proposeWithMilestones(client: Actor, freelancer: Actor) {
 }
 
 beforeAll(async () => {
+  startDaytimeClock();
   const res = await request(app).get('/api/health');
   expect(res.status).toBe(200);
 });
 
 afterAll(async () => {
+  stopClock();
   await pool.end();
 });
 
@@ -290,19 +293,21 @@ describe('Escrow por marcos (RN-069)', () => {
     const { id } = await proposeWithMilestones(client, freelancer);
     await request(app).post(`/api/contracts/${id}/accept`).set(auth(freelancer.token)).expect(200);
     const detail = await request(app).get(`/api/contracts/${id}`).set(auth(client.token));
-    const [m1, m2] = detail.body.milestones as { id: number }[];
+    const [m1] = detail.body.milestones as { id: number }[];
 
-    // Marco 1 entregue e sem resposta há 6 dias → o job aprova em nome do cliente.
-    await request(app)
+    // Marco 1 entregue: a aprovação automática tem hora gravada e aparece para as duas partes.
+    const delivered = await request(app)
       .post(`/api/contracts/${id}/milestones/${m1!.id}/deliver`)
       .set(auth(freelancer.token))
       .send({ message: 'Layout' })
       .expect(200);
-    await pool.query(
-      `UPDATE contract_milestones SET delivered_at = DATE_SUB(NOW(), INTERVAL 6 DAY) WHERE id = :id`,
-      { id: m1!.id },
-    );
-    const job = await runTacitApproval();
+    expect(delivered.body.milestones[0].approvalDueAt).toEqual(expect.any(String));
+    // Sem resposta até a hora gravada → o job aprova em nome do cliente.
+    await pool.query('UPDATE contract_milestones SET approval_due_at = :due WHERE id = :id', {
+      id: m1!.id,
+      due: fromNow(-HOUR),
+    });
+    const job = await runTacitApproval(now());
     expect(job.milestones).toContain(m1!.id);
     expect(await wallet(freelancer.token)).toMatchObject({
       balance: 283.33,
@@ -314,16 +319,22 @@ describe('Escrow por marcos (RN-069)', () => {
       after.body.history.some((h: { note: string | null }) => /tácita/.test(h.note ?? '')),
     ).toBe(true);
 
-    // Cancelamento sem prazo (50%): do restante (666,67 / líquido 566,67) o cliente recebe
-    // 333,34 e o freelancer 283,34; o que já tinha sido liberado (283,33) não volta.
-    await request(app)
-      .post(`/api/contracts/${id}/milestones/${m2!.id}/deliver`)
-      .set(auth(freelancer.token))
-      .send({ message: 'Front' })
-      .expect(200);
-    const cancel = await request(app).post(`/api/contracts/${id}/cancel`).set(auth(client.token));
+    // Cancelamento sem prazo (50%), com os marcos 2 e 3 nunca entregues: do restante (666,67 /
+    // líquido 566,67) o cliente recebe 333,34 e o freelancer 283,34; o que já tinha sido liberado
+    // (283,33) não volta. A Sala mostra o mesmo valor antes (ADR 57).
+    const quote = await request(app).get(`/api/contracts/${id}`).set(auth(client.token));
+    expect(quote.body.cancellation).toMatchObject({
+      allowed: true,
+      stage: 'no_deadline',
+      refundClient: 333.34,
+      releaseFreelancer: 283.34,
+    });
+    const cancel = await request(app)
+      .post(`/api/contracts/${id}/cancel`)
+      .set(auth(client.token))
+      .send({ expectedRefund: 333.34 });
     expect(cancel.status, JSON.stringify(cancel.body)).toBe(200);
-    expect(cancel.body.refundPercentage).toBe(50);
+    expect(cancel.body).toMatchObject({ refundPercentage: 50, stage: 'no_deadline' });
     expect(await wallet(freelancer.token)).toMatchObject({ balance: 566.67, balancePending: 0 });
     expect(await wallet(client.token)).toMatchObject({ balance: 333.34, balancePending: 0 });
     const final = await request(app).get(`/api/contracts/${id}`).set(auth(client.token));

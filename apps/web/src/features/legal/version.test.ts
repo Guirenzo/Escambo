@@ -23,7 +23,7 @@ describe('versões dos documentos legais (ADR 54)', () => {
       }
     }
     expect(LEGAL_VERSIONS.privacidade).toBe('1.4');
-    expect(LEGAL_VERSIONS.termos).toBe('1.2');
+    expect(LEGAL_VERSIONS.termos).toBe('1.3');
   });
 
   it('compareVersions é numérica por segmento', () => {
@@ -44,8 +44,9 @@ describe('versões dos documentos legais (ADR 54)', () => {
         'privacidade',
       ),
     ).toBe(false);
-    // Os Termos não mudaram: quem tem 1.2 está em dia.
-    expect(legalAckPending([consent('terms_of_use', '1.2')], 'termos')).toBe(false);
+    // Termos 1.3 (ADR 57): quem respondeu a 1.2 tem a faixa; quem está na 1.3, não.
+    expect(legalAckPending([consent('terms_of_use', '1.2')], 'termos')).toBe(true);
+    expect(legalAckPending([consent('terms_of_use', '1.3')], 'termos')).toBe(false);
   });
 
   it('changesSince: só o que veio depois da versão respondida; sem resposta, só a vigente', () => {
@@ -54,7 +55,8 @@ describe('versões dos documentos legais (ADR 54)', () => {
     expect(changesSince('privacidade', '1.2').map((c) => c.version)).toEqual(['1.4', '1.3']);
     expect(changesSince('privacidade', '1.3').map((c) => c.version)).toEqual(['1.4']);
     expect(changesSince('privacidade', null).map((c) => c.version)).toEqual(['1.4']);
-    expect(changesSince('termos', '1.2')).toEqual([]);
+    expect(changesSince('termos', '1.2').map((c) => c.version)).toEqual(['1.3']);
+    expect(changesSince('termos', '1.3')).toEqual([]);
   });
 
   it('a política 1.4 diz o que sai no silêncio, sem prometer silêncio absoluto (ADR 56)', () => {
@@ -66,6 +68,27 @@ describe('versões dos documentos legais (ADR 54)', () => {
     expect(texto).not.toContain('nenhum aviso bate');
     expect(texto).not.toContain('não bater no aparelho durante o silêncio');
     expect(texto).toContain('As versões anteriores à 1.3');
+  });
+
+  it('os Termos 1.3 dizem a regra do prazo e do cancelamento sem prometer números fixos (ADR 57)', () => {
+    const texto = LEGAL.termos.sections.flatMap((s) => s.paragraphs).join('\n');
+    expect(texto).toContain(
+      'se o freelancer desistir, tudo o que está em garantia volta ao cliente',
+    );
+    expect(texto).toContain(
+      'Com o prazo vencido sem nenhuma entrega, a partir do aviso do Escambo',
+    );
+    expect(texto).toContain('O app mostra os valores antes de confirmar');
+    expect(texto).toContain('O prazo só abre disputa sozinho enquanto há trabalho nunca entregue');
+    expect(texto).toContain('por marcos, enquanto algum marco não foi entregue');
+    expect(texto).toContain('(hoje, 15%)');
+    expect(texto).not.toMatch(/cobra 15%|taxa de 15%/);
+    expect(texto).toContain('até duas vezes, e só uma pode ser aceita');
+    expect(texto).toContain('entre 21h e 9h no horário de quem é afetado');
+    // Os números configuráveis aparecem como "hoje": o painel pode mudá-los.
+    expect(texto).toContain('(hoje, 5 dias corridos depois)');
+    expect(texto).toContain('(hoje, 48 horas)');
+    expect(texto).not.toContain('responder a uma entrega em 5 dias');
   });
 
   it('a política diz o que o push guarda, com quem compartilha e por quanto tempo', () => {

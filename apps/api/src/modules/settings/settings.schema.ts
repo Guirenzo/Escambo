@@ -50,7 +50,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     type: 'integer',
     label: 'Aprovação tácita',
     description:
-      'Entrega sem resposta do cliente por esse tempo é aprovada em nome dele, liberando o escrow (job tacit-approval).',
+      'Entrega sem resposta do cliente por esse tempo, em dias corridos, é aprovada em nome dele e libera o valor (RN-024, job tacit-approval). A hora fica gravada na entrega e dita no aviso, e nunca cai entre 20h30 e 9h no fuso do cliente (passa para as 9h). Mudar aqui vale para as entregas registradas depois (ADR 57).',
     unit: 'dias',
     min: 1,
     max: 30,
@@ -60,7 +60,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     type: 'integer',
     label: 'Validade da proposta',
     description:
-      'Proposta sem resposta do freelancer por esse tempo expira e a reserva volta ao cliente (RN-021, job expire-proposals).',
+      'Proposta sem resposta do freelancer por esse tempo, ou até o prazo de entrega se ele vier antes, expira e a reserva volta ao cliente (RN-021, job expire-proposals). A hora fica gravada na proposta e dita no aviso, e nunca cai entre 20h30 e 9h no fuso do freelancer (ADR 57).',
     unit: 'horas',
     min: 1,
     max: 720,
@@ -70,7 +70,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     type: 'integer',
     label: 'Carência do prazo',
     description:
-      'Depois do aviso de prazo estourado, sem entrega nem extensão aprovada, a plataforma abre a disputa em nome do cliente (RN-029, job overdue-contracts). Quem entrega e deixou sair o prazo vencido no "não perturbe" recebe o aviso na hora; quem não deixou só o vê ao fim do silêncio, então uma carência menor que uma noite pode passar inteira dormindo (ADR 56).',
+      'Depois do aviso de prazo vencido sem nenhuma entrega (que sai a partir das 9h no fuso de quem entrega), passado esse tempo sem entrega nem extensão aceita, a plataforma abre a disputa em nome do cliente (RN-029, job overdue-contracts). O fim nunca cai entre 20h30 e 9h (passa para as 9h) e fica gravado no aviso: mudar aqui vale para os avisos dados depois da mudança (ADR 57).',
     unit: 'horas',
     min: 1,
     max: 168,

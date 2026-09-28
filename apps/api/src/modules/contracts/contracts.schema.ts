@@ -96,6 +96,20 @@ export const extensionDecisionSchema = z.object({
   decision: z.enum(['accept', 'decline']),
 });
 
+/**
+ * Corpo da decisão (ADR 57): o número do pedido que o cliente viu. Opcional para quem chama a
+ * API sem ele; com ele, um pedido trocado no meio responde 409 extension_changed.
+ */
+export const extensionDecisionBodySchema = z
+  .object({ seq: z.number().int().min(0).max(2).optional() })
+  .default({});
+
+/** Corpo do cancelamento (ADR 57): o reembolso que a pessoa viu na tela. */
+export const cancelBodySchema = z
+  .object({ expectedRefund: z.number().min(0).optional() })
+  .default({});
+export type CancelBody = z.infer<typeof cancelBodySchema>;
+
 export const listContractsSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),

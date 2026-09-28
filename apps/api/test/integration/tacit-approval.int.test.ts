@@ -4,10 +4,12 @@ import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { fundWallet } from './wallet.helpers';
 import { runTacitApproval } from '../../src/jobs/tacit-approval';
+import { DAY, fromNow, HOUR, now, startDaytimeClock, stopClock } from './clock.helpers';
 
 /**
- * Aprovação tácita: entrega sem resposta do cliente além do prazo da plataforma é aprovada pelo
- * job, com liberação do escrow e registro no histórico. Entregas recentes ficam como estão.
+ * Aprovação tácita (RN-024, ADR 57): a hora é gravada na entrega (5 dias corridos, nunca de noite
+ * no fuso do cliente) e o job aprova quando ela passa, com liberação do escrow e registro no
+ * histórico. Entregas recentes ficam como estão; de noite no fuso do cliente, nada acontece.
  */
 
 const app = createApp();
@@ -52,11 +54,13 @@ async function deliveredContract(client: Actor, freelancer: Actor, title: string
 }
 
 beforeAll(async () => {
+  startDaytimeClock();
   const res = await request(app).get('/api/health');
   expect(res.status).toBe(200);
 });
 
 afterAll(async () => {
+  stopClock();
   await pool.end();
 });
 
@@ -69,16 +73,28 @@ describe('Aprovação tácita (job)', () => {
     const old = await deliveredContract(client, freelancer, 'Entrega antiga sem resposta');
     const recent = await deliveredContract(client, freelancer, 'Entrega recente');
 
-    // Simula o tempo: a entrega antiga aconteceu há 6 dias (prazo padrão da plataforma: 5).
-    await pool.query(
-      `UPDATE contract_status_history
-          SET created_at = DATE_SUB(NOW(), INTERVAL 6 DAY)
-        WHERE contract_id = :id AND new_status = 'delivered'`,
-      { id: old },
-    );
+    // A hora foi gravada na entrega: 5 dias corridos depois, de dia no fuso do cliente.
+    const [[row]] = (await pool.query('SELECT approval_due_at FROM contracts WHERE id = :id', {
+      id: recent,
+    })) as unknown as [[{ approval_due_at: Date }]];
+    const due = new Date(row.approval_due_at).getTime();
+    expect(due).toBeGreaterThanOrEqual(now().getTime() + 5 * DAY - 2000);
+    expect(due).toBeLessThanOrEqual(now().getTime() + 5 * DAY + 13 * HOUR);
+    const shown = await request(app).get(`/api/contracts/${recent}`).set(auth(client.token));
+    expect(shown.body.approvalDueAt).toBe(new Date(due).toISOString());
 
-    const result = await runTacitApproval();
-    expect(result.days).toBeGreaterThan(0);
+    // Simula o tempo: a aprovação tácita da antiga já venceu.
+    await pool.query('UPDATE contracts SET approval_due_at = :due WHERE id = :id', {
+      id: old,
+      due: fromNow(-HOUR),
+    });
+
+    // De noite (03:00 em Brasília, 01:00 em Rio Branco…) o job não aprova nada.
+    const night = new Date(now().getTime() + 15 * HOUR);
+    expect((await runTacitApproval(night)).approved).not.toContain(old);
+
+    const result = await runTacitApproval(now());
+    expect(result.zones.length).toBeGreaterThan(0);
     expect(result.approved).toContain(old);
     expect(result.approved).not.toContain(recent);
     expect(result.failed).toEqual([]);
@@ -97,7 +113,8 @@ describe('Aprovação tácita (job)', () => {
     expect(wallet.body).toMatchObject({ balance: 170, balancePending: 170 });
 
     // Idempotente: rodar de novo não aprova nada a mais.
-    const again = await runTacitApproval();
-    expect(again.approved).toEqual([]);
+    const again = await runTacitApproval(now());
+    expect(again.approved).not.toContain(old);
+    expect(again.approved).not.toContain(recent);
   });
 });
