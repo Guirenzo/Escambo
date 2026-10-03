@@ -122,7 +122,7 @@ jobs:
 
       - name: Checkout do commit que vai ao ar
         if: steps.cfg.outputs.enabled == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.rev.outputs.sha }}
           fetch-depth: 0

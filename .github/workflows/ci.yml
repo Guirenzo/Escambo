@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -83,7 +83,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -118,7 +118,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -180,7 +180,7 @@ jobs:
 
       - name: Checkout (histórico completo, para o blame e o código novo)
         if: env.SONAR_TOKEN != ''
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -231,7 +231,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -294,7 +294,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Nomes e tags (o GHCR exige dono em minúsculas)
         id: img
