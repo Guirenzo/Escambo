@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { env } from './config/env';
 import { logger } from './config/logger';
+import { metricsMiddleware } from './config/metrics';
 import { openapiDocument, swaggerHtml } from './config/openapi';
 import { errorHandler } from './middlewares/error-handler';
 import { maintenanceGate } from './middlewares/maintenance';
@@ -13,6 +14,7 @@ import { apiRateLimiter } from './middlewares/rate-limit';
 import { router } from './routes';
 import { serveMedia } from './modules/media/media.controller';
 import { asyncHandler } from './utils/async-handler';
+import { HttpError } from './utils/http-error';
 
 /** Converte a env TRUST_PROXY na forma aceita pelo Express. */
 function parseTrustProxy(value: string): boolean | number | string {
@@ -31,7 +33,7 @@ function corsOrigin(value: string): CorsOptions['origin'] {
     .filter(Boolean);
   return (origin, cb) => {
     if (!origin || allow.includes(origin)) return cb(null, true);
-    cb(new Error('Origem não permitida pelo CORS'));
+    cb(new HttpError(403, 'Origem não permitida pelo CORS', 'cors_origin'));
   };
 }
 
@@ -59,6 +61,9 @@ export function createApp() {
       },
     }),
   );
+
+  // Duração por rota declarada, para o Prometheus (ADR 59). O /metrics fica em outra porta.
+  app.use(metricsMiddleware);
 
   app.use(express.json({ limit: env.BODY_LIMIT }));
 

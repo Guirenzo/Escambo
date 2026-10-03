@@ -115,7 +115,86 @@ describe('list', () => {
   });
 });
 
+describe('list: paginação e formato', () => {
+  it('a página vira deslocamento (página 3 de 20 pula 40), e as duas consultas são da conta pedida', async () => {
+    repo.listForUser.mockResolvedValue([]);
+    repo.countUnread.mockResolvedValue(0);
+
+    expect(await notificationsService.list(7, 3, 20)).toEqual({
+      items: [],
+      unreadCount: 0,
+      page: 3,
+      limit: 20,
+    });
+
+    expect(repo.listForUser.mock.calls).toEqual([[7, 20, 40]]);
+    expect(repo.countUnread.mock.calls).toEqual([[7]]);
+
+    // A primeira página não pula nada.
+    await notificationsService.list(8, 1, 50);
+    expect(repo.listForUser).toHaveBeenLastCalledWith(8, 50, 0);
+    expect(repo.countUnread).toHaveBeenLastCalledWith(8);
+  });
+
+  it('cada linha sai no formato da API: lida como booleano, data em ISO e o data já convertido ou nulo', async () => {
+    repo.listForUser.mockResolvedValue([
+      row({ id: 9, body: 'Landing page', data: { contractId: 5 }, is_read: 1 }),
+      row({ id: 8, type: 'review_received', title: 'Nova avaliação' }),
+    ]);
+    repo.countUnread.mockResolvedValue(1);
+
+    const res = await notificationsService.list(7, 1, 20);
+
+    expect(res.items).toEqual([
+      {
+        id: 9,
+        type: 'contract_proposal',
+        title: 'Nova proposta',
+        body: 'Landing page',
+        // O driver pode entregar a coluna JSON já como objeto: passa como veio.
+        data: { contractId: 5 },
+        isRead: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 8,
+        type: 'review_received',
+        title: 'Nova avaliação',
+        body: null,
+        data: null,
+        isRead: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+  });
+});
+
+describe('markAllRead', () => {
+  it('marca as da conta pedida e devolve quantas eram', async () => {
+    repo.markAllRead.mockResolvedValueOnce(4).mockResolvedValueOnce(0);
+
+    expect(await notificationsService.markAllRead(7)).toBe(4);
+    // Nada por ler não é erro: devolve zero.
+    expect(await notificationsService.markAllRead(8)).toBe(0);
+
+    expect(repo.markAllRead.mock.calls).toEqual([[7], [8]]);
+  });
+});
+
 describe('markRead', () => {
+  it('só marca a notificação da própria conta: a de outra pessoa (ou já lida) é 404 notification_not_found', async () => {
+    repo.markRead.mockResolvedValue(false);
+
+    await expect(notificationsService.markRead(5, 7)).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'notification_not_found',
+      message: 'Notificação não encontrada',
+    });
+
+    // O id da notificação e o da conta chegam ao repository nessa ordem.
+    expect(repo.markRead.mock.calls).toEqual([[5, 7]]);
+  });
+
   it('404 quando não encontra', async () => {
     repo.markRead.mockResolvedValue(false);
     await expect(notificationsService.markRead(1, 7)).rejects.toMatchObject({ statusCode: 404 });

@@ -83,20 +83,21 @@ git commit -m "chore: adiciona eslint e prettier ao projeto"
 
 ## Pull Requests
 
-Ao abrir um PR, use o template abaixo:
+Ao abrir um PR, o GitHub já traz o modelo (`.github/pull_request_template.md`). É este:
 
 ```markdown
 ## O que este PR faz?
 Descrição clara e objetiva da mudança.
 
 ## Módulo relacionado
-[ ] Autenticação  [ ] Perfis  [ ] Chat  [ ] Pagamentos  [ ] Gamificação  [ ] Outro: ___
+[ ] Autenticação  [ ] Perfis  [ ] Contratações  [ ] Chat  [ ] Pagamentos  [ ] Moderação  [ ] Infra/CI  [ ] Outro: ___
 
 ## Tipo de mudança
 [ ] feat — nova funcionalidade
 [ ] fix — correção de bug
 [ ] docs — documentação
 [ ] refactor — refatoração
+[ ] chore — infraestrutura, CI, dependências
 
 ## Como testar?
 1. Passo 1
@@ -104,10 +105,11 @@ Descrição clara e objetiva da mudança.
 3. Resultado esperado: ...
 
 ## Checklist
-- [ ] Código segue os padrões do projeto (ESLint/Prettier)
+- [ ] Testes novos ou alterados cobrem a mudança (`npm test`; integração se mexeu em SQL)
+- [ ] Código segue os padrões do projeto (ESLint/Prettier) e o `tsc` passa
 - [ ] Nenhum `console.log` esquecido
 - [ ] Variáveis de ambiente sensíveis não foram commitadas
-- [ ] Documentação atualizada se necessário
+- [ ] Documentação atualizada se necessário (ADR em `docs/decisoes.md` para decisão nova)
 ```
 
 ---
@@ -122,6 +124,9 @@ O squad atua como equipe de **Quality Assurance**. Ao revisar um PR:
 - ✅ A lógica está clara e legível?
 - ✅ Há algum risco de segurança (ex.: SQL injection, dados expostos)?
 - ✅ O código segue os padrões do projeto?
+
+**Bugs achados nos testes cruzados** viram uma _issue_ pelo modelo "Relato de bug" (`.github/ISSUE_TEMPLATE/`),
+com os passos, o esperado, o obtido e a versão que aparece em `GET /api/health`.
 
 **Como comentar:**
 - Use prefixos para deixar claro o tipo de feedback:
@@ -147,19 +152,23 @@ O squad atua como equipe de **Quality Assurance**. Ao revisar um PR:
 
 ### Estrutura de pastas (API)
 ```
-src/
+apps/api/src/
 ├── modules/
 │   └── nome-do-modulo/
-│       ├── nome-do-modulo.controller.ts
-│       ├── nome-do-modulo.service.ts
-│       ├── nome-do-modulo.repository.ts
-│       └── nome-do-modulo.routes.ts
-├── shared/
-│   ├── middlewares/
-│   └── utils/
-└── app.ts
+│       ├── nome-do-modulo.routes.ts        # rotas e quem pode chamar
+│       ├── nome-do-modulo.controller.ts    # só traduz HTTP
+│       ├── nome-do-modulo.schema.ts        # validação (Zod)
+│       ├── nome-do-modulo.service.ts       # regra de negócio
+│       ├── nome-do-modulo.repository.ts    # SQL
+│       └── *.test.ts                       # testes de unidade, ao lado do código
+├── middlewares/    # autenticação, papéis, rate limit, erros
+├── jobs/           # tarefas em background
+├── config/         # env, banco, logger, métricas
+├── utils/
+├── app.ts
+└── routes.ts
 ```
 
 ---
 
-*Dúvidas? Abra uma [Discussion](../../discussions) no repositório.*
+*Dúvidas? Abra uma [issue](../../issues) no repositório.*

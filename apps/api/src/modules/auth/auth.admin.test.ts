@@ -26,6 +26,7 @@ vi.mock('./session.repository', () => ({
   },
 }));
 
+import { env } from '../../config/env';
 import { authRepository, type UserRow } from './auth.repository';
 import { authService, isAdminEmail } from './auth.service';
 
@@ -42,6 +43,40 @@ describe('promoção a admin por ADMIN_EMAILS', () => {
     expect(isAdminEmail('qualquer@admin.escambo.test')).toBe(true);
     expect(isAdminEmail('root@outro.test')).toBe(false);
     expect(isAdminEmail('admin.escambo.test@gmail.com')).toBe(false);
+  });
+
+  it('e-mail exato só vale inteiro e o domínio só vale no fim: parecido não vira admin', () => {
+    // Termina igual ao e-mail da lista, mas é outra caixa postal.
+    expect(isAdminEmail('notroot@escambo.test')).toBe(false);
+    expect(isAdminEmail('x.root@escambo.test')).toBe(false);
+    // O domínio da lista aparece no meio, mas o e-mail é de outro domínio.
+    expect(isAdminEmail('x@admin.escambo.test.evil.com')).toBe(false);
+    expect(isAdminEmail('root@escambo.test.evil.com')).toBe(false);
+    // Subdomínio do domínio da lista não é o domínio da lista.
+    expect(isAdminEmail('x@sub.admin.escambo.test')).toBe(false);
+    // Outra conta do domínio do e-mail exato não entra de carona.
+    expect(isAdminEmail('ana@escambo.test')).toBe(false);
+  });
+
+  it('a lista é lida como vier do ambiente: espaços, caixa e vírgulas sobrando não mudam quem é admin', () => {
+    const original = env.ADMIN_EMAILS;
+    try {
+      env.ADMIN_EMAILS = ' Chefe@Escambo.Test , ,@Ops.Escambo.Test,';
+      expect(isAdminEmail('chefe@escambo.test')).toBe(true);
+      expect(isAdminEmail('ana@ops.escambo.test')).toBe(true);
+      // Quem estava na lista antiga saiu junto com ela (a lista é lida a cada consulta).
+      expect(isAdminEmail('root@escambo.test')).toBe(false);
+      // Entrada vazia (vírgula sobrando) não casa com nada, nem com e-mail vazio.
+      expect(isAdminEmail('')).toBe(false);
+      expect(isAdminEmail('   ')).toBe(false);
+
+      // Lista vazia: ninguém é admin por e-mail.
+      env.ADMIN_EMAILS = '';
+      expect(isAdminEmail('chefe@escambo.test')).toBe(false);
+      expect(isAdminEmail('')).toBe(false);
+    } finally {
+      env.ADMIN_EMAILS = original;
+    }
   });
 
   it('cadastro com e-mail da lista nasce admin, mesmo pedindo outro papel', async () => {

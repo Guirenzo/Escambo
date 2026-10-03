@@ -25,5 +25,17 @@ export default defineConfig({
       DB_HOST: '127.0.0.1',
       DB_PORT: '1',
     },
+    // Cobertura (ADR 59): conta todo arquivo de src, carregado ou não pelos testes. A meta do
+    // Playbook para os testes de unidade do backend é 75%; o piso aqui é mais alto, para a
+    // cobertura que existe não se desfazer aos poucos. A união com a integração (que é onde o
+    // SQL roda de verdade) é conferida por scripts/coverage-merge.mjs.
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.test.ts', 'src/test-support/**'],
+      reporter: ['text-summary', 'json', 'lcov'],
+      reportsDirectory: 'coverage/unit',
+      thresholds: { lines: 90, statements: 90, functions: 90, branches: 85 },
+    },
   },
 });

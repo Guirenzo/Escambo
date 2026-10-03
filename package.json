@@ -1,11 +1,11 @@
 {
   "name": "escambo",
-  "version": "1.39.0",
+  "version": "1.40.0",
   "private": true,
   "description": "Escambo — monorepo (API + Web + tipos compartilhados)",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "workspaces": [
     "packages/*",
@@ -18,6 +18,7 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "coverage:merge": "node scripts/coverage-merge.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "db:up": "docker compose up -d db",
@@ -31,6 +32,9 @@
     "@eslint/js": "^9.17.0",
     "concurrently": "^9.1.0",
     "eslint": "^9.17.0",
+    "istanbul-lib-coverage": "^3.2.2",
+    "istanbul-lib-report": "^3.0.1",
+    "istanbul-reports": "^3.2.0",
     "prettier": "^3.4.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1"

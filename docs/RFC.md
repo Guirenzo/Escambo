@@ -41,6 +41,7 @@ MIT — Open Source
 | 2.1 | Jun/2026 | Revisão após avaliação da banca: linha declarada como Web App (mobile movido para Fase 2); benchmark ampliado para três plataformas com fontes rastreáveis; correção da análise de mercado (Workana cobra do cliente); plano técnico de CI/CD, testes (TDD), análise estática e observabilidade detalhado; seção de instalação/deploy adicionada; padronização dos números entre RFC e README; ajuste de tom para registro acadêmico |
 | 2.2 | Jun/2026 | Introdução da **troca de serviços (escambo)** como diferencial central, em modo híbrido (dinheiro + troca, com *torna*); banco ampliado para **50 tabelas em 15 módulos**; +8 RFs (total **90**) e +2 RNFs (total **42**) de confiança e segurança — pacotes de serviço, marcos de escrow, disputas como entidade própria, denúncias, 2FA e portabilidade LGPD; preenchimento das regras RN-066 a RN-070 (total **75**); correção das contagens divergentes e dos caminhos de instalação (`apps/api`, `apps/web`); inclusão do texto da LICENSE MIT |
 | 2.3 | Set/2026 | Fluxos alternativos alinhados aos prazos da v1.39.0 (ADR 57): aprovação tácita em **5 dias corridos** (e não úteis); cancelamento com a desistência do freelancer (devolve tudo ao cliente), reembolso integral no atraso sem entrega a partir do aviso, a metade do prazo contada do aceite e a confirmação com os valores na tela; disputa por prazo aberta pela plataforma depois do aviso das 9h e da carência, direto na mediação, sem ticket de suporte; contagem das regras de negócio atualizada (total **78**); nota de que as Figuras 3 a 5 são da v2.2 |
+| 2.4 | Out/2026 | Engenharia de entrega como construída (ADR 59): checklist das Directions atualizado (CI/CD, cobertura, análise estática, monitoramento e Wiki atendidos, com o ponteiro para cada um); seções 7 e 8 alinhadas ao que está no repositório (Vitest, Docker Compose com imagens no GHCR, Caddy, deploy pelo GitHub Actions, Prometheus e Grafana) |
 
 ---
 
@@ -61,11 +62,11 @@ Uma observação importante sobre o escopo: apesar de o Escambo ter carteira dig
 | Documentação: requisitos, casos de uso, arquitetura | Atendido | Seções 2 e 5 + apêndices |
 | Instruções de deploy/instalação | Atendido | Seção 8 (nova) |
 | Benchmark com 3 a 5 soluções | Atendido | Seção 1.3 (três plataformas + referência internacional) |
-| CI/CD | Planejado — M2 | Seção 7.3 |
-| Cobertura de testes (TDD): 75% backend / 25% frontend | Planejado — M2 a M5 | Seção 7.1 e 7.2 |
-| Análise estática de código e segurança | Planejado — M2 | Seção 7.4 |
-| Monitoramento / observabilidade / analytics | Planejado — M4 | Seção 7.5 |
-| Wiki do repositório | Planejado — M5 | Seção 9 (planejamento) |
+| CI/CD | Atendido | Seção 7.3; `.github/workflows/ci.yml` (testes, cobertura, imagens) e `deploy.yml` (deploy contínuo na VPS, ADR 59) |
+| Cobertura de testes (TDD): 75% backend / 25% frontend | Atendido | Seções 7.1 e 7.2; testes de unidade do backend em 99,1% (meta conferida pelo Vitest no CI) e 99,3% com a integração; frontend em 99,5% |
+| Análise estática de código e segurança | Atendido | Seção 7.4; ESLint, TypeScript estrito, SonarCloud (`sonar-project.properties`), `npm audit` no CI e Dependabot |
+| Monitoramento / observabilidade / analytics | Atendido (analytics de produto não entregue) | Seção 7.5; Prometheus, Grafana com alertas por e-mail, sonda de uptime, Sentry e logs estruturados (`docs/wiki/Observabilidade.md`) |
+| Wiki do repositório | Atendido | Gerada da pasta `docs/` a cada push na `main` (`docs/wiki/`, workflow `wiki.yml`) |
 
 A linha Mobile não é avaliada nesta entrega por decisão de escopo. Seus critérios das Directions (arquitetura mobile, testes, build do app) passam a valer na Fase 2, cujo ponto de partida arquitetural está documentado na seção 5.6.
 
@@ -821,9 +822,10 @@ erDiagram
     }
 ```
 
-> O DER completo (todas as tabelas, com tipos e índices) pode ser gerado a partir do
-> arquivo [`docs/escambo.dbml`](./escambo.dbml) em [dbdiagram.io](https://dbdiagram.io),
-> que também exporta o script SQL.
+> O esquema completo (todas as tabelas, com tipos, chaves e índices) está no baseline
+> [`apps/api/db/schema.sql`](../apps/api/db/schema.sql) e nas migrations de
+> [`apps/api/db/migrations`](../apps/api/db/migrations), descrito tabela a tabela em
+> [Modelagem do Banco](./modelagem-banco.md).
 
 ---
 
@@ -1032,14 +1034,16 @@ O sistema está em conformidade com a Lei nº 13.709/2018 (LGPD) desde o início
 
 Esta seção reúne os itens de engenharia exigidos pelas Directions: estratégia de testes (TDD), integração e entrega contínuas, análise estática e observabilidade. Eles não são um anexo da implementação; fazem parte dela desde o primeiro módulo.
 
+> **Como construído (v2.4):** o texto abaixo foi atualizado para o que está no repositório. O detalhe de cada item, com os comandos e os números de cada versão, está nas páginas [Qualidade](./wiki/Qualidade.md), [Observabilidade](./wiki/Observabilidade.md) e [Deploy e CI/CD](./wiki/Deploy-e-CI-CD.md), e a decisão no ADR 59 de [`decisoes.md`](./decisoes.md).
+
 ### 7.1 Estratégia de Testes (TDD)
 
 Adoto desenvolvimento orientado a testes nos módulos críticos, escrevendo o teste antes da implementação sempre que a regra de negócio justificar. As metas de cobertura, alinhadas às Directions, são de pelo menos **75% no backend** e **25% no frontend**, medidas sobre os módulos críticos.
 
 No backend, a prioridade de cobertura segue o risco: pagamentos e escrow, autenticação, contratações e gamificação vêm primeiro, porque são onde um erro custa mais caro (dinheiro liberado errado, sessão insegura, XP calculado de forma incorreta). Cada camada tem um tipo de teste:
 
-- **Testes unitários** nos services, com os repositories mockados, validando as regras de negócio isoladamente.
-- **Testes de integração** nas rotas, exercitando o caminho completo (HTTP → controller → service → repository → banco) contra um banco de testes.
+- **Testes unitários**, sem banco, nas três camadas: os services com os repositories mockados (as regras de negócio isoladas), as rotas e os controllers com o service mockado (quem pode chamar, o que a validação recusa, o que chega ao service) e os repositories com um banco falso (o que cada método pede e o que faz com o resultado). É sobre eles que vale a meta de 75%.
+- **Testes de integração** nas rotas, exercitando o caminho completo (HTTP → controller → service → repository → banco) contra um MySQL de verdade, que é onde se prova que o SQL roda.
 
 No frontend, os testes cobrem os componentes e fluxos mais sensíveis (formulários de contratação, fluxo de pagamento, exibição de saldo e carteira), garantindo que a interface não quebre nesses pontos.
 
@@ -1047,7 +1051,7 @@ No frontend, os testes cobrem os componentes e fluxos mais sensíveis (formulár
 
 | Camada | Ferramentas |
 |---|---|
-| Backend (unitário e integração) | Jest + Supertest |
+| Backend (unitário e integração) | Vitest + Supertest |
 | Frontend (componentes) | Vitest + React Testing Library |
 | Cobertura | Relatório de cobertura gerado no CI e verificado contra as metas mínimas |
 
@@ -1063,7 +1067,7 @@ O pipeline de integração e entrega contínuas roda no **GitHub Actions** e é 
 4. **Build** do backend e do frontend
 5. **Deploy** para o ambiente correspondente
 
-O branch `main` é protegido: nenhum merge entra sem o pipeline verde e sem revisão. Os deploys de produção usam o servidor na DigitalOcean, com PM2 gerenciando o processo Node e Nginx como proxy reverso (detalhes na seção 8).
+O fluxo de contribuição é por Pull Request com o pipeline verde (ver `CONTRIBUTING.md`); em `main`, com tudo verde, o CI publica as imagens da API e do Web no GitHub Container Registry e o workflow de deploy as põe no ar numa VPS com Docker Compose, conferindo no `/api/health` que o commit no ar é o esperado e voltando sozinho para a versão anterior se a subida falha (detalhes na seção 8 e no ADR 59).
 
 ### 7.4 Análise Estática de Código e Segurança
 
@@ -1071,8 +1075,8 @@ A qualidade e a segurança do código são verificadas de forma automática, sem
 
 - **ESLint + Prettier** para padronização e detecção de problemas de estilo e de código
 - **TypeScript em modo estrito**, eliminando uma classe inteira de erros antes da execução
-- **SonarCloud** para análise contínua de qualidade, code smells e pontos de manutenção difícil
-- **`npm audit` + Dependabot** para identificar e atualizar dependências com vulnerabilidades conhecidas
+- **SonarCloud** para análise contínua de qualidade, code smells e pontos de manutenção difícil, com a cobertura do backend enviada pelo CI
+- **`npm audit` + Dependabot** para identificar e atualizar dependências com vulnerabilidades conhecidas: o CI barra vulnerabilidade alta, e o Dependabot abre os PRs de atualização toda semana
 - **Varredura de segredos** (secret scanning do GitHub) para impedir que chaves e tokens vazem no repositório
 
 Essas verificações são integradas ao pipeline de CI, de modo que problemas aparecem no próprio pull request.
@@ -1082,10 +1086,10 @@ Essas verificações são integradas ao pipeline de CI, de modo que problemas ap
 Com a plataforma em produção, é necessário enxergar o que está acontecendo:
 
 - **Logging estruturado** (Pino) em toda a API, com níveis e correlação por requisição
-- **Rastreamento de erros** com Sentry, capturando exceções em produção com contexto suficiente para depuração
-- **Health-check** (`/health`) e **monitoramento de uptime** (UptimeRobot ou o monitoramento da própria DigitalOcean), validando a meta de 99,5%
-- **Métricas de latência**, acompanhando o p95 das requisições para verificar a meta de resposta abaixo de 300ms (RNF-001)
-- **Analytics de produto** para acompanhar o funil de conversão (busca → proposta → pagamento → conclusão) e entender onde os usuários abandonam o fluxo
+- **Rastreamento de erros** com Sentry, capturando as falhas do servidor em produção com a versão, o commit e a pilha, sem nenhum dado pessoal
+- **Health-check** (`/api/health`) e **monitoramento de uptime** por uma sonda (blackbox) que consulta o endereço público como um usuário, com painel no Grafana e alerta por e-mail, validando a meta de 99,5%; um monitor externo (UptimeRobot ou equivalente) cobre a queda da máquina inteira
+- **Métricas de latência** no Prometheus, por rota, acompanhando o p95 das requisições para verificar a meta de resposta abaixo de 300ms (RNF-001), além das rodadas e falhas dos jobs em background
+- **Analytics de produto** para acompanhar o funil de conversão (busca → proposta → pagamento → conclusão) e entender onde os usuários abandonam o fluxo (não entregue nesta versão; os números de operação estão no painel do administrador)
 - **Audit log** das ações financeiras e críticas, já previsto na arquitetura
 
 ---
@@ -1096,7 +1100,7 @@ Esta seção descreve como rodar o projeto localmente e como ele é publicado em
 
 ### 8.1 Pré-requisitos
 
-- Node.js 20 ou superior
+- Node.js 22 ou superior
 - MySQL 8 (ou MariaDB compatível)
 - Conta no MercadoPago (credenciais de sandbox para desenvolvimento)
 - Conta na DigitalOcean (para o ambiente de produção)
@@ -1129,12 +1133,14 @@ As variáveis de ambiente sensíveis (credenciais do banco, segredos de JWT, cha
 
 ### 8.3 Produção
 
-O ambiente de produção roda em um droplet Ubuntu na DigitalOcean, com a seguinte configuração:
+O ambiente de produção roda numa VPS Ubuntu, com a seguinte configuração:
 
-- **PM2** gerenciando o processo Node da API (restart automático, logs centralizados)
-- **Nginx** como proxy reverso, encaminhando as requisições para a API e servindo o build estático do frontend
-- **Cloudflare** à frente, cuidando de CDN, SSL e proteção contra DDoS
-- Deploy automatizado por script, que executa o fluxo padrão: `git pull`, instalação de dependências, build, execução de migrações e `pm2 reload`
+- **Docker Compose** (`docker-compose.prod.yml`) com as imagens da API e do Web publicadas pelo CI no GitHub Container Registry; o contêiner reinicia sozinho e os logs são estruturados
+- **Caddy** como borda, com HTTPS automático (Let's Encrypt), HSTS e HTTP/3, à frente do **Nginx** que serve o build estático do frontend e encaminha `/api` para a API
+- **MySQL 8** sem porta no host, com as migrações aplicadas por um job próprio antes de a API subir, e backup diário por script
+- Deploy automatizado pelo GitHub Actions (`deploy.yml`): copia a configuração do commit, puxa as imagens, sobe, confere o commit no `/api/health` e volta para a versão anterior se algo falha
+
+O desenho inicial previa PM2 com `git pull` no servidor e Cloudflare à frente; a troca por contêineres e pelo Caddy está nos ADRs 20 e 59. O passo a passo completo está no `DEPLOY.md`.
 
 O deploy é acionado pelo pipeline de CI/CD após o merge em `main` (seção 7.3).
 
@@ -1151,7 +1157,7 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 | M3 | Módulo de serviços, contratações e pagamentos com escrow (MercadoPago); cobertura de testes do backend ≥ 75% nos módulos críticos | Jul–Ago/2026 |
 | M4 | Chat em tempo real (Socket.IO), gamificação e notificações; observabilidade (logging estruturado, Sentry, health-check, monitoramento de uptime e latência) | Set/2026 |
 | M5 | Dashboard financeiro, testes de frontend (≥ 25%), testes de usabilidade com usuários reais, ajustes de UX, documentação de deploy/instalação e Wiki do repositório | Out/2026 |
-| M6 | Deploy em produção (DigitalOcean + Nginx + PM2 + Cloudflare), validação com usuários reais, coleta de feedback, hardening de segurança e analytics de conversão | Nov–Dez/2026 |
+| M6 | Deploy em produção (VPS com Docker Compose, Caddy e deploy pelo GitHub Actions), validação com usuários reais, coleta de feedback, hardening de segurança e analytics de conversão | Nov–Dez/2026 |
 | Fase 2 | Aplicativo mobile (React Native + Expo), reaproveitando a API e a lógica já validadas, com arquitetura modular por features | 2027 |
 
 ---
@@ -1256,4 +1262,4 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 
 ---
 
-*RFC — Escambo v2.3 — PAC Extensionista VII — Católica SC — 2026 — Guilherme Renzo*
+*RFC — Escambo v2.4 — PAC Extensionista VII e VIII — Católica SC — 2026 — Guilherme Renzo*

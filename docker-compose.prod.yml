@@ -87,6 +87,11 @@ services:
       ATTACHMENT_PURGE_HOUR: ${ATTACHMENT_PURGE_HOUR:-4}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
       LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-10}
+      # Observabilidade (ADR 59): /metrics na porta 9464, só na rede interna (o Prometheus lê);
+      # erros no Sentry quando SENTRY_DSN tem valor.
+      METRICS_PORT: 9464
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
 
   api:
     image: *api-image
@@ -128,6 +133,94 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+  # --- Monitoramento (ADR 59), perfil opcional: COMPOSE_PROFILES=monitoring no .env ---
+  # O Prometheus lê o /metrics da API e a sonda externa; o Grafana mostra o painel "Escambo", avalia os
+  # alertas e os manda por e-mail (pelo SMTP do sistema), e só escuta no 127.0.0.1 da VPS
+  # (acesso por túnel: ssh -L 3000:127.0.0.1:3000 usuario@vps).
+  # Os arquivos de deploy/monitoring chegam pelo workflow Deploy. Bind sem `create_host_path`: se
+  # faltarem, a subida para com erro claro em vez de o Docker criar pastas vazias no lugar deles.
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [monitoring]
+    restart: unless-stopped
+    # O prometheus.yml não lê variável de ambiente: o endereço da sonda entra por substituição na subida.
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >-
+        sed "s|__PROBE_URL__|$$PROBE_URL|g" /etc/prometheus/prometheus.tmpl.yml > /prometheus/prometheus.yml &&
+        exec /bin/prometheus --config.file=/prometheus/prometheus.yml --storage.tsdb.path=/prometheus
+        --storage.tsdb.retention.time=$$RETENTION
+    environment:
+      PROBE_URL: https://${DOMAIN}/api/health
+      RETENTION: ${PROMETHEUS_RETENTION:-45d}
+    volumes:
+      - type: bind
+        source: ./deploy/monitoring/prometheus.yml
+        target: /etc/prometheus/prometheus.tmpl.yml
+        read_only: true
+        bind:
+          create_host_path: false
+      - prometheus_data:/prometheus
+    depends_on:
+      - api
+
+  # Sonda de fora para dentro: GET https://DOMAIN/api/health pelo Caddy, como um usuário (uptime, RNF-007).
+  blackbox:
+    image: prom/blackbox-exporter:v0.27.0
+    profiles: [monitoring]
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ./deploy/monitoring/blackbox.yml
+        target: /etc/blackbox_exporter/config.yml
+        read_only: true
+        bind:
+          create_host_path: false
+
+  grafana:
+    image: grafana/grafana-oss:12.1.1
+    profiles: [monitoring]
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      # Sem senha o Grafana não sobe (grafana/entrypoint.sh). Um `:?` aqui barraria também quem não
+      # usa o perfil.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      # Alertas por e-mail: para ALERT_EMAIL_TO (padrão: o ACME_EMAIL), pelo SMTP dos avisos do sistema.
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-${ACME_EMAIL:-}}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+    entrypoint: ['/bin/sh', '/etc/escambo/grafana-entrypoint.sh']
+    volumes:
+      - type: bind
+        source: ./deploy/monitoring/grafana/entrypoint.sh
+        target: /etc/escambo/grafana-entrypoint.sh
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./deploy/monitoring/grafana/provisioning
+        target: /etc/grafana/provisioning
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./deploy/monitoring/grafana/dashboards
+        target: /var/lib/grafana/dashboards
+        read_only: true
+        bind:
+          create_host_path: false
+      - grafana_data:/var/lib/grafana
+    ports:
+      - '127.0.0.1:${GRAFANA_PORT:-3000}:3000'
+    depends_on:
+      - prometheus
+
 volumes:
   # Com o projeto `escambo`, vira `escambo_db_data` — o mesmo volume do docker-compose.yml,
   # então uma instância da demo pode ser promovida sem perder dados.
@@ -135,3 +228,5 @@ volumes:
   api_data:
   caddy_data:
   caddy_config:
+  prometheus_data:
+  grafana_data:

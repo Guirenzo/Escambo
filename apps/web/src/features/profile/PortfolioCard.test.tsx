@@ -30,12 +30,13 @@ vi.mock('../../lib/api', () => ({
     addPortfolioItem: vi.fn(() => Promise.resolve(undefined)),
     removePortfolioItem: vi.fn(() => Promise.resolve(undefined)),
     reorderPortfolio: vi.fn(() => Promise.resolve(undefined)),
-    uploadImage: vi.fn(() => Promise.resolve({ url: '' })),
+    uploadMedia: vi.fn(() => Promise.resolve({ url: '' })),
   },
 }));
 
 const { api } = await import('../../lib/api');
 const reorderPortfolio = vi.mocked(api.reorderPortfolio);
+const myPortfolio = vi.mocked(api.myPortfolio);
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -46,21 +47,35 @@ function wrap(ui: ReactNode) {
   );
 }
 
-/** Os títulos na ordem em que estão na tela. */
+/** Os títulos na ordem em que estão na tela, lidos do nome da alça de cada linha. */
 const titulos = (): string[] =>
-  within(screen.getByTestId('portfolio-list'))
-    .getAllByRole('listitem')
-    .map((li) => li.querySelector('strong')?.textContent ?? '');
+  within(screen.getByRole('list'))
+    .getAllByRole('button', { name: /^Reordenar / })
+    .map((b) => (b.getAttribute('aria-label') ?? '').replace(/^Reordenar /, ''));
 
+/**
+ * O que o leitor de tela ouve: a região viva do cartão (um parágrafo sem papel, só com aria-live).
+ * Procurar pelo aria-live, e não pela classe, garante que a frase está mesmo numa região anunciada.
+ */
 const anuncio = (): string =>
-  document.querySelector('.portfolio-announce')?.textContent?.trim() ?? '';
+  document.querySelector('p[aria-live="polite"]')?.textContent?.trim() ?? '';
 
 const alca = (titulo: string): HTMLElement =>
   screen.getByRole('button', { name: `Reordenar ${titulo}` });
 
+const DICA_DA_ALCA = 'Na alça: espaço pega, setas movem, espaço solta, Esc ou Tab cancela.';
+
 beforeEach(() => {
   lista = [item(1, 'Logo', 0), item(2, 'Site', 1), item(3, 'Cardápio', 2), item(4, 'Vitrine', 3)];
-  reorderPortfolio.mockClear();
+  // mockReset também descarta respostas "Once" que um teste anterior não tenha consumido.
+  myPortfolio.mockReset();
+  myPortfolio.mockImplementation(() => Promise.resolve(lista));
+  reorderPortfolio.mockReset();
+  // A API de mentira grava a ordem, para a lista relida depois de soltar vir na ordem nova.
+  reorderPortfolio.mockImplementation((ids: number[]) => {
+    lista = ids.map((id) => lista.find((i) => i.id === id)!);
+    return Promise.resolve(lista);
+  });
   // Lacunas do jsdom que o arraste por ponteiro usa; aqui só precisam existir.
   Element.prototype.scrollIntoView = vi.fn();
   Element.prototype.setPointerCapture = vi.fn();
@@ -74,12 +89,18 @@ describe('portfólio: pegar e soltar pelo teclado (ADR 53)', () => {
     render(wrap(<PortfolioCard />));
     await screen.findByText('Vitrine');
 
+    // Antes de pegar, a alça diz as teclas.
+    expect(alca('Vitrine')).toHaveAccessibleDescription(DICA_DA_ALCA);
+
     alca('Vitrine').focus();
     await user.keyboard(' ');
     expect(alca('Vitrine')).toHaveAttribute('aria-pressed', 'true');
     expect(anuncio()).toBe(
       'Pegou Vitrine, 4º de 4. Setas movem, espaço solta, Esc ou Tab cancela.',
     );
+    // Na mão, a dica sai da alça (a frase de pegar já disse as teclas); as outras seguem com ela.
+    expect(alca('Vitrine')).not.toHaveAccessibleDescription();
+    expect(alca('Logo')).toHaveAccessibleDescription(DICA_DA_ALCA);
 
     await user.keyboard('{ArrowUp}{ArrowUp}');
     // A prévia é a ordem de verdade na tela, e nada foi gravado ainda.
@@ -94,6 +115,10 @@ describe('portfólio: pegar e soltar pelo teclado (ADR 53)', () => {
     expect(reorderPortfolio).toHaveBeenCalledWith([1, 4, 2, 3]);
     expect(anuncio()).toBe('Vitrine agora é o 2º de 4.');
     expect(alca('Vitrine')).toHaveAttribute('aria-pressed', 'false');
+    expect(alca('Vitrine')).toHaveAccessibleDescription(DICA_DA_ALCA);
+    // Gravada, a lista é relida do servidor e fica na ordem nova.
+    await waitFor(() => expect(myPortfolio).toHaveBeenCalledTimes(2));
+    expect(titulos()).toEqual(['Logo', 'Vitrine', 'Site', 'Cardápio']);
   });
 
   it('Esc devolve a ordem e não grava nada', async () => {
@@ -259,15 +284,21 @@ describe('portfólio: pegar e soltar pelo teclado (ADR 53)', () => {
 
   it('gravação que falha: a ordem volta, o erro aparece e a prévia não fica mentindo', async () => {
     const user = userEvent.setup();
-    reorderPortfolio.mockRejectedValueOnce(new Error('Não foi possível mudar a ordem'));
+    // Mensagem diferente do texto padrão: prova que a tela mostra a que a API mandou.
+    reorderPortfolio.mockRejectedValueOnce(
+      new Error('Portfólio em revisão: a ordem não pode mudar.'),
+    );
     render(wrap(<PortfolioCard />));
     await screen.findByText('Vitrine');
 
     alca('Vitrine').focus();
     await user.keyboard(' {ArrowUp} ');
     expect(reorderPortfolio).toHaveBeenCalledTimes(1);
+    expect(reorderPortfolio).toHaveBeenCalledWith([1, 2, 4, 3]);
 
-    expect(await screen.findByText('Não foi possível mudar a ordem')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Portfólio em revisão: a ordem não pode mudar.'),
+    ).toBeInTheDocument();
     // A prévia cai no mesmo tempo do assentamento do arraste (SETTLE_MS), e não fica para sempre.
     await waitFor(() => expect(titulos()).toEqual(['Logo', 'Site', 'Cardápio', 'Vitrine']), {
       timeout: 3000,
@@ -297,5 +328,7 @@ describe('portfólio: pegar e soltar pelo teclado (ADR 53)', () => {
     expect(reorderPortfolio).toHaveBeenCalledTimes(1);
     expect(reorderPortfolio).toHaveBeenCalledWith([1, 2, 4, 3]);
     expect(anuncio()).toBe('Vitrine agora é o 3º de 4.');
+    await waitFor(() => expect(myPortfolio).toHaveBeenCalledTimes(2));
+    expect(titulos()).toEqual(['Logo', 'Site', 'Vitrine', 'Cardápio']);
   });
 });

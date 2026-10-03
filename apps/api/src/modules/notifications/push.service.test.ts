@@ -1,4 +1,34 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Repositories e provedor falsos: os testes de envio conferem o que o service pede a cada um. As
+// funções puras do provedor (resultForStatus) continuam as de verdade.
+const { subs, notifs, users, provider } = vi.hoisted(() => ({
+  subs: {
+    upsert: vi.fn(),
+    remove: vi.fn(),
+    belongsTo: vi.fn(),
+    countForUser: vi.fn(),
+    listForUser: vi.fn(),
+    markSent: vi.fn(),
+    removeById: vi.fn(),
+    markError: vi.fn(),
+    deliversWork: vi.fn(),
+  },
+  notifs: { countHeld: vi.fn(), markPushHeld: vi.fn() },
+  users: { findById: vi.fn() },
+  provider: { name: 'simulated' as const, send: vi.fn() },
+}));
+vi.mock('./push.repository', () => ({ pushRepository: subs }));
+vi.mock('./notifications.repository', () => ({ notificationsRepository: notifs }));
+vi.mock('../auth/auth.repository', () => ({ authRepository: users }));
+vi.mock('./push.provider', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./push.provider')>()),
+  activePushProvider: () => provider,
+  vapidKeys: () => ({ publicKey: 'chave-publica-vapid', privateKey: 'chave-privada-vapid' }),
+}));
+
+import { env } from '../../config/env';
+import { logger } from '../../config/logger';
 import {
   buildPayload,
   passCategoryFor,
@@ -48,6 +78,30 @@ describe('avisos push (ADR 52)', () => {
     expect(
       buildPayload({ type: 'dispute_opened', title: 'Disputa', data: { disputeId: 4 } }).tag,
     ).toBe('dispute_opened:4');
+  });
+
+  it('cada assunto vira etiqueta (contratação, disputa, troca, busca, saque, pagamento, avaliação, remoção), e a contratação vem primeiro', () => {
+    const tagOf = (data: Record<string, unknown>): string =>
+      buildPayload({ type: 't', title: 'x', data, notificationId: 31 }).tag;
+    expect(tagOf({ contractId: 1 })).toBe('t:1');
+    expect(tagOf({ disputeId: 2 })).toBe('t:2');
+    expect(tagOf({ barterId: 3 })).toBe('t:3');
+    expect(tagOf({ savedSearchId: 4 })).toBe('t:4');
+    expect(tagOf({ withdrawalId: 5 })).toBe('t:5');
+    expect(tagOf({ paymentId: 6 })).toBe('t:6');
+    expect(tagOf({ reviewId: 7 })).toBe('t:7');
+    expect(tagOf({ removalId: 'r8' })).toBe('t:r8');
+    // Dois assuntos no mesmo aviso: vale o primeiro da lista, não a ordem das chaves do objeto.
+    expect(tagOf({ disputeId: 2, contractId: 1 })).toBe('t:1');
+    expect(tagOf({ removalId: 8, barterId: 3 })).toBe('t:3');
+    // Assunto nulo ou que não é número nem texto não conta; campo fora da lista também não.
+    expect(tagOf({ contractId: null, disputeId: 2 })).toBe('t:2');
+    expect(tagOf({ contractId: { id: 1 }, rating: 5 })).toBe('t:n31');
+  });
+
+  it('pushUrl: contratação nula ou que não é número nem texto não vira endereço de contratação', () => {
+    expect(pushUrl('contract_proposal', { contractId: null })).toBe('/notificacoes');
+    expect(pushUrl('barter_accepted', { contractId: { id: 1 } })).toBe('/trocas');
   });
 
   it('sem assunto, cada aviso fica com etiqueta própria e não apaga o anterior', () => {
@@ -145,5 +199,424 @@ describe('o que sai no silêncio (ADR 56)', () => {
       buildPayload({ type: 'contract_overdue', title: 't', notificationId: 5 }, { ownTag: true })
         .tag,
     ).toBe('contract_overdue:n5');
+  });
+});
+
+/** Assinaturas por aparelho e o envio para todos eles (ADR 52), com repositories e provedor falsos. */
+describe('pushService: assinaturas e envio (ADR 52)', () => {
+  const ENDPOINT = 'https://fcm.googleapis.com/fcm/send/aparelho-1';
+  const payload = { title: 'Proposta', body: 'x', url: '/contratos/3', tag: 'contract_proposal:3' };
+  const device = (id: number) => ({
+    id,
+    user_id: 7,
+    endpoint: `https://push.escambo.test/${id}`,
+    p256dh: `p${id}`,
+    auth_key: `a${id}`,
+  });
+  const target = (id: number) => ({
+    endpoint: `https://push.escambo.test/${id}`,
+    p256dh: `p${id}`,
+    auth: `a${id}`,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    env.PUSH_PROVIDER = 'simulated';
+  });
+  afterEach(() => {
+    // vitest.config.ts fixa 'off' nos testes de unidade.
+    env.PUSH_PROVIDER = 'off';
+    vi.restoreAllMocks();
+  });
+
+  it('com o canal ligado, a chave pública é a do par VAPID (nunca a privada)', () => {
+    expect(pushService.publicKey()).toBe('chave-publica-vapid');
+  });
+
+  it('subscribe grava a assinatura do aparelho na conta de quem pediu', async () => {
+    await pushService.subscribe(7, { endpoint: ENDPOINT, p256dh: 'chave', auth: 'segredo' });
+
+    expect(subs.upsert).toHaveBeenCalledTimes(1);
+    expect(subs.upsert).toHaveBeenCalledWith({
+      userId: 7,
+      endpoint: ENDPOINT,
+      p256dh: 'chave',
+      auth: 'segredo',
+    });
+  });
+
+  it('unsubscribe só remove o aparelho da própria conta e diz se havia o que remover', async () => {
+    subs.remove.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+    expect(await pushService.unsubscribe(7, ENDPOINT)).toBe(true);
+    expect(await pushService.unsubscribe(8, ENDPOINT)).toBe(false);
+
+    expect(subs.remove).toHaveBeenNthCalledWith(1, 7, ENDPOINT);
+    expect(subs.remove).toHaveBeenNthCalledWith(2, 8, ENDPOINT);
+  });
+
+  it('as consultas da tela (este aparelho, quantos aparelhos, retidos, quem entrega trabalho) são sempre da conta pedida', async () => {
+    subs.belongsTo.mockResolvedValue(true);
+    subs.countForUser.mockResolvedValue(2);
+    notifs.countHeld.mockResolvedValue(3);
+    subs.deliversWork.mockResolvedValue(false);
+
+    expect(await pushService.subscribed(7, ENDPOINT)).toBe(true);
+    expect(await pushService.devices(7)).toBe(2);
+    expect(await pushService.held(7)).toBe(3);
+    expect(await pushService.deliversWork(7)).toBe(false);
+
+    expect(subs.belongsTo).toHaveBeenCalledWith(7, ENDPOINT);
+    expect(subs.countForUser).toHaveBeenCalledWith(7);
+    expect(notifs.countHeld).toHaveBeenCalledWith(7);
+    expect(subs.deliversWork).toHaveBeenCalledWith(7);
+  });
+
+  describe('send', () => {
+    it('envia para cada aparelho da conta: o entregue ganha a marca, o morto é apagado e a falha fica anotada', async () => {
+      subs.listForUser.mockResolvedValue([device(1), device(2), device(3)]);
+      provider.send
+        .mockResolvedValueOnce('sent')
+        .mockResolvedValueOnce('gone')
+        .mockResolvedValueOnce('failed');
+      const opts = { ttlSeconds: 600, urgency: 'high' as const };
+
+      const result = await pushService.send(7, payload, opts);
+
+      expect(result).toEqual({ sent: 1, removed: 1, failed: 1 });
+      expect(subs.listForUser).toHaveBeenCalledWith(7);
+      expect(provider.send.mock.calls).toEqual([
+        [target(1), payload, opts],
+        [target(2), payload, opts],
+        [target(3), payload, opts],
+      ]);
+      expect(subs.markSent.mock.calls).toEqual([[1]]);
+      expect(subs.removeById.mock.calls).toEqual([[2]]);
+      expect(subs.markError.mock.calls).toEqual([[3, 'provedor simulated']]);
+    });
+
+    it('sem opções, o provedor recebe opções vazias (o TTL padrão é dele)', async () => {
+      subs.listForUser.mockResolvedValue([device(1)]);
+      provider.send.mockResolvedValue('sent');
+
+      expect(await pushService.send(7, payload)).toEqual({ sent: 1, removed: 0, failed: 0 });
+
+      expect(provider.send.mock.calls[0]![2]).toStrictEqual({});
+    });
+
+    it('conta sem aparelho: nada sai e nada é marcado', async () => {
+      subs.listForUser.mockResolvedValue([]);
+
+      expect(await pushService.send(7, payload)).toEqual({ sent: 0, removed: 0, failed: 0 });
+
+      expect(provider.send).not.toHaveBeenCalled();
+      expect(subs.markSent).not.toHaveBeenCalled();
+      expect(subs.removeById).not.toHaveBeenCalled();
+      expect(subs.markError).not.toHaveBeenCalled();
+    });
+
+    it('com o canal desligado, nem consulta os aparelhos', async () => {
+      env.PUSH_PROVIDER = 'off';
+
+      expect(await pushService.send(7, payload)).toEqual({ sent: 0, removed: 0, failed: 0 });
+
+      expect(subs.listForUser).not.toHaveBeenCalled();
+      expect(provider.send).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('notify (melhor esforço)', () => {
+    const notice = {
+      type: 'contract_proposal',
+      title: 'Proposta',
+      body: 'x',
+      data: { contractId: 3 },
+      notificationId: 41,
+    };
+    const account = (over: Record<string, unknown> = {}) => ({
+      id: 7,
+      deleted_at: null,
+      timezone: 'America/Sao_Paulo',
+      push_quiet_start: null,
+      push_quiet_end: null,
+      push_quiet_pass: null,
+      ...over,
+    });
+    const noon = new Date('2026-09-15T15:00:00Z'); // 12:00 em Brasília
+
+    it('nunca lança: se a consulta da conta falha, quem notificou segue e o log registra o tipo', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+      const down = new Error('banco fora');
+      users.findById.mockRejectedValue(down);
+
+      await expect(pushService.notify(7, notice)).resolves.toBeUndefined();
+
+      expect(warn).toHaveBeenCalledWith(
+        { err: down, type: 'contract_proposal' },
+        'push da notificação falhou',
+      );
+      expect(provider.send).not.toHaveBeenCalled();
+    });
+
+    it('falha no envio (provedor fora) também não derruba quem notificou', async () => {
+      users.findById.mockResolvedValue(account());
+      subs.listForUser.mockResolvedValue([device(1)]);
+      const warn = vi.spyOn(logger, 'warn');
+      const offline = new Error('provedor fora');
+      provider.send.mockRejectedValue(offline);
+
+      await expect(pushService.notify(7, notice, noon)).resolves.toBeUndefined();
+
+      expect(provider.send.mock.calls).toEqual([
+        [
+          target(1),
+          { title: 'Proposta', body: 'x', url: '/contratos/3', tag: 'contract_proposal:3' },
+          { ttlSeconds: 12 * 3600 },
+        ],
+      ]);
+      expect(subs.markSent).not.toHaveBeenCalled();
+      expect(subs.markError).not.toHaveBeenCalled();
+      expect(subs.removeById).not.toHaveBeenCalled();
+      expect(warn.mock.calls).toEqual([
+        [{ err: offline, type: 'contract_proposal' }, 'push da notificação falhou'],
+      ]);
+    });
+
+    it('falha ao anotar a entrega (banco fora depois do envio) também fica só no log de quem notificou', async () => {
+      users.findById.mockResolvedValue(account());
+      subs.listForUser.mockResolvedValue([device(1)]);
+      provider.send.mockResolvedValue('sent');
+      const warn = vi.spyOn(logger, 'warn');
+      const down = new Error('banco fora');
+      subs.markSent.mockRejectedValueOnce(down);
+
+      await expect(pushService.notify(7, notice, noon)).resolves.toBeUndefined();
+
+      expect(subs.markSent.mock.calls).toEqual([[1]]);
+      expect(warn.mock.calls).toEqual([
+        [{ err: down, type: 'contract_proposal' }, 'push da notificação falhou'],
+      ]);
+    });
+
+    it('falha ao marcar o aviso como retido não derruba quem notificou, e nada sai no silêncio', async () => {
+      const night = new Date('2026-09-15T01:00:00Z'); // 22:00 em Brasília
+      users.findById.mockResolvedValue(account({ push_quiet_start: 22, push_quiet_end: 7 }));
+      const warn = vi.spyOn(logger, 'warn');
+      const down = new Error('banco fora');
+      notifs.markPushHeld.mockRejectedValueOnce(down);
+
+      await expect(pushService.notify(7, notice, night)).resolves.toBeUndefined();
+
+      expect(notifs.markPushHeld.mock.calls).toEqual([[41, night]]);
+      expect(subs.listForUser).not.toHaveBeenCalled();
+      expect(provider.send).not.toHaveBeenCalled();
+      expect(warn.mock.calls).toEqual([
+        [{ err: down, type: 'contract_proposal' }, 'push da notificação falhou'],
+      ]);
+    });
+
+    it('com o canal desligado, notify nem consulta a conta nem os aparelhos', async () => {
+      env.PUSH_PROVIDER = 'off';
+
+      await expect(pushService.notify(7, notice, noon)).resolves.toBeUndefined();
+
+      expect(users.findById).not.toHaveBeenCalled();
+      expect(subs.listForUser).not.toHaveBeenCalled();
+      expect(notifs.markPushHeld).not.toHaveBeenCalled();
+    });
+
+    it('conta encerrada não recebe aviso, mesmo fora do silêncio e com aparelho ligado', async () => {
+      users.findById.mockResolvedValue(account({ deleted_at: new Date('2026-09-01T00:00:00Z') }));
+      subs.listForUser.mockResolvedValue([device(1)]);
+
+      await pushService.notify(7, notice, noon);
+
+      expect(users.findById).toHaveBeenCalledWith(7);
+      expect(subs.listForUser).not.toHaveBeenCalled();
+      expect(provider.send).not.toHaveBeenCalled();
+    });
+
+    it('dentro do silêncio, o aviso fica marcado como retido naquela notificação, com a hora do evento, e nada sai (ADR 54)', async () => {
+      const night = new Date('2026-09-15T01:00:00Z'); // 22:00 em Brasília
+      users.findById.mockResolvedValue(account({ push_quiet_start: 22, push_quiet_end: 7 }));
+
+      await pushService.notify(7, notice, night);
+
+      expect(notifs.markPushHeld.mock.calls).toEqual([[41, night]]);
+      expect(subs.listForUser).not.toHaveBeenCalled();
+      expect(provider.send).not.toHaveBeenCalled();
+    });
+
+    it('aparelho que o serviço de push diz que morreu é apagado também no caminho do aviso comum', async () => {
+      users.findById.mockResolvedValue(account());
+      subs.listForUser.mockResolvedValue([device(1), device(2)]);
+      provider.send.mockResolvedValueOnce('gone').mockResolvedValueOnce('sent');
+
+      await pushService.notify(7, notice, noon);
+
+      expect(subs.removeById.mock.calls).toEqual([[1]]);
+      expect(subs.markSent.mock.calls).toEqual([[2]]);
+      expect(subs.markError).not.toHaveBeenCalled();
+    });
+
+    it('conta que não existe mais não recebe aviso nem consulta de aparelhos', async () => {
+      users.findById.mockResolvedValue(undefined);
+
+      await pushService.notify(7, notice, noon);
+
+      expect(users.findById).toHaveBeenCalledWith(7);
+      expect(subs.listForUser).not.toHaveBeenCalled();
+      expect(notifs.markPushHeld).not.toHaveBeenCalled();
+    });
+
+    it('tipo que não vira push (chat) nem consulta a conta', async () => {
+      await pushService.notify(7, { ...notice, type: 'message_received' }, noon);
+
+      expect(users.findById).not.toHaveBeenCalled();
+      expect(provider.send).not.toHaveBeenCalled();
+    });
+
+    it('fora do silêncio, sai para os aparelhos da conta com o aviso montado e o TTL', async () => {
+      users.findById.mockResolvedValue(account());
+      subs.listForUser.mockResolvedValue([device(1)]);
+      provider.send.mockResolvedValue('sent');
+
+      await pushService.notify(7, notice, noon);
+
+      expect(subs.listForUser).toHaveBeenCalledWith(7);
+      expect(provider.send).toHaveBeenCalledTimes(1);
+      expect(provider.send).toHaveBeenCalledWith(
+        target(1),
+        { title: 'Proposta', body: 'x', url: '/contratos/3', tag: 'contract_proposal:3' },
+        { ttlSeconds: 12 * 3600 },
+      );
+      expect(subs.markSent).toHaveBeenCalledWith(1);
+      expect(notifs.markPushHeld).not.toHaveBeenCalled();
+    });
+
+    it('dentro do silêncio, aviso sem notificação in-app (sem id) fica retido sem marcar nada', async () => {
+      users.findById.mockResolvedValue(account({ push_quiet_start: 22, push_quiet_end: 7 }));
+
+      await pushService.notify(
+        7,
+        { type: 'contract_proposal', title: 'Proposta' },
+        new Date('2026-09-15T01:00:00Z'), // 22:00 em Brasília
+      );
+
+      expect(notifs.markPushHeld).not.toHaveBeenCalled();
+      expect(subs.listForUser).not.toHaveBeenCalled();
+    });
+
+    it('categoria afirmada que não é a do tipo fica no log e o aviso segue como comum (ADR 56)', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+      users.findById.mockResolvedValue(account({ push_quiet_pass: 'deadline' }));
+      subs.listForUser.mockResolvedValue([device(1)]);
+      provider.send.mockResolvedValue('sent');
+
+      await pushService.notify(7, { ...notice, passCategory: 'deadline' }, noon);
+
+      expect(warn).toHaveBeenCalledWith(
+        { type: 'contract_proposal', passCategory: 'deadline' },
+        'categoria fora da lista do ADR 56 para este tipo: vai como aviso comum',
+      );
+      // Aviso comum: sem prioridade alta e com a etiqueta de sempre.
+      expect(provider.send.mock.calls[0]![1]).toMatchObject({ tag: 'contract_proposal:3' });
+      expect(provider.send.mock.calls[0]![2]).toStrictEqual({ ttlSeconds: 12 * 3600 });
+    });
+
+    it('o aviso no log é só para o par errado: sem categoria, ou com a categoria do próprio tipo, nada é registrado', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+      users.findById.mockResolvedValue(account({ push_quiet_pass: 'deadline' }));
+      subs.listForUser.mockResolvedValue([device(1)]);
+      provider.send.mockResolvedValue('sent');
+
+      // Aviso comum, sem categoria afirmada.
+      await pushService.notify(7, notice, noon);
+      // Prazo estourado com a categoria que o mapa dá a ele (ADR 56).
+      await pushService.notify(
+        7,
+        { ...notice, type: 'contract_overdue', passCategory: 'deadline' },
+        noon,
+      );
+
+      expect(warn).not.toHaveBeenCalled();
+      expect(provider.send.mock.calls.map((c) => (c[1] as { tag: string }).tag)).toEqual([
+        'contract_proposal:3',
+        // Fora da janela não é "sair no silêncio": a etiqueta é a de sempre, sem prioridade alta.
+        'contract_overdue:3',
+      ]);
+      expect(provider.send.mock.calls[1]![2]).toStrictEqual({ ttlSeconds: 12 * 3600 });
+    });
+  });
+
+  describe('sendTest', () => {
+    it('manda o aviso de teste, com texto e etiqueta próprios, só para os aparelhos da conta', async () => {
+      users.findById.mockResolvedValue(undefined);
+      subs.listForUser.mockResolvedValue([device(1)]);
+      provider.send.mockResolvedValue('sent');
+
+      const result = await pushService.sendTest(7, new Date('2026-09-15T15:00:00Z'));
+
+      expect(result).toEqual({ sent: 1, removed: 0, failed: 0 });
+      expect(users.findById).toHaveBeenCalledWith(7);
+      expect(subs.listForUser).toHaveBeenCalledWith(7);
+      expect(provider.send).toHaveBeenCalledWith(
+        target(1),
+        {
+          title: 'Tudo certo!',
+          body: 'É assim que os avisos do Escambo vão chegar neste aparelho.',
+          url: '/notificacoes',
+          tag: 'push_test:n0',
+        },
+        // Sem janela de silêncio (aqui, nem conta carregada), vale o teto de 12 horas.
+        { ttlSeconds: 12 * 3600 },
+      );
+    });
+
+    const quietAccount = {
+      id: 7,
+      deleted_at: null,
+      timezone: 'America/Sao_Paulo',
+      push_quiet_start: 22,
+      push_quiet_end: 7,
+      push_quiet_pass: null,
+    };
+
+    it('fura o silêncio de propósito: dentro da janela sai do mesmo jeito, sem marcar retido e sem prioridade alta (ADR 54)', async () => {
+      users.findById.mockResolvedValue(quietAccount);
+      subs.listForUser.mockResolvedValue([device(1)]);
+      provider.send.mockResolvedValue('sent');
+
+      // 23:00 em Brasília: dentro da janela 22→7.
+      const result = await pushService.sendTest(7, new Date('2026-09-15T02:00:00Z'));
+
+      expect(result).toEqual({ sent: 1, removed: 0, failed: 0 });
+      expect(notifs.markPushHeld).not.toHaveBeenCalled();
+      expect(provider.send).toHaveBeenCalledTimes(1);
+      // O próximo início da janela é só amanhã às 22:00 (23 h): vale o teto de 12 horas, e a
+      // chave da prioridade nem vai.
+      expect(provider.send.mock.calls[0]![2]).toStrictEqual({ ttlSeconds: 12 * 3600 });
+      expect(subs.markSent).toHaveBeenCalledWith(1);
+    });
+
+    it('a 5 minutos do silêncio, o TTL do teste fica no piso de 15 minutos', async () => {
+      users.findById.mockResolvedValue(quietAccount);
+      subs.listForUser.mockResolvedValue([device(1)]);
+      provider.send.mockResolvedValue('sent');
+
+      await pushService.sendTest(7, new Date('2026-09-15T00:55:00Z')); // 21:55 em Brasília
+
+      expect(provider.send.mock.calls[0]![2]).toStrictEqual({ ttlSeconds: 15 * 60 });
+    });
+
+    it('falha ao listar os aparelhos sobe para a rota: o teste é um pedido da pessoa, não melhor esforço', async () => {
+      const down = new Error('banco fora');
+      users.findById.mockResolvedValue(undefined);
+      subs.listForUser.mockRejectedValue(down);
+
+      await expect(pushService.sendTest(7)).rejects.toBe(down);
+
+      expect(provider.send).not.toHaveBeenCalled();
+    });
   });
 });

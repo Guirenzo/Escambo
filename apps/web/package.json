@@ -1,6 +1,6 @@
 {
   "name": "@escambo/web",
-  "version": "1.39.0",
+  "version": "1.40.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:cov": "vitest run --coverage",
     "e2e": "playwright test --project=desktop --project=mobile",
     "e2e:ui": "playwright test --ui",
     "screenshots": "playwright test --project=screenshots"
@@ -36,6 +37,7 @@
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^5.0.0",
     "jsdom": "^29.1.1",
     "vite": "^6.0.5",
     "vitest": "^5.0.0"

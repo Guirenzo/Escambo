@@ -1,0 +1,194 @@
+# Regras de alerta do Escambo (ADR 59), avaliadas pelo Grafana sobre o Prometheus a cada minuto.
+# Aparecem em Alerting → Alert rules e saem por e-mail pelo ponto de contato de contact-points.yml.
+# Cada regra: A consulta o Prometheus (instantâneo), B reduz ao último valor, C compara com o limite.
+# (O Grafana não troca variáveis de ambiente nas anotações: `{{ $labels.x }}` vai como está.)
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: escambo
+    folder: Escambo
+    interval: 1m
+    rules:
+      # Sem dado também alerta: se a sonda parar, ninguém mais sabe se o site está no ar.
+      - uid: escambo-site-fora-do-ar
+        title: SiteForaDoAr
+        condition: C
+        for: 3m
+        noDataState: Alerting
+        execErrState: Alerting
+        labels:
+          severity: critical
+        annotations:
+          summary: 'O /api/health não responde 200 com o banco de pé (ou a sonda parou) há 3 minutos'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: probe_success{job="uptime"}
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      - uid: escambo-api-sem-metricas
+        title: ApiSemMetricas
+        condition: C
+        for: 3m
+        noDataState: Alerting
+        execErrState: Alerting
+        labels:
+          severity: critical
+        annotations:
+          summary: 'O Prometheus não alcança a API (processo caído ou reiniciando em laço)'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: up{job="api"}
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # `or vector(0)`: enquanto não houve nenhum 5xx a série nem existe, e a conta daria vazio.
+      - uid: escambo-erros-do-servidor
+        title: ErrosDoServidor
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Mais de 2% das requisições com erro 5xx nos últimos 10 minutos'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                100 * (sum(rate(escambo_http_request_duration_seconds_count{status=~"5.."}[5m])) or vector(0))
+                / clamp_min(sum(rate(escambo_http_request_duration_seconds_count[5m])), 1e-9)
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [2] }
+
+      # Sem tráfego o p95 não é número: o redutor descarta e a regra fica normal.
+      - uid: escambo-latencia-alta
+        title: LatenciaAlta
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: 'p95 das requisições acima de 1 s nos últimos 10 minutos (RNF de desempenho)'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: histogram_quantile(0.95, sum by (le) (rate(escambo_http_request_duration_seconds_bucket[5m])))
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+
+      # Uma série por job (rótulo job_name): o alerta diz qual falhou.
+      - uid: escambo-job-falhando
+        title: JobFalhando
+        condition: C
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: 'O job {{ $labels.job_name }} falhou nos últimos 30 minutos (ver o log da API)'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: sum by (job_name) (increase(escambo_job_runs_total{outcome="error"}[30m]))
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }

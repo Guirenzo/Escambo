@@ -15,12 +15,13 @@ const base = {
 };
 
 describe('QueryState (estados padrão do kit)', () => {
-  it('carregando → skeleton', () => {
-    render(<QueryState isLoading error={null} data={undefined} {...base} />);
+  it('carregando mostra o esqueleto e nada do conteúdo', () => {
+    render(<QueryState isLoading error={null} data={['a']} {...base} />);
     expect(screen.getByRole('status', { name: 'Carregando' })).toBeInTheDocument();
+    expect(screen.queryByRole('list')).not.toBeInTheDocument();
   });
 
-  it('erro → mensagem + botão de tentar de novo que chama onRetry', async () => {
+  it('erro mostra a mensagem dele e o "Tentar de novo" chama onRetry', async () => {
     const onRetry = vi.fn();
     render(
       <QueryState
@@ -36,14 +37,25 @@ describe('QueryState (estados padrão do kit)', () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
-  it('vazio → empty state com a mensagem informada', () => {
-    render(<QueryState isLoading={false} error={null} data={[]} empty="Nada aqui." {...base} />);
-    expect(screen.getByText('Nada aqui.')).toBeInTheDocument();
+  it('erro vem antes dos dados antigos: a lista que já tinha chegado sai da tela', () => {
+    render(
+      <QueryState isLoading={false} error={new Error('Deu ruim')} data={['a', 'b']} {...base} />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Deu ruim');
+    expect(screen.queryByRole('list')).not.toBeInTheDocument();
   });
 
-  it('dados → renderiza o conteúdo', () => {
+  it('vazio mostra a mensagem informada no lugar da lista', () => {
+    render(<QueryState isLoading={false} error={null} data={[]} empty="Nada aqui." {...base} />);
+    expect(screen.getByText('Nada aqui.')).toBeInTheDocument();
+    expect(screen.queryByRole('list')).not.toBeInTheDocument();
+  });
+
+  it('com dados, mostra o conteúdo, sem carregando, erro ou vazio', () => {
     render(<QueryState isLoading={false} error={null} data={['a', 'b']} {...base} />);
-    expect(screen.getByText('a')).toBeInTheDocument();
-    expect(screen.getByText('b')).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['a', 'b']);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nada por aqui ainda.')).not.toBeInTheDocument();
   });
 });

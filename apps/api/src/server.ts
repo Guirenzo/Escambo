@@ -5,6 +5,8 @@ import { buildInfo } from './config/build-info';
 import { pingDb, pool } from './config/db';
 import { env } from './config/env';
 import { logger } from './config/logger';
+import { startMetricsServer } from './config/metrics';
+import { captureError, flushSentry, initSentry } from './config/sentry';
 import { createSocketServer } from './config/socket';
 import { startJobs, stopJobs } from './jobs/scheduler';
 
@@ -25,11 +27,13 @@ async function waitForDb(retries = 10, delayMs = 1500): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  await initSentry(); // SENTRY_DSN vazio: não carrega nem inicia nada
   await waitForDb();
   await blocklist.hydrate(); // suspensos/banidos passam a ser negados de imediato
   const app = createApp();
   const server = createServer(app);
   const io = createSocketServer(server); // chat em tempo real no mesmo servidor HTTP
+  const metricsServer = startMetricsServer(env.METRICS_PORT); // /metrics só na rede interna
 
   server.listen(env.PORT, () => {
     logger.info(
@@ -54,16 +58,23 @@ async function main(): Promise<void> {
     forced.unref();
 
     try {
-      await io.close();
-      await new Promise<void>((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()));
-      });
+      metricsServer?.close();
+      // Primeiro o que está na fila do Sentry: é o erro que está derrubando o processo.
+      await flushSentry();
+      await io.close(); // o socket.io fecha também o servidor HTTP ao qual está preso
+      if (server.listening) {
+        await new Promise<void>((resolve, reject) => {
+          server.close((err) => (err ? reject(err) : resolve()));
+        });
+      }
       await pool.end();
       clearTimeout(forced);
       logger.info('API encerrada com sucesso');
       process.exit(0);
     } catch (err) {
       logger.error({ err }, 'Falha no encerramento gracioso');
+      captureError(err);
+      await flushSentry().catch(() => undefined);
       process.exit(1);
     }
   }
@@ -75,15 +86,19 @@ async function main(): Promise<void> {
   // conexões. Quem reinicia é o orquestrador (restart: unless-stopped no compose).
   process.on('unhandledRejection', (reason) => {
     logger.error({ err: reason }, 'Promise rejeitada sem tratamento — encerrando');
+    captureError(reason);
     void shutdown('unhandledRejection');
   });
   process.on('uncaughtException', (err) => {
     logger.fatal({ err }, 'Exceção não capturada — encerrando');
+    captureError(err);
     void shutdown('uncaughtException');
   });
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   logger.error({ err }, 'Falha ao iniciar a API');
+  captureError(err);
+  await flushSentry().catch(() => undefined);
   process.exit(1);
 });

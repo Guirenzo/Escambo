@@ -1,0 +1,31 @@
+# Prometheus do Escambo (ADR 59). O compose troca __PROBE_URL__ pelo endereço do /api/health ao subir
+# (produção: https://DOMAIN/api/health; demo local: http://web:8080/api/health).
+# As regras de alerta ficam no Grafana (grafana/provisioning/alerting), que é quem avisa por e-mail.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  # A API: latência e status por rota, jobs em background, memória, event loop (config/metrics.ts).
+  - job_name: api
+    static_configs:
+      - targets: ['api:9464']
+
+  # Uptime visto de fora: GET no /api/health atravessando o proxy → nginx → API → MySQL.
+  - job_name: uptime
+    metrics_path: /probe
+    params:
+      module: [health]
+    static_configs:
+      - targets: ['__PROBE_URL__']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']

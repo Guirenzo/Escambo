@@ -1,5 +1,7 @@
 import { env } from '../config/env';
 import { logger } from '../config/logger';
+import { jobDuration, jobRuns, registerJobMetrics } from '../config/metrics';
+import { captureError } from '../config/sentry';
 import { runExpireDeposits } from './expire-deposits';
 import { runDailyDigest } from './daily-digest';
 import { runExpireExports } from './expire-exports';
@@ -48,6 +50,8 @@ export const JOBS: Job[] = [
   { name: 'purge-push-subscriptions', run: runPurgePushSubscriptions },
 ];
 
+registerJobMetrics(JOBS.map((j) => j.name));
+
 let timer: NodeJS.Timeout | null = null;
 let running = false;
 
@@ -60,11 +64,17 @@ export async function runAllJobs(jobs: Job[] = JOBS): Promise<void> {
   try {
     for (const job of jobs) {
       const started = Date.now();
+      const end = jobDuration.startTimer({ job_name: job.name });
       try {
         const result = await job.run();
+        jobRuns.inc({ job_name: job.name, outcome: 'ok' });
         logger.info({ job: job.name, ms: Date.now() - started, result }, 'job concluído');
       } catch (err) {
+        jobRuns.inc({ job_name: job.name, outcome: 'error' });
         logger.error({ job: job.name, err }, 'job falhou');
+        captureError(err);
+      } finally {
+        end();
       }
     }
   } finally {
