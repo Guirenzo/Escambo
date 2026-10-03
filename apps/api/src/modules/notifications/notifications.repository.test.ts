@@ -1,3 +1,4 @@
+import type { PoolConnection } from 'mysql2/promise';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeDb } from '../../test-support/fake-db';
 import { notificationsRepository } from './notifications.repository';
@@ -84,6 +85,45 @@ describe('notificationsRepository', () => {
     expect(params).toEqual(data);
   });
 
+  it('create com a conexão de quem chama grava nela (a transação dos lembretes, ADR 58), não no pool', async () => {
+    const data = {
+      userId: 7,
+      type: 'contract_deadline_reminder',
+      title: 'Lembrete: Logo',
+      body: 'Entregue até sex, 02/10/2026, até 23:59.',
+      data: '{"contractId":3}',
+    };
+    const conn = {
+      query: vi.fn(async (_sql: string, _params?: unknown) => [
+        { insertId: 77, affectedRows: 1 },
+        [],
+      ]),
+    };
+
+    expect(await notificationsRepository.create(data, conn as unknown as PoolConnection)).toBe(77);
+
+    expect(fakeDb.calls).toEqual([]);
+    expect(conn.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = conn.query.mock.calls[0]!;
+    expect(sql.replace(/\s+/g, ' ').trim()).toBe(
+      "INSERT INTO notifications (user_id, type, title, body, data, channel) VALUES (:userId, :type, :title, :body, :data, 'in_app')",
+    );
+    expect(params).toEqual(data);
+  });
+
+  it('create com a conexão: a falha do banco sobe para quem chama desfazer a transação', async () => {
+    const down = new Error('ER_LOCK_WAIT_TIMEOUT');
+    const conn = { query: vi.fn(async () => Promise.reject(down)) };
+
+    await expect(
+      notificationsRepository.create(
+        { userId: 7, type: 't', title: 'x', body: null, data: null },
+        conn as unknown as PoolConnection,
+      ),
+    ).rejects.toBe(down);
+    expect(fakeDb.calls).toEqual([]);
+  });
+
   describe('resumo diário por e-mail (ADR 27, 42 e 46)', () => {
     it('listSince traz as criadas depois do último resumo, em ordem cronológica, até 50 por padrão', async () => {
       const since = new Date('2026-09-14T11:00:00Z');
@@ -91,16 +131,44 @@ describe('notificationsRepository', () => {
       fakeDb.reply(rows, []);
 
       expect(await notificationsRepository.listSince(7, since)).toBe(rows);
-      await notificationsRepository.listSince(7, since, 10);
+      await notificationsRepository.listSince(7, since, { limit: 10 });
 
       const { sql, params } = fakeDb.calls[0]!;
       expect(sql).toContain(
         'SELECT id, type, title, body, data, is_read, created_at FROM notifications WHERE user_id = :userId AND created_at > :since',
       );
-      expect(sql).toMatch(/ORDER BY id ASC LIMIT 50$/);
-      expect(params).toEqual({ userId: 7, since });
-      expect(fakeDb.calls[1]!.sql).toMatch(/ORDER BY id ASC LIMIT 10$/);
-      expect(fakeDb.calls[1]!.params).toEqual({ userId: 7, since });
+      // Sem `first`, só a ordem de chegada: nada de (type IN (...)) na ordenação.
+      expect(sql).toMatch(/ ORDER BY id ASC LIMIT 50$/);
+      expect(sql).not.toContain('type IN');
+      expect(params).toEqual({ userId: 7, since, first: null });
+      expect(fakeDb.calls[1]!.sql).toMatch(/ ORDER BY id ASC LIMIT 10$/);
+      expect(fakeDb.calls[1]!.params).toEqual({ userId: 7, since, first: null });
+    });
+
+    it('listSince com `first` põe esses tipos antes (ADR 58) e, dentro de cada grupo, a ordem de chegada', async () => {
+      const since = new Date('2026-09-14T11:00:00Z');
+      const first = ['contract_overdue', 'contract_deadline_reminder'];
+
+      await notificationsRepository.listSince(7, since, { first });
+      await notificationsRepository.listSince(7, since, { first, limit: 20 });
+
+      expect(fakeDb.calls[0]!.sql).toMatch(
+        / ORDER BY \(type IN \(:first\)\) DESC, id ASC LIMIT 50$/,
+      );
+      expect(fakeDb.calls[0]!.params).toEqual({ userId: 7, since, first });
+      expect(fakeDb.calls[1]!.sql).toMatch(
+        / ORDER BY \(type IN \(:first\)\) DESC, id ASC LIMIT 20$/,
+      );
+    });
+
+    it('listSince com `first` vazio é igual a sem `first`: o IN () vazio não chega ao MySQL', async () => {
+      const since = new Date('2026-09-14T11:00:00Z');
+
+      await notificationsRepository.listSince(7, since, { first: [] });
+
+      expect(fakeDb.calls[0]!.sql).toMatch(/ ORDER BY id ASC LIMIT 50$/);
+      expect(fakeDb.calls[0]!.sql).not.toContain('type IN');
+      expect(fakeDb.calls[0]!.params).toEqual({ userId: 7, since, first: null });
     });
 
     it('usersForDigest: só quem pediu resumo diário, não encerrou a conta, está no fuso, já chegou na hora e ainda não recebeu hoje', async () => {

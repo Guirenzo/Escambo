@@ -23,7 +23,8 @@ describe('versões dos documentos legais (ADR 54)', () => {
       }
     }
     expect(LEGAL_VERSIONS.privacidade).toBe('1.4');
-    expect(LEGAL_VERSIONS.termos).toBe('1.3');
+    expect(LEGAL_VERSIONS.termos).toBe('1.4');
+    expect(LEGAL_UPDATED.termos).toBe('2026-10-03');
   });
 
   it('compareVersions é numérica por segmento', () => {
@@ -44,9 +45,10 @@ describe('versões dos documentos legais (ADR 54)', () => {
         'privacidade',
       ),
     ).toBe(false);
-    // Termos 1.3 (ADR 57): quem respondeu a 1.2 tem a faixa; quem está na 1.3, não.
+    // Termos 1.4 (ADR 58): quem respondeu a 1.3 (ou antes) tem a faixa; quem está na 1.4, não.
     expect(legalAckPending([consent('terms_of_use', '1.2')], 'termos')).toBe(true);
-    expect(legalAckPending([consent('terms_of_use', '1.3')], 'termos')).toBe(false);
+    expect(legalAckPending([consent('terms_of_use', '1.3')], 'termos')).toBe(true);
+    expect(legalAckPending([consent('terms_of_use', '1.4')], 'termos')).toBe(false);
   });
 
   it('changesSince: só o que veio depois da versão respondida; sem resposta, só a vigente', () => {
@@ -55,8 +57,10 @@ describe('versões dos documentos legais (ADR 54)', () => {
     expect(changesSince('privacidade', '1.2').map((c) => c.version)).toEqual(['1.4', '1.3']);
     expect(changesSince('privacidade', '1.3').map((c) => c.version)).toEqual(['1.4']);
     expect(changesSince('privacidade', null).map((c) => c.version)).toEqual(['1.4']);
-    expect(changesSince('termos', '1.2').map((c) => c.version)).toEqual(['1.3']);
-    expect(changesSince('termos', '1.3')).toEqual([]);
+    expect(changesSince('termos', '1.2').map((c) => c.version)).toEqual(['1.4', '1.3']);
+    expect(changesSince('termos', '1.3').map((c) => c.version)).toEqual(['1.4']);
+    expect(changesSince('termos', null).map((c) => c.version)).toEqual(['1.4']);
+    expect(changesSince('termos', '1.4')).toEqual([]);
   });
 
   it('a política 1.4 diz o que sai no silêncio, sem prometer silêncio absoluto (ADR 56)', () => {
@@ -70,7 +74,7 @@ describe('versões dos documentos legais (ADR 54)', () => {
     expect(texto).toContain('As versões anteriores à 1.3');
   });
 
-  it('os Termos 1.3 dizem a regra do prazo e do cancelamento sem prometer números fixos (ADR 57)', () => {
+  it('os Termos dizem a regra do prazo e do cancelamento sem prometer números fixos (ADR 57)', () => {
     const texto = LEGAL.termos.sections.flatMap((s) => s.paragraphs).join('\n');
     expect(texto).toContain(
       'se o freelancer desistir, tudo o que está em garantia volta ao cliente',
@@ -89,6 +93,26 @@ describe('versões dos documentos legais (ADR 54)', () => {
     expect(texto).toContain('(hoje, 5 dias corridos depois)');
     expect(texto).toContain('(hoje, 48 horas)');
     expect(texto).not.toContain('responder a uma entrega em 5 dias');
+  });
+
+  it('os Termos 1.4 dizem que o prazo é um dia no horário de quem entrega e que o lembrete é um aviso a mais (ADR 58)', () => {
+    const texto = LEGAL.termos.sections.flatMap((s) => s.paragraphs).join('\n');
+    expect(texto).toContain(
+      'O prazo de entrega é uma data e vale até 23:59 dela no horário de quem entrega; quando a outra parte está em outro fuso, o app diz de qual horário se trata.',
+    );
+    expect(texto).toContain(
+      'Nas contratações criadas antes desta versão, vale o dia e a hora que o app mostra.',
+    );
+    expect(texto).toContain(
+      'O lembrete é um aviso a mais: sai no máximo uma vez, pode não sair quando a contagem começa perto do vencimento, e não suspende, não adia nem condiciona nenhuma hora.',
+    );
+    expect(texto).toContain('as duas partes são avisadas quando isso acontece');
+    expect(texto).toContain('se ficar 7 dias sem nova entrega, as duas partes são avisadas');
+    expect(texto).toContain('a entrega aprovada não volta para revisão');
+    expect(texto).not.toContain('O prazo de entrega vale até 23:59 do dia escolhido.');
+    const mudanca = LEGAL_CHANGES.find((c) => c.doc === 'termos' && c.version === '1.4');
+    expect(mudanca?.date).toBe('2026-10-03');
+    expect(mudanca?.summary).toContain('O lembrete é um aviso a mais e não muda nenhuma hora.');
   });
 
   it('a política diz o que o push guarda, com quem compartilha e por quanto tempo', () => {

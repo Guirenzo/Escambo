@@ -53,6 +53,8 @@ const contract = (o: Partial<Contract> = {}): Contract => ({
   paymentMode: 'cash',
   status: 'accepted',
   deadlineAt: null,
+  deadlineZone: 'America/Sao_Paulo',
+  revisionRequestedAt: null,
   createdAt: '2026-09-10T15:00:00.000Z',
   hasReview: false,
   hasMilestones: false,

@@ -26,8 +26,10 @@ describe('notificações em tempo real', () => {
       data: { contractId: 1 },
     });
 
+    // Fora de transação: o notify não passa conexão (só os lembretes gravam na deles, ADR 58).
     expect(repo.create).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 7, type: 'contract_proposal', title: 'Nova proposta' }),
+      undefined,
     );
     expect(rt.emitToUser).toHaveBeenCalledWith(
       7,

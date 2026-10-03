@@ -24,6 +24,7 @@ import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { authRepository } from '../auth/auth.repository';
 import { mailService } from '../mail/mail.service';
+import { DEADLINE_FIRST_TYPES } from './deadline-types';
 import { notificationsRepository, type NotificationRow } from './notifications.repository';
 import { notificationsService } from './notifications.service';
 
@@ -140,13 +141,16 @@ describe('preferência de e-mail (ADR 27)', () => {
     ).resolves.toBeUndefined();
     await flush();
 
-    expect(repo.create).toHaveBeenCalledWith({
-      userId: 7,
-      type: 'contract_proposal',
-      title: 'Nova proposta',
-      body: null,
-      data: null,
-    });
+    expect(repo.create).toHaveBeenCalledWith(
+      {
+        userId: 7,
+        type: 'contract_proposal',
+        title: 'Nova proposta',
+        body: null,
+        data: null,
+      },
+      undefined,
+    );
     expect(send).not.toHaveBeenCalled();
     expect(warn.mock.calls).toEqual([
       [{ err: down, type: 'contract_proposal' }, 'e-mail da notificação falhou'],
@@ -247,7 +251,10 @@ describe('preferência de e-mail (ADR 27)', () => {
     );
 
     expect(count).toBe(2);
-    expect(repo.listSince).toHaveBeenCalledWith(7, new Date('2026-09-13T11:00:00Z'));
+    // Os avisos de hora-limite próxima vêm primeiro no e-mail (ADR 58): a ordem é do repositório.
+    expect(repo.listSince).toHaveBeenCalledWith(7, new Date('2026-09-13T11:00:00Z'), {
+      first: [...DEADLINE_FIRST_TYPES],
+    });
     expect(send).toHaveBeenCalledWith({
       userId: 7,
       to: 'f@escambo.test',
@@ -271,7 +278,10 @@ describe('preferência de e-mail (ADR 27)', () => {
       ),
     ).toBe(0);
     expect(send).not.toHaveBeenCalled();
-    expect(repo.listSince).toHaveBeenLastCalledWith(7, new Date('2026-09-13T15:00:00Z')); // últimas 24h
+    // Sem resumo anterior, as últimas 24h.
+    expect(repo.listSince).toHaveBeenLastCalledWith(7, new Date('2026-09-13T15:00:00Z'), {
+      first: [...DEADLINE_FIRST_TYPES],
+    });
     expect(repo.markDigest).toHaveBeenLastCalledWith(7, now);
   });
 });

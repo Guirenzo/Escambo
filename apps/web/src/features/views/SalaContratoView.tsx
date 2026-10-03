@@ -22,7 +22,7 @@ import { StarInput, Stars } from '../../components/Stars';
 import { Button, Input, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
-import { brl, dt, dtm, hm, STATUS_LABEL } from '../../lib/format';
+import { brl, dtm, hm, STATUS_LABEL } from '../../lib/format';
 import {
   useChatHistory,
   useContractDetail,
@@ -42,11 +42,12 @@ import {
 } from '../contracts/ChatAttachment';
 import { CancelModal } from '../contracts/CancelModal';
 import { ContractActions } from '../contracts/ContractActions';
-import { DeadlineSection } from '../contracts/DeadlineSection';
+import { DeadlineSection, RevisionSince } from '../contracts/DeadlineSection';
 import { DisputeModal, DisputeSection } from '../contracts/DisputePanel';
 import { MilestonesSection } from '../contracts/MilestonesSection';
 import { describeSignals, offPlatformSignals } from '../../lib/offPlatform';
-import { momentText, untilLabel } from '../../lib/deadline';
+import { deadlineText, deadlineZoneNote, momentText, untilLabel } from '../../lib/deadline';
+import { DEFAULT_TIMEZONE } from '../../lib/timezones';
 import { useToast } from '../../lib/toast';
 
 /** Valor da contratação na unidade dela ("R$ 200,00" ou "30 créditos"). */
@@ -441,7 +442,9 @@ export function SalaContratoView({
                     <span data-testid="payment-state">{paymentState(d)}</span>
                     <span className="muted">Prazo</span>
                     <span data-testid="deadline-kv">
-                      {d.deadlineAt ? dt(d.deadlineAt) : 'sem prazo definido'}
+                      {d.deadlineAt
+                        ? `${deadlineText(d.deadlineAt, d.deadlineZone ?? DEFAULT_TIMEZONE)}${deadlineZoneNote(d.deadlineAt, d.deadlineZone ?? DEFAULT_TIMEZONE, user?.timezone)}`
+                        : 'sem prazo definido'}
                     </span>
                   </div>
                   <ol className="timeline">
@@ -468,6 +471,7 @@ export function SalaContratoView({
           </section>
 
           {c && <DeadlineSection contract={c} myId={myId} />}
+          {c && <RevisionSince contract={c} myId={myId} />}
           {c && <MilestonesSection contract={c} myId={myId} />}
           {c && <ReviewSection contract={c} myId={myId} />}
           {c && c.status === 'disputed' && <DisputeSection contractId={c.id} />}

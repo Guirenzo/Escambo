@@ -46,6 +46,7 @@ vi.mock('../reviews/reviews.repository', () => ({
   reviewsRepository: { findByContractIdWithResponse: vi.fn().mockResolvedValue(undefined) },
 }));
 
+import { logger } from '../../config/logger';
 import { setClockForTests } from '../../utils/clock';
 import { notificationsService } from '../notifications/notifications.service';
 import { contractsService } from './contracts.service';
@@ -231,12 +232,24 @@ describe('entrega e aprovação por marco', () => {
       {},
     );
 
-    ms.approve.mockResolvedValueOnce({ ok: true, completed: false, net: 283.33, title: 'Layout' });
+    ms.approve.mockResolvedValueOnce({
+      ok: true,
+      completed: false,
+      net: 283.33,
+      title: 'Layout',
+      amount: 333.33,
+    });
     const first = await contractsService.approveMilestone(1, 7, 1);
     expect(first.completed).toBe(false);
     expect(gamificationService.onContractCompleted).not.toHaveBeenCalled();
 
-    ms.approve.mockResolvedValueOnce({ ok: true, completed: true, net: 283.34, title: 'Deploy' });
+    ms.approve.mockResolvedValueOnce({
+      ok: true,
+      completed: true,
+      net: 283.34,
+      title: 'Deploy',
+      amount: 333.34,
+    });
     const last = await contractsService.approveMilestone(1, 9, 1);
     expect(last.completed).toBe(true);
     expect(last.unit).toBe('BRL');
@@ -246,7 +259,13 @@ describe('entrega e aprovação por marco', () => {
 
   it('em créditos a aprovação libera créditos (modo passado ao repositório)', async () => {
     repo.findById.mockResolvedValue(row({ status: 'in_progress', payment_mode: 'credits' }));
-    ms.approve.mockResolvedValueOnce({ ok: true, completed: false, net: 20, title: 'Visita 1' });
+    ms.approve.mockResolvedValueOnce({
+      ok: true,
+      completed: false,
+      net: 20,
+      title: 'Visita 1',
+      amount: 20,
+    });
     const r = await contractsService.approveMilestone(1, 7, 1);
     expect(ms.approve).toHaveBeenCalledWith(expect.objectContaining({ mode: 'credits' }));
     expect(r).toMatchObject({ net: 20, unit: 'credits', completed: false });
@@ -266,25 +285,31 @@ describe('entrega e aprovação por marco', () => {
     });
     expect(ms.deliver).not.toHaveBeenCalled();
     expect(ms.approve).not.toHaveBeenCalled();
-    ms.approve.mockResolvedValue({ ok: false, completed: false, net: 0, title: '' });
+    ms.approve.mockResolvedValue({ ok: false, completed: false, net: 0, title: '', amount: 0 });
     await expect(contractsService.approveMilestone(1, 7, 1)).rejects.toMatchObject({
       statusCode: 409,
       code: 'invalid_transition',
     });
   });
 
-  it('aprovação tácita de marco só em contrato aberto', async () => {
-    repo.findById.mockResolvedValue(row({ status: 'completed' }));
-    expect(
-      await contractsService.approveMilestoneTacitly({
-        id: 7,
-        contract_id: 1,
-        client_id: 1,
-        freelancer_id: 2,
-        approval_due_at: new Date(),
-      } as never),
-    ).toBe(false);
+  it('aprovação tácita de marco só em contratação aceita ou em andamento: fora disso, nada é aprovado nem avisado', async () => {
+    const due = {
+      id: 7,
+      contract_id: 1,
+      client_id: 1,
+      freelancer_id: 2,
+      approval_due_at: new Date('2026-10-11T21:20:00Z'),
+    } as never;
+    for (const status of ['pending', 'completed', 'cancelled', 'disputed']) {
+      repo.findById.mockResolvedValue(row({ status }));
+      expect(
+        await contractsService.approveMilestonesTacitly(1, [due], new Date('2026-10-11T21:25:00Z')),
+        status,
+      ).toEqual({ approved: [], failed: [] });
+    }
     expect(ms.approve).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    expect(gamificationService.onContractCompleted).not.toHaveBeenCalled();
   });
 
   it('aprovação tácita de marco: em nome do cliente, só se a hora gravada já passou, e o último dá o XP', async () => {
@@ -298,8 +323,17 @@ describe('entrega e aprovação por marco', () => {
     const now = new Date('2026-10-11T21:25:00Z');
     repo.findById.mockResolvedValue(row({ status: 'in_progress' }));
 
-    ms.approve.mockResolvedValueOnce({ ok: true, completed: true, net: 283.34, title: 'Deploy' });
-    expect(await contractsService.approveMilestoneTacitly(due, now)).toBe(true);
+    ms.approve.mockResolvedValueOnce({
+      ok: true,
+      completed: true,
+      net: 283.34,
+      title: 'Deploy',
+      amount: 333.34,
+    });
+    expect(await contractsService.approveMilestonesTacitly(1, [due], now)).toEqual({
+      approved: [7],
+      failed: [],
+    });
     expect(ms.approve).toHaveBeenCalledWith({
       contractId: 1,
       milestoneId: 7,
@@ -315,30 +349,75 @@ describe('entrega e aprovação por marco', () => {
 
     // Não era o último marco: aprova, mas a contratação segue (sem XP).
     vi.mocked(gamificationService.onContractCompleted).mockClear();
-    ms.approve.mockResolvedValueOnce({ ok: true, completed: false, net: 283.33, title: 'Layout' });
-    expect(await contractsService.approveMilestoneTacitly(due, now)).toBe(true);
+    ms.approve.mockResolvedValueOnce({
+      ok: true,
+      completed: false,
+      net: 283.33,
+      title: 'Layout',
+      amount: 333.33,
+    });
+    expect(await contractsService.approveMilestonesTacitly(1, [due], now)).toEqual({
+      approved: [7],
+      failed: [],
+    });
     expect(gamificationService.onContractCompleted).not.toHaveBeenCalled();
 
-    // O cliente respondeu no meio (o marco saiu de entregue): nada acontece.
-    ms.approve.mockResolvedValueOnce({ ok: false, completed: false, net: 0, title: '' });
-    expect(await contractsService.approveMilestoneTacitly(due, now)).toBe(false);
+    // O cliente respondeu no meio (o marco saiu de entregue): nada acontece, e não conta como falha.
+    notify.mockClear();
+    ms.approve.mockResolvedValueOnce({ ok: false, completed: false, net: 0, title: '', amount: 0 });
+    expect(await contractsService.approveMilestonesTacitly(1, [due], now)).toEqual({
+      approved: [],
+      failed: [],
+    });
     expect(gamificationService.onContractCompleted).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 
-  it('aprovação tácita de marco em créditos libera créditos', async () => {
+  it('aprovação tácita de marco em créditos libera créditos, e os avisos falam em créditos', async () => {
     repo.findById.mockResolvedValue(row({ status: 'in_progress', payment_mode: 'credits' }));
-    ms.approve.mockResolvedValueOnce({ ok: true, completed: false, net: 20, title: 'Visita 1' });
-    await contractsService.approveMilestoneTacitly(
-      {
-        id: 7,
-        contract_id: 1,
-        client_id: 1,
-        freelancer_id: 2,
-        approval_due_at: new Date('2026-10-11T21:20:00Z'),
-      } as never,
+    ms.approve.mockResolvedValueOnce({
+      ok: true,
+      completed: false,
+      net: 20,
+      title: 'Visita 1',
+      amount: 20,
+    });
+    await contractsService.approveMilestonesTacitly(
+      1,
+      [
+        {
+          id: 7,
+          contract_id: 1,
+          client_id: 1,
+          freelancer_id: 2,
+          approval_due_at: new Date('2026-10-11T21:20:00Z'),
+        } as never,
+      ],
       new Date('2026-10-11T21:25:00Z'),
     );
     expect(ms.approve).toHaveBeenCalledWith(expect.objectContaining({ mode: 'credits' }));
+    expect(notify.mock.calls).toEqual([
+      [
+        1,
+        {
+          type: 'contract_auto_approved',
+          title: 'Marco aprovado automaticamente: Visita 1',
+          body: 'Site em 3 etapas: sem resposta até dom, 11/10 às 18:20, o marco foi aprovado e os créditos dele foram liberados ao freelancer (marco de 20 créditos).',
+          data: { contractId: 1, milestoneId: 7 },
+        },
+        {},
+      ],
+      [
+        2,
+        {
+          type: 'milestone_approved',
+          title: 'Marco aprovado automaticamente: Visita 1',
+          body: 'Site em 3 etapas: sem resposta do cliente até dom, 11/10 às 18:20, 20 créditos foram liberados na sua carteira.',
+          data: { contractId: 1, milestoneId: 7 },
+        },
+        {},
+      ],
+    ]);
   });
 
   it('marco que não está financiado (ou contrato fora de aceito/em andamento): 409 e o cliente não é avisado', async () => {
@@ -362,6 +441,11 @@ describe('entrega e aprovação por marco', () => {
 });
 
 describe('revisão por marco', () => {
+  // Quarta, 10:00 em Brasília: o instante do pedido de revisão.
+  const REVISION_AT = new Date('2026-10-07T13:00:00Z');
+  beforeEach(() => setClockForTests(REVISION_AT, { frozen: true }));
+  afterEach(() => setClockForTests(null));
+
   it('só o cliente pede, e só com a contratação aceita ou em andamento', async () => {
     repo.findById.mockResolvedValue(row({ status: 'in_progress' }));
     await expect(contractsService.requestMilestoneRevision(1, 7, 2, 'x')).rejects.toMatchObject({
@@ -376,7 +460,7 @@ describe('revisão por marco', () => {
     expect(ms.requestRevision).not.toHaveBeenCalled();
   });
 
-  it('pede a revisão em nome do cliente e devolve a contratação com os marcos', async () => {
+  it('pede a revisão em nome do cliente, com o instante do fluxo, e devolve a contratação com os marcos', async () => {
     repo.findById.mockResolvedValue(row({ status: 'in_progress' }));
     ms.requestRevision.mockResolvedValue(true);
     ms.listForContract.mockResolvedValueOnce([
@@ -393,6 +477,8 @@ describe('revisão por marco', () => {
         delivered_at: new Date('2026-10-06T21:20:00Z'),
         // Sobra da entrega anterior: fora de "entregue", a API não mostra hora de aprovação.
         approval_due_at: new Date('2026-10-11T21:20:00Z'),
+        // O que o repository acabou de gravar: a revisão está em aberto desde agora (ADR 58).
+        revision_requested_at: REVISION_AT,
         delivery_note: 'Layout no Figma',
         revision_note: 'Ajustar o topo',
         released_at: null,
@@ -409,6 +495,8 @@ describe('revisão por marco', () => {
         due_at: null,
         delivered_at: new Date('2026-10-06T21:20:00Z'),
         approval_due_at: new Date('2026-10-11T21:20:00Z'),
+        // Sobra de uma revisão anterior: entregue de novo, a revisão não está mais em aberto.
+        revision_requested_at: new Date('2026-10-03T13:00:00Z'),
         delivery_note: 'No ar',
         revision_note: null,
         released_at: null,
@@ -438,6 +526,8 @@ describe('revisão por marco', () => {
       milestoneId: 7,
       changedBy: 1,
       note: 'Ajustar o topo',
+      // O aviso de revisão parada conta a partir daqui (ADR 58).
+      now: REVISION_AT,
     });
     expect(c.id).toBe(1);
     // Os marcos saem no formato da API: valores em número e datas em ISO.
@@ -456,6 +546,10 @@ describe('revisão por marco', () => {
         revisionNote: 'Ajustar o topo',
         releasedAt: null,
         approvalDueAt: null,
+        // 23:59:59 de 11/10 em Brasília: o dia do marco é no fuso de quem entrega.
+        dueZone: 'America/Sao_Paulo',
+        // Financiado e já entregue antes: está em revisão, desde o pedido.
+        revisionRequestedAt: '2026-10-07T13:00:00.000Z',
       },
       {
         id: 8,
@@ -471,6 +565,9 @@ describe('revisão por marco', () => {
         revisionNote: null,
         releasedAt: null,
         approvalDueAt: '2026-10-11T21:20:00.000Z',
+        // Sem prazo: o fuso de quem entrega.
+        dueZone: 'America/Sao_Paulo',
+        revisionRequestedAt: null,
       },
       {
         id: 9,
@@ -486,6 +583,8 @@ describe('revisão por marco', () => {
         revisionNote: null,
         releasedAt: '2026-10-05T15:00:00.000Z',
         approvalDueAt: null,
+        dueZone: 'America/Sao_Paulo',
+        revisionRequestedAt: null,
       },
     ]);
   });
@@ -644,7 +743,13 @@ describe('marcos: quem age, quem recebe e quem é avisado (RN-069)', () => {
 
   it('a aprovação do marco fica em nome do cliente, libera ao freelancer da contratação e devolve o que foi liberado', async () => {
     repo.findById.mockResolvedValue(other({ status: 'accepted' }));
-    ms.approve.mockResolvedValueOnce({ ok: true, completed: false, net: 283.33, title: 'Layout' });
+    ms.approve.mockResolvedValueOnce({
+      ok: true,
+      completed: false,
+      net: 283.33,
+      title: 'Layout',
+      amount: 333.33,
+    });
 
     const r = await contractsService.approveMilestone(31, 5, 7);
 
@@ -671,6 +776,7 @@ describe('marcos: quem age, quem recebe e quem é avisado (RN-069)', () => {
       completed: true,
       net: 283.34,
       title: 'Publicação',
+      amount: 333.34,
     });
 
     const r = await contractsService.approveMilestone(31, 6, 7);
@@ -693,7 +799,7 @@ describe('marcos: quem age, quem recebe e quem é avisado (RN-069)', () => {
 
   it('marco que não está esperando aprovação: 409 com a mensagem do marco, sem XP', async () => {
     repo.findById.mockResolvedValue(other({ status: 'in_progress' }));
-    ms.approve.mockResolvedValueOnce({ ok: false, completed: false, net: 0, title: '' });
+    ms.approve.mockResolvedValueOnce({ ok: false, completed: false, net: 0, title: '', amount: 0 });
     await expect(contractsService.approveMilestone(31, 5, 7)).rejects.toMatchObject({
       statusCode: 409,
       code: 'invalid_transition',
@@ -702,7 +808,7 @@ describe('marcos: quem age, quem recebe e quem é avisado (RN-069)', () => {
     expect(gamificationService.onContractCompleted).not.toHaveBeenCalled();
   });
 
-  it('a aprovação tácita do marco busca a contratação do marco, age em nome do cliente dela e vale também para a contratação só aceita', async () => {
+  it('a aprovação tácita do marco busca a contratação pedida, age em nome do cliente dela, vale também para a contratação só aceita e avisa as duas partes', async () => {
     const due = {
       id: 5,
       contract_id: 31,
@@ -716,10 +822,14 @@ describe('marcos: quem age, quem recebe e quem é avisado (RN-069)', () => {
       completed: true,
       net: 283.34,
       title: 'Publicação',
+      amount: 333.34,
     });
 
     // Sem instante informado, vale o relógio do fluxo.
-    expect(await contractsService.approveMilestoneTacitly(due)).toBe(true);
+    expect(await contractsService.approveMilestonesTacitly(31, [due])).toEqual({
+      approved: [5],
+      failed: [],
+    });
 
     expect(repo.findById.mock.calls).toEqual([[31]]);
     expect(ms.approve).toHaveBeenCalledWith({
@@ -733,6 +843,30 @@ describe('marcos: quem age, quem recebe e quem é avisado (RN-069)', () => {
       dueBy: AT,
     });
     expect(gamificationService.onContractCompleted).toHaveBeenCalledWith(44, 31);
+    // Era o último: o cliente sabe até quando avalia (7 dias depois de agora), e quem entrega, que
+    // a contratação foi concluída. Ao cliente, o valor do marco; ao freelancer, o líquido.
+    expect(notify.mock.calls).toEqual([
+      [
+        7,
+        {
+          type: 'contract_auto_approved',
+          title: 'Marco aprovado automaticamente: Publicação',
+          body: 'Site em 3 etapas: sem resposta até ter, 06/10 às 18:20, o marco foi aprovado e o pagamento dele foi liberado ao freelancer (marco de R$ 333,34). Era o que faltava: a contratação foi concluída, e você pode avaliar até ter, 13/10 às 20:45.',
+          data: { contractId: 31, milestoneId: 5 },
+        },
+        {},
+      ],
+      [
+        44,
+        {
+          type: 'contract_completed',
+          title: 'Contratação concluída: Site em 3 etapas',
+          body: 'Sem resposta do cliente até ter, 06/10 às 18:20, o último marco («Publicação») foi aprovado automaticamente e R$ 283,34 foi liberado na sua carteira.',
+          data: { contractId: 31, milestoneId: 5 },
+        },
+        {},
+      ],
+    ]);
   });
 
   it('a revisão do marco fica em nome do cliente; sem nota, vai null', async () => {
@@ -746,6 +880,7 @@ describe('marcos: quem age, quem recebe e quem é avisado (RN-069)', () => {
       milestoneId: 5,
       changedBy: 7,
       note: null,
+      now: AT,
     });
     expect(repo.findById.mock.calls).toEqual([[31], [31]]);
     expect(c).toMatchObject({ id: 31, clientId: 7, freelancerId: 44 });
@@ -786,5 +921,369 @@ describe('marcos: quem age, quem recebe e quem é avisado (RN-069)', () => {
       expect.objectContaining({ body: 'Os 20 créditos em garantia voltaram ao cliente.' }),
       {},
     );
+  });
+});
+
+describe('o dia de cada marco e a revisão em aberto, como a API devolve (ADR 58)', () => {
+  it('o fuso do dia é o em que o prazo do marco marca 23:59:59, preferindo quem entrega; sem prazo (ou sem bater), o de quem entrega', async () => {
+    repo.findById.mockResolvedValue({
+      ...other({ status: 'in_progress' }),
+      freelancer_timezone: 'America/Manaus',
+      client_timezone: 'America/Sao_Paulo',
+    } as ContractRow);
+    const base = {
+      contract_id: 31,
+      description: null,
+      amount: '100.00',
+      freelancer_net: '85.00',
+      status: 'funded',
+      delivered_at: null,
+      approval_due_at: null,
+      delivery_note: null,
+      revision_note: null,
+      released_at: null,
+    };
+    ms.listForContract.mockResolvedValueOnce([
+      // O fim de 11/10 em Manaus.
+      { ...base, id: 1, title: 'A', sort_order: 0, due_at: new Date('2026-10-12T03:59:59Z') },
+      // O fim de 11/10 em Brasília, o fuso do cliente.
+      { ...base, id: 2, title: 'B', sort_order: 1, due_at: new Date('2026-10-12T02:59:59Z') },
+      { ...base, id: 3, title: 'C', sort_order: 2, due_at: null },
+      // 20:00 em Manaus: nenhum relógio marca 23:59:59.
+      { ...base, id: 4, title: 'D', sort_order: 3, due_at: new Date('2026-10-12T00:00:00Z') },
+      // Nunca entregue: uma data de revisão que sobrou não diz que está em revisão.
+      {
+        ...base,
+        id: 5,
+        title: 'E',
+        sort_order: 4,
+        due_at: null,
+        revision_requested_at: new Date('2026-10-03T13:00:00Z'),
+      },
+    ] as never);
+
+    const c = await contractsService.getById(31, 7);
+
+    expect(c.milestones.map((m) => [m.id, m.dueZone, m.revisionRequestedAt])).toEqual([
+      [1, 'America/Manaus', null],
+      [2, 'America/Sao_Paulo', null],
+      [3, 'America/Manaus', null],
+      [4, 'America/Manaus', null],
+      [5, 'America/Manaus', null],
+    ]);
+  });
+});
+
+describe('a revisão em aberto do marco só aparece com a contratação correndo (ADR 58)', () => {
+  const inRevision = {
+    id: 1,
+    contract_id: 31,
+    title: 'Layout',
+    description: null,
+    amount: '100.00',
+    freelancer_net: '85.00',
+    sort_order: 0,
+    status: 'funded',
+    due_at: null,
+    delivered_at: new Date('2026-10-02T13:00:00Z'),
+    approval_due_at: null,
+    delivery_note: null,
+    revision_note: 'Ajustar o topo',
+    released_at: null,
+    revision_requested_at: new Date('2026-10-03T13:00:00Z'),
+  };
+  const revisionWith = async (status: string): Promise<string | null> => {
+    repo.findById.mockResolvedValue(other({ status }));
+    ms.listForContract.mockResolvedValueOnce([inRevision] as never);
+    return (await contractsService.getById(31, 7)).milestones[0]!.revisionRequestedAt;
+  };
+
+  it.each(['accepted', 'in_progress'])(
+    'contratação %s: o marco financiado e já entregue diz desde quando está em revisão',
+    async (status) => {
+      expect(await revisionWith(status)).toBe('2026-10-03T13:00:00.000Z');
+    },
+  );
+
+  it.each(['disputed', 'completed', 'cancelled'])(
+    'contratação %s: a revisão do marco não anda mais, e a data que sobrou não aparece',
+    async (status) => {
+      expect(await revisionWith(status)).toBeNull();
+    },
+  );
+});
+
+describe('aprovação tácita dos marcos de uma contratação na mesma rodada (RN-024, RN-069, ADR 58)', () => {
+  // Terça, 20:45 em Brasília (19:45 em Manaus).
+  const AT = new Date('2026-10-06T23:45:00Z');
+  beforeEach(() => setClockForTests(AT, { frozen: true }));
+  afterEach(() => setClockForTests(null));
+
+  /** Marco vencido como o job lê: o id e a hora gravada da aprovação tácita. */
+  const due = (id: number, approvalDueAt: string) =>
+    ({
+      id,
+      contract_id: 31,
+      client_id: 7,
+      freelancer_id: 44,
+      approval_due_at: new Date(approvalDueAt),
+    }) as never;
+  /** O cliente em Manaus; quem entrega, em Brasília. */
+  const contract = (o: Parameters<typeof row>[0] = {}): ContractRow =>
+    ({
+      ...other({ status: 'in_progress', ...o }),
+      client_timezone: 'America/Manaus',
+      freelancer_timezone: 'America/Sao_Paulo',
+    }) as ContractRow;
+  const approved = (title: string, amount: number, net: number, completed = false) => ({
+    ok: true,
+    completed,
+    net,
+    title,
+    amount,
+  });
+  const notApproved = { ok: false, completed: false, net: 0, title: '', amount: 0 };
+
+  it('dois marcos com a mesma hora: cada um na própria aprovação, um aviso só a cada parte com a hora no fuso dela, e a conclusão uma vez', async () => {
+    repo.findById.mockResolvedValue(contract());
+    ms.approve
+      .mockResolvedValueOnce(approved('Layout', 333.33, 283.33))
+      .mockResolvedValueOnce(approved('Publicação', 333.34, 283.34, true));
+
+    expect(
+      await contractsService.approveMilestonesTacitly(31, [
+        due(5, '2026-10-06T21:20:00Z'),
+        due(6, '2026-10-06T21:20:00Z'),
+      ]),
+    ).toEqual({ approved: [5, 6], failed: [] });
+
+    expect(repo.findById.mock.calls).toEqual([[31]]);
+    expect(ms.approve.mock.calls.map((c) => c[0].milestoneId)).toEqual([5, 6]);
+    expect(ms.approve).toHaveBeenNthCalledWith(2, {
+      contractId: 31,
+      milestoneId: 6,
+      changedBy: 7,
+      freelancerId: 44,
+      mode: 'cash',
+      note: 'Aprovação tácita: sem resposta do cliente até 06/10/2026 às 18:20 (horário de Brasília)',
+      now: AT,
+      dueBy: AT,
+    });
+    expect(gamificationService.onContractCompleted).toHaveBeenCalledTimes(1);
+    expect(gamificationService.onContractCompleted).toHaveBeenCalledWith(44, 31);
+    expect(notify.mock.calls).toEqual([
+      [
+        7,
+        {
+          type: 'contract_auto_approved',
+          title: '2 marcos aprovados automaticamente: Site em 3 etapas',
+          body: 'Sem resposta até ter, 06/10 às 17:20, os marcos «Layout» e «Publicação» foram aprovados e o pagamento deles foi liberado ao freelancer (R$ 666,67 ao todo). Era o que faltava: a contratação foi concluída, e você pode avaliar até ter, 13/10 às 19:45.',
+          data: { contractId: 31 },
+        },
+        {},
+      ],
+      [
+        44,
+        {
+          type: 'contract_completed',
+          title: 'Contratação concluída: Site em 3 etapas',
+          body: 'Sem resposta do cliente até ter, 06/10 às 18:20, os marcos «Layout» e «Publicação» foram aprovados automaticamente e R$ 566,67 foi liberado na sua carteira. Eram os que faltavam.',
+          data: { contractId: 31 },
+        },
+        {},
+      ],
+    ]);
+    // Os avisos só saem depois das aprovações gravadas.
+    expect(Math.max(...ms.approve.mock.invocationCallOrder)).toBeLessThan(
+      Math.min(...notify.mock.invocationCallOrder),
+    );
+  });
+
+  it('marcos com horas diferentes: o aviso não inventa uma hora em comum, e sem concluir não fala em avaliação', async () => {
+    repo.findById.mockResolvedValue(contract());
+    ms.approve
+      .mockResolvedValueOnce(approved('Layout', 333.33, 283.33))
+      .mockResolvedValueOnce(approved('Front', 333.33, 283.33));
+
+    expect(
+      await contractsService.approveMilestonesTacitly(31, [
+        due(5, '2026-10-06T14:00:00Z'),
+        due(6, '2026-10-06T21:20:00Z'),
+      ]),
+    ).toEqual({ approved: [5, 6], failed: [] });
+
+    expect(gamificationService.onContractCompleted).not.toHaveBeenCalled();
+    expect(notify.mock.calls).toEqual([
+      [
+        7,
+        {
+          type: 'contract_auto_approved',
+          title: '2 marcos aprovados automaticamente: Site em 3 etapas',
+          body: 'Sem resposta na hora de cada um, os marcos «Layout» e «Front» foram aprovados e o pagamento deles foi liberado ao freelancer (R$ 666,66 ao todo).',
+          data: { contractId: 31 },
+        },
+        {},
+      ],
+      [
+        44,
+        {
+          type: 'milestone_approved',
+          title: '2 marcos aprovados automaticamente: Site em 3 etapas',
+          body: 'Sem resposta do cliente na hora de cada um, os marcos «Layout» e «Front» foram aprovados e R$ 566,66 foi liberado na sua carteira.',
+          data: { contractId: 31 },
+        },
+        {},
+      ],
+    ]);
+  });
+
+  it('falha no meio: o aprovado fica e é avisado sozinho, o que falhou volta como falha (e vai para o log), e o que o cliente respondeu no meio só some', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    repo.findById.mockResolvedValue(contract());
+    const boom = new Error('deadlock');
+    ms.approve
+      .mockRejectedValueOnce(boom)
+      .mockResolvedValueOnce(approved('Front', 333.33, 283.33))
+      .mockResolvedValueOnce(notApproved);
+
+    try {
+      expect(
+        await contractsService.approveMilestonesTacitly(31, [
+          due(5, '2026-10-06T21:20:00Z'),
+          due(6, '2026-10-06T21:20:00Z'),
+          due(7, '2026-10-06T21:20:00Z'),
+        ]),
+      ).toEqual({ approved: [6], failed: [5] });
+
+      // A falha do primeiro não impede os seguintes.
+      expect(ms.approve.mock.calls.map((c) => c[0].milestoneId)).toEqual([5, 6, 7]);
+      expect(warn).toHaveBeenCalledWith(
+        { err: boom, milestoneId: 5 },
+        'aprovação tácita do marco falhou',
+      );
+      expect(notify.mock.calls).toEqual([
+        [
+          7,
+          {
+            type: 'contract_auto_approved',
+            title: 'Marco aprovado automaticamente: Front',
+            body: 'Site em 3 etapas: sem resposta até ter, 06/10 às 17:20, o marco foi aprovado e o pagamento dele foi liberado ao freelancer (marco de R$ 333,33).',
+            data: { contractId: 31, milestoneId: 6 },
+          },
+          {},
+        ],
+        [
+          44,
+          {
+            type: 'milestone_approved',
+            title: 'Marco aprovado automaticamente: Front',
+            body: 'Site em 3 etapas: sem resposta do cliente até ter, 06/10 às 18:20, R$ 283,33 foi liberado na sua carteira.',
+            data: { contractId: 31, milestoneId: 6 },
+          },
+          {},
+        ],
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('nenhum aprovado (falha, ou o cliente respondeu no meio): ninguém é avisado e a conclusão não roda', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    repo.findById.mockResolvedValue(contract());
+    ms.approve.mockRejectedValueOnce(new Error('deadlock')).mockResolvedValueOnce(notApproved);
+
+    try {
+      expect(
+        await contractsService.approveMilestonesTacitly(31, [
+          due(5, '2026-10-06T21:20:00Z'),
+          due(6, '2026-10-06T21:20:00Z'),
+        ]),
+      ).toEqual({ approved: [], failed: [5] });
+    } finally {
+      warn.mockRestore();
+    }
+    expect(notify).not.toHaveBeenCalled();
+    expect(gamificationService.onContractCompleted).not.toHaveBeenCalled();
+  });
+
+  it('a hora em comum é a dos aprovados: o que falhou com outra hora não a apaga, e cada aprovação grava na linha do tempo a própria hora', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    repo.findById.mockResolvedValue(contract());
+    ms.approve
+      .mockRejectedValueOnce(new Error('deadlock'))
+      .mockResolvedValueOnce(approved('Layout', 333.33, 283.33))
+      .mockResolvedValueOnce(approved('Front', 333.33, 283.33));
+
+    try {
+      expect(
+        await contractsService.approveMilestonesTacitly(31, [
+          // 11:00 em Brasília: falha e volta na próxima rodada, com aviso próprio.
+          due(5, '2026-10-06T14:00:00Z'),
+          due(6, '2026-10-06T21:20:00Z'),
+          due(7, '2026-10-06T21:20:00Z'),
+        ]),
+      ).toEqual({ approved: [6, 7], failed: [5] });
+    } finally {
+      warn.mockRestore();
+    }
+
+    expect(ms.approve.mock.calls.map((c) => c[0].note)).toEqual([
+      'Aprovação tácita: sem resposta do cliente até 06/10/2026 às 11:00 (horário de Brasília)',
+      'Aprovação tácita: sem resposta do cliente até 06/10/2026 às 18:20 (horário de Brasília)',
+      'Aprovação tácita: sem resposta do cliente até 06/10/2026 às 18:20 (horário de Brasília)',
+    ]);
+    expect(notify.mock.calls.map((c) => [c[0], c[1].body])).toEqual([
+      [
+        7,
+        'Sem resposta até ter, 06/10 às 17:20, os marcos «Layout» e «Front» foram aprovados e o pagamento deles foi liberado ao freelancer (R$ 666,66 ao todo).',
+      ],
+      [
+        44,
+        'Sem resposta do cliente até ter, 06/10 às 18:20, os marcos «Layout» e «Front» foram aprovados e R$ 566,66 foi liberado na sua carteira.',
+      ],
+    ]);
+  });
+
+  it('em créditos, um marco de 1 crédito: os dois avisos dizem "1 crédito", no singular, e o do cliente fala nos créditos, não em pagamento', async () => {
+    repo.findById.mockResolvedValue(contract({ payment_mode: 'credits' }));
+    ms.approve.mockResolvedValueOnce(approved('Visita 1', 1, 1));
+
+    await contractsService.approveMilestonesTacitly(31, [due(5, '2026-10-06T21:20:00Z')]);
+
+    expect(notify.mock.calls.map((c) => [c[0], c[1].body])).toEqual([
+      [
+        7,
+        'Site em 3 etapas: sem resposta até ter, 06/10 às 17:20, o marco foi aprovado e os créditos dele foram liberados ao freelancer (marco de 1 crédito).',
+      ],
+      [
+        44,
+        'Site em 3 etapas: sem resposta do cliente até ter, 06/10 às 18:20, 1 crédito foi liberado na sua carteira.',
+      ],
+    ]);
+  });
+
+  it('em créditos: aprova em créditos, e os avisos somam créditos, não reais', async () => {
+    repo.findById.mockResolvedValue(contract({ payment_mode: 'credits' }));
+    ms.approve
+      .mockResolvedValueOnce(approved('Visita 1', 20, 20))
+      .mockResolvedValueOnce(approved('Visita 2', 20, 20));
+
+    await contractsService.approveMilestonesTacitly(31, [
+      due(5, '2026-10-06T21:20:00Z'),
+      due(6, '2026-10-06T21:20:00Z'),
+    ]);
+
+    expect(ms.approve.mock.calls.map((c) => c[0].mode)).toEqual(['credits', 'credits']);
+    expect(notify.mock.calls.map((c) => [c[0], c[1].body])).toEqual([
+      [
+        7,
+        'Sem resposta até ter, 06/10 às 17:20, os marcos «Visita 1» e «Visita 2» foram aprovados e os créditos deles foram liberados ao freelancer (40 créditos ao todo).',
+      ],
+      [
+        44,
+        'Sem resposta do cliente até ter, 06/10 às 18:20, os marcos «Visita 1» e «Visita 2» foram aprovados e 40 créditos foram liberados na sua carteira.',
+      ],
+    ]);
   });
 });

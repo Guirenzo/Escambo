@@ -72,7 +72,7 @@ apps/api/src
 │   ├── notifications/   → avisos no app, e-mail, push e "não perturbe"
 │   ├── reports/ disputes/ admin/   → moderação, disputas, painel
 │   └── …                → auth, profiles, services, reviews, score, gamification, lgpd, settings
-├── jobs/                → aprovação tácita, prazos, expirações, resumos, expurgos (scheduler.ts)
+├── jobs/                → aprovação tácita, prazos, lembretes, expirações, resumos, expurgos (scheduler.ts)
 └── config/              → env (Zod), banco, logger, socket, métricas, Sentry
 ```
 
@@ -81,7 +81,8 @@ apps/api/src
   conjunto é testado contra o MySQL de verdade nos testes de integração.
 - Todo dinheiro se move em **transação** com trava de linha, e cada movimento vira uma linha imutável no ledger.
 - Prazos e jobs leem a hora de um **relógio único** (`utils/clock.ts`), e nada automático age de madrugada no
-  fuso de quem é afetado (ADR 57).
+  fuso de quem é afetado (ADR 57). Os lembretes de prazo saem no máximo uma vez por vencimento, por um livro
+  (`deadline_reminders`) gravado na mesma transação que confere a contratação e grava o aviso (ADR 58).
 - Os tipos que atravessam a rede ficam em `packages/types` e são os mesmos no back e no front.
 
 ## Web

@@ -5,6 +5,50 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.41.0] — 2026-10-03
+
+Lembretes de prazo (ADR 58): o que o ADR 57 deixou para o bloco seguinte.
+
+### Adicionado
+
+- **Lembretes antes de cada vencimento**, a partir das 9h no seu horário e em geral na véspera: entregar
+  (a quem entrega), responder a uma proposta (ao freelancer), aprovar uma entrega ou os marcos antes da
+  aprovação automática (ao cliente) e responder a um pedido de extensão (ao cliente). O título diz o que
+  fazer e até quando; o lembrete é um aviso a mais, sai no máximo uma vez e não muda nenhuma hora. Nenhum
+  sai durante o "não perturbe".
+- **A aprovação automática avisa as duas partes:** o cliente, com até quando pode avaliar; o freelancer, com
+  quanto entrou na carteira. Marcos aprovados juntos vão num aviso só.
+- **Aviso de revisão parada:** se uma revisão fica 7 dias sem nova entrega, as duas partes são avisadas, uma
+  vez por pedido, sem nenhuma sanção. A Sala mostra às duas partes desde quando a revisão está pedida, também
+  nas contratações sem prazo, como as de troca.
+- A API: `deadlineZone` e `revisionRequestedAt` na contratação, `extension.deadlineZone` no pedido de
+  extensão, `dueZone` e `revisionRequestedAt` no marco.
+- Termos de Uso 1.4, com faixa informativa para quem aceitou a 1.3.
+
+### Alterado
+
+- **O prazo é um dia no horário de quem entrega**, em todas as telas e avisos: `sex, 02/10/2026, até 23:59`,
+  com "(horário de Manaus)" para quem está em outro relógio. Ao contratar, o dia mínimo e o fim do dia são
+  os de quem entrega, e a dica diz o horário quando ele é outro; o pedido de extensão escolhe o dia no
+  mesmo horário. As horas em que cada um age continuam no horário de quem lê.
+- Nos dois resumos (o do fim do "não perturbe" e o diário), os avisos com hora-limite próxima vêm primeiro.
+- O prazo para avaliar (7 dias) passa a contar pelo relógio da plataforma, o mesmo dos prazos.
+
+### Corrigido
+
+- Cliente e freelancer em fusos diferentes liam dias diferentes para o mesmo prazo: o prazo era o 23:59 do
+  navegador de quem escolhia.
+- A demonstração gravava os prazos às 20:59 de Brasília.
+- O pedido de revisão de um marco passa a reconferir, com a contratação travada, que ela continua ativa.
+
+### Para quem opera
+
+- Migrations 0029 (a tabela `deadline_reminders` e a hora do pedido de revisão na contratação) e 0030 (a
+  hora do pedido de revisão no marco); o reparo preenche a hora das revisões em curso, pela linha do tempo.
+  No primeiro dia saem de uma vez os lembretes do que vence nas próximas 48 h e os avisos das revisões
+  paradas há mais de 7 dias. Voltar para a 1.40.0 e de novo para a 1.41.0 não pede passo manual.
+  Conferências no `DEPLOY.md`.
+
 ## [1.40.0] — 2026-10-02
 
 Engenharia de entrega (ADR 59): o que o Playbook de Web Apps exige em volta do produto. Nenhuma tela,

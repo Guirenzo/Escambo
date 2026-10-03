@@ -49,9 +49,9 @@ describe('LegalView', () => {
   });
 
   it('a data da versão é a do documento, sem voltar um dia pelo fuso', () => {
-    // Regra fixada no texto: a versão vigente dos termos saiu em 28/09/2026.
+    // Regra fixada no texto: a versão vigente dos termos (1.4, ADR 58) saiu em 03/10/2026.
     show('termos');
-    expect(screen.getByText(/Versão 1\.3 · atualizada em 28\/09\/2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Versão 1\.4 · atualizada em 03\/10\/2026/)).toBeInTheDocument();
   });
 
   it('mostra a introdução e uma seção por título, com todos os parágrafos', () => {

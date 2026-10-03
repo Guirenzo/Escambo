@@ -3,8 +3,19 @@ import { useState, type FormEvent } from 'react';
 import type { ContractWithHistory } from '@escambo/types';
 import { Button, Field, Input, Modal } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
-import { deadlinePill, momentText } from '../../lib/deadline';
-import { addDays, dateInputValue, deadlineInfo, dt, endOfDayIso } from '../../lib/format';
+import {
+  addDaysToDay,
+  dayIn,
+  deadlineInfo,
+  deadlinePill,
+  deadlineText,
+  deadlineZoneNote,
+  endOfDayIn,
+  momentText,
+  sameClock,
+  todayIn,
+} from '../../lib/deadline';
+import { DEFAULT_TIMEZONE, timezoneLabel } from '../../lib/timezones';
 import { usePublicSettings, useRequestExtension, useResolveExtension } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 
@@ -21,6 +32,32 @@ const openDelivered = (c: ContractWithHistory): boolean =>
   c.milestones.some((m) => m.status === 'delivered' || (m.status === 'funded' && !!m.deliveredAt));
 
 const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Revisão parada há esse tempo: o Escambo avisa as duas partes uma vez (ADR 58, RN-081). */
+const REVISION_STALL_DAYS = 7;
+
+/**
+ * Desde quando a revisão está pedida (ADR 58), para cada parte. Não há hora-limite: nada muda
+ * sozinho, e qualquer parte pode abrir uma disputa. Sem a hora do pedido (contratação antiga antes
+ * do reparo), nada.
+ */
+function revisionText(
+  requestedAt: string,
+  who: 'client' | 'freelancer',
+  moment: (iso: string | null) => string,
+  now: number,
+): string {
+  const days = Math.floor((now - Date.parse(requestedAt)) / 86_400_000);
+  const since = moment(requestedAt);
+  if (who === 'client') {
+    return days >= REVISION_STALL_DAYS
+      ? `Revisão pedida em ${since}, há ${days} dias, sem nova entrega. Nada muda sozinho: combine pelo chat ou abra uma disputa pela Sala.`
+      : `Revisão pedida em ${since}. Não há hora-limite: nada muda sozinho. Se a nova entrega não vier, combine pelo chat ou abra uma disputa pela Sala; se ela não vier em ${REVISION_STALL_DAYS} dias, o Escambo lembra vocês dois, uma vez.`;
+  }
+  return days >= REVISION_STALL_DAYS
+    ? `Revisão pedida em ${since}, há ${days} dias: registre a nova entrega. O cliente pode abrir uma disputa a qualquer momento.`
+    : `Revisão pedida em ${since}: registre a nova entrega. Não há hora-limite, mas o cliente pode abrir uma disputa a qualquer momento.`;
+}
 
 /**
  * O que a Sala diz com o prazo vencido (ADR 57), para cada parte. Nunca "sem entrega" quando houve
@@ -78,6 +115,42 @@ function lateText(
 }
 
 /**
+ * Revisão em aberto numa contratação SEM prazo (troca, ou criada sem data): a seção do prazo não
+ * aparece, mas as duas partes veem desde quando a revisão está pedida (ADR 58, RN-081). Com prazo,
+ * a mesma linha fica dentro da seção do prazo.
+ */
+export function RevisionSince({ contract, myId }: { contract: ContractWithHistory; myId: number }) {
+  const { user } = useAuth();
+  const who =
+    contract.freelancerId === myId ? 'freelancer' : contract.clientId === myId ? 'client' : null;
+  if (
+    contract.deadlineAt ||
+    contract.status !== 'revision_requested' ||
+    !contract.revisionRequestedAt ||
+    !who
+  ) {
+    return null;
+  }
+  return (
+    <section className="card" data-testid="revision" aria-labelledby="revision-title">
+      <div className="card-head">
+        <h3 id="revision-title">
+          <Clock size={16} /> Revisão pedida
+        </h3>
+      </div>
+      <p className="tiny" data-testid="revision-since">
+        {revisionText(
+          contract.revisionRequestedAt,
+          who,
+          (iso) => (iso ? momentText(iso, user?.timezone) : ''),
+          Date.now(),
+        )}
+      </p>
+    </section>
+  );
+}
+
+/**
  * Prazo de entrega da contratação (RN-028 / RN-029, ADR 57). O estado vem da API
  * (`contract.deadline`), com as horas já gravadas ou projetadas: quando sai o aviso de atraso,
  * a partir de quando a disputa automática abre, até quando o cliente responde a um pedido. As
@@ -97,16 +170,20 @@ export function DeadlineSection({
   if (!contract.deadlineAt) return null;
 
   const zone = user?.timezone;
+  // O prazo é um dia no fuso de quem entrega (ADR 58); a API antiga (deploy) não manda: Brasília.
+  const dz = contract.deadlineZone ?? DEFAULT_TIMEZONE;
   const d = contract.deadline;
   const pill = deadlinePill(contract);
   const isFreelancer = contract.freelancerId === myId;
   const isClient = contract.clientId === myId;
   const ext = contract.extension;
+  // A data pedida vale até 23:59 no fuso dela (a API antiga não manda: o do prazo).
+  const ez = ext?.deadlineZone ?? dz;
   const moment = (iso: string | null): string => (iso ? momentText(iso, zone) : '');
   const late = d.state === 'due' || d.state === 'grace';
   const counting = d.state === 'running' || late;
   const canAsk = isFreelancer && counting && d.extensionRequestsLeft > 0;
-  const info = deadlineInfo(contract.deadlineAt);
+  const info = deadlineInfo(contract.deadlineAt, dz);
   const now = Date.now();
   const deadlinePassed = new Date(contract.deadlineAt).getTime() <= now;
 
@@ -141,10 +218,15 @@ export function DeadlineSection({
       </div>
 
       <div className="deadline-main">
-        <strong data-testid="deadline-date">{dt(contract.deadlineAt)}</strong>
+        <strong data-testid="deadline-date">{deadlineText(contract.deadlineAt, dz)}</strong>
+        {deadlineZoneNote(contract.deadlineAt, dz, zone) && (
+          <span className="muted tiny" data-testid="deadline-zone">
+            {deadlineZoneNote(contract.deadlineAt, dz, zone).trim()}
+          </span>
+        )}
         {contract.deadlineExtendedAt && (
           <span className="muted tiny">
-            estendido em {dt(contract.deadlineExtendedAt)} · extensão usada
+            estendido em {moment(contract.deadlineExtendedAt)} · extensão usada
           </span>
         )}
       </div>
@@ -165,7 +247,10 @@ export function DeadlineSection({
       {d.state === 'paused' && ext && (
         <div className="ext-request" data-testid="extension-request">
           <div>
-            <strong>Extensão pedida: novo prazo {dt(ext.deadlineAt)}</strong>
+            <strong>
+              Extensão pedida: novo prazo {deadlineText(ext.deadlineAt, ez)}
+              {deadlineZoneNote(ext.deadlineAt, ez, zone)}
+            </strong>
             <div className="muted tiny">{ext.reason}</div>
             {isClient && ext.respondBy && (
               <div className="tiny" data-testid="extension-respond-by">
@@ -205,17 +290,27 @@ export function DeadlineSection({
         <p className="muted tiny" data-testid="deadline-met">
           {contract.hasMilestones
             ? 'Todos os marcos foram entregues: o prazo não abre mais disputa sozinho; cada marco segue a própria aprovação.'
-            : `Houve entrega${d.firstDeliveredAt ? ` em ${moment(d.firstDeliveredAt)}` : ''}: o prazo não abre mais disputa sozinho.${
-                isClient && contract.status === 'revision_requested'
-                  ? ' Se a revisão não vier, abra uma disputa pela Sala.'
-                  : ''
-              }`}
+            : `Houve entrega${d.firstDeliveredAt ? ` em ${moment(d.firstDeliveredAt)}` : ''}: o prazo não abre mais disputa sozinho.`}
         </p>
       )}
 
+      {contract.status === 'revision_requested' &&
+        contract.revisionRequestedAt &&
+        (isFreelancer || isClient) && (
+          <p className="tiny" data-testid="revision-since">
+            {revisionText(
+              contract.revisionRequestedAt,
+              isFreelancer ? 'freelancer' : 'client',
+              moment,
+              now,
+            )}
+          </p>
+        )}
+
       {counting && ext?.status === 'declined' && (
         <p className="muted tiny" data-testid="extension-outcome">
-          Pedido de extensão (novo prazo {dt(ext.deadlineAt)}) recusado; vale o prazo atual.
+          Pedido de extensão (novo prazo {deadlineText(ext.deadlineAt, ez)}
+          {deadlineZoneNote(ext.deadlineAt, ez, zone)}) recusado; vale o prazo atual.
           {isFreelancer && d.extensionRequestsLeft === 1
             ? ' Você ainda pode fazer mais um pedido.'
             : ''}
@@ -223,7 +318,8 @@ export function DeadlineSection({
       )}
       {counting && ext?.status === 'expired' && (
         <p className="muted tiny" data-testid="extension-outcome">
-          Pedido de extensão (novo prazo {dt(ext.deadlineAt)}) sem resposta até{' '}
+          Pedido de extensão (novo prazo {deadlineText(ext.deadlineAt, ez)}
+          {deadlineZoneNote(ext.deadlineAt, ez, zone)}) sem resposta até{' '}
           {moment(ext.respondBy ?? ext.resolvedAt)}: vale o prazo atual.
           {isFreelancer && d.extensionRequestsLeft === 1
             ? ' Você ainda pode fazer mais um pedido.'
@@ -263,11 +359,13 @@ function ExtensionModal({
   const settings = usePublicSettings();
   const hours = settings.data?.extensionResponseHours ?? 48;
   const left = contract.deadline.extensionRequestsLeft;
-  const current = new Date(contract.deadlineAt!);
-  const tomorrow = addDays(new Date(), 1);
-  const floor = current.getTime() > tomorrow.getTime() ? addDays(current, 1) : tomorrow;
-  const min = dateInputValue(floor);
-  const [date, setDate] = useState(dateInputValue(addDays(floor, 6)));
+  const dz = contract.deadlineZone ?? DEFAULT_TIMEZONE;
+  const viewer = user?.timezone ?? DEFAULT_TIMEZONE;
+  const afterCurrent = addDaysToDay(dayIn(dz, contract.deadlineAt!), 1);
+  const tomorrow = addDaysToDay(todayIn(dz), 1);
+  const min = afterCurrent > tomorrow ? afterCurrent : tomorrow;
+  const otherClock = !sameClock(dz, viewer);
+  const [date, setDate] = useState(addDaysToDay(min, 6));
   const [reason, setReason] = useState('');
 
   async function submit(e: FormEvent): Promise<void> {
@@ -275,7 +373,7 @@ function ExtensionModal({
     try {
       const c = await ask.mutateAsync({
         id: contract.id,
-        deadlineAt: endOfDayIso(date),
+        deadlineAt: endOfDayIn(dz, date),
         reason: reason.trim(),
       });
       toast.success(
@@ -293,12 +391,15 @@ function ExtensionModal({
     <Modal title="Pedir extensão de prazo" onClose={onClose}>
       <form className="stack" onSubmit={submit}>
         <p className="muted tiny" data-testid="extension-rules">
-          Prazo atual: {dt(contract.deadlineAt!)}. Você pode pedir até 2 vezes nesta contratação
-          (resta {left}), e só uma extensão pode ser aceita. O cliente tem até {hours} h para
-          responder; sem resposta, o pedido expira. Enquanto ele decide, a disputa automática
+          Prazo atual: {deadlineText(contract.deadlineAt!, dz)}
+          {deadlineZoneNote(contract.deadlineAt!, dz, viewer)}. Você pode pedir até 2 vezes nesta
+          contratação (resta {left}), e só uma extensão pode ser aceita. O cliente tem até {hours} h
+          para responder; sem resposta, o pedido expira. Enquanto ele decide, a disputa automática
           espera.
         </p>
-        <Field label="Novo prazo (vale até 23:59 do dia)">
+        <Field
+          label={`Novo prazo (vale até 23:59 do dia${otherClock ? `, no horário de ${timezoneLabel(dz)}` : ''})`}
+        >
           <Input
             type="date"
             min={min}

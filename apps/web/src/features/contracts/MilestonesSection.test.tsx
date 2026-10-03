@@ -30,9 +30,11 @@ vi.mock('../../lib/api', () => ({
       milestoneAction(contractId, milestoneId, action, text),
   },
 }));
-vi.mock('../../lib/auth', () => ({
-  useAuth: () => ({ user: { id: 1, timezone: 'America/Sao_Paulo' } }),
+// Quem lê: o fuso muda por teste (a data do marco é um dia no fuso de quem entrega, ADR 58).
+const auth = vi.hoisted(() => ({
+  user: { id: 1, timezone: 'America/Sao_Paulo' as string | null },
 }));
+vi.mock('../../lib/auth', () => ({ useAuth: () => auth }));
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -46,9 +48,13 @@ function wrap(ui: ReactNode) {
 const CLIENT = 1;
 const FREELANCER = 2;
 
-/** Datas montadas na hora local: o texto da tela não depende do fuso de quem roda o teste. */
+/** Horas montadas na hora local: a entrega e a liberação aparecem no relógio da máquina (dtm). */
 const local = (month: number, day: number, hour = 12, minute = 0, second = 0): string =>
   new Date(2026, month - 1, day, hour, minute, second).toISOString();
+
+/** Fim do dia em Brasília (UTC−3): a data do marco é um dia no fuso dele, não no da máquina. */
+const endOfBrasiliaDay = (month: number, day: number): string =>
+  new Date(Date.UTC(2026, month - 1, day + 1, 2, 59, 59)).toISOString();
 
 const milestone = (o: Partial<Milestone> = {}): Milestone => ({
   id: 1,
@@ -64,6 +70,8 @@ const milestone = (o: Partial<Milestone> = {}): Milestone => ({
   revisionNote: null,
   releasedAt: null,
   approvalDueAt: null,
+  dueZone: 'America/Sao_Paulo',
+  revisionRequestedAt: null,
   ...o,
 });
 
@@ -91,7 +99,7 @@ const three = (): Milestone[] => [
     title: 'Roteiro',
     description: 'Texto e storyboard',
     status: 'released',
-    dueAt: local(9, 20, 23, 59, 59),
+    dueAt: endOfBrasiliaDay(9, 20),
     deliveredAt: local(9, 22, 10, 0),
     deliveryNote: 'Roteiro no Drive',
     releasedAt: local(9, 23, 9, 15),
@@ -100,12 +108,12 @@ const three = (): Milestone[] => [
     id: 2,
     title: 'Gravação',
     status: 'delivered',
-    dueAt: local(10, 5, 23, 59, 59),
+    dueAt: endOfBrasiliaDay(10, 5),
     deliveredAt: local(9, 30, 18, 0),
     deliveryNote: 'Vídeo bruto enviado',
     approvalDueAt: '2026-10-03T12:00:00.000Z',
   }),
-  milestone({ id: 3, title: 'Edição', status: 'funded', dueAt: local(10, 4, 23, 59, 59) }),
+  milestone({ id: 3, title: 'Edição', status: 'funded', dueAt: endOfBrasiliaDay(10, 4) }),
 ];
 
 const items = (): HTMLElement[] => screen.getAllByRole('listitem');
@@ -113,13 +121,17 @@ const item = (i: number): HTMLElement => items()[i]!;
 
 let prompt: MockInstance<typeof window.prompt>;
 
+/** Agora: qui, 01/10/2026, meio-dia em Brasília. */
+const NOW = '2026-10-01T15:00:00.000Z';
 beforeAll(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(new Date(2026, 9, 1, 12, 0, 0));
+  vi.setSystemTime(new Date(NOW));
 });
 afterAll(() => vi.useRealTimers());
 
 beforeEach(() => {
+  vi.setSystemTime(new Date(NOW));
+  auth.user = { id: 1, timezone: 'America/Sao_Paulo' };
   milestoneAction.mockReset();
   milestoneAction.mockImplementation(async () => contract(three()));
   prompt = vi.spyOn(window, 'prompt').mockReturnValue(null);
@@ -262,7 +274,7 @@ describe('MilestonesSection: o que a lista mostra', () => {
               id: 1,
               title: 'Gravação',
               status: 'delivered',
-              dueAt: local(9, 28, 23, 59, 59),
+              dueAt: endOfBrasiliaDay(9, 28),
               deliveredAt: local(9, 29, 10, 0),
               deliveryNote: 'Vídeo bruto',
             }),
@@ -271,7 +283,7 @@ describe('MilestonesSection: o que a lista mostra', () => {
               id: 2,
               title: 'Roteiro',
               status: 'released',
-              dueAt: local(9, 20, 23, 59, 59),
+              dueAt: endOfBrasiliaDay(9, 20),
               deliveredAt: local(9, 19, 10, 0),
               releasedAt: local(9, 21, 9, 0),
             }),
@@ -280,7 +292,7 @@ describe('MilestonesSection: o que a lista mostra', () => {
               id: 3,
               title: 'Edição',
               status: 'funded',
-              dueAt: local(9, 28, 23, 59, 59),
+              dueAt: endOfBrasiliaDay(9, 28),
               deliveredAt: local(9, 29, 10, 0),
               revisionNote: 'Trocar a trilha',
             }),
@@ -289,10 +301,10 @@ describe('MilestonesSection: o que a lista mostra', () => {
         />,
       ),
     );
-    expect(item(0)).toHaveTextContent('até 28/09/2026 · entregue com atraso');
-    expect(item(1)).toHaveTextContent('até 20/09/2026');
+    expect(item(0)).toHaveTextContent('seg, 28/09/2026, até 23:59 · entregue com atraso');
+    expect(item(1)).toHaveTextContent('dom, 20/09/2026, até 23:59');
     expect(item(1)).not.toHaveTextContent('entregue com atraso');
-    expect(item(2)).toHaveTextContent('até 28/09/2026');
+    expect(item(2)).toHaveTextContent('seg, 28/09/2026, até 23:59');
     expect(item(2)).not.toHaveTextContent('entregue com atraso');
     // Em revisão o prazo do marco também não volta a contar ("atrasada há…").
     expect(item(2)).not.toHaveTextContent('atrasada');
@@ -353,21 +365,21 @@ describe('MilestonesSection: o que a lista mostra', () => {
       wrap(
         <MilestonesSection
           contract={contract([
-            milestone({ id: 1, title: 'Roteiro', dueAt: local(10, 1, 23, 59, 59) }),
-            milestone({ id: 2, title: 'Gravação', dueAt: local(10, 2, 23, 59, 59) }),
+            milestone({ id: 1, title: 'Roteiro', dueAt: endOfBrasiliaDay(10, 1) }),
+            milestone({ id: 2, title: 'Gravação', dueAt: endOfBrasiliaDay(10, 2) }),
           ])}
           myId={FREELANCER}
         />,
       ),
     );
-    expect(item(0)).toHaveTextContent('até 01/10/2026 · vence hoje');
-    expect(item(1)).toHaveTextContent('até 02/10/2026 · vence amanhã');
+    expect(item(0)).toHaveTextContent('qui, 01/10/2026, até 23:59 · vence hoje');
+    expect(item(1)).toHaveTextContent('sex, 02/10/2026, até 23:59 · vence amanhã');
   });
 
   it('marco liberado: a entrega (com atraso), a nota e quanto foi liberado, quando', () => {
     render(wrap(<MilestonesSection contract={contract(three())} myId={CLIENT} />));
     const released = item(0);
-    expect(released).toHaveTextContent('até 20/09/2026 · entregue com atraso');
+    expect(released).toHaveTextContent('dom, 20/09/2026, até 23:59 · entregue com atraso');
     expect(released).toHaveTextContent('Roteiro no Drive · 22/09, 10:00');
     expect(released).toHaveTextContent('R$ 85,00 liberados em 23/09, 09:15');
   });
@@ -375,7 +387,7 @@ describe('MilestonesSection: o que a lista mostra', () => {
   it('marco entregue no prazo: sem "atraso", com a nota e a hora da aprovação automática no fuso de quem lê', () => {
     render(wrap(<MilestonesSection contract={contract(three())} myId={CLIENT} />));
     const delivered = item(1);
-    expect(delivered).toHaveTextContent('até 05/10/2026');
+    expect(delivered).toHaveTextContent('seg, 05/10/2026, até 23:59');
     expect(delivered).not.toHaveTextContent('entregue com atraso');
     expect(delivered).toHaveTextContent('Vídeo bruto enviado · 30/09, 18:00');
     expect(
@@ -386,7 +398,7 @@ describe('MilestonesSection: o que a lista mostra', () => {
 
   it('marco por entregar com a contratação aberta: quanto falta para o prazo dele', () => {
     render(wrap(<MilestonesSection contract={contract(three())} myId={FREELANCER} />));
-    expect(item(2)).toHaveTextContent('até 04/10/2026 · faltam 3 dias');
+    expect(item(2)).toHaveTextContent('dom, 04/10/2026, até 23:59 · faltam 3 dias');
     // A até 3 dias, a contagem vem no tom de "perto".
     expect(within(item(2)).getByText('faltam 3 dias')).toHaveClass('deadline-text-soon');
     // Só o marco por entregar conta o prazo: o entregue e o liberado, não.
@@ -399,13 +411,13 @@ describe('MilestonesSection: o que a lista mostra', () => {
       wrap(
         <MilestonesSection
           contract={contract([
-            milestone({ id: 3, title: 'Edição', dueAt: local(9, 29, 23, 59, 59) }),
+            milestone({ id: 3, title: 'Edição', dueAt: endOfBrasiliaDay(9, 29) }),
           ])}
           myId={FREELANCER}
         />,
       ),
     );
-    expect(item(0)).toHaveTextContent('até 29/09/2026 · atrasada há 2 dias');
+    expect(item(0)).toHaveTextContent('ter, 29/09/2026, até 23:59 · atrasada há 2 dias');
     expect(within(item(0)).getByText('atrasada há 2 dias')).toHaveClass('deadline-text-late');
   });
 
@@ -418,7 +430,7 @@ describe('MilestonesSection: o que a lista mostra', () => {
               id: 3,
               title: 'Edição',
               status: 'funded',
-              dueAt: local(10, 4, 23, 59, 59),
+              dueAt: endOfBrasiliaDay(10, 4),
               deliveredAt: local(9, 30, 18, 0),
               deliveryNote: 'Primeiro corte',
               revisionNote: 'Trocar a trilha',
@@ -430,7 +442,7 @@ describe('MilestonesSection: o que a lista mostra', () => {
     );
     expect(item(0)).toHaveTextContent('Revisão pedida: Trocar a trilha');
     expect(item(0)).not.toHaveTextContent('Primeiro corte');
-    expect(item(0)).toHaveTextContent('até 04/10/2026');
+    expect(item(0)).toHaveTextContent('dom, 04/10/2026, até 23:59');
     expect(item(0)).not.toHaveTextContent('faltam');
   });
 
@@ -443,7 +455,7 @@ describe('MilestonesSection: o que a lista mostra', () => {
         />,
       ),
     );
-    expect(item(2)).toHaveTextContent('até 04/10/2026');
+    expect(item(2)).toHaveTextContent('dom, 04/10/2026, até 23:59');
     expect(item(2)).not.toHaveTextContent('faltam');
     expect(screen.queryAllByRole('button')).toEqual([]);
   });
@@ -699,5 +711,122 @@ describe('MilestonesSection: as ações de cada lado', () => {
     await waitFor(() => expect(approve).toBeEnabled());
     expect(revision).toBeEnabled();
     expect(milestoneAction).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** Fim de 02/10/2026 em Manaus (sexta, 23:59:59 lá). */
+const FIM_MANAUS = '2026-10-03T03:59:59.000Z';
+
+/** A data do marco é um dia no fuso de quem entrega (ADR 58), como o prazo da contratação. */
+describe('MilestonesSection: o dia do marco', () => {
+  const due = (): string | null => screen.getByTestId('milestone-due-7').textContent;
+  const manaus = (o: Partial<Milestone> = {}) =>
+    contract([milestone({ id: 7, dueAt: FIM_MANAUS, dueZone: 'America/Manaus', ...o })]);
+
+  it('quem lê em outro relógio vê o dia do marco com o horário de quem entrega', () => {
+    render(wrap(<MilestonesSection contract={manaus()} myId={CLIENT} />));
+    expect(due()).toBe(' sex, 02/10/2026, até 23:59 (horário de Manaus) · vence amanhã');
+  });
+
+  it.each<[string, string | null]>([
+    ['Manaus', 'America/Manaus'],
+    ['Cuiabá (mesmo relógio de Manaus)', 'America/Cuiaba'],
+  ])('quem lê de %s vê o mesmo dia, sem nota', (_n, tz) => {
+    auth.user = { id: FREELANCER, timezone: tz };
+    render(wrap(<MilestonesSection contract={manaus()} myId={FREELANCER} />));
+    expect(due()).toBe(' sex, 02/10/2026, até 23:59 · vence amanhã');
+  });
+
+  it('a contagem é no fuso do marco: 22:30 em Manaus ainda é "vence hoje"', () => {
+    vi.setSystemTime(new Date('2026-10-03T02:30:00Z')); // 23:30 em Brasília
+    render(wrap(<MilestonesSection contract={manaus()} myId={FREELANCER} />));
+    expect(due()).toBe(' sex, 02/10/2026, até 23:59 (horário de Manaus) · vence hoje');
+  });
+
+  it('marco sem o fuso (API antiga, durante o deploy) vale em Brasília, com a hora real do legado', () => {
+    auth.user = { id: CLIENT, timezone: 'America/Manaus' };
+    const legacy = milestone({ id: 7, dueAt: '2026-10-02T23:59:59.000Z' });
+    delete (legacy as Partial<Milestone>).dueZone;
+    render(wrap(<MilestonesSection contract={contract([legacy])} myId={CLIENT} />));
+    expect(due()).toBe(' sex, 02/10/2026, até 20:59 (horário de Brasília) · vence amanhã');
+  });
+});
+
+/** Marco em revisão (ADR 58): desde quando a revisão está pedida; passados 7 dias, há quantos. */
+describe('MilestonesSection: revisão pedida no marco', () => {
+  const inRevision = (o: Partial<Milestone> = {}) =>
+    contract([
+      milestone({
+        id: 8,
+        title: 'Edição',
+        status: 'funded',
+        deliveredAt: local(9, 20, 18, 0),
+        revisionNote: 'Trocar a trilha',
+        ...o,
+      }),
+    ]);
+  const since = (): string | null => screen.getByTestId('milestone-revision-since-8').textContent;
+
+  it('antes dos 7 dias, só desde quando, na hora de quem lê', () => {
+    const { unmount } = render(
+      wrap(
+        <MilestonesSection
+          contract={inRevision({ revisionRequestedAt: '2026-09-28T13:00:00.000Z' })}
+          myId={FREELANCER}
+        />,
+      ),
+    );
+    expect(since()).toBe('revisão pedida em seg, 28/09, às 10:00');
+    unmount();
+    auth.user = { id: FREELANCER, timezone: 'America/Manaus' };
+    render(
+      wrap(
+        <MilestonesSection
+          contract={inRevision({ revisionRequestedAt: '2026-09-28T13:00:00.000Z' })}
+          myId={FREELANCER}
+        />,
+      ),
+    );
+    expect(since()).toBe('revisão pedida em seg, 28/09, às 09:00');
+  });
+
+  it('depois dos 7 dias, as duas partes leem há quantos dias', () => {
+    const c = inRevision({ revisionRequestedAt: '2026-09-21T13:00:00.000Z' });
+    const { unmount } = render(wrap(<MilestonesSection contract={c} myId={CLIENT} />));
+    expect(since()).toBe('revisão pedida em seg, 21/09, às 10:00 (há 10 dias)');
+    unmount();
+    render(wrap(<MilestonesSection contract={c} myId={FREELANCER} />));
+    expect(since()).toBe('revisão pedida em seg, 21/09, às 10:00 (há 10 dias)');
+  });
+
+  it('a contagem aparece aos 7 dias exatos, e não um segundo antes', () => {
+    const { unmount } = render(
+      wrap(
+        <MilestonesSection
+          contract={inRevision({ revisionRequestedAt: '2026-09-24T15:00:00.000Z' })}
+          myId={CLIENT}
+        />,
+      ),
+    );
+    expect(since()).toBe('revisão pedida em qui, 24/09, às 12:00 (há 7 dias)');
+    unmount();
+    render(
+      wrap(
+        <MilestonesSection
+          contract={inRevision({ revisionRequestedAt: '2026-09-24T15:00:01.000Z' })}
+          myId={CLIENT}
+        />,
+      ),
+    );
+    expect(since()).toBe('revisão pedida em qui, 24/09, às 12:00');
+  });
+
+  it.each<[string, Partial<Milestone>]>([
+    ['sem a hora do pedido (antes do reparo)', { revisionRequestedAt: null }],
+    ['entregue de novo', { status: 'delivered', revisionRequestedAt: '2026-09-21T13:00:00.000Z' }],
+    ['nunca entregue', { deliveredAt: null, revisionRequestedAt: '2026-09-21T13:00:00.000Z' }],
+  ])('marco %s: nada de "revisão pedida em"', (_n, o) => {
+    render(wrap(<MilestonesSection contract={inRevision(o)} myId={CLIENT} />));
+    expect(screen.queryByTestId('milestone-revision-since-8')).toBeNull();
   });
 });

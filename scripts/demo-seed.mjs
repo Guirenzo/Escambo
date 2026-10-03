@@ -341,11 +341,39 @@ async function ensureService(user, spec, categories) {
  * estado pedido: 'pending' | 'accepted' | 'delivered' | 'completed'.
  */
 /** Fim do dia daqui a `days` dias, em ISO — o prazo vale o dia inteiro. */
-function endOfDayInDays(days) {
-  const d = new Date(Date.now() + days * 86_400_000);
-  d.setHours(23, 59, 59, 0);
-  return d.toISOString();
+/**
+ * Fim (23:59:59) do dia daqui a `days` dias, no fuso de quem entrega (ADR 58): o prazo é um dia no
+ * horário do freelancer, e não no da máquina que roda o script. Mesmo algoritmo de localInstant.
+ */
+function endOfDayInZone(zone, days) {
+  const parts = (at) => {
+    const p = {};
+    for (const { type, value } of new Intl.DateTimeFormat('en-US', {
+      timeZone: zone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).formatToParts(at)) {
+      if (type !== 'literal') p[type] = Number(value);
+    }
+    return p;
+  };
+  const offset = (at) => {
+    const p = parts(at);
+    return (Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - at.getTime()) / 60_000;
+  };
+  const today = parts(new Date());
+  const naive = Date.UTC(today.year, today.month - 1, today.day + days, 23, 59, 59);
+  const guess = naive - offset(new Date(naive)) * 60_000;
+  return new Date(naive - offset(new Date(guess)) * 60_000).toISOString();
 }
+
+/** O fuso de quem entrega: o escolhido na conta, ou Brasília. */
+const zoneOf = (freelancer) => freelancer.timezone ?? 'America/Sao_Paulo';
 
 /** Pedido de extensão de prazo do freelancer (RN-028), uma vez; o cliente decide na Sala. */
 async function ensureExtensionRequest(freelancer, contract, days, reason) {
@@ -359,7 +387,7 @@ async function ensureExtensionRequest(freelancer, contract, days, reason) {
   }
   await call('POST', `/contracts/${contract.id}/extension`, {
     token: freelancer.token,
-    body: { deadlineAt: endOfDayInDays(days), reason },
+    body: { deadlineAt: endOfDayInZone(zoneOf(freelancer), days), reason },
   });
   log(`  extensão de prazo pedida no #${contract.id} (aguardando a cliente)`);
 }
@@ -517,7 +545,7 @@ async function ensureContract(
         price,
         paymentMode,
         // Prazo de entrega: o do serviço, salvo quando a demo quer outro (RN-028/029).
-        deadlineAt: endOfDayInDays(deadlineDays ?? service.deliveryDays ?? 7),
+        deadlineAt: endOfDayInZone(zoneOf(freelancer), deadlineDays ?? service.deliveryDays ?? 7),
       },
     });
     log(`contrato #${contract.id} ${title} (${paymentMode}) → pendente`);
@@ -638,11 +666,11 @@ async function ensureMilestoneContract(
         description: `Contratação do serviço "${service.title}" em ${milestones.length} marcos (demo).`,
         price,
         paymentMode,
-        deadlineAt: endOfDayInDays(30),
+        deadlineAt: endOfDayInZone(zoneOf(freelancer), 30),
         // Prazo por marco (opcional): `days` vira dueAt no fim daquele dia.
         milestones: milestones.map(({ days, ...m }) => ({
           ...m,
-          dueAt: days ? endOfDayInDays(days) : null,
+          dueAt: days ? endOfDayInZone(zoneOf(freelancer), days) : null,
         })),
       },
     });
@@ -801,6 +829,7 @@ async function main() {
   const svc = {};
   for (const f of FREELANCERS) {
     const u = users[f.key];
+    u.timezone = f.timezone ?? 'America/Sao_Paulo';
     await call('PUT', '/profiles/freelancer', {
       token: u.token,
       body: { ...f.profile, isAvailable: true },

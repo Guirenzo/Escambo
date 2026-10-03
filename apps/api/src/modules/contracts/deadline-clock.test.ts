@@ -20,7 +20,23 @@ const FLOW = [
   'jobs/tacit-approval.ts',
   'jobs/expire-proposals.ts',
   'jobs/repair-deadlines.ts',
+  // ADR 58: lembretes, fuso do prazo, avisos da aprovação tácita e a janela da avaliação.
+  'jobs/deadline-reminders.ts',
+  'modules/contracts/reminders.repository.ts',
+  'modules/contracts/reminders-sql.ts',
+  'modules/contracts/deadline-reminders.service.ts',
+  'modules/contracts/contract-zones.ts',
+  'modules/contracts/approval-notices.ts',
+  'modules/contracts/reminder-notices.ts',
+  'modules/reviews/reviews.service.ts',
 ];
+
+/**
+ * O fuso do prazo não é gravado (ADR 58, corte da crítica): é calculado na leitura por
+ * inferDeadlineZone (contract-zones.ts). Uma coluna deadline_zone voltando ao fluxo seria uma
+ * segunda verdade para o mesmo dia.
+ */
+const ADR58_MIGRATIONS = ['0029_lembretes_prazos.sql', '0030_lembretes_marcos.sql'];
 
 describe('o fluxo de prazos usa um relógio só', () => {
   it.each(FLOW)('%s não usa NOW(), Date.now() nem new Date() sem argumento', (file) => {
@@ -28,6 +44,16 @@ describe('o fluxo de prazos usa um relógio só', () => {
     expect(src).not.toMatch(/\bNOW\(\)/);
     expect(src).not.toMatch(/Date\.now\(\)/);
     expect(src).not.toMatch(/new Date\(\)/);
+  });
+
+  it.each(FLOW)('%s não lê nem grava uma coluna deadline_zone', (file) => {
+    const src = readFileSync(join(ROOT, file), 'utf8');
+    expect(src).not.toContain('deadline_zone');
+  });
+
+  it.each(ADR58_MIGRATIONS)('a migração %s não cria a coluna deadline_zone', (file) => {
+    const sql = readFileSync(join(ROOT, '..', 'db', 'migrations', file), 'utf8');
+    expect(sql).not.toContain('deadline_zone');
   });
 
   it('a abertura da disputa (que a RN-029 também usa) grava o status anterior e recebe :now', () => {

@@ -1,15 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../modules/contracts/contracts.repository', () => ({
   contractsRepository: { findApprovalDue: vi.fn() },
 }));
 vi.mock('../modules/contracts/contracts.service', () => ({
-  contractsService: { approveTacitly: vi.fn(), approveMilestoneTacitly: vi.fn() },
+  contractsService: { approveTacitly: vi.fn(), approveMilestonesTacitly: vi.fn() },
 }));
 vi.mock('../modules/contracts/milestones.repository', () => ({
   milestonesRepository: { findApprovalDue: vi.fn().mockResolvedValue([]) },
 }));
 
+import { logger } from '../config/logger';
 import { contractsRepository } from '../modules/contracts/contracts.repository';
 import { contractsService } from '../modules/contracts/contracts.service';
 import { milestonesRepository } from '../modules/contracts/milestones.repository';
@@ -28,6 +29,7 @@ describe('job de aprovação tácita (RN-024, ADR 57)', () => {
     repo.findApprovalDue.mockResolvedValue([]);
     milestones.findApprovalDue.mockResolvedValue([]);
   });
+  afterEach(() => vi.restoreAllMocks());
 
   it('aprova cada entrega com a hora gravada vencida, no mesmo instante da rodada', async () => {
     repo.findApprovalDue.mockResolvedValue([{ id: 10 }, { id: 11 }] as never);
@@ -42,19 +44,60 @@ describe('job de aprovação tácita (RN-024, ADR 57)', () => {
     expect(result).toMatchObject({ approved: [10, 11], failed: [], milestones: [] });
   });
 
-  it('marcos entregues com a hora vencida também são aprovados (escrow por marcos)', async () => {
-    const m5 = { id: 5, contract_id: 20, client_id: 1, freelancer_id: 2 };
-    milestones.findApprovalDue.mockResolvedValue([
-      m5,
-      { id: 6, contract_id: 21, client_id: 1, freelancer_id: 2 },
-    ] as never);
-    svc.approveMilestoneTacitly.mockResolvedValueOnce(true).mockRejectedValueOnce(new Error('x'));
+  describe('marcos entregues com a hora vencida (escrow por marcos, ADR 58)', () => {
+    const due = (id: number, contractId: number) => ({
+      id,
+      contract_id: contractId,
+      client_id: 1,
+      freelancer_id: 2,
+      approval_due_at: new Date('2026-10-01T12:00:00Z'),
+    });
 
-    const result = await runTacitApproval(NOON);
+    it('os marcos da mesma contratação vão juntos (um aviso a cada parte), na ordem da consulta', async () => {
+      const m5 = due(5, 20);
+      const m6 = due(6, 21);
+      const m7 = due(7, 20);
+      milestones.findApprovalDue.mockResolvedValue([m5, m6, m7] as never);
+      svc.approveMilestonesTacitly
+        .mockResolvedValueOnce({ approved: [5, 7], failed: [] })
+        .mockResolvedValueOnce({ approved: [6], failed: [] });
 
-    expect(svc.approveMilestoneTacitly).toHaveBeenCalledWith(m5, NOON);
-    expect(result.milestones).toEqual([5]);
-    expect(result.failed).toEqual([21]);
+      const result = await runTacitApproval(NOON);
+
+      expect(milestones.findApprovalDue).toHaveBeenCalledWith(NOON, result.zones);
+      expect(svc.approveMilestonesTacitly.mock.calls).toEqual([
+        [20, [m5, m7], NOON],
+        [21, [m6], NOON],
+      ]);
+      expect(result).toMatchObject({ milestones: [5, 7, 6], failed: [] });
+    });
+
+    it('marco que falha dentro do grupo marca a contratação como falha, e os aprovados contam', async () => {
+      milestones.findApprovalDue.mockResolvedValue([due(5, 20), due(7, 20)] as never);
+      svc.approveMilestonesTacitly.mockResolvedValueOnce({ approved: [5], failed: [7] });
+
+      const result = await runTacitApproval(NOON);
+
+      expect(result.milestones).toEqual([5]);
+      expect(result.failed).toEqual([20]);
+    });
+
+    it('o grupo que lança não impede os outros: registra a contratação e segue', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+      const boom = new Error('conexão perdida');
+      milestones.findApprovalDue.mockResolvedValue([due(5, 20), due(6, 21)] as never);
+      svc.approveMilestonesTacitly
+        .mockRejectedValueOnce(boom)
+        .mockResolvedValueOnce({ approved: [6], failed: [] });
+
+      const result = await runTacitApproval(NOON);
+
+      expect(result.milestones).toEqual([6]);
+      expect(result.failed).toEqual([20]);
+      expect(warn.mock.calls).toEqual([
+        [{ err: boom, contractId: 20 }, 'aprovação tácita dos marcos falhou'],
+      ]);
+    });
   });
 
   it('isola falhas: um contrato com erro não impede os outros', async () => {
@@ -76,5 +119,6 @@ describe('job de aprovação tácita (RN-024, ADR 57)', () => {
     expect(repo.findApprovalDue).not.toHaveBeenCalled();
     expect(milestones.findApprovalDue).not.toHaveBeenCalled();
     expect(svc.approveTacitly).not.toHaveBeenCalled();
+    expect(svc.approveMilestonesTacitly).not.toHaveBeenCalled();
   });
 });

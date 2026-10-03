@@ -257,6 +257,79 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
+### Atualizar para a 1.41.0 (lembretes de prazo, ADR 58)
+
+A 1.41.0 traz os lembretes antes de cada vencimento, o aviso da aprovação automática às duas partes e o
+de revisão parada, e duas migrations, a 0029 e a 0030. Nenhum instante gravado muda. A atualização é a de
+sempre (pelo workflow Deploy ou, à mão, como na seção 3); os passos abaixo são as conferências em volta dela.
+
+**1. Antes: o tamanho da primeira rodada.** Consultas só de leitura, no console do MySQL (tabela da seção
+5); mostre o comando a quem responde pelo deploy e espere o ok antes de rodar. Na primeira rodada de dia
+de cada pessoa saem de uma vez os lembretes do que vence nas próximas 48 h, e as revisões paradas há mais
+de 7 dias recebem o aviso, às duas partes, uma vez (a de um marco cujo título se repete na contratação conta
+7 dias a partir do deploy). Estas contagens dão a ordem de grandeza:
+
+```sql
+-- vencimentos nas próximas 48 h (cada um pode ganhar um lembrete)
+SELECT COUNT(*) FROM contracts WHERE status = 'pending' AND proposal_expires_at BETWEEN NOW() AND NOW() + INTERVAL 48 HOUR;
+SELECT COUNT(*) FROM contracts WHERE status IN ('accepted','in_progress') AND deadline_at BETWEEN NOW() AND NOW() + INTERVAL 48 HOUR;
+SELECT COUNT(*) FROM contracts WHERE status = 'delivered' AND approval_due_at BETWEEN NOW() AND NOW() + INTERVAL 48 HOUR;
+SELECT COUNT(*) FROM contract_milestones WHERE status = 'delivered' AND approval_due_at BETWEEN NOW() AND NOW() + INTERVAL 48 HOUR;
+SELECT COUNT(*) FROM contracts WHERE extension_status = 'pending';
+-- revisões em curso (as paradas há mais de 7 dias recebem o aviso de revisão parada)
+SELECT COUNT(*) FROM contracts WHERE status = 'revision_requested';
+SELECT COUNT(*) FROM contract_milestones m JOIN contracts c ON c.id = m.contract_id
+ WHERE m.status = 'funded' AND m.delivered_at IS NOT NULL AND c.status IN ('accepted','in_progress');
+```
+
+**2. O deploy.** Pelo workflow Deploy; à mão, com `IMAGE_TAG=1.41.0` no `.env`:
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+O job `migrate` aplica a 0029 (a tabela `deadline_reminders`, o livro dos lembretes, e na contratação a
+hora do pedido de revisão, com um índice) e a 0030 (a mesma hora no marco, com um índice), e no fim roda o
+reparo dos prazos, que ganhou dois passos: a contratação em revisão recebe a hora do último pedido de
+revisão da linha do tempo; o marco em revisão, a do último pedido dele na linha do tempo, quando o título
+do marco é único na contratação, e senão a hora do deploy (o aviso dele sai 7 dias depois). Nenhuma das
+duas fica antes da última entrega.
+
+**3. Depois: conferir o reparo.**
+
+```bash
+docker compose -f docker-compose.prod.yml logs migrate | grep 'Prazos reparados'
+curl -s https://SEU_DOMINIO/api/health   # "version":"1.41.0"
+```
+
+Em `reparo`, `revisionRequested` e `milestoneRevisionRequested` devem bater com as duas últimas contagens
+do passo 1 (salvo o que mudou no intervalo). No console do MySQL, as duas consultas abaixo precisam dar 0
+(o reparo trata até 200 linhas por passo a cada rodada: se não derem, espere as próximas rodadas dos jobs e
+rode de novo):
+
+```sql
+SELECT COUNT(*) FROM contracts WHERE status = 'revision_requested' AND revision_requested_at IS NULL;
+SELECT COUNT(*) FROM contract_milestones m JOIN contracts c ON c.id = m.contract_id
+ WHERE m.status = 'funded' AND m.delivered_at IS NOT NULL AND m.revision_requested_at IS NULL
+   AND c.status IN ('accepted','in_progress');
+```
+
+Os lembretes enviados ficam em `deadline_reminders` (uma linha por lembrete; `kind` diz o tipo):
+
+```sql
+SELECT kind, COUNT(*) FROM deadline_reminders GROUP BY kind;
+```
+
+**4. Voltar para a 1.40.0** é seguro: pelo workflow Deploy com a tag `1.40.0` (ou à mão, seção 3). A API
+antiga ignora a tabela e as colunas novas e volta a não mandar lembretes. As migrations são só para frente.
+
+**5. Voltar de novo para a 1.41.0 depois de a 1.40.0 ter ficado no ar** não pede passo manual. A 1.40.0
+registra pedidos de revisão sem gravar a hora, e uma revisão pedida nela fica com a hora de um pedido
+anterior, de antes da última entrega. O reparo reconhece essa hora como sobra de outro ciclo e a recalcula
+(a da contratação pela linha do tempo; a do marco também, quando o título dele é único, e senão a partir do
+deploy); as revisões com a hora certa não são tocadas, e o aviso de revisão parada não se repete.
+
 ## 4. Backup e restauração
 
 `scripts/backup-db.sh` faz um `mysqldump --single-transaction` **dentro** do container do banco (não expõe

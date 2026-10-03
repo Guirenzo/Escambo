@@ -4,21 +4,18 @@ import {
   BARTER_STATUS_LABEL,
   brl,
   dateInputValue,
-  deadlineInfo,
   DIGEST_HOURS,
   digestHourLabel,
   displayName,
   durationLabel,
   percentLabel,
   dt,
-  endOfDayIso,
   formatAvailability,
   formatAvailableDays,
   formatBytes,
   formatHours,
   formatPeriods,
   hm,
-  spreadDates,
   STATUS_LABEL,
 } from './format';
 
@@ -82,61 +79,10 @@ describe('perfil: dias de atendimento e tempo de resposta', () => {
   });
 });
 
-describe('prazo de entrega', () => {
-  const now = new Date(2026, 8, 10, 15, 0, 0); // 10/09/2026 15:00 local
-
-  it('deadlineInfo conta em dias de calendário e marca o tom', () => {
-    expect(deadlineInfo(null)).toBeNull();
-    expect(deadlineInfo(new Date(2026, 8, 20, 23, 59).toISOString(), now)).toMatchObject({
-      daysLeft: 10,
-      tone: 'ok',
-      label: 'faltam 10 dias',
-    });
-    expect(deadlineInfo(new Date(2026, 8, 12, 23, 59).toISOString(), now)).toMatchObject({
-      tone: 'soon',
-      label: 'faltam 2 dias',
-    });
-    expect(deadlineInfo(new Date(2026, 8, 11, 23, 59).toISOString(), now)).toMatchObject({
-      tone: 'soon',
-      label: 'vence amanhã',
-    });
-    expect(deadlineInfo(new Date(2026, 8, 10, 23, 59).toISOString(), now)).toMatchObject({
-      daysLeft: 0,
-      tone: 'soon',
-      label: 'vence hoje',
-    });
-    expect(deadlineInfo(new Date(2026, 8, 10, 9, 0).toISOString(), now)).toMatchObject({
-      tone: 'late',
-      label: 'venceu hoje',
-    });
-    expect(deadlineInfo(new Date(2026, 8, 8, 23, 59).toISOString(), now)).toMatchObject({
-      daysLeft: -2,
-      tone: 'late',
-      label: 'atrasada há 2 dias',
-    });
-  });
-
-  it('spreadDates distribui os prazos dos marcos até o prazo da contratação', () => {
-    const from = new Date(2026, 8, 10, 10, 0);
-    const to = new Date(2026, 8, 20, 23, 59);
-    expect(spreadDates(from, to, 2)).toEqual(['2026-09-15', '2026-09-20']);
-    expect(spreadDates(from, to, 1)).toEqual(['2026-09-20']);
-    expect(spreadDates(from, to, 5)).toEqual([
-      '2026-09-12',
-      '2026-09-14',
-      '2026-09-16',
-      '2026-09-18',
-      '2026-09-20',
-    ]);
-  });
-
-  it('dateInputValue e endOfDayIso conversam com <input type="date"> no fuso local', () => {
+describe('dia do <input type="date">', () => {
+  it('dateInputValue escreve o dia local como AAAA-MM-DD, com zero à esquerda', () => {
     expect(dateInputValue(new Date(2026, 0, 5))).toBe('2026-01-05');
-    const iso = endOfDayIso('2026-01-05');
-    const d = new Date(iso);
-    expect([d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()]).toEqual([
-      2026, 0, 5, 23, 59,
-    ]);
+    expect(dateInputValue(new Date(2026, 11, 31, 23, 59))).toBe('2026-12-31');
   });
 });
 

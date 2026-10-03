@@ -167,7 +167,12 @@ test('entregue: a Sala diz até quando aprovar; em revisão não há Cancelar e 
   await page.reload();
   await settled(page);
   await expect(page.getByTestId('deadline-met')).toContainText(
-    'o prazo não abre mais disputa sozinho. Se a revisão não vier, abra uma disputa pela Sala.',
+    'o prazo não abre mais disputa sozinho.',
+  );
+  // Desde quando a revisão está pedida, e que nada muda sozinho (ADR 58, RN-081).
+  await expect(page.getByTestId('revision-since')).toContainText('Revisão pedida em');
+  await expect(page.getByTestId('revision-since')).toContainText(
+    'se ela não vier em 7 dias, o Escambo lembra vocês dois, uma vez.',
   );
   await expect(page.getByRole('button', { name: 'Cancelar', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Abrir disputa' })).toBeVisible();
@@ -175,6 +180,7 @@ test('entregue: a Sala diz até quando aprovar; em revisão não há Cancelar e 
   await openAs(page, freelancer, `/contratos/${id}`);
   await settled(page);
   await expect(page.getByRole('button', { name: 'Desistir' })).toHaveCount(0);
+  await expect(page.getByTestId('revision-since')).toContainText(': registre a nova entrega.');
 });
 
 test('prazo vencido: horas do aviso e da disputa; valor que mudou no meio é recusado', async ({

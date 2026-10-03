@@ -18,6 +18,8 @@ export const DEFAULT_TACIT_APPROVAL_DAYS = 5;
 export const EXTENSION_RESPONSE_HOURS = 48;
 /** Pedidos de extensão por contratação (RN-028): até 2, e só um pode ser aceito. */
 export const MAX_EXTENSION_REQUESTS = 2;
+/** Revisão sem nova entrega por esse tempo avisa as duas partes, uma vez (ADR 58). Fixo: não é sanção. */
+export const REVISION_STALL_DAYS = 7;
 /** Depois da recusa ou da expiração, quem entrega tem pelo menos 12 h de relógio... */
 export const GRACE_FLOOR_AFTER_DECISION_MS = 12 * 3_600_000;
 /** ...e pelo menos 6 h de dia (9h às 20h30) para agir antes da disputa. */

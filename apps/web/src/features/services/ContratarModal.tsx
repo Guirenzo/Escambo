@@ -3,7 +3,10 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Service } from '@escambo/types';
 import { Button, Field, Input, Modal } from '../../components/ui';
-import { addDays, brl, dateInputValue, endOfDayIso, spreadDates } from '../../lib/format';
+import { useAuth } from '../../lib/auth';
+import { addDaysToDay, endOfDayIn, sameClock, spreadDays, todayIn } from '../../lib/deadline';
+import { brl } from '../../lib/format';
+import { DEFAULT_TIMEZONE, timezoneLabel } from '../../lib/timezones';
 import { useCreateContract, usePublicSettings, useWallet } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { DepositModal } from '../wallet/DepositModal';
@@ -25,6 +28,7 @@ const round2 = (v: number): number => Math.round(v * 100) / 100;
  */
 export function ContratarModal({ service, onClose }: { service: Service; onClose: () => void }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const toast = useToast();
   const wallet = useWallet();
   const settings = usePublicSettings();
@@ -35,10 +39,15 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
   const [description, setDescription] = useState(`Contratação do serviço "${service.title}".`);
   const [price, setPrice] = useState(String(service.price ?? ''));
   const [mode, setMode] = useState<'cash' | 'credits'>('cash');
-  // Prazo de entrega: sugerido pelo prazo do serviço (RN-028/029 cobram a partir dele).
+  // Prazo de entrega: sugerido pelo prazo do serviço (RN-028/029 cobram a partir dele). É um dia
+  // no fuso de quem entrega (ADR 58): o mínimo é amanhã dele, e vale até 23:59 dele.
+  const ownerZone = service.ownerTimezone ?? DEFAULT_TIMEZONE;
+  const viewerZone = user?.timezone ?? DEFAULT_TIMEZONE;
+  const otherClock = !sameClock(ownerZone, viewerZone);
+  const today = todayIn(ownerZone);
   const suggestedDays = service.deliveryDays ?? 7;
-  const [deadline, setDeadline] = useState(dateInputValue(addDays(new Date(), suggestedDays)));
-  const minDeadline = dateInputValue(addDays(new Date(), 1));
+  const [deadline, setDeadline] = useState(addDaysToDay(today, suggestedDays));
+  const minDeadline = addDaysToDay(today, 1);
   const [depositing, setDepositing] = useState(false);
   const [useMilestones, setUseMilestones] = useState(false);
   const [milestones, setMilestones] = useState<MilestoneDraft[]>([
@@ -96,7 +105,7 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
 
   /** Espalha os prazos dos marcos por igual até o prazo da contratação (o último cai nele). */
   function spreadDeadlines(): void {
-    const dates = spreadDates(new Date(), new Date(endOfDayIso(deadline)), milestones.length);
+    const dates = spreadDays(today, deadline, milestones.length);
     setMilestones((ms) => ms.map((m, i) => ({ ...m, dueAt: dates[i] ?? '' })));
   }
 
@@ -110,12 +119,12 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
         description,
         price: priceNum,
         paymentMode: mode,
-        deadlineAt: endOfDayIso(deadline),
+        deadlineAt: endOfDayIn(ownerZone, deadline),
         milestones: withMilestones
           ? milestones.map((m) => ({
               title: m.title.trim(),
               amount: Number(m.amount),
-              dueAt: m.dueAt ? endOfDayIso(m.dueAt) : null,
+              dueAt: m.dueAt ? endOfDayIn(ownerZone, m.dueAt) : null,
             }))
           : undefined,
       });
@@ -176,14 +185,16 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
             min={minDeadline}
             value={deadline}
             onChange={(e) => setDeadline(e.target.value)}
+            aria-describedby="deadline-hint"
             required
           />
         </Field>
-        <span className="muted tiny" data-testid="deadline-hint">
-          Sugerido pelo serviço: {suggestedDays} dia{suggestedDays === 1 ? '' : 's'}. Vale até 23:59
-          do dia. Sem entrega até lá, a partir das 9h do dia seguinte o Escambo avisa vocês dois e
-          você pode cancelar com reembolso integral. O freelancer pode pedir extensão, que só vale
-          com o seu aceite.
+        <span className="muted tiny" id="deadline-hint" data-testid="deadline-hint">
+          Sugerido pelo serviço: {suggestedDays} dia{suggestedDays === 1 ? '' : 's'}.{' '}
+          {otherClock
+            ? `Vale até 23:59 do dia, no horário de ${timezoneLabel(ownerZone)} (de quem entrega). Em geral na véspera, o Escambo lembra o freelancer do prazo. Sem entrega até lá, a partir das 9h do dia seguinte, também no horário de ${timezoneLabel(ownerZone)}, o Escambo avisa vocês dois e você pode cancelar com reembolso integral.`
+            : 'Vale até 23:59 do dia. Em geral na véspera, o Escambo lembra o freelancer do prazo. Sem entrega até lá, a partir das 9h do dia seguinte o Escambo avisa vocês dois e você pode cancelar com reembolso integral.'}{' '}
+          O freelancer pode pedir extensão, que só vale com o seu aceite.
         </span>
 
         <div className="radio-row" role="radiogroup" aria-label="Forma de pagamento">
@@ -262,6 +273,7 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
                   value={m.dueAt}
                   onChange={(e) => setMilestone(i, { dueAt: e.target.value })}
                   aria-label={`Prazo do marco ${i + 1}`}
+                  aria-describedby={otherClock ? 'deadline-hint' : undefined}
                   title="Prazo do marco (opcional)"
                 />
                 <button

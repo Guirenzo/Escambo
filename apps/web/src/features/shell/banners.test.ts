@@ -18,11 +18,12 @@ const user = (o: Partial<PublicUser> = {}): PublicUser => ({
 });
 const ok: Consent[] = [
   { type: 'privacy_policy', version: '1.4', accepted: true, at: '' },
-  { type: 'terms_of_use', version: '1.3', accepted: true, at: '' },
+  { type: 'terms_of_use', version: '1.4', accepted: true, at: '' },
 ];
+// Termos 1.3: quem respondeu antes do ADR 58 tem a faixa dos Termos 1.4.
 const termosVelhos: Consent[] = [
   { type: 'privacy_policy', version: '1.4', accepted: true, at: '' },
-  { type: 'terms_of_use', version: '1.2', accepted: true, at: '' },
+  { type: 'terms_of_use', version: '1.3', accepted: true, at: '' },
 ];
 const velho: Consent[] = [{ type: 'privacy_policy', version: '1.2', accepted: true, at: '' }];
 

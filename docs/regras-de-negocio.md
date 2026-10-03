@@ -18,9 +18,9 @@
 7. [RN-51 a RN-60 — Gamificação](#7-rn-51-a-rn-60--gamificação)
 8. [RN-61 a RN-65 — Suporte e Disputas](#8-rn-61-a-rn-65--suporte-e-disputas)
 9. [RN-66 a RN-70 — Troca, Pacotes e Confiança](#81-rn-66-a-rn-70--troca-pacotes-e-confiança)
-10. [RN-71 a RN-80 — Conformidade, LGPD, avisos e prazos](#9-rn-71-a-rn-80--conformidade-lgpd-avisos-e-prazos)
+10. [RN-71 a RN-81 — Conformidade, LGPD, avisos e prazos](#9-rn-71-a-rn-81--conformidade-lgpd-avisos-e-prazos)
 11. [Tabela Consolidada](#10-tabela-consolidada)
-12. [Matriz de situação (ADR 57)](#11-matriz-de-situação-adr-57)
+12. [Matriz de situação (ADR 58)](#11-matriz-de-situação-adr-58)
 
 ---
 
@@ -34,10 +34,10 @@ Cada regra possui:
 - **Descrição** — a regra em linguagem precisa
 - **Impacto** — consequência do não cumprimento
 - **Casos de Uso relacionados**
-- **Situação** — nas regras revistas contra o código (a partir do ADR 57): implementada, parcial, não implementada ou corrigida no texto; a [matriz da seção 11](#11-matriz-de-situação-adr-57) reúne essas regras
+- **Situação** — nas regras revistas contra o código (a partir do ADR 57): implementada, parcial, não implementada ou corrigida no texto; a [matriz da seção 11](#11-matriz-de-situação-adr-58) reúne essas regras
 - **Origem** — quando a regra nasceu de uma decisão registrada em `docs/decisoes.md`
 
-O documento reúne **78 regras**, de RN-001 a RN-078.
+O documento reúne **81 regras**, de RN-001 a RN-081.
 
 ---
 
@@ -278,7 +278,7 @@ O documento reúne **78 regras**, de RN-001 a RN-078.
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Contratações |
-| **Descrição** | O freelancer tem até a hora de validade da proposta para aceitar ou recusar (a contra-proposta é a RN-030, ainda não implementada). A validade é **gravada na criação**: **72 horas** depois (`platform_settings.proposal_expiry_hours`, padrão 72) ou, se o prazo de entrega vier antes, o último instante de dia antes dele, e nunca entre 20h30 e 9h no fuso do freelancer (passa para as 9h seguintes, RN-078). Com menos de 1 hora para responder, a proposta nem é criada. O aviso da proposta diz até quando responder, e a Sala mostra a mesma hora. Proposta vencida, ou com o prazo de entrega já passado, **não pode ser aceita**. Sem resposta até a hora gravada, o job `expire-proposals` encerra a proposta com a nota do motivo, a reserva da carteira volta ao cliente e os dois são avisados; o job só age com o fuso do freelancer de dia. Mudar o painel vale para as propostas criadas depois |
+| **Descrição** | O freelancer tem até a hora de validade da proposta para aceitar ou recusar (a contra-proposta é a RN-030, ainda não implementada). A validade é **gravada na criação**: **72 horas** depois (`platform_settings.proposal_expiry_hours`, padrão 72) ou, se o prazo de entrega vier antes, o último instante de dia antes dele, e nunca entre 20h30 e 9h no fuso do freelancer (passa para as 9h seguintes, RN-078). Com menos de 1 hora para responder, a proposta nem é criada. O aviso da proposta diz até quando responder, e a Sala mostra a mesma hora; o freelancer é lembrado antes (RN-079), e o prazo de entrega da proposta é dito como dia (RN-080). Proposta vencida, ou com o prazo de entrega já passado, **não pode ser aceita**. Sem resposta até a hora gravada, o job `expire-proposals` encerra a proposta com a nota do motivo, a reserva da carteira volta ao cliente e os dois são avisados; o job só age com o fuso do freelancer de dia. Mudar o painel vale para as propostas criadas depois |
 | **Impacto** | Garante agilidade no processo e libera o cliente para buscar outro profissional; a hora avisada é a cumprida |
 | **UC Relacionado** | UC-05 |
 | **Situação** | Implementada (ADR 57) |
@@ -313,10 +313,10 @@ O documento reúne **78 regras**, de RN-001 a RN-078.
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Contratações |
-| **Descrição** | Se o cliente não aprovar, não pedir revisão nem abrir disputa até a hora gravada na entrega, o sistema considera a entrega **automaticamente aprovada** e libera o pagamento ao freelancer. A hora é **5 dias corridos** depois da entrega (`platform_settings.tacit_approval_days`, padrão 5), gravada a cada entrega, dita no aviso da entrega e na Sala, e nunca cai entre 20h30 e 9h no fuso do cliente (passa para as 9h seguintes, RN-078). Vale por marco: cada marco entregue tem a própria hora (RN-069). O job `tacit-approval` só age com o fuso do cliente de dia; mudar o painel vale para as entregas registradas depois |
+| **Descrição** | Se o cliente não aprovar, não pedir revisão nem abrir disputa até a hora gravada na entrega, o sistema considera a entrega **automaticamente aprovada** e libera o pagamento ao freelancer. A hora é **5 dias corridos** depois da entrega (`platform_settings.tacit_approval_days`, padrão 5), gravada a cada entrega, dita no aviso da entrega e na Sala, e nunca cai entre 20h30 e 9h no fuso do cliente (passa para as 9h seguintes, RN-078). Vale por marco: cada marco entregue tem a própria hora (RN-069). O cliente é lembrado antes (RN-079). Quando a aprovação acontece, as duas partes são avisadas: o cliente com até quando pode avaliar (RN-043), o freelancer com o líquido; depois dela não há revisão nem disputa. O job `tacit-approval` só age com o fuso do cliente de dia (a cópia do freelancer pode chegar das 6h à meia-noite dele); mudar o painel vale para as entregas registradas depois |
 | **Impacto** | Protege o freelancer de clientes que ignoram a entrega indefinidamente |
 | **UC Relacionado** | UC-05, UC-06 |
-| **Situação** | Implementada (ADR 57). Corrigida no texto: dizia "5 dias úteis", mas o código sempre contou dias corridos, e os Termos de Uso sempre disseram "5 dias" |
+| **Situação** | Implementada (ADR 57; avisos às duas partes no ADR 58). Corrigida no texto: dizia "5 dias úteis", mas o código sempre contou dias corridos, e os Termos de Uso sempre disseram "5 dias" |
 
 ---
 
@@ -360,7 +360,7 @@ O documento reúne **78 regras**, de RN-001 a RN-078.
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Contratações |
-| **Descrição** | O freelancer pode pedir a extensão do prazo de entrega pela Sala (nova data e motivo) **até 2 vezes** por contratação, e **só 1 pedido pode ser aceito**, sempre com **aceite explícito do cliente** pelo app. Só vale **antes da primeira entrega** (por marcos, enquanto algum marco financiado nunca foi entregue), com um pedido de cada vez e nunca depois do fim da carência da RN-029. O cliente responde até a hora dita no pedido: 48 horas depois (valor fixo no código), levadas para as 9h se caírem de noite no fuso dele, e nunca depois do último instante de dia 12 horas antes da data pedida; se sobrariam menos de 6 horas para decidir, o pedido nem é registrado (a data está perto demais). Sem resposta até essa hora, o pedido **expira e vale como recusa**, com aviso às duas partes. O aceite troca o prazo, fica na linha do tempo e zera o aviso de atraso e a carência. Enquanto o pedido espera, a disputa automática espera (a carência pausa); depois da recusa ou da expiração, a carência volta de onde parou, com piso de **12 horas de relógio e 6 horas de dia** (de 9h a 20h30) a partir da decisão. Entrega, cancelamento, disputa e conclusão encerram o pedido pendente. A decisão confere o número do pedido: a recusa e a expiração do mesmo pedido nunca passam as duas |
+| **Descrição** | O freelancer pode pedir a extensão do prazo de entrega pela Sala (nova data e motivo) **até 2 vezes** por contratação, e **só 1 pedido pode ser aceito**, sempre com **aceite explícito do cliente** pelo app. Só vale **antes da primeira entrega** (por marcos, enquanto algum marco financiado nunca foi entregue), com um pedido de cada vez e nunca depois do fim da carência da RN-029. O novo prazo é uma data no fuso do prazo (RN-080). O cliente responde até a hora dita no pedido: 48 horas depois (valor fixo no código; a chave no painel foi adiada de novo no ADR 58), levadas para as 9h se caírem de noite no fuso dele, e nunca depois do último instante de dia 12 horas antes da data pedida; se sobrariam menos de 6 horas para decidir, o pedido nem é registrado (a data está perto demais). O cliente é lembrado antes, um lembrete por pedido (RN-079). Sem resposta até essa hora, o pedido **expira e vale como recusa**, com aviso às duas partes. O aceite troca o prazo, fica na linha do tempo e zera o aviso de atraso e a carência. Enquanto o pedido espera, a disputa automática espera (a carência pausa); depois da recusa ou da expiração, a carência volta de onde parou, com piso de **12 horas de relógio e 6 horas de dia** (de 9h a 20h30) a partir da decisão. Entrega, cancelamento, disputa e conclusão encerram o pedido pendente. A decisão confere o número do pedido: a recusa e a expiração do mesmo pedido nunca passam as duas |
 | **Impacto** | Evita extensões unilaterais que prejudicam o cliente e pedidos repetidos, ou ignorados, que adiariam a disputa automática sem limite |
 | **UC Relacionado** | UC-05 |
 | **Situação** | Implementada (ADR 57) |
@@ -372,7 +372,7 @@ O documento reúne **78 regras**, de RN-001 a RN-078.
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Disputas |
-| **Descrição** | Se o prazo de entrega vence sem **nenhuma entrega** (por marcos, com algum marco financiado nunca entregue) e sem extensão aceita, o job `overdue-contracts` avisa as duas partes, uma vez, a partir das **9h** depois do prazo no fuso de quem entrega (a mesma hora que a Sala mostra antes). O aviso grava o fim da **carência** (`platform_settings.deadline_grace_hours`, padrão 24 horas depois do aviso), que nunca cai entre 20h30 e 9h (passa para as 9h, RN-078) e é dito nos dois avisos, cada um no fuso de quem lê; mudar o painel vale para os avisos dados depois. Passada essa hora, ainda sem entrega, sem extensão aceita e sem pedido esperando resposta (RN-028), a plataforma **abre a disputa** (motivo "prazo", em nome do cliente), a mediação assume e o escrow congela (RN-038). A partir do aviso, o cliente pode cancelar com **reembolso integral** (RN-025). Depois da primeira entrega (por marcos, quando todo marco financiado já foi entregue), o prazo não abre mais disputa sozinho, mesmo que a entrega volte para revisão. Só o aviso a quem entrega pode sair durante o "não perturbe" (RN-077); o do cliente espera |
+| **Descrição** | O prazo é uma data no fuso de quem entrega (RN-080), e quem entrega é lembrado antes (RN-079). Se o prazo de entrega vence sem **nenhuma entrega** (por marcos, com algum marco financiado nunca entregue) e sem extensão aceita, o job `overdue-contracts` avisa as duas partes, uma vez, a partir das **9h** depois do prazo no fuso de quem entrega (a mesma hora que a Sala mostra antes). O aviso grava o fim da **carência** (`platform_settings.deadline_grace_hours`, padrão 24 horas depois do aviso), que nunca cai entre 20h30 e 9h (passa para as 9h, RN-078) e é dito nos dois avisos, cada um no fuso de quem lê; mudar o painel vale para os avisos dados depois. Passada essa hora, ainda sem entrega, sem extensão aceita e sem pedido esperando resposta (RN-028), a plataforma **abre a disputa** (motivo "prazo", em nome do cliente), a mediação assume e o escrow congela (RN-038). A partir do aviso, o cliente pode cancelar com **reembolso integral** (RN-025). Depois da primeira entrega (por marcos, quando todo marco financiado já foi entregue), o prazo não abre mais disputa sozinho, mesmo que a entrega volte para revisão. Só o aviso a quem entrega pode sair durante o "não perturbe" (RN-077); o do cliente espera |
 | **Impacto** | Nenhuma contratação sem entrega fica em estado indefinido; depois da entrega, o desfecho é das partes |
 | **UC Relacionado** | UC-05, UC-10 |
 | **Situação** | Implementada (ADR 57) |
@@ -536,7 +536,7 @@ O documento reúne **78 regras**, de RN-001 a RN-078.
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Avaliações |
-| **Descrição** | O cliente tem **7 dias corridos** após a conclusão para avaliar. Após esse prazo, a avaliação não pode mais ser registrada |
+| **Descrição** | O cliente tem **7 dias corridos** após a conclusão para avaliar, contados pelo relógio da plataforma. Após esse prazo, a avaliação não pode mais ser registrada. O aviso da conclusão automática (RN-024) diz até quando avaliar |
 | **Impacto** | Garante relevância temporal das avaliações |
 | **UC Relacionado** | UC-07 |
 
@@ -835,10 +835,10 @@ O documento reúne **78 regras**, de RN-001 a RN-078.
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Pagamentos |
-| **Descrição** | Contratos divididos em marcos têm **cada marco financiado e liberado individualmente**. A soma dos marcos deve ser igual ao valor total do contrato. A aprovação de um marco libera apenas o valor daquele marco. Vale em dinheiro e em créditos Escambo (marcos inteiros, sem taxa). Cada marco pode ter o próprio prazo (opcional; no futuro, em ordem e nunca depois do prazo da contratação): marco em escrow com prazo vencido avisa as duas partes uma vez — a mediação automática continua sendo pelo prazo da contratação (RN-029). Marco entregue conta como entrega para a RN-029 mesmo que volte para revisão. O aviso de marco atrasado vale só para marco nunca entregue, a partir das 9h no fuso de quem entrega. A tácita de cada marco tem hora gravada na entrega do marco (RN-024). Não se cancela com marco entregue em aberto, esperando o cliente ou em revisão (RN-025) |
+| **Descrição** | Contratos divididos em marcos têm **cada marco financiado e liberado individualmente**. A soma dos marcos deve ser igual ao valor total do contrato. A aprovação de um marco libera apenas o valor daquele marco. Vale em dinheiro e em créditos Escambo (marcos inteiros, sem taxa). Cada marco pode ter o próprio prazo (opcional; no futuro, em ordem e nunca depois do prazo da contratação): marco em escrow com prazo vencido avisa as duas partes uma vez — a mediação automática continua sendo pelo prazo da contratação (RN-029). Marco entregue conta como entrega para a RN-029 mesmo que volte para revisão. O aviso de marco atrasado vale só para marco nunca entregue, a partir das 9h no fuso de quem entrega. A tácita de cada marco tem hora gravada na entrega do marco (RN-024); o lembrete e o aviso da tácita juntam os marcos da mesma contratação (RN-079), e a revisão parada vale por marco (RN-081). Não se cancela com marco entregue em aberto, esperando o cliente ou em revisão (RN-025) |
 | **Impacto** | Reduz o risco das duas partes em projetos longos e de maior valor |
 | **UC Relacionado** | UC-06 |
-| **Situação** | Implementada (prazos, tácita e cancelamento por marco revistos no ADR 57) |
+| **Situação** | Implementada (prazos, tácita e cancelamento por marco revistos no ADR 57; lembretes e avisos no ADR 58) |
 
 ---
 
@@ -853,7 +853,7 @@ O documento reúne **78 regras**, de RN-001 a RN-078.
 
 ---
 
-## 9. RN-71 a RN-80 — Conformidade, LGPD, avisos e prazos
+## 9. RN-71 a RN-81 — Conformidade, LGPD, avisos e prazos
 
 ---
 
@@ -920,7 +920,7 @@ O documento reúne **78 regras**, de RN-001 a RN-078.
 | **Descrição** | Quando a Política de Privacidade ou os Termos de Uso mudam, quem ainda não respondeu à versão vigente vê, ao entrar, uma **faixa com destaque** que resume o que mudou desde a versão que respondeu e leva ao texto completo. A resposta é registrada por versão, no mesmo consentimento do cadastro, e encerra a faixa em todos os aparelhos; se o registro falhar, a faixa volta na próxima vez. Na Política, a faixa pede **aceitar ou não aceitar** (art. 8 §6, art. 9). Nos Termos (desde a 1.3), a faixa é **informativa**: não há "Não aceito", porque a seção 7 diz que o uso continuado vale como aceite, e quem não concorda pode pedir a exclusão da conta no Perfil. Uma faixa por vez: a da Política vem antes da dos Termos |
 | **Impacto** | Ninguém segue sob um documento que mudou sem ter sido avisado, e cada resposta fica registrada com a versão |
 | **UC Relacionado** | UC-01 |
-| **Situação** | Implementada: Política (ADR 54) e Termos de Uso 1.3 (ADR 57) |
+| **Situação** | Implementada: Política (ADR 54) e Termos de Uso 1.4 (ADR 58) |
 
 ---
 
@@ -929,7 +929,7 @@ O documento reúne **78 regras**, de RN-001 a RN-078.
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Notificações |
-| **Descrição** | Durante a janela de silêncio da conta, nenhum aviso no navegador sai, exceto o aviso de teste e as categorias que a própria pessoa marcou, dentro de uma lista fechada mantida pela plataforma. Hoje a lista tem uma categoria, "Prazo vencido num trabalho que você entrega": o aviso de prazo estourado a quem entrega (RN-029). A extensão recusada e a revisão pedida saíram da lista no ADR 57: depois de uma recusa ou expiração sobram sempre pelo menos 6 horas de dia até a disputa (RN-028), e depois da entrega não há carência (RN-029). Quem nunca escolheu não tem nada saindo; ao ligar o silêncio, quem entrega trabalho vê a opção marcada. O que não sai fica para o aviso do fim do silêncio, com os de prazo primeiro. Uma categoria só entra se a espera tira de quem recebe algo que não volta e se ele consegue agir |
+| **Descrição** | Durante a janela de silêncio da conta, nenhum aviso no navegador sai, exceto o aviso de teste e as categorias que a própria pessoa marcou, dentro de uma lista fechada mantida pela plataforma. Hoje a lista tem uma categoria, "Prazo vencido num trabalho que você entrega": o aviso de prazo estourado a quem entrega (RN-029). A extensão recusada e a revisão pedida saíram da lista no ADR 57: depois de uma recusa ou expiração sobram sempre pelo menos 6 horas de dia até a disputa (RN-028), e depois da entrega não há carência (RN-029). Quem nunca escolheu não tem nada saindo; ao ligar o silêncio, quem entrega trabalho vê a opção marcada. O que não sai fica para o aviso do fim do silêncio, com os de prazo primeiro (os que podem nascer com menos de 24 horas para agir, inclusive os lembretes da RN-079, que nunca saem no silêncio). Uma categoria só entra se a espera tira de quem recebe algo que não volta e se ele consegue agir |
 | **Impacto** | Quem entrega não perde horas da carência dormindo, e ninguém é acordado pelo que não escolheu |
 | **UC Relacionado** | UC-02, UC-05 |
 | **Situação** | Implementada (ADR 56, estreitada pelo ADR 57) |
@@ -941,11 +941,50 @@ O documento reúne **78 regras**, de RN-001 a RN-078.
 | Campo | Detalhe |
 |---|---|
 | **Categoria** | Contratações |
-| **Descrição** | Todo prazo que tira um direito tem a hora gravada quando a contagem começa, e ela nunca cai entre 20h30 e 9h no fuso de quem é afetado (passa para as 9h). Nenhum job age sobre prazo com esse fuso de noite (entre 21h e 9h). A hora vale como foi dita: mudar o painel vale para o que começar depois. Hoje, os instantes gravados são quatro: a validade da proposta (RN-021, fuso do freelancer), a aprovação tácita da entrega e de cada marco (RN-024, fuso do cliente), a resposta a um pedido de extensão (RN-028, fuso do cliente) e o fim da carência do prazo (RN-029, fuso de quem entrega). A outra parte, que não sofre a sanção, pode receber a cópia de um aviso mais cedo no fuso dela (a partir das 6h). As contratações que já estavam em andamento recebem essas horas pelo job `repair-deadlines`, com as mesmas contas da API |
+| **Descrição** | Todo prazo que tira um direito sobre dinheiro ou sobre a contratação tem a hora gravada quando a contagem começa, e ela nunca cai entre 20h30 e 9h no fuso de quem é afetado (passa para as 9h). Nenhum job age sobre prazo com esse fuso de noite (entre 21h e 9h). A hora vale como foi dita: mudar o painel vale para o que começar depois. Hoje, os instantes gravados são quatro: a validade da proposta (RN-021, fuso do freelancer), a aprovação tácita da entrega e de cada marco (RN-024, fuso do cliente), a resposta a um pedido de extensão (RN-028, fuso do cliente) e o fim da carência do prazo (RN-029, fuso de quem entrega). A outra parte, que não sofre a sanção, pode receber a cópia de um aviso fora do dia dela (das 6h à meia-noite). A janela de avaliação (RN-043) é contada em dias corridos e não entra. O fuso do prazo (RN-080) só diz o dia. As contratações que já estavam em andamento recebem essas horas pelo job `repair-deadlines`, com as mesmas contas da API |
 | **Impacto** | Nenhuma sanção por prazo cai de madrugada, e a hora avisada é a hora cumprida |
 | **UC Relacionado** | UC-05 |
 | **Situação** | Implementada |
 | **Origem** | ADR 57 |
+
+---
+
+### RN-079 — Lembrete antes do vencimento
+
+| Campo | Detalhe |
+|---|---|
+| **Categoria** | Notificações |
+| **Descrição** | O lembrete é um **aviso a mais**: sai no máximo uma vez por vencimento, a partir das 9h no fuso atual de quem recebe, e não suspende, não adia nem condiciona nenhuma hora; vale a hora dita no aviso que abriu a contagem, e a Sala sempre a mostra. São quatro: o **prazo de entrega** (a quem entrega, enquanto há trabalho nunca entregue e nenhum pedido de extensão esperando resposta), a **validade da proposta** (ao freelancer; propostas de troca não expiram e não têm lembrete), a **aprovação automática** da entrega e dos marcos (ao cliente; os marcos da mesma contratação que chegam à hora na mesma rodada vão num aviso só) e a **resposta a um pedido de extensão** (ao cliente, um lembrete por pedido). Em geral sai às 9h da véspera (as 9h mais recentes com pelo menos 24 horas pela frente); se a contagem começou há menos de 12 horas, às 9h do próprio dia, desde que sobrem 2 h 30; senão, não sai. Só de dia e com pelo menos 2 horas até o vencimento. Um vencimento novo (extensão aceita, nova entrega, novo pedido) ganha lembrete novo. Nenhum lembrete sai durante o "não perturbe" (RN-077). A linha no app sai uma vez; e-mail e push, no máximo uma vez. Não têm lembrete: o fim da carência (o aviso de atraso já é o lembrete e diz a hora), o prazo de um marco (o atraso do marco não tem sanção) e a janela de avaliação (o aviso da conclusão automática já diz até quando avaliar) |
+| **Impacto** | Ninguém perde dinheiro nem a contratação por um vencimento de que não se lembrou, e ninguém recebe mais de um lembrete pelo mesmo vencimento |
+| **UC Relacionado** | UC-05, UC-06 |
+| **Situação** | Implementada |
+| **Origem** | ADR 58 |
+
+---
+
+### RN-080 — Data de entrega no horário de quem entrega
+
+| Campo | Detalhe |
+|---|---|
+| **Categoria** | Contratações |
+| **Descrição** | O prazo de entrega, e o de cada marco, é uma **data** e vale até 23:59 dela no fuso de quem entrega. As duas partes leem o mesmo dia, com "(horário de X)" quando quem lê está em outro relógio; as horas em que cada um age (aviso, disputa, resposta, aprovação) aparecem no fuso de quem lê. O dia mínimo é amanhã no fuso de quem entrega, e a extensão escolhe um dia no fuso do prazo. A API continua recebendo um instante; o fuso do prazo é o relógio em que esse instante é 23:59 (preferindo o de quem entrega e depois o do cliente), o que preserva o dia escolhido também nas contratações anteriores. Ele só diz o dia: os jobs agem no fuso atual de cada pessoa (RN-078). Quando o instante não é 23:59 em fuso nenhum (contratações antigas, chamadas diretas à API), o app mostra a hora real |
+| **Impacto** | Cliente e freelancer em fusos diferentes combinam o mesmo dia, e o prazo não vira outra hora para quem entrega |
+| **UC Relacionado** | UC-05 |
+| **Situação** | Implementada |
+| **Origem** | ADR 58 |
+
+---
+
+### RN-081 — Aviso de revisão parada
+
+| Campo | Detalhe |
+|---|---|
+| **Categoria** | Contratações |
+| **Descrição** | Uma revisão pedida não termina sozinha. Se ficar **7 dias** (valor fixo no código) sem nova entrega, as duas partes são avisadas, uma vez por pedido de revisão, na primeira rodada em que é dia para as duas; vale para a entrega única e para cada marco. Não há sanção: o desfecho continua sendo nova entrega, acordo pelo chat ou disputa, que qualquer das partes pode abrir. A Sala mostra às duas partes desde quando a revisão está pedida |
+| **Impacto** | Uma revisão esquecida não deixa o dinheiro parado em garantia sem que ninguém perceba |
+| **UC Relacionado** | UC-05 |
+| **Situação** | Implementada |
+| **Origem** | ADR 58 |
 
 ---
 
@@ -1031,28 +1070,35 @@ O documento reúne **78 regras**, de RN-001 a RN-078.
 | RN-076 | LGPD | Comunicação de alteração da Política de Privacidade e dos Termos de Uso: faixa com destaque ao entrar, resposta registrada por versão; a Política pede aceitar/não aceitar (art. 8 §6, art. 9), a dos Termos é informativa (uso continuado vale como aceite) | UC-01 |
 | RN-077 | Notificações | O que sai durante o "não perturbe": lista fechada da plataforma, escolha da pessoa (hoje, o aviso de prazo estourado a quem entrega) | UC-02, UC-05 |
 | RN-078 | Contratações | Prazos de dia: hora gravada, nunca entre 20h30 e 9h no fuso de quem é afetado; nenhum job age de noite | UC-05 |
+| RN-079 | Notificações | Lembrete antes do vencimento: no máximo um, a partir das 9h no fuso de quem recebe, em geral na véspera; não muda nenhuma hora | UC-05, UC-06 |
+| RN-080 | Contratações | O prazo de entrega é uma data, até 23:59 no fuso de quem entrega, o mesmo dia para as duas partes | UC-05 |
+| RN-081 | Contratações | Revisão sem nova entrega há 7 dias: aviso às duas partes, uma vez, sem sanção | UC-05 |
 
 ---
 
-## 11. Matriz de situação (ADR 57)
+## 11. Matriz de situação (ADR 58)
 
-Regras revistas contra o código na v1.39.0 (ADR 57). Os arquivos da API ficam em `apps/api/src/` (as contratações em `modules/contracts/`), e os do web em `apps/web/src/features/`.
+Regras revistas contra o código na v1.39.0 (ADR 57) e na v1.41.0 (ADR 58). Os arquivos da API ficam em `apps/api/src/` (as contratações em `modules/contracts/`), e os do web em `apps/web/src/features/`.
 
 | RN | Situação | Onde | ADR |
 |---|---|---|---|
-| RN-021 | Implementada | `contracts.service.ts` (criação e aceite da proposta), `jobs/expire-proposals.ts` | 57 |
+| RN-021 | Implementada | `contracts.service.ts` (criação e aceite da proposta), `jobs/expire-proposals.ts` | 57, 58 |
 | RN-023 | Não implementada | Nenhum limite de revisões; a revisão não abre disputa automática | 57 |
-| RN-024 | Implementada; "dias úteis" corrigido para dias corridos | `contracts.service.ts` (entrega e marco), `jobs/tacit-approval.ts` | 57 |
+| RN-024 | Implementada; "dias úteis" corrigido para dias corridos | `contracts.service.ts` (entrega e marco), `jobs/tacit-approval.ts`, `approval-notices.ts` | 57, 58 |
 | RN-025 | Implementada | `cancel-policy.ts` (`cancelTerms`), `contracts.service.ts` (cancelamento), `contracts/CancelModal.tsx` | 57 |
 | RN-026 | Parcial | Desistência em `cancel-policy.ts` e aviso `contract_cancelled` em `deadline-notices.ts`; histórico público e alerta pendentes | 57 |
-| RN-028 | Implementada | `deadline-grace.ts`, `contracts.service.ts` (pedido e decisão), `jobs/overdue-contracts.ts` (expiração) | 57 |
-| RN-029 | Implementada | `deadline-sql.ts` (`rn029Eligible`), `deadline-grace.ts`, `jobs/overdue-contracts.ts` | 57 |
+| RN-028 | Implementada | `deadline-grace.ts`, `contracts.service.ts` (pedido e decisão), `jobs/overdue-contracts.ts` (expiração) | 57, 58 |
+| RN-029 | Implementada | `deadline-sql.ts` (`rn029Eligible`), `deadline-grace.ts`, `jobs/overdue-contracts.ts` | 57, 58 |
+| RN-043 | Implementada | `modules/reviews/reviews.service.ts` (`REVIEW_WINDOW_DAYS`, relógio da plataforma) | 58 |
 | RN-039 | Corrigida no texto | `cancel-policy.ts` (`cashSettlement`), `modules/admin/admin.service.ts` (decisão de disputa) | 15, 57 |
 | RN-062 | Não implementada | `modules/disputes/disputes.repository.ts` (status em que a disputa abre) | 57 |
-| RN-069 | Implementada | `deadline-sql.ts`, `jobs/overdue-contracts.ts` (marco atrasado), `jobs/tacit-approval.ts` | 57 |
-| RN-076 | Implementada | `shell/LegalUpdateBanner.tsx`, `shell/banners.ts`, `legal/content.ts` | 54, 57 |
-| RN-077 | Implementada | `modules/notifications/push.service.ts`, `deadline-notices.ts` | 56, 57 |
+| RN-069 | Implementada | `deadline-sql.ts`, `jobs/overdue-contracts.ts` (marco atrasado), `jobs/tacit-approval.ts` (marcos agrupados) | 57, 58 |
+| RN-076 | Implementada | `shell/LegalUpdateBanner.tsx`, `shell/banners.ts`, `legal/content.ts` | 54, 57, 58 |
+| RN-077 | Implementada | `modules/notifications/push.service.ts`, `deadline-notices.ts`, `notifications/deadline-types.ts` | 56, 57, 58 |
 | RN-078 | Implementada | `utils/human-hours.ts`, `jobs/repair-deadlines.ts`, migrations 0027 e 0028 | 57 |
+| RN-079 | Implementada | `reminders-sql.ts`, `reminders.repository.ts`, `deadline-reminders.service.ts`, `reminder-notices.ts`, `jobs/deadline-reminders.ts`, `utils/human-hours.ts` (`reminderSlot`), migration 0029 | 58 |
+| RN-080 | Implementada | `utils/timezone.ts` (`inferDeadlineZone`, `formatDeadline`), `contract-zones.ts`; no web, `lib/deadline.ts`, `services/ContratarModal.tsx`, `contracts/DeadlineSection.tsx` | 58 |
+| RN-081 | Implementada | `deadline-reminders.service.ts` (revisão parada), `jobs/repair-deadlines.ts` (passos 9 e 10), migrations 0029 e 0030; no web, `contracts/DeadlineSection.tsx` e `MilestonesSection.tsx` | 58 |
 
 ---
 

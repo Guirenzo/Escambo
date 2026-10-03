@@ -1,3 +1,4 @@
+import type { PoolConnection } from 'mysql2/promise';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeDb } from '../../test-support/fake-db';
 import { setClockForTests } from '../../utils/clock';
@@ -71,6 +72,8 @@ describe('contractsRepository', () => {
       paymentMode: 'cash' as const,
       deadlineAt: '2026-10-20T02:59:59.000Z',
       proposalExpiresAt: new Date('2026-10-09T15:00:00.000Z'),
+      // O relógio do fluxo, não o do banco: o lembrete da proposta conta a idade daqui (ADR 58).
+      createdAt: NOW,
     };
     const milestones = [
       {
@@ -109,8 +112,9 @@ describe('contractsRepository', () => {
       ]);
       // O prazo chega em ISO e é gravado como Date; a reserva e os marcos não são colunas.
       expect(fakeDb.calls[0]!.sql).toContain(
-        '(ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, payment_mode, deadline_at, proposal_expires_at)',
+        '(ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, payment_mode, deadline_at, proposal_expires_at, created_at)',
       );
+      expect(fakeDb.calls[0]!.sql).toContain(':deadlineAt, :proposalExpiresAt, :createdAt)');
       expect(fakeDb.calls[0]!.params).toEqual({
         ...data,
         deadlineAt: new Date('2026-10-20T02:59:59.000Z'),
@@ -198,6 +202,19 @@ describe('contractsRepository', () => {
       expect(mainQuery(fakeDb.calls[0]!.sql)).toBe('FROM contracts c WHERE c.id = :id LIMIT 1');
       expect(fakeDb.calls[0]!.params).toEqual({ id: 12 });
       expect(fakeDb.calls[1]!.params).toEqual({ id: 13 });
+    });
+
+    it('findById com a conexão de quem chama lê dentro daquela transação, não pelo pool (ADR 58)', async () => {
+      const row = { id: 12, status: 'delivered' };
+      const own = { query: vi.fn(async () => [[row], []]) };
+
+      expect(await contractsRepository.findById(12, own as unknown as PoolConnection)).toBe(row);
+
+      expect(fakeDb.calls).toHaveLength(0);
+      expect(own.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = own.query.mock.calls[0] as unknown as [string, unknown];
+      expect(mainQuery(flat(sql))).toBe('FROM contracts c WHERE c.id = :id LIMIT 1');
+      expect(params).toEqual({ id: 12 });
     });
 
     it('toda leitura traz o que o prazo e o cancelamento precisam: marcos por situação, entregas e os fusos das partes (ADR 57)', async () => {
@@ -698,8 +715,13 @@ describe('contractsRepository', () => {
       expect(fakeDb.calls[0]!.sql).not.toContain('extension_status');
     });
 
-    it('a data gravada é a da etapa pedida (aceite, conclusão ou cancelamento)', async () => {
-      for (const column of ['accepted_at', 'completed_at', 'cancelled_at'] as const) {
+    it('a data gravada é a da etapa pedida (aceite, conclusão, cancelamento ou pedido de revisão)', async () => {
+      for (const column of [
+        'accepted_at',
+        'completed_at',
+        'cancelled_at',
+        'revision_requested_at',
+      ] as const) {
         fakeDb.reset();
         fakeDb.reply({ affectedRows: 1 }, { affectedRows: 1 });
         await contractsRepository.transition({ ...base, timestampColumn: column });

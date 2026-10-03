@@ -257,7 +257,7 @@ export const openapiDocument: Record<string, any> = {
     '/contracts/{id}': {
       get: op(
         'Contratações',
-        'Detalhe + histórico, com o prazo (deadline: state, noticeAt, mediationAt, extensionRequestsLeft), approvalDueAt, proposalExpiresAt, extension.respondBy/seq e cancellation: o que cancelar (cliente) ou desistir (freelancer) faria agora (ADR 57)',
+        'Detalhe + histórico, com o prazo (deadline: state, noticeAt, mediationAt, extensionRequestsLeft), approvalDueAt, proposalExpiresAt, extension.respondBy/seq, cancellation: o que cancelar (cliente) ou desistir (freelancer) faria agora (ADR 57), deadlineZone (o fuso em que o prazo é um dia), revisionRequestedAt e, nos marcos, dueZone e revisionRequestedAt (ADR 58)',
         { auth: true },
       ),
     },

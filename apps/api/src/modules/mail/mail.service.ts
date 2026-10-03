@@ -39,6 +39,13 @@ export const EMAILED_NOTIFICATION_TYPES = new Set([
   'review_received',
   'content_removed',
   'appeal_decided',
+  // ADR 58
+  'contract_proposal_reminder',
+  'contract_deadline_reminder',
+  'contract_approval_reminder',
+  'contract_extension_reminder',
+  'contract_revision_stalled',
+  'contract_auto_approved',
 ]);
 
 /** Para onde o e-mail de notificação aponta, a partir dos dados da notificação. */

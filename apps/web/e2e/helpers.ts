@@ -321,9 +321,9 @@ const BROWSER_TZ = 'America/Sao_Paulo';
 const DAY_MS = 86_400_000;
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
-function browserDateParts(d: Date): { y: number; m: number; d: number } {
+function browserDateParts(d: Date, zone: string = BROWSER_TZ): { y: number; m: number; d: number } {
   const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: BROWSER_TZ,
+    timeZone: zone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -336,6 +336,24 @@ function browserDateParts(d: Date): { y: number; m: number; d: number } {
 export function inputDatePlus(days: number): string {
   const { y, m, d } = browserDateParts(new Date(Date.now() + days * DAY_MS));
   return `${y}-${pad2(m)}-${pad2(d)}`;
+}
+
+/** Valor de <input type="date"> para daqui a N dias no fuso dado (o "hoje" de quem entrega, ADR 58). */
+export function inputDatePlusIn(zone: string, days: number): string {
+  const { y, m, d } = browserDateParts(new Date(Date.now() + days * DAY_MS), zone);
+  return `${y}-${pad2(m)}-${pad2(d)}`;
+}
+
+const WEEKDAY_SHORT = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+/**
+ * Como o app diz o prazo (ADR 58) para o dia daqui a N dias no fuso de quem entrega:
+ * "sex, 02/10/2026, até 23:59". A nota "(horário de X)" fica de fora.
+ */
+export function deadlineTextPlus(days: number, zone: string = BROWSER_TZ): string {
+  const { y, m, d } = browserDateParts(new Date(Date.now() + days * DAY_MS), zone);
+  const weekday = WEEKDAY_SHORT[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]!;
+  return `${weekday}, ${pad2(d)}/${pad2(m)}/${y}, até 23:59`;
 }
 
 /** Como o app exibe a data (dd/mm/aaaa) para daqui a N dias, no fuso do navegador. */

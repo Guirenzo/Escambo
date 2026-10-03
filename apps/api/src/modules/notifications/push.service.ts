@@ -1,3 +1,4 @@
+import { DEADLINE_FIRST_TYPES } from './deadline-types';
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { pushRepository } from './push.repository';
@@ -66,6 +67,13 @@ export const QUIET_PASS_BY_TYPE: Readonly<Record<string, QuietPassCategory | nul
   review_received: null,
   content_removed: null,
   appeal_decided: null,
+  // ADR 58: lembretes, aprovação automática e revisão parada esperam o fim da janela.
+  contract_proposal_reminder: null,
+  contract_deadline_reminder: null,
+  contract_approval_reminder: null,
+  contract_extension_reminder: null,
+  contract_revision_stalled: null,
+  contract_auto_approved: null,
 };
 
 /** A categoria afirmada vale para este tipo? Qualquer outra coisa (inclusive chaves do protótipo) não. */
@@ -80,20 +88,11 @@ export function passCategoryFor(
     : null;
 }
 
-/**
- * Tipos que falam de um prazo correndo contra quem lê, mesmo sem furar o silêncio (ADR 57): a
- * recusa e a expiração do pedido dizem até quando agir.
- */
-const DEADLINE_SUMMARY_TYPES = new Set([
-  'deadline_extension_declined',
-  'deadline_extension_expired',
-]);
-
 /** Tipo que anuncia prazo: vem primeiro no resumo do fim do silêncio (ADR 56 e 57). */
 const announcesDeadline = (type: string | undefined): boolean =>
   type != null &&
   ((Object.hasOwn(QUIET_PASS_BY_TYPE, type) && QUIET_PASS_BY_TYPE[type] !== null) ||
-    DEADLINE_SUMMARY_TYPES.has(type));
+    DEADLINE_FIRST_TYPES.has(type));
 
 /** Para onde a notificação leva quando a pessoa toca no aviso. */
 export function pushUrl(type: string, data: Record<string, unknown> | null | undefined): string {
@@ -256,6 +255,8 @@ export const pushService = {
       notificationId?: number;
       /** Categoria afirmada por quem emite (ADR 56); só vale se o par (tipo, categoria) está no mapa. */
       passCategory?: QuietPassCategory;
+      /** Etiqueta própria no aparelho: o aviso não troca calado um anterior da mesma contratação (ADR 58). */
+      ownTag?: boolean;
     },
     now: Date = new Date(),
   ): Promise<void> {
@@ -301,7 +302,9 @@ export const pushService = {
         });
         return;
       }
-      await this.send(userId, buildPayload(params), { ttlSeconds: timing.ttlSeconds });
+      await this.send(userId, buildPayload(params, { ownTag: params.ownTag === true }), {
+        ttlSeconds: timing.ttlSeconds,
+      });
     } catch (err) {
       logger.warn({ err, type: params.type }, 'push da notificação falhou');
     }

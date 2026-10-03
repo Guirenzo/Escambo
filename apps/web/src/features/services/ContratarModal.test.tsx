@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import type { Deposit, Service } from '@escambo/types';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -23,6 +23,11 @@ vi.mock('../../lib/api', () => ({
     simulateDeposit: (id: number) => simulateDeposit(id),
   },
 }));
+// Quem contrata: o fuso muda por teste (o prazo é um dia no fuso de quem entrega, ADR 58).
+const auth = vi.hoisted(() => ({
+  user: { id: 1, timezone: 'America/Sao_Paulo' } as { id: number; timezone: string | null } | null,
+}));
+vi.mock('../../lib/auth', () => ({ useAuth: () => auth }));
 // O depósito sem sair do fluxo desenha um QR Code; o jsdom não tem canvas.
 vi.mock('qrcode', () => ({ default: { toCanvas: () => Promise.resolve() } }));
 
@@ -58,9 +63,12 @@ const pendingDeposit: Deposit = {
   canSimulate: true,
 };
 
-/** Fim do dia no fuso de quem usa: é assim que o prazo escolhido num <input type="date"> vale. */
-const endOfLocalDay = (year: number, month: number, day: number): string =>
-  new Date(year, month - 1, day, 23, 59, 59).toISOString();
+/**
+ * 23:59:59 do dia no fuso de quem entrega (Brasília, −03:00, quando o serviço não diz outro): é
+ * assim que o prazo escolhido num <input type="date"> vale (ADR 58).
+ */
+const endOfDay = (day: string, offset = '-03:00'): string =>
+  new Date(`${day}T23:59:59${offset}`).toISOString();
 
 /** Para onde o app foi depois da proposta. */
 function Where() {
@@ -103,14 +111,17 @@ async function retype(user: UserEvent, field: HTMLElement, value: string): Promi
   await user.type(field, value);
 }
 
-// "Hoje" é 01/10/2026 ao meio-dia no fuso da máquina: o prazo sugerido e o mínimo saem daí.
+// "Hoje" é qui, 01/10/2026, meio-dia em Brasília: o prazo sugerido e o mínimo saem daí.
+const NOW = '2026-10-01T15:00:00.000Z';
 beforeAll(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(new Date(2026, 9, 1, 12, 0, 0));
+  vi.setSystemTime(new Date(NOW));
 });
 afterAll(() => vi.useRealTimers());
 
 beforeEach(() => {
+  vi.setSystemTime(new Date(NOW));
+  auth.user = { id: 1, timezone: 'America/Sao_Paulo' };
   funds = { balance: 500, credits: 0 };
   wallet.mockReset();
   wallet.mockImplementation(async () => ({
@@ -203,7 +214,7 @@ describe('ContratarModal: proposta em dinheiro', () => {
       description: 'Contratação do serviço "Logo profissional".',
       price: 200,
       paymentMode: 'cash',
-      deadlineAt: endOfLocalDay(2026, 10, 8),
+      deadlineAt: endOfDay('2026-10-08'),
     });
     expect(
       await screen.findByText('Proposta enviada — valor reservado na sua carteira'),
@@ -253,7 +264,7 @@ describe('ContratarModal: proposta em dinheiro', () => {
       description: 'Logo e paleta para a fachada nova.',
       price: 350.5,
       paymentMode: 'cash',
-      deadlineAt: endOfLocalDay(2026, 10, 20),
+      deadlineAt: endOfDay('2026-10-20'),
     });
   });
 
@@ -454,7 +465,7 @@ describe('ContratarModal: saldo insuficiente', () => {
       description: 'Contratação do serviço "Logo profissional".',
       price: 200,
       paymentMode: 'cash',
-      deadlineAt: endOfLocalDay(2026, 10, 8),
+      deadlineAt: endOfDay('2026-10-08'),
     });
   });
 });
@@ -518,7 +529,7 @@ describe('ContratarModal: proposta em créditos', () => {
       description: 'Contratação do serviço "Logo profissional".',
       price: 200,
       paymentMode: 'credits',
-      deadlineAt: endOfLocalDay(2026, 10, 8),
+      deadlineAt: endOfDay('2026-10-08'),
     });
     expect(
       await screen.findByText('Proposta enviada — créditos retidos no aceite'),
@@ -617,7 +628,7 @@ describe('ContratarModal: dividir em marcos', () => {
       description: 'Contratação do serviço "Logo profissional".',
       price: 200,
       paymentMode: 'cash',
-      deadlineAt: endOfLocalDay(2026, 10, 8),
+      deadlineAt: endOfDay('2026-10-08'),
       milestones: [
         { title: 'Etapa 1', amount: 100, dueAt: null },
         { title: 'Etapa 2', amount: 100, dueAt: null },
@@ -767,7 +778,8 @@ describe('ContratarModal: dividir em marcos', () => {
 
     await user.click(screen.getByRole('button', { name: 'Distribuir prazos' }));
 
-    // De hoje (01/10, meio-dia) até 08/10 às 23:59: a metade do caminho cai em 05/10 e o último no prazo.
+    // De hoje (01/10) a 08/10 são 7 dias: o primeiro cai em 01/10 + 4 (metade, para cima) = 05/10
+    // e o último no prazo.
     expect(msDue(1)).toHaveValue('2026-10-05');
     expect(msDue(2)).toHaveValue('2026-10-08');
     expect(msDue(2)).toHaveAttribute('max', '2026-10-08');
@@ -776,10 +788,10 @@ describe('ContratarModal: dividir em marcos', () => {
 
     expect(createContract).toHaveBeenCalledWith(
       expect.objectContaining({
-        deadlineAt: endOfLocalDay(2026, 10, 8),
+        deadlineAt: endOfDay('2026-10-08'),
         milestones: [
-          { title: 'Etapa 1', amount: 100, dueAt: endOfLocalDay(2026, 10, 5) },
-          { title: 'Etapa 2', amount: 100, dueAt: endOfLocalDay(2026, 10, 8) },
+          { title: 'Etapa 1', amount: 100, dueAt: endOfDay('2026-10-05') },
+          { title: 'Etapa 2', amount: 100, dueAt: endOfDay('2026-10-08') },
         ],
       }),
     );
@@ -797,7 +809,7 @@ describe('ContratarModal: dividir em marcos', () => {
       expect.objectContaining({
         milestones: [
           { title: 'Etapa 1', amount: 100, dueAt: null },
-          { title: 'Etapa 2', amount: 100, dueAt: endOfLocalDay(2026, 10, 6) },
+          { title: 'Etapa 2', amount: 100, dueAt: endOfDay('2026-10-06') },
         ],
       }),
     );
@@ -864,7 +876,7 @@ describe('ContratarModal: dividir em marcos', () => {
       description: 'Contratação do serviço "Logo profissional".',
       price: 200,
       paymentMode: 'credits',
-      deadlineAt: endOfLocalDay(2026, 10, 8),
+      deadlineAt: endOfDay('2026-10-08'),
       milestones: [
         { title: 'Etapa 1', amount: 66, dueAt: null },
         { title: 'Etapa 2', amount: 66, dueAt: null },
@@ -893,5 +905,192 @@ describe('ContratarModal: dividir em marcos', () => {
     await retype(user, msAmount(1), '99');
     await retype(user, msAmount(2), '101');
     expect(submitButton()).toBeEnabled();
+  });
+});
+
+/**
+ * O prazo é um dia no fuso de quem entrega (ADR 58): o mínimo é amanhã dele, o padrão é hoje dele
+ * mais os dias do serviço, e vai o fim do dia (23:59:59) no fuso dele, no prazo e nos marcos.
+ */
+describe('ContratarModal: o prazo no fuso de quem entrega', () => {
+  const MANAUS = '-04:00';
+  const hint = (): string | null => screen.getByTestId('deadline-hint').textContent;
+  const OTHER_CLOCK_HINT =
+    'Sugerido pelo serviço: 7 dias. Vale até 23:59 do dia, no horário de Manaus (de quem entrega). Em geral na véspera, o Escambo lembra o freelancer do prazo. Sem entrega até lá, a partir das 9h do dia seguinte, também no horário de Manaus, o Escambo avisa vocês dois e você pode cancelar com reembolso integral. O freelancer pode pedir extensão, que só vale com o seu aceite.';
+  const SAME_CLOCK_HINT =
+    'Sugerido pelo serviço: 7 dias. Vale até 23:59 do dia. Em geral na véspera, o Escambo lembra o freelancer do prazo. Sem entrega até lá, a partir das 9h do dia seguinte o Escambo avisa vocês dois e você pode cancelar com reembolso integral. O freelancer pode pedir extensão, que só vale com o seu aceite.';
+
+  // 23:30 de sex 02/10 em Brasília; 22:30 em Manaus; já 00:30 de sáb 03/10 em Noronha.
+  beforeEach(() => vi.setSystemTime(new Date('2026-10-03T02:30:00Z')));
+
+  it('dono em Manaus: o mínimo é amanhã em Manaus, o padrão +7 dias de lá, e vai o fim do dia de Manaus', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderModal(service({ ownerTimezone: 'America/Manaus' }));
+    await walletLoaded();
+
+    expect(screen.getByLabelText('Prazo de entrega')).toHaveAttribute('min', '2026-10-03');
+    expect(screen.getByLabelText('Prazo de entrega')).toHaveValue('2026-10-09');
+    expect(hint()).toBe(OTHER_CLOCK_HINT);
+
+    await user.click(submitButton());
+    expect(createContract).toHaveBeenCalledTimes(1);
+    expect(createContract).toHaveBeenCalledWith({
+      freelancerId: 9,
+      serviceId: 5,
+      title: 'Logo profissional',
+      description: 'Contratação do serviço "Logo profissional".',
+      price: 200,
+      paymentMode: 'cash',
+      deadlineAt: '2026-10-10T03:59:59.000Z', // 09/10, 23:59:59 em Manaus
+    });
+  });
+
+  it('dono em Manaus: "Distribuir prazos" conta a partir de hoje em Manaus, e os marcos vão como fim do dia de lá', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderModal(service({ ownerTimezone: 'America/Manaus' }));
+    await walletLoaded();
+    await user.click(milestonesToggle());
+    await user.click(screen.getByRole('button', { name: 'Dividir igualmente' }));
+    await user.click(screen.getByRole('button', { name: 'Distribuir prazos' }));
+
+    // De 02/10 (hoje em Manaus) a 09/10 são 7 dias: 02/10 + 4 = 06/10, e o último no prazo.
+    expect(msDue(1)).toHaveValue('2026-10-06');
+    expect(msDue(2)).toHaveValue('2026-10-09');
+    expect(msDue(1)).toHaveAttribute('min', '2026-10-03');
+    expect(msDue(1)).toHaveAttribute('max', '2026-10-09');
+
+    await user.click(submitButton());
+    expect(createContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deadlineAt: endOfDay('2026-10-09', MANAUS),
+        milestones: [
+          { title: 'Etapa 1', amount: 100, dueAt: endOfDay('2026-10-06', MANAUS) },
+          { title: 'Etapa 2', amount: 100, dueAt: endOfDay('2026-10-09', MANAUS) },
+        ],
+      }),
+    );
+  });
+
+  it('quem contrata em Noronha, já no dia seguinte: o dia continua o de Manaus, de quem entrega', () => {
+    auth.user = { id: 1, timezone: 'America/Noronha' };
+    renderModal(service({ ownerTimezone: 'America/Manaus', deliveryDays: 1 }));
+    expect(screen.getByLabelText('Prazo de entrega')).toHaveAttribute('min', '2026-10-03');
+    expect(screen.getByLabelText('Prazo de entrega')).toHaveValue('2026-10-03');
+    expect(hint()).toBe(OTHER_CLOCK_HINT.replace('7 dias', '1 dia'));
+  });
+
+  it('quem contrata em Noronha: "Distribuir prazos" parte de hoje em Manaus, não do dia de quem contrata', async () => {
+    const user = userEvent.setup({ delay: null });
+    auth.user = { id: 1, timezone: 'America/Noronha' };
+    renderModal(service({ ownerTimezone: 'America/Manaus', deliveryDays: 6 }));
+    await walletLoaded();
+    expect(screen.getByLabelText('Prazo de entrega')).toHaveValue('2026-10-08');
+    await user.click(milestonesToggle());
+    await user.click(screen.getByRole('button', { name: 'Dividir igualmente' }));
+    await user.click(screen.getByRole('button', { name: 'Distribuir prazos' }));
+
+    // De 02/10 (hoje em Manaus) a 08/10 são 6 dias: 02/10 + 3 = 05/10. Partindo de 03/10 (hoje em
+    // Noronha), seriam 5 dias e o primeiro cairia em 06/10.
+    expect(msDue(1)).toHaveValue('2026-10-05');
+    expect(msDue(2)).toHaveValue('2026-10-08');
+
+    await user.click(submitButton());
+    expect(createContract).toHaveBeenCalledTimes(1);
+    expect(createContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deadlineAt: endOfDay('2026-10-08', MANAUS),
+        milestones: [
+          { title: 'Etapa 1', amount: 100, dueAt: endOfDay('2026-10-05', MANAUS) },
+          { title: 'Etapa 2', amount: 100, dueAt: endOfDay('2026-10-08', MANAUS) },
+        ],
+      }),
+    );
+  });
+
+  it('dono em Cuiabá e quem contrata em Manaus (mesmo relógio): a dica não fala de horário', async () => {
+    const user = userEvent.setup({ delay: null });
+    auth.user = { id: 1, timezone: 'America/Manaus' };
+    renderModal(service({ ownerTimezone: 'America/Cuiaba' }));
+    await walletLoaded();
+    expect(hint()).toBe(SAME_CLOCK_HINT);
+    expect(screen.getByLabelText('Prazo de entrega')).toHaveValue('2026-10-09');
+    await user.click(submitButton());
+    expect(createContract).toHaveBeenCalledWith(
+      expect.objectContaining({ deadlineAt: endOfDay('2026-10-09', MANAUS) }),
+    );
+  });
+
+  it('serviço sem o fuso do dono vale Brasília: às 23:30 de lá, o mínimo é amanhã de Brasília e vai o fim do dia de Brasília', async () => {
+    const user = userEvent.setup({ delay: null });
+    auth.user = { id: 1, timezone: 'America/Manaus' };
+    renderModal(service());
+    await walletLoaded();
+    expect(screen.getByLabelText('Prazo de entrega')).toHaveAttribute('min', '2026-10-03');
+    expect(hint()).toBe(OTHER_CLOCK_HINT.replace(/Manaus/g, 'Brasília'));
+    await user.click(submitButton());
+    // 09/10, 23:59:59 em Brasília (no fuso de quem contrata, Manaus, seria uma hora depois).
+    expect(createContract).toHaveBeenCalledWith(
+      expect.objectContaining({ deadlineAt: '2026-10-10T02:59:59.000Z' }),
+    );
+  });
+
+  it('o campo do prazo é descrito pela dica, com o horário de quem entrega quando o relógio é outro', () => {
+    renderModal(service({ ownerTimezone: 'America/Manaus' }));
+    expect(screen.getByLabelText('Prazo de entrega')).toHaveAttribute(
+      'aria-describedby',
+      'deadline-hint',
+    );
+    expect(screen.getByLabelText('Prazo de entrega')).toHaveAccessibleDescription(OTHER_CLOCK_HINT);
+    cleanup();
+    renderModal(service());
+    expect(screen.getByLabelText('Prazo de entrega')).toHaveAccessibleDescription(SAME_CLOCK_HINT);
+  });
+
+  it('dono em outro relógio: os prazos dos marcos, inclusive o acrescentado, são descritos pela dica', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderModal(service({ ownerTimezone: 'America/Manaus' }));
+    await walletLoaded();
+    await user.click(milestonesToggle());
+    await user.click(screen.getByRole('button', { name: 'Marco' }));
+    for (const n of [1, 2, 3]) {
+      expect(msDue(n)).toHaveAttribute('aria-describedby', 'deadline-hint');
+      expect(msDue(n)).toHaveAccessibleDescription(OTHER_CLOCK_HINT);
+    }
+  });
+
+  it.each<[string, string | null, Partial<Service>]>([
+    ['os dois em Brasília', 'America/Sao_Paulo', {}],
+    [
+      'dono em Cuiabá e quem contrata em Manaus (mesmo relógio)',
+      'America/Manaus',
+      { ownerTimezone: 'America/Cuiaba' },
+    ],
+  ])(
+    'mesmo relógio (%s): os prazos dos marcos não apontam para a dica; fica só o title do campo',
+    async (_n, viewer, owner) => {
+      const user = userEvent.setup({ delay: null });
+      auth.user = { id: 1, timezone: viewer };
+      renderModal(service(owner));
+      await walletLoaded();
+      await user.click(milestonesToggle());
+      for (const n of [1, 2]) {
+        expect(msDue(n)).not.toHaveAttribute('aria-describedby');
+        expect(msDue(n)).toHaveAccessibleDescription('Prazo do marco (opcional)');
+      }
+      // O campo do prazo da contratação continua descrito pela dica.
+      expect(screen.getByLabelText('Prazo de entrega')).toHaveAccessibleDescription(
+        SAME_CLOCK_HINT,
+      );
+    },
+  );
+
+  it('sem sessão carregada, quem contrata conta como Brasília', () => {
+    auth.user = null;
+    renderModal(service({ ownerTimezone: 'America/Manaus' }));
+    expect(hint()).toBe(OTHER_CLOCK_HINT);
+    auth.user = { id: 1, timezone: null };
+    cleanup();
+    renderModal(service({ ownerTimezone: 'America/Sao_Paulo' }));
+    expect(hint()).toBe(SAME_CLOCK_HINT);
   });
 });

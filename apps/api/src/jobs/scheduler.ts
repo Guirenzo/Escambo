@@ -4,6 +4,7 @@ import { jobDuration, jobRuns, registerJobMetrics } from '../config/metrics';
 import { captureError } from '../config/sentry';
 import { runExpireDeposits } from './expire-deposits';
 import { runDailyDigest } from './daily-digest';
+import { runDeadlineReminders } from './deadline-reminders';
 import { runExpireExports } from './expire-exports';
 import { runExpireProposals } from './expire-proposals';
 import { runModerationSlaReport } from './moderation-sla-report';
@@ -33,12 +34,15 @@ export interface Job {
 /**
  * A ordem importa: o reparo dos prazos vem antes de quem os lê (ADR 57); as sanções de prazo
  * vêm antes do resumo diário, para o que aconteceu às 9h entrar no resumo de quem escolheu 9h.
+ * Os lembretes (ADR 58) vêm depois das sanções, para não lembrar o que acabou de acontecer, e
+ * antes do resumo, para o lembrete das 9h entrar no resumo de quem escolheu 9h.
  */
 export const JOBS: Job[] = [
   { name: 'repair-deadlines', run: () => runRepairDeadlines() },
   { name: 'tacit-approval', run: () => runTacitApproval() },
   { name: 'expire-proposals', run: () => runExpireProposals() },
   { name: 'overdue-contracts', run: () => runOverdueContracts() },
+  { name: 'deadline-reminders', run: () => runDeadlineReminders() },
   { name: 'daily-digest', run: () => runDailyDigest() },
   { name: 'moderation-sla-report', run: () => runModerationSlaReport() },
   { name: 'quiet-push-summary', run: () => runQuietPushSummary() },

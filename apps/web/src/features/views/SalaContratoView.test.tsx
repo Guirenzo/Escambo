@@ -13,7 +13,7 @@ import type {
 } from '@escambo/types';
 import { MemoryRouter } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dt, dtm } from '../../lib/format';
+import { dtm } from '../../lib/format';
 import { ToastProvider } from '../../lib/toast';
 import { SalaContratoView } from './SalaContratoView';
 
@@ -40,7 +40,9 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('../../lib/api', () => ({ api }));
 
-const auth = vi.hoisted(() => ({ user: { id: 1, timezone: 'America/Sao_Paulo' } }));
+const auth = vi.hoisted(() => ({
+  user: { id: 1, timezone: 'America/Sao_Paulo' as string | null },
+}));
 vi.mock('../../lib/auth', () => ({ useAuth: () => auth }));
 
 type Listener = (payload?: unknown) => void;
@@ -85,6 +87,8 @@ const contract = (o: Partial<ContractWithHistory> = {}): ContractWithHistory => 
   paymentMode: 'cash',
   status: 'accepted',
   deadlineAt: null,
+  deadlineZone: 'America/Sao_Paulo',
+  revisionRequestedAt: null,
   createdAt: CREATED,
   hasReview: false,
   hasMilestones: false,
@@ -170,8 +174,12 @@ const draftInput = (): HTMLElement =>
   screen.getByPlaceholderText(/^(Escreva uma mensagem…|Legenda \(opcional\)…)$/);
 const sendButton = (): HTMLElement => screen.getByRole('button', { name: 'Enviar' });
 
-function renderSala(as: number = CLIENT, onBack: () => void = () => undefined) {
-  auth.user = { id: as, timezone: 'America/Sao_Paulo' };
+function renderSala(
+  as: number = CLIENT,
+  onBack: () => void = () => undefined,
+  timezone: string | null = 'America/Sao_Paulo',
+) {
+  auth.user = { id: as, timezone };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
@@ -185,8 +193,8 @@ function renderSala(as: number = CLIENT, onBack: () => void = () => undefined) {
 }
 
 /** Renderiza e espera a contratação e o histórico do chat chegarem. */
-async function openSala(as: number = CLIENT) {
-  const view = renderSala(as);
+async function openSala(as: number = CLIENT, timezone: string | null = 'America/Sao_Paulo') {
+  const view = renderSala(as, undefined, timezone);
   await screen.findByRole('heading', { level: 1, name: 'Vídeo institucional' });
   await waitFor(() => expect(within(card('Chat')).queryByText('Carregando…')).toBeNull());
   return view;
@@ -316,8 +324,8 @@ describe('SalaContratoView: valores e linha do tempo', () => {
     expect(read(kv)).toContain('Valor30 créditosTaxasem taxaLíquido30 créditos');
   });
 
-  it('com prazo, a linha do tempo mostra a data e a seção de prazo aparece', async () => {
-    const deadlineAt = '2026-12-20T02:59:59.000Z';
+  it('com prazo, a linha do tempo diz o dia e "até 23:59", e a seção de prazo aparece com o mesmo dia', async () => {
+    const deadlineAt = '2026-12-20T02:59:59.000Z'; // sáb 19/12, 23:59:59 em Brasília
     api.contractDetail.mockResolvedValue(
       contract({
         deadlineAt,
@@ -325,8 +333,101 @@ describe('SalaContratoView: valores e linha do tempo', () => {
       }),
     );
     await openSala();
-    expect(within(card('Linha do tempo')).getByText(dt(deadlineAt))).toBeInTheDocument();
-    expect(within(card('Prazo de entrega')).getByText(dt(deadlineAt))).toBeInTheDocument();
+    expect(screen.getByTestId('deadline-kv').textContent).toBe('sáb, 19/12/2026, até 23:59');
+    expect(within(card('Prazo de entrega')).getByTestId('deadline-date').textContent).toBe(
+      'sáb, 19/12/2026, até 23:59',
+    );
+  });
+
+  it.each<[string, string | null, string]>([
+    ['Brasília', 'America/Sao_Paulo', 'sáb, 19/12/2026, até 23:59 (horário de Manaus)'],
+    ['sem fuso escolhido (Brasília)', null, 'sáb, 19/12/2026, até 23:59 (horário de Manaus)'],
+    ['Cuiabá (mesmo relógio de Manaus)', 'America/Cuiaba', 'sáb, 19/12/2026, até 23:59'],
+    ['Manaus', 'America/Manaus', 'sáb, 19/12/2026, até 23:59'],
+  ])(
+    'prazo de Manaus lido de %s: o mesmo dia, com a nota só em outro relógio',
+    async (_n, tz, kv) => {
+      api.contractDetail.mockResolvedValue(
+        contract({
+          deadlineAt: '2026-12-20T03:59:59.000Z', // sáb 19/12, 23:59:59 em Manaus
+          deadlineZone: 'America/Manaus',
+          deadline: { ...contract().deadline, state: 'running', extensionRequestsLeft: 2 },
+        }),
+      );
+      await openSala(CLIENT, tz);
+      expect(screen.getByTestId('deadline-kv').textContent).toBe(kv);
+    },
+  );
+
+  it('prazo sem o fuso (API antiga, durante o deploy) vale em Brasília, também para quem lê em Manaus', async () => {
+    const c = contract({
+      deadlineAt: '2026-12-20T02:59:59.000Z', // sáb 19/12, 23:59:59 em Brasília
+      deadline: { ...contract().deadline, state: 'running', extensionRequestsLeft: 2 },
+    });
+    delete (c as Partial<ContractWithHistory>).deadlineZone;
+    api.contractDetail.mockResolvedValue(c);
+    await openSala(CLIENT, 'America/Manaus');
+    expect(screen.getByTestId('deadline-kv').textContent).toBe(
+      'sáb, 19/12/2026, até 23:59 (horário de Brasília)',
+    );
+  });
+
+  /**
+   * Revisão em aberto (ADR 58, RN-081): sem prazo (troca, ou criada sem data) a seção do prazo some,
+   * mas a Sala diz desde quando a revisão foi pedida, para as duas partes; com prazo, a mesma linha
+   * fica dentro da seção do prazo, uma vez só.
+   */
+  describe('revisão pedida', () => {
+    // Agora: qui, 01/10/2026, meio-dia em Brasília; a revisão foi pedida há 10 dias.
+    beforeAll(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-01T15:00:00Z'));
+    });
+    afterAll(() => vi.useRealTimers());
+
+    const inRevision = (o: Partial<ContractWithHistory> = {}) =>
+      contract({
+        status: 'revision_requested',
+        revisionRequestedAt: '2026-09-21T13:00:00.000Z', // seg 21/09, 10:00 em Brasília
+        ...o,
+      });
+    const CLIENT_TEXT =
+      'Revisão pedida em seg, 21/09, às 10:00, há 10 dias, sem nova entrega. Nada muda sozinho: combine pelo chat ou abra uma disputa pela Sala.';
+    const FREELANCER_TEXT =
+      'Revisão pedida em seg, 21/09, às 10:00, há 10 dias: registre a nova entrega. O cliente pode abrir uma disputa a qualquer momento.';
+
+    it.each<[string, number, string]>([
+      ['o cliente', CLIENT, CLIENT_TEXT],
+      ['o freelancer', FREELANCER, FREELANCER_TEXT],
+    ])(
+      'troca sem prazo em revisão: %s lê na Sala desde quando a revisão foi pedida',
+      async (_n, me, text) => {
+        api.contractDetail.mockResolvedValue(inRevision({ paymentMode: 'barter' }));
+        await openSala(me);
+        expect(screen.queryByRole('heading', { name: 'Prazo de entrega' })).toBeNull();
+        expect(screen.getAllByTestId('revision-since')).toHaveLength(1);
+        expect(within(card('Revisão pedida')).getByTestId('revision-since').textContent).toBe(text);
+      },
+    );
+
+    it('com prazo, a linha aparece uma vez só, dentro da seção do prazo', async () => {
+      api.contractDetail.mockResolvedValue(
+        inRevision({
+          deadlineAt: '2026-09-26T02:59:59.000Z', // sex 25/09, 23:59:59 em Brasília
+          deadline: {
+            ...contract().deadline,
+            state: 'met',
+            firstDeliveredAt: '2026-09-20T12:00:00.000Z',
+          },
+        }),
+      );
+      await openSala(CLIENT);
+      expect(screen.getAllByTestId('revision-since')).toHaveLength(1);
+      expect(within(card('Prazo de entrega')).getByTestId('revision-since').textContent).toBe(
+        CLIENT_TEXT,
+      );
+      expect(screen.queryByTestId('revision')).toBeNull();
+    });
   });
 
   it('sem prazo, a seção de prazo não aparece; com marcos, a de marcos aparece', async () => {
@@ -344,6 +445,8 @@ describe('SalaContratoView: valores e linha do tempo', () => {
       revisionNote: null,
       releasedAt: null,
       approvalDueAt: null,
+      dueZone: 'America/Sao_Paulo',
+      revisionRequestedAt: null,
     });
     api.contractDetail.mockResolvedValue(
       contract({

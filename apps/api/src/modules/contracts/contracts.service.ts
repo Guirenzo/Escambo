@@ -18,9 +18,15 @@ import { HttpError } from '../../utils/http-error';
 import { floorSecond, humanize, lastHumanAtOrBefore } from '../../utils/human-hours';
 import {
   DEFAULT_TIMEZONE,
+  addDaysToDay,
+  dayIn,
+  endOfDayIn,
   formatDate,
   formatDateTime,
+  formatDeadline,
+  formatDeadlineDay,
   formatDue,
+  inferDeadlineZone,
   timezoneOf,
 } from '../../utils/timezone';
 import { barterService } from '../barter/barter.service';
@@ -41,11 +47,17 @@ import {
   type OverdueMilestoneRow,
 } from './milestones.repository';
 import { reviewsRepository } from '../reviews/reviews.repository';
-import { toReview } from '../reviews/reviews.service';
+import { REVIEW_WINDOW_DAYS, toReview } from '../reviews/reviews.service';
+import {
+  milestonesTacitNotices,
+  tacitApprovedNotices,
+  type ApprovedMilestone,
+} from './approval-notices';
 import { settingsService } from '../settings/settings.service';
 import { settingsRepository } from '../settings/settings.repository';
 import { userZone } from '../auth/user-zone';
 import { cancelTerms, money, type CancelInput } from './cancel-policy';
+import { clientZoneOf, dayZoneOf, freelancerZoneOf } from './contract-zones';
 import {
   DEFAULT_DEADLINE_GRACE_HOURS,
   DEFAULT_PROPOSAL_EXPIRY_HOURS,
@@ -102,10 +114,6 @@ const iso = (d: Date | string | null | undefined): string | null =>
   d ? new Date(d).toISOString() : null;
 const date = (d: Date | string | null | undefined): Date | null => (d ? new Date(d) : null);
 
-/** Data curta em horário de Brasília, para notas e notificações ("15/09/2026"). */
-export const brDate = (d: Date | string): string =>
-  new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-
 /** O que a leitura de uma contratação precisa além da linha: o instante e a carência vigente. */
 interface ViewCtx {
   now: Date;
@@ -115,9 +123,6 @@ interface ViewCtx {
 async function viewCtx(): Promise<ViewCtx> {
   return { now: clock.now(), graceHours: await settingsService.number('deadline_grace_hours') };
 }
-
-const freelancerZoneOf = (row: ContractRow) => timezoneOf(row.freelancer_timezone);
-const clientZoneOf = (row: ContractRow) => timezoneOf(row.client_timezone);
 
 function toContract(row: ContractRow, ctx: ViewCtx): Contract {
   const d = deadlineView(row, { ...ctx, zone: freelancerZoneOf(row) });
@@ -150,6 +155,12 @@ function toContract(row: ContractRow, ctx: ViewCtx): Contract {
             resolvedAt: iso(row.extension_resolved_at),
             respondBy: iso(row.extension_respond_by),
             seq: Number(row.extension_requests ?? 0),
+            // A data pedida no relógio em que ela é 23:59 (a mesma conta dos avisos do pedido).
+            deadlineZone: inferDeadlineZone(new Date(row.extension_deadline_at), [
+              dayZoneOf(row, row.deadline_at),
+              freelancerZoneOf(row),
+              clientZoneOf(row),
+            ]),
           }
         : null,
     deadline: {
@@ -163,10 +174,13 @@ function toContract(row: ContractRow, ctx: ViewCtx): Contract {
     },
     approvalDueAt: row.status === 'delivered' ? iso(row.approval_due_at) : null,
     proposalExpiresAt: row.status === 'pending' ? iso(row.proposal_expires_at) : null,
+    deadlineZone: dayZoneOf(row, row.deadline_at),
+    revisionRequestedAt:
+      row.status === 'revision_requested' ? iso(row.revision_requested_at) : null,
   };
 }
 
-function toMilestone(m: MilestoneRow): Milestone {
+function toMilestone(m: MilestoneRow, row: ContractRow): Milestone {
   return {
     id: m.id,
     title: m.title,
@@ -181,6 +195,14 @@ function toMilestone(m: MilestoneRow): Milestone {
     revisionNote: m.revision_note,
     releasedAt: m.released_at ? new Date(m.released_at).toISOString() : null,
     approvalDueAt: m.status === 'delivered' ? iso(m.approval_due_at) : null,
+    dueZone: dayZoneOf(row, m.due_at),
+    // Só com a contratação correndo: numa disputa ou encerrada, a revisão do marco não anda mais.
+    revisionRequestedAt:
+      m.status === 'funded' &&
+      m.delivered_at &&
+      (row.status === 'accepted' || row.status === 'in_progress')
+        ? iso(m.revision_requested_at)
+        : null,
   };
 }
 
@@ -206,6 +228,10 @@ const MILESTONES_CANCEL = { from: ['pending', 'funded', 'delivered'], to: 'cance
 
 /** Créditos (inteiros) em jogo num contrato time-bank. */
 const creditsOf = (row: ContractRow): number => Math.round(Number(row.freelancer_net));
+
+/** Até quando o cliente avalia uma contratação concluída agora (RN-043), no relógio do fluxo. */
+const reviewUntil = (completedAt: Date): Date =>
+  new Date(completedAt.getTime() + REVIEW_WINDOW_DAYS * DAY);
 
 async function loadOr404(id: number): Promise<ContractRow> {
   const row = await contractsRepository.findById(id);
@@ -391,7 +417,9 @@ async function decisionFacts(row: ContractRow, now: Date): Promise<DecisionFacts
   return {
     contractId: row.id,
     title: row.title,
-    deadline: row.deadline_at ? formatDate(new Date(row.deadline_at), fz) : '',
+    deadline: row.deadline_at
+      ? formatDeadline(new Date(row.deadline_at), dayZoneOf(row, row.deadline_at), fz)
+      : '',
     byMilestones: work.byMilestones,
     missing: work.missing,
     requestsLeft: extensionRequestsLeft(row),
@@ -418,6 +446,7 @@ export const contractsService = {
     // RN-021 (ADR 57): a validade é gravada agora, no fuso de quem responde: as horas do painel,
     // nunca depois do último instante de dia antes do prazo de entrega.
     const fz = await userZone(input.freelancerId);
+    const cz = await userZone(clientId);
     const expiryHours = await settingsRepository.getNumber(
       'proposal_expiry_hours',
       DEFAULT_PROPOSAL_EXPIRY_HOURS,
@@ -474,6 +503,7 @@ export const contractsService = {
       paymentMode: isCredits ? 'credits' : 'cash',
       deadlineAt: deadline ? deadline.toISOString() : null,
       proposalExpiresAt: expiresAt,
+      createdAt: now,
       hold: isCredits ? null : { userId: clientId, amount: input.price },
       milestones,
     });
@@ -491,7 +521,9 @@ export const contractsService = {
       proposalNotice({
         contractId: id,
         title: contract.title,
-        deadline: deadline ? formatDate(deadline, fz) : null,
+        deadline: deadline
+          ? formatDeadline(deadline, inferDeadlineZone(deadline, [fz, cz]), fz)
+          : null,
         respondBy: formatDue(expiresAt, fz),
       }),
     );
@@ -522,7 +554,7 @@ export const contractsService = {
     const reviewRow = await reviewsRepository.findByContractIdWithResponse(id);
     const review = reviewRow ? toReview(reviewRow, reviewRow.response) : null;
     const milestones = hasMilestones(row)
-      ? (await milestonesRepository.listForContract(id)).map(toMilestone)
+      ? (await milestonesRepository.listForContract(id)).map((m) => toMilestone(m, row))
       : [];
     const cancellable = ['pending', 'accepted', 'in_progress'].includes(row.status);
     const cancellation = cancellable
@@ -702,6 +734,24 @@ export const contractsService = {
         guard: { sql: 'AND c.approval_due_at IS NOT NULL AND c.approval_due_at <= :now' },
       },
     );
+    const cz = clientZoneOf(row);
+    const n = tacitApprovedNotices({
+      contractId: id,
+      title: row.title,
+      mode:
+        row.payment_mode === 'barter'
+          ? 'barter'
+          : row.payment_mode === 'credits'
+            ? 'credits'
+            : 'cash',
+      price: Number(row.price),
+      net: row.payment_mode === 'credits' ? creditsOf(row) : Number(row.freelancer_net),
+      dueClient: formatDue(due, cz),
+      dueFreelancer: formatDue(due, freelancerZoneOf(row)),
+      reviewUntil: formatDue(reviewUntil(now), cz),
+    });
+    send(row.client_id, n.client);
+    send(row.freelancer_id, n.freelancer);
     return load(id);
   },
 
@@ -710,7 +760,15 @@ export const contractsService = {
     assertClient(row, uid);
     assertSingleDelivery(row);
     assertStatus(row, ['delivered']);
-    await applyTransition({ id, changedBy: uid, from: row.status, to: 'revision_requested', note });
+    await applyTransition({
+      id,
+      changedBy: uid,
+      from: row.status,
+      to: 'revision_requested',
+      note,
+      timestampColumn: 'revision_requested_at',
+      now: clock.now(),
+    });
     // Depois da entrega o prazo não cobra mais (R-VEZ): o aviso é simples, sem hora-limite.
     send(row.freelancer_id, revisionNotice({ contractId: id, title: row.title, note }));
     return load(id);
@@ -921,11 +979,12 @@ export const contractsService = {
       );
     }
     const cz = clientZoneOf(row);
+    const dz = dayZoneOf(row, row.deadline_at);
     const respondBy = extensionRespondBy({ requestedAt: now, proposed, zone: cz });
     if (!respondBy) {
       throw new HttpError(
         400,
-        `O novo prazo está perto demais para o cliente decidir a tempo: escolha uma data a partir de ${formatDate(new Date(now.getTime() + 2 * DAY), freelancerZoneOf(row))}.`,
+        `O novo prazo está perto demais para o cliente decidir a tempo: escolha uma data a partir de ${formatDate(endOfDayIn(dz, addDaysToDay(dayIn(dz, now), 2)), dz)}.`,
         'extension_too_close',
       );
     }
@@ -943,7 +1002,11 @@ export const contractsService = {
         contractId: id,
         title: row.title,
         respondBy: formatDue(respondBy, cz),
-        proposed: formatDate(proposed, cz),
+        proposed: formatDeadline(
+          proposed,
+          inferDeadlineZone(proposed, [dz, freelancerZoneOf(row), cz]),
+          cz,
+        ),
         reason: input.reason,
       }),
     );
@@ -1007,7 +1070,7 @@ export const contractsService = {
         now,
         changedBy: uid,
         status: row.status,
-        note: `Prazo estendido de ${brDate(row.deadline_at!)} para ${brDate(row.extension_deadline_at)} (RN-028): ${row.extension_reason ?? ''}`,
+        note: `Prazo estendido de ${formatDeadlineDay(new Date(row.deadline_at!), dayZoneOf(row, row.deadline_at))} para ${formatDeadline(new Date(row.extension_deadline_at), dayZoneOf(row, row.extension_deadline_at))} (RN-028): ${row.extension_reason ?? ''}`,
       });
       if (!ok) throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
       send(
@@ -1015,7 +1078,15 @@ export const contractsService = {
         extensionAcceptedNotice({
           contractId: id,
           title: row.title,
-          deadline: formatDate(new Date(row.extension_deadline_at), fz),
+          day: formatDeadlineDay(
+            new Date(row.extension_deadline_at),
+            dayZoneOf(row, row.extension_deadline_at),
+          ),
+          deadline: formatDeadline(
+            new Date(row.extension_deadline_at),
+            dayZoneOf(row, row.extension_deadline_at),
+            fz,
+          ),
         }),
       );
       return load(id);
@@ -1082,8 +1153,12 @@ export const contractsService = {
         contractId: row.id,
         title: row.title,
         respondBy: formatDue(respondBy, cz),
-        proposed: formatDate(new Date(row.extension_deadline_at!), cz),
-        deadline: formatDate(new Date(row.deadline_at!), cz),
+        proposed: formatDeadline(
+          new Date(row.extension_deadline_at!),
+          dayZoneOf(row, row.extension_deadline_at),
+          cz,
+        ),
+        deadline: formatDeadline(new Date(row.deadline_at!), dayZoneOf(row, row.deadline_at), cz),
       }),
     );
     return true;
@@ -1151,7 +1226,7 @@ export const contractsService = {
     const facts = (zone: typeof fz): OverdueFacts => ({
       contractId: row.id,
       title: row.title,
-      deadline: formatDate(deadlineAt, zone),
+      deadline: formatDeadline(deadlineAt, dayZoneOf(row, deadlineAt), zone),
       limit: formatDue(graceEndsAt, zone),
       byMilestones: work.byMilestones,
       missing: work.missing,
@@ -1181,7 +1256,7 @@ export const contractsService = {
         openedBy: row.client_id,
         reason: 'deadline',
         description: autoDisputeDescription({
-          deadline: formatDate(new Date(row.deadline_at!), DEFAULT_TIMEZONE),
+          deadline: formatDeadline(new Date(row.deadline_at!), dayZoneOf(row, row.deadline_at)),
           noticeAt: formatDateTime(new Date(row.overdue_notified_at!), DEFAULT_TIMEZONE),
           limit: formatDateTime(graceEndsAt, DEFAULT_TIMEZONE),
           delivered: work.byMilestones ? work.delivered : null,
@@ -1217,6 +1292,7 @@ export const contractsService = {
   async notifyMilestoneOverdue(m: OverdueMilestoneRow, now: Date = clock.now()): Promise<boolean> {
     const fz = timezoneOf(m.freelancer_timezone);
     const due = new Date(m.due_at);
+    const dzm = inferDeadlineZone(due, [fz, timezoneOf(m.client_timezone)]);
     if (overdueNoticeAt(due, fz).getTime() > now.getTime()) return false;
     const ok = await milestonesRepository.markOverdueNotified(m.id, floorSecond(now));
     if (!ok) return false;
@@ -1225,8 +1301,8 @@ export const contractsService = {
       milestoneId: m.id,
       title: m.title,
       contractTitle: m.contract_title,
-      dueFreelancer: formatDate(due, fz),
-      dueClient: formatDate(due, timezoneOf(m.client_timezone)),
+      dueFreelancer: formatDeadline(due, dzm, fz),
+      dueClient: formatDeadline(due, dzm, timezoneOf(m.client_timezone)),
     });
     send(m.freelancer_id, n.freelancer);
     send(m.client_id, n.client);
@@ -1313,22 +1389,63 @@ export const contractsService = {
     };
   },
 
-  /** Aprovação tácita de um marco entregue, na hora gravada na entrega (job). */
-  async approveMilestoneTacitly(m: DueMilestoneRow, now: Date = clock.now()): Promise<boolean> {
-    const row = await loadOr404(m.contract_id);
-    if (row.status !== 'accepted' && row.status !== 'in_progress') return false;
-    const r = await milestonesRepository.approve({
-      contractId: m.contract_id,
-      milestoneId: m.id,
-      changedBy: row.client_id,
-      freelancerId: row.freelancer_id,
-      mode: row.payment_mode === 'credits' ? 'credits' : 'cash',
-      note: `Aprovação tácita: sem resposta do cliente até ${formatDateTime(new Date(m.approval_due_at), DEFAULT_TIMEZONE)} (horário de Brasília)`,
-      now,
-      dueBy: now,
+  /**
+   * Job: os marcos com a aprovação tácita vencida da mesma contratação, nesta rodada (RN-024 e
+   * RN-069, ADR 58). Cada marco é aprovado na própria transação; o que foi aprovado fica e é avisado
+   * (um aviso a cada parte, só com os aprovados), e o que falhou volta na próxima rodada com aviso
+   * próprio. A conclusão roda uma vez.
+   */
+  async approveMilestonesTacitly(
+    contractId: number,
+    due: DueMilestoneRow[],
+    now: Date = clock.now(),
+  ): Promise<{ approved: number[]; failed: number[] }> {
+    const result = { approved: [] as number[], failed: [] as number[] };
+    const row = await loadOr404(contractId);
+    if (row.status !== 'accepted' && row.status !== 'in_progress') return result;
+    const mode = row.payment_mode === 'credits' ? 'credits' : 'cash';
+    const won: (ApprovedMilestone & { due: Date })[] = [];
+    let completed = false;
+    for (const m of due) {
+      try {
+        const dueAt = new Date(m.approval_due_at);
+        const r = await milestonesRepository.approve({
+          contractId,
+          milestoneId: m.id,
+          changedBy: row.client_id,
+          freelancerId: row.freelancer_id,
+          mode,
+          note: `Aprovação tácita: sem resposta do cliente até ${formatDateTime(dueAt, DEFAULT_TIMEZONE)} (horário de Brasília)`,
+          now,
+          dueBy: now,
+        });
+        if (!r.ok) continue;
+        won.push({ id: m.id, title: r.title, amount: r.amount, net: r.net, due: dueAt });
+        result.approved.push(m.id);
+        completed = completed || r.completed;
+      } catch (err) {
+        result.failed.push(m.id);
+        logger.warn({ err, milestoneId: m.id }, 'aprovação tácita do marco falhou');
+      }
+    }
+    if (won.length === 0) return result;
+    if (completed) await afterCompleted(row);
+    const cz = clientZoneOf(row);
+    const fz = freelancerZoneOf(row);
+    const sameDue = won.every((w) => w.due.getTime() === won[0]!.due.getTime());
+    const n = milestonesTacitNotices({
+      contractId,
+      title: row.title,
+      mode,
+      milestones: won,
+      dueClient: sameDue ? formatDue(won[0]!.due, cz) : null,
+      dueFreelancer: sameDue ? formatDue(won[0]!.due, fz) : null,
+      completed,
+      reviewUntil: completed ? formatDue(reviewUntil(now), cz) : null,
     });
-    if (r.ok && r.completed) await afterCompleted(row);
-    return r.ok;
+    send(row.client_id, n.client);
+    send(row.freelancer_id, n.freelancer);
+    return result;
   },
 
   async requestMilestoneRevision(
@@ -1345,6 +1462,7 @@ export const contractsService = {
       milestoneId,
       changedBy: uid,
       note,
+      now: clock.now(),
     });
     if (!ok)
       throw new HttpError(409, 'Este marco não está aguardando aprovação', 'invalid_transition');

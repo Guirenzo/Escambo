@@ -4,6 +4,7 @@ import {
   autoDisputeNotice,
   brl,
   cancelledNotice,
+  extensionAcceptedNotice,
   extensionDeclinedNotice,
   extensionExpiredClientNotice,
   extensionExpiredFreelancerNotice,
@@ -169,6 +170,22 @@ describe('extensão (RN-028)', () => {
     });
   });
 
+  it('aceite: o título diz só o dia do novo prazo e o corpo, o prazo inteiro (ADR 58)', () => {
+    const n = extensionAcceptedNotice({
+      contractId: 3,
+      title: 'Vídeo',
+      day: 'qua, 07/10',
+      deadline: 'qua, 07/10/2026, até 23:59 (horário de Manaus)',
+    });
+    expect(n.passCategory).toBeUndefined();
+    expect(n.params).toEqual({
+      type: 'deadline_extension_accepted',
+      title: 'Extensão aceita: novo prazo qua, 07/10',
+      body: 'Vídeo: o novo prazo é qua, 07/10/2026, até 23:59 (horário de Manaus); não há outra extensão nesta contratação.',
+      data: { contractId: 3 },
+    });
+  });
+
   it('recusa com o prazo no futuro: vale o prazo atual; sobra um pedido', () => {
     const n = extensionDeclinedNotice(decision());
     expect(n.passCategory).toBeUndefined();
@@ -219,11 +236,11 @@ describe('extensão (RN-028)', () => {
         contractId: 3,
         title: 'Vídeo',
         respondBy: 'seg, 05/10 às 20:00',
-        proposed: '10/10/2026',
-        deadline: '02/10/2026',
+        proposed: 'sáb, 10/10/2026, até 23:59',
+        deadline: 'sex, 02/10/2026, até 23:59',
       }).params.body,
     ).toBe(
-      'Sem a sua resposta até seg, 05/10 às 20:00, o pedido de novo prazo (10/10/2026) expirou e vale o prazo atual, 02/10/2026.',
+      'Sem a sua resposta até seg, 05/10 às 20:00, o pedido de novo prazo, sáb, 10/10/2026, até 23:59, expirou e vale o prazo atual, sex, 02/10/2026, até 23:59.',
     );
   });
 });
@@ -332,17 +349,31 @@ describe('revisão, cancelamento e disputa', () => {
     );
   });
 
-  it('descrição da disputa automática: começa por "Aberta automaticamente" e lista os marcos', () => {
+  it('descrição da disputa automática: começa por "Aberta automaticamente", diz o prazo como dia e lista os marcos', () => {
     const d = autoDisputeDescription({
-      deadline: '02/10/2026',
+      deadline: 'sex, 02/10/2026, até 23:59 (horário de Brasília)',
       noticeAt: '03/10/2026 às 09:03',
       limit: '04/10/2026 às 09:03',
       delivered: ['Layout'],
       missing: ['Publicação'],
     });
-    expect(d.startsWith('Aberta automaticamente pela plataforma (RN-029)')).toBe(true);
-    expect(d).toContain('Horários de Brasília.');
-    expect(d.endsWith('Marcos entregues: «Layout»; sem entrega: «Publicação».')).toBe(true);
+    expect(d).toBe(
+      'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, sex, 02/10/2026, até 23:59 (horário de Brasília), venceu com marcos nunca entregues, o aviso saiu em 03/10/2026 às 09:03 e, até 04/10/2026 às 09:03, eles não foram entregues nem houve extensão aceita. O aviso e o limite estão em horário de Brasília. Marcos entregues: «Layout»; sem entrega: «Publicação».',
+    );
+  });
+
+  it('descrição da disputa automática da entrega única: "venceu sem entrega", sem lista de marcos', () => {
+    expect(
+      autoDisputeDescription({
+        deadline: 'sex, 02/10/2026, até 23:59 (horário de Manaus)',
+        noticeAt: '03/10/2026 às 10:03',
+        limit: '04/10/2026 às 10:03',
+        delivered: null,
+        missing: null,
+      }),
+    ).toBe(
+      'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, sex, 02/10/2026, até 23:59 (horário de Manaus), venceu sem entrega, o aviso saiu em 03/10/2026 às 10:03 e, até 04/10/2026 às 10:03, não houve entrega nem extensão aceita. O aviso e o limite estão em horário de Brasília.',
+    );
   });
 
   it('milestoneList e brl', () => {

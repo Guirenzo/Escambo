@@ -37,7 +37,7 @@ describe('consentimento no cadastro (ADR 54)', () => {
         c,
       ]),
     );
-    expect(byType.terms_of_use).toMatchObject({ version: '1.3', accepted: true }); // Termos 1.3 (ADR 57)
+    expect(byType.terms_of_use).toMatchObject({ version: '1.4', accepted: true }); // Termos 1.4 (ADR 58)
     expect(byType.privacy_policy).toMatchObject({
       version: CURRENT_LEGAL_VERSION.privacy_policy,
       accepted: true,

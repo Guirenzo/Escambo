@@ -42,6 +42,7 @@ MIT — Open Source
 | 2.2 | Jun/2026 | Introdução da **troca de serviços (escambo)** como diferencial central, em modo híbrido (dinheiro + troca, com *torna*); banco ampliado para **50 tabelas em 15 módulos**; +8 RFs (total **90**) e +2 RNFs (total **42**) de confiança e segurança — pacotes de serviço, marcos de escrow, disputas como entidade própria, denúncias, 2FA e portabilidade LGPD; preenchimento das regras RN-066 a RN-070 (total **75**); correção das contagens divergentes e dos caminhos de instalação (`apps/api`, `apps/web`); inclusão do texto da LICENSE MIT |
 | 2.3 | Set/2026 | Fluxos alternativos alinhados aos prazos da v1.39.0 (ADR 57): aprovação tácita em **5 dias corridos** (e não úteis); cancelamento com a desistência do freelancer (devolve tudo ao cliente), reembolso integral no atraso sem entrega a partir do aviso, a metade do prazo contada do aceite e a confirmação com os valores na tela; disputa por prazo aberta pela plataforma depois do aviso das 9h e da carência, direto na mediação, sem ticket de suporte; contagem das regras de negócio atualizada (total **78**); nota de que as Figuras 3 a 5 são da v2.2 |
 | 2.4 | Out/2026 | Engenharia de entrega como construída (ADR 59): checklist das Directions atualizado (CI/CD, cobertura, análise estática, monitoramento e Wiki atendidos, com o ponteiro para cada um); seções 7 e 8 alinhadas ao que está no repositório (Vitest, Docker Compose com imagens no GHCR, Caddy, deploy pelo GitHub Actions, Prometheus e Grafana) |
+| 2.5 | Out/2026 | Lembretes de prazo (ADR 58): o fluxo da aprovação tácita ganha o lembrete ao cliente e o aviso às duas partes quando ela acontece; o prazo de entrega é uma data no horário de quem entrega; revisão parada há 7 dias avisa as duas partes; contagem das regras de negócio de 78 para **81** (RN-079 a RN-081) |
 
 ---
 
@@ -337,7 +338,7 @@ As principais regras que o sistema deve respeitar, independentemente da interfac
 - XP nunca é perdido por inatividade: o freelancer pode voltar sem perder a progressão
 - O saque mínimo é de R$ 20,00, com prazo de até 1 dia útil via PIX
 
-> A lista completa com as 78 regras de negócio está em [`docs/regras-de-negocio.md`](./regras-de-negocio.md).
+> A lista completa com as 81 regras de negócio está em [`docs/regras-de-negocio.md`](./regras-de-negocio.md).
 
 ### 2.6 Fora do Escopo
 
@@ -468,9 +469,9 @@ Em todos os casos:
 
 A aprovação tácita existe para evitar que uma contratação fique parada indefinidamente quando o freelancer já realizou a entrega e o cliente não responde dentro do prazo estabelecido.
 
-Após o freelancer registrar a entrega, o cliente tem 5 dias corridos para aprovar o serviço ou solicitar uma revisão. A hora-limite fica gravada na entrega e aparece no aviso; se ela cairia entre 20h30 e 9h no horário do cliente, passa para as 9h. Se não houver manifestação dentro desse período, o sistema entende que a entrega foi aceita e aprova automaticamente a contratação.
+Após o freelancer registrar a entrega, o cliente tem 5 dias corridos para aprovar o serviço ou solicitar uma revisão. A hora-limite fica gravada na entrega e aparece no aviso; se ela cairia entre 20h30 e 9h no horário do cliente, passa para as 9h. Antes disso, em geral na véspera e a partir das 9h no horário dele, o cliente recebe um lembrete dizendo até quando responder e que depois não cabe mais revisão nem disputa. Se não houver manifestação dentro desse período, o sistema entende que a entrega foi aceita e aprova automaticamente a contratação.
 
-Com isso, o pagamento é liberado ao freelancer e o contrato é encerrado como concluído.
+Com isso, o pagamento é liberado ao freelancer, o contrato é encerrado como concluído e as duas partes são avisadas: o cliente, com até quando pode avaliar; o freelancer, com o valor que entrou na carteira.
 
 **Figura 4 — Fluxo alternativo de aprovação tácita após 5 dias corridos.**
 
@@ -485,9 +486,11 @@ O comportamento da aprovação tácita é:
 Freelancer registra a entrega
     → Sistema inicia contagem de 5 dias corridos
     → Cliente pode aprovar ou solicitar revisão
+    → Em geral na véspera, o cliente recebe um lembrete
     → Se o cliente não se manifestar no prazo
     → Sistema aprova automaticamente
     → Pagamento é liberado ao freelancer
+    → As duas partes são avisadas
 ```
 
 #### Disputa
@@ -1193,7 +1196,7 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 - **Apêndice A** — Modelagem completa do banco de dados: [`docs/modelagem-banco.md`](./modelagem-banco.md)
 - **Apêndice B** — Lista completa de requisitos funcionais (90 RFs): [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md)
 - **Apêndice C** — Lista completa de requisitos não funcionais (42 RNFs): [`docs/requisitos-nao-funcionais.md`](./requisitos-nao-funcionais.md)
-- **Apêndice D** — Regras de negócio (78 RNs): [`docs/regras-de-negocio.md`](./regras-de-negocio.md)
+- **Apêndice D** — Regras de negócio (81 RNs): [`docs/regras-de-negocio.md`](./regras-de-negocio.md)
 - **Apêndice E** — Personas detalhadas: [`docs/personas.md`](./personas.md)
 - **Apêndice F** — Casos de uso completos: [`docs/casos-de-uso.md`](./casos-de-uso.md)
 - **Apêndice G** — Benchmarking e estado da arte: [`docs/benchmarking.md`](./benchmarking.md)

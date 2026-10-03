@@ -153,6 +153,23 @@ describe('templates', () => {
     expect(EMAILED_NOTIFICATION_TYPES.has('contract_proposal')).toBe(true);
     expect(EMAILED_NOTIFICATION_TYPES.has('appeal_decided')).toBe(true);
   });
+
+  it('os lembretes, a revisão parada e a aprovação automática (ADR 58) vão por e-mail, e o conjunto tem 38 tipos', () => {
+    for (const type of [
+      'contract_proposal_reminder',
+      'contract_deadline_reminder',
+      'contract_approval_reminder',
+      'contract_extension_reminder',
+      'contract_revision_stalled',
+      'contract_auto_approved',
+    ]) {
+      expect(EMAILED_NOTIFICATION_TYPES.has(type)).toBe(true);
+    }
+    // Tipo novo entra de propósito: o push (QUIET_PASS_BY_TYPE) e o resumo dependem deste conjunto.
+    expect(EMAILED_NOTIFICATION_TYPES.size).toBe(38);
+    // O lembrete leva à contratação, como os outros avisos dela.
+    expect(notificationLink({ contractId: 3 })).toBe(`${env.APP_URL}/contratos/3`);
+  });
 });
 
 describe('mailService.send', () => {
