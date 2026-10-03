@@ -88,7 +88,8 @@ deixa de ser aviso e passa a ser erro, para o verde não esconder uma entrega de
 - **Relógio único** nos prazos, com um teste que proíbe `NOW()` do MySQL nesses arquivos (ADR 57).
 - **Migrations** só aditivas, aplicadas pelo mesmo runner no CI (E2E) e em produção, com ledger e checksum.
 - **Dependências:** `npm audit --audit-level=high` roda no CI e barra vulnerabilidade alta; o Dependabot abre,
-  toda semana, os PRs de atualização do npm e das actions (`.github/dependabot.yml`).
+  toda semana, os PRs de versões menores e correções do npm e das actions (versão maior é atualizada de
+  propósito, num bloco próprio) (`.github/dependabot.yml`).
 - **Revisão por pares:** o fluxo é Pull Request com revisão e bugs em Issues, com os modelos em `.github/`
   (ver [Como Contribuir](Como-Contribuir)). Até a 1.39.0 a maior parte das mudanças entrou por merge local de
   ramos `feat/`, com o CI rodando no ramo; a partir da 1.40.0 cada bloco sobe por PR.
