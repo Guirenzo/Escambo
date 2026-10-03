@@ -1,0 +1,80 @@
+# Wiki (ADR 59): a cada push na main que mexe na documentação, gera as páginas a partir do repositório
+# (scripts/wiki-build.mjs) e as publica na Wiki do GitHub. A Wiki é espelho: o que se edita direto nela é
+# sobrescrito na publicação seguinte.
+#
+# Commit com [skip ci] não dispara workflow nenhum, este incluído: depois de um, publique à mão
+# (Actions → Wiki → Run workflow) ou espere o próximo push.
+#
+# Pré-requisito (uma vez): Settings → General → Features → Wikis ligado, e a primeira página criada à mão
+# (qualquer conteúdo) em https://github.com/Guirenzo/Escambo/wiki — só então o repositório .wiki existe.
+name: Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'DEPLOY.md'
+      - 'CONTRIBUTING.md'
+      - 'CHANGELOG.md'
+      - 'scripts/wiki-build.mjs'
+      - '.github/workflows/wiki.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: wiki
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publicar a Wiki
+    # À mão, só a partir da main: a Wiki é o espelho do que está publicado.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Gerar as páginas (falha com link relativo quebrado)
+        run: node scripts/wiki-build.mjs .wiki-build
+
+      - name: Publicar
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENFORCED: ${{ vars.DELIVERY_ENFORCED }}
+        run: |
+          url="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+          # O erro do clone vai para o log sem o token (a URL com o token nunca é impressa).
+          if ! git clone --depth 1 "$url" wiki 2>clone.err; then
+            sed "s#x-access-token:[^@]*@#x-access-token:***@#g" clone.err >&2
+            msg="A Wiki ainda não existe (ou o clone falhou: veja o log acima). Crie a primeira página à mão em https://github.com/${GITHUB_REPOSITORY}/wiki e rode este workflow de novo (Actions → Wiki → Run workflow)."
+            if [ "$ENFORCED" = "true" ]; then
+              echo "::error::$msg"
+              exit 1
+            fi
+            echo "::warning::$msg"
+            exit 0
+          fi
+          # Espelho: apaga o que havia (menos o .git) e põe as páginas geradas.
+          find wiki -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -r .wiki-build/. wiki/
+          cd wiki
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Wiki já está em dia."
+            exit 0
+          fi
+          git commit -m "Wiki gerada de ${GITHUB_SHA::7}"
+          git push
+          echo "### Wiki publicada a partir de ${GITHUB_SHA::7}" >> "$GITHUB_STEP_SUMMARY"

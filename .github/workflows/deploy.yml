@@ -1,0 +1,295 @@
+# Deploy contínuo (ADR 59): cada CI verde em `main` põe no ar, na VPS, as imagens daquele commit.
+# Ninguém entra na VPS para atualizar: o job descobre o commit da imagem, copia a configuração desse
+# commit (compose, Caddyfile, monitoramento), puxa as imagens, fixa IMAGE_TAG no sha curto, sobe,
+# recarrega o que lê configuração de arquivo e confere no /api/health que o commit no ar é o esperado.
+# Se a subida ou a conferência falham, a VPS volta sozinha para a versão anterior.
+# Rollback: rodar este workflow à mão ("Run workflow", na main) com o sha curto ou a versão anterior.
+#
+# Segredos do ambiente `production` (Settings → Environments → production):
+#   DEPLOY_HOST        IP ou nome da VPS
+#   DEPLOY_USER        usuário SSH (no grupo docker)
+#   DEPLOY_SSH_KEY     chave privada só deste deploy (a pública em ~/.ssh/authorized_keys da VPS)
+#   DEPLOY_KNOWN_HOSTS saída de `ssh-keyscan -H <host>` (com outra porta: `ssh-keyscan -p <porta> -H <host>`),
+#                      conferida à mão; sem ela o job não confia no host
+# Variáveis (Settings → Environments → production → Variables):
+#   DEPLOY_URL         https://seu-dominio (o health é conferido nele)
+#   DEPLOY_PATH        pasta na VPS (padrão /opt/escambo)
+#   DEPLOY_PORT        porta SSH (padrão 22)
+# Sem os segredos o job termina verde, avisando que o deploy está desligado. Depois de configurar,
+# crie a variável de repositório DELIVERY_ENFORCED=true: a falta de um segredo passa a ser erro.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag das imagens: sha curto (7 caracteres) ou versão (ex.: 1.39.0). Vazio = a mais nova publicada (latest).'
+        required: false
+        default: ''
+
+# Um deploy por vez; um novo espera o anterior terminar (nunca dois `up -d` ao mesmo tempo). Só entra
+# na fila a execução que vai mesmo implantar: as que o `if` do job pula ganham um grupo próprio, para
+# não tomarem o lugar de um deploy que está esperando.
+concurrency:
+  group: ${{ (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')) && 'deploy-production' || format('deploy-skip-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Produção (VPS)
+    # À mão, só a partir da main: a configuração que vai para a VPS é sempre a de um commit publicado.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.DEPLOY_URL }}
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_URL: ${{ vars.DEPLOY_URL }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/escambo' }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+
+    steps:
+      - name: Deploy configurado?
+        id: cfg
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          ENFORCED: ${{ vars.DELIVERY_ENFORCED }}
+        run: |
+          missing=""
+          for v in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS DEPLOY_URL; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -z "$missing" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif [ "$ENFORCED" = "true" ]; then
+            echo "::error::Deploy sem configuração: faltam$missing no ambiente production (ver DEPLOY.md, seção 3)."
+            exit 1
+          else
+            echo "::warning::Deploy desligado: faltam$missing no ambiente production (ver DEPLOY.md, seção 3)."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A imagem diz de que commit saiu (rótulo gravado pelo CI). É esse commit que dá a configuração e
+      # que o /api/health tem de mostrar, seja no deploy automático, seja no rollback por versão.
+      - name: Imagem e commit
+        if: steps.cfg.outputs.enabled == 'true'
+        id: rev
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
+            tag="${HEAD_SHA::7}"
+          else
+            tag="${INPUT_TAG#v}"
+            [ -n "$tag" ] || tag="latest"
+          fi
+          if ! [[ "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "::error::Tag inválida: use o sha curto (7 caracteres) ou a versão (ex.: 1.39.0)."
+            exit 1
+          fi
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/escambo-api:$tag"
+          sha="$(skopeo inspect --creds "$GITHUB_ACTOR:$GH_TOKEN" \
+            --format '{{ index .Labels "org.opencontainers.image.revision" }}' "docker://$image")" || {
+            echo "::error::A imagem $image não existe no GHCR (commits com [skip ci] não têm imagem)."
+            exit 1
+          }
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::A imagem $image não traz o commit de origem."
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "workflow_run" ] && [ "$sha" != "$HEAD_SHA" ]; then
+            echo "::error::A imagem $image é do commit $sha, e o CI aprovou $HEAD_SHA."
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=${sha::7}" >> "$GITHUB_OUTPUT"
+          echo "asked=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout do commit que vai ao ar
+        if: steps.cfg.outputs.enabled == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.rev.outputs.sha }}
+          fetch-depth: 0
+
+      # Um CI antigo reexecutado, ou dois merges cujo CI termina fora de ordem, não podem devolver a
+      # produção a um commit que já foi superado. Voltar no tempo é só à mão.
+      - name: Não voltar no tempo (deploy automático)
+        if: steps.cfg.outputs.enabled == 'true' && github.event_name == 'workflow_run'
+        id: fresh
+        env:
+          SHA: ${{ steps.rev.outputs.sha }}
+        run: |
+          live="$(curl -fsS --max-time 10 "$DEPLOY_URL/api/health" | sed -n 's/.*"commit":"\([0-9a-f]*\)".*/\1/p' || true)"
+          if [ -n "$live" ] && [ "$live" != "$SHA" ] && git cat-file -e "$live^{commit}" 2>/dev/null \
+             && git merge-base --is-ancestor "$SHA" "$live"; then
+            echo "::notice::O commit $SHA já foi superado pelo que está no ar ($live): nada a fazer."
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Chave SSH
+        if: steps.cfg.outputs.enabled == 'true' && steps.fresh.outputs.stale != 'true'
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName $DEPLOY_HOST
+            User $DEPLOY_USER
+            Port $DEPLOY_PORT
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ConnectTimeout 15
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+          EOF
+
+      # A configuração nova vai para uma pasta de espera: só troca a que está no ar depois de as
+      # imagens novas terem sido puxadas.
+      - name: Configuração do commit → VPS (pasta de espera)
+        if: steps.cfg.outputs.enabled == 'true' && steps.fresh.outputs.stale != 'true'
+        run: |
+          remote="$(printf %q "$DEPLOY_PATH")"
+          ssh vps "set -e; cd $remote; test -f .env; rm -rf .next; mkdir -p .next/deploy"
+          scp docker-compose.prod.yml "vps:$DEPLOY_PATH/.next/docker-compose.prod.yml"
+          scp -r deploy/. "vps:$DEPLOY_PATH/.next/deploy/"
+
+      - name: Puxar e subir
+        if: steps.cfg.outputs.enabled == 'true' && steps.fresh.outputs.stale != 'true'
+        id: up
+        env:
+          TAG: ${{ steps.rev.outputs.tag }}
+        run: |
+          ssh vps "DEPLOY_PATH=$(printf %q "$DEPLOY_PATH") TAG=$(printf %q "$TAG") bash -s" <<'EOF'
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+          dc() { docker compose -f docker-compose.prod.yml "$@"; }
+          # A tag no ar fica gravada no .env: é o que o rollback troca, e o que um `up -d` à mão repete.
+          set_tag() {
+            if grep -q '^IMAGE_TAG=' .env; then
+              sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$1/" .env
+            else
+              printf '\nIMAGE_TAG=%s\n' "$1" >> .env
+            fi
+          }
+          monitoring_hash() {
+            find deploy/monitoring -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | cut -d' ' -f1
+          }
+          # Volta para a versão anterior (tag, compose e configuração) e sai com erro.
+          fail() {
+            dc logs --tail 80 migrate api || true
+            if [ -f .prev/docker-compose.prod.yml ]; then
+              set_tag "$prev"
+              cp -a .prev/docker-compose.prod.yml docker-compose.prod.yml
+              cp -a .prev/deploy/. deploy/
+              dc up -d --remove-orphans || true
+              dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || true
+              echo "::error::$1 A VPS voltou para $prev."
+            else
+              echo "::error::$1 Não havia versão anterior para voltar: confira a VPS."
+            fi
+            exit 1
+          }
+
+          prev="$(sed -n 's/^IMAGE_TAG=//p' .env | tail -n 1)"
+          prev="${prev:-latest}"
+
+          # 1. As imagens novas, com o compose novo, sem tocar no que está no ar. Tag que não existe
+          #    falha aqui, antes de qualquer troca.
+          IMAGE_TAG="$TAG" docker compose --project-directory . -f .next/docker-compose.prod.yml pull api web
+
+          # 2. Guarda a configuração no ar (para a volta) e põe a nova no lugar.
+          before="$(monitoring_hash)"
+          rm -rf .prev
+          mkdir -p .prev/deploy deploy
+          [ ! -f docker-compose.prod.yml ] || cp -a docker-compose.prod.yml .prev/docker-compose.prod.yml
+          cp -a deploy/. .prev/deploy/
+          printf '%s\n' "$prev" > .prev/IMAGE_TAG
+          cp -a .next/docker-compose.prod.yml docker-compose.prod.yml
+          cp -a .next/deploy/. deploy/
+          rm -rf .next
+          set_tag "$TAG"
+
+          # 3. Sobe (o `migrate` roda antes da API). Se não subir, volta para a versão anterior.
+          dc up -d --remove-orphans || fail "A subida falhou com $TAG."
+
+          # 4. Arquivo montado por bind não recria contêiner: recarrega quem lê a configuração.
+          #    O reload do Caddy valida o arquivo e não derruba conexões.
+          dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile             || fail "O Caddyfile de $TAG não é válido."
+          if [ "$before" != "$(monitoring_hash)" ]; then
+            running="$(dc ps --services --status running)"
+            for s in prometheus blackbox grafana; do
+              if printf '%s\n' "$running" | grep -qx "$s"; then dc restart "$s"; fi
+            done
+          fi
+
+          # 5. Com uma tag por commit, as imagens antigas não ficam mais sem nome: apaga as do Escambo
+          #    que não são a atual nem a anterior (a anterior fica para o rollback rápido).
+          docker images --format '{{.Repository}}:{{.Tag}}' \
+            | grep -E '/escambo-(api|web):' \
+            | grep -v -e ":$TAG\$" -e ":$prev\$" \
+            | xargs -r docker rmi >/dev/null 2>&1 || true
+          docker image prune -f >/dev/null
+          dc ps
+          EOF
+
+      - name: O commit certo está no ar?
+        if: steps.cfg.outputs.enabled == 'true' && steps.fresh.outputs.stale != 'true'
+        id: health
+        env:
+          WANT: ${{ steps.rev.outputs.sha }}
+          TAG: ${{ steps.rev.outputs.tag }}
+          ASKED: ${{ steps.rev.outputs.asked }}
+        run: |
+          for i in $(seq 1 30); do
+            body="$(curl -fsS --max-time 10 "$DEPLOY_URL/api/health" || true)"
+            commit="$(printf '%s' "$body" | sed -n 's/.*"commit":"\([^"]*\)".*/\1/p')"
+            version="$(printf '%s' "$body" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
+            if [ "$commit" = "$WANT" ]; then
+              echo "### No ar: $version ($commit), imagem \`$TAG\` (pedido: \`$ASKED\`)" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Esperando a API nova ($i/30): no ar '${commit:-nada}'"
+            sleep 10
+          done
+          echo "::error::Depois de 5 minutos o /api/health ainda não mostra o commit $WANT (imagem $TAG)."
+          exit 1
+
+      # Os contêineres subiram, mas a API nova não respondeu com o commit esperado: volta sozinho.
+      - name: Voltar à versão anterior
+        if: failure() && steps.up.outcome == 'success' && steps.health.outcome == 'failure'
+        run: |
+          ssh vps "DEPLOY_PATH=$(printf %q "$DEPLOY_PATH") bash -s" <<'EOF'
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+          [ -f .prev/docker-compose.prod.yml ] || { echo "::error::Sem versão anterior guardada: confira a VPS."; exit 1; }
+          prev="$(cat .prev/IMAGE_TAG)"
+          docker compose -f docker-compose.prod.yml logs --tail 80 migrate api || true
+          sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$prev/" .env
+          cp -a .prev/docker-compose.prod.yml docker-compose.prod.yml
+          cp -a .prev/deploy/. deploy/
+          docker compose -f docker-compose.prod.yml up -d --remove-orphans
+          docker compose -f docker-compose.prod.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || true
+          echo "::error::A API nova não ficou saudável; a VPS voltou para $prev."
+          EOF

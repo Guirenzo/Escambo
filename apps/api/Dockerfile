@@ -8,7 +8,8 @@ WORKDIR /repo
 COPY . .
 RUN npm ci \
  && npm run build --workspace @escambo/api \
- && npm prune --omit=dev
+ && npm prune --omit=dev \
+ && mkdir -p apps/api/node_modules
 
 # --- runtime ---
 FROM node:22-alpine AS runtime
@@ -21,6 +22,9 @@ LABEL org.opencontainers.image.revision=$GIT_SHA \
 RUN apk add --no-cache tini
 WORKDIR /repo
 COPY --from=build --chown=node:node /repo/node_modules ./node_modules
+# O npm às vezes instala uma dependência dentro do workspace em vez de na raiz. Sem esta cópia a
+# imagem subiria sem ela ("Cannot find module"), e nenhum teste roda a imagem para avisar.
+COPY --from=build --chown=node:node /repo/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build --chown=node:node /repo/package.json ./package.json
 COPY --from=build --chown=node:node /repo/packages/types ./packages/types
 COPY --from=build --chown=node:node /repo/apps/api/package.json ./apps/api/package.json

@@ -110,6 +110,14 @@ const envSchema = z.object({
   DIGEST_HOUR: z.coerce.number().int().min(0).max(23).default(8),
   // Hora (Brasília, 0–23) a partir da qual o expurgo diário de anexos do chat roda (ADR 31).
   ATTACHMENT_PURGE_HOUR: z.coerce.number().int().min(0).max(23).default(4),
+
+  // --- Observabilidade (ADR 59) ---
+  // Porta do /metrics (Prometheus), num servidor à parte que só a rede interna alcança; 0 = desligado.
+  METRICS_PORT: z.coerce.number().int().min(0).max(65535).default(0),
+  // Rastreamento de erros no Sentry: vazio = desligado (nada sai da máquina).
+  SENTRY_DSN: z.string().default(''),
+  // Ambiente mostrado no Sentry (produção, homologação…); vazio = NODE_ENV.
+  SENTRY_ENVIRONMENT: z.string().default(''),
 });
 
 const parsed = envSchema.safeParse(process.env);

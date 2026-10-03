@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./settings.repository', () => ({
   settingsRepository: { list: vi.fn(), set: vi.fn(), get: vi.fn(), getNumber: vi.fn() },
@@ -124,6 +124,158 @@ describe('settingsService (ADR 32/33)', () => {
     expect(repo.set).toHaveBeenCalledWith('maintenance_mode', 'true', 'boolean', 9);
     expect(item.value).toBe(true);
     expect(await settingsService.maintenanceMode()).toBe(true); // cache limpo
+  });
+
+  it('a lista do painel pede ao banco todas as chaves editáveis, de uma vez', async () => {
+    await settingsService.listForAdmin();
+    expect(repo.list).toHaveBeenCalledTimes(1);
+    expect(repo.list).toHaveBeenCalledWith([...SETTING_KEYS]);
+  });
+
+  it('update com valor fora dos limites é 422 value_out_of_range e nada é gravado', async () => {
+    await expect(settingsService.update('platform_fee_percentage', 51, 9)).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'value_out_of_range',
+    });
+    await expect(settingsService.update('maintenance_mode', 1, 9)).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'value_out_of_range',
+    });
+    expect(repo.set).not.toHaveBeenCalled();
+    expect(repo.list).not.toHaveBeenCalled();
+  });
+
+  it('os limites da chave são inclusivos: o mínimo e o máximo passam, um a mais ou a menos não', () => {
+    expect(validateSettingValue('platform_fee_percentage', 0)).toBe('0');
+    expect(validateSettingValue('platform_fee_percentage', 50)).toBe('50');
+    expect(() => validateSettingValue('platform_fee_percentage', -1)).toThrow(/entre 0 e 50 %/);
+    expect(validateSettingValue('min_withdrawal_amount', 1)).toBe('1');
+    expect(validateSettingValue('min_withdrawal_amount', 10000)).toBe('10000');
+    expect(() => validateSettingValue('min_withdrawal_amount', 10000.01)).toThrow(
+      /entre 1 e 10000 R\$/,
+    );
+    expect(() => validateSettingValue('tacit_approval_days', Number.NaN)).toThrow(/inteiro/);
+    expect(() => validateSettingValue('tacit_approval_days', Infinity)).toThrow(/inteiro/);
+  });
+
+  it('update grava número como texto, com o tipo da chave e o admin, e devolve a linha relida daquela chave', async () => {
+    repo.list.mockResolvedValue([
+      {
+        key_name: 'min_service_price',
+        value: '12.5',
+        type: 'decimal',
+        updated_at: new Date('2026-09-14T12:00:00Z'),
+        updated_by_email: 'admin@escambo.demo',
+      },
+    ] as never);
+
+    const item = await settingsService.update('min_service_price', 12.5, 9);
+
+    expect(repo.set).toHaveBeenCalledTimes(1);
+    expect(repo.set).toHaveBeenCalledWith('min_service_price', '12.5', 'decimal', 9);
+    expect(repo.list).toHaveBeenCalledWith(['min_service_price']);
+    expect(item).toMatchObject({
+      key: 'min_service_price',
+      type: 'decimal',
+      value: 12.5,
+      defaultValue: 10,
+      min: 1,
+      max: 100000,
+      unit: 'R$',
+      updatedAt: '2026-09-14T12:00:00.000Z',
+      updatedBy: 'admin@escambo.demo',
+    });
+    // Grava antes de reler: o que volta é o que ficou no banco.
+    expect(repo.set.mock.invocationCallOrder[0]!).toBeLessThan(
+      repo.list.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  describe('cache curto das leituras', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('dentro de 5 s a chave não volta ao banco; passado esse tempo, a leitura é refeita', async () => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-09-15T12:00:00Z') });
+      repo.get.mockResolvedValue('true');
+      expect(await settingsService.maintenanceMode()).toBe(true);
+
+      repo.get.mockResolvedValue('false');
+      vi.setSystemTime(new Date('2026-09-15T12:00:04.999Z'));
+      expect(await settingsService.maintenanceMode()).toBe(true);
+      expect(repo.get).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(new Date('2026-09-15T12:00:05Z'));
+      expect(await settingsService.maintenanceMode()).toBe(false);
+      expect(repo.get).toHaveBeenCalledTimes(2);
+      expect(repo.get).toHaveBeenLastCalledWith('maintenance_mode');
+    });
+
+    it('o cache é por chave: ler uma não serve de resposta para outra, e a ausência da chave também fica em cache', async () => {
+      repo.get.mockResolvedValueOnce('false').mockResolvedValueOnce(null);
+
+      expect(await settingsService.barterEnabled()).toBe(false);
+      expect(await settingsService.maintenanceMode()).toBe(false);
+      expect(await settingsService.maintenanceMode()).toBe(false);
+
+      expect(repo.get).toHaveBeenCalledTimes(2);
+      expect(repo.get).toHaveBeenNthCalledWith(1, 'barter_enabled');
+      expect(repo.get).toHaveBeenNthCalledWith(2, 'maintenance_mode');
+    });
+
+    it('update só limpa o cache da chave alterada', async () => {
+      repo.get.mockResolvedValue('false');
+      expect(await settingsService.barterEnabled()).toBe(false);
+      expect(await settingsService.maintenanceMode()).toBe(false);
+
+      repo.get.mockResolvedValue('true');
+      await settingsService.update('maintenance_mode', true, 9);
+
+      expect(await settingsService.maintenanceMode()).toBe(true);
+      // Trocas continuam com o valor em cache: ninguém mexeu nelas.
+      expect(await settingsService.barterEnabled()).toBe(false);
+    });
+  });
+
+  it('cada leitor lê a sua chave, com o valor gravado no banco e não o padrão', async () => {
+    const stored: Record<string, string> = {
+      platform_fee_percentage: '12',
+      tacit_approval_days: '3',
+      proposal_expiry_hours: '48',
+      deadline_grace_hours: '36',
+      min_service_price: '25.50',
+      min_withdrawal_amount: '50',
+      barter_enabled: 'false',
+      maintenance_mode: 'true',
+    };
+    repo.get.mockImplementation(async (key: string) => stored[key] ?? null);
+
+    expect(await settingsService.feeRate()).toBe(0.12);
+    expect(await settingsService.minServicePrice()).toBe(25.5);
+    expect(await settingsService.minWithdrawal()).toBe(50);
+    expect(await settingsService.barterEnabled()).toBe(false);
+    expect(await settingsService.maintenanceMode()).toBe(true);
+    expect(await settingsService.publicSettings()).toEqual({
+      platformFeePercentage: 12,
+      tacitApprovalDays: 3,
+      proposalExpiryHours: 48,
+      deadlineGraceHours: 36,
+      extensionResponseHours: 48,
+      minServicePrice: 25.5,
+      minWithdrawalAmount: 50,
+      barterEnabled: false,
+      maintenanceMode: true,
+    });
+  });
+
+  it('liga/desliga lido como número vira 1 ou 0, e número lido como liga/desliga é sempre desligado', async () => {
+    repo.get.mockImplementation(async (key: string) =>
+      key === 'maintenance_mode' ? 'true' : key === 'barter_enabled' ? 'false' : '7',
+    );
+
+    expect(await settingsService.number('maintenance_mode')).toBe(1);
+    expect(await settingsService.number('barter_enabled')).toBe(0);
+    expect(await settingsService.flag('strike_upload_block_days')).toBe(false);
+    expect(await settingsService.value('strike_upload_block_days')).toBe(7);
   });
 
   it('leitores tipados e públicos com padrões quando não há linha', async () => {

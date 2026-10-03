@@ -34,5 +34,12 @@ export default defineConfig({
       PUSH_PROVIDER: 'simulated',
       APP_URL: 'http://app.escambo.test',
     },
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/*.test.ts', 'src/test-support/**'],
+      reporter: ['text-summary', 'json', 'lcov'],
+      reportsDirectory: 'coverage/integration',
+    },
   },
 });

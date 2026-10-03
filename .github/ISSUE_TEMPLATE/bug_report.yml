@@ -1,0 +1,54 @@
+name: Relato de bug
+description: Algo não funcionou como deveria (testes cruzados do squad, uso da demo ou da produção)
+title: 'bug: '
+labels: [bug]
+body:
+  - type: textarea
+    id: passos
+    attributes:
+      label: Passos para reproduzir
+      description: 'Conta usada (por exemplo, cliente@escambo.demo), tela e o que foi feito, em ordem.'
+      placeholder: |
+        1. Entrei como ...
+        2. Abri ...
+        3. Cliquei em ...
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: O que era esperado
+    validations:
+      required: true
+  - type: textarea
+    id: obtido
+    attributes:
+      label: O que aconteceu
+      description: Mensagem na tela, print ou o erro do console do navegador, se houver.
+    validations:
+      required: true
+  - type: input
+    id: versao
+    attributes:
+      label: Versão
+      description: Versão e commit que aparecem em GET /api/health (ou no rodapé do app).
+      placeholder: 1.40.0 (a1b2c3d)
+    validations:
+      required: false
+  - type: dropdown
+    id: onde
+    attributes:
+      label: Onde
+      options:
+        - Demo local (docker compose)
+        - Desenvolvimento (npm run dev)
+        - Produção
+    validations:
+      required: true
+  - type: input
+    id: navegador
+    attributes:
+      label: Navegador e aparelho
+      placeholder: Chrome 140 no Windows 11; Safari no iPhone 15
+    validations:
+      required: false

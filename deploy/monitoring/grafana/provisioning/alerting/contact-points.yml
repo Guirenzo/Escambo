@@ -1,0 +1,20 @@
+# Para onde os alertas vão (ADR 59): e-mail para ALERT_EMAIL_TO, pelo SMTP do sistema (entrypoint.sh).
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: escambo-email
+    receivers:
+      - uid: escambo-email
+        type: email
+        settings:
+          addresses: ${ALERT_EMAIL_TO}
+          singleEmail: true
+
+policies:
+  - orgId: 1
+    receiver: escambo-email
+    group_by: ['alertname']
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h

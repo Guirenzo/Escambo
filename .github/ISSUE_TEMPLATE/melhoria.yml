@@ -1,0 +1,24 @@
+name: Sugestão de melhoria
+description: Uma ideia para o produto ou para o código
+title: 'melhoria: '
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Que problema isso resolve?
+      description: Quem sente o problema (cliente, freelancer, admin, quem desenvolve) e em que situação.
+    validations:
+      required: true
+  - type: textarea
+    id: proposta
+    attributes:
+      label: O que você propõe
+    validations:
+      required: true
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas
+    validations:
+      required: false

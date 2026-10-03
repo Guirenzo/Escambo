@@ -5,6 +5,63 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.40.0] — 2026-10-02
+
+Engenharia de entrega (ADR 59): o que o Playbook de Web Apps exige em volta do produto. Nenhuma tela,
+rota pública, migration ou regra de negócio muda.
+
+### Adicionado
+
+- **Deploy contínuo:** com o CI verde em `main`, o workflow **Deploy** põe o commit no ar na VPS: descobre o
+  commit da imagem, copia a configuração dele, puxa as imagens, sobe, recarrega o Caddy e confere no
+  `/api/health` que o commit certo está no ar. Se a subida ou a conferência falham, a VPS volta sozinha para a
+  versão anterior. Rollback pelo mesmo workflow, com a tag anterior; um deploy automático nunca devolve a
+  produção a um commit já superado.
+- **Testes de unidade nas três camadas do backend**, sem banco: rotas e controllers (com o `authenticate` e o
+  tratamento de erros de verdade), _services_ e _repositories_ (com um banco falso que confere cada instrução).
+  A cobertura dos unitários foi de 50,2% para **99,1%** (3.042 testes); a meta do Playbook é 75%, e o
+  Vitest barra a rodada abaixo de 90%.
+- **Cobertura com meta no CI:** além dos unitários, 75% sobre a união unitários + integração (hoje 99,3%) e
+  25% no frontend (hoje 99,5%), contando todo arquivo de `src`.
+- **SonarCloud** no CI, com a cobertura do backend (liga com o segredo `SONAR_TOKEN`; informativo, não segura o
+  deploy), **`npm audit`** barrando vulnerabilidade alta e **Dependabot** para o npm e as actions.
+- **Métricas Prometheus** da API numa porta interna: latência por rota declarada, requisições abandonadas
+  (status 499), rodadas e duração dos jobs, versão no ar, processo.
+- **Monitoramento** num perfil do compose, igual na produção e na demo (`docker compose --profile monitoring up
+  -d`, Grafana em <http://localhost:3030>): Prometheus, sonda de uptime e Grafana com o painel "Escambo" e
+  cinco alertas, que saem **por e-mail** pelo SMTP do sistema.
+- **Erros no Sentry** com `SENTRY_DSN`: só as falhas do servidor, sem nenhum dado pessoal (nem e-mail na
+  mensagem, nem o texto de erro do banco, nem o rastro das chamadas).
+- **Wiki** gerada da pasta `docs/` e publicada a cada push na `main`, com páginas de arquitetura como
+  construída, qualidade, observabilidade e deploy.
+- Modelos de Pull Request e de issue em `.github/`.
+
+### Corrigido
+
+- **A imagem da API podia subir sem uma dependência.** Quando o npm instala um pacote dentro do workspace em vez
+  de na raiz, a imagem não o copiava e a API não iniciava ("Cannot find module"); nenhum teste roda a imagem
+  para avisar. A imagem passa a copiar também `apps/api/node_modules`.
+- **Vulnerabilidade alta no `nodemailer`** (10.0.3 → 10.0.13) e no `brace-expansion` (desenvolvimento).
+- **Origem recusada pelo CORS, URL mal codificada e corpo com charset desconhecido respondiam 500.** Passam a
+  responder 403 (`cors_origin`) e o 4xx correspondente.
+- **O encerramento da API saía sempre com erro:** o servidor HTTP era fechado duas vezes (o Socket.IO já o
+  fecha), e o pool do banco nunca era encerrado.
+- O RFC apontava um `docs/escambo.dbml` inexistente e marcava CI/CD, cobertura, análise estática,
+  monitoramento e Wiki como "planejado"; a versão 2.4 descreve o que foi construído.
+
+### Alterado
+
+- Node mínimo: 22 (o do CI e das imagens).
+- O resumo do job de publicação e o `DEPLOY.md` deixam de mandar atualizar a VPS à mão.
+
+### Para quem opera
+
+- O deploy, o SonarCloud, o Sentry e a Wiki ligam com passos que só o dono do repositório faz (segredos do
+  ambiente `production`, `SONAR_TOKEN`, `SENTRY_DSN` e a primeira página da Wiki). Até lá os jobs terminam
+  verdes avisando. O passo a passo está em `docs/wiki/Deploy-e-CI-CD.md`, `Qualidade.md` e `Observabilidade.md`.
+- O perfil `monitoring` da produção deve ser ligado depois do primeiro deploy pelo workflow, que é quem copia
+  `deploy/monitoring/` para a VPS.
+
 ## [1.39.0] — 2026-09-28
 
 ### Adicionado

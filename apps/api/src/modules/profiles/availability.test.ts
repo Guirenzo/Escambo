@@ -83,6 +83,17 @@ describe('períodos por dia: leitura e normalização', () => {
     expect(normalizePeriods(null, { '1': ['morning'] })).toBeNull();
     expect(normalizePeriods([1, 2], null)).toBeNull();
   });
+
+  it('normalizePeriods: dia marcado sem períodos informados fica de fora (vale o dia todo); sem dia marcado, nada', () => {
+    // Dias repetidos e fora de ordem na entrada saem uma vez só, em ordem.
+    expect(normalizePeriods([5, 1, 5, 2], { '5': ['evening'], '1': ['morning'] })).toBe(
+      '{"1":["morning"],"5":["evening"]}',
+    );
+    expect(normalizePeriods([], { '1': ['morning'] })).toBeNull();
+    expect(normalizePeriods([3], { '1': ['morning'] })).toBeNull();
+    // Período desconhecido não conta: sozinho, o dia volta a ser o dia todo.
+    expect(normalizePeriods([1], { '1': ['madrugada'] })).toBeNull();
+  });
 });
 
 describe('isAvailableNow', () => {

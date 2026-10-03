@@ -108,6 +108,11 @@ services:
       # Rate limit por IP (padrões de produção). Para e2e/carga local, suba: LOGIN_RATE_LIMIT_MAX=1000
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
       LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-10}
+      # Observabilidade (ADR 59): /metrics na porta 9464, só na rede interna (o Prometheus do perfil
+      # `monitoring` lê); erros no Sentry quando SENTRY_DSN tem valor.
+      METRICS_PORT: 9464
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-demo}
 
   api:
     image: *api-image
@@ -158,7 +163,72 @@ services:
       - ./scripts/demo-seed.mjs:/demo-seed.mjs:ro
     command: ['node', '/demo-seed.mjs']
 
+  # --- Monitoramento (ADR 59), opcional:  docker compose --profile monitoring up -d ---
+  # A mesma configuração da produção (deploy/monitoring), com a sonda apontada para o web local.
+  # Grafana em http://localhost:3030 (painel "Escambo"; na demo abre sem login, só para leitura).
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: escambo-prometheus
+    profiles: [monitoring]
+    restart: unless-stopped
+    # O prometheus.yml não lê variável de ambiente: o endereço da sonda entra por substituição na subida.
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >-
+        sed "s|__PROBE_URL__|$$PROBE_URL|g" /etc/prometheus/prometheus.tmpl.yml > /prometheus/prometheus.yml &&
+        exec /bin/prometheus --config.file=/prometheus/prometheus.yml --storage.tsdb.path=/prometheus
+        --storage.tsdb.retention.time=$$RETENTION
+    environment:
+      PROBE_URL: http://web:8080/api/health
+      RETENTION: ${PROMETHEUS_RETENTION:-15d}
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.tmpl.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - api
+
+  blackbox:
+    image: prom/blackbox-exporter:v0.27.0
+    container_name: escambo-blackbox
+    profiles: [monitoring]
+    restart: unless-stopped
+    volumes:
+      - ./deploy/monitoring/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+
+  grafana:
+    image: grafana/grafana-oss:12.1.1
+    container_name: escambo-grafana
+    profiles: [monitoring]
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      # Senha da demo (a mesma das contas de demonstração). Em produção ela é obrigatória no .env.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-Escambo@123}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/escambo.json
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-}
+      MAIL_FROM: ${MAIL_FROM:-Escambo <nao-responda@escambo.demo>}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+    entrypoint: ['/bin/sh', '/etc/escambo/grafana-entrypoint.sh']
+    volumes:
+      - ./deploy/monitoring/grafana/entrypoint.sh:/etc/escambo/grafana-entrypoint.sh:ro
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - '127.0.0.1:${GRAFANA_PORT:-3030}:3000'
+    depends_on:
+      - prometheus
+
 volumes:
   api_data:
+  prometheus_data:
+  grafana_data:
   escambo_db_data:
     name: escambo_db_data

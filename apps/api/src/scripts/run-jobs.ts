@@ -1,5 +1,6 @@
 import { pool } from '../config/db';
 import { logger } from '../config/logger';
+import { captureError, flushSentry, initSentry } from '../config/sentry';
 import { runAllJobs } from '../jobs/scheduler';
 
 /**
@@ -7,13 +8,17 @@ import { runAllJobs } from '../jobs/scheduler';
  *   npm run -w @escambo/api jobs:run
  *   docker compose run --rm api node dist/scripts/run-jobs.js
  */
-runAllJobs()
+initSentry()
+  .then(() => runAllJobs())
   .then(async () => {
     await pool.end();
+    await flushSentry();
     process.exit(0);
   })
   .catch(async (err) => {
     logger.error({ err }, 'Falha ao rodar jobs');
+    captureError(err);
     await pool.end();
+    await flushSentry().catch(() => undefined);
     process.exit(1);
   });

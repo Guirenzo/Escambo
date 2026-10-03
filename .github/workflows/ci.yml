@@ -24,14 +24,31 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Dependências sem vulnerabilidade alta (npm audit)
+        run: npm audit --audit-level=high
+
       - name: Lint (ESLint)
         run: npm run lint
 
       - name: Typecheck (tsc)
         run: npm run typecheck
 
-      - name: Testes (Vitest)
-        run: npm test
+      # Unitários com cobertura (ADR 59): a do web tem meta própria (25%, vite.config.ts); a da API
+      # só é conferida unida à da integração, no job `coverage`.
+      - name: Testes unitários + cobertura (API)
+        run: npm run -w @escambo/api test:cov
+
+      - name: Testes unitários + cobertura (Web, meta 25%)
+        run: npm run -w @escambo/web test:cov
+
+      - name: Relatórios de cobertura (unitários)
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: |
+            apps/api/coverage/unit
+            apps/web/coverage
+          retention-days: 7
 
       - name: Build (API + Web)
         run: npm run build
@@ -77,14 +94,108 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Testes de integração (fluxo de escrow ponta a ponta)
-        run: npm run -w @escambo/api test:int
+      - name: Testes de integração + cobertura
+        run: npm run -w @escambo/api test:int:cov
         env:
           DB_HOST: 127.0.0.1
           DB_PORT: '3306'
           TEST_DB_USER: root
           TEST_DB_PASSWORD: escambo_root
           TEST_DB_NAME: escambo_test
+
+      - name: Relatório de cobertura (integração)
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration
+          path: apps/api/coverage/integration
+          retention-days: 7
+
+  # Meta do backend (75%, Playbook de Web Apps) sobre a união unitários + integração (ADR 59).
+  coverage:
+    name: Cobertura · meta do backend
+    runs-on: ubuntu-latest
+    needs: [build-and-test, integration]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # O upload guarda a partir do ancestral comum dos caminhos: `coverage-unit` a partir de apps/,
+      # `coverage-integration` a partir da própria pasta.
+      - name: Baixar a cobertura dos unitários
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-unit
+          path: apps
+
+      - name: Baixar a cobertura da integração
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-integration
+          path: apps/api/coverage/integration
+
+      - name: União e meta (75%)
+        run: npm run coverage:merge
+
+      - name: Relatório unido
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-merged
+          path: |
+            coverage/sonar.lcov.info
+            apps/api/coverage/merged
+          retention-days: 30
+
+  # Análise estática e de segurança no SonarCloud (ADR 59), com a cobertura do backend. Liga sozinho
+  # quando o segredo SONAR_TOKEN existe (Settings → Secrets and variables → Actions); sem ele, só avisa
+  # (ou falha, com a variável DELIVERY_ENFORCED=true). É informativo: o resultado fica no painel do
+  # projeto e no PR, e uma falha do scan (serviço fora, chave errada) não segura imagem nem deploy.
+  sonar:
+    name: SonarCloud
+    runs-on: ubuntu-latest
+    needs: [coverage]
+    continue-on-error: true
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      ENFORCED: ${{ vars.DELIVERY_ENFORCED }}
+
+    steps:
+      - name: SonarCloud configurado?
+        if: env.SONAR_TOKEN == ''
+        run: |
+          if [ "$ENFORCED" = "true" ]; then
+            echo "::error::Falta o segredo SONAR_TOKEN (ver docs/wiki/Qualidade.md)."
+            exit 1
+          fi
+          echo "::warning::SonarCloud desligado: falta o segredo SONAR_TOKEN (ver docs/wiki/Qualidade.md)."
+
+      - name: Checkout (histórico completo, para o blame e o código novo)
+        if: env.SONAR_TOKEN != ''
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Baixar a cobertura
+        if: env.SONAR_TOKEN != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-merged
+          path: .
+
+      - name: Análise
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
 
   e2e:
     name: E2E · Playwright (Web + API + MySQL)
@@ -170,13 +281,13 @@ jobs:
           path: apps/web/playwright-report
           retention-days: 7
 
-  # Só em main, só com os três jobs verdes: constrói as imagens de produção e publica no GHCR.
-  # Tags: latest · sha curto · versão do package.json. A VPS só puxa (ver DEPLOY.md).
+  # Só em main, com testes, E2E e cobertura verdes: constrói as imagens de produção e publica no GHCR.
+  # Tags: latest · sha curto · versão do package.json. Quem as põe no ar é o workflow Deploy (deploy.yml).
   publish:
     name: Publicar imagens (GHCR)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build-and-test, integration, e2e]
+    needs: [build-and-test, integration, e2e, coverage]
     permissions:
       contents: read
       packages: write
@@ -247,5 +358,5 @@ jobs:
             echo "- \`${{ steps.img.outputs.api }}\` → latest · ${{ steps.img.outputs.sha }} · ${{ steps.img.outputs.version }}"
             echo "- \`${{ steps.img.outputs.web }}\` → latest · ${{ steps.img.outputs.sha }} · ${{ steps.img.outputs.version }}"
             echo
-            echo "Atualizar a VPS: \`docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d\` (DEPLOY.md)"
+            echo "O workflow **Deploy** põe este commit no ar na VPS quando o CI termina verde (DEPLOY.md, seção 3)."
           } >> "$GITHUB_STEP_SUMMARY"

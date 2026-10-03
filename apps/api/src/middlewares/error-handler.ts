@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler } from 'express';
 import { ZodError } from 'zod';
 import { logger } from '../config/logger';
+import { captureError } from '../config/sentry';
 import { HttpError } from '../utils/http-error';
 
 /**
@@ -39,6 +40,16 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
+  // Erro do cliente levantado pela camada HTTP (URL mal codificada, charset ou encoding do corpo
+  // que não existe, envio interrompido): responde o 4xx que ela indica. Não é falha do servidor.
+  const fromHttpLayer = (err as { expose?: unknown }).expose === true || err instanceof URIError;
+  const status = parseErr.status;
+  if (fromHttpLayer && typeof status === 'number' && status >= 400 && status < 500) {
+    res.status(status).json({ error: 'bad_request', message: 'Requisição inválida' });
+    return;
+  }
+
   logger.error({ err }, 'erro não tratado');
+  captureError(err);
   res.status(500).json({ error: 'internal_error', message: 'Erro interno do servidor' });
 };
