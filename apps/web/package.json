@@ -23,7 +23,7 @@
     "lucide-react": "^1.40.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.3",
     "socket.io-client": "^4.8.3"
   },
@@ -35,7 +35,7 @@
     "@testing-library/user-event": "^14.6.7",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^18.3.17",
-    "@types/react-dom": "^18.3.5",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^5.0.0",
     "jsdom": "^29.1.1",
