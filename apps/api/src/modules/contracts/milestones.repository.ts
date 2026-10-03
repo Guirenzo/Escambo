@@ -24,6 +24,8 @@ export interface MilestoneRow extends RowDataPacket {
   delivered_at: Date | null;
   /** Aprovação tácita do marco entregue (RN-024), gravada na entrega (ADR 57). */
   approval_due_at: Date | null;
+  /** Revisão em aberto: quando o cliente pediu (ADR 58). */
+  revision_requested_at?: Date | null;
   delivery_note: string | null;
   revision_note: string | null;
   released_at: Date | null;
@@ -62,8 +64,8 @@ export interface MilestoneSpec {
 }
 
 const COLS = `id, contract_id, title, description, amount, freelancer_net, sort_order, status,
-              due_at, overdue_notified_at, delivered_at, approval_due_at, delivery_note,
-              revision_note, released_at, created_at`;
+              due_at, overdue_notified_at, delivered_at, approval_due_at, revision_requested_at,
+              delivery_note, revision_note, released_at, created_at`;
 
 /**
  * Libera créditos do escrow (pendente → disponível) do freelancer, com linha no ledger de
@@ -138,8 +140,8 @@ export const milestonesRepository = {
     }
   },
 
-  async listForContract(contractId: number): Promise<MilestoneRow[]> {
-    const [rows] = await pool.query<MilestoneRow[]>(
+  async listForContract(contractId: number, conn?: PoolConnection): Promise<MilestoneRow[]> {
+    const [rows] = await (conn ?? pool).query<MilestoneRow[]>(
       `SELECT ${COLS} FROM contract_milestones WHERE contract_id = :contractId
         ORDER BY sort_order ASC, id ASC`,
       { contractId },
@@ -259,14 +261,14 @@ export const milestonesRepository = {
     now: Date;
     /** Aprovação tácita: só se a hora gravada no marco já passou deste instante. */
     dueBy?: Date | null;
-  }): Promise<{ ok: boolean; completed: boolean; net: number; title: string }> {
+  }): Promise<{ ok: boolean; completed: boolean; net: number; title: string; amount: number }> {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
       const status = await contractStatus(conn, p.contractId);
       if (status !== 'accepted' && status !== 'in_progress') {
         await conn.rollback();
-        return { ok: false, completed: false, net: 0, title: '' };
+        return { ok: false, completed: false, net: 0, title: '', amount: 0 };
       }
       const [rows] = await conn.query<MilestoneRow[]>(
         `SELECT ${COLS} FROM contract_milestones
@@ -278,7 +280,7 @@ export const milestonesRepository = {
       const m = rows[0];
       if (!m) {
         await conn.rollback();
-        return { ok: false, completed: false, net: 0, title: '' };
+        return { ok: false, completed: false, net: 0, title: '', amount: 0 };
       }
       const net =
         p.mode === 'credits' ? Math.round(Number(m.freelancer_net)) : Number(m.freelancer_net);
@@ -298,7 +300,7 @@ export const milestonesRepository = {
             });
       if (!paid) {
         await conn.rollback();
-        return { ok: false, completed: false, net: 0, title: '' };
+        return { ok: false, completed: false, net: 0, title: '', amount: 0 };
       }
       const [left] = await conn.query<RowDataPacket[]>(
         `SELECT COUNT(*) AS open FROM contract_milestones
@@ -329,7 +331,7 @@ export const milestonesRepository = {
         );
       }
       await conn.commit();
-      return { ok: true, completed, net, title: m.title };
+      return { ok: true, completed, net, title: m.title, amount: Number(m.amount) };
     } catch (err) {
       await conn.rollback();
       throw err;
@@ -344,16 +346,22 @@ export const milestonesRepository = {
     milestoneId: number;
     changedBy: number;
     note: string | null;
+    now: Date;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
       const status = await contractStatus(conn, p.contractId);
+      if (status !== 'accepted' && status !== 'in_progress') {
+        await conn.rollback();
+        return false;
+      }
       const [upd] = await conn.query<ResultSetHeader>(
         `UPDATE contract_milestones
-            SET status = 'funded', revision_note = :note, approval_due_at = NULL
+            SET status = 'funded', revision_note = :note, approval_due_at = NULL,
+                revision_requested_at = :now
           WHERE id = :id AND contract_id = :contractId AND status = 'delivered'`,
-        { id: p.milestoneId, contractId: p.contractId, note: p.note },
+        { id: p.milestoneId, contractId: p.contractId, note: p.note, now: p.now },
       );
       if (upd.affectedRows === 0) {
         await conn.rollback();
@@ -440,8 +448,11 @@ export const milestonesRepository = {
   },
 
   /** Títulos dos marcos, entregues ou não: o aviso de atraso e a descrição da disputa listam. */
-  async titlesByDelivery(contractId: number): Promise<{ delivered: string[]; missing: string[] }> {
-    const [rows] = await pool.query<RowDataPacket[]>(
+  async titlesByDelivery(
+    contractId: number,
+    conn?: PoolConnection,
+  ): Promise<{ delivered: string[]; missing: string[] }> {
+    const [rows] = await (conn ?? pool).query<RowDataPacket[]>(
       `SELECT title, status, delivered_at FROM contract_milestones
         WHERE contract_id = :contractId AND status <> 'cancelled'
         ORDER BY sort_order ASC, id ASC`,

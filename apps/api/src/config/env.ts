@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { JOBS_INTERVAL_MAX_MS } from '../utils/human-hours';
 
 /**
  * Validação das variáveis de ambiente (RNF-034: configs externalizadas).
@@ -58,7 +59,7 @@ const envSchema = z.object({
     .number()
     .int()
     .positive()
-    .max(30 * 60_000)
+    .max(JOBS_INTERVAL_MAX_MS)
     .default(5 * 60_000),
 
   // Pagamentos (depósitos na carteira). Só existe o gateway simulado neste estágio:

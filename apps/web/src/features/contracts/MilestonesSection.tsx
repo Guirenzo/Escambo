@@ -2,8 +2,9 @@ import { CalendarClock, CheckCircle2, Flag, PackageCheck, RotateCcw } from 'luci
 import type { ContractWithHistory, Milestone } from '@escambo/types';
 import { Button } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
-import { momentText } from '../../lib/deadline';
-import { brl, deadlineInfo, dt, dtm, MILESTONE_STATUS_LABEL } from '../../lib/format';
+import { deadlineInfo, deadlineText, deadlineZoneNote, momentText } from '../../lib/deadline';
+import { brl, dtm, MILESTONE_STATUS_LABEL } from '../../lib/format';
+import { DEFAULT_TIMEZONE } from '../../lib/timezones';
 import { useMilestoneAction } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 
@@ -106,12 +107,14 @@ export function MilestonesSection({
                 {m.description && <div className="muted tiny">{m.description}</div>}
                 {m.dueAt && (
                   <div className="muted tiny" data-testid={`milestone-due-${m.id}`}>
-                    <CalendarClock size={12} /> até {dt(m.dueAt)}
+                    <CalendarClock size={12} />{' '}
+                    {deadlineText(m.dueAt, m.dueZone ?? DEFAULT_TIMEZONE)}
+                    {deadlineZoneNote(m.dueAt, m.dueZone ?? DEFAULT_TIMEZONE, user?.timezone)}
                     {m.status === 'funded' &&
                       !m.deliveredAt &&
                       open &&
                       (() => {
-                        const info = deadlineInfo(m.dueAt);
+                        const info = deadlineInfo(m.dueAt, m.dueZone ?? DEFAULT_TIMEZONE);
                         return info ? (
                           <>
                             {' · '}
@@ -134,6 +137,17 @@ export function MilestonesSection({
                 {m.status === 'delivered' && m.approvalDueAt && (
                   <div className="muted tiny" data-testid={`milestone-approval-${m.id}`}>
                     aprovação automática a partir de {momentText(m.approvalDueAt, user?.timezone)}
+                  </div>
+                )}
+                {m.status === 'funded' && m.deliveredAt && m.revisionRequestedAt && (
+                  <div className="muted tiny" data-testid={`milestone-revision-since-${m.id}`}>
+                    revisão pedida em {momentText(m.revisionRequestedAt, user?.timezone)}
+                    {(() => {
+                      const days = Math.floor(
+                        (Date.now() - Date.parse(m.revisionRequestedAt)) / 86_400_000,
+                      );
+                      return days >= 7 ? ` (há ${days} dias)` : '';
+                    })()}
                   </div>
                 )}
                 {m.revisionNote && m.status === 'funded' && (

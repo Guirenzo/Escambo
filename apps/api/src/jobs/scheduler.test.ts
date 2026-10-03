@@ -2,8 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registry } from '../config/metrics';
 import { JOBS, runAllJobs } from './scheduler';
 
-const { captureError } = vi.hoisted(() => ({ captureError: vi.fn() }));
+const { captureError, runDeadlineReminders } = vi.hoisted(() => ({
+  captureError: vi.fn(),
+  runDeadlineReminders: vi.fn(),
+}));
 vi.mock('../config/sentry', () => ({ captureError }));
+// O job dos lembretes tem o próprio teste (deadline-reminders.test): aqui importa onde ele entra.
+vi.mock('./deadline-reminders', () => ({ runDeadlineReminders }));
 
 /** A linha de uma série no /metrics, ou undefined. */
 async function sample(series: string): Promise<string | undefined> {
@@ -24,6 +29,34 @@ describe('agendador de jobs', () => {
         / 0$/,
       );
     }
+  });
+
+  it('a ordem da rodada: o reparo antes de quem lê os prazos, as sanções antes dos lembretes e os lembretes antes do resumo diário', () => {
+    expect(JOBS.map((j) => j.name)).toEqual([
+      'repair-deadlines',
+      'tacit-approval',
+      'expire-proposals',
+      'overdue-contracts',
+      'deadline-reminders',
+      'daily-digest',
+      'moderation-sla-report',
+      'quiet-push-summary',
+      'expire-deposits',
+      'expire-exports',
+      'purge-attachments',
+      'purge-quarantine',
+      'saved-search-alerts',
+      'purge-push-subscriptions',
+    ]);
+  });
+
+  it('o job dos lembretes roda com o relógio do fluxo de prazos (sem hora fixa)', async () => {
+    const result = { zones: [] };
+    runDeadlineReminders.mockResolvedValue(result);
+    const job = JOBS.find((j) => j.name === 'deadline-reminders');
+
+    expect(await job!.run()).toBe(result);
+    expect(runDeadlineReminders.mock.calls).toEqual([[]]);
   });
 
   it('conta o resultado e a duração de cada job; a falha de um não para os outros e vai ao Sentry', async () => {

@@ -1015,6 +1015,13 @@ export interface Contract {
   approvalDueAt: string | null;
   /** Proposta: até quando o freelancer responde (RN-021). */
   proposalExpiresAt: string | null;
+  /**
+   * Fuso em que o prazo é um dia: vale até 23:59 nele (ADR 58). É o fuso em que o prazo gravado marca
+   * 23:59:59, preferindo o de quem entrega; só diz o dia, e as horas de agir vêm no fuso de quem lê.
+   */
+  deadlineZone: BrazilTimezone;
+  /** Revisão em aberto (entrega única): quando o cliente pediu; null fora de revisão (ADR 58). */
+  revisionRequestedAt: string | null;
 }
 
 /**
@@ -1035,6 +1042,8 @@ export interface ContractExtension {
   respondBy: string | null;
   /** Número do pedido (1 ou 2): vai na decisão, para o cliente decidir o pedido que viu. */
   seq: number;
+  /** Fuso em que a data pedida vale até 23:59 (ADR 58): o dia que as duas partes leem. */
+  deadlineZone: BrazilTimezone;
 }
 
 /**
@@ -1078,6 +1087,10 @@ export interface Milestone {
   releasedAt: string | null;
   /** Marco entregue: a partir de quando ele é aprovado automaticamente (RN-024). */
   approvalDueAt: string | null;
+  /** Fuso em que a data do marco é um dia (ADR 58), como `Contract.deadlineZone`. */
+  dueZone: BrazilTimezone;
+  /** Marco em revisão ('funded' já entregue antes): quando o cliente pediu (ADR 58). */
+  revisionRequestedAt: string | null;
 }
 
 export interface MilestoneInput {

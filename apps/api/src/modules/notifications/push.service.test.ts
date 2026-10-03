@@ -29,6 +29,8 @@ vi.mock('./push.provider', async (importOriginal) => ({
 
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
+import { EMAILED_NOTIFICATION_TYPES } from '../mail/mail.service';
+import { DEADLINE_FIRST_TYPES } from './deadline-types';
 import {
   buildPayload,
   passCategoryFor,
@@ -36,6 +38,7 @@ import {
   pushService,
   pushUrl,
   QUIET_PASS_BY_TYPE,
+  quietSummaryPayload,
   trimBody,
 } from './push.service';
 import { isPushEndpointAllowed } from './push.endpoint';
@@ -175,6 +178,28 @@ describe('o que sai no silêncio (ADR 56)', () => {
     expect(passCategoryFor('deadline_extension_declined', 'deadline')).toBeNull();
   });
 
+  it('o mapa tem exatamente as chaves do conjunto do e-mail, e o push usa o mesmo conjunto', () => {
+    expect(PUSHED_NOTIFICATION_TYPES).toBe(EMAILED_NOTIFICATION_TYPES);
+    expect(Object.keys(QUIET_PASS_BY_TYPE).sort()).toEqual([...EMAILED_NOTIFICATION_TYPES].sort());
+  });
+
+  it.each([
+    'contract_proposal_reminder',
+    'contract_deadline_reminder',
+    'contract_approval_reminder',
+    'contract_extension_reminder',
+    'contract_revision_stalled',
+    'contract_auto_approved',
+  ])(
+    '%s (ADR 58) vira push e espera o fim da janela: null no mapa, nenhuma categoria vale',
+    (type) => {
+      expect(PUSHED_NOTIFICATION_TYPES.has(type)).toBe(true);
+      expect(Object.hasOwn(QUIET_PASS_BY_TYPE, type)).toBe(true);
+      expect(QUIET_PASS_BY_TYPE[type]).toBeNull();
+      expect(passCategoryFor(type, 'deadline')).toBeNull();
+    },
+  );
+
   it('passCategoryFor aceita só o par do mapa', () => {
     expect(passCategoryFor('contract_overdue', 'deadline')).toBe('deadline');
     expect(passCategoryFor('contract_proposal', 'deadline')).toBeNull();
@@ -200,6 +225,42 @@ describe('o que sai no silêncio (ADR 56)', () => {
         .tag,
     ).toBe('contract_overdue:n5');
   });
+
+  it('o resumo do fim do silêncio põe primeiro os lembretes e o pedido de extensão (ADR 58); revisão parada e aprovação automática ficam na ordem de chegada', () => {
+    const p = quietSummaryPayload([
+      { title: 'Aprovada automaticamente: Site', type: 'contract_auto_approved' },
+      { title: 'Revisão parada: Vídeo', type: 'contract_revision_stalled' },
+      { title: 'Lembrete: entrega do Logo', type: 'contract_deadline_reminder' },
+      { title: 'Pedido de extensão: Site', type: 'deadline_extension_requested' },
+    ]);
+    expect(p.body).toBe(
+      '4 avisos ficaram por ver: Lembrete: entrega do Logo · Pedido de extensão: Site · Aprovada automaticamente: Site',
+    );
+  });
+
+  it.each([...DEADLINE_FIRST_TYPES])(
+    '%s vem antes de um aviso comum no resumo do silêncio',
+    (type) => {
+      expect(
+        quietSummaryPayload([
+          { title: 'Nova proposta', type: 'contract_proposal' },
+          { title: 'Hora-limite', type },
+        ]).body,
+      ).toBe('2 avisos ficaram por ver: Hora-limite · Nova proposta');
+    },
+  );
+
+  it.each(['contract_revision_stalled', 'contract_auto_approved', 'contract_delivered'])(
+    '%s não passa à frente: fica na ordem de chegada',
+    (type) => {
+      expect(
+        quietSummaryPayload([
+          { title: 'Nova proposta', type: 'contract_proposal' },
+          { title: 'Outro', type },
+        ]).body,
+      ).toBe('2 avisos ficaram por ver: Nova proposta · Outro');
+    },
+  );
 });
 
 /** Assinaturas por aparelho e o envio para todos eles (ADR 52), com repositories e provedor falsos. */
@@ -492,6 +553,137 @@ describe('pushService: assinaturas e envio (ADR 52)', () => {
       );
       expect(subs.markSent).toHaveBeenCalledWith(1);
       expect(notifs.markPushHeld).not.toHaveBeenCalled();
+    });
+
+    it('etiqueta própria no caminho normal (lembretes, ADR 58): fora do silêncio sai com tipo:alvo:nID, sem prioridade alta', async () => {
+      users.findById.mockResolvedValue(account());
+      subs.listForUser.mockResolvedValue([device(1)]);
+      provider.send.mockResolvedValue('sent');
+      const lembrete = {
+        type: 'contract_deadline_reminder',
+        title: 'Lembrete: Logo',
+        body: 'Entregue até sex, 02/10/2026, até 23:59.',
+        data: { contractId: 3 },
+        notificationId: 41,
+      };
+
+      await pushService.notify(7, { ...lembrete, ownTag: true }, noon);
+      // Sem a opção (ou com false), a etiqueta é a do assunto: substitui o aviso anterior.
+      await pushService.notify(7, { ...lembrete, notificationId: 42, ownTag: false }, noon);
+      await pushService.notify(7, { ...lembrete, notificationId: 43 }, noon);
+
+      expect(provider.send.mock.calls).toEqual([
+        [
+          target(1),
+          {
+            title: 'Lembrete: Logo',
+            body: 'Entregue até sex, 02/10/2026, até 23:59.',
+            url: '/contratos/3',
+            tag: 'contract_deadline_reminder:3:n41',
+          },
+          { ttlSeconds: 12 * 3600 },
+        ],
+        [
+          target(1),
+          {
+            title: 'Lembrete: Logo',
+            body: 'Entregue até sex, 02/10/2026, até 23:59.',
+            url: '/contratos/3',
+            tag: 'contract_deadline_reminder:3',
+          },
+          { ttlSeconds: 12 * 3600 },
+        ],
+        [
+          target(1),
+          {
+            title: 'Lembrete: Logo',
+            body: 'Entregue até sex, 02/10/2026, até 23:59.',
+            url: '/contratos/3',
+            tag: 'contract_deadline_reminder:3',
+          },
+          { ttlSeconds: 12 * 3600 },
+        ],
+      ]);
+      for (const call of provider.send.mock.calls) {
+        expect(call[2]).toStrictEqual({ ttlSeconds: 12 * 3600 });
+      }
+      expect(notifs.markPushHeld).not.toHaveBeenCalled();
+    });
+
+    it('lembrete com etiqueta própria dentro do silêncio fica retido, mesmo para quem libera o prazo', async () => {
+      const night = new Date('2026-09-15T01:00:00Z'); // 22:00 em Brasília
+      users.findById.mockResolvedValue(
+        account({ push_quiet_start: 22, push_quiet_end: 7, push_quiet_pass: 'deadline' }),
+      );
+
+      await pushService.notify(
+        7,
+        {
+          type: 'contract_deadline_reminder',
+          title: 'Lembrete: Logo',
+          data: { contractId: 3 },
+          notificationId: 41,
+          ownTag: true,
+        },
+        night,
+      );
+
+      expect(notifs.markPushHeld.mock.calls).toEqual([[41, night]]);
+      expect(subs.listForUser).not.toHaveBeenCalled();
+      expect(provider.send).not.toHaveBeenCalled();
+    });
+
+    it('lembrete que chega afirmando a categoria do prazo não fura o silêncio: o par não está no mapa, vai para o log e o aviso fica retido', async () => {
+      const night = new Date('2026-09-15T01:00:00Z'); // 22:00 em Brasília
+      users.findById.mockResolvedValue(
+        account({ push_quiet_start: 22, push_quiet_end: 7, push_quiet_pass: 'deadline' }),
+      );
+      const warn = vi.spyOn(logger, 'warn');
+
+      for (const [i, type] of [
+        'contract_proposal_reminder',
+        'contract_deadline_reminder',
+        'contract_approval_reminder',
+        'contract_extension_reminder',
+        'contract_revision_stalled',
+        'contract_auto_approved',
+      ].entries()) {
+        await pushService.notify(
+          7,
+          {
+            type,
+            title: 'Aviso',
+            data: { contractId: 3 },
+            notificationId: 60 + i,
+            passCategory: 'deadline',
+            ownTag: true,
+          },
+          night,
+        );
+      }
+
+      expect(notifs.markPushHeld.mock.calls).toEqual([
+        [60, night],
+        [61, night],
+        [62, night],
+        [63, night],
+        [64, night],
+        [65, night],
+      ]);
+      expect(provider.send).not.toHaveBeenCalled();
+      expect(warn.mock.calls.map((c) => c[0])).toEqual([
+        { type: 'contract_proposal_reminder', passCategory: 'deadline' },
+        { type: 'contract_deadline_reminder', passCategory: 'deadline' },
+        { type: 'contract_approval_reminder', passCategory: 'deadline' },
+        { type: 'contract_extension_reminder', passCategory: 'deadline' },
+        { type: 'contract_revision_stalled', passCategory: 'deadline' },
+        { type: 'contract_auto_approved', passCategory: 'deadline' },
+      ]);
+      for (const call of warn.mock.calls) {
+        expect(call[1]).toBe(
+          'categoria fora da lista do ADR 56 para este tipo: vai como aviso comum',
+        );
+      }
     });
 
     it('dentro do silêncio, aviso sem notificação in-app (sem id) fica retido sem marcar nada', async () => {

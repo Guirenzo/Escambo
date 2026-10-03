@@ -184,14 +184,15 @@ describe('requestExtension (RN-028, ADR 57)', () => {
       now: NOW,
       respondBy: brt('2026-10-08 12:00:00'),
     });
+    // O novo prazo é dito como dia (ADR 58); o cliente está no mesmo relógio, então sem nota de fuso.
     expect(notify).toHaveBeenCalledWith(
       1,
-      expect.objectContaining({
+      {
         type: 'deadline_extension_requested',
-        body: expect.stringMatching(
-          /^Responda até qui, 08\/10 às 12:00: novo prazo proposto 16\/10\/2026\./,
-        ),
-      }),
+        title: 'Pedido de extensão: Vídeo institucional',
+        body: 'Responda até qui, 08/10 às 12:00: novo prazo proposto sex, 16/10/2026, até 23:59. Sem resposta, o pedido expira e vale o prazo atual. Motivo: O material do cliente chegou depois do combinado',
+        data: { contractId: 1 },
+      },
       {},
     );
   });
@@ -286,15 +287,18 @@ describe('resolveExtension (RN-028, ADR 57)', () => {
         now: NOW,
         changedBy: 1,
         status: 'accepted',
-        note: 'Prazo estendido de 09/10/2026 para 16/10/2026 (RN-028): Atraso do material',
+        // O histórico não tem leitor: o novo prazo sempre leva o fuso (ADR 58).
+        note: 'Prazo estendido de sex, 09/10 para sex, 16/10/2026, até 23:59 (horário de Brasília) (RN-028): Atraso do material',
       }),
     );
     expect(notify).toHaveBeenCalledWith(
       2,
-      expect.objectContaining({
+      {
         type: 'deadline_extension_accepted',
-        title: 'Extensão aceita: novo prazo 16/10/2026',
-      }),
+        title: 'Extensão aceita: novo prazo sex, 16/10',
+        body: 'Vídeo institucional: o novo prazo é sex, 16/10/2026, até 23:59; não há outra extensão nesta contratação.',
+        data: { contractId: 1 },
+      },
       {},
     );
   });
@@ -329,7 +333,7 @@ describe('resolveExtension (RN-028, ADR 57)', () => {
     expect(params).toMatchObject({
       type: 'deadline_extension_declined',
       title: 'Extensão recusada: Vídeo institucional',
-      body: 'Prazo vencido. Até qua, 07/10 às 09:00: entregue ou peça a extensão, senão a disputa abre sozinha. O prazo era 02/10/2026. Você ainda pode fazer mais um pedido.',
+      body: 'Prazo vencido. Até qua, 07/10 às 09:00: entregue ou peça a extensão, senão a disputa abre sozinha. O prazo era sex, 02/10/2026, até 23:59. Você ainda pode fazer mais um pedido.',
     });
     expect(opts).toEqual({});
   });
@@ -363,7 +367,7 @@ describe('resolveExtension (RN-028, ADR 57)', () => {
       {
         type: 'deadline_extension_declined',
         title: 'Extensão recusada: Vídeo institucional',
-        body: 'Sem entrega nem extensão aceita, a disputa abre a partir de qua, 07/10 às 12:00; o aviso de atraso sai a partir de ter, 06/10 às 12:00. O prazo era 05/10/2026. Você ainda pode fazer mais um pedido.',
+        body: 'Sem entrega nem extensão aceita, a disputa abre a partir de qua, 07/10 às 12:00; o aviso de atraso sai a partir de ter, 06/10 às 12:00. O prazo era seg, 05/10/2026, até 23:59. Você ainda pode fazer mais um pedido.',
         data: { contractId: 1 },
       },
       {},
@@ -394,18 +398,22 @@ describe('expireExtension (job, ADR 57)', () => {
     });
     expect(notify).toHaveBeenCalledWith(
       2,
-      expect.objectContaining({
+      {
         type: 'deadline_extension_expired',
-        body: 'Vale o prazo atual, 09/10/2026. O cliente não respondeu até ter, 06/10 às 10:00. Você ainda pode fazer mais um pedido.',
-      }),
+        title: 'Pedido de extensão sem resposta: Vídeo institucional',
+        body: 'Vale o prazo atual, sex, 09/10/2026, até 23:59. O cliente não respondeu até ter, 06/10 às 10:00. Você ainda pode fazer mais um pedido.',
+        data: { contractId: 1 },
+      },
       {},
     );
     expect(notify).toHaveBeenCalledWith(
       1,
-      expect.objectContaining({
+      {
         type: 'deadline_extension_expired',
         title: 'Pedido de extensão expirou: Vídeo institucional',
-      }),
+        body: 'Sem a sua resposta até ter, 06/10 às 10:00, o pedido de novo prazo, sex, 16/10/2026, até 23:59, expirou e vale o prazo atual, sex, 09/10/2026, até 23:59.',
+        data: { contractId: 1 },
+      },
       {},
     );
 
@@ -500,13 +508,15 @@ describe('prazo estourado (RN-029, ADR 57)', () => {
     });
     const [freela, cliente] = [notify.mock.calls[0]!, notify.mock.calls[1]!];
     expect(freela[0]).toBe(2);
+    // O prazo é 23:59:59 em Brasília (não em Manaus): quem entrega lê o dia com o fuso anotado, e
+    // o cliente, no mesmo relógio do prazo, sem a nota (ADR 58).
     expect(freela[1].body).toBe(
-      'Até qua, 07/10 às 09:03: entregue ou peça a extensão, senão a disputa abre sozinha. O cliente já pode cancelar com reembolso integral. O prazo era 05/10/2026.',
+      'Até qua, 07/10 às 09:03: entregue ou peça a extensão, senão a disputa abre sozinha. O cliente já pode cancelar com reembolso integral. O prazo era seg, 05/10/2026, até 23:59 (horário de Brasília).',
     );
     expect(freela[2]).toEqual({ passCategory: 'deadline' });
     expect(cliente[0]).toBe(1);
     expect(cliente[1].body).toBe(
-      'Sem entrega nem extensão aceita até qua, 07/10 às 10:03, a disputa abre sozinha. Se preferir, cancele com reembolso integral. O prazo era 05/10/2026 e não houve entrega.',
+      'Sem entrega nem extensão aceita até qua, 07/10 às 10:03, a disputa abre sozinha. Se preferir, cancele com reembolso integral. O prazo era seg, 05/10/2026, até 23:59 e não houve entrega.',
     );
     expect(cliente[2]).toEqual({});
 
@@ -556,7 +566,7 @@ describe('prazo estourado (RN-029, ADR 57)', () => {
         openedBy: 1,
         reason: 'deadline',
         description:
-          'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega (02/10/2026) venceu sem entrega, o aviso saiu em 03/10/2026 às 09:03 e, até 04/10/2026 às 09:03, não houve entrega nem extensão aceita. Horários de Brasília.',
+          'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, sex, 02/10/2026, até 23:59 (horário de Brasília), venceu sem entrega, o aviso saiu em 03/10/2026 às 09:03 e, até 04/10/2026 às 09:03, não houve entrega nem extensão aceita. O aviso e o limite estão em horário de Brasília.',
       }),
       { guard: 'AND guarda_da_disputa', now: NOW },
     );
@@ -592,7 +602,7 @@ describe('prazo estourado (RN-029, ADR 57)', () => {
     expect(disputes.create).toHaveBeenCalledWith(
       expect.objectContaining({
         description:
-          'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega (02/10/2026) venceu com marcos nunca entregues, o aviso saiu em 03/10/2026 às 09:03 e, até 04/10/2026 às 09:03, eles não foram entregues nem houve extensão aceita. Horários de Brasília. Marcos entregues: «Layout»; sem entrega: «Publicação».',
+          'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, sex, 02/10/2026, até 23:59 (horário de Brasília), venceu com marcos nunca entregues, o aviso saiu em 03/10/2026 às 09:03 e, até 04/10/2026 às 09:03, eles não foram entregues nem houve extensão aceita. O aviso e o limite estão em horário de Brasília. Marcos entregues: «Layout»; sem entrega: «Publicação».',
       }),
       { guard: 'AND guarda_da_disputa', now: NOW },
     );
@@ -708,12 +718,12 @@ describe('entrega única (RN-024, ADR 57)', () => {
 });
 
 describe('marco atrasado (RN-069, ADR 57)', () => {
-  // Prazo do marco: 23:30 de 05/10 em Manaus, que já é 00:30 de 06/10 em Brasília.
+  // Prazo do marco: o fim de 05/10 em Manaus (23:59:59), que já é 00:59:59 de 06/10 em Brasília.
   const overdue = {
     id: 5,
     contract_id: 31,
     title: 'Layout',
-    due_at: brt('2026-10-06 00:30:00'),
+    due_at: brt('2026-10-06 00:59:59'),
     client_id: 7,
     freelancer_id: 44,
     contract_title: 'Vídeo institucional',
@@ -731,7 +741,7 @@ describe('marco atrasado (RN-069, ADR 57)', () => {
     expect(notify).not.toHaveBeenCalled();
   });
 
-  it('marca o aviso uma vez e avisa as duas partes, cada uma com a data no próprio fuso, sem furar o silêncio', async () => {
+  it('marca o aviso uma vez e avisa as duas partes com o mesmo dia, com o fuso anotado só para quem está em outro relógio, sem furar o silêncio', async () => {
     mark.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     const at = brt('2026-10-06 10:03:00.400'); // 09:03 em Manaus
 
@@ -745,17 +755,18 @@ describe('marco atrasado (RN-069, ADR 57)', () => {
       {
         type: 'milestone_overdue',
         title: 'Marco atrasado: Layout',
-        body: 'Vídeo institucional: o prazo deste marco era 05/10/2026. Entregue o marco ou combine com o cliente pelo chat.',
+        body: 'Vídeo institucional: o prazo deste marco era seg, 05/10/2026, até 23:59. Entregue o marco ou combine com o cliente pelo chat.',
         data: { contractId: 31, milestoneId: 5 },
       },
       {},
     );
+    // O cliente, em Brasília, lê o mesmo dia 05/10 (não 06/10), com o fuso do prazo anotado.
     expect(notify).toHaveBeenCalledWith(
       7,
       {
         type: 'milestone_overdue',
         title: 'Marco atrasado: Layout',
-        body: 'Vídeo institucional: o prazo deste marco era 06/10/2026 e ele não foi entregue. É o prazo da contratação que abre a disputa automática.',
+        body: 'Vídeo institucional: o prazo deste marco era seg, 05/10/2026, até 23:59 (horário de Manaus) e ele não foi entregue. É o prazo da contratação que abre a disputa automática.',
         data: { contractId: 31, milestoneId: 5 },
       },
       {},
@@ -765,6 +776,27 @@ describe('marco atrasado (RN-069, ADR 57)', () => {
     notify.mockClear();
     expect(await contractsService.notifyMilestoneOverdue(overdue, at)).toBe(false);
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('prazo antigo que não é fim de dia em nenhum fuso: vale o fuso de quem entrega, com a hora real', async () => {
+    mark.mockResolvedValueOnce(true);
+    // 23:30 em Manaus (00:30 em Brasília): nenhum relógio marca 23:59:59.
+    const old = { ...(overdue as object), due_at: brt('2026-10-06 00:30:00') } as never;
+
+    expect(await contractsService.notifyMilestoneOverdue(old, brt('2026-10-06 10:03:00'))).toBe(
+      true,
+    );
+
+    expect(notify.mock.calls.map((c) => [c[0], c[1].body])).toEqual([
+      [
+        44,
+        'Vídeo institucional: o prazo deste marco era seg, 05/10/2026, até 23:30. Entregue o marco ou combine com o cliente pelo chat.',
+      ],
+      [
+        7,
+        'Vídeo institucional: o prazo deste marco era seg, 05/10/2026, até 23:30 (horário de Manaus) e ele não foi entregue. É o prazo da contratação que abre a disputa automática.',
+      ],
+    ]);
   });
 });
 
@@ -799,24 +831,110 @@ describe('aprovação tácita da entrega única (RN-024, job)', () => {
       ],
     });
     expect(c.status).toBe('completed');
+    // A tácita move dinheiro sozinha: as duas partes são avisadas (ADR 58). O cliente lê o valor da
+    // contratação e até quando avalia (7 dias depois de agora); quem entrega, o líquido.
+    expect(notify.mock.calls).toEqual([
+      [
+        1,
+        {
+          type: 'contract_auto_approved',
+          title: 'Aprovada automaticamente: Vídeo institucional',
+          body: 'Sem resposta até ter, 06/10 às 11:00, a entrega foi aprovada e o pagamento foi liberado ao freelancer (contratação de R$ 900,00). Você pode avaliar até ter, 13/10 às 12:00.',
+          data: { contractId: 1 },
+        },
+        {},
+      ],
+      [
+        2,
+        {
+          type: 'contract_completed',
+          title: 'Contratação concluída: Vídeo institucional',
+          body: 'Sem resposta do cliente até ter, 06/10 às 11:00, a entrega foi aprovada automaticamente e R$ 765,00 foi liberado na sua carteira.',
+          data: { contractId: 1 },
+        },
+        {},
+      ],
+    ]);
+    // Os avisos só saem depois da transição gravada.
+    expect(repo.transition.mock.invocationCallOrder[0]!).toBeLessThan(
+      notify.mock.invocationCallOrder[0]!,
+    );
   });
 
-  it('entrega que o cliente já respondeu (saiu de delivered) não é aprovada', async () => {
+  it('cada parte lê a hora da aprovação no próprio fuso, e o cliente lê no dele até quando avalia', async () => {
+    repo.findById.mockResolvedValue({
+      ...delivered(),
+      client_timezone: 'America/Manaus',
+    } as ContractRow);
+    repo.transition.mockResolvedValue(true);
+
+    await contractsService.approveTacitly(1, NOW);
+
+    expect(notify.mock.calls.map((c) => [c[0], c[1].body])).toEqual([
+      [
+        1,
+        'Sem resposta até ter, 06/10 às 10:00, a entrega foi aprovada e o pagamento foi liberado ao freelancer (contratação de R$ 900,00). Você pode avaliar até ter, 13/10 às 11:00.',
+      ],
+      [
+        2,
+        'Sem resposta do cliente até ter, 06/10 às 11:00, a entrega foi aprovada automaticamente e R$ 765,00 foi liberado na sua carteira.',
+      ],
+    ]);
+  });
+
+  it('em créditos, os avisos dizem os créditos liberados; na troca, que a entrega conta para fechar a troca', async () => {
+    repo.transition.mockResolvedValue(true);
+    repo.findById.mockResolvedValue({ ...delivered(), payment_mode: 'credits' } as ContractRow);
+
+    await contractsService.approveTacitly(1, NOW);
+
+    expect(notify.mock.calls.map((c) => [c[0], c[1].body])).toEqual([
+      [
+        1,
+        'Sem resposta até ter, 06/10 às 11:00, a entrega foi aprovada e os 765 créditos foram liberados ao freelancer. Você pode avaliar até ter, 13/10 às 12:00.',
+      ],
+      [
+        2,
+        'Sem resposta do cliente até ter, 06/10 às 11:00, a entrega foi aprovada automaticamente e 765 créditos foram liberados na sua carteira.',
+      ],
+    ]);
+
+    notify.mockClear();
+    repo.findById.mockResolvedValue({ ...delivered(), payment_mode: 'barter' } as ContractRow);
+
+    await contractsService.approveTacitly(1, NOW);
+
+    expect(notify.mock.calls.map((c) => [c[0], c[1].body])).toEqual([
+      [
+        1,
+        'Sem resposta até ter, 06/10 às 11:00, a entrega foi aprovada e conta para fechar a troca. Você pode avaliar até ter, 13/10 às 12:00.',
+      ],
+      [
+        2,
+        'Sem resposta do cliente até ter, 06/10 às 11:00, a entrega foi aprovada automaticamente e conta para fechar a troca.',
+      ],
+    ]);
+  });
+
+  it('entrega que o cliente já respondeu (saiu de delivered) não é aprovada nem avisada', async () => {
     repo.findById.mockResolvedValue(row({ status: 'revision_requested', deliveries_count: 1 }));
     await expect(contractsService.approveTacitly(1, NOW)).rejects.toMatchObject({
       statusCode: 409,
       code: 'invalid_transition',
     });
     expect(repo.transition).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 
-  it('se a hora gravada mudou no meio (a guarda não pegou): 409 conflict', async () => {
+  it('se a hora gravada mudou no meio (a guarda não pegou): 409 conflict e ninguém é avisado', async () => {
     repo.findById.mockResolvedValue(delivered());
     repo.transition.mockResolvedValue(false);
     await expect(contractsService.approveTacitly(1, NOW)).rejects.toMatchObject({
       statusCode: 409,
       code: 'conflict',
     });
+    expect(notify).not.toHaveBeenCalled();
+    expect(gamificationService.onContractCompleted).not.toHaveBeenCalled();
   });
 });
 
@@ -880,10 +998,12 @@ describe('create: validade da proposta gravada (RN-021, ADR 57)', () => {
     );
     expect(notify).toHaveBeenLastCalledWith(
       2,
-      expect.objectContaining({
+      {
         type: 'contract_proposal',
-        body: 'Vídeo institucional. Prazo de entrega: 20/10/2026. Responda até sex, 09/10 às 12:00.',
-      }),
+        title: 'Nova proposta de contratação',
+        body: 'Vídeo institucional. Prazo de entrega: ter, 20/10/2026, até 23:59. Responda até sex, 09/10 às 12:00.',
+        data: { contractId: 1 },
+      },
       {},
     );
   });
@@ -960,7 +1080,8 @@ describe('requestExtension: limites e fusos (RN-028, ADR 57)', () => {
     repo.findById.mockResolvedValue(other({ client_timezone: 'America/Manaus' }));
     repo.requestExtension.mockResolvedValue(true);
     const input = {
-      deadlineAt: '2026-10-17T03:30:00.500Z', // 00:30 de 17/10 em Brasília, 23:30 de 16/10 em Manaus
+      // O fim de 16/10 em Manaus (00:59:59 de 17/10 em Brasília), com a fração que a tela pode mandar.
+      deadlineAt: '2026-10-17T03:59:59.500Z',
       reason: 'O material do cliente chegou depois do combinado',
     };
 
@@ -969,7 +1090,7 @@ describe('requestExtension: limites e fusos (RN-028, ADR 57)', () => {
     expect(repo.findById).toHaveBeenCalledWith(31);
     expect(repo.requestExtension).toHaveBeenCalledWith({
       id: 31,
-      deadlineAt: new Date('2026-10-17T03:30:00.000Z'),
+      deadlineAt: new Date('2026-10-17T03:59:59.000Z'),
       reason: input.reason,
       now: at,
       respondBy: brt('2026-10-08 20:45:00'),
@@ -980,7 +1101,8 @@ describe('requestExtension: limites e fusos (RN-028, ADR 57)', () => {
       {
         type: 'deadline_extension_requested',
         title: 'Pedido de extensão: Vídeo institucional',
-        body: 'Responda até qui, 08/10 às 19:45: novo prazo proposto 16/10/2026. Sem resposta, o pedido expira e vale o prazo atual. Motivo: O material do cliente chegou depois do combinado',
+        // O dia pedido é o de Manaus, o mesmo relógio do cliente: sem nota de fuso.
+        body: 'Responda até qui, 08/10 às 19:45: novo prazo proposto sex, 16/10/2026, até 23:59. Sem resposta, o pedido expira e vale o prazo atual. Motivo: O material do cliente chegou depois do combinado',
         data: { contractId: 31 },
       },
       {},
@@ -994,7 +1116,8 @@ describe('resolveExtension: quem decide, quem é avisado e em que fuso (RN-028, 
       status: 'in_progress',
       extension_status: 'pending',
       extension_requests: 1,
-      extension_deadline_at: brt('2026-10-17 00:30:00'),
+      // O fim de 16/10 em Manaus, o fuso de quem entrega.
+      extension_deadline_at: brt('2026-10-17 00:59:59'),
       extension_reason: 'Atraso do material',
       extension_requested_at: brt('2026-10-06 10:00:00'),
       extension_respond_by: brt('2026-10-08 10:00:00'),
@@ -1047,18 +1170,18 @@ describe('resolveExtension: quem decide, quem é avisado e em que fuso (RN-028, 
       changedBy: 7,
       // O status não muda: a linha do tempo repete o atual.
       status: 'in_progress',
-      // A nota é em horário de Brasília: 00:30 de 17/10.
-      note: 'Prazo estendido de 09/10/2026 para 17/10/2026 (RN-028): Atraso do material',
+      // O histórico não tem leitor: cada prazo é dito no fuso em que é um dia, com a nota do fuso.
+      note: 'Prazo estendido de sex, 09/10 para sex, 16/10/2026, até 23:59 (horário de Manaus) (RN-028): Atraso do material',
     });
     expect(repo.settleExtension).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledTimes(1);
-    // Quem entrega está em Manaus, onde o novo prazo ainda é 23:30 de 16/10.
+    // Quem entrega está em Manaus, o relógio do novo prazo: o dia vai sem nota de fuso.
     expect(notify).toHaveBeenCalledWith(
       44,
       {
         type: 'deadline_extension_accepted',
-        title: 'Extensão aceita: novo prazo 16/10/2026',
-        body: 'Vídeo institucional: o prazo foi estendido; não há outra extensão nesta contratação.',
+        title: 'Extensão aceita: novo prazo sex, 16/10',
+        body: 'Vídeo institucional: o novo prazo é sex, 16/10/2026, até 23:59; não há outra extensão nesta contratação.',
         data: { contractId: 31 },
       },
       {},
@@ -1107,7 +1230,8 @@ describe('resolveExtension: quem decide, quem é avisado e em que fuso (RN-028, 
       {
         type: 'deadline_extension_declined',
         title: 'Extensão recusada: Vídeo institucional',
-        body: 'Prazo vencido. Até qua, 07/10 às 09:00: entregue o marco «Publicação» ou peça a extensão, senão a disputa abre sozinha. O prazo era 02/10/2026. Você ainda pode fazer mais um pedido.',
+        // O prazo era o fim do dia em Brasília (o fuso do cliente); quem entrega, em Manaus, lê o fuso.
+        body: 'Prazo vencido. Até qua, 07/10 às 09:00: entregue o marco «Publicação» ou peça a extensão, senão a disputa abre sozinha. O prazo era sex, 02/10/2026, até 23:59 (horário de Brasília). Você ainda pode fazer mais um pedido.',
         data: { contractId: 31 },
       },
       {},
@@ -1144,7 +1268,7 @@ describe('expireExtension: quem é avisado e com que carência (job, ADR 57)', (
       {
         type: 'deadline_extension_expired',
         title: 'Pedido de extensão sem resposta: Vídeo institucional',
-        body: 'Vale o prazo atual, 09/10/2026. O cliente não respondeu até ter, 06/10 às 10:00. Você ainda pode fazer mais um pedido.',
+        body: 'Vale o prazo atual, sex, 09/10/2026, até 23:59. O cliente não respondeu até ter, 06/10 às 10:00. Você ainda pode fazer mais um pedido.',
         data: { contractId: 31 },
       },
       {},
@@ -1154,7 +1278,8 @@ describe('expireExtension: quem é avisado e com que carência (job, ADR 57)', (
       {
         type: 'deadline_extension_expired',
         title: 'Pedido de extensão expirou: Vídeo institucional',
-        body: 'Sem a sua resposta até ter, 06/10 às 09:00, o pedido de novo prazo (16/10/2026) expirou e vale o prazo atual, 09/10/2026.',
+        // O cliente está em Manaus: os dois prazos são o fim do dia em Brasília e levam a nota.
+        body: 'Sem a sua resposta até ter, 06/10 às 09:00, o pedido de novo prazo, sex, 16/10/2026, até 23:59 (horário de Brasília), expirou e vale o prazo atual, sex, 09/10/2026, até 23:59 (horário de Brasília).',
         data: { contractId: 31 },
       },
       {},
@@ -1373,7 +1498,7 @@ describe('quem age e quem é avisado nos prazos', () => {
         {
           type: 'contract_overdue',
           title: 'Prazo estourado: Vídeo institucional',
-          body: 'Até qua, 07/10 às 12:00: registre a entrega, senão a disputa abre sozinha. O cliente já pode cancelar com reembolso integral. A extensão já foi usada. O prazo era 05/10/2026.',
+          body: 'Até qua, 07/10 às 12:00: registre a entrega, senão a disputa abre sozinha. O cliente já pode cancelar com reembolso integral. A extensão já foi usada. O prazo era seg, 05/10/2026, até 23:59.',
           data: { contractId: 31 },
         },
         { passCategory: 'deadline' },
@@ -1383,7 +1508,7 @@ describe('quem age e quem é avisado nos prazos', () => {
         {
           type: 'contract_overdue',
           title: 'Prazo estourado: Vídeo institucional',
-          body: 'Sem entrega nem extensão aceita até qua, 07/10 às 12:00, a disputa abre sozinha. Se preferir, cancele com reembolso integral. O prazo era 05/10/2026 e não houve entrega.',
+          body: 'Sem entrega nem extensão aceita até qua, 07/10 às 12:00, a disputa abre sozinha. Se preferir, cancele com reembolso integral. O prazo era seg, 05/10/2026, até 23:59 e não houve entrega.',
           data: { contractId: 31 },
         },
         {},
@@ -1413,11 +1538,11 @@ describe('quem age e quem é avisado nos prazos', () => {
       expect(milestonesRepository.titlesByDelivery).toHaveBeenLastCalledWith(31);
       expect(notify.mock.calls[0]![0]).toBe(44);
       expect(notify.mock.calls[0]![1].body).toBe(
-        'Até qua, 07/10 às 12:00: entregue o marco «Publicação» ou peça a extensão, senão a disputa abre sozinha. O prazo era 05/10/2026.',
+        'Até qua, 07/10 às 12:00: entregue o marco «Publicação» ou peça a extensão, senão a disputa abre sozinha. O prazo era seg, 05/10/2026, até 23:59.',
       );
       expect(notify.mock.calls[1]![0]).toBe(7);
       expect(notify.mock.calls[1]![1].body).toBe(
-        'Sem as entregas que faltam nem extensão aceita até qua, 07/10 às 12:00, a disputa abre sozinha. O prazo era 05/10/2026: 2 de 3 marcos entregues; falta o marco «Publicação».',
+        'Sem as entregas que faltam nem extensão aceita até qua, 07/10 às 12:00, a disputa abre sozinha. O prazo era seg, 05/10/2026, até 23:59: 2 de 3 marcos entregues; falta o marco «Publicação».',
       );
     }
   });
@@ -1439,7 +1564,7 @@ describe('quem age e quem é avisado nos prazos', () => {
         openedBy: 7,
         reason: 'deadline',
         description:
-          'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega (02/10/2026) venceu sem entrega, o aviso saiu em 03/10/2026 às 09:03 e, até 04/10/2026 às 09:03, não houve entrega nem extensão aceita. Horários de Brasília.',
+          'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, sex, 02/10/2026, até 23:59 (horário de Brasília), venceu sem entrega, o aviso saiu em 03/10/2026 às 09:03 e, até 04/10/2026 às 09:03, não houve entrega nem extensão aceita. O aviso e o limite estão em horário de Brasília.',
       },
       { guard: 'AND guarda_da_disputa', now: NOW },
     );
@@ -1506,8 +1631,9 @@ describe('create: o que é gravado e quem é avisado (RN-021, RN-031)', () => {
       deadlineAt: '2026-10-20T02:59:59.700Z', // 19/10 23:59:59,7 em Brasília
     });
 
-    // A validade conta no fuso de quem responde, com as horas do painel (72 de padrão).
-    expect(userZone).toHaveBeenCalledWith(44);
+    // A validade conta no fuso de quem responde, com as horas do painel (72 de padrão); o fuso do
+    // cliente entra para dizer o prazo como dia (ADR 58).
+    expect(vi.mocked(userZone).mock.calls).toEqual([[44], [7]]);
     expect(settings).toHaveBeenCalledWith('proposal_expiry_hours', 72);
     expect(vi.mocked(walletService.ensure).mock.calls).toEqual([[7]]);
     expect(repo.create).toHaveBeenCalledTimes(1);
@@ -1526,6 +1652,8 @@ describe('create: o que é gravado e quem é avisado (RN-021, RN-031)', () => {
       // O prazo é gravado sem a fração de segundo.
       deadlineAt: '2026-10-20T02:59:59.000Z',
       proposalExpiresAt: brt('2026-10-09 12:00:00'),
+      // O relógio do fluxo: o lembrete da proposta conta a idade daqui (ADR 58).
+      createdAt: NOW,
       hold: { userId: 7, amount: 199.99 },
       milestones: null,
     });
@@ -1538,7 +1666,7 @@ describe('create: o que é gravado e quem é avisado (RN-021, RN-031)', () => {
       {
         type: 'contract_proposal',
         title: 'Nova proposta de contratação',
-        body: 'Vídeo institucional. Prazo de entrega: 19/10/2026. Responda até sex, 09/10 às 12:00.',
+        body: 'Vídeo institucional. Prazo de entrega: seg, 19/10/2026, até 23:59. Responda até sex, 09/10 às 12:00.',
         data: { contractId: 31 },
       },
       {},
@@ -1621,6 +1749,8 @@ describe('a contratação como a API devolve (ADR 57)', () => {
       paymentMode: 'cash',
       status: 'in_progress',
       deadlineAt: at('2026-10-09 23:59:59'),
+      // O prazo é 23:59:59 em Brasília: é o fuso em que ele é um dia (ADR 58).
+      deadlineZone: 'America/Sao_Paulo',
       createdAt: at('2026-10-04 10:00:00'),
       hasReview: false,
       hasMilestones: false,
@@ -1634,6 +1764,8 @@ describe('a contratação como a API devolve (ADR 57)', () => {
         resolvedAt: null,
         respondBy: at('2026-10-08 10:00:00'),
         seq: 1,
+        // A data pedida é 23:59:59 em Brasília: é o dia que as duas partes leem.
+        deadlineZone: 'America/Sao_Paulo',
       },
       deadline: {
         state: 'paused',
@@ -1646,6 +1778,7 @@ describe('a contratação como a API devolve (ADR 57)', () => {
       },
       approvalDueAt: null,
       proposalExpiresAt: null,
+      revisionRequestedAt: null,
       history: [],
       review: null,
       milestones: [],
@@ -1982,5 +2115,321 @@ describe('cancelamento: a conta e a guarda usam o que a leitura viu (RN-025, ADR
       code: 'conflict',
     });
     expect(notify).not.toHaveBeenCalled();
+  });
+});
+
+describe('o dia do prazo e a revisão em aberto (ADR 58)', () => {
+  const at = (s: string): string => brt(s).toISOString();
+  const zoneOf = async (o: Partial<Omit<ContractRow, 'constructor'>>) => {
+    repo.findById.mockResolvedValue(other(o));
+    return (await contractsService.getById(31, 7)).deadlineZone;
+  };
+
+  it('o fuso do prazo é o em que ele marca 23:59:59: primeiro o de quem entrega, depois o do cliente, depois um por relógio; sem prazo (ou sem bater), o de quem entrega', async () => {
+    // O fim de 09/10 em Manaus, onde está quem entrega.
+    expect(
+      await zoneOf({
+        freelancer_timezone: 'America/Manaus',
+        deadline_at: brt('2026-10-10 00:59:59'),
+      }),
+    ).toBe('America/Manaus');
+    // O fim de 09/10 em Brasília, o fuso do cliente.
+    expect(
+      await zoneOf({
+        freelancer_timezone: 'America/Manaus',
+        deadline_at: brt('2026-10-09 23:59:59'),
+      }),
+    ).toBe('America/Sao_Paulo');
+    // O fim de 09/10 em Noronha, onde ninguém está: o nome daquele relógio.
+    expect(await zoneOf({ deadline_at: brt('2026-10-09 22:59:59') })).toBe('America/Noronha');
+    // Cuiabá marca a mesma hora que Manaus: quem entrega em Cuiabá fica com o próprio nome.
+    expect(
+      await zoneOf({
+        freelancer_timezone: 'America/Cuiaba',
+        deadline_at: brt('2026-10-10 00:59:59'),
+      }),
+    ).toBe('America/Cuiaba');
+    expect(await zoneOf({ freelancer_timezone: 'America/Manaus', deadline_at: null })).toBe(
+      'America/Manaus',
+    );
+    // Prazo de antes do ADR 58 (20:30 em Brasília): nenhum relógio marca 23:59:59.
+    expect(
+      await zoneOf({
+        freelancer_timezone: 'America/Manaus',
+        deadline_at: brt('2026-10-09 20:30:00'),
+      }),
+    ).toBe('America/Manaus');
+  });
+
+  it('a data pedida na extensão é dita no relógio em que ela é 23:59: pedida em Manaus com o prazo em Brasília, o dia é o de Manaus', async () => {
+    repo.findById.mockResolvedValue(
+      other({
+        freelancer_timezone: 'America/Manaus',
+        deadline_at: brt('2026-10-09 23:59:59'),
+        extension_status: 'pending',
+        extension_requests: 1,
+        // O fim de 16/10 em Manaus.
+        extension_deadline_at: brt('2026-10-17 00:59:59'),
+        extension_reason: 'Atraso do material',
+        extension_requested_at: brt('2026-10-06 10:00:00'),
+        extension_respond_by: brt('2026-10-08 10:00:00'),
+      }),
+    );
+
+    const c = await contractsService.getById(31, 7);
+
+    expect(c.deadlineZone).toBe('America/Sao_Paulo');
+    expect(c.extension!.deadlineZone).toBe('America/Manaus');
+  });
+
+  it.each(['pending', 'declined', 'expired'] as const)(
+    'pedido %s no mesmo relógio do prazo: vale o fuso do prazo, mesmo com quem entrega em outro',
+    async (status) => {
+      repo.findById.mockResolvedValue(
+        other({
+          freelancer_timezone: 'America/Manaus',
+          deadline_at: brt('2026-10-09 23:59:59'),
+          extension_status: status,
+          extension_requests: 1,
+          extension_deadline_at: brt('2026-10-16 23:59:59'),
+          extension_reason: 'Atraso do material',
+          extension_requested_at: brt('2026-10-06 10:00:00'),
+          extension_respond_by: brt('2026-10-08 10:00:00'),
+          extension_resolved_at: status === 'pending' ? null : brt('2026-10-07 10:00:00'),
+        }),
+      );
+
+      const c = await contractsService.getById(31, 7);
+
+      expect(c.extension!.status).toBe(status);
+      expect(c.extension!.deadlineZone).toBe('America/Sao_Paulo');
+      expect(c.extension!.deadlineZone).toBe(c.deadlineZone);
+    },
+  );
+
+  it('pedido gravado antes das colunas novas (sem motivo, sem hora do pedido e sem contador): sai com os padrões e com o fuso da data pedida', async () => {
+    repo.findById.mockResolvedValue(
+      other({
+        payment_mode: null as unknown as string,
+        extension_status: 'declined',
+        extension_requests: null as unknown as number,
+        extension_deadline_at: brt('2026-10-16 23:59:59'),
+        extension_reason: null,
+        extension_requested_at: null,
+        extension_resolved_at: brt('2026-10-07 10:00:00'),
+      }),
+    );
+
+    const c = await contractsService.getById(31, 7);
+
+    expect(c.paymentMode).toBe('cash');
+    expect(c.extension).toEqual({
+      status: 'declined',
+      deadlineAt: at('2026-10-16 23:59:59'),
+      reason: '',
+      requestedAt: at('2026-10-04 10:00:00'),
+      resolvedAt: at('2026-10-07 10:00:00'),
+      respondBy: null,
+      seq: 0,
+      deadlineZone: 'America/Sao_Paulo',
+    });
+  });
+
+  it('no relógio do prazo, a extensão leva o NOME do fuso do prazo (Cuiabá de quem entrega), não o do cliente em Manaus', async () => {
+    repo.findById.mockResolvedValue(
+      other({
+        freelancer_timezone: 'America/Cuiaba',
+        client_timezone: 'America/Manaus',
+        // O fim de 09/10 e de 16/10 no relógio de Manaus e Cuiabá.
+        deadline_at: brt('2026-10-10 00:59:59'),
+        extension_status: 'pending',
+        extension_requests: 1,
+        extension_deadline_at: brt('2026-10-17 00:59:59'),
+        extension_reason: 'Atraso do material',
+        extension_requested_at: brt('2026-10-06 10:00:00'),
+        extension_respond_by: brt('2026-10-08 10:00:00'),
+      }),
+    );
+
+    const c = await contractsService.getById(31, 7);
+
+    expect(c.deadlineZone).toBe('America/Cuiaba');
+    expect(c.extension!.deadlineZone).toBe('America/Cuiaba');
+  });
+
+  it('a revisão em aberto diz desde quando, e só enquanto a contratação está em revisão', async () => {
+    repo.findById.mockResolvedValue(
+      other({
+        status: 'revision_requested',
+        deliveries_count: 1,
+        revision_requested_at: brt('2026-10-05 15:00:00'),
+      }),
+    );
+    expect((await contractsService.getById(31, 7)).revisionRequestedAt).toBe(
+      at('2026-10-05 15:00:00'),
+    );
+
+    // Entregue de novo: a data que sobrou do pedido não aparece.
+    repo.findById.mockResolvedValue(
+      other({
+        status: 'delivered',
+        deliveries_count: 2,
+        approval_due_at: brt('2026-10-11 12:00:00'),
+        revision_requested_at: brt('2026-10-05 15:00:00'),
+      }),
+    );
+    expect((await contractsService.getById(31, 7)).revisionRequestedAt).toBeNull();
+  });
+
+  it('a proposta diz ao freelancer o prazo como dia: no fuso dele se for lá o fim do dia, senão no do cliente, com o fuso anotado', async () => {
+    settings.mockResolvedValue(72);
+    repo.create.mockResolvedValue(31);
+    repo.findById.mockResolvedValue(other({ status: 'pending', accepted_at: null }));
+    const propose = (deadlineAt: Date) => {
+      // Quem entrega em Manaus; o cliente, em Brasília.
+      vi.mocked(userZone).mockResolvedValueOnce('America/Manaus');
+      return contractsService.create(7, {
+        freelancerId: 44,
+        title: 'Vídeo',
+        description: 'Roteiro e edição do vídeo',
+        price: 100,
+        paymentMode: 'cash',
+        deadlineAt: deadlineAt.toISOString(),
+      });
+    };
+
+    // O fim de 20/10 em Manaus.
+    await propose(brt('2026-10-21 00:59:59'));
+    // O fim de 20/10 em Brasília.
+    await propose(brt('2026-10-20 23:59:59'));
+
+    expect(vi.mocked(userZone).mock.calls).toEqual([[44], [7], [44], [7]]);
+    // A validade é contada no fuso de quem responde: 72 h depois das 11:00 de Manaus.
+    expect(notify.mock.calls.map((c) => [c[0], c[1].body])).toEqual([
+      [
+        44,
+        'Vídeo institucional. Prazo de entrega: ter, 20/10/2026, até 23:59. Responda até sex, 09/10 às 11:00.',
+      ],
+      [
+        44,
+        'Vídeo institucional. Prazo de entrega: ter, 20/10/2026, até 23:59 (horário de Brasília). Responda até sex, 09/10 às 11:00.',
+      ],
+    ]);
+  });
+});
+
+describe('o dia do prazo quando as partes estão em relógios diferentes (ADR 58)', () => {
+  /** O fim de 09/10 em Manaus (00:59:59 de 10/10 em Brasília) e o de 16/10. */
+  const END_9_MANAUS = brt('2026-10-10 00:59:59');
+  const END_16_MANAUS = brt('2026-10-17 00:59:59');
+
+  it('pedido de extensão: o cliente em Brasília lê o dia pedido em Manaus, com o fuso anotado, e não o dia seguinte', async () => {
+    // Quem entrega está em Manaus e escolheu o fim de 16/10 lá; o cliente, em Brasília.
+    repo.findById.mockResolvedValue(
+      other({ freelancer_timezone: 'America/Manaus', deadline_at: END_9_MANAUS }),
+    );
+    repo.requestExtension.mockResolvedValue(true);
+
+    await contractsService.requestExtension(31, 44, ask(END_16_MANAUS));
+
+    expect(notify.mock.calls).toEqual([
+      [
+        7,
+        {
+          type: 'deadline_extension_requested',
+          title: 'Pedido de extensão: Vídeo institucional',
+          body: 'Responda até qui, 08/10 às 12:00: novo prazo proposto sex, 16/10/2026, até 23:59 (horário de Manaus). Sem resposta, o pedido expira e vale o prazo atual. Motivo: O material do cliente chegou depois do combinado',
+          data: { contractId: 31 },
+        },
+        {},
+      ],
+    ]);
+  });
+
+  it('aceite da extensão com os prazos no fuso do cliente: a linha do tempo e quem entrega leem os dias de Manaus, e quem entrega com o fuso anotado', async () => {
+    // Prazo antigo escolhido no navegador do cliente (Manaus); a extensão, no mesmo fuso do prazo.
+    repo.findById.mockResolvedValue(
+      other({
+        status: 'in_progress',
+        client_timezone: 'America/Manaus',
+        deadline_at: END_9_MANAUS,
+        extension_status: 'pending',
+        extension_requests: 1,
+        extension_deadline_at: END_16_MANAUS,
+        extension_reason: 'Atraso do material',
+        extension_requested_at: brt('2026-10-06 10:00:00'),
+        extension_respond_by: brt('2026-10-08 10:00:00'),
+      }),
+    );
+    repo.acceptExtension.mockResolvedValue(true);
+
+    await contractsService.resolveExtension(31, 7, true, 1);
+
+    expect(repo.acceptExtension).toHaveBeenCalledWith({
+      id: 31,
+      seq: 1,
+      now: NOW,
+      changedBy: 7,
+      status: 'in_progress',
+      // Em Brasília seriam sáb, 10/10 e sáb, 17/10: os dois dias são os de Manaus.
+      note: 'Prazo estendido de sex, 09/10 para sex, 16/10/2026, até 23:59 (horário de Manaus) (RN-028): Atraso do material',
+    });
+    expect(notify.mock.calls).toEqual([
+      [
+        44,
+        {
+          type: 'deadline_extension_accepted',
+          title: 'Extensão aceita: novo prazo sex, 16/10',
+          body: 'Vídeo institucional: o novo prazo é sex, 16/10/2026, até 23:59 (horário de Manaus); não há outra extensão nesta contratação.',
+          data: { contractId: 31 },
+        },
+        {},
+      ],
+    ]);
+  });
+
+  it('pedido expirado com quem entrega em Manaus e os prazos em Brasília: cada parte lê os mesmos dias, e só quem está no outro relógio lê o fuso', async () => {
+    const r = other({
+      freelancer_timezone: 'America/Manaus',
+      extension_status: 'pending',
+      extension_requests: 1,
+      extension_deadline_at: brt('2026-10-16 23:59:59'),
+      extension_requested_at: brt('2026-10-04 10:00:00'),
+      extension_respond_by: brt('2026-10-06 10:00:00'),
+    });
+    repo.findById.mockResolvedValue({ ...r, extension_status: 'expired' } as ContractRow);
+    repo.settleExtension.mockResolvedValue(true);
+
+    expect(await contractsService.expireExtension(r, 24, NOW)).toBe(true);
+
+    expect(notify.mock.calls.map((c) => [c[0], c[1].body])).toEqual([
+      [
+        44,
+        'Vale o prazo atual, sex, 09/10/2026, até 23:59 (horário de Brasília). O cliente não respondeu até ter, 06/10 às 09:00. Você ainda pode fazer mais um pedido.',
+      ],
+      [
+        7,
+        'Sem a sua resposta até ter, 06/10 às 10:00, o pedido de novo prazo, sex, 16/10/2026, até 23:59, expirou e vale o prazo atual, sex, 09/10/2026, até 23:59.',
+      ],
+    ]);
+  });
+
+  it('data perto demais logo depois da meia-noite de Brasília (ainda 23:30 em Manaus): o dia sugerido conta do hoje do fuso do prazo', async () => {
+    // Prazo no fim de 06/10 em Brasília, o fuso do cliente; quem entrega está em Manaus.
+    setClockForTests(brt('2026-10-07 00:30:00'), { frozen: true });
+    repo.findById.mockResolvedValue(
+      other({ freelancer_timezone: 'America/Manaus', deadline_at: brt('2026-10-06 23:59:59') }),
+    );
+
+    await expect(
+      contractsService.requestExtension(31, 44, ask(brt('2026-10-07 20:00:00'))),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'extension_too_close',
+      // Em Brasília já é 07/10: dois dias depois é 09/10 (em Manaus ainda seria 06/10, e 08/10).
+      message:
+        'O novo prazo está perto demais para o cliente decidir a tempo: escolha uma data a partir de 09/10/2026.',
+    });
+    expect(repo.requestExtension).not.toHaveBeenCalled();
   });
 });

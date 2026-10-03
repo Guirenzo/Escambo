@@ -18,7 +18,8 @@ import { timezoneOf } from '../utils/timezone';
  * Reparo dos prazos (ADR 57): preenche, em Node e com as MESMAS funções de hora que a API usa ao
  * gravar, as colunas que as contratações de antes da 0027 não têm, e acerta o que a API antiga
  * possa gravar durante o deploy. Roda no fim do `db:migrate` e em toda rodada dos jobs (primeiro
- * da lista). Idempotente: cada UPDATE repete `<coluna> IS NULL`, e normalmente nada é tocado.
+ * da lista). Idempotente: cada UPDATE repete o predicado da leitura (`<coluna> IS NULL`; nas
+ * revisões, também a hora anterior à última entrega), e normalmente nada é tocado.
  *
  *  1. carência sem aviso (extensão aceita pela API antiga)            → grace_ends_at = NULL
  *  2. contador de pedidos zerado com pedido visível                   → 1 (conservador)
@@ -28,6 +29,9 @@ import { timezoneOf } from '../utils/timezone';
  *  6. proposta sem validade                                           → criação + horas vigentes
  *  7. entrega única sem a hora da aprovação tácita                    → última entrega + dias
  *  8. marco entregue sem a hora da aprovação tácita                   → entrega do marco + dias
+ *  9. contratação em revisão sem a hora do pedido, ou com a de outro ciclo (ADR 58) → histórico
+ * 10. marco em revisão sem a hora do pedido, ou com a de outro ciclo (ADR 58)       → histórico
+ *     (só com o título único na contratação), ou agora
  * Os instantes calculados passam pela hora humana no fuso ATUAL de quem é afetado. Toda escrita é
  * pela chave primária, repetindo o predicado da leitura: a mesma ordem de trava da API (linha
  * primeiro, índice depois), e um deadlock ou espera de trava só adia aquela linha para a próxima
@@ -47,6 +51,10 @@ export interface RepairDeadlinesResult {
   proposalExpiry: number;
   approvalDue: number;
   milestoneApprovalDue: number;
+  /** ADR 58: revisões em aberto sem a hora do pedido, ou com a de outro ciclo (a do histórico, ou agora). */
+  revisionRequested: number;
+  /** ADR 58: marcos em revisão sem a hora do pedido (a da nota do histórico, ou agora). */
+  milestoneRevisionRequested: number;
 }
 
 async function each<T extends RowDataPacket>(
@@ -75,6 +83,13 @@ async function update(
     }
     throw err;
   }
+}
+
+/** A hora achada (ou `fallback`), nunca antes de `floor`. */
+function latest(found: unknown, floor: unknown, fallback: Date): Date {
+  const at = found ? new Date(found as Date) : fallback;
+  const min = floor ? new Date(floor as Date) : null;
+  return min && min.getTime() > at.getTime() ? min : at;
 }
 
 export async function runRepairDeadlines(now: Date = clock.now()): Promise<RepairDeadlinesResult> {
@@ -217,6 +232,61 @@ export async function runRepairDeadlines(now: Date = clock.now()): Promise<Repai
     },
   );
 
+  // 9. Contratação em revisão sem a hora do pedido (ADR 58), ou com uma hora anterior à última
+  // entrega: sobra de outro ciclo, quando a versão anterior registrou a revisão sem gravar a hora.
+  // Recebe a última entrada 'revision_requested' do histórico (ou agora), nunca antes da última
+  // entrega: assim a linha consertada não volta a parecer velha. O aviso de revisão parada conta
+  // 7 dias a partir dela.
+  const lastDelivery = (alias: string): string =>
+    `(SELECT MAX(d.created_at) FROM deliveries d WHERE d.contract_id = ${alias}.id)`;
+  const staleContract = (alias: string): string =>
+    `(${alias}.revision_requested_at IS NULL OR ${alias}.revision_requested_at < ${lastDelivery(alias)})`;
+  const revisionRequested = await each<RowDataPacket>(
+    `SELECT c.id, ${lastDelivery('c')} AS delivered_at,
+            (SELECT MAX(h.created_at) FROM contract_status_history h
+              WHERE h.contract_id = c.id AND h.new_status = 'revision_requested') AS requested_at
+       FROM contracts c
+      WHERE c.status = 'revision_requested' AND ${staleContract('c')}
+      LIMIT ${BATCH}`,
+    {},
+    (row) =>
+      update(
+        `UPDATE contracts SET revision_requested_at = :v
+          WHERE id = :id AND status = 'revision_requested' AND ${staleContract('contracts')}`,
+        { id: row.id, v: floorSecond(latest(row.requested_at, row.delivered_at, now)) },
+      ),
+  );
+
+  // 10. Marco em revisão sem a hora do pedido, ou com uma anterior à última entrega dele. A linha do
+  // tempo guarda o pedido como nota ("Revisão pedida no marco «título»"): vale a mais recente, se
+  // o título é único na contratação (comparação por prefixo, sem LIKE: título com % ou _); senão,
+  // agora, e o aviso sai 7 dias depois do deploy. Nunca antes da entrega.
+  const staleMilestone = (alias: string): string =>
+    `(${alias}.revision_requested_at IS NULL OR ${alias}.revision_requested_at < ${alias}.delivered_at)`;
+  const milestoneRevisionRequested = await each<RowDataPacket>(
+    `SELECT m.id, m.delivered_at,
+            (SELECT MAX(h.created_at) FROM contract_status_history h
+              WHERE h.contract_id = m.contract_id
+                AND (h.note = CONCAT('Revisão pedida no marco «', m.title, '»')
+                     OR LEFT(h.note, CHAR_LENGTH(CONCAT('Revisão pedida no marco «', m.title, '»:')))
+                        = CONCAT('Revisão pedida no marco «', m.title, '»:'))
+                AND (SELECT COUNT(*) FROM contract_milestones m2
+                      WHERE m2.contract_id = m.contract_id AND m2.title = m.title) = 1) AS requested_at
+       FROM contract_milestones m
+       JOIN contracts c ON c.id = m.contract_id
+      WHERE m.status = 'funded' AND m.delivered_at IS NOT NULL AND ${staleMilestone('m')}
+        AND c.status IN ('accepted', 'in_progress')
+      LIMIT ${BATCH}`,
+    {},
+    (row) =>
+      update(
+        `UPDATE contract_milestones SET revision_requested_at = :v
+          WHERE id = :id AND status = 'funded' AND delivered_at IS NOT NULL
+            AND ${staleMilestone('contract_milestones')}`,
+        { id: row.id, v: floorSecond(latest(row.requested_at ?? now, row.delivered_at, now)) },
+      ),
+  );
+
   return {
     graceWithoutNotice,
     requestCounters,
@@ -226,5 +296,7 @@ export async function runRepairDeadlines(now: Date = clock.now()): Promise<Repai
     proposalExpiry,
     approvalDue,
     milestoneApprovalDue,
+    revisionRequested,
+    milestoneRevisionRequested,
   };
 }

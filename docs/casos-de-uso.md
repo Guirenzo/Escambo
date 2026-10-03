@@ -282,14 +282,17 @@
 3. Aceita a proposta
    └── [Alternativa] Recusa ou faz contra-proposta
 4. Sistema muda status para "Em andamento"
-5. Freelancer executa o serviço
+5. Freelancer executa o serviço (o prazo é um dia, até 23:59 no horário dele; em geral na
+   véspera, ele é lembrado do prazo)
 6. Freelancer registra a entrega (mensagem + arquivos)
 7. Sistema notifica o cliente
 8. Cliente analisa a entrega
    ├── Aprova → status "Concluído" → pagamento liberado
    ├── Solicita revisão → freelancer entrega de novo
-   │   (com o trabalho entregue — por marcos, todos os marcos —, o prazo não abre mais disputa sozinho)
-   └── Não responde até a hora dita no aviso da entrega → aprovação automática (RN-024)
+   │   (com o trabalho entregue — por marcos, todos os marcos —, o prazo não abre mais disputa sozinho;
+   │   sem nova entrega em 7 dias, as duas partes são avisadas, sem sanção, RN-081)
+   └── Não responde até a hora dita no aviso da entrega → aprovação automática (RN-024):
+       o cliente é lembrado antes e, quando ela acontece, as duas partes são avisadas
 9. Sistema registra o histórico completo
 ```
 
@@ -333,6 +336,7 @@
 ```
 [FE-01] Prazo estourado sem entrega
   → Sistema avisa as duas partes a partir das 9h do dia seguinte, no fuso de quem entrega
+    (o prazo é o dia combinado, até 23:59 no horário de quem entrega, RN-080)
   → O cliente pode cancelar com reembolso integral (FA-02) ou esperar
   → Sem entrega nem extensão aceita até a hora dita no aviso (hoje, 24 h depois dele),
     a disputa abre sozinha (FE-02)
@@ -435,6 +439,7 @@
   3. Sistema publica a resposta abaixo do comentário do cliente
 
 [FA-02] Cliente não avalia em 7 dias
+  → O aviso da conclusão automática (UC-05) já diz até quando avaliar
   → Sistema encerra o prazo de avaliação automaticamente
   → Contratação permanece como "Concluída" sem avaliação
 ```

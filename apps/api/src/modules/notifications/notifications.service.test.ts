@@ -42,17 +42,12 @@ const row = (
 beforeEach(() => vi.clearAllMocks());
 
 describe('notify (best-effort)', () => {
-  it('cria a notificação serializando o data', async () => {
+  it('cria a notificação serializando o data, fora de transação (sem conexão de quem chama)', async () => {
     repo.create.mockResolvedValue(1);
     await notificationsService.notify(7, { type: 't', title: 'oi', data: { contractId: 5 } });
-    expect(repo.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: 7,
-        type: 't',
-        title: 'oi',
-        data: JSON.stringify({ contractId: 5 }),
-      }),
-    );
+    expect(repo.create.mock.calls).toEqual([
+      [{ userId: 7, type: 't', title: 'oi', body: null, data: '{"contractId":5}' }, undefined],
+    ]);
   });
 
   it('a categoria do silêncio vai só para o push: não entra no banco nem no socket (ADR 56)', async () => {

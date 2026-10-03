@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 import {
-  brDatePlus,
   createService,
   createUser,
+  deadlineTextPlus,
   inputDatePlus,
   openAs,
   settled,
@@ -120,8 +120,8 @@ test('marcos com prazos distribuídos até o prazo da contratação, visíveis n
   // Sala: cada marco mostra o próprio prazo; depois do aceite, quanto falta.
   const dues = page.getByTestId('milestones').locator('[data-testid^="milestone-due-"]');
   await expect(dues).toHaveCount(2);
-  await expect(dues.nth(0)).toContainText(`até ${brDatePlus(5)}`);
-  await expect(dues.nth(1)).toContainText(`até ${brDatePlus(10)}`);
+  await expect(dues.nth(0)).toContainText(deadlineTextPlus(5));
+  await expect(dues.nth(1)).toContainText(deadlineTextPlus(10));
 
   const acc = await request.post(`/api/contracts/${contractId}/accept`, {
     headers: h(freelancer.token),

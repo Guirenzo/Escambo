@@ -9,7 +9,8 @@ import { dayZones } from '../utils/human-hours';
  * Aprovação tácita (RN-024, ADR 57): entrega sem resposta do cliente até a hora gravada na
  * entrega (`tacit_approval_days` corridos depois, nunca de noite no fuso dele) é aprovada
  * automaticamente, liberando o escrow. Só age sobre clientes num fuso em que é dia. Cada contrato
- * é tratado isoladamente: uma falha não bloqueia os demais.
+ * é tratado isoladamente: uma falha não bloqueia os demais. As duas partes são avisadas (ADR 58); os
+ * marcos vencidos da mesma contratação viram um aviso só para cada parte.
  */
 
 export { DEFAULT_TACIT_APPROVAL_DAYS } from '../modules/contracts/deadline-grace';
@@ -38,13 +39,24 @@ export async function runTacitApproval(now: Date = clock.now()): Promise<TacitAp
       logger.warn({ err, contractId: contract.id }, 'aprovação tácita falhou');
     }
   }
+  // Agrupados por contratação, na ordem de vencimento (a consulta já vem ordenada).
+  const byContract = new Map<
+    number,
+    Awaited<ReturnType<typeof milestonesRepository.findApprovalDue>>
+  >();
   for (const m of await milestonesRepository.findApprovalDue(now, zones)) {
+    const list = byContract.get(m.contract_id) ?? [];
+    list.push(m);
+    byContract.set(m.contract_id, list);
+  }
+  for (const [contractId, due] of byContract) {
     try {
-      const ok = await contractsService.approveMilestoneTacitly(m, now);
-      if (ok) result.milestones.push(m.id);
+      const r = await contractsService.approveMilestonesTacitly(contractId, due, now);
+      result.milestones.push(...r.approved);
+      if (r.failed.length > 0) result.failed.push(contractId);
     } catch (err) {
-      result.failed.push(m.contract_id);
-      logger.warn({ err, milestoneId: m.id }, 'aprovação tácita do marco falhou');
+      result.failed.push(contractId);
+      logger.warn({ err, contractId }, 'aprovação tácita dos marcos falhou');
     }
   }
   return result;

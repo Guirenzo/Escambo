@@ -76,12 +76,17 @@ describe('LegalUpdateBanner', () => {
     expect(await screen.findByText(/escolher o que sai no silêncio/)).toBeInTheDocument();
   });
 
-  it('Termos 1.3 (ADR 57): faixa informativa, sem "Não aceito"; "Li e aceito" registra os Termos', async () => {
+  it('Termos 1.4 (ADR 58): faixa informativa, sem "Não aceito"; "Li e aceito" registra a 1.4', async () => {
     const user = userEvent.setup();
-    render(wrap(<LegalUpdateBanner kind="termos" consents={[consent('1.2', 'terms_of_use')]} />));
+    render(wrap(<LegalUpdateBanner kind="termos" consents={[consent('1.3', 'terms_of_use')]} />));
     const region = screen.getByRole('region', { name: 'Atualização dos Termos de Uso' });
-    expect(region).toHaveTextContent('versão 1.3');
+    expect(region).toHaveTextContent('Os Termos de Uso mudaram (versão 1.4, 03/10/2026): Prazos:');
     expect(region).toHaveTextContent(
+      'o prazo de entrega é uma data e vale até 23:59 no horário de quem entrega',
+    );
+    expect(region).toHaveTextContent('O lembrete é um aviso a mais e não muda nenhuma hora.');
+    // O que mudou na 1.3 a pessoa já respondeu: não volta.
+    expect(region).not.toHaveTextContent(
       'a disputa automática só vale enquanto há trabalho nunca entregue',
     );
     expect(region).toHaveTextContent('Continuar usando o Escambo vale como aceite (seção 7)');
@@ -91,16 +96,25 @@ describe('LegalUpdateBanner', () => {
     );
     expect(screen.queryByRole('button', { name: 'Não aceito' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Li e aceito' }));
+    expect(recordConsent).toHaveBeenCalledTimes(1);
     expect(recordConsent).toHaveBeenCalledWith({
       type: 'terms_of_use',
-      version: '1.3',
+      version: '1.4',
       accepted: true,
     });
     expect(
       await screen.findByText(
-        'Pronto: a versão 1.3 dos Termos fica registrada nos seus consentimentos, no Perfil.',
+        'Pronto: a versão 1.4 dos Termos fica registrada nos seus consentimentos, no Perfil.',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('quem ainda está nos Termos 1.2 ouve a 1.4 e, depois, a 1.3', () => {
+    render(wrap(<LegalUpdateBanner kind="termos" consents={[consent('1.2', 'terms_of_use')]} />));
+    const region = screen.getByRole('region', { name: 'Atualização dos Termos de Uso' });
+    expect(region).toHaveTextContent(
+      'O lembrete é um aviso a mais e não muda nenhuma hora. A aprovação automática passa a avisar as duas partes, e a revisão parada há 7 dias também. Antes disso, na versão anterior: Prazos: nada automático acontece de madrugada',
+    );
   });
 
   it('erro ao registrar: avisa e a faixa continua', async () => {

@@ -23,9 +23,11 @@ const ZERO = {
   proposalExpiry: 0,
   approvalDue: 0,
   milestoneApprovalDue: 0,
+  revisionRequested: 0,
+  milestoneRevisionRequested: 0,
 };
 
-/** Os passos do reparo, na ordem em que leem o banco (1 a 8). */
+/** Os passos do reparo, na ordem em que leem o banco (1 a 10, como no comentário do código). */
 const STEP = {
   graceWithoutNotice: 1,
   requestCounters: 2,
@@ -35,6 +37,8 @@ const STEP = {
   proposalExpiry: 6,
   approvalDue: 7,
   milestoneApprovalDue: 8,
+  revisionRequested: 9,
+  milestoneRevisionRequested: 10,
 } as const;
 
 const OK = { affectedRows: 1 };
@@ -79,10 +83,10 @@ describe('reparo dos prazos (ADR 57)', () => {
     vi.restoreAllMocks();
   });
 
-  it('sem nada a reparar, só lê: oito consultas em lote de 200, nenhum UPDATE e tudo zerado', async () => {
+  it('sem nada a reparar, só lê: dez consultas em lote de 200, nenhum UPDATE e tudo zerado', async () => {
     expect(await runRepairDeadlines(NOW)).toEqual(ZERO);
 
-    expect(fakeDb.calls).toHaveLength(8);
+    expect(fakeDb.calls).toHaveLength(10);
     for (const { sql, params } of fakeDb.calls) {
       expect(sql).toMatch(/^SELECT /);
       expect(sql).toMatch(/ LIMIT 200$/);
@@ -489,6 +493,346 @@ describe('reparo dos prazos (ADR 57)', () => {
     });
   });
 
+  describe('9. contratação em revisão sem a hora do pedido, ou com a de outro ciclo (ADR 58)', () => {
+    /** A última entrega da contratação, como a leitura e a gravação a calculam. */
+    const LAST_DELIVERY = (alias: string): string =>
+      `(SELECT MAX(d.created_at) FROM deliveries d WHERE d.contract_id = ${alias}.id)`;
+    /** Sem a hora, ou com uma anterior à última entrega: sobra de outro ciclo. */
+    const STALE = (alias: string): string =>
+      `(${alias}.revision_requested_at IS NULL OR ${alias}.revision_requested_at < ${LAST_DELIVERY(alias)})`;
+
+    it('lê a última entrega e o último pedido de revisão do histórico; pega a hora vazia OU anterior à última entrega, e a gravação repete o predicado pela chave primária', async () => {
+      arrange(
+        STEP.revisionRequested,
+        [
+          {
+            id: 101,
+            delivered_at: '2026-09-18T12:00:00.000Z',
+            requested_at: '2026-09-20T13:45:10.000Z',
+          },
+        ],
+        OK,
+      );
+
+      const result = await runRepairDeadlines(NOW);
+
+      expect(result).toEqual({ ...ZERO, revisionRequested: 1 });
+      const { select, updates } = callsOf(STEP.revisionRequested, 1);
+      expect(select.sql).toBe(
+        `SELECT c.id, ${LAST_DELIVERY('c')} AS delivered_at, (SELECT MAX(h.created_at) FROM contract_status_history h WHERE h.contract_id = c.id AND h.new_status = 'revision_requested') AS requested_at FROM contracts c WHERE c.status = 'revision_requested' AND ${STALE('c')} LIMIT 200`,
+      );
+      expect(select.params).toEqual({});
+      expect(updates[0]!.sql).toBe(
+        `UPDATE contracts SET revision_requested_at = :v WHERE id = :id AND status = 'revision_requested' AND ${STALE('contracts')}`,
+      );
+      // O pedido do histórico é depois da última entrega: é a hora do ciclo atual.
+      expect(updates[0]!.params).toEqual({ id: 101, v: new Date('2026-09-20T13:45:10.000Z') });
+    });
+
+    it('hora gravada anterior à última entrega (sobra de outro ciclo): conserta com o pedido do histórico, que é o do ciclo atual', async () => {
+      // Pediu revisão em 10/09 (gravado), entregou de novo em 18/09 e a versão anterior registrou o
+      // novo pedido de 20/09 só no histórico. A leitura pega a linha porque 10/09 < 18/09.
+      arrange(
+        STEP.revisionRequested,
+        [
+          {
+            id: 105,
+            delivered_at: new Date('2026-09-18T12:00:00.000Z'),
+            requested_at: new Date('2026-09-20T13:45:00.000Z'),
+          },
+        ],
+        OK,
+      );
+
+      expect((await runRepairDeadlines(NOW)).revisionRequested).toBe(1);
+      expect(callsOf(STEP.revisionRequested, 1).updates[0]!.params).toEqual({
+        id: 105,
+        v: new Date('2026-09-20T13:45:00.000Z'),
+      });
+    });
+
+    it('hora gravada posterior à última entrega: a leitura não a pega, e nada é gravado', async () => {
+      // O banco só devolve a linha com a hora vazia ou anterior à última entrega (o predicado acima).
+      arrange(STEP.revisionRequested, []);
+
+      expect(await runRepairDeadlines(NOW)).toEqual(ZERO);
+
+      expect(fakeDb.calls).toHaveLength(10);
+      expect(callsOf(STEP.revisionRequested, 0).select.sql).toContain(
+        `AND ${STALE('c')} LIMIT 200`,
+      );
+    });
+
+    it('a gravação repete o predicado: se a API gravou uma hora posterior à entrega no meio, 0 linhas e não conta', async () => {
+      arrange(
+        STEP.revisionRequested,
+        [{ id: 106, delivered_at: '2026-09-18T12:00:00.000Z', requested_at: null }],
+        NOT_TOUCHED,
+      );
+
+      expect((await runRepairDeadlines(NOW)).revisionRequested).toBe(0);
+      expect(callsOf(STEP.revisionRequested, 1).updates[0]!.sql).toContain(
+        `AND ${STALE('contracts')}`,
+      );
+    });
+
+    it('sem a revisão no histórico, vale a hora da rodada (sem a fração): o aviso de revisão parada conta dela', async () => {
+      arrange(
+        STEP.revisionRequested,
+        [{ id: 102, delivered_at: '2026-09-18T12:00:00.000Z', requested_at: null }],
+        OK,
+      );
+
+      await runRepairDeadlines(new Date('2026-10-01T15:00:00.700Z'));
+
+      expect(callsOf(STEP.revisionRequested, 1).updates[0]!.params).toEqual({
+        id: 102,
+        v: new Date('2026-10-01T15:00:00.000Z'),
+      });
+    });
+
+    it('sem histórico e sem entrega lida, vale a hora da rodada', async () => {
+      arrange(STEP.revisionRequested, [{ id: 107, delivered_at: null, requested_at: null }], OK);
+
+      await runRepairDeadlines(NOW);
+
+      expect(callsOf(STEP.revisionRequested, 1).updates[0]!.params).toEqual({ id: 107, v: NOW });
+    });
+
+    it('sem histórico, a hora da rodada nunca fica antes da última entrega: vale a entrega', async () => {
+      // A entrega foi gravada depois do instante da rodada (relógio de outra instância adiantado).
+      arrange(
+        STEP.revisionRequested,
+        [{ id: 108, delivered_at: '2026-10-01T15:00:30.000Z', requested_at: null }],
+        OK,
+      );
+
+      await runRepairDeadlines(NOW);
+
+      expect(callsOf(STEP.revisionRequested, 1).updates[0]!.params).toEqual({
+        id: 108,
+        v: new Date('2026-10-01T15:00:30.000Z'),
+      });
+    });
+
+    it('pedido do histórico anterior à última entrega (é de outro ciclo): vale a entrega, e a linha não volta a parecer velha', async () => {
+      arrange(
+        STEP.revisionRequested,
+        [
+          {
+            id: 109,
+            delivered_at: '2026-09-25T18:30:00.000Z',
+            requested_at: '2026-09-20T13:45:00.000Z',
+          },
+        ],
+        OK,
+      );
+
+      await runRepairDeadlines(NOW);
+
+      expect(callsOf(STEP.revisionRequested, 1).updates[0]!.params).toEqual({
+        id: 109,
+        v: new Date('2026-09-25T18:30:00.000Z'),
+      });
+    });
+
+    it('a linha que a API acertou no meio (0 linhas) não conta', async () => {
+      arrange(
+        STEP.revisionRequested,
+        [
+          { id: 103, delivered_at: null, requested_at: null },
+          { id: 104, delivered_at: null, requested_at: null },
+        ],
+        NOT_TOUCHED,
+        OK,
+      );
+
+      expect((await runRepairDeadlines(NOW)).revisionRequested).toBe(1);
+    });
+  });
+
+  describe('10. marco em revisão sem a hora do pedido, ou com a de outro ciclo (ADR 58)', () => {
+    /** A nota que a linha do tempo grava no pedido de revisão do marco (milestones.repository). */
+    const NOTE = "CONCAT('Revisão pedida no marco «', m.title, '»')";
+    /** A mesma nota com o motivo: o título fecha em «»: e só então vem o texto do cliente. */
+    const NOTE_REASON = "CONCAT('Revisão pedida no marco «', m.title, '»:')";
+    const STALE = (alias: string): string =>
+      `(${alias}.revision_requested_at IS NULL OR ${alias}.revision_requested_at < ${alias}.delivered_at)`;
+    const SELECT_SQL =
+      'SELECT m.id, m.delivered_at, (SELECT MAX(h.created_at) FROM contract_status_history h ' +
+      `WHERE h.contract_id = m.contract_id AND (h.note = ${NOTE} OR LEFT(h.note, CHAR_LENGTH(${NOTE_REASON})) = ${NOTE_REASON}) ` +
+      'AND (SELECT COUNT(*) FROM contract_milestones m2 WHERE m2.contract_id = m.contract_id AND m2.title = m.title) = 1) AS requested_at ' +
+      "FROM contract_milestones m JOIN contracts c ON c.id = m.contract_id WHERE m.status = 'funded' AND m.delivered_at IS NOT NULL " +
+      `AND ${STALE('m')} AND c.status IN ('accepted', 'in_progress') LIMIT 200`;
+    const UPDATE_SQL =
+      "UPDATE contract_milestones SET revision_requested_at = :v WHERE id = :id AND status = 'funded' AND delivered_at IS NOT NULL " +
+      `AND ${STALE('contract_milestones')}`;
+
+    it('título único na contratação: lê a hora do pedido na nota da linha do tempo (a mais recente) e grava no marco, repetindo o predicado', async () => {
+      arrange(
+        STEP.milestoneRevisionRequested,
+        [
+          {
+            id: 111,
+            delivered_at: '2026-09-18T12:00:00.000Z',
+            requested_at: '2026-09-22T14:10:05.000Z',
+          },
+        ],
+        OK,
+      );
+
+      const result = await runRepairDeadlines(NOW);
+
+      expect(result).toEqual({ ...ZERO, milestoneRevisionRequested: 1 });
+      const { select, updates } = callsOf(STEP.milestoneRevisionRequested, 1);
+      expect(select.sql).toBe(SELECT_SQL);
+      expect(select.params).toEqual({});
+      expect(updates[0]!.sql).toBe(UPDATE_SQL);
+      expect(updates[0]!.params).toEqual({ id: 111, v: new Date('2026-09-22T14:10:05.000Z') });
+    });
+
+    it('a nota casa o título inteiro: igual, ou seguida de ":" e do motivo, sem LIKE (% e _ não viram curinga, e o marco «A» não pega a nota do «A» x»)', async () => {
+      arrange(STEP.milestoneRevisionRequested, [
+        { id: 111, delivered_at: null, requested_at: null },
+      ]);
+
+      await runRepairDeadlines(NOW);
+
+      const { sql } = callsOf(STEP.milestoneRevisionRequested, 0).select;
+      expect(sql).toContain(`(h.note = ${NOTE} OR LEFT(h.note, CHAR_LENGTH(${NOTE_REASON})) = ${NOTE_REASON})`);
+      expect(sql).not.toContain(`LEFT(h.note, CHAR_LENGTH(${NOTE})) = ${NOTE}`);
+      expect(sql).not.toMatch(/\bLIKE\b/i);
+      expect(sql).toContain('SELECT MAX(h.created_at) FROM contract_status_history h');
+    });
+
+    it('título repetido na contratação: a nota não diz qual marco, então a leitura não a usa e vale a hora da rodada (sem a fração)', async () => {
+      // O COUNT(*) dos marcos com o mesmo título é 2: o banco devolve requested_at NULL.
+      arrange(
+        STEP.milestoneRevisionRequested,
+        [
+          { id: 112, delivered_at: '2026-09-18T12:00:00.000Z', requested_at: null },
+          { id: 113, delivered_at: '2026-09-18T12:00:00.000Z', requested_at: null },
+        ],
+        OK,
+        OK,
+      );
+
+      const result = await runRepairDeadlines(new Date('2026-10-01T15:00:00.700Z'));
+
+      expect(result).toEqual({ ...ZERO, milestoneRevisionRequested: 2 });
+      const { select, updates } = callsOf(STEP.milestoneRevisionRequested, 2);
+      expect(select.sql).toContain(
+        'AND (SELECT COUNT(*) FROM contract_milestones m2 WHERE m2.contract_id = m.contract_id AND m2.title = m.title) = 1) AS requested_at',
+      );
+      expect(updates.map((u) => u.params)).toEqual([
+        { id: 112, v: new Date('2026-10-01T15:00:00.000Z') },
+        { id: 113, v: new Date('2026-10-01T15:00:00.000Z') },
+      ]);
+    });
+
+    it('sem a nota na linha do tempo: vale a hora da rodada', async () => {
+      arrange(
+        STEP.milestoneRevisionRequested,
+        [{ id: 114, delivered_at: '2026-09-18T12:00:00.000Z', requested_at: null }],
+        OK,
+      );
+
+      await runRepairDeadlines(NOW);
+
+      expect(callsOf(STEP.milestoneRevisionRequested, 1).updates[0]!.params).toEqual({
+        id: 114,
+        v: NOW,
+      });
+    });
+
+    it('hora gravada anterior ao delivered_at (sobra de outro ciclo): a leitura e a gravação a pegam, e o conserto é a nota do ciclo atual', async () => {
+      arrange(
+        STEP.milestoneRevisionRequested,
+        [
+          {
+            id: 115,
+            delivered_at: new Date('2026-09-25T18:30:00.000Z'),
+            requested_at: new Date('2026-09-27T09:00:00.000Z'),
+          },
+        ],
+        OK,
+      );
+
+      expect((await runRepairDeadlines(NOW)).milestoneRevisionRequested).toBe(1);
+      const { select, updates } = callsOf(STEP.milestoneRevisionRequested, 1);
+      expect(select.sql).toContain(
+        'AND (m.revision_requested_at IS NULL OR m.revision_requested_at < m.delivered_at) AND ',
+      );
+      expect(updates[0]!.sql).toContain(
+        'AND (contract_milestones.revision_requested_at IS NULL OR contract_milestones.revision_requested_at < contract_milestones.delivered_at)',
+      );
+      expect(updates[0]!.params).toEqual({ id: 115, v: new Date('2026-09-27T09:00:00.000Z') });
+    });
+
+    it('nota anterior ao delivered_at (pedido de outro ciclo): vale a entrega do marco, nunca antes dela', async () => {
+      arrange(
+        STEP.milestoneRevisionRequested,
+        [
+          {
+            id: 116,
+            delivered_at: '2026-09-25T18:30:00.000Z',
+            requested_at: '2026-09-20T13:45:00.000Z',
+          },
+        ],
+        OK,
+      );
+
+      await runRepairDeadlines(NOW);
+
+      expect(callsOf(STEP.milestoneRevisionRequested, 1).updates[0]!.params).toEqual({
+        id: 116,
+        v: new Date('2026-09-25T18:30:00.000Z'),
+      });
+    });
+
+    it('sem a nota, a hora da rodada nunca fica antes do delivered_at: vale a entrega', async () => {
+      arrange(
+        STEP.milestoneRevisionRequested,
+        [{ id: 117, delivered_at: '2026-10-01T15:00:30.000Z', requested_at: null }],
+        OK,
+      );
+
+      await runRepairDeadlines(NOW);
+
+      expect(callsOf(STEP.milestoneRevisionRequested, 1).updates[0]!.params).toEqual({
+        id: 117,
+        v: new Date('2026-10-01T15:00:30.000Z'),
+      });
+    });
+
+    it('a gravação repete o predicado: o marco que a API acertou no meio (0 linhas) não conta', async () => {
+      arrange(
+        STEP.milestoneRevisionRequested,
+        [{ id: 118, delivered_at: '2026-09-18T12:00:00.000Z', requested_at: null }],
+        NOT_TOUCHED,
+      );
+
+      expect((await runRepairDeadlines(NOW)).milestoneRevisionRequested).toBe(0);
+    });
+
+    it('sem hora informada, usa o relógio do fluxo de prazos', async () => {
+      const frozen = new Date('2026-10-05T13:00:00.000Z');
+      setClockForTests(frozen, { frozen: true });
+      arrange(
+        STEP.milestoneRevisionRequested,
+        [{ id: 119, delivered_at: '2026-09-18T12:00:00.000Z', requested_at: null }],
+        OK,
+      );
+
+      await runRepairDeadlines();
+
+      expect(callsOf(STEP.milestoneRevisionRequested, 1).updates[0]!.params).toEqual({
+        id: 119,
+        v: frozen,
+      });
+    });
+  });
+
   it('nos passos que calculam hora, linha que a API já preencheu no meio (0 linhas) também não conta', async () => {
     const notified = '2026-10-01T15:00:00.000Z';
     arrange(
@@ -525,8 +869,8 @@ describe('reparo dos prazos (ADR 57)', () => {
         const result = await runRepairDeadlines(NOW);
 
         expect(result).toEqual({ ...ZERO, graceWithoutNotice: 1, requestCounters: 1 });
-        // 8 leituras + 3 gravações: nada foi pulado.
-        expect(fakeDb.calls).toHaveLength(11);
+        // 10 leituras + 3 gravações: nada foi pulado.
+        expect(fakeDb.calls).toHaveLength(13);
         expect(warn).toHaveBeenCalledTimes(1);
         expect(warn).toHaveBeenCalledWith(
           { code, params: { id: 11 } },
@@ -554,6 +898,27 @@ describe('reparo dos prazos (ADR 57)', () => {
             code: 'ER_LOCK_WAIT_TIMEOUT',
             params: { id: 71, v: new Date('2026-10-06T15:00:00.000Z') },
           },
+          'reparo dos prazos: linha adiada para a próxima rodada',
+        ],
+      ]);
+    });
+
+    it('a trava no passo 9 adia só aquela contratação, e o passo 10 ainda roda', async () => {
+      const warn = vi.spyOn(logger, 'warn');
+      arrange(STEP.revisionRequested, [{ id: 101, requested_at: null }]);
+      fakeDb.reply(
+        dbError('ER_LOCK_DEADLOCK'),
+        // Passo 10, depois da linha adiada no 9.
+        [{ id: 111 }],
+        OK,
+      );
+
+      const result = await runRepairDeadlines(NOW);
+
+      expect(result).toEqual({ ...ZERO, milestoneRevisionRequested: 1 });
+      expect(warn.mock.calls).toEqual([
+        [
+          { code: 'ER_LOCK_DEADLOCK', params: { id: 101, v: NOW } },
           'reparo dos prazos: linha adiada para a próxima rodada',
         ],
       ]);

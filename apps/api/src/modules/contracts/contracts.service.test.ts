@@ -721,13 +721,18 @@ describe('requestRevision (entrega única)', () => {
     expect(repo.transition).not.toHaveBeenCalled();
   });
 
-  it('volta para revisão com a nota na linha do tempo e avisa quem entrega', async () => {
-    repo.findById
-      .mockResolvedValueOnce(fakeRow({ status: 'delivered' }))
-      .mockResolvedValueOnce(fakeRow({ status: 'revision_requested' }));
+  it('volta para revisão com a nota na linha do tempo, grava desde quando está em revisão e avisa quem entrega', async () => {
+    const at = new Date('2026-10-07T13:00:00Z');
+    setClockForTests(at, { frozen: true });
+    repo.findById.mockResolvedValueOnce(fakeRow({ status: 'delivered' })).mockResolvedValueOnce({
+      ...fakeRow({ status: 'revision_requested' }),
+      revision_requested_at: at,
+    } as ContractRow);
     repo.transition.mockResolvedValue(true);
 
-    const c = await contractsService.requestRevision(1, 1, 'Trocar a cor do botão');
+    const c = await contractsService
+      .requestRevision(1, 1, 'Trocar a cor do botão')
+      .finally(() => setClockForTests(null));
 
     expect(repo.transition).toHaveBeenCalledWith({
       id: 1,
@@ -735,7 +740,11 @@ describe('requestRevision (entrega única)', () => {
       from: 'delivered',
       to: 'revision_requested',
       note: 'Trocar a cor do botão',
+      // O aviso de revisão parada conta a partir deste instante (ADR 58).
+      timestampColumn: 'revision_requested_at',
+      now: at,
     });
+    expect(c.revisionRequestedAt).toBe('2026-10-07T13:00:00.000Z');
     // Depois da entrega o prazo não cobra mais: aviso simples, sem furar o silêncio.
     expect(vi.mocked(notificationsService.notify)).toHaveBeenCalledWith(
       2,

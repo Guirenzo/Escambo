@@ -120,3 +120,89 @@ export function formatDue(at: Date, zone: BrazilTimezone): string {
   const two = (n: number): string => String(n).padStart(2, '0');
   return `${WEEKDAY[p.weekday]}, ${two(p.day)}/${two(p.month)} às ${two(p.hour)}:${two(p.minute)}`;
 }
+
+/** O instante em que o relógio de parede do fuso marca essa data e hora (o dia pode transbordar). */
+export function localInstant(
+  zone: BrazilTimezone,
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+): Date {
+  const naive = Date.UTC(year, month - 1, day, hour, minute, second);
+  const guess = naive - offsetMinutes(zone, new Date(naive)) * 60_000;
+  return new Date(naive - offsetMinutes(zone, new Date(guess)) * 60_000);
+}
+
+const two = (n: number): string => String(n).padStart(2, '0');
+const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** O dia do instante no fuso, como "2026-10-02". */
+export function dayIn(zone: BrazilTimezone, at: Date): string {
+  const p = localParts(zone, at);
+  return `${p.year}-${two(p.month)}-${two(p.day)}`;
+}
+
+/** Soma dias a um "AAAA-MM-DD" (calendário puro, sem fuso). */
+export function addDaysToDay(day: string, n: number): string {
+  const m = DAY.exec(day);
+  if (!m) throw new Error(`dia inválido: ${day}`);
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + n));
+  return `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())}`;
+}
+
+/** 23:59:59 do dia no fuso: o fim do dia de um prazo (ADR 58). */
+export function endOfDayIn(zone: BrazilTimezone, day: string): Date {
+  const m = DAY.exec(day);
+  if (!m) throw new Error(`dia inválido: ${day}`);
+  return localInstant(zone, Number(m[1]), Number(m[2]), Number(m[3]), 23, 59, 59);
+}
+
+/** Os dois fusos marcam a mesma hora nesse instante (Manaus e Cuiabá, hoje). */
+export const sameClock = (a: BrazilTimezone, b: BrazilTimezone, at: Date): boolean =>
+  offsetMinutes(a, at) === offsetMinutes(b, at);
+
+/** Depois dos preferidos, um nome por relógio (Cuiabá só entra quando é o fuso de uma das partes). */
+export const DEADLINE_ZONE_FALLBACK: readonly BrazilTimezone[] = [
+  'America/Sao_Paulo',
+  'America/Manaus',
+  'America/Noronha',
+  'America/Rio_Branco',
+];
+
+/**
+ * O fuso em que o prazo é um dia (ADR 58): aquele em que o instante marca 23:59:59, procurando
+ * primeiro nos preferidos (quem entrega, depois o cliente) e depois um nome por relógio. Um instante
+ * só é 23:59:59 num relógio, então as duas partes leem o mesmo dia. Se nenhum bater (contratação
+ * antiga, chamada direta à API), fica o primeiro preferido e a tela mostra a hora real ("até 20:59").
+ * Só diz o dia: nenhum job usa (os prazos agem no fuso atual de quem é afetado, ADR 57).
+ */
+export function inferDeadlineZone(at: Date, prefer: readonly BrazilTimezone[]): BrazilTimezone {
+  for (const zone of [...prefer, ...DEADLINE_ZONE_FALLBACK]) {
+    const p = localParts(zone, at);
+    if (p.hour === 23 && p.minute === 59 && p.second === 59) return zone;
+  }
+  return prefer[0] ?? DEFAULT_TIMEZONE;
+}
+
+/**
+ * " (horário de Manaus)" quando quem lê está em outro RELÓGIO (Manaus e Cuiabá não se anotam);
+ * sem leitor (histórico, mediação), sempre.
+ */
+export function deadlineZoneNote(at: Date, zone: BrazilTimezone, reader?: BrazilTimezone): string {
+  return reader && sameClock(zone, reader, at) ? '' : ` (horário de ${TIMEZONE_LABEL[zone]})`;
+}
+
+/** O prazo como dia (ADR 58): "sex, 02/10/2026, até 23:59" no fuso do prazo, mais a nota do fuso. */
+export function formatDeadline(at: Date, zone: BrazilTimezone, reader?: BrazilTimezone): string {
+  const p = localParts(zone, at);
+  return `${WEEKDAY[p.weekday]}, ${two(p.day)}/${two(p.month)}/${p.year}, até ${two(p.hour)}:${two(p.minute)}${deadlineZoneNote(at, zone, reader)}`;
+}
+
+/** Só o dia do prazo, para títulos: "sex, 02/10". */
+export function formatDeadlineDay(at: Date, zone: BrazilTimezone): string {
+  const p = localParts(zone, at);
+  return `${WEEKDAY[p.weekday]}, ${two(p.day)}/${two(p.month)}`;
+}

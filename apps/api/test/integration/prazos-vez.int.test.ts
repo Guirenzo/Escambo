@@ -10,7 +10,7 @@ import { owesDelivery } from '../../src/modules/contracts/deadline-grace';
 import { rn029Eligible } from '../../src/modules/contracts/deadline-sql';
 import { setClockForTests } from '../../src/utils/clock';
 import { dayZones } from '../../src/utils/human-hours';
-import { formatDate, formatDateTime, formatDue, localParts } from '../../src/utils/timezone';
+import { formatDateTime, formatDeadline, formatDue, localParts } from '../../src/utils/timezone';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
 import { DAY, fromNow, HOUR, isoFromNow, now, startDaytimeClock, stopClock } from './clock.helpers';
@@ -366,7 +366,7 @@ describe('R-VEZ: depois da primeira entrega o prazo não cobra mais', () => {
     const r = await dbRow(id);
     const deadline = new Date(r.deadline_at!);
     const grace = new Date(r.grace_ends_at!);
-    const clientBody = `Sem as entregas que faltam nem extensão aceita até ${formatDue(grace, SP)}, a disputa abre sozinha. O prazo era ${formatDate(deadline, SP)}: 1 de 2 marcos entregues; falta o marco «Publicação».`;
+    const clientBody = `Sem as entregas que faltam nem extensão aceita até ${formatDue(grace, SP)}, a disputa abre sozinha. O prazo era ${formatDeadline(deadline, SP, SP)}: 1 de 2 marcos entregues; falta o marco «Publicação».`;
     await expect.poll(() => bodiesOf(client.token, 'contract_overdue')).toEqual([clientBody]);
     const [body] = await bodiesOf(client.token, 'contract_overdue');
     expect(body).toContain('1 de 2 marcos entregues');
@@ -374,7 +374,7 @@ describe('R-VEZ: depois da primeira entrega o prazo não cobra mais', () => {
     await expect
       .poll(() => bodiesOf(freelancer.token, 'contract_overdue'))
       .toEqual([
-        `Até ${formatDue(grace, SP)}: entregue o marco «Publicação» ou peça a extensão, senão a disputa abre sozinha. O prazo era ${formatDate(deadline, SP)}.`,
+        `Até ${formatDue(grace, SP)}: entregue o marco «Publicação» ou peça a extensão, senão a disputa abre sozinha. O prazo era ${formatDeadline(deadline, SP, SP)}.`,
       ]);
 
     // Carência vencida sem o marco que falta: a disputa abre, com os marcos dos dois lados.
@@ -386,7 +386,7 @@ describe('R-VEZ: depois da primeira entrega o prazo não cobra mais', () => {
     expect(disputes).toHaveLength(1);
     expect(disputes[0]!.reason).toBe('deadline');
     expect(disputes[0]!.description).toBe(
-      `Aberta automaticamente pela plataforma (RN-029): o prazo de entrega (${formatDate(deadline, SP)}) venceu com marcos nunca entregues, o aviso saiu em ${formatDateTime(new Date(r.overdue_notified_at!), SP)} e, até ${formatDateTime(graceEnd, SP)}, eles não foram entregues nem houve extensão aceita. Horários de Brasília. Marcos entregues: «Layout»; sem entrega: «Publicação».`,
+      `Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, ${formatDeadline(deadline, SP)}, venceu com marcos nunca entregues, o aviso saiu em ${formatDateTime(new Date(r.overdue_notified_at!), SP)} e, até ${formatDateTime(graceEnd, SP)}, eles não foram entregues nem houve extensão aceita. O aviso e o limite estão em horário de Brasília. Marcos entregues: «Layout»; sem entrega: «Publicação».`,
     );
     expect(await waitForNotification(app, client.token, 'dispute_opened')).toBe(true);
     expect(await waitForNotification(app, freelancer.token, 'dispute_opened')).toBe(true);

@@ -20,9 +20,21 @@ const CLOSE_EXTENSION =
   "c.extension_resolved_at = IF(c.extension_status = 'pending', :now, c.extension_resolved_at), " +
   "c.extension_status = IF(c.extension_status = 'pending', 'closed', c.extension_status)";
 
-/** As colunas do marco que o service mapeia para a API (prazo, entrega, aprovação tácita, notas). */
+/**
+ * As colunas do marco que o service mapeia para a API (prazo, entrega, aprovação tácita, revisão em
+ * aberto desde quando, notas).
+ */
 const MILESTONE_COLS =
-  'SELECT id, contract_id, title, description, amount, freelancer_net, sort_order, status, due_at, overdue_notified_at, delivered_at, approval_due_at, delivery_note, revision_note, released_at, created_at FROM contract_milestones';
+  'SELECT id, contract_id, title, description, amount, freelancer_net, sort_order, status, due_at, overdue_notified_at, delivered_at, approval_due_at, revision_requested_at, delivery_note, revision_note, released_at, created_at FROM contract_milestones';
+
+/** Uma conexão de transação de quem chama, com as próprias respostas, separada do fakeDb. */
+function ownConn(rows: unknown[]): {
+  conn: PoolConnection;
+  query: ReturnType<typeof vi.fn>;
+} {
+  const query = vi.fn(async () => [rows, []]);
+  return { conn: { query } as unknown as PoolConnection, query };
+}
 
 /** As primeiras palavras de cada instrução executada, para conferir a ordem. */
 const steps = (words = 3): string[] =>
@@ -106,6 +118,33 @@ describe('milestonesRepository', () => {
         `${MILESTONE_COLS} WHERE contract_id = :contractId ORDER BY sort_order ASC, id ASC`,
       );
       expect(fakeDb.calls[0]!.params).toEqual({ contractId: 12 });
+    });
+
+    it('com a conexão de quem chama, os marcos e os títulos são lidos dentro daquela transação, não pelo pool (ADR 58)', async () => {
+      const rows = [{ id: 5, sort_order: 0 }];
+      const list = ownConn(rows);
+      expect(await milestonesRepository.listForContract(12, list.conn)).toBe(rows);
+      expect(list.query).toHaveBeenCalledTimes(1);
+      const [listSql, listParams] = list.query.mock.calls[0] as unknown as [string, unknown];
+      expect(flat(listSql)).toBe(
+        `${MILESTONE_COLS} WHERE contract_id = :contractId ORDER BY sort_order ASC, id ASC`,
+      );
+      expect(listParams).toEqual({ contractId: 12 });
+
+      const titles = ownConn([
+        { title: 'Layout', status: 'delivered', delivered_at: NOW },
+        { title: 'Publicação', status: 'funded', delivered_at: null },
+      ]);
+      expect(await milestonesRepository.titlesByDelivery(12, titles.conn)).toEqual({
+        delivered: ['Layout'],
+        missing: ['Publicação'],
+      });
+      expect(titles.query).toHaveBeenCalledTimes(1);
+      expect((titles.query.mock.calls[0] as unknown as [string, unknown])[1]).toEqual({
+        contractId: 12,
+      });
+
+      expect(fakeDb.calls).toHaveLength(0);
     });
 
     it('um marco só é achado dentro do contrato a que pertence', async () => {
@@ -322,8 +361,14 @@ describe('milestonesRepository', () => {
       note: null,
       now: NOW,
     };
-    const milestone = { id: 5, contract_id: 12, title: 'Layout', freelancer_net: '283.33' };
-    const failed = { ok: false, completed: false, net: 0, title: '' };
+    const milestone = {
+      id: 5,
+      contract_id: 12,
+      title: 'Layout',
+      amount: '333.33',
+      freelancer_net: '283.33',
+    };
+    const failed = { ok: false, completed: false, net: 0, title: '', amount: 0 };
 
     it('libera só o líquido daquele marco ao freelancer e mantém o contrato em andamento enquanto há marco aberto', async () => {
       fakeDb.reply(
@@ -335,11 +380,13 @@ describe('milestonesRepository', () => {
         { affectedRows: 1 },
       );
 
+      // O valor do marco volta em número: o aviso da aprovação tácita diz ao cliente quanto foi (ADR 58).
       expect(await milestonesRepository.approve(p)).toEqual({
         ok: true,
         completed: false,
         net: 283.33,
         title: 'Layout',
+        amount: 333.33,
       });
 
       expect(steps()).toEqual([
@@ -414,7 +461,7 @@ describe('milestonesRepository', () => {
     it('o último marco conclui o contrato na mesma transação e encerra o pedido de extensão pendente', async () => {
       fakeDb.reply(
         [{ status: 'in_progress' }],
-        [{ ...milestone, title: 'Publicação', freelancer_net: '283.34' }],
+        [{ ...milestone, title: 'Publicação', amount: '333.34', freelancer_net: '283.34' }],
         { affectedRows: 1 },
         [{ open: '0' }],
         { affectedRows: 1 },
@@ -426,6 +473,7 @@ describe('milestonesRepository', () => {
         completed: true,
         net: 283.34,
         title: 'Publicação',
+        amount: 333.34,
       });
 
       expect(fakeDb.calls[4]!.params).toMatchObject({
@@ -533,7 +581,12 @@ describe('milestonesRepository', () => {
 
     describe('em créditos (time-bank)', () => {
       const credits = { ...p, mode: 'credits' as const };
-      const creditMilestone = { ...milestone, title: 'Visita 1', freelancer_net: '19.60' };
+      const creditMilestone = {
+        ...milestone,
+        title: 'Visita 1',
+        amount: '20.00',
+        freelancer_net: '19.60',
+      };
 
       it('libera créditos inteiros do retido para o disponível, com guarda e linha no extrato de créditos', async () => {
         fakeDb.reply(
@@ -552,6 +605,7 @@ describe('milestonesRepository', () => {
           completed: false,
           net: 20,
           title: 'Visita 1',
+          amount: 20,
         });
 
         const wallet = fakeDb.calls[3]!;
@@ -599,9 +653,9 @@ describe('milestonesRepository', () => {
   });
 
   describe('requestRevision', () => {
-    const p = { contractId: 12, milestoneId: 5, changedBy: 7, note: 'Ajustar o topo' };
+    const p = { contractId: 12, milestoneId: 5, changedBy: 7, note: 'Ajustar o topo', now: NOW };
 
-    it('o marco entregue volta a financiado com a nota, sem hora de aprovação tácita, e a linha do tempo registra o pedido', async () => {
+    it('o marco entregue volta a financiado com a nota, sem hora de aprovação tácita, grava desde quando está em revisão e a linha do tempo registra o pedido', async () => {
       fakeDb.reply([{ status: 'in_progress' }], { affectedRows: 1 }, [{ title: 'Layout' }], {
         affectedRows: 1,
       });
@@ -613,16 +667,11 @@ describe('milestonesRepository', () => {
         'SELECT status FROM contracts WHERE id = :contractId FOR UPDATE',
       );
       const update = fakeDb.calls[1]!;
-      expect(update.sql).toContain(
-        "UPDATE contract_milestones SET status = 'funded', revision_note = :note, approval_due_at = NULL",
+      // O instante do pedido é o do fluxo: o aviso de revisão parada conta daqui (ADR 58).
+      expect(update.sql).toBe(
+        "UPDATE contract_milestones SET status = 'funded', revision_note = :note, approval_due_at = NULL, revision_requested_at = :now WHERE id = :id AND contract_id = :contractId AND status = 'delivered'",
       );
-      // Só o marco daquele contrato, e só se estiver entregue.
-      expect(
-        update.sql.endsWith(
-          "WHERE id = :id AND contract_id = :contractId AND status = 'delivered'",
-        ),
-      ).toBe(true);
-      expect(update.params).toEqual({ id: 5, contractId: 12, note: 'Ajustar o topo' });
+      expect(update.params).toEqual({ id: 5, contractId: 12, note: 'Ajustar o topo', now: NOW });
       // O título que vai para a linha do tempo é o do marco revisado (5), não o do contrato (12).
       expect(fakeDb.calls[2]!.sql).toBe('SELECT title FROM contract_milestones WHERE id = :id');
       expect(fakeDb.calls[2]!.params).toEqual({ id: 5 });
@@ -648,6 +697,40 @@ describe('milestonesRepository', () => {
 
       expect(fakeDb.calls[1]!.params).toMatchObject({ note: null });
       expect(fakeDb.calls[3]!.params).toMatchObject({ note: 'Revisão pedida no marco «Layout»' });
+    });
+
+    it('contratação só aceita também recebe o pedido: a guarda deixa passar aceita e em andamento', async () => {
+      fakeDb.reply([{ status: 'accepted' }], { affectedRows: 1 }, [{ title: 'Layout' }], {
+        affectedRows: 1,
+      });
+
+      expect(await milestonesRepository.requestRevision(p)).toBe(true);
+
+      expect(fakeDb.calls).toHaveLength(4);
+      expect(fakeDb.calls[3]!.params).toEqual({
+        contractId: 12,
+        changedBy: 7,
+        oldStatus: 'accepted',
+        newStatus: 'accepted',
+        note: 'Revisão pedida no marco «Layout»: Ajustar o topo',
+      });
+      expectCommitted();
+    });
+
+    it('contratação fora de aceita/em andamento (ou inexistente) não recebe pedido de revisão: desfaz sem tocar no marco', async () => {
+      for (const rows of [[{ status: 'disputed' }], [{ status: 'cancelled' }], []]) {
+        fakeDb.reset();
+        fakeDb.reply(rows);
+
+        expect(await milestonesRepository.requestRevision(p)).toBe(false);
+
+        // Só a leitura travada da contratação: nem o marco nem a linha do tempo.
+        expect(fakeDb.calls).toHaveLength(1);
+        expect(fakeDb.calls[0]!.sql).toBe(
+          'SELECT status FROM contracts WHERE id = :contractId FOR UPDATE',
+        );
+        expectRolledBack();
+      }
     });
 
     it('marco que não está entregue: desfaz e devolve false sem linha do tempo', async () => {

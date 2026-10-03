@@ -12,7 +12,7 @@ import {
 } from '../../src/modules/notifications/push.provider';
 import { QUIET_PASS_CATEGORIES } from '../../src/modules/notifications/quiet-hours';
 import { addHumanHours, isHumanInstant } from '../../src/utils/human-hours';
-import { formatDate, formatDue, hourIn } from '../../src/utils/timezone';
+import { formatDeadline, formatDue, hourIn } from '../../src/utils/timezone';
 import { DAY, fromNow, HOUR, isoFromNow, now, startDaytimeClock, stopClock } from './clock.helpers';
 import { fundWallet } from './wallet.helpers';
 
@@ -431,7 +431,7 @@ describe('O que sai durante o silêncio (ADR 56 e 57)', () => {
     const ny = await latest(freela.id, 'deadline_extension_declined', y);
     expect(ny.title).toMatch(/^Extensão recusada: Logo \d+$/);
     expect(ny.body).toBe(
-      `Prazo vencido. Até ${formatDue(endsY, BRASILIA)}: entregue ou peça a extensão, senão a disputa abre sozinha. O prazo era ${formatDate(new Date(cy.deadline_at), BRASILIA)}. Você ainda pode fazer mais um pedido.`,
+      `Prazo vencido. Até ${formatDue(endsY, BRASILIA)}: entregue ou peça a extensão, senão a disputa abre sozinha. O prazo era ${formatDeadline(new Date(cy.deadline_at), BRASILIA, BRASILIA)}. Você ainda pode fazer mais um pedido.`,
     );
     expect(await held(ny)).toBe(true);
     expect(callFor(ny)).toBeUndefined();

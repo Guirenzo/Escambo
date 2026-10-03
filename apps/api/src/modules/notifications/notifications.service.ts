@@ -1,3 +1,4 @@
+import type { PoolConnection } from 'mysql2/promise';
 import type {
   EmailPreference,
   Notification,
@@ -14,6 +15,7 @@ import { pushService } from './push.service';
 import { quietPassOf, quietWindowOf } from './quiet-hours';
 import { authRepository } from '../auth/auth.repository';
 import { EMAILED_NOTIFICATION_TYPES, mailService, notificationLink } from '../mail/mail.service';
+import { DEADLINE_FIRST_TYPES } from './deadline-types';
 import { notificationsRepository, type NotificationRow } from './notifications.repository';
 
 /** O título cabe em notifications.title (VARCHAR(150)). */
@@ -51,6 +53,20 @@ async function emailNotification(
   });
 }
 
+export interface NotifyInput {
+  type: string;
+  title: string;
+  body?: string | null;
+  data?: Record<string, unknown> | null;
+}
+
+/** Uma notificação gravada, pronta para o envio (o título já cortado). */
+export interface SavedNotification {
+  userId: number;
+  id: number;
+  params: NotifyInput;
+}
+
 export function toNotification(r: NotificationRow): Notification {
   const data =
     r.data == null
@@ -71,29 +87,41 @@ export function toNotification(r: NotificationRow): Notification {
 
 export const notificationsService = {
   /**
-   * Cria uma notificação in-app. Best-effort: usada em hooks de evento, nunca lança. `passCategory`
-   * é só para o push (ADR 56): não é gravada, não vai no socket nem no e-mail.
+   * Grava a notificação in-app (na transação de quem chama, se houver) com o título cortado e
+   * devolve o que o envio precisa. Lança se o banco falhar: quem grava dentro de uma transação
+   * (os lembretes, ADR 58) desfaz tudo e tenta na rodada seguinte.
    */
-  async notify(
+  async persist(
     userId: number,
-    input: {
-      type: string;
-      title: string;
-      body?: string | null;
-      data?: Record<string, unknown> | null;
-    },
-    opts: { passCategory?: QuietPassCategory } = {},
-  ): Promise<void> {
+    input: NotifyInput,
+    conn?: PoolConnection,
+  ): Promise<SavedNotification> {
     // O mesmo título, cortado, no banco, no socket, no e-mail e no push.
     const params = { ...input, title: clipTitle(input.title) };
-    try {
-      const id = await notificationsRepository.create({
+    const id = await notificationsRepository.create(
+      {
         userId,
         type: params.type,
         title: params.title,
         body: params.body ?? null,
         data: params.data != null ? JSON.stringify(params.data) : null,
-      });
+      },
+      conn,
+    );
+    return { userId, id, params };
+  },
+
+  /**
+   * Envia uma notificação já gravada: socket, e-mail e push. Nunca lança. `passCategory` é só
+   * para o push (ADR 56): não é gravada, não vai no socket nem no e-mail; `ownTag` dá etiqueta
+   * própria ao aviso no aparelho (ADR 58).
+   */
+  dispatch(
+    saved: SavedNotification,
+    opts: { passCategory?: QuietPassCategory; ownTag?: boolean } = {},
+  ): void {
+    const { userId, id, params } = saved;
+    try {
       // Push em tempo real para as conexões do usuário (badge, toast, invalidação de cache).
       const pushed: Notification = {
         id,
@@ -113,7 +141,23 @@ export const notificationsService = {
         ...params,
         notificationId: id,
         ...(opts.passCategory ? { passCategory: opts.passCategory } : {}),
+        ...(opts.ownTag ? { ownTag: true } : {}),
       });
+    } catch (err) {
+      logger.warn({ err, type: params.type }, 'envio da notificação falhou');
+    }
+  },
+
+  /**
+   * Cria uma notificação in-app e a envia. Best-effort: usada em hooks de evento, nunca lança.
+   */
+  async notify(
+    userId: number,
+    input: NotifyInput,
+    opts: { passCategory?: QuietPassCategory } = {},
+  ): Promise<void> {
+    try {
+      notificationsService.dispatch(await notificationsService.persist(userId, input), opts);
     } catch (err) {
       logger.warn({ err }, 'notify falhou');
     }
@@ -167,7 +211,9 @@ export const notificationsService = {
     now: Date,
   ): Promise<number> {
     const since = user.last_digest_at ?? new Date(now.getTime() - 24 * 3_600_000);
-    const rows = await notificationsRepository.listSince(user.id, since);
+    const rows = await notificationsRepository.listSince(user.id, since, {
+      first: [...DEADLINE_FIRST_TYPES],
+    });
     if (rows.length > 0) {
       const items = rows.map(toNotification).map((n) => ({
         title: n.title,

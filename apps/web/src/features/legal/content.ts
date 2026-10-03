@@ -8,9 +8,9 @@
  */
 export type LegalKind = 'termos' | 'privacidade';
 
-export const LEGAL_VERSIONS: Record<LegalKind, string> = { termos: '1.3', privacidade: '1.4' };
+export const LEGAL_VERSIONS: Record<LegalKind, string> = { termos: '1.4', privacidade: '1.4' };
 export const LEGAL_UPDATED: Record<LegalKind, string> = {
-  termos: '2026-09-28',
+  termos: '2026-10-03',
   privacidade: '2026-09-25',
 };
 
@@ -51,6 +51,13 @@ export const LEGAL_CHANGES: LegalChange[] = [
       'Acompanhou a carteira pré-paga: movimentações de carteira e créditos nos dados de uso.',
   },
   { doc: 'privacidade', version: '1.0', date: '2026-09-09', summary: 'Primeira versão.' },
+  {
+    doc: 'termos',
+    version: '1.4',
+    date: '2026-10-03',
+    summary:
+      'Prazos: o prazo de entrega é uma data e vale até 23:59 no horário de quem entrega (nas contratações anteriores, vale o dia e a hora que o app mostra). O Escambo passa a lembrar, a partir das 9h e em geral na véspera, o que vence com você: entregar, responder a uma proposta, aprovar uma entrega ou um marco, responder a um pedido de extensão. O lembrete é um aviso a mais e não muda nenhuma hora. A aprovação automática passa a avisar as duas partes, e a revisão parada há 7 dias também.',
+  },
   {
     doc: 'termos',
     version: '1.3',
@@ -110,8 +117,9 @@ export const LEGAL: Record<LegalKind, LegalDoc> = {
         paragraphs: [
           'A carteira é pré-paga: o cliente deposita via PIX e, ao enviar uma proposta em dinheiro, o valor é reservado do saldo na hora. Se o freelancer recusar ou o cliente cancelar antes do aceite, a reserva volta integralmente. No aceite, o valor líquido fica retido (escrow) e é liberado ao freelancer quando o cliente aprova a entrega. A plataforma cobra uma taxa sobre o valor da contratação em dinheiro (hoje, 15%); contratações em créditos Escambo não têm taxa.',
           'Cancelamentos: antes do aceite, a reserva volta inteira. Depois do aceite, se o freelancer desistir, tudo o que está em garantia volta ao cliente. Se o cliente cancelar antes do prazo, recebe metade do valor quando menos da metade do tempo entre o aceite e o prazo passou, e nada quando passou mais da metade; sem prazo definido, recebe metade. Com o prazo vencido sem nenhuma entrega, a partir do aviso do Escambo, o cliente recebe tudo de volta. O app mostra os valores antes de confirmar. Entrega registrada não se cancela: vai para aprovação, revisão ou disputa. Nas contratações por marcos, o cancelamento espera a resposta a um marco entregue e só devolve o que ainda não foi liberado. Em créditos Escambo, os créditos em garantia voltam inteiros. Decisões de disputa devolvem ao cliente a fração definida pela mediação e liberam ao freelancer a fração correspondente do líquido. Saques são solicitados na carteira, processados pela equipe e, se não puderem ser pagos, estornados ao saldo; o titular pode cancelar um saque ainda não processado.',
-          'Se o cliente não responder a uma entrega até a hora informada no aviso da entrega (hoje, 5 dias corridos depois), ela é aprovada automaticamente (aprovação tácita). Antes disso, o cliente pode pedir revisão ou abrir uma disputa.',
-          'O prazo de entrega vale até 23:59 do dia escolhido. Se ele vencer sem nenhuma entrega, as duas partes são avisadas a partir das 9h do dia seguinte, no horário de quem entrega. Sem entrega nem extensão aceita até a hora informada nesse aviso (hoje, 24 horas depois), a disputa abre sozinha em nome do cliente e a mediação do Escambo decide sobre o valor. O prazo só abre disputa sozinho enquanto há trabalho nunca entregue: na entrega única, até a primeira entrega; por marcos, enquanto algum marco não foi entregue. O freelancer pode pedir extensão até duas vezes, e só uma pode ser aceita; o cliente responde até a hora informada no pedido (hoje, 48 horas), e sem resposta o pedido expira. Nenhuma ação automática por prazo acontece entre 21h e 9h no horário de quem é afetado: ela passa para as 9h seguintes.',
+          'Se o cliente não responder a uma entrega até a hora informada no aviso da entrega (hoje, 5 dias corridos depois), ela é aprovada automaticamente (aprovação tácita), e as duas partes são avisadas quando isso acontece. Antes disso, o cliente pode pedir revisão ou abrir uma disputa; a entrega aprovada não volta para revisão. Uma revisão pedida não termina sozinha: se ficar 7 dias sem nova entrega, as duas partes são avisadas, e o desfecho continua com elas (nova entrega, acordo pelo chat ou disputa).',
+          'O prazo de entrega é uma data e vale até 23:59 dela no horário de quem entrega; quando a outra parte está em outro fuso, o app diz de qual horário se trata. Nas contratações criadas antes desta versão, vale o dia e a hora que o app mostra. Se ele vencer sem nenhuma entrega, as duas partes são avisadas a partir das 9h do dia seguinte, no horário de quem entrega. Sem entrega nem extensão aceita até a hora informada nesse aviso (hoje, 24 horas depois), a disputa abre sozinha em nome do cliente e a mediação do Escambo decide sobre o valor. O prazo só abre disputa sozinho enquanto há trabalho nunca entregue: na entrega única, até a primeira entrega; por marcos, enquanto algum marco não foi entregue. O freelancer pode pedir extensão até duas vezes, e só uma pode ser aceita; o cliente responde até a hora informada no pedido (hoje, 48 horas), e sem resposta o pedido expira. Nenhuma ação automática por prazo acontece entre 21h e 9h no horário de quem é afetado: ela passa para as 9h seguintes.',
+          'O Escambo envia lembretes a partir das 9h, no horário de quem recebe, em geral na véspera: a quem entrega, do prazo de entrega; ao freelancer, do fim da validade de uma proposta; ao cliente, da aprovação automática e de um pedido de extensão esperando resposta. O lembrete é um aviso a mais: sai no máximo uma vez, pode não sair quando a contagem começa perto do vencimento, e não suspende, não adia nem condiciona nenhuma hora. Vale sempre a hora informada no aviso que abriu a contagem e na contratação.',
         ],
       },
       {

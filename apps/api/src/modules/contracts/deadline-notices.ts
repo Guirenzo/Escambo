@@ -145,13 +145,16 @@ export function extensionRequestedNotice(f: {
 export function extensionAcceptedNotice(f: {
   contractId: number;
   title: string;
+  /** Só o dia do novo prazo, para o título ("qua, 07/10"). */
+  day: string;
+  /** O novo prazo inteiro, no fuso de quem entrega (ADR 58). */
   deadline: string;
 }): DeadlineNotice {
   return {
     params: {
       type: 'deadline_extension_accepted',
-      title: `Extensão aceita: novo prazo ${f.deadline}`,
-      body: `${f.title}: o prazo foi estendido; não há outra extensão nesta contratação.`,
+      title: `Extensão aceita: novo prazo ${f.day}`,
+      body: `${f.title}: o novo prazo é ${f.deadline}; não há outra extensão nesta contratação.`,
       data: { contractId: f.contractId },
     },
   };
@@ -226,7 +229,7 @@ export function extensionExpiredClientNotice(f: {
     params: {
       type: 'deadline_extension_expired',
       title: `Pedido de extensão expirou: ${f.title}`,
-      body: `Sem a sua resposta até ${f.respondBy}, o pedido de novo prazo (${f.proposed}) expirou e vale o prazo atual, ${f.deadline}.`,
+      body: `Sem a sua resposta até ${f.respondBy}, o pedido de novo prazo, ${f.proposed}, expirou e vale o prazo atual, ${f.deadline}.`,
       data: { contractId: f.contractId },
     },
   };
@@ -253,7 +256,10 @@ export function autoDisputeNotice(f: {
   };
 }
 
-/** O que a mediação lê, em horário de Brasília. Começa sempre por "Aberta automaticamente". */
+/**
+ * O que a mediação lê. O prazo vem como dia, com o horário de quem entrega; o aviso e o limite, em
+ * horário de Brasília. Começa sempre por "Aberta automaticamente".
+ */
 export function autoDisputeDescription(f: {
   deadline: string;
   noticeAt: string;
@@ -267,8 +273,8 @@ export function autoDisputeDescription(f: {
       : '';
   const partial = !!f.delivered && f.delivered.length > 0;
   return partial
-    ? `Aberta automaticamente pela plataforma (RN-029): o prazo de entrega (${f.deadline}) venceu com marcos nunca entregues, o aviso saiu em ${f.noticeAt} e, até ${f.limit}, eles não foram entregues nem houve extensão aceita. Horários de Brasília.${milestones}`
-    : `Aberta automaticamente pela plataforma (RN-029): o prazo de entrega (${f.deadline}) venceu sem entrega, o aviso saiu em ${f.noticeAt} e, até ${f.limit}, não houve entrega nem extensão aceita. Horários de Brasília.${milestones}`;
+    ? `Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, ${f.deadline}, venceu com marcos nunca entregues, o aviso saiu em ${f.noticeAt} e, até ${f.limit}, eles não foram entregues nem houve extensão aceita. O aviso e o limite estão em horário de Brasília.${milestones}`
+    : `Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, ${f.deadline}, venceu sem entrega, o aviso saiu em ${f.noticeAt} e, até ${f.limit}, não houve entrega nem extensão aceita. O aviso e o limite estão em horário de Brasília.${milestones}`;
 }
 
 // ---------- Marco atrasado (só marco nunca entregue) ----------

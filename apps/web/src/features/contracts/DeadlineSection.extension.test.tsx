@@ -28,9 +28,11 @@ vi.mock('../../lib/api', () => ({
     publicSettings: () => publicSettings(),
   },
 }));
-vi.mock('../../lib/auth', () => ({
-  useAuth: () => ({ user: { id: 1, timezone: 'America/Sao_Paulo' } }),
+// Quem lê: o fuso muda por teste (o prazo é um dia no fuso de quem entrega, ADR 58).
+const auth = vi.hoisted(() => ({
+  user: { id: 1, timezone: 'America/Sao_Paulo' as string | null },
 }));
+vi.mock('../../lib/auth', () => ({ useAuth: () => auth }));
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -44,9 +46,12 @@ function wrap(ui: ReactNode) {
 const CLIENT = 1;
 const FREELANCER = 2;
 
-/** Dias montados na hora local: datas e campos de data não dependem do fuso de quem roda. */
+/**
+ * Hora de Brasília (UTC−3) em ISO: o prazo sem outro fuso é um dia em Brasília, e o texto da tela
+ * não depende do fuso da máquina que roda o teste.
+ */
 const local = (month: number, day: number, hour = 23, minute = 59, second = 59): string =>
-  new Date(2026, month - 1, day, hour, minute, second).toISOString();
+  new Date(Date.UTC(2026, month - 1, day, hour + 3, minute, second)).toISOString();
 
 function contract(
   deadline: Partial<ContractDeadline>,
@@ -60,6 +65,8 @@ function contract(
     status: 'accepted',
     hasMilestones: false,
     deadlineAt: local(9, 30),
+    deadlineZone: 'America/Sao_Paulo',
+    revisionRequestedAt: null,
     deadlineExtendedAt: null,
     extension: null,
     milestones: [],
@@ -85,19 +92,23 @@ const pending = (o: Partial<ContractExtension> = {}): ContractExtension => ({
   resolvedAt: null,
   respondBy: '2026-10-03T12:00:00.000Z',
   seq: 2,
+  deadlineZone: 'America/Sao_Paulo',
   ...o,
 });
 
 const section = (): HTMLElement => screen.getByRole('region', { name: 'Prazo de entrega' });
 
-// Agora: 01/10/2026, meio-dia local. O prazo padrão dos exemplos (30/09) já venceu.
+// Agora: qui, 01/10/2026, meio-dia em Brasília. O prazo padrão dos exemplos (30/09) já venceu.
+const NOW = local(10, 1, 12, 0, 0);
 beforeAll(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
-  vi.setSystemTime(new Date(2026, 9, 1, 12, 0, 0));
+  vi.setSystemTime(new Date(NOW));
 });
 afterAll(() => vi.useRealTimers());
 
 beforeEach(() => {
+  vi.setSystemTime(new Date(NOW));
+  auth.user = { id: 1, timezone: 'America/Sao_Paulo' };
   requestExtension.mockReset();
   requestExtension.mockResolvedValue(contract({ state: 'paused' }, { extension: pending() }));
   resolveExtension.mockReset();
@@ -123,7 +134,9 @@ describe('DeadlineSection: prazo correndo e contratação sem prazo', () => {
     render(
       wrap(<DeadlineSection contract={contract({}, { deadlineAt: local(10, 3) })} myId={CLIENT} />),
     );
-    expect(within(section()).getByText('03/10/2026')).toBeInTheDocument();
+    expect(within(section()).getByTestId('deadline-date').textContent).toBe(
+      'sáb, 03/10/2026, até 23:59',
+    );
     expect(within(section()).getByText('faltam 2 dias')).toBeInTheDocument();
     expect(
       within(section())
@@ -143,7 +156,9 @@ describe('DeadlineSection: prazo correndo e contratação sem prazo', () => {
         <DeadlineSection contract={contract({}, { deadlineAt: local(10, 10) })} myId={CLIENT} />,
       ),
     );
-    expect(within(section()).getByText('10/10/2026')).toBeInTheDocument();
+    expect(within(section()).getByTestId('deadline-date').textContent).toBe(
+      'sáb, 10/10/2026, até 23:59',
+    );
     expect(within(section()).getByText('faltam 9 dias')).toBeInTheDocument();
     expect(within(section()).queryAllByRole('listitem')).toEqual([]);
   });
@@ -216,7 +231,7 @@ describe('DeadlineSection: prazo correndo e contratação sem prazo', () => {
       ),
     );
     expect(
-      within(section()).getByText('estendido em 28/09/2026 · extensão usada'),
+      within(section()).getByText('estendido em seg, 28/09, às 10:00 · extensão usada'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pedir extensão de prazo' })).toBeNull();
   });
@@ -369,7 +384,9 @@ describe('DeadlineSection: prazo vencido, os textos que faltavam', () => {
 
   it('quem não é parte da contratação vê o prazo, mas não o aviso de atraso nem o pedido de extensão', () => {
     render(wrap(<DeadlineSection contract={contract({ state: 'due' })} myId={99} />));
-    expect(within(section()).getByText('30/09/2026')).toBeInTheDocument();
+    expect(within(section()).getByTestId('deadline-date').textContent).toBe(
+      'qua, 30/09/2026, até 23:59',
+    );
     expect(within(section()).getByText('venceu')).toBeInTheDocument();
     expect(screen.queryByText(/O prazo venceu sem entrega/)).toBeNull();
     expect(screen.queryByRole('button')).toBeNull();
@@ -468,7 +485,7 @@ describe('DeadlineSection: pedido de extensão esperando o cliente', () => {
     );
     expect(within(section()).getByText('extensão pedida')).toBeInTheDocument();
     expect(
-      within(section()).getByText('Extensão pedida: novo prazo 10/10/2026'),
+      within(section()).getByText('Extensão pedida: novo prazo sáb, 10/10/2026, até 23:59'),
     ).toBeInTheDocument();
     expect(within(section()).getByText('Material atrasou')).toBeInTheDocument();
     expect(
@@ -519,7 +536,7 @@ describe('DeadlineSection: pedido de extensão esperando o cliente', () => {
       ),
     );
     expect(
-      within(section()).getByText('Extensão pedida: novo prazo 10/10/2026'),
+      within(section()).getByText('Extensão pedida: novo prazo sáb, 10/10/2026, até 23:59'),
     ).toBeInTheDocument();
     expect(within(section()).getByText('Material atrasou')).toBeInTheDocument();
     expect(screen.queryByText(/Responda até/)).toBeNull();
@@ -541,7 +558,7 @@ describe('DeadlineSection: pedido de extensão esperando o cliente', () => {
       ),
     );
     expect(
-      within(section()).getByText('Extensão pedida: novo prazo 10/10/2026'),
+      within(section()).getByText('Extensão pedida: novo prazo sáb, 10/10/2026, até 23:59'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button')).toBeNull();
     expect(screen.queryByText(/Responda até/)).toBeNull();
@@ -658,12 +675,12 @@ describe('DeadlineSection: pedido de extensão esperando o cliente', () => {
     [
       'recusado',
       'declined',
-      'Pedido de extensão (novo prazo 10/10/2026) recusado; vale o prazo atual.',
+      'Pedido de extensão (novo prazo sáb, 10/10/2026, até 23:59) recusado; vale o prazo atual.',
     ],
     [
       'expirado',
       'expired',
-      'Pedido de extensão (novo prazo 10/10/2026) sem resposta até sáb, 03/10, às 09:00: vale o prazo atual.',
+      'Pedido de extensão (novo prazo sáb, 10/10/2026, até 23:59) sem resposta até sáb, 03/10, às 09:00: vale o prazo atual.',
     ],
   ])(
     'segundo pedido %s: o freelancer não lê "mais um pedido" nem vê o botão de pedir',
@@ -699,7 +716,7 @@ describe('DeadlineSection: pedido de extensão esperando o cliente', () => {
     );
     expect(
       within(section()).getByText(
-        'Pedido de extensão (novo prazo 10/10/2026) recusado; vale o prazo atual. Você ainda pode fazer mais um pedido.',
+        'Pedido de extensão (novo prazo sáb, 10/10/2026, até 23:59) recusado; vale o prazo atual. Você ainda pode fazer mais um pedido.',
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pedir extensão de prazo' })).toBeEnabled();
@@ -720,7 +737,7 @@ describe('DeadlineSection: pedido de extensão esperando o cliente', () => {
     );
     expect(
       within(section()).getByText(
-        'Pedido de extensão (novo prazo 10/10/2026) sem resposta até sáb, 03/10, às 09:00: vale o prazo atual.',
+        'Pedido de extensão (novo prazo sáb, 10/10/2026, até 23:59) sem resposta até sáb, 03/10, às 09:00: vale o prazo atual.',
       ),
     ).toBeInTheDocument();
   });
@@ -745,7 +762,7 @@ describe('DeadlineSection: pedido de extensão esperando o cliente', () => {
     );
     expect(
       within(section()).getByText(
-        'Pedido de extensão (novo prazo 10/10/2026) sem resposta até dom, 04/10, às 09:00: vale o prazo atual. Você ainda pode fazer mais um pedido.',
+        'Pedido de extensão (novo prazo sáb, 10/10/2026, até 23:59) sem resposta até dom, 04/10, às 09:00: vale o prazo atual. Você ainda pode fazer mais um pedido.',
       ),
     ).toBeInTheDocument();
     expect(within(section()).getByText('resta 1 pedido')).toBeInTheDocument();
@@ -765,7 +782,7 @@ describe('DeadlineSection: pedido de extensão esperando o cliente', () => {
     );
     expect(
       within(section()).getByText(
-        'Pedido de extensão (novo prazo 10/10/2026) recusado; vale o prazo atual.',
+        'Pedido de extensão (novo prazo sáb, 10/10/2026, até 23:59) recusado; vale o prazo atual.',
       ),
     ).toBeInTheDocument();
   });
@@ -783,7 +800,7 @@ describe('DeadlineSection: o freelancer pede a extensão', () => {
     const { dialog } = await open(contract({ state: 'due', extensionRequestsLeft: 1 }));
     expect(
       await within(dialog).findByText(
-        'Prazo atual: 30/09/2026. Você pode pedir até 2 vezes nesta contratação (resta 1), e só uma extensão pode ser aceita. O cliente tem até 72 h para responder; sem resposta, o pedido expira. Enquanto ele decide, a disputa automática espera.',
+        'Prazo atual: qua, 30/09/2026, até 23:59. Você pode pedir até 2 vezes nesta contratação (resta 1), e só uma extensão pode ser aceita. O cliente tem até 72 h para responder; sem resposta, o pedido expira. Enquanto ele decide, a disputa automática espera.',
       ),
     ).toBeInTheDocument();
   });
@@ -843,9 +860,9 @@ describe('DeadlineSection: o freelancer pede a extensão', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Enviar pedido' }));
 
     expect(requestExtension).toHaveBeenCalledTimes(1);
-    // O prazo vale o dia inteiro: 23:59:59 do dia escolhido, na hora local de quem pede.
+    // O prazo vale o dia inteiro: 23:59:59 do dia escolhido, no fuso do prazo (Brasília).
     expect(requestExtension).toHaveBeenCalledWith(9, {
-      deadlineAt: local(10, 15),
+      deadlineAt: '2026-10-16T02:59:59.000Z',
       reason: 'O material chegou 3 dias depois',
     });
     expect(
@@ -861,7 +878,7 @@ describe('DeadlineSection: o freelancer pede a extensão', () => {
     await user.type(within(dialog).getByLabelText('Motivo (o cliente lê)'), 'Material atrasou');
     await user.click(within(dialog).getByRole('button', { name: 'Enviar pedido' }));
     expect(requestExtension).toHaveBeenCalledWith(9, {
-      deadlineAt: local(10, 8),
+      deadlineAt: '2026-10-09T02:59:59.000Z',
       reason: 'Material atrasou',
     });
   });
@@ -917,5 +934,109 @@ describe('DeadlineSection: o freelancer pede a extensão', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(requestExtension).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Pedir extensão de prazo' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * O novo prazo é um dia no fuso GRAVADO do prazo (ADR 58), não no de quem pede: o mínimo, o padrão
+ * e o fim do dia enviado saem dele, e o rótulo diz o horário quando quem pede está em outro relógio.
+ */
+describe('DeadlineSection: o novo prazo no fuso do prazo', () => {
+  const open = async (c: ContractWithHistory) => {
+    const user = userEvent.setup();
+    render(wrap(<DeadlineSection contract={c} myId={FREELANCER} />));
+    await user.click(screen.getByRole('button', { name: 'Pedir extensão de prazo' }));
+    return { user, dialog: screen.getByRole('dialog', { name: 'Pedir extensão de prazo' }) };
+  };
+  const manaus = (deadlineAt: string, deadline: Partial<ContractDeadline> = {}) =>
+    contract(deadline, { deadlineAt, deadlineZone: 'America/Manaus' });
+
+  it('prazo de Manaus já vencido, pedido de Brasília depois da meia-noite: o mínimo é amanhã em Manaus e vai o fim do dia de lá', async () => {
+    // 00:30 de sex 02/10 em Brasília; em Manaus ainda é qui 01/10, 23:30.
+    vi.setSystemTime(new Date('2026-10-02T03:30:00Z'));
+    const { user, dialog } = await open(manaus('2026-10-01T03:59:59.000Z', { state: 'due' }));
+    expect(within(dialog).getByTestId('extension-rules').textContent).toBe(
+      'Prazo atual: qua, 30/09/2026, até 23:59 (horário de Manaus). Você pode pedir até 2 vezes nesta contratação (resta 2), e só uma extensão pode ser aceita. O cliente tem até 72 h para responder; sem resposta, o pedido expira. Enquanto ele decide, a disputa automática espera.',
+    );
+    const date = within(dialog).getByLabelText(
+      'Novo prazo (vale até 23:59 do dia, no horário de Manaus)',
+    );
+    expect(date).toHaveAttribute('min', '2026-10-02');
+    expect(date).toHaveValue('2026-10-08');
+    await user.type(within(dialog).getByLabelText('Motivo (o cliente lê)'), 'Material atrasou');
+    await user.click(within(dialog).getByRole('button', { name: 'Enviar pedido' }));
+    expect(requestExtension).toHaveBeenCalledTimes(1);
+    expect(requestExtension).toHaveBeenCalledWith(9, {
+      deadlineAt: '2026-10-09T03:59:59.000Z', // 08/10, 23:59:59 em Manaus
+      reason: 'Material atrasou',
+    });
+    expect(
+      await screen.findByText(
+        'Pedido enviado. O cliente tem até sáb, 03/10, às 09:00 para responder.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('prazo de Manaus por vencer, pedido de Noronha: o mínimo é o dia seguinte ao prazo no dia de Manaus', async () => {
+    auth.user = { id: FREELANCER, timezone: 'America/Noronha' };
+    // Fim de seg 05/10 em Manaus: em Noronha já é ter 06/10, 01:59.
+    const { user, dialog } = await open(manaus('2026-10-06T03:59:59.000Z'));
+    const date = within(dialog).getByLabelText(
+      'Novo prazo (vale até 23:59 do dia, no horário de Manaus)',
+    );
+    expect(date).toHaveAttribute('min', '2026-10-06');
+    expect(date).toHaveValue('2026-10-12');
+    await user.clear(date);
+    await user.type(date, '2026-10-15');
+    await user.type(within(dialog).getByLabelText('Motivo (o cliente lê)'), 'Material atrasou');
+    await user.click(within(dialog).getByRole('button', { name: 'Enviar pedido' }));
+    expect(requestExtension).toHaveBeenCalledWith(9, {
+      deadlineAt: '2026-10-16T03:59:59.000Z',
+      reason: 'Material atrasou',
+    });
+    // A hora para o cliente responder vem no fuso de quem pediu.
+    expect(
+      await screen.findByText(
+        'Pedido enviado. O cliente tem até sáb, 03/10, às 10:00 para responder.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('quem pede em Cuiabá um prazo de Manaus (mesmo relógio) não lê nota nenhuma', async () => {
+    auth.user = { id: FREELANCER, timezone: 'America/Cuiaba' };
+    const { dialog } = await open(manaus('2026-10-06T03:59:59.000Z'));
+    expect(within(dialog).getByTestId('extension-rules').textContent).toBe(
+      'Prazo atual: seg, 05/10/2026, até 23:59. Você pode pedir até 2 vezes nesta contratação (resta 2), e só uma extensão pode ser aceita. O cliente tem até 72 h para responder; sem resposta, o pedido expira. Enquanto ele decide, a disputa automática espera.',
+    );
+    expect(within(dialog).getByLabelText('Novo prazo (vale até 23:59 do dia)')).toHaveAttribute(
+      'min',
+      '2026-10-06',
+    );
+  });
+
+  it('quem não escolheu fuso pede em Brasília: prazo de Manaus vem com o horário no rótulo', async () => {
+    auth.user = { id: FREELANCER, timezone: null };
+    const { dialog } = await open(manaus('2026-10-06T03:59:59.000Z'));
+    expect(
+      within(dialog).getByLabelText('Novo prazo (vale até 23:59 do dia, no horário de Manaus)'),
+    ).toHaveValue('2026-10-12');
+  });
+
+  it('prazo sem o fuso (API antiga, durante o deploy): o novo prazo vale em Brasília', async () => {
+    auth.user = { id: FREELANCER, timezone: 'America/Manaus' };
+    const legacy = contract({ state: 'due' });
+    delete (legacy as Partial<ContractWithHistory>).deadlineZone;
+    const { user, dialog } = await open(legacy);
+    const date = within(dialog).getByLabelText(
+      'Novo prazo (vale até 23:59 do dia, no horário de Brasília)',
+    );
+    expect(date).toHaveAttribute('min', '2026-10-02');
+    expect(date).toHaveValue('2026-10-08');
+    await user.type(within(dialog).getByLabelText('Motivo (o cliente lê)'), 'Material atrasou');
+    await user.click(within(dialog).getByRole('button', { name: 'Enviar pedido' }));
+    expect(requestExtension).toHaveBeenCalledWith(9, {
+      deadlineAt: '2026-10-09T02:59:59.000Z', // 08/10, 23:59:59 em Brasília
+      reason: 'Material atrasou',
+    });
   });
 });

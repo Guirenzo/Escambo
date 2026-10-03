@@ -1,5 +1,6 @@
 import type { BrazilTimezone } from '@escambo/types';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
+import type { PoolConnection } from 'mysql2/promise';
 import { pool } from '../../config/db';
 import { clock } from '../../utils/clock';
 import { applyWalletEffect, type WalletEffect } from '../wallet/wallet.ledger';
@@ -40,6 +41,8 @@ export interface ContractRow extends RowDataPacket {
   overdue_notified_at: Date | null;
   grace_ends_at: Date | null;
   approval_due_at: Date | null;
+  /** Revisão em aberto: quando o cliente pediu (ADR 58). */
+  revision_requested_at?: Date | null;
   proposal_expires_at: Date | null;
   // Calculados nas leituras (CONTRACT_COLS)
   total_milestones?: number;
@@ -107,6 +110,8 @@ export const contractsRepository = {
     deadlineAt: string | null;
     /** RN-021: até quando o freelancer responde (gravado, ADR 57); null na troca. */
     proposalExpiresAt: Date | null;
+    /** O relógio do fluxo: o lembrete da proposta conta a idade a partir daqui (ADR 58). */
+    createdAt: Date;
     /**
      * Cash: o valor da proposta sai do saldo disponível do cliente e fica RESERVADO
      * (balance_pending) na mesma transação do INSERT. Retorna null se não há saldo.
@@ -123,9 +128,9 @@ export const contractsRepository = {
       await conn.beginTransaction();
       const [res] = await conn.query<ResultSetHeader>(
         `INSERT INTO contracts
-           (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, payment_mode, deadline_at, proposal_expires_at)
+           (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, payment_mode, deadline_at, proposal_expires_at, created_at)
          VALUES
-           (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, :platformFee, :freelancerNet, :paymentMode, :deadlineAt, :proposalExpiresAt)`,
+           (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, :platformFee, :freelancerNet, :paymentMode, :deadlineAt, :proposalExpiresAt, :createdAt)`,
         row,
       );
       const id = res.insertId;
@@ -161,8 +166,9 @@ export const contractsRepository = {
     }
   },
 
-  async findById(id: number): Promise<ContractRow | undefined> {
-    const [rows] = await pool.query<ContractRow[]>(
+  /** Com `conn`, lê dentro da transação de quem chama (lembretes, ADR 58). */
+  async findById(id: number, conn?: PoolConnection): Promise<ContractRow | undefined> {
+    const [rows] = await (conn ?? pool).query<ContractRow[]>(
       `SELECT ${CONTRACT_COLS} FROM contracts c WHERE c.id = :id LIMIT 1`,
       { id },
     );
@@ -431,7 +437,7 @@ export const contractsRepository = {
     from: string;
     to: string;
     note: string | null;
-    timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at';
+    timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at' | 'revision_requested_at';
     /** O instante gravado (padrão: o relógio do fluxo). */
     now?: Date;
     /**

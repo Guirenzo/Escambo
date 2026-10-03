@@ -4,11 +4,14 @@ import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { env } from '../../src/config/env';
 import { runDailyDigest, startOfTodayBrt } from '../../src/jobs/daily-digest';
+import { notificationsService } from '../../src/modules/notifications/notifications.service';
 import { fundWallet } from './wallet.helpers';
 
 /**
  * Preferência de e-mail e resumo diário contra o MySQL real (provedor simulado: a caixa de
  * saída é a entrega). O job recebe um "agora" ao meio-dia de Brasília para passar da hora.
+ * ADR 58: o resumo leva no máximo 50 avisos, e os que têm hora-limite próxima (atraso, extensão,
+ * lembretes) vêm primeiro: com mais de 50, um lembrete chegado por último não fica de fora.
  */
 
 const app = createApp();
@@ -229,5 +232,62 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
       quietHours: null,
       quietPass: null,
     });
+  });
+
+  it('com mais de 50 avisos, o lembrete chegado por último entra no e-mail, em primeiro (prazo primeiro); o resto segue a ordem de chegada', async () => {
+    const admin = await registerAndLogin('client', 'admin.escambo.test');
+    const daily = await registerAndLogin('freelancer');
+    // Hora 0: o resumo sai em qualquer rodada do dia, com os avisos das últimas 24 h.
+    await request(app)
+      .put('/api/notifications/preferences')
+      .set(auth(daily.token))
+      .send({ emailFrequency: 'daily', digestHour: 0 })
+      .expect(200);
+
+    // 55 avisos comuns, depois uma aprovação automática (sem prazo correndo: ordem de chegada) e,
+    // por último, o lembrete da entrega. Gravados como os lembretes gravam (sem envio imediato).
+    for (let i = 1; i <= 55; i++) {
+      await notificationsService.persist(daily.id, {
+        type: 'contract_proposal',
+        title: `Proposta ${String(i).padStart(2, '0')}`,
+        body: 'Site da padaria',
+        data: null,
+      });
+    }
+    await notificationsService.persist(daily.id, {
+      type: 'contract_auto_approved',
+      title: 'Aprovada automaticamente: Cartão de visita',
+      body: 'Sem resposta, a entrega foi aprovada.',
+      data: null,
+    });
+    const reminder = {
+      title: 'Entregue até sex, 02/10: Logo da padaria',
+      body: 'O prazo é sex, 02/10/2026, até 23:59.',
+    };
+    await notificationsService.persist(daily.id, {
+      type: 'contract_deadline_reminder',
+      ...reminder,
+      data: null,
+    });
+
+    const result = await runDailyDigest(new Date());
+    expect(result.sent).toContain(daily.id);
+    const digests = (await outbox(admin, daily.id)).filter((m) => m.template === 'digest');
+    expect(digests).toHaveLength(1);
+    expect(digests[0]!.subject).toBe('Seu resumo do dia: 50 novidades no Escambo');
+    const lines = digests[0]!.text.split('\n');
+    expect(lines[0]).toBe('Seu resumo do dia: 50 novidades');
+    // O lembrete, o 57º a chegar, abre o resumo; seguem as propostas 01 a 49, na ordem de chegada.
+    expect(lines.slice(2, 52)).toEqual([
+      `• ${reminder.title} — ${reminder.body}`,
+      ...Array.from(
+        { length: 49 },
+        (_, i) => `• Proposta ${String(i + 1).padStart(2, '0')} — Site da padaria`,
+      ),
+    ]);
+    // Ficaram de fora as propostas 50 a 55 e a aprovação automática (não passa à frente).
+    expect(lines[52]).toBe('');
+    expect(digests[0]!.text).not.toContain('Proposta 50');
+    expect(digests[0]!.text).not.toContain('Aprovada automaticamente');
   });
 });

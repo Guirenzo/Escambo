@@ -1,3 +1,4 @@
+import { clock } from '../../utils/clock';
 import type { Paginated, Review } from '@escambo/types';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
@@ -6,7 +7,7 @@ import { gamificationService } from '../gamification/gamification.service';
 import { reviewsRepository, type ReviewListRow, type ReviewRow } from './reviews.repository';
 import type { CreateReviewInput, ListReviewsInput } from './reviews.schema';
 
-const REVIEW_WINDOW_DAYS = 7; // RN-043
+export const REVIEW_WINDOW_DAYS = 7; // RN-043
 
 export function toReview(row: ReviewRow, response: string | null): Review {
   return {
@@ -39,7 +40,7 @@ export const reviewsService = {
     }
     // RN-043: janela de 7 dias após a conclusão
     if (contract.completed_at) {
-      const days = (Date.now() - new Date(contract.completed_at).getTime()) / 86_400_000;
+      const days = (clock.now().getTime() - new Date(contract.completed_at).getTime()) / 86_400_000;
       if (days > REVIEW_WINDOW_DAYS) {
         throw new HttpError(409, 'Prazo para avaliar (7 dias) expirado', 'review_window_closed');
       }

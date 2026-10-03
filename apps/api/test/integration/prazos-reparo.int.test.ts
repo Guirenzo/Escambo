@@ -14,13 +14,17 @@ import { DAY, fromNow, HOUR, isoFromNow, now, startDaytimeClock, stopClock } fro
 import { fundWallet } from './wallet.helpers';
 
 /**
- * Reparo dos prazos (ADR 57, jobs/repair-deadlines.ts) contra o MySQL real. As contratações de
+ * Reparo dos prazos (ADR 57 e 58, jobs/repair-deadlines.ts) contra o MySQL real. As contratações de
  * antes da 0027 (e o que a API antiga grava durante o deploy) chegam com as colunas novas vazias e
  * o contador de pedidos zerado: aqui cada linha é criada pela API e levada ao formato antigo pelo
  * SQL. Uma rodada do reparo preenche cada uma com a hora humana no fuso ATUAL de quem é afetado
  * (freelancer em Manaus ou Noronha, cliente em Rio Branco ou Noronha, os demais em Brasília), uma
  * segunda rodada não muda nada, e as sanções (expiração do pedido, disputa, aprovação tácita,
- * proposta vencida) saem na rodada seguinte dos jobs, na hora reparada.
+ * proposta vencida) saem na rodada seguinte dos jobs, na hora reparada. ADR 58: as revisões em
+ * aberto ganham a hora do pedido (a do último pedido no histórico da contratação; no marco, a da
+ * nota "Revisão pedida no marco «título»" quando o título é único na contratação; senão, a da
+ * rodada), nunca antes da última entrega, e dela conta o aviso de revisão parada. A mesma conta
+ * conserta a hora que ficou de outro ciclo (a volta da 1.40 pediu a revisão de novo sem gravá-la).
  * O reparo varre o banco inteiro: tudo é conferido por id. Os valores esperados saem das mesmas
  * funções puras de hora que a API usa e, em vários casos, também de instantes escritos à mão.
  * Configurações do seed: carência de 24 h, proposta de 72 h, aprovação tácita em 5 dias.
@@ -51,6 +55,26 @@ const PROPOSAL_CREATED = new Date('2026-03-11T00:15:00Z');
 /** Primeira entrega (depois veio a revisão) e a última, às 20:50 em Brasília. */
 const FIRST_DELIVERY = new Date('2026-03-04T14:00:00Z');
 const LAST_DELIVERY = new Date('2026-03-10T23:50:00Z');
+/** Os dois pedidos de revisão de uma contratação antiga: vale o último. */
+const FIRST_REVISION = new Date('2026-03-05T14:00:00Z');
+const LAST_REVISION = new Date('2026-03-08T13:30:00Z');
+/** As duas entregas dessa contratação, cada uma antes do pedido que veio depois dela. */
+const REVISED_DELIVERIES = [new Date('2026-03-04T18:00:00Z'), new Date('2026-03-07T16:00:00Z')];
+/** Marco de título único entregue e devolvido para revisão: a hora da nota na linha do tempo. */
+const MILESTONE_DELIVERED = new Date('2026-03-05T17:00:00Z');
+const MILESTONE_REVISION = new Date('2026-03-06T12:45:00Z');
+/**
+ * A volta da 1.40: a API nova gravou a hora do 1º pedido; a 1.40 registrou a nova entrega e o 2º
+ * pedido sem gravá-la. A coluna ficou com a hora do ciclo anterior, antes da última entrega.
+ */
+const RETURN_DELIVERIES = [new Date('2026-03-02T13:00:00Z'), new Date('2026-03-06T13:00:00Z')];
+const RETURN_REVISIONS = [new Date('2026-03-03T13:00:00Z'), new Date('2026-03-07T13:00:00Z')];
+/** O mesmo num marco: as entregas ficam em `delivered_at` (só a última), os pedidos nas notas. */
+const RETURN_MILESTONE_DELIVERED = new Date('2026-03-06T15:00:00Z');
+const RETURN_MILESTONE_REVISIONS = [
+  new Date('2026-03-03T15:00:00Z'),
+  new Date('2026-03-07T15:00:00Z'),
+];
 
 let seq = 0;
 async function registerAndLogin(
@@ -115,10 +139,25 @@ const deliver = (id: number, freelancer: Actor): Promise<void> =>
 const askRevision = (id: number, client: Actor): Promise<void> =>
   ok(`/api/contracts/${id}/request-revision`, client, { note: 'Ajustar as cores do cardápio' });
 
-async function firstMilestone(id: number, token: string): Promise<number> {
+const askMilestoneRevision = (id: number, milestoneId: number, client: Actor): Promise<void> =>
+  ok(`/api/contracts/${id}/milestones/${milestoneId}/request-revision`, client, {
+    note: 'Trocar a fonte do rascunho',
+  });
+
+const deliverMilestone = (id: number, milestoneId: number, freelancer: Actor): Promise<void> =>
+  ok(`/api/contracts/${id}/milestones/${milestoneId}/deliver`, freelancer, {
+    message: 'Rascunho no chat.',
+  });
+
+/** Os marcos da contratação, na ordem. */
+async function milestoneIds(id: number, token: string): Promise<number[]> {
   const res = await request(app).get(`/api/contracts/${id}`).set(auth(token));
   expect(res.status).toBe(200);
-  return (res.body.milestones as { id: number }[])[0]!.id;
+  return (res.body.milestones as { id: number }[]).map((m) => m.id);
+}
+
+async function firstMilestone(id: number, token: string): Promise<number> {
+  return (await milestoneIds(id, token))[0]!;
 }
 
 /** Leva a linha ao formato antigo (ou "anda o tempo") direto no banco. */
@@ -133,6 +172,57 @@ async function setColumns(
   await pool.query(`UPDATE ${table} SET ${sets} WHERE id = :id`, { ...cols, id });
 }
 
+/**
+ * Põe horas escritas à mão nas linhas da contratação (no histórico ou nas entregas), na ordem em
+ * que foram gravadas: uma hora por linha. O histórico grava com o relógio do banco, e as entregas
+ * com o do fluxo; aqui as duas contam a mesma história.
+ */
+async function restamp(
+  table: 'contract_status_history' | 'deliveries',
+  contractId: number,
+  filter: string,
+  params: Record<string, string>,
+  times: Date[],
+): Promise<void> {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id FROM ${table} WHERE contract_id = :contractId AND ${filter} ORDER BY id`,
+    { ...params, contractId },
+  );
+  expect(rows).toHaveLength(times.length);
+  const sets = table === 'deliveries' ? 'created_at = :at, delivered_at = :at' : 'created_at = :at';
+  for (const [i, at] of times.entries()) {
+    await pool.query(`UPDATE ${table} SET ${sets} WHERE id = :id`, { id: rows[i]!.id, at });
+  }
+}
+
+/** As entregas da contratação, uma hora por entrega. */
+const restampDeliveries = (contractId: number, times: Date[]): Promise<void> =>
+  restamp('deliveries', contractId, '1 = 1', {}, times);
+
+/** Os pedidos de revisão da entrega única no histórico. */
+const restampRevisions = (contractId: number, times: Date[]): Promise<void> =>
+  restamp(
+    'contract_status_history',
+    contractId,
+    'new_status = :status',
+    { status: 'revision_requested' },
+    times,
+  );
+
+/** As notas "Revisão pedida no marco «título»" da linha do tempo. */
+const restampMilestoneRevisions = (
+  contractId: number,
+  title: string,
+  times: Date[],
+): Promise<void> =>
+  restamp(
+    'contract_status_history',
+    contractId,
+    'note LIKE :like',
+    { like: `Revisão pedida no marco «${title}»%` },
+    times,
+  );
+
 interface ContractCols extends RowDataPacket {
   status: string;
   deadline_at: Date | null;
@@ -146,11 +236,12 @@ interface ContractCols extends RowDataPacket {
   grace_ends_at: Date | null;
   approval_due_at: Date | null;
   proposal_expires_at: Date | null;
+  revision_requested_at: Date | null;
 }
 
 const COLS = `id, status, deadline_at, created_at, extension_status, extension_requests,
   extension_deadline_at, extension_respond_by, extension_resolved_at, overdue_notified_at,
-  grace_ends_at, approval_due_at, proposal_expires_at`;
+  grace_ends_at, approval_due_at, proposal_expires_at, revision_requested_at`;
 
 async function contractRow(id: number): Promise<ContractCols> {
   const [rows] = await pool.query<ContractCols[]>(`SELECT ${COLS} FROM contracts WHERE id = :id`, {
@@ -164,11 +255,13 @@ interface MilestoneCols extends RowDataPacket {
   status: string;
   delivered_at: Date | null;
   approval_due_at: Date | null;
+  revision_requested_at: Date | null;
 }
 
 async function milestoneRow(id: number): Promise<MilestoneCols> {
   const [rows] = await pool.query<MilestoneCols[]>(
-    'SELECT id, status, delivered_at, approval_due_at FROM contract_milestones WHERE id = :id',
+    `SELECT id, status, delivered_at, approval_due_at, revision_requested_at
+       FROM contract_milestones WHERE id = :id`,
     { id },
   );
   expect(rows).toHaveLength(1);
@@ -214,22 +307,40 @@ describe('Reparo dos prazos: linhas de antes da 0027', () => {
     respondPast: 0,
     /** 4: data pedida daqui a 10 h, cliente em Rio Branco. */
     respondSoon: 0,
-    /** 5 e 10: aviso de março, freelancer em Manaus. */
+    /** 5 e 13: aviso de março, freelancer em Manaus. */
     noticeManaus: 0,
     /** 5: por marcos, em andamento, freelancer em Noronha. */
     noticeInProgress: 0,
-    /** 5: revisão pedida (fora da RN-029), com aviso da API antiga. */
+    /** 5 e 10: revisão pedida (fora da RN-029), com aviso da API antiga; a hora do pedido já gravada. */
     noticeRevision: 0,
-    /** 6 e 10: proposta de março, freelancer em Manaus. */
+    /** 6 e 13: proposta de março, freelancer em Manaus. */
     proposalOld: 0,
     /** 6: proposta com o prazo amanhã de madrugada, freelancer em Manaus. */
     proposalNearDeadline: 0,
-    /** 7 e 10: entrega, revisão e nova entrega; a última em março. */
+    /** 7 e 13: entrega, revisão e nova entrega; a última em março. */
     deliveredOld: 0,
-    /** 8 e 10: marco entregue, cliente em Rio Branco. */
+    /** 8 e 13: marco entregue, cliente em Rio Branco. */
     milestoneContract: 0,
+    /** 10: duas entregas e duas revisões pedidas em março, sem a hora do pedido gravada. */
+    revisionOld: 0,
+    /** 10: em revisão sem nenhum pedido no histórico (gravado pela API antiga direto no status). */
+    revisionNoHistory: 0,
+    /** 11: marcos devolvidos para revisão sem a hora do pedido: um de título único, um repetido. */
+    milestoneRevisionContract: 0,
+    /** Volta da 1.40: o 2º pedido de revisão ficou com a hora do 1º, anterior à última entrega. */
+    revisionReturn: 0,
+    /** Volta da 1.40, num marco. */
+    milestoneReturnContract: 0,
   };
   let milestoneId = 0;
+  /** 11: o marco «Rascunho» (título único na contratação). */
+  let revisionMilestoneId = 0;
+  /** 11: o 1º dos dois marcos «Ajustes» (título repetido na contratação). */
+  let repeatedMilestoneId = 0;
+  /** Volta da 1.40: o marco «Rascunho» pedido de novo. */
+  let returnMilestoneId = 0;
+  /** A hora do pedido que a API gravou na revisão do caso 5 (não pode mudar). */
+  let apiRevisionAt: Date;
   /** O instante da primeira rodada do reparo. */
   let t: Date;
   let first: RepairDeadlinesResult;
@@ -243,7 +354,7 @@ describe('Reparo dos prazos: linhas de antes da 0027', () => {
     const freBrasilia = await registerAndLogin('freelancer');
     const freManaus = await registerAndLogin('freelancer', MANAUS);
     const freNoronha = await registerAndLogin('freelancer', NORONHA);
-    await fundWallet(app, cliBrasilia.token, 3000);
+    await fundWallet(app, cliBrasilia.token, 4000);
     await fundWallet(app, cliRioBranco.token, 1000);
     await fundWallet(app, cliNoronha.token, 1000);
 
@@ -365,18 +476,13 @@ describe('Reparo dos prazos: linhas de antes da 0027', () => {
     await deliver(c.deliveredOld, freManaus);
     await askRevision(c.deliveredOld, cliBrasilia);
     await deliver(c.deliveredOld, freManaus);
-    const [deliveries] = await pool.query<RowDataPacket[]>(
-      `SELECT id FROM contract_status_history
-        WHERE contract_id = :id AND new_status = 'delivered' ORDER BY id`,
-      { id: c.deliveredOld },
+    await restamp(
+      'contract_status_history',
+      c.deliveredOld,
+      'new_status = :status',
+      { status: 'delivered' },
+      [FIRST_DELIVERY, LAST_DELIVERY],
     );
-    expect(deliveries).toHaveLength(2);
-    for (const [i, at] of [FIRST_DELIVERY, LAST_DELIVERY].entries()) {
-      await pool.query('UPDATE contract_status_history SET created_at = :at WHERE id = :id', {
-        id: deliveries[i]!.id,
-        at,
-      });
-    }
     await setColumns('contracts', c.deliveredOld, { approval_due_at: null });
 
     // 8. Marco entregue sem a hora da aprovação tácita: às 21:00 de Brasília, 19:00 em Rio Branco.
@@ -397,6 +503,86 @@ describe('Reparo dos prazos: linhas de antes da 0027', () => {
       approval_due_at: null,
     });
 
+    // 10. Contratação em revisão de antes da 0029: o histórico tem dois pedidos (vale o último), e
+    // cada entrega veio antes do pedido seguinte, como na vida real.
+    c.revisionOld = await accepted(cliBrasilia, freBrasilia);
+    await deliver(c.revisionOld, freBrasilia);
+    await askRevision(c.revisionOld, cliBrasilia);
+    await deliver(c.revisionOld, freBrasilia);
+    await askRevision(c.revisionOld, cliBrasilia);
+    await restampDeliveries(c.revisionOld, REVISED_DELIVERIES);
+    await restampRevisions(c.revisionOld, [FIRST_REVISION, LAST_REVISION]);
+    await setColumns('contracts', c.revisionOld, { revision_requested_at: null });
+    // Sem pedido no histórico: a hora da rodada.
+    c.revisionNoHistory = await accepted(cliBrasilia, freBrasilia);
+    await deliver(c.revisionNoHistory, freBrasilia);
+    await setColumns('contracts', c.revisionNoHistory, {
+      status: 'revision_requested',
+      revision_requested_at: null,
+    });
+    // Controle: a revisão do caso 5 foi pedida pela API nova, que já gravou a hora.
+    const [[control]] = (await pool.query(
+      'SELECT revision_requested_at FROM contracts WHERE id = :id',
+      { id: c.noticeRevision },
+    )) as unknown as [[{ revision_requested_at: Date | null }]];
+    expect(control.revision_requested_at).not.toBeNull();
+    apiRevisionAt = new Date(control.revision_requested_at!);
+
+    // 11. Marcos devolvidos para revisão de antes da 0030. «Rascunho» é único na contratação: a
+    // nota da linha do tempo diz a hora. «Ajustes» aparece duas vezes: a nota não diz de qual é.
+    c.milestoneRevisionContract = await accepted(cliBrasilia, freBrasilia, {
+      deadlineAt: null,
+      milestones: [
+        { title: 'Rascunho', amount: 100 },
+        { title: 'Ajustes', amount: 50 },
+        { title: 'Ajustes', amount: 50 },
+      ],
+    });
+    [revisionMilestoneId, repeatedMilestoneId] = (await milestoneIds(
+      c.milestoneRevisionContract,
+      cliBrasilia.token,
+    )) as [number, number, number];
+    for (const id of [revisionMilestoneId, repeatedMilestoneId]) {
+      await deliverMilestone(c.milestoneRevisionContract, id, freBrasilia);
+      await askMilestoneRevision(c.milestoneRevisionContract, id, cliBrasilia);
+      await setColumns('contract_milestones', id, { revision_requested_at: null });
+    }
+    await setColumns('contract_milestones', revisionMilestoneId, {
+      delivered_at: MILESTONE_DELIVERED,
+    });
+    await restampMilestoneRevisions(c.milestoneRevisionContract, 'Rascunho', [MILESTONE_REVISION]);
+
+    // Volta da 1.40: entrega, revisão (a API nova grava a hora), nova entrega e nova revisão pela
+    // 1.40, que não grava a hora. Simulado pelo SQL: a coluna volta à hora do 1º pedido.
+    c.revisionReturn = await accepted(cliBrasilia, freBrasilia);
+    for (let i = 0; i < 2; i++) {
+      await deliver(c.revisionReturn, freBrasilia);
+      await askRevision(c.revisionReturn, cliBrasilia);
+    }
+    await restampDeliveries(c.revisionReturn, RETURN_DELIVERIES);
+    await restampRevisions(c.revisionReturn, RETURN_REVISIONS);
+    await setColumns('contracts', c.revisionReturn, {
+      revision_requested_at: RETURN_REVISIONS[0]!,
+    });
+    c.milestoneReturnContract = await accepted(cliBrasilia, freBrasilia, {
+      deadlineAt: null,
+      milestones: MILESTONES,
+    });
+    returnMilestoneId = await firstMilestone(c.milestoneReturnContract, cliBrasilia.token);
+    for (let i = 0; i < 2; i++) {
+      await deliverMilestone(c.milestoneReturnContract, returnMilestoneId, freBrasilia);
+      await askMilestoneRevision(c.milestoneReturnContract, returnMilestoneId, cliBrasilia);
+    }
+    await restampMilestoneRevisions(
+      c.milestoneReturnContract,
+      'Rascunho',
+      RETURN_MILESTONE_REVISIONS,
+    );
+    await setColumns('contract_milestones', returnMilestoneId, {
+      delivered_at: RETURN_MILESTONE_DELIVERED,
+      revision_requested_at: RETURN_MILESTONE_REVISIONS[0]!,
+    });
+
     t = now();
     first = await runRepairDeadlines(t);
   });
@@ -411,6 +597,8 @@ describe('Reparo dos prazos: linhas de antes da 0027', () => {
       proposalExpiry: 2,
       approvalDue: 1,
       milestoneApprovalDue: 1,
+      revisionRequested: 3,
+      milestoneRevisionRequested: 3,
     });
   });
 
@@ -559,17 +747,81 @@ describe('Reparo dos prazos: linhas de antes da 0027', () => {
     );
   });
 
-  it('9. rodar de novo não muda nada', async () => {
+  it('10. contratação em revisão sem a hora do pedido: a do último pedido no histórico (depois da última entrega), ou a da rodada sem histórico; a gravada pela API fica', async () => {
+    const old = await contractRow(c.revisionOld);
+    expect(old.status).toBe('revision_requested');
+    // O último pedido veio depois da última entrega: é ele, e não a entrega, que vale.
+    expect(iso(old.revision_requested_at)).toBe(LAST_REVISION.toISOString());
+
+    const noHistory = await contractRow(c.revisionNoHistory);
+    expect(noHistory.status).toBe('revision_requested');
+    expect(iso(noHistory.revision_requested_at)).toBe(t.toISOString());
+
+    const control = await contractRow(c.noticeRevision);
+    expect(iso(control.revision_requested_at)).toBe(apiRevisionAt.toISOString());
+  });
+
+  it('11. marco em revisão sem a hora do pedido: a da nota da linha do tempo se o título é único na contratação; com título repetido, a hora da rodada', async () => {
+    const unique = await milestoneRow(revisionMilestoneId);
+    expect(unique.status).toBe('funded');
+    expect(iso(unique.delivered_at)).toBe(MILESTONE_DELIVERED.toISOString());
+    expect(iso(unique.revision_requested_at)).toBe(MILESTONE_REVISION.toISOString());
+
+    // Os dois «Ajustes» têm o mesmo título: a nota não diz de qual marco é.
+    const repeated = await milestoneRow(repeatedMilestoneId);
+    expect(repeated.status).toBe('funded');
+    expect(repeated.delivered_at).not.toBeNull();
+    expect(iso(repeated.revision_requested_at)).toBe(t.toISOString());
+    const [notes] = await pool.query<RowDataPacket[]>(
+      `SELECT note FROM contract_status_history
+        WHERE contract_id = :id AND note LIKE 'Revisão pedida no marco%' ORDER BY id`,
+      { id: c.milestoneRevisionContract },
+    );
+    expect(notes.map((n) => n.note)).toEqual([
+      'Revisão pedida no marco «Rascunho»: Trocar a fonte do rascunho',
+      'Revisão pedida no marco «Ajustes»: Trocar a fonte do rascunho',
+    ]);
+
+    // O marco entregue do caso 8 não está em revisão: fica sem a hora.
+    expect((await milestoneRow(milestoneId)).revision_requested_at).toBeNull();
+  });
+
+  it('volta da 1.40: revisão pedida de novo sem gravar a hora (ficou a do ciclo anterior, antes da última entrega) recebe a do último pedido, na contratação e no marco', async () => {
+    // A hora gravada (a do 1º pedido) era anterior à última entrega: o reparo a troca pela do 2º.
+    const contract = await contractRow(c.revisionReturn);
+    expect(contract.status).toBe('revision_requested');
+    expect(iso(contract.revision_requested_at)).toBe(RETURN_REVISIONS[1]!.toISOString());
+
+    const m = await milestoneRow(returnMilestoneId);
+    expect(m.status).toBe('funded');
+    expect(iso(m.delivered_at)).toBe(RETURN_MILESTONE_DELIVERED.toISOString());
+    expect(iso(m.revision_requested_at)).toBe(RETURN_MILESTONE_REVISIONS[1]!.toISOString());
+    // A segunda rodada (caso 12) não muda nada: a hora já não é anterior à última entrega.
+  });
+
+  it('12. rodar de novo não muda nada (nem as horas consertadas da volta da 1.40)', async () => {
     const ids = Object.values(c);
+    const milestoneIdsToCheck = [
+      milestoneId,
+      revisionMilestoneId,
+      repeatedMilestoneId,
+      returnMilestoneId,
+    ];
     const snapshot = async () => {
       const [contracts] = await pool.query<ContractCols[]>(
         `SELECT ${COLS} FROM contracts WHERE id IN (:ids) ORDER BY id`,
         { ids },
       );
-      return { contracts, milestone: await milestoneRow(milestoneId) };
+      return {
+        contracts,
+        milestones: await Promise.all(milestoneIdsToCheck.map((id) => milestoneRow(id))),
+      };
     };
     const before = await snapshot();
     expect(before.contracts).toHaveLength(ids.length);
+    expect(
+      iso(before.contracts.find((r) => r.id === c.revisionReturn)?.revision_requested_at),
+    ).toBe(RETURN_REVISIONS[1]!.toISOString());
 
     const again = await runRepairDeadlines(now());
     expect(again).toEqual({
@@ -581,11 +833,13 @@ describe('Reparo dos prazos: linhas de antes da 0027', () => {
       proposalExpiry: 0,
       approvalDue: 0,
       milestoneApprovalDue: 0,
+      revisionRequested: 0,
+      milestoneRevisionRequested: 0,
     });
     expect(await snapshot()).toEqual(before);
   });
 
-  it('10. depois do reparo, a sanção sai na rodada seguinte dos jobs, na hora reparada', async () => {
+  it('13. depois do reparo, a sanção sai na rodada seguinte dos jobs, na hora reparada', async () => {
     // Fase 0: os pedidos com a hora da rodada expiram; os de resposta futura seguem.
     // Fase 2: a carência reparada (março) venceu, e a plataforma abre a disputa.
     const overdue = await runOverdueContracts(now());

@@ -79,13 +79,13 @@ test('política vigente: faixa para quem está na versão anterior, aceite regis
   );
   await expect(consents.locator('li').first()).toContainText('aceito em');
 
-  // Termos 1.3 (ADR 57): a conta nova já nasce nela, então não há faixa dos Termos.
+  // Termos 1.4 (ADR 58): a conta nova já nasce nela, então não há faixa dos Termos.
   await expect(page.getByTestId('terms-banner')).toHaveCount(0);
   await page.goto('/termos');
-  await expect(page.getByText(/Versão 1\.3 · atualizada em 28\/09\/2026/)).toBeVisible();
+  await expect(page.getByText(/Versão 1\.4 · atualizada em 03\/10\/2026/)).toBeVisible();
 });
 
-test('termos 1.3: faixa informativa para quem aceitou a 1.2, depois da Política e sem "Não aceito"', async ({
+test('termos 1.4: faixa informativa para quem aceitou a 1.2, com a 1.3 e a 1.4, depois da Política e sem "Não aceito"', async ({
   page,
   request,
 }) => {
@@ -107,13 +107,15 @@ test('termos 1.3: faixa informativa para quem aceitou a 1.2, depois da Política
   await page.getByTestId('legal-banner').getByRole('button', { name: 'Li e aceito' }).click();
   await expect(page.getByTestId('legal-banner')).toHaveCount(0);
 
-  // Depois, os Termos: o que mudou, que o uso continuado vale como aceite, e só "Li e aceito".
+  // Depois, os Termos: o que mudou desde a 1.2 (a 1.3 e a 1.4), que o uso continuado vale como
+  // aceite, e só "Li e aceito".
   const banner = page.getByRole('region', { name: 'Atualização dos Termos de Uso' });
   await expect(banner).toBeVisible();
-  await expect(banner).toContainText('versão 1.3');
+  await expect(banner).toContainText('versão 1.4');
   await expect(banner).toContainText(
     'a disputa automática só vale enquanto há trabalho nunca entregue',
   );
+  await expect(banner).toContainText('O lembrete é um aviso a mais e não muda nenhuma hora.');
   await expect(banner).toContainText('Continuar usando o Escambo vale como aceite (seção 7)');
   await expect(banner.getByRole('button', { name: 'Não aceito' })).toHaveCount(0);
   const axe = await new AxeBuilder({ page })
@@ -127,7 +129,7 @@ test('termos 1.3: faixa informativa para quem aceitou a 1.2, depois da Política
   ).toEqual([]);
   await banner.getByRole('button', { name: 'Li e aceito' }).click();
   await expect(
-    page.locator('.toast', { hasText: 'a versão 1.3 dos Termos fica registrada' }),
+    page.locator('.toast', { hasText: 'a versão 1.4 dos Termos fica registrada' }),
   ).toBeVisible();
   await expect(page.getByTestId('terms-banner')).toHaveCount(0);
   await page.reload();
@@ -139,7 +141,7 @@ test('termos 1.3: faixa informativa para quem aceitou a 1.2, depois da Política
     accepted: boolean;
   }[];
   expect(list.find((c) => c.type === 'terms_of_use')).toMatchObject({
-    version: '1.3',
+    version: '1.4',
     accepted: true,
   });
 });

@@ -547,6 +547,7 @@ CREATE TABLE contracts (
   grace_ends_at          DATETIME     NULL,             -- fim da carência, gravado no aviso: a hora avisada é a cumprida (migration 0027)
   approval_due_at        DATETIME     NULL,             -- aprovação tácita da entrega única (RN-024), gravada na entrega (migration 0027)
   proposal_expires_at    DATETIME     NULL,             -- validade da proposta (RN-021), gravada na criação (migration 0027)
+  revision_requested_at  DATETIME     NULL,             -- quando o cliente pediu a revisão em aberto: aviso de revisão parada (RN-081, migration 0029)
   accepted_at    DATETIME        NULL,
   completed_at   DATETIME        NULL,
   cancelled_at   DATETIME        NULL,
@@ -565,6 +566,7 @@ CREATE TABLE contracts (
   INDEX idx_contract_status_approval  (status, approval_due_at),     -- migration 0027
   INDEX idx_contract_status_proposal  (status, proposal_expires_at), -- migration 0027
   INDEX idx_contract_extension_respond (extension_status, extension_respond_by), -- migration 0027
+  INDEX idx_contract_status_revision (status, revision_requested_at), -- migration 0029
   CONSTRAINT fk_contract_client     FOREIGN KEY (client_id)     REFERENCES users(id),
   CONSTRAINT fk_contract_freelancer FOREIGN KEY (freelancer_id) REFERENCES users(id),
   CONSTRAINT fk_contract_service    FOREIGN KEY (service_id)    REFERENCES services(id) ON DELETE SET NULL
@@ -580,6 +582,10 @@ CREATE TABLE contracts (
 > fora passa para as 9h seguintes). As migrations 0027 e 0028 só mudam o esquema: as contratações que
 > já estavam em andamento são preenchidas pelo job `repair-deadlines`, e os leitores toleram as colunas
 > nulas do legado.
+>
+> O prazo é um dia (ADR 58): `deadline_at` é o fim do dia no fuso de quem entrega, e o fuso não é
+> gravado: a API o calcula na leitura (o relógio em que o instante é 23:59:59). `revision_requested_at`
+> (0029 na contratação, 0030 no marco) é preenchido pelo reparo nas revisões que já estavam em curso.
 
 ---
 
@@ -641,6 +647,7 @@ CREATE TABLE contract_milestones (
   overdue_notified_at DATETIME NULL,                   -- aviso de marco atrasado, uma vez, só para marco nunca entregue (migration 0009)
   delivered_at    DATETIME    NULL,                    -- última entrega; continua preenchida se o marco voltar para revisão (migration 0006)
   approval_due_at DATETIME    NULL,                    -- aprovação tácita do marco, gravada na entrega; a revisão zera (migration 0028, ADR 57)
+  revision_requested_at DATETIME NULL,                -- quando o cliente pediu a revisão do marco (migration 0030, ADR 58)
   released_at DATETIME        NULL,
   created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -650,7 +657,29 @@ CREATE TABLE contract_milestones (
   INDEX idx_milestone_status   (status),
   INDEX idx_milestone_status_due      (status, due_at),          -- migration 0009
   INDEX idx_milestone_status_approval (status, approval_due_at), -- migration 0028
+  INDEX idx_milestone_status_revision (status, revision_requested_at), -- migration 0030
   CONSTRAINT fk_milestone_contract FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+### `deadline_reminders`
+O livro dos lembretes de prazo (ADR 58, RN-079 e RN-081): uma linha por lembrete enviado, gravada na mesma
+transação que confere o estado da contratação e grava a notificação, o que garante no máximo um por
+vencimento. Um vencimento novo (extensão aceita, nova entrega, novo pedido, nova revisão) é uma chave nova.
+Sem `user_id` e sem dado pessoal: quem foi avisado está em `notifications`.
+
+```sql
+CREATE TABLE deadline_reminders (
+  id        BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,
+  kind      ENUM('proposal', 'delivery', 'approval', 'milestone_approval', 'extension',
+                 'revision', 'milestone_revision') NOT NULL,
+  entity_id BIGINT UNSIGNED  NOT NULL,              -- contracts.id; contract_milestones.id nos tipos milestone_*
+  due_at    DATETIME         NOT NULL,              -- o vencimento lembrado; nas revisões, a hora do pedido
+  seq       TINYINT UNSIGNED NOT NULL DEFAULT 0,    -- no pedido de extensão, o número do pedido; nos demais, 0
+  sent_at   DATETIME         NOT NULL,
+
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_deadline_reminder (kind, entity_id, due_at, seq)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 

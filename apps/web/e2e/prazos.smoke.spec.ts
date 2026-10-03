@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 import {
-  brDatePlus,
   createService,
   createUser,
+  deadlineTextPlus,
   inputDatePlus,
   openAs,
   settled,
@@ -45,8 +45,10 @@ test('contratar com prazo, pedir extensão duas vezes (recusa, depois aceite): o
   await modal.getByRole('button', { name: 'Enviar proposta' }).click();
   await expect(page).toHaveURL(/\/contratos\/\d+$/);
   const contractId = Number(page.url().split('/').pop());
-  await expect(page.getByTestId('deadline-kv')).toHaveText(brDatePlus(5));
-  await expect(page.getByTestId('deadline-date')).toHaveText(brDatePlus(5));
+  // O prazo é um dia (ADR 58): as duas partes em Brasília, sem nota de horário.
+  await expect(page.getByTestId('deadline-kv')).toHaveText(deadlineTextPlus(5));
+  await expect(page.getByTestId('deadline-date')).toHaveText(deadlineTextPlus(5));
+  await expect(page.getByTestId('deadline-zone')).toHaveCount(0);
 
   // Freelancer aceita (API) e, na Sala, vê quanto falta e pede extensão de mais uma semana.
   const acc = await request.post(`/api/contracts/${contractId}/accept`, {
@@ -102,7 +104,7 @@ test('contratar com prazo, pedir extensão duas vezes (recusa, depois aceite): o
   await expect(req).toContainText('O material chegou depois do combinado');
   await req.getByRole('button', { name: 'Aceitar novo prazo' }).click();
   await expect(page.locator('.toast', { hasText: 'Prazo estendido' })).toBeVisible();
-  await expect(page.getByTestId('deadline-date')).toHaveText(brDatePlus(12));
+  await expect(page.getByTestId('deadline-date')).toHaveText(deadlineTextPlus(12));
   await expect(page.getByTestId('deadline')).toContainText('extensão usada');
   await expect(page.locator('.timeline')).toContainText('Prazo estendido de');
 

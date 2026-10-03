@@ -1,3 +1,4 @@
+import type { PoolConnection } from 'mysql2/promise';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import type { BrazilTimezone } from '@escambo/types';
 import { pool } from '../../config/db';
@@ -32,14 +33,23 @@ export interface DigestUserRow extends RowDataPacket {
 }
 
 export const notificationsRepository = {
-  /** Notificações criadas depois de `since` (as que entram no resumo), em ordem cronológica. */
-  async listSince(userId: number, since: Date, limit = 50): Promise<NotificationRow[]> {
+  /**
+   * O que chegou desde `since`, no máximo `limit`. Os tipos de `first` (hora-limite próxima,
+   * ADR 58) vêm antes; dentro de cada grupo, a ordem de chegada.
+   */
+  async listSince(
+    userId: number,
+    since: Date,
+    opts: { limit?: number; first?: readonly string[] } = {},
+  ): Promise<NotificationRow[]> {
+    const limit = opts.limit ?? 50;
+    const first = opts.first && opts.first.length > 0 ? [...opts.first] : null;
     const [rows] = await pool.query<NotificationRow[]>(
       `SELECT id, type, title, body, data, is_read, created_at
          FROM notifications WHERE user_id = :userId AND created_at > :since
-        ORDER BY id ASC
+        ORDER BY ${first ? '(type IN (:first)) DESC, ' : ''}id ASC
         LIMIT ${limit}`,
-      { userId, since },
+      { userId, since, first },
     );
     return rows;
   },
@@ -143,14 +153,18 @@ export const notificationsRepository = {
     });
   },
 
-  async create(d: {
-    userId: number;
-    type: string;
-    title: string;
-    body: string | null;
-    data: string | null;
-  }): Promise<number> {
-    const [res] = await pool.query<ResultSetHeader>(
+  /** Grava a notificação; com `conn`, dentro da transação de quem chama (lembretes, ADR 58). */
+  async create(
+    d: {
+      userId: number;
+      type: string;
+      title: string;
+      body: string | null;
+      data: string | null;
+    },
+    conn?: PoolConnection,
+  ): Promise<number> {
+    const [res] = await (conn ?? pool).query<ResultSetHeader>(
       `INSERT INTO notifications (user_id, type, title, body, data, channel)
        VALUES (:userId, :type, :title, :body, :data, 'in_app')`,
       d,
