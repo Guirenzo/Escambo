@@ -32,6 +32,9 @@ function fromLast(sql: string, marker: string): string {
 
 const BASE = 's.deleted_at IS NULL AND s.is_active = 1';
 
+/** O texto da busca no título ou na descrição, com a barra como escape do LIKE. */
+const LIKE_Q = String.raw`(s.title LIKE :q ESCAPE '\\' OR s.description LIKE :q ESCAPE '\\')`;
+
 /** Período em available_periods (ADR 34): sem objeto, ou sem a chave do dia, vale o dia todo. */
 const periodSql = (path: string, period: string): string =>
   `(pf.available_periods IS NULL OR JSON_EXTRACT(pf.available_periods, :${path}) IS NULL OR JSON_CONTAINS(JSON_EXTRACT(pf.available_periods, :${path}), :${period}))`;
@@ -125,6 +128,21 @@ describe('servicesRepository', () => {
     });
   });
 
+  describe('categoryIsActive', () => {
+    it('só vale a categoria que existe e está ativa', async () => {
+      fakeDb.reply([{ id: 10 }], []);
+
+      expect(await servicesRepository.categoryIsActive(10)).toBe(true);
+      expect(await servicesRepository.categoryIsActive(99)).toBe(false);
+
+      expect(fakeDb.calls[0]!.sql).toBe(
+        'SELECT id FROM service_categories WHERE id = :categoryId AND is_active = 1 LIMIT 1',
+      );
+      expect(fakeDb.calls[0]!.params).toEqual({ categoryId: 10 });
+      expect(fakeDb.calls[1]!.params).toEqual({ categoryId: 99 });
+    });
+  });
+
   describe('list: busca comum (sem geolocalização)', () => {
     it('sem filtro, traz só serviço ativo e não removido, por relevância, e devolve as linhas do banco', async () => {
       const rows = [{ id: 2 }, { id: 1 }];
@@ -198,12 +216,7 @@ describe('servicesRepository', () => {
       ],
       ['só remotos', { isRemote: true }, 's.is_remote = :isRemote', { isRemote: 1 }],
       ['só presenciais', { isRemote: false }, 's.is_remote = :isRemote', { isRemote: 0 }],
-      [
-        'texto no título ou na descrição',
-        { q: 'logo' },
-        '(s.title LIKE :q OR s.description LIKE :q)',
-        { q: '%logo%' },
-      ],
+      ['texto no título ou na descrição', { q: 'logo' }, LIKE_Q, { q: '%logo%' }],
       ['preço mínimo', { minPrice: 100 }, 's.price >= :minPrice', { minPrice: 100 }],
       [
         'preço mínimo zero ainda filtra (serviço sem preço fica de fora)',
@@ -245,10 +258,25 @@ describe('servicesRepository', () => {
     it('o texto da busca vai como parâmetro, nunca dentro do SQL (aspas e ponto e vírgula não mudam a instrução)', async () => {
       const text = `x' OR '1'='1; DROP TABLE services`;
       const { sql, params } = await runList({ q: text });
-      expect(whereOf(sql)).toBe(`${BASE} AND (s.title LIKE :q OR s.description LIKE :q)`);
+      expect(whereOf(sql)).toBe(`${BASE} AND ${LIKE_Q}`);
       expect(sql).not.toContain('DROP');
       expect(params).toEqual({ q: `%${text}%` });
     });
+
+    it.each([
+      ['100%', String.raw`%100\%%`],
+      ['_', String.raw`%\_%`],
+      ['%', String.raw`%\%%`],
+      [String.raw`C:\temp`, String.raw`%C:\\temp%`],
+      [String.raw`50\%_off`, String.raw`%50\\\%\_off%`],
+    ])(
+      'curinga do LIKE na busca "%s" vale como texto: escapado com a barra do ESCAPE',
+      async (text, pattern) => {
+        const { sql, params } = await runList({ q: text });
+        expect(whereOf(sql)).toBe(`${BASE} AND ${LIKE_Q}`);
+        expect(params).toEqual({ q: pattern });
+      },
+    );
 
     it('as datas da janela chegam ao banco como a mesma instância de Date (sem virar texto)', async () => {
       const { params } = await runList({ createdFrom, createdBefore });
@@ -295,7 +323,7 @@ describe('servicesRepository', () => {
           's.category_id = :categoryId',
           's.user_id = :ownerId',
           's.is_remote = :isRemote',
-          '(s.title LIKE :q OR s.description LIKE :q)',
+          LIKE_Q,
           's.price >= :minPrice',
           's.price <= :maxPrice',
           's.delivery_days IS NOT NULL AND s.delivery_days <= :maxDeliveryDays',
@@ -487,7 +515,7 @@ describe('servicesRepository', () => {
 
       const { sql, params } = fakeDb.calls[0]!;
       expect(sql).toContain(
-        ` WHERE ${BASE} AND s.category_id = :categoryId AND (s.title LIKE :q OR s.description LIKE :q)` +
+        ` WHERE ${BASE} AND s.category_id = :categoryId AND ${LIKE_Q}` +
           ' AND pf.available_days IS NOT NULL AND JSON_CONTAINS(pf.available_days, :dayJson)' +
           ' AND pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL ) AS sub WHERE sub.distance_km <= :radius ',
       );

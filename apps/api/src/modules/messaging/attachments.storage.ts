@@ -161,6 +161,19 @@ export interface DiskFile {
   mtimeMs: number;
 }
 
+/**
+ * stat de um arquivo listado agora há pouco; null se ele saiu nesse meio-tempo (o expurgo rodando ao
+ * mesmo tempo que o painel). Qualquer outra falha sobe.
+ */
+async function statIfExists(abs: string): Promise<import('node:fs').Stats | null> {
+  try {
+    return await stat(abs);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
 /** Todos os arquivos da pasta de uploads (vazio se a pasta ainda não existe). */
 export async function listUploadedFiles(): Promise<DiskFile[]> {
   const root = uploadsDir();
@@ -174,7 +187,8 @@ export async function listUploadedFiles(): Promise<DiskFile[]> {
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     const abs = path.join(entry.parentPath, entry.name);
-    const st = await stat(abs);
+    const st = await statIfExists(abs);
+    if (!st) continue;
     files.push({
       key: path.relative(root, abs).split(path.sep).join('/'),
       path: abs,
@@ -200,8 +214,10 @@ export async function dataDirUsage(
   let bytes = 0;
   for (const entry of entries) {
     if (!entry.isFile()) continue;
+    const st = await statIfExists(path.join(entry.parentPath, entry.name));
+    if (!st) continue;
     files++;
-    bytes += (await stat(path.join(entry.parentPath, entry.name))).size;
+    bytes += st.size;
   }
   return { files, bytes };
 }

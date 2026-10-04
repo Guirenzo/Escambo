@@ -296,16 +296,70 @@ describe('servidor de sockets', () => {
         expect(ack.mock.calls).toEqual([[{ ok: true, message }]]);
       });
 
-      it('conteúdo ausente vai como texto vazio (quem recusa é a regra do service)', async () => {
+      it('o texto passa pela mesma regra da rota REST: chega ao service sem os espaços das pontas', async () => {
         service.send.mockResolvedValue({ id: 91 });
         const socket = connected();
+        const ack = vi.fn();
 
-        await socket.listeners.get('message:send')!({ contractId: 5 }, vi.fn());
+        await socket.listeners.get('message:send')!({ contractId: 5, content: '  oi  ' }, ack);
 
-        expect(service.send).toHaveBeenCalledWith(5, 7, '');
+        expect(service.send).toHaveBeenCalledWith(5, 7, 'oi');
+        expect(ack.mock.calls).toEqual([[{ ok: true, message: { id: 91 } }]]);
       });
 
-      it('falha do service (não é parte, texto vazio…) vira send_failed, sem o motivo', async () => {
+      it('mensagem ausente, vazia, só de espaços, que não é texto ou acima de 2000 caracteres é recusada no ack, sem chegar ao service', async () => {
+        const socket = connected();
+        const warn = vi.spyOn(logger, 'warn');
+
+        for (const content of [undefined, '', '   \n\t ', 42, 'x'.repeat(2001)]) {
+          const ack = vi.fn();
+          await socket.listeners.get('message:send')!({ contractId: 5, content }, ack);
+          expect(ack.mock.calls, String(content).slice(0, 10)).toEqual([
+            [
+              {
+                ok: false,
+                error: 'validation_error',
+                details: { content: [expect.any(String)] },
+              },
+            ],
+          ]);
+        }
+        // Sem payload nenhum também é recusado (e não quebra).
+        const ack = vi.fn();
+        await socket.listeners.get('message:send')!(undefined, ack);
+        expect(ack.mock.calls[0]![0]).toMatchObject({ ok: false, error: 'validation_error' });
+
+        expect(service.send).not.toHaveBeenCalled();
+        // Erro de quem enviou, não do servidor: nada no log.
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it('o vazio diz o motivo, como na rota REST; com exatamente 2000 caracteres passa', async () => {
+        service.send.mockResolvedValue({ id: 93 });
+        const socket = connected();
+        const empty = vi.fn();
+
+        await socket.listeners.get('message:send')!({ contractId: 5, content: '  ' }, empty);
+        await socket.listeners.get('message:send')!(
+          { contractId: 5, content: 'x'.repeat(2000) },
+          vi.fn(),
+        );
+
+        expect(empty.mock.calls).toEqual([
+          [{ ok: false, error: 'validation_error', details: { content: ['Mensagem vazia'] } }],
+        ]);
+        expect(service.send.mock.calls).toEqual([[5, 7, 'x'.repeat(2000)]]);
+      });
+
+      it('sem ack, mensagem inválida é recusada sem quebrar', async () => {
+        const socket = connected();
+        await expect(
+          socket.listeners.get('message:send')!({ contractId: 5, content: ' ' }),
+        ).resolves.toBeUndefined();
+        expect(service.send).not.toHaveBeenCalled();
+      });
+
+      it('falha do service (não é parte, contrato que não existe…) vira send_failed, sem o motivo', async () => {
         const boom = new Error('Você não participa deste contrato');
         service.send.mockRejectedValue(boom);
         const warn = vi.spyOn(logger, 'warn');
@@ -331,6 +385,78 @@ describe('servidor de sockets', () => {
         await expect(
           socket.listeners.get('message:send')!({ contractId: 5, content: 'b' }),
         ).resolves.toBeUndefined();
+      });
+    });
+
+    /**
+     * O 2º argumento vem do cliente: sem id no pacote, o socket.io não troca por um ack, e chega o que
+     * ele mandou (`42["message:send","x",1]`). Um listener que rejeita cai no unhandledRejection do
+     * server.ts, que encerra a API: qualquer usuário logado a derrubaria em loop.
+     */
+    describe('ack que não é função', () => {
+      const notFunctions: unknown[] = [1, 'ok', { ok: true }, null, true];
+
+      it('message:send: mensagem inválida, enviada ou que falha no service resolve sem lançar', async () => {
+        const socket = connected();
+        const send = socket.listeners.get('message:send')!;
+        const warn = vi.spyOn(logger, 'warn');
+
+        for (const ack of notFunctions) {
+          await expect(send('x', ack), String(ack)).resolves.toBeUndefined();
+          await expect(send({ contractId: 5, content: ' ' }, ack)).resolves.toBeUndefined();
+          service.send.mockResolvedValueOnce({ id: 94 });
+          await expect(send({ contractId: 5, content: 'oi' }, ack)).resolves.toBeUndefined();
+          service.send.mockRejectedValueOnce(new Error('Você não participa deste contrato'));
+          await expect(send({ contractId: 5, content: 'oi' }, ack)).resolves.toBeUndefined();
+        }
+
+        // A mensagem válida chegou ao service mesmo sem ack de verdade.
+        expect(service.send).toHaveBeenCalledTimes(notFunctions.length * 2);
+        expect(service.send).toHaveBeenCalledWith(5, 7, 'oi');
+        // No log só a falha do service, nunca "listener do socket falhou".
+        expect(warn.mock.calls.map((c) => c[1])).toEqual(
+          notFunctions.map(() => 'message:send falhou'),
+        );
+      });
+
+      it('contract:join: quem é parte entra na sala e quem não é fica de fora, sem lançar', async () => {
+        const socket = connected();
+        const join = socket.listeners.get('contract:join')!;
+        const warn = vi.spyOn(logger, 'warn');
+
+        for (const ack of notFunctions) {
+          service.history.mockResolvedValueOnce([]);
+          await expect(join(5, ack), String(ack)).resolves.toBeUndefined();
+          service.history.mockRejectedValueOnce(new Error('403'));
+          await expect(join(6, ack)).resolves.toBeUndefined();
+        }
+
+        expect(socket.join).toHaveBeenCalledWith('contract:5');
+        expect(socket.join).not.toHaveBeenCalledWith('contract:6');
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it('o que escapar do listener (aqui, um ack que lança) vai para o log e não rejeita', async () => {
+        const socket = connected();
+        const warn = vi.spyOn(logger, 'warn');
+        const boom = new Error('ack quebrado');
+        const throwing = vi.fn(() => {
+          throw boom;
+        });
+
+        service.history.mockResolvedValueOnce([]);
+        await expect(socket.listeners.get('contract:join')!(5, throwing)).resolves.toBeUndefined();
+        service.send.mockResolvedValueOnce({ id: 95 });
+        await expect(
+          socket.listeners.get('message:send')!({ contractId: 5, content: 'oi' }, throwing),
+        ).resolves.toBeUndefined();
+
+        // Uma chamada por evento: o ack que lançou não é chamado de novo com outro resultado.
+        expect(throwing.mock.calls).toEqual([[{ ok: true }], [{ ok: true, message: { id: 95 } }]]);
+        expect(warn.mock.calls).toEqual([
+          [{ err: boom, event: 'contract:join' }, 'listener do socket falhou'],
+          [{ err: boom, event: 'message:send' }, 'listener do socket falhou'],
+        ]);
       });
     });
   });

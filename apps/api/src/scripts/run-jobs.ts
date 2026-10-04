@@ -18,7 +18,8 @@ initSentry()
   .catch(async (err) => {
     logger.error({ err }, 'Falha ao rodar jobs');
     captureError(err);
-    await pool.end();
+    // Já é o caminho de falha: o pool que não fecha não pode impedir a saída com 1 (nem o envio).
+    await pool.end().catch(() => undefined);
     await flushSentry().catch(() => undefined);
     process.exit(1);
   });

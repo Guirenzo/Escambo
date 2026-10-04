@@ -34,6 +34,14 @@ describe('auditRepository', () => {
     expect(fakeDb.calls[0]!.params).toEqual(entry);
   });
 
+  it('navegador acima de 512 caracteres é gravado cortado no tamanho da coluna (com o sql_mode estrito, inteiro derrubaria a linha)', async () => {
+    fakeDb.reply({ insertId: 2, affectedRows: 1 });
+
+    await auditRepository.record({ ...entry, userAgent: 'M'.repeat(600) });
+
+    expect(fakeDb.calls[0]!.params).toEqual({ ...entry, userAgent: 'M'.repeat(512) });
+  });
+
   it('ação do sistema (sem usuário, sem entidade, sem origem) é gravada com null em cada coluna', async () => {
     const system = {
       userId: null,

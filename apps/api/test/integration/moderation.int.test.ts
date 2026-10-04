@@ -1,3 +1,4 @@
+import type { RowDataPacket } from 'mysql2';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
@@ -104,5 +105,58 @@ describe('Moderação efetiva', () => {
     expect((await request(app).get('/api/auth/me').set(auth(login2.body.accessToken))).status).toBe(
       403,
     );
+  });
+
+  it('admin não suspende nem bane a si mesmo nem outro admin (409), e a ação registra o id do moderado', async () => {
+    const admin = await registerAndLogin('client', 'admin.escambo.test');
+    const other = await registerAndLogin('client', 'admin.escambo.test');
+    const target = await registerAndLogin('freelancer');
+    const statuses = async (): Promise<unknown[]> => {
+      const [rows] = await pool.query<RowDataPacket[]>(
+        'SELECT status FROM users WHERE id IN (?, ?) ORDER BY id',
+        [admin.id, other.id],
+      );
+      return rows.map((r) => r.status);
+    };
+    const before = await statuses();
+
+    for (const ulid of [admin.ulid, other.ulid]) {
+      for (const action of ['suspend', 'ban']) {
+        const res = await request(app)
+          .post(`/api/admin/users/${ulid}/${action}`)
+          .set(auth(admin.token));
+        expect(res.status, `${action} ${ulid}`).toBe(409);
+        expect(res.body).toEqual({
+          error: 'cannot_moderate_admin',
+          message: 'Administradores não são suspensos nem banidos pelo painel.',
+        });
+      }
+    }
+    // Nada mudou: o status dos dois admins é o mesmo e o painel segue aberto para eles.
+    expect(await statuses()).toEqual(before);
+    expect(before).not.toContain('suspended');
+    expect(before).not.toContain('banned');
+    for (const a of [admin, other]) {
+      expect((await request(app).get('/api/admin/metrics').set(auth(a.token))).status).toBe(200);
+    }
+
+    // Usuário comum: a ação fica em admin_actions com o alvo (tipo e id), filtrável por usuário.
+    await request(app)
+      .post(`/api/admin/users/${target.ulid}/suspend`)
+      .set(auth(admin.token))
+      .expect(204);
+    const [actions] = await pool.query<RowDataPacket[]>(
+      `SELECT action, target_type, target_id, description FROM admin_actions
+        WHERE admin_id = ? ORDER BY id`,
+      [admin.id],
+    );
+    expect(actions).toEqual([
+      {
+        action: 'user_suspend',
+        target_type: 'user',
+        target_id: target.id,
+        description: `ulid=${target.ulid}`,
+      },
+    ]);
   });
 });

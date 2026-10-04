@@ -1,5 +1,6 @@
 import type { ResultSetHeader } from 'mysql2';
 import { pool } from '../../config/db';
+import { userAgentOf } from '../../utils/user-agent';
 
 export const auditRepository = {
   async record(d: {
@@ -16,7 +17,7 @@ export const auditRepository = {
       `INSERT INTO audit_logs
          (user_id, action, entity_type, entity_id, old_value, new_value, ip_address, user_agent)
        VALUES (:userId, :action, :entityType, :entityId, :oldValue, :newValue, :ip, :userAgent)`,
-      d,
+      { ...d, userAgent: userAgentOf(d.userAgent) },
     );
   },
 };

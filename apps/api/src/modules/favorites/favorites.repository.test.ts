@@ -61,6 +61,34 @@ describe('favoritesRepository', () => {
     expect(fakeDb.calls[0]!.params).toEqual({ userId: 8 });
   });
 
+  it('o dono de um serviço é o user_id dele, e serviço removido não é encontrado', async () => {
+    fakeDb.reply([{ user_id: '9' }], []);
+
+    // O id chega como número, venha o BIGINT como número ou como texto.
+    expect(await favoritesRepository.targetOwner('service', 5)).toBe(9);
+    expect(await favoritesRepository.targetOwner('service', 404)).toBeUndefined();
+
+    expect(fakeDb.calls[0]!.sql).toBe(
+      'SELECT user_id FROM services WHERE id = :targetId AND deleted_at IS NULL LIMIT 1',
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ targetId: 5 });
+    expect(fakeDb.calls[1]!.params).toEqual({ targetId: 404 });
+  });
+
+  it('o freelancer é o próprio usuário: precisa ter perfil de freelancer e a conta não pode estar excluída', async () => {
+    fakeDb.reply([{ user_id: 44 }], []);
+
+    expect(await favoritesRepository.targetOwner('freelancer', 44)).toBe(44);
+    expect(await favoritesRepository.targetOwner('freelancer', 45)).toBeUndefined();
+
+    expect(fakeDb.calls[0]!.sql).toBe(
+      'SELECT u.id AS user_id FROM users u JOIN profiles_freelancer pf ON pf.user_id = u.id ' +
+        'WHERE u.id = :targetId AND u.deleted_at IS NULL LIMIT 1',
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ targetId: 44 });
+    expect(fakeDb.calls[1]!.params).toEqual({ targetId: 45 });
+  });
+
   it('a falha do banco sobe para quem chamou', async () => {
     const boom = new Error('ER_LOCK_DEADLOCK');
     fakeDb.reply(boom, boom, boom);

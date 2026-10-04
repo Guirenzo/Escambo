@@ -14,6 +14,18 @@ export const resolveDisputeSchema = z
         message: 'refundPercentage é obrigatório em partial_split',
       });
     }
+    // Divisão de verdade: 0% ou 100% terminariam a contratação 'completed' mesmo devolvendo tudo.
+    if (
+      d.resolution === 'partial_split' &&
+      (d.refundPercentage === 0 || d.refundPercentage === 100)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['refundPercentage'],
+        message:
+          'Em partial_split a porcentagem vai de 1 a 99; para devolver tudo use refund_client, para liberar tudo use release_freelancer',
+      });
+    }
   });
 export type ResolveDisputeInput = z.infer<typeof resolveDisputeSchema>;
 

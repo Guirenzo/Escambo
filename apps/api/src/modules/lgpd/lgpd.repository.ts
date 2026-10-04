@@ -1,5 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
-import { pool } from '../../config/db';
+import type { PoolConnection } from 'mysql2/promise';
+import { inTransaction, pool } from '../../config/db';
+import { userAgentOf } from '../../utils/user-agent';
 
 export interface ConsentRow extends RowDataPacket {
   type: string;
@@ -56,7 +58,7 @@ export const lgpdRepository = {
     await pool.query<ResultSetHeader>(
       `INSERT INTO lgpd_consents (user_id, type, version, accepted, ip_address, user_agent)
        VALUES (:userId, :type, :version, :accepted, :ip, :userAgent)`,
-      d,
+      { ...d, userAgent: userAgentOf(d.userAgent) },
     );
   },
 
@@ -71,8 +73,26 @@ export const lgpdRepository = {
 
   // ---------- exclusão ----------
 
-  async findActiveDeletion(userId: number): Promise<DeletionRow | undefined> {
-    const [rows] = await pool.query<DeletionRow[]>(
+  /**
+   * Roda `work` numa transação com a linha do titular travada (SELECT ... FOR UPDATE): dois
+   * pedidos de exclusão ao mesmo tempo passam um de cada vez da checagem ao INSERT, e o segundo já
+   * vê a solicitação do primeiro. As leituras e o INSERT de `work` usam a `conn` recebida.
+   */
+  async withUserLock<T>(userId: number, work: (conn: PoolConnection) => Promise<T>): Promise<T> {
+    return inTransaction(async (conn) => {
+      await conn.query<RowDataPacket[]>('SELECT id FROM users WHERE id = :userId FOR UPDATE', {
+        userId,
+      });
+      return work(conn);
+    });
+  },
+
+  /** Com `conn`, lê dentro da transação de quem chama (withUserLock). */
+  async findActiveDeletion(
+    userId: number,
+    conn?: PoolConnection,
+  ): Promise<DeletionRow | undefined> {
+    const [rows] = await (conn ?? pool).query<DeletionRow[]>(
       `SELECT ${DELETION_COLS} FROM data_deletion_requests d
         WHERE d.user_id = :userId AND d.status IN ('pending', 'processing') LIMIT 1`,
       { userId },
@@ -88,8 +108,12 @@ export const lgpdRepository = {
     return rows[0];
   },
 
-  async createDeletion(userId: number, reason: string | null): Promise<number> {
-    const [res] = await pool.query<ResultSetHeader>(
+  async createDeletion(
+    userId: number,
+    reason: string | null,
+    conn?: PoolConnection,
+  ): Promise<number> {
+    const [res] = await (conn ?? pool).query<ResultSetHeader>(
       `INSERT INTO data_deletion_requests (user_id, reason) VALUES (:userId, :reason)`,
       { userId, reason },
     );
@@ -108,8 +132,9 @@ export const lgpdRepository = {
   /** O que impede a exclusão agora: contratações abertas e dinheiro na carteira. */
   async deletionBlockers(
     userId: number,
+    conn?: PoolConnection,
   ): Promise<{ activeContracts: number; balance: number; balancePending: number }> {
-    const [rows] = await pool.query<RowDataPacket[]>(
+    const [rows] = await (conn ?? pool).query<RowDataPacket[]>(
       `SELECT
          (SELECT COUNT(*) FROM contracts
            WHERE (client_id = :userId OR freelancer_id = :userId)
@@ -218,8 +243,11 @@ export const lgpdRepository = {
         userId,
       });
       // O texto da contestação é do titular; a remoção fica, sem ele, como registro da moderação.
+      // Sem os lugares de onde a imagem saiu (cleared_refs), nenhuma reversão de contestação ainda
+      // pendente recoloca a foto dele no perfil anonimizado (imagem externa, ou arquivo da quarentena
+      // que não saiu do disco).
       await conn.query<ResultSetHeader>(
-        `UPDATE content_removals SET appeal_text = NULL WHERE owner_id = :userId`,
+        `UPDATE content_removals SET appeal_text = NULL, cleared_refs = NULL WHERE owner_id = :userId`,
         { userId },
       );
       await conn.query<ResultSetHeader>(`DELETE FROM notifications WHERE user_id = :userId`, {
@@ -303,6 +331,16 @@ export const lgpdRepository = {
       `UPDATE data_export_requests SET status = 'downloaded' WHERE id = :id AND status = 'ready'`,
       { id },
     );
+  },
+
+  /** Cópias do titular ainda disponíveis (anonimização: saem do disco na hora, sem esperar vencer). */
+  async listLiveExports(userId: number): Promise<ExportRow[]> {
+    const [rows] = await pool.query<ExportRow[]>(
+      `SELECT ${EXPORT_COLS} FROM data_export_requests
+        WHERE user_id = :userId AND status IN ('ready', 'downloaded')`,
+      { userId },
+    );
+    return rows;
   },
 
   /** Exportações vencidas ainda com arquivo (job de expiração). */

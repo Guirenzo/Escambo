@@ -34,11 +34,6 @@ export interface MessageRow extends RowDataPacket {
   off_platform?: string | null;
 }
 
-/** Mensagem com o contrato da conversa, para avisar a sala quando ela muda. */
-export interface MessageWithContractRow extends MessageRow {
-  contract_id: number | null;
-}
-
 /** Anexo + quem pode lê-lo (as partes da conversa). */
 export interface AttachmentRow extends RowDataPacket {
   id: number;
@@ -104,16 +99,20 @@ export const messagingRepository = {
     return rows[0] as { sender_id: number; created_at: Date } | undefined;
   },
 
+  /**
+   * As `limit` mensagens MAIS RECENTES da conversa, em ordem cronológica. A conversa é uma só por
+   * par e atravessa as contratações: pegar as mais antigas congelava o histórico na 200ª mensagem.
+   */
   async listMessages(conversationId: number, limit: number): Promise<MessageRow[]> {
     const [rows] = await pool.query<MessageRow[]>(
       `SELECT ${MESSAGE_COLUMNS}
          FROM messages
         WHERE conversation_id = :conversationId
-        ORDER BY id ASC
+        ORDER BY id DESC
         LIMIT ${limit}`,
       { conversationId },
     );
-    return rows;
+    return rows.reverse();
   },
 
   /**
@@ -167,16 +166,32 @@ export const messagingRepository = {
     return res.affectedRows > 0;
   },
 
-  /** A mensagem e o contrato da conversa dela (para o aviso em tempo real). */
-  async findWithContract(id: number): Promise<MessageWithContractRow | undefined> {
-    const [rows] = await pool.query<MessageWithContractRow[]>(
-      `SELECT ${MESSAGE_COLUMNS},
-              (SELECT cv.contract_id FROM conversations cv WHERE cv.id = messages.conversation_id)
-                AS contract_id
-         FROM messages WHERE id = :id LIMIT 1`,
+  /** Uma mensagem pelo id (para o aviso em tempo real quando ela muda). */
+  async findById(id: number): Promise<MessageRow | undefined> {
+    const [rows] = await pool.query<MessageRow[]>(
+      `SELECT ${MESSAGE_COLUMNS} FROM messages WHERE id = :id LIMIT 1`,
       { id },
     );
     return rows[0];
+  },
+
+  /**
+   * Todas as contratações entre as duas pessoas da conversa. A conversa é uma só por par e guarda
+   * só o PRIMEIRO contrato (conversations.contract_id), mas cada parte acompanha o chat na sala do
+   * contrato que está aberto na tela.
+   */
+  async pairContractIds(conversationId: number): Promise<number[]> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT c.id
+         FROM conversations cv
+         JOIN contracts c
+           ON (c.client_id = cv.participant_a AND c.freelancer_id = cv.participant_b)
+           OR (c.client_id = cv.participant_b AND c.freelancer_id = cv.participant_a)
+        WHERE cv.id = :conversationId
+        ORDER BY c.id`,
+      { conversationId },
+    );
+    return rows.map((r) => Number(r.id));
   },
 
   /** Anexo de uma mensagem com as partes da conversa (para checar quem pode baixar). */

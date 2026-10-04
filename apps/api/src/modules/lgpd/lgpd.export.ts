@@ -2,6 +2,7 @@ import { quietPassOf } from '../notifications/quiet-hours';
 import { createReadStream } from 'node:fs';
 import { mkdir, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { env } from '../../config/env';
@@ -251,14 +252,19 @@ export async function exportFileExists(fileName: string): Promise<boolean> {
   }
 }
 
-export function openExportFile(fileName: string): NodeJS.ReadableStream {
+export function openExportFile(fileName: string): Readable {
   return createReadStream(exportFilePath(fileName));
 }
 
+/**
+ * Apaga o arquivo de uma cópia. Arquivo que já não existe conta como apagado; qualquer outra falha
+ * (sem permissão, preso, erro de disco) LANÇA: quem chama não pode marcar como expirada uma cópia
+ * que continua no disco com todos os dados do titular.
+ */
 export async function deleteExportFile(fileName: string): Promise<void> {
   try {
     await unlink(exportFilePath(fileName));
-  } catch {
-    /* já não existe */
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
   }
 }

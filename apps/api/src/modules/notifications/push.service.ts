@@ -6,6 +6,7 @@ import {
   activePushProvider,
   vapidKeys,
   type PushPayload,
+  type PushResult,
   type PushSendOptions,
 } from './push.provider';
 import { EMAILED_NOTIFICATION_TYPES } from '../mail/mail.service';
@@ -211,7 +212,9 @@ export const pushService = {
 
   /**
    * Envia para todos os aparelhos da conta. Assinatura que o serviço de push recusa por não
-   * existir mais é apagada na hora, então a lista não acumula aparelho morto.
+   * existir mais é apagada na hora, então a lista não acumula aparelho morto. Cada aparelho é
+   * isolado: o que dá errado com um fica no log e não impede os seguintes. A contagem é o que o
+   * serviço de push respondeu, mesmo que a anotação na assinatura falhe depois.
    */
   async send(
     userId: number,
@@ -225,20 +228,30 @@ export const pushService = {
     let removed = 0;
     let failed = 0;
     for (const sub of subs) {
-      const result = await provider.send(
-        { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth_key },
-        payload,
-        opts,
-      );
-      if (result === 'sent') {
-        sent += 1;
-        await pushRepository.markSent(sub.id);
-      } else if (result === 'gone') {
-        removed += 1;
-        await pushRepository.removeById(sub.id);
-      } else {
-        failed += 1;
-        await pushRepository.markError(sub.id, `provedor ${provider.name}`);
+      let result: PushResult;
+      try {
+        result = await provider.send(
+          { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth_key },
+          payload,
+          opts,
+        );
+      } catch (err) {
+        // O provedor não deveria lançar; se lançar, é tentativa perdida deste aparelho.
+        logger.warn({ err, subscriptionId: sub.id }, 'push: o provedor lançou ao entregar');
+        result = 'failed';
+      }
+      if (result === 'sent') sent += 1;
+      else if (result === 'gone') removed += 1;
+      else failed += 1;
+      try {
+        if (result === 'sent') await pushRepository.markSent(sub.id);
+        else if (result === 'gone') await pushRepository.removeById(sub.id);
+        else await pushRepository.markError(sub.id, `provedor ${provider.name}`);
+      } catch (err) {
+        logger.warn(
+          { err, subscriptionId: sub.id, result },
+          'push: resultado do aparelho não anotado na assinatura',
+        );
       }
     }
     return { sent, removed, failed };

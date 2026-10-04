@@ -44,22 +44,32 @@ describe('gamificationRepository', () => {
     const input = {
       userId: 7,
       delta: 100,
-      level: 2,
-      levelName: 'Aprendiz',
       reason: 'contract_completed',
       referenceId: 55,
     };
 
-    it('registra o ganho no extrato e soma ao total, gravando o nível novo', async () => {
-      fakeDb.reply({ affectedRows: 0 }, { insertId: 1, affectedRows: 1 }, { affectedRows: 1 });
+    it('trava o total, registra o ganho no extrato e soma ao total, gravando o nível do total novo', async () => {
+      fakeDb.reply(
+        { affectedRows: 0 }, // a linha de XP já existia
+        [{ total_xp: 250, level: 1 }], // o total travado
+        { insertId: 1, affectedRows: 1 }, // extrato
+        { affectedRows: 1 }, // total
+      );
 
-      await expect(gamificationRepository.applyXp(input)).resolves.toBeUndefined();
+      // 250 + 100 = 350: nível 2 (Aprendiz, a partir de 300).
+      expect(await gamificationRepository.applyXp(input)).toEqual({ previousLevel: 1, level: 2 });
 
-      expect(fakeDb.calls).toHaveLength(3);
-      const [ensure, ledger, total] = fakeDb.calls;
+      expect(fakeDb.calls).toHaveLength(4);
+      const [ensure, lock, ledger, total] = fakeDb.calls;
 
       expect(ensure!.sql).toBe('INSERT IGNORE INTO user_xp (user_id) VALUES (:userId)');
       expect(ensure!.params).toEqual({ userId: 7 });
+
+      // O total é lido com a linha travada, dentro da transação do crédito.
+      expect(lock!.sql).toBe(
+        'SELECT total_xp, level FROM user_xp WHERE user_id = :userId FOR UPDATE',
+      );
+      expect(lock!.params).toEqual({ userId: 7 });
 
       expect(ledger!.sql).toContain(
         'INSERT INTO xp_transactions (user_id, amount, reason, reference_id)',
@@ -85,53 +95,156 @@ describe('gamificationRepository', () => {
       expect(fakeDb.conn.rollback).not.toHaveBeenCalled();
       expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
 
-      // Extrato e total entram juntos: a transação abre antes da primeira instrução, confirma
-      // depois da última e só então a conexão volta para o pool.
+      // A linha de XP é garantida antes da transação (autocommit): o INSERT IGNORE que acha a linha
+      // deixaria nela uma trava compartilhada até o fim, e dois créditos com essa trava pedindo o
+      // FOR UPDATE se travariam. A trava, o extrato e o total ficam entre o begin e o commit.
       const queryOrder = fakeDb.pool.query.mock.invocationCallOrder;
       const begin = fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!;
       const commit = fakeDb.conn.commit.mock.invocationCallOrder[0]!;
       const release = fakeDb.conn.release.mock.invocationCallOrder[0]!;
-      expect(begin).toBeLessThan(queryOrder[0]!);
-      expect(commit).toBeGreaterThan(queryOrder[2]!);
+      expect(queryOrder[0]!).toBeLessThan(begin);
+      expect(begin).toBeLessThan(queryOrder[1]!);
+      expect(commit).toBeGreaterThan(queryOrder[3]!);
       expect(release).toBeGreaterThan(commit);
 
-      // As três instruções rodam na conexão que abriu a transação: pelo pool, o lançamento e a
-      // soma do total deixariam de ser desfeitos juntos.
+      // Tudo roda na conexão que abriu a transação: pelo pool, o lançamento e a soma do total
+      // deixariam de ser desfeitos juntos.
       const contexts = fakeDb.pool.query.mock.contexts;
-      expect(contexts).toHaveLength(3);
+      expect(contexts).toHaveLength(4);
       expect(contexts.every((ctx) => ctx === fakeDb.conn)).toBe(true);
     });
 
-    it('se a transação não chega a abrir, nada é gravado e a conexão volta para o pool', async () => {
+    it.each([
+      ['chegar exatamente no piso do próximo nível já sobe (RN-052)', 200, 1, 100, 2, 'Aprendiz'],
+      ['um ganho grande pula níveis: vale o nível do total novo', 250, 1, 2000, 4, 'Especialista'],
+      ['ganho dentro do mesmo nível, já acima do primeiro', 900, 3, 100, 3, 'Profissional'],
+      ['perda de XP que rebaixa grava o nível do total novo', 900, 3, -200, 2, 'Aprendiz'],
+      ['chegar na Lenda', 11950, 5, 50, 6, 'Lenda'],
+    ])('%s', async (_rule, totalXp, level, delta, newLevel, levelName) => {
+      fakeDb.reply({ affectedRows: 0 }, [{ total_xp: totalXp, level }], {}, {});
+
+      expect(await gamificationRepository.applyXp({ ...input, delta })).toEqual({
+        previousLevel: level,
+        level: newLevel,
+      });
+
+      expect(fakeDb.calls[3]!.params).toEqual({ delta, level: newLevel, levelName, userId: 7 });
+    });
+
+    it('o nível sai do total travado, e não de um total lido antes: dois créditos seguidos somam', async () => {
+      // O segundo crédito trava a linha já com o primeiro somado (200 + 60 = 260; 260 + 60 = 320).
+      fakeDb.reply({}, [{ total_xp: 200, level: 1 }], {}, {});
+      fakeDb.reply({}, [{ total_xp: 260, level: 1 }], {}, {});
+
+      expect(await gamificationRepository.applyXp({ ...input, delta: 60 })).toEqual({
+        previousLevel: 1,
+        level: 1,
+      });
+      expect(await gamificationRepository.applyXp({ ...input, delta: 60 })).toEqual({
+        previousLevel: 1,
+        level: 2,
+      });
+
+      expect(fakeDb.calls[3]!.params).toEqual({
+        delta: 60,
+        level: 1,
+        levelName: 'Iniciante',
+        userId: 7,
+      });
+      expect(fakeDb.calls[7]!.params).toEqual({
+        delta: 60,
+        level: 2,
+        levelName: 'Aprendiz',
+        userId: 7,
+      });
+    });
+
+    it('o total travado que chega como texto vale pelo número', async () => {
+      fakeDb.reply({}, [{ total_xp: '799', level: '2' }], {}, {});
+
+      expect(await gamificationRepository.applyXp({ ...input, delta: 1 })).toEqual({
+        previousLevel: 2,
+        level: 3,
+      });
+    });
+
+    it('sem linha travada (usuário inexistente: o INSERT IGNORE engole a FK), o lançamento falha e nada fica', async () => {
+      const boom = new Error('ER_NO_REFERENCED_ROW_2');
+      fakeDb.reply({ affectedRows: 0 }, [], boom);
+
+      await expect(gamificationRepository.applyXp(input)).rejects.toBe(boom);
+
+      expect(fakeDb.sqls().some((s) => s.startsWith('UPDATE user_xp'))).toBe(false);
+      expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+    });
+
+    it('contrato concluído: a contagem do contrato entra na mesma transação dos XP (RN-051)', async () => {
+      fakeDb.reply({}, [{ total_xp: 0, level: 1 }], {}, {}, { affectedRows: 1 });
+
+      await gamificationRepository.applyXp({ ...input, countContract: true });
+
+      expect(fakeDb.calls).toHaveLength(5);
+      expect(fakeDb.calls[4]!.sql).toBe(
+        'UPDATE profiles_freelancer SET total_contracts = total_contracts + 1 WHERE user_id = :userId',
+      );
+      expect(fakeDb.calls[4]!.params).toEqual({ userId: 7 });
+      // Depois do total e antes do commit, na conexão da transação.
+      expect(fakeDb.conn.commit.mock.invocationCallOrder[0]!).toBeGreaterThan(
+        fakeDb.pool.query.mock.invocationCallOrder[4]!,
+      );
+      expect(fakeDb.pool.query.mock.contexts[4]).toBe(fakeDb.conn);
+    });
+
+    it('sem contrato (avaliação, badge), a contagem de contratos não é tocada', async () => {
+      fakeDb.reply({}, [{ total_xp: 0, level: 1 }], {}, {});
+
+      await gamificationRepository.applyXp(input);
+
+      expect(fakeDb.sqls().some((s) => s.includes('profiles_freelancer'))).toBe(false);
+    });
+
+    it('se a contagem do contrato falha, os XP também são desfeitos', async () => {
+      const boom = new Error('ER_LOCK_WAIT_TIMEOUT');
+      fakeDb.reply({}, [{ total_xp: 0, level: 1 }], {}, {}, boom);
+
+      await expect(gamificationRepository.applyXp({ ...input, countContract: true })).rejects.toBe(
+        boom,
+      );
+
+      expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+      expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('se a transação não chega a abrir, nada é lançado e a conexão volta para o pool', async () => {
       const boom = new Error('ER_CONNECTION_LOST');
       fakeDb.conn.beginTransaction.mockRejectedValueOnce(boom);
 
       await expect(gamificationRepository.applyXp(input)).rejects.toBe(boom);
 
-      expect(fakeDb.calls).toHaveLength(0);
+      // Só a garantia da linha (fora da transação) rodou.
+      expect(fakeDb.sqls()).toEqual(['INSERT IGNORE INTO user_xp (user_id) VALUES (:userId)']);
       expect(fakeDb.conn.commit).not.toHaveBeenCalled();
       expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
     });
 
-    it('se a linha de XP não pode ser criada (usuário inexistente), nada é lançado e a transação é desfeita', async () => {
+    it('se a linha de XP não pode ser criada (usuário inexistente), nada é lançado', async () => {
       const boom = new Error('ER_NO_REFERENCED_ROW_2: usuário inexistente');
       fakeDb.reply(boom);
 
       await expect(gamificationRepository.applyXp(input)).rejects.toBe(boom);
 
       expect(fakeDb.sqls()).toEqual(['INSERT IGNORE INTO user_xp (user_id) VALUES (:userId)']);
+      expect(fakeDb.conn.beginTransaction).not.toHaveBeenCalled();
       expect(fakeDb.conn.commit).not.toHaveBeenCalled();
-      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
       expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
-      // Desfaz antes de devolver a conexão ao pool.
-      expect(fakeDb.conn.rollback.mock.invocationCallOrder[0]!).toBeLessThan(
-        fakeDb.conn.release.mock.invocationCallOrder[0]!,
-      );
     });
 
     it('ganho sem referência grava reference_id nulo', async () => {
+      fakeDb.reply({}, [{ total_xp: 0, level: 1 }]);
       await gamificationRepository.applyXp({ ...input, referenceId: null });
-      expect(fakeDb.calls[1]!.params).toEqual({
+      expect(fakeDb.calls[2]!.params).toEqual({
         userId: 7,
         delta: 100,
         reason: 'contract_completed',
@@ -141,24 +254,28 @@ describe('gamificationRepository', () => {
 
     it('se a soma do total falha, o lançamento do extrato é desfeito e a conexão é devolvida', async () => {
       const boom = new Error('deadlock');
-      fakeDb.reply({ affectedRows: 0 }, { insertId: 1, affectedRows: 1 }, boom);
+      fakeDb.reply({}, [{ total_xp: 0, level: 1 }], { insertId: 1, affectedRows: 1 }, boom);
 
       await expect(gamificationRepository.applyXp(input)).rejects.toBe(boom);
 
-      expect(fakeDb.calls).toHaveLength(3);
+      expect(fakeDb.calls).toHaveLength(4);
       expect(fakeDb.conn.commit).not.toHaveBeenCalled();
       expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
       expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
+      // Desfaz antes de devolver a conexão ao pool.
+      expect(fakeDb.conn.rollback.mock.invocationCallOrder[0]!).toBeLessThan(
+        fakeDb.conn.release.mock.invocationCallOrder[0]!,
+      );
     });
 
     it('se o lançamento no extrato falha, o total não é somado e a transação é desfeita', async () => {
       const boom = new Error('ER_NO_REFERENCED_ROW_2');
-      fakeDb.reply({ affectedRows: 0 }, boom);
+      fakeDb.reply({}, [{ total_xp: 0, level: 1 }], boom);
 
       await expect(gamificationRepository.applyXp(input)).rejects.toBe(boom);
 
       // XP sem lançamento no extrato não existe: o UPDATE do total nem chega a rodar.
-      expect(fakeDb.calls).toHaveLength(2);
+      expect(fakeDb.calls).toHaveLength(3);
       expect(fakeDb.sqls().some((s) => s.startsWith('UPDATE user_xp'))).toBe(false);
       expect(fakeDb.conn.commit).not.toHaveBeenCalled();
       expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
@@ -167,11 +284,23 @@ describe('gamificationRepository', () => {
 
     it('se o commit falha, o erro sobe, a transação é desfeita e a conexão é devolvida', async () => {
       const boom = new Error('ER_LOCK_WAIT_TIMEOUT');
+      fakeDb.reply({}, [{ total_xp: 0, level: 1 }]);
       fakeDb.conn.commit.mockRejectedValueOnce(boom);
 
       await expect(gamificationRepository.applyXp(input)).rejects.toBe(boom);
 
-      expect(fakeDb.calls).toHaveLength(3);
+      expect(fakeDb.calls).toHaveLength(4);
+      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+      expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('um rollback que falha não troca o erro original: quem chama recebe o erro do crédito', async () => {
+      const boom = new Error('deadlock');
+      fakeDb.reply({}, [{ total_xp: 0, level: 1 }], {}, boom);
+      fakeDb.conn.rollback.mockRejectedValueOnce(new Error('conexão caiu no rollback'));
+
+      await expect(gamificationRepository.applyXp(input)).rejects.toBe(boom);
+
       expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
       expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
     });
@@ -262,18 +391,6 @@ describe('gamificationRepository', () => {
     expect(fakeDb.calls[1]!.params).toEqual({ userId: 8 });
   });
 
-  it('incrementContracts soma um contrato só no perfil do freelancer informado', async () => {
-    fakeDb.reply({ affectedRows: 1 });
-
-    await expect(gamificationRepository.incrementContracts(7)).resolves.toBeUndefined();
-
-    expect(fakeDb.calls).toHaveLength(1);
-    expect(fakeDb.calls[0]!.sql).toBe(
-      'UPDATE profiles_freelancer SET total_contracts = total_contracts + 1 WHERE user_id = :userId',
-    );
-    expect(fakeDb.calls[0]!.params).toEqual({ userId: 7 });
-  });
-
   it('recentEvents traz os últimos ganhos do usuário, do mais novo para o mais antigo, no limite pedido', async () => {
     const rows = [{ amount: 100, reason: 'contract_completed' }];
     fakeDb.reply(rows);
@@ -293,41 +410,47 @@ describe('gamificationRepository', () => {
     expect(fakeDb.calls).toHaveLength(2);
   });
 
-  it('activityDates devolve os dias distintos com atividade (texto YYYY-MM-DD), do mais recente para trás', async () => {
-    fakeDb.reply([{ d: '2026-03-10' }, { d: '2026-03-09' }, { d: '2026-03-07' }]);
-
-    expect(await gamificationRepository.activityDates(7, 60)).toEqual([
-      '2026-03-10',
-      '2026-03-09',
-      '2026-03-07',
+  it('activityTimes devolve os instantes com atividade desde a data pedida, do mais recente para trás', async () => {
+    const since = new Date('2026-01-08T12:00:00Z');
+    fakeDb.reply([
+      { created_at: new Date('2026-03-10T14:00:00Z') },
+      // Com dateStrings no driver a data chega como texto: sai como Date do mesmo jeito.
+      { created_at: '2026-03-10T03:30:00Z' },
     ]);
 
+    expect(await gamificationRepository.activityTimes(7, since)).toEqual([
+      new Date('2026-03-10T14:00:00Z'),
+      new Date('2026-03-10T03:30:00Z'),
+    ]);
+
+    // O instante cru, e não o DATE_FORMAT do banco: o dia é contado no fuso da pessoa, fora daqui.
     const { sql, params } = fakeDb.calls[0]!;
-    expect(sql).toContain("SELECT DISTINCT DATE_FORMAT(created_at, '%Y-%m-%d') AS d");
-    expect(sql).toContain('FROM xp_transactions WHERE user_id = :userId');
-    expect(sql).toContain('ORDER BY d DESC LIMIT 60');
-    expect(params).toEqual({ userId: 7 });
+    expect(sql).toBe(
+      'SELECT created_at FROM xp_transactions WHERE user_id = :userId AND created_at >= :since ORDER BY created_at DESC',
+    );
+    expect(params).toEqual({ userId: 7, since });
+    expect((params as { since: Date }).since).toBe(since);
   });
 
-  it('activityDates sem atividade devolve lista vazia, e a janela de dias é a que foi pedida', async () => {
-    expect(await gamificationRepository.activityDates(8, 7)).toEqual([]);
-
-    expect(fakeDb.calls[0]!.sql).toMatch(/WHERE user_id = :userId ORDER BY d DESC LIMIT 7$/);
-    expect(fakeDb.calls[0]!.params).toEqual({ userId: 8 });
+  it('activityTimes sem atividade devolve lista vazia', async () => {
+    const since = new Date('2026-03-01T00:00:00Z');
+    expect(await gamificationRepository.activityTimes(8, since)).toEqual([]);
+    expect(fakeDb.calls[0]!.params).toEqual({ userId: 8, since });
     expect(fakeDb.calls).toHaveLength(1);
   });
 
   describe('rankOf', () => {
-    it('a posição é quantos têm mais XP que o usuário, mais um', async () => {
+    it('a posição é quantos têm mais XP que o usuário, mais um, contando só contas em dia', async () => {
       fakeDb.reply([{ rnk: '5' }]);
 
       // O COUNT chega como texto ou BigInt conforme o driver: sai como número.
       expect(await gamificationRepository.rankOf(7)).toBe(5);
 
       const { sql, params } = fakeDb.calls[0]!;
-      expect(sql).toContain('SELECT COUNT(*) + 1 AS rnk FROM user_xp');
-      expect(sql).toContain(
-        'WHERE total_xp > (SELECT total_xp FROM user_xp WHERE user_id = :userId)',
+      expect(sql).toBe(
+        'SELECT COUNT(*) + 1 AS rnk FROM user_xp ux JOIN users u ON u.id = ux.user_id ' +
+          "WHERE u.deleted_at IS NULL AND u.status NOT IN ('suspended', 'banned') " +
+          'AND ux.total_xp > (SELECT total_xp FROM user_xp WHERE user_id = :userId)',
       );
       expect(params).toEqual({ userId: 7 });
     });
@@ -352,6 +475,10 @@ describe('gamificationRepository', () => {
     expect(sql).toContain('FROM user_xp ux JOIN users u ON u.id = ux.user_id');
     // Quem não tem perfil de freelancer continua no ranking, sem nome.
     expect(sql).toContain('LEFT JOIN profiles_freelancer pf ON pf.user_id = ux.user_id');
+    // Conta banida, suspensa ou excluída sai do ranking.
+    expect(sql).toContain(
+      "LEFT JOIN profiles_freelancer pf ON pf.user_id = ux.user_id WHERE u.deleted_at IS NULL AND u.status NOT IN ('suspended', 'banned') ORDER BY ",
+    );
     expect(sql).toMatch(/ORDER BY ux\.total_xp DESC, ux\.user_id ASC LIMIT 10$/);
     expect(params).toBeUndefined();
 

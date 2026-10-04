@@ -93,6 +93,35 @@ describe('settingsService (ADR 32/33)', () => {
     expect(by.min_service_price!.value).toBe(12.5);
   });
 
+  it('número em branco no banco é chave sem valor: vale o padrão, e não zero (a mesma leitura do getNumber dos jobs)', async () => {
+    const blank = (key_name: string, value: string) => ({
+      key_name,
+      value,
+      type: 'integer',
+      updated_at: null,
+      updated_by_email: null,
+    });
+    repo.list.mockResolvedValue([
+      blank('deadline_grace_hours', ''),
+      blank('platform_fee_percentage', '   '),
+      blank('tacit_approval_days', '\n\t'),
+      blank('proposal_expiry_hours', ' 48 '),
+    ] as never);
+
+    const by = Object.fromEntries((await settingsService.listForAdmin()).map((i) => [i.key, i]));
+    expect(by.deadline_grace_hours!.value).toBe(24);
+    expect(by.platform_fee_percentage!.value).toBe(15);
+    expect(by.tacit_approval_days!.value).toBe(5);
+    // Número com espaços em volta continua valendo.
+    expect(by.proposal_expiry_hours!.value).toBe(48);
+
+    // A leitura com cache (a da tela da contratação e dos parâmetros públicos) também.
+    repo.get.mockResolvedValue('');
+    expect(await settingsService.number('deadline_grace_hours')).toBe(24);
+    expect(await settingsService.feeRate()).toBe(0.15);
+    expect((await settingsService.publicSettings()).deadlineGraceHours).toBe(24);
+  });
+
   it('validateSettingValue: inteiro, decimal (2 casas) e liga/desliga, cada um nos seus limites', () => {
     expect(validateSettingValue('platform_fee_percentage', 10)).toBe('10');
     expect(() => validateSettingValue('platform_fee_percentage', 51)).toThrow(/entre 0 e 50/);

@@ -427,6 +427,9 @@ describe('AdminView: mediação de disputas', () => {
     await user.click(within(dialog).getByRole('radio', { name: /^Dividir/ }));
     const slider = within(dialog).getByRole('slider', { name: 'Percentual devolvido ao cliente' });
     expect(slider).toHaveValue('50');
+    // De 5% a 95% (ADR 60): 0% e 100% são 'Liberar' e 'Devolver', e a API os recusa na divisão.
+    expect(slider).toHaveAttribute('min', '5');
+    expect(slider).toHaveAttribute('max', '95');
     expect(within(dialog).getByText('Percentual devolvido ao cliente: 50%')).toBeInTheDocument();
 
     // O controle deslizante não tem teclado no jsdom: a mudança de valor é disparada direto.

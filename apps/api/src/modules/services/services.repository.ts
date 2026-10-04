@@ -97,6 +97,9 @@ export function orderClause(sort: ServiceSort, geo: boolean, prefix = ''): strin
 const periodCondition = (path: string, period: string): string =>
   `(pf.available_periods IS NULL OR JSON_EXTRACT(pf.available_periods, :${path}) IS NULL OR JSON_CONTAINS(JSON_EXTRACT(pf.available_periods, :${path}), :${period}))`;
 
+/** O texto da busca como "contém" no LIKE: %, _ e a própria barra valem como texto (ESCAPE '\'). */
+export const likeContains = (text: string): string => `%${text.replace(/[\\%_]/g, '\\$&')}%`;
+
 /** Quem presta o serviço: nome e reputação (avg_rating/total_reviews são mantidos pelo módulo de reviews). */
 const OWNER_COLS = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, pf.available_days AS owner_available_days, pf.available_periods AS owner_available_periods, pf.is_available AS owner_is_available, u.timezone AS owner_timezone`;
 
@@ -117,6 +120,15 @@ export const servicesRepository = {
       { ...data, isRemote: data.isRemote ? 1 : 0 },
     );
     return res.insertId;
+  },
+
+  /** A categoria existe e está ativa: só nela se publica serviço. */
+  async categoryIsActive(categoryId: number): Promise<boolean> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM service_categories WHERE id = :categoryId AND is_active = 1 LIMIT 1`,
+      { categoryId },
+    );
+    return rows.length > 0;
   },
 
   async findById(id: number): Promise<ServiceRow | undefined> {
@@ -156,8 +168,8 @@ export const servicesRepository = {
       params.isRemote = filters.isRemote ? 1 : 0;
     }
     if (filters.q) {
-      where.push('(s.title LIKE :q OR s.description LIKE :q)');
-      params.q = `%${filters.q}%`;
+      where.push(String.raw`(s.title LIKE :q ESCAPE '\\' OR s.description LIKE :q ESCAPE '\\')`);
+      params.q = likeContains(filters.q);
     }
     if (filters.minPrice !== undefined) {
       where.push('s.price >= :minPrice');

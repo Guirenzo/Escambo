@@ -97,8 +97,9 @@ export const simulatedPushProvider: PushProvider = {
 export const webPushProvider: PushProvider = {
   name: 'webpush',
   async send(target, payload, opts) {
-    const { publicKey, privateKey } = vapidKeys();
     try {
+      // Dentro do try: chave faltando também é tentativa perdida, não exceção para quem envia.
+      const { publicKey, privateKey } = vapidKeys();
       await webpush.sendNotification(
         { endpoint: target.endpoint, keys: { p256dh: target.p256dh, auth: target.auth } },
         JSON.stringify(payload),

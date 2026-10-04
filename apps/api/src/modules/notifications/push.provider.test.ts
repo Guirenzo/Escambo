@@ -154,12 +154,24 @@ describe('vapidKeys', () => {
     // Só a pública não basta.
     const publicOnly = await fresh({ PUSH_PROVIDER: 'webpush', PUSH_PUBLIC_KEY: 'publica' });
     expect(() => publicOnly.provider.vapidKeys()).toThrow('PUSH_PROVIDER=webpush exige');
-    await expect(publicOnly.provider.webPushProvider.send(alvo, aviso)).rejects.toThrow(
-      'PUSH_PROVIDER=webpush exige',
-    );
 
     expect(wp.generateVAPIDKeys).not.toHaveBeenCalled();
+  });
+
+  it('envio sem as chaves não lança para quem envia: é tentativa perdida (failed), com o erro de configuração no log', async () => {
+    const { provider, log } = await fresh({ PUSH_PROVIDER: 'webpush', PUSH_PUBLIC_KEY: 'publica' });
+    const warn = vi.spyOn(log, 'warn');
+
+    await expect(provider.webPushProvider.send(alvo, aviso)).resolves.toBe('failed');
+
     expect(wp.sendNotification).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    const [fields, message] = warn.mock.calls[0]!;
+    expect(message).toBe('push não entregue');
+    expect(fields).toEqual({ err: expect.any(Error), status: undefined });
+    expect((fields as { err: Error }).err.message).toContain(
+      'PUSH_PROVIDER=webpush exige PUSH_PUBLIC_KEY e PUSH_PRIVATE_KEY',
+    );
   });
 
   it('simulado sem chaves: gera um par uma vez, reaproveita enquanto o processo viver e loga só a pública', async () => {

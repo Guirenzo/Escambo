@@ -1,14 +1,16 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { env } from '../../config/env';
+import { logger } from '../../config/logger';
 import { bearer, routerApp } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
 import { adminRoutes } from '../admin/admin.routes';
 import { moderationRoutes } from './appeals.routes';
 
-const { service, recordAction, audit } = vi.hoisted(() => ({
+const { service, recordAction, audit, captureError } = vi.hoisted(() => ({
   service: {
     mine: vi.fn(),
     appeal: vi.fn(),
@@ -18,6 +20,7 @@ const { service, recordAction, audit } = vi.hoisted(() => ({
   },
   recordAction: vi.fn(),
   audit: vi.fn(),
+  captureError: vi.fn(),
 }));
 // O mínimo de caracteres da contestação (APPEAL_MIN_CHARS) continua vindo do módulo de verdade.
 vi.mock('./appeals.service', async (importOriginal) => ({
@@ -26,6 +29,7 @@ vi.mock('./appeals.service', async (importOriginal) => ({
 }));
 vi.mock('../admin/admin.repository', () => ({ adminRepository: { recordAction } }));
 vi.mock('../audit/audit.service', () => ({ auditService: { log: audit } }));
+vi.mock('../../config/sentry', () => ({ captureError }));
 
 const ownerApp = routerApp('/api/moderation', moderationRoutes);
 // As rotas do admin são as de verdade (admin.routes.ts), para o 403 vir do requireAdmin real.
@@ -234,30 +238,42 @@ describe('contestação pelo admin: borda HTTP', () => {
   });
 
   describe('GET /api/admin/appeals/:id/image', () => {
+    const realDataDir = env.DATA_DIR;
     let dir: string;
 
     beforeEach(async () => {
       dir = await mkdtemp(path.join(os.tmpdir(), 'escambo-appeals-'));
+      env.DATA_DIR = dir;
     });
     afterEach(async () => {
+      env.DATA_DIR = realDataDir;
       await rm(dir, { recursive: true, force: true });
     });
 
+    /** Caminho absoluto de um arquivo em DATA_DIR/quarantine, como o service devolve. */
+    const inQuarantine = (name: string): string => path.join(env.DATA_DIR, 'quarantine', name);
+    /** Grava o arquivo na quarentena e devolve o caminho dele. */
+    async function quarantined(name: string, bytes: Buffer | string): Promise<string> {
+      const file = inQuarantine(name);
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, bytes);
+      return file;
+    }
+    const binary = (r: request.Response, done: (err: Error | null, body: Buffer) => void): void => {
+      const chunks: Buffer[] = [];
+      r.on('data', (c: Buffer) => chunks.push(c));
+      r.on('end', () => done(null, Buffer.concat(chunks)));
+    };
+
     it('entrega o arquivo da quarentena com o tipo da extensão, sem cache e sem sniffing', async () => {
       const bytes = Buffer.from([0x52, 0x49, 0x46, 0x46, 0x01, 0x02, 0x03]);
-      const file = path.join(dir, '31.webp');
-      await writeFile(file, bytes);
-      service.quarantineImage.mockResolvedValue(file);
+      service.quarantineImage.mockResolvedValue(await quarantined('31.webp', bytes));
 
       const res = await request(adminApp)
         .get('/api/admin/appeals/31/image')
         .set(ADMIN)
         .buffer(true)
-        .parse((r, done) => {
-          const chunks: Buffer[] = [];
-          r.on('data', (c: Buffer) => chunks.push(c));
-          r.on('end', () => done(null, Buffer.concat(chunks)));
-        })
+        .parse(binary)
         .expect(200);
 
       expect(service.quarantineImage).toHaveBeenCalledTimes(1);
@@ -277,9 +293,7 @@ describe('contestação pelo admin: borda HTTP', () => {
         ['31.bin', 'application/octet-stream'],
       ];
       for (const [name, type] of expected) {
-        const file = path.join(dir, name);
-        await writeFile(file, 'x');
-        service.quarantineImage.mockResolvedValueOnce(file);
+        service.quarantineImage.mockResolvedValueOnce(await quarantined(name, 'x'));
         const res = await request(adminApp)
           .get('/api/admin/appeals/31/image')
           .set(ADMIN)
@@ -289,7 +303,7 @@ describe('contestação pelo admin: borda HTTP', () => {
     });
 
     it('arquivo que já saiu do disco é 404 padronizado, não erro interno', async () => {
-      service.quarantineImage.mockResolvedValue(path.join(dir, '31.webp'));
+      service.quarantineImage.mockResolvedValue(inQuarantine('31.webp'));
       const res = await request(adminApp).get('/api/admin/appeals/31/image').set(ADMIN).expect(404);
       expect(res.body).toEqual({
         error: 'removal_image_not_found',
@@ -298,11 +312,26 @@ describe('contestação pelo admin: borda HTTP', () => {
     });
 
     it('arquivo oculto (nome começando com ponto) não é servido', async () => {
-      const file = path.join(dir, '.oculto.webp');
-      await writeFile(file, 'x');
-      service.quarantineImage.mockResolvedValue(file);
+      service.quarantineImage.mockResolvedValue(await quarantined('.oculto.webp', 'x'));
       const res = await request(adminApp).get('/api/admin/appeals/31/image').set(ADMIN).expect(404);
       expect(res.body.error).toBe('removal_image_not_found');
+    });
+
+    it('DATA_DIR dentro de uma pasta começada por ponto (ex.: /home/app/.escambo) não bloqueia a imagem: a recusa de oculto olha só dentro da quarentena', async () => {
+      env.DATA_DIR = path.join(dir, '.escambo', 'data');
+      const bytes = Buffer.from('imagem guardada');
+      service.quarantineImage.mockResolvedValue(await quarantined('31.png', bytes));
+
+      const res = await request(adminApp)
+        .get('/api/admin/appeals/31/image')
+        .set(ADMIN)
+        .buffer(true)
+        .parse(binary)
+        .expect(200);
+
+      expect((res.body as Buffer).equals(bytes)).toBe(true);
+      expect(res.headers['content-type']).toBe('image/png');
+      expect(res.headers['cache-control']).toBe('private, no-store');
     });
 
     it('remoção sem imagem em quarentena: o 404 do service chega como está', async () => {
@@ -475,6 +504,39 @@ describe('contestação pelo admin: borda HTTP', () => {
       expect(res.status).toBe(200);
       expect(res.body).toEqual(upheld);
       expect(audit).toHaveBeenCalledTimes(1);
+    });
+
+    it('decisão já gravada cujo registro nas ações do admin falha: 200 com a decisão, a auditoria ainda grava e a falha vai para o log e o Sentry', async () => {
+      service.decide.mockResolvedValue(overturned);
+      const boom = new Error('banco fora');
+      recordAction.mockRejectedValueOnce(boom);
+      const error = vi.spyOn(logger, 'error');
+
+      try {
+        const res = await request(adminApp)
+          .post('/api/admin/appeals/31/overturn')
+          .set(ADMIN)
+          .send({ note: 'Foto legítima.' })
+          .expect(200);
+
+        // A nova tentativa daria 409 (já decidida): a resposta tem de ser a decisão, não um 500.
+        expect(res.body).toEqual(overturned);
+        expect(audit).toHaveBeenCalledTimes(1);
+        expect(audit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: 'appeal_overturned',
+            entityId: 31,
+            newValue: { note: 'Foto legítima.', ...overturned },
+          }),
+        );
+        expect(error).toHaveBeenCalledWith(
+          { err: boom, adminId: 1, removalId: 31, action: 'appeal_overturned' },
+          'decisão sem registro nas ações do admin',
+        );
+        expect(captureError).toHaveBeenCalledWith(boom);
+      } finally {
+        error.mockRestore();
+      }
     });
 
     it('decisão que o service recusa (já decidida) não fica registrada como ação do admin', async () => {

@@ -68,15 +68,22 @@ describe('sessionRepository', () => {
     });
   });
 
-  it('revokeByHash revoga só a sessão daquele token, e só se ainda estiver aberta (não regrava a data)', async () => {
-    fakeDb.reply({ affectedRows: 1 });
+  describe('revokeByHash', () => {
+    it('revoga só a sessão daquele token, e só se ainda estiver aberta (não regrava a data); devolve true', async () => {
+      fakeDb.reply({ affectedRows: 1 });
 
-    expect(await sessionRepository.revokeByHash('hash-sha256')).toBeUndefined();
+      expect(await sessionRepository.revokeByHash('hash-sha256')).toBe(true);
 
-    expect(fakeDb.calls[0]!.sql).toBe(
-      'UPDATE user_sessions SET revoked_at = NOW() WHERE refresh_token = :tokenHash AND revoked_at IS NULL',
-    );
-    expect(fakeDb.calls[0]!.params).toEqual({ tokenHash: 'hash-sha256' });
+      expect(fakeDb.calls[0]!.sql).toBe(
+        'UPDATE user_sessions SET revoked_at = NOW() WHERE refresh_token = :tokenHash AND revoked_at IS NULL',
+      );
+      expect(fakeDb.calls[0]!.params).toEqual({ tokenHash: 'hash-sha256' });
+    });
+
+    it('sessão já revogada (outra rotação chegou antes) ou inexistente devolve false', async () => {
+      fakeDb.reply({ affectedRows: 0 });
+      expect(await sessionRepository.revokeByHash('hash-sha256')).toBe(false);
+    });
   });
 
   describe('revokeAllForUser (RN-008)', () => {

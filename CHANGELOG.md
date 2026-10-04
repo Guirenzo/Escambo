@@ -5,6 +5,49 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.41.1] — 2026-10-04
+
+Correções da varredura de testes (ADR 60): os pontos que os testes de unidade do ADR 59 acharam no código,
+conferidos um a um.
+
+### Corrigido
+
+- **Regras que o código furava:** serviço pausado aceitava proposta pelo link, na contratação e na troca (RN-013); dava para mandar proposta direta a uma conta que não é de freelancer, ou a um administrador; a edição deixava um
+  serviço de preço fixo sem preço (RN-016); dava para comprar um segundo impulsionamento enquanto o primeiro
+  valia, e impulsionar serviço pausado (RN-017); o ranking mostrava conta suspensa, banida ou excluída.
+- **Dinheiro:** saque e contratação com fração de centavo criavam um centavo a cada pedido ou proposta cancelados; valores da troca e da
+  contratação sem teto davam erro interno; a troca aceitava oferecer serviço de outra pessoa; uma divisão de
+  0% ou 100% numa disputa terminava com o status errado (agora vai de 1% a 99% e precisa dar algo aos dois lados, e o painel vai de 5% a 95%); a troca podia ser proposta a conta suspensa ou banida.
+- **Corridas:** dois refresh simultâneos com o mesmo token saíam com duas sessões; dois pedidos de exclusão
+  simultâneos criavam duas solicitações; o nível de XP podia ficar abaixo do total.
+- **LGPD e moderação:** arquivo da quarentena era marcado como apagado sem ter saído do disco; a cópia de dados
+  do titular ficava no disco depois da anonimização ou de uma falha ao gerá-la; baixar uma cópia que sumia
+  derrubava a API; uma decisão já gravada respondia erro se um passo depois dela falhasse; a miniatura de uma
+  imagem removida podia continuar no ar.
+- **Chat:** um evento do socket com retorno inválido derrubava a API; a mensagem nova não aparecia ao vivo na Sala de uma segunda contratação com a mesma pessoa; depois de 200 mensagens a conversa parava de mostrar as novas; pelo socket entrava mensagem vazia
+  ou longa demais; a remoção de uma mensagem não aparecia ao vivo numa segunda contratação com a mesma pessoa;
+  nome de anexo com acento chegava trocado.
+- **Entradas que davam erro interno:** página muito grande, número vazio na busca, `%` e `_` na busca,
+  multipart cortado, navegador com nome muito longo, categoria inexistente, destinatário de troca
+  inexistente, administrador banindo a si mesmo.
+- **Documentação da API:** `/api/docs` abria em branco (também em http fora do localhost); o Swagger UI agora vem da própria API.
+- A sequência de dias da gamificação contava em UTC (virava às 21h de Brasília); agora conta no fuso da pessoa.
+
+### Alterado
+
+- Administradores não são suspensos nem banidos pelo painel. A RN-007 passa a dizer o que o código faz: a
+  suspensão bloqueia o acesso como o banimento, até o admin reativar.
+- A API recusa com códigos novos o que antes aceitava ou quebrava (`service_inactive`, `boost_active`,
+  `price_required`, `invalid_category`, `cannot_favorite_self`, `cannot_moderate_admin`, entre outros; a lista
+  está no ADR 60).
+
+### Para quem opera
+
+- Sem migration. Dependência nova na API: `swagger-ui-dist` (Apache-2.0). A estatística de instalação que vem
+  com ele (`@scarf/scarf`) fica desligada no `package.json` da raiz (`scarfSettings.enabled: false`).
+- `PUSH_PROVIDER=webpush` sem `PUSH_PUBLIC_KEY` e `PUSH_PRIVATE_KEY` agora impede a API de subir, com a
+  mensagem dizendo qual chave falta.
+
 ## [1.41.0] — 2026-10-03
 
 Lembretes de prazo (ADR 58): o que o ADR 57 deixou para o bloco seguinte.

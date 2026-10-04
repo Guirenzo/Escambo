@@ -904,7 +904,7 @@ CREATE TABLE barter_agreements (
   estimated_value_requested DECIMAL(10, 2)  NOT NULL,      -- valor estimado do que é pedido
   cash_difference           DECIMAL(10, 2)  NOT NULL DEFAULT 0.00, -- torna (diferença em dinheiro)
   cash_payer_id             BIGINT UNSIGNED NULL,          -- quem paga a torna (NULL em troca par)
-  platform_fee              DECIMAL(10, 2)  NOT NULL DEFAULT 0.00, -- 15% sobre o maior valor estimado
+  platform_fee              DECIMAL(10, 2)  NOT NULL DEFAULT 0.00, -- comissão sobre a torna (RN-066)
   status                    ENUM('proposed', 'accepted', 'rejected', 'active', 'completed', 'cancelled', 'disputed') NOT NULL DEFAULT 'proposed',
   contract_offered_id       BIGINT UNSIGNED NULL,          -- contrato gerado (lado proponente)
   contract_requested_id     BIGINT UNSIGNED NULL,          -- contrato gerado (lado receptor)

@@ -7,7 +7,8 @@ vi.mock('./messaging.repository', () => ({
     insertMessage: vi.fn(),
     previousMessage: vi.fn(),
     findAttachment: vi.fn(),
-    findWithContract: vi.fn(),
+    findById: vi.fn(),
+    pairContractIds: vi.fn(),
     markPurged: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -41,6 +42,7 @@ import { contractsRepository, type ContractRow } from '../contracts/contracts.re
 import { notificationsService } from '../notifications/notifications.service';
 import { profilesRepository } from '../profiles/profiles.repository';
 import { realtime } from '../../config/realtime';
+import { logger } from '../../config/logger';
 import { reportsRepository } from '../reports/reports.repository';
 import * as storage from './attachments.storage';
 
@@ -73,7 +75,11 @@ const fakeMsg = (o: Partial<Omit<MessageRow, 'constructor'>> = {}): MessageRow =
     ...o,
   }) as unknown as MessageRow;
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  // Uma contratação só entre as duas pessoas: a do contrato de onde a mensagem sai.
+  mRepo.pairContractIds.mockResolvedValue([1]);
+});
 
 describe('messagingService.history', () => {
   it('404 quando o contrato não existe', async () => {
@@ -266,6 +272,70 @@ describe('messagingService.send', () => {
       body: 'bom dia',
       data: { contractId: 1 },
     });
+  });
+});
+
+describe('messagingService: mensagem nova numa segunda contratação entre as mesmas pessoas', () => {
+  // A conversa é uma por par; cada parte acompanha o chat na sala do contrato aberto na tela, que
+  // só aceita evento com o id dele.
+  beforeEach(() => {
+    cRepo.findById.mockResolvedValue(fakeContract({ client_id: 10, freelancer_id: 20 }));
+    mRepo.getOrCreate.mockResolvedValue(5);
+  });
+
+  it('o texto chega à sala de cada contratação do par, com o id dela', async () => {
+    mRepo.insertMessage.mockResolvedValue(fakeMsg({ id: 42, sender_id: 10, content: 'oi' }));
+    mRepo.pairContractIds.mockResolvedValue([1, 4]);
+
+    const msg = await messagingService.send(1, 10, 'oi');
+
+    // As contratações saem da conversa da mensagem.
+    expect(mRepo.pairContractIds.mock.calls).toEqual([[5]]);
+    expect(vi.mocked(realtime.emitToContract).mock.calls).toEqual([
+      [1, 'message:new', { ...msg, contractId: 1 }],
+      [4, 'message:new', { ...msg, contractId: 4 }],
+    ]);
+    // A notificação continua sendo uma só, com o contrato de onde a mensagem saiu.
+    expect(notificationsService.notify).toHaveBeenCalledTimes(1);
+    expect(notificationsService.notify).toHaveBeenCalledWith(
+      20,
+      expect.objectContaining({ data: { contractId: 1 } }),
+    );
+  });
+
+  it('o anexo também, saindo da segunda contratação', async () => {
+    disk.saveAttachment.mockResolvedValue('2026/09/01KEY.png');
+    mRepo.insertMessage.mockResolvedValue(
+      fakeMsg({ id: 43, type: 'image', content: null, file_url: '2026/09/01KEY.png' }),
+    );
+    mRepo.pairContractIds.mockResolvedValue([1, 4]);
+
+    const msg = await messagingService.sendAttachment(4, 10, { buffer: PNG }, null);
+
+    expect(vi.mocked(realtime.emitToContract).mock.calls).toEqual([
+      [1, 'message:new', { ...msg, contractId: 1 }],
+      [4, 'message:new', { ...msg, contractId: 4 }],
+    ]);
+  });
+
+  it('se as contratações do par não puderem ser lidas, a mensagem sai e vai ao menos para a sala de origem', async () => {
+    mRepo.insertMessage.mockResolvedValue(fakeMsg({ id: 44, sender_id: 10, content: 'oi' }));
+    const boom = new Error('banco fora');
+    mRepo.pairContractIds.mockRejectedValueOnce(boom);
+    const warn = vi.spyOn(logger, 'warn');
+
+    const msg = await messagingService.send(1, 10, 'oi');
+
+    expect(msg.id).toBe(44);
+    expect(vi.mocked(realtime.emitToContract).mock.calls).toEqual([
+      [1, 'message:new', { ...msg, contractId: 1 }],
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      { err: boom, conversationId: 5 },
+      'tempo real: contratações do par não lidas; a mensagem vai só para a sala de origem',
+    );
+    expect(notificationsService.notify).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 });
 
@@ -1073,20 +1143,22 @@ describe('messagingService.attachment: quando o arquivo não pode sair', () => {
 });
 
 describe('messagingService.announceChange (moderação, ADR 44)', () => {
-  it('avisa a sala do contrato da mensagem com a versão atual dela: removida vai sem texto e sem anexo', async () => {
-    mRepo.findWithContract.mockResolvedValue({
-      ...fakeMsg({
+  it('avisa a sala do contrato com a versão atual da mensagem: removida vai sem texto e sem anexo', async () => {
+    mRepo.findById.mockResolvedValue(
+      fakeMsg({
         id: 31,
         content: 'me paga por fora',
         off_platform: 'off_platform',
         removed_at: new Date('2026-09-10T12:00:00Z'),
       }),
-      contract_id: 3,
-    } as never);
+    );
+    mRepo.pairContractIds.mockResolvedValue([3]);
 
     await messagingService.announceChange(31);
 
-    expect(mRepo.findWithContract).toHaveBeenCalledWith(31);
+    expect(mRepo.findById).toHaveBeenCalledWith(31);
+    // As contratações do par saem da conversa DA mensagem.
+    expect(mRepo.pairContractIds).toHaveBeenCalledWith(5);
     expect(realtime.emitToContract).toHaveBeenCalledTimes(1);
     expect(realtime.emitToContract).toHaveBeenCalledWith(3, 'message:updated', {
       id: 31,
@@ -1102,11 +1174,26 @@ describe('messagingService.announceChange (moderação, ADR 44)', () => {
     });
   });
 
+  it('numa segunda contratação entre as mesmas pessoas, o aviso chega à sala de cada contratação, com o id dela', async () => {
+    // A conversa guarda só o primeiro contrato (3); as partes podem estar na sala do 8.
+    mRepo.findById.mockResolvedValue(
+      fakeMsg({ id: 31, removed_at: new Date('2026-09-10T12:00:00Z') }),
+    );
+    mRepo.pairContractIds.mockResolvedValue([3, 8]);
+
+    await messagingService.announceChange(31);
+
+    expect(vi.mocked(realtime.emitToContract).mock.calls).toEqual([
+      [3, 'message:updated', expect.objectContaining({ id: 31, contractId: 3, content: '' })],
+      [8, 'message:updated', expect.objectContaining({ id: 31, contractId: 8, content: '' })],
+    ]);
+  });
+
   it('mensagem devolvida numa contestação aceita volta para a sala com o texto e os sinais', async () => {
-    mRepo.findWithContract.mockResolvedValue({
-      ...fakeMsg({ id: 31, content: 'chave pix', off_platform: 'pix', removed_at: null }),
-      contract_id: 3,
-    } as never);
+    mRepo.findById.mockResolvedValue(
+      fakeMsg({ id: 31, content: 'chave pix', off_platform: 'pix', removed_at: null }),
+    );
+    mRepo.pairContractIds.mockResolvedValue([3]);
 
     await messagingService.announceChange(31);
 
@@ -1117,17 +1204,16 @@ describe('messagingService.announceChange (moderação, ADR 44)', () => {
     );
   });
 
-  it('mensagem que não existe, ou de conversa sem contrato, não avisa ninguém', async () => {
-    mRepo.findWithContract.mockResolvedValue(undefined);
+  it('mensagem que não existe, ou de conversa sem contratação, não avisa ninguém', async () => {
+    mRepo.findById.mockResolvedValue(undefined);
     await messagingService.announceChange(404);
+    expect(mRepo.pairContractIds).not.toHaveBeenCalled();
 
-    mRepo.findWithContract.mockResolvedValue({
-      ...fakeMsg({ id: 31 }),
-      contract_id: null,
-    } as never);
+    mRepo.findById.mockResolvedValue(fakeMsg({ id: 31 }));
+    mRepo.pairContractIds.mockResolvedValue([]);
     await messagingService.announceChange(31);
 
-    expect(mRepo.findWithContract).toHaveBeenCalledTimes(2);
+    expect(mRepo.findById).toHaveBeenCalledTimes(2);
     expect(realtime.emitToContract).not.toHaveBeenCalled();
   });
 });

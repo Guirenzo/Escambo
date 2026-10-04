@@ -144,31 +144,33 @@ describe('adminService.resolveDispute (escrow)', () => {
 });
 
 describe('adminService.moderateUser', () => {
-  it('bane o usuário e registra a ação', async () => {
+  it('bane o usuário e registra a ação com o usuário moderado como alvo (tipo e id)', async () => {
     admin.setUserStatus.mockResolvedValue(true);
     admin.recordAction.mockResolvedValue(undefined);
     await adminService.moderateUser(10, '01HZXULIDEXAMPLE0000000000', 'ban');
     expect(admin.setUserStatus).toHaveBeenCalledTimes(1);
     expect(admin.setUserStatus).toHaveBeenCalledWith('01HZXULIDEXAMPLE0000000000', 'banned');
     expect(admin.recordAction).toHaveBeenCalledTimes(1);
+    // O id (5, o do authRepository mockado) vai no target_id: admin_actions filtra por usuário.
     expect(admin.recordAction).toHaveBeenCalledWith(
       10,
       'user_ban',
       'user',
-      null,
+      5,
       'ulid=01HZXULIDEXAMPLE0000000000',
     );
   });
 
-  it('404 quando o usuário não existe', async () => {
-    admin.setUserStatus.mockResolvedValue(false);
+  it('404 quando o usuário não existe, sem tentar mudar o status', async () => {
+    users.findByUlid.mockResolvedValueOnce(undefined);
     await expect(
       adminService.moderateUser(10, '01HZXULIDEXAMPLE0000000000', 'suspend'),
     ).rejects.toMatchObject({
       statusCode: 404,
       code: 'user_not_found',
     });
-    expect(admin.setUserStatus).toHaveBeenCalledWith('01HZXULIDEXAMPLE0000000000', 'suspended');
+    expect(users.findByUlid).toHaveBeenCalledWith('01HZXULIDEXAMPLE0000000000');
+    expect(admin.setUserStatus).not.toHaveBeenCalled();
     expect(admin.recordAction).not.toHaveBeenCalled();
   });
 });
@@ -403,31 +405,125 @@ describe('adminService.resolveDispute (RN-063): o que é aplicado e quem é avis
     );
   });
 
-  it('divisão sem porcentagem não devolve nada ao cliente', async () => {
-    await adminService.resolveDispute(10, 7, { resolution: 'partial_split' });
+  /** Recusada antes de aplicar: nada liberado nem devolvido, e ninguém é avisado. */
+  const expectNotApplied = () => {
+    expect(disputes.resolve).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  };
+
+  it('divisão sem porcentagem (0%) liberaria tudo ao freelancer: 422 split_one_sided, pedindo release_freelancer', async () => {
+    await expect(
+      adminService.resolveDispute(10, 7, { resolution: 'partial_split' }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'split_one_sided',
+      message:
+        'Com essa porcentagem nada volta ao cliente e tudo vai ao freelancer: use "Liberar ao freelancer" (release_freelancer).',
+    });
+    expectNotApplied();
+  });
+
+  it('divisão com 100% devolveria tudo ao cliente e fecharia concluída: 422 split_one_sided, pedindo refund_client', async () => {
+    // A borda HTTP já recusa 0% e 100% (admin.schema); o service decide pelo valor de qualquer jeito.
+    await expect(
+      adminService.resolveDispute(10, 7, { resolution: 'partial_split', refundPercentage: 100 }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'split_one_sided',
+      message:
+        'Com essa porcentagem nada vai ao freelancer e tudo volta ao cliente: use "Devolver ao cliente" (refund_client).',
+    });
+    expectNotApplied();
+  });
+
+  it('em créditos, 99% de 10 créditos arredonda para 0 ao freelancer: 422, e não uma contratação concluída que devolveu tudo', async () => {
+    contracts.findById.mockResolvedValue(
+      contract30({ payment_mode: 'credits', price: '10.00', freelancer_net: '10.00' }),
+    );
+    await expect(
+      adminService.resolveDispute(10, 7, { resolution: 'partial_split', refundPercentage: 99 }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'split_one_sided',
+      message:
+        'Com essa porcentagem nada vai ao freelancer e tudo volta ao cliente: use "Devolver ao cliente" (refund_client).',
+    });
+    // 1% de 10 créditos também arredonda: 0 de volta ao cliente, tudo ao freelancer.
+    await expect(
+      adminService.resolveDispute(10, 7, { resolution: 'partial_split', refundPercentage: 1 }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'split_one_sided',
+      message:
+        'Com essa porcentagem nada volta ao cliente e tudo vai ao freelancer: use "Liberar ao freelancer" (release_freelancer).',
+    });
+    expectNotApplied();
+  });
+
+  it('em créditos por marcos, 1 crédito restante a 60% vai todo para um lado: 422 (o painel oferece de 5 a 95%)', async () => {
+    contracts.findById.mockResolvedValue(
+      contract30({ payment_mode: 'credits', price: '45.00', freelancer_net: '45.00' }),
+    );
+    // Uma leitura por tentativa (as duas abaixo).
+    milestones.escrowRemaining
+      .mockResolvedValueOnce({ price: 1, net: 1 })
+      .mockResolvedValueOnce({ price: 1, net: 1 });
+    await expect(
+      adminService.resolveDispute(10, 7, { resolution: 'partial_split', refundPercentage: 60 }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'split_one_sided',
+      message:
+        'Com essa porcentagem nada vai ao freelancer e tudo volta ao cliente: use "Devolver ao cliente" (refund_client).',
+    });
+    // A 50% o arredondamento manda o crédito inteiro ao freelancer: também é de um lado só.
+    await expect(
+      adminService.resolveDispute(10, 7, { resolution: 'partial_split', refundPercentage: 50 }),
+    ).rejects.toMatchObject({ statusCode: 422, code: 'split_one_sided' });
+    expectNotApplied();
+  });
+
+  it('em dinheiro, um resto de centavos a 95% não libera nada ao freelancer: 422', async () => {
+    // Marco restante de R$ 0,05 (líquido 0,04): 5% de 0,04 arredonda para 0.
+    milestones.escrowRemaining.mockResolvedValueOnce({ price: 0.05, net: 0.04 });
+    await expect(
+      adminService.resolveDispute(10, 7, { resolution: 'partial_split', refundPercentage: 95 }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'split_one_sided',
+      message:
+        'Com essa porcentagem nada vai ao freelancer e tudo volta ao cliente: use "Devolver ao cliente" (refund_client).',
+    });
+    expectNotApplied();
+  });
+
+  it('divisão que deixa algo dos dois lados passa, mesmo pequena: 1 crédito para cada lado de 2', async () => {
+    contracts.findById.mockResolvedValue(
+      contract30({ payment_mode: 'credits', price: '45.00', freelancer_net: '45.00' }),
+    );
+    milestones.escrowRemaining.mockResolvedValueOnce({ price: 2, net: 2 });
+    await adminService.resolveDispute(10, 7, { resolution: 'partial_split', refundPercentage: 50 });
     expect(disputes.resolve).toHaveBeenCalledWith(
       expect.objectContaining({
-        refundPercentage: 0,
-        releaseToFreelancer: 850,
-        refundToClient: 0,
+        escrowNet: 2,
+        releaseToFreelancer: 1,
+        refundToClient: 1,
         contractFinalStatus: 'completed',
       }),
     );
   });
 
-  it('divisão com 100% devolve o preço inteiro ao cliente e não libera nada ao freelancer', async () => {
-    await adminService.resolveDispute(10, 7, {
-      resolution: 'partial_split',
-      refundPercentage: 100,
-    });
-    // Só o dinheiro: o status final da contratação neste caso é ponto em aberto (ver o retorno da revisão).
+  it('troca com partial_split segue como antes: sem escrow, nada a dividir, e a disputa é resolvida', async () => {
+    contracts.findById.mockResolvedValue(contract30({ payment_mode: 'barter' }));
+    await adminService.resolveDispute(10, 7, { resolution: 'partial_split', refundPercentage: 40 });
     expect(disputes.resolve).toHaveBeenCalledWith(
       expect.objectContaining({
-        resolution: 'partial_split',
-        refundPercentage: 100,
-        escrowNet: 850,
+        paymentMode: 'barter',
+        escrowNet: 0,
         releaseToFreelancer: 0,
-        refundToClient: 1000,
+        refundToClient: 0,
+        contractFinalStatus: 'completed',
+        refundPercentage: 40,
       }),
     );
   });
@@ -529,11 +625,12 @@ describe('adminService.moderateUser (RN-007): efeito imediato', () => {
       expect(sessions.revokeAllForUser).toHaveBeenCalledTimes(1);
       expect(sessions.revokeAllForUser).toHaveBeenCalledWith(USER_ID);
       expect(admin.recordAction).toHaveBeenCalledTimes(1);
+      // O alvo é o usuário moderado (tipo e id), não só o ulid na descrição.
       expect(admin.recordAction).toHaveBeenCalledWith(
         10,
         `user_${action}`,
         'user',
-        null,
+        USER_ID,
         `ulid=${ULID}`,
       );
     }
@@ -551,7 +648,7 @@ describe('adminService.moderateUser (RN-007): efeito imediato', () => {
       10,
       'user_reactivate',
       'user',
-      null,
+      USER_ID,
       `ulid=${ULID}`,
     );
   });
@@ -568,30 +665,67 @@ describe('adminService.moderateUser (RN-007): efeito imediato', () => {
   });
 
   it('usuário que não existe: 404, ninguém é bloqueado e nada é registrado', async () => {
-    admin.setUserStatus.mockResolvedValue(false);
+    users.findByUlid.mockResolvedValueOnce(undefined);
     await expect(adminService.moderateUser(10, ULID, 'ban')).rejects.toMatchObject({
       statusCode: 404,
       code: 'user_not_found',
     });
-    expect(users.findByUlid).not.toHaveBeenCalled();
+    expect(users.findByUlid).toHaveBeenCalledWith(ULID);
+    expect(admin.setUserStatus).not.toHaveBeenCalled();
     expect(blocklist.has(USER_ID)).toBe(false);
     expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
     expect(admin.recordAction).not.toHaveBeenCalled();
   });
 
-  it('se o usuário some entre a mudança e a releitura, a ação fica registrada sem bloquear ninguém', async () => {
-    users.findByUlid.mockResolvedValueOnce(undefined);
+  it('se o usuário some entre a leitura e a mudança (UPDATE sem linha), é 404 e ninguém é bloqueado', async () => {
+    admin.setUserStatus.mockResolvedValue(false);
     const before = blocklist.size();
 
-    await adminService.moderateUser(10, ULID, 'suspend');
+    await expect(adminService.moderateUser(10, ULID, 'suspend')).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'user_not_found',
+    });
 
     expect(blocklist.size()).toBe(before);
     expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+    expect(admin.recordAction).not.toHaveBeenCalled();
+  });
+
+  it('admin não é suspenso nem banido pelo painel, nem o próprio: 409 cannot_moderate_admin e nada muda', async () => {
+    // O admin 5 moderando a si mesmo, e o admin 10 moderando o admin 5.
+    const attempts = [
+      [USER_ID, 'ban'],
+      [USER_ID, 'suspend'],
+      [10, 'ban'],
+      [10, 'suspend'],
+    ] as const;
+    for (const [adminId, action] of attempts) {
+      users.findByUlid.mockResolvedValueOnce({ id: USER_ID, role: 'admin' } as never);
+      await expect(adminService.moderateUser(adminId, ULID, action)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'cannot_moderate_admin',
+        message: 'Administradores não são suspensos nem banidos pelo painel.',
+      });
+    }
+    expect(admin.setUserStatus).not.toHaveBeenCalled();
+    expect(blocklist.has(USER_ID)).toBe(false);
+    expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+    expect(admin.recordAction).not.toHaveBeenCalled();
+  });
+
+  it('reativar um admin continua valendo (é a saída de quem foi bloqueado antes da trava)', async () => {
+    users.findByUlid.mockResolvedValueOnce({ id: USER_ID, role: 'admin' } as never);
+    blocklist.add(USER_ID);
+
+    await adminService.moderateUser(10, ULID, 'reactivate');
+
+    expect(admin.setUserStatus).toHaveBeenCalledWith(ULID, 'active');
+    expect(blocklist.has(USER_ID)).toBe(false);
     expect(admin.recordAction).toHaveBeenCalledWith(
       10,
-      'user_suspend',
+      'user_reactivate',
       'user',
-      null,
+      USER_ID,
       `ulid=${ULID}`,
     );
   });

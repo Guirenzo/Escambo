@@ -19,9 +19,12 @@ vi.mock('./moderation.strikes', async (importOriginal) => ({
   strikePolicy: vi.fn(),
   strikeSummary: vi.fn(),
 }));
+// Contrato do deleteQuarantined: true quando o arquivo saiu (apagado ou já fora do disco); erro
+// de disco (EBUSY, EPERM, EACCES, EIO) lança.
 vi.mock('../media/media.storage', () => ({
   deleteQuarantined: vi.fn(),
   quarantineFilePath: vi.fn(),
+  quarantineMediaImage: vi.fn(),
   restoreQuarantined: vi.fn(),
 }));
 vi.mock('../notifications/notifications.service', () => ({
@@ -31,7 +34,13 @@ vi.mock('../messaging/messaging.service', () => ({
   messagingService: { announceChange: vi.fn().mockResolvedValue(undefined) },
 }));
 
-import { deleteQuarantined, quarantineFilePath, restoreQuarantined } from '../media/media.storage';
+import { logger } from '../../config/logger';
+import {
+  deleteQuarantined,
+  quarantineFilePath,
+  quarantineMediaImage,
+  restoreQuarantined,
+} from '../media/media.storage';
 import { messagingService } from '../messaging/messaging.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { appealsService, removalLabel } from './appeals.service';
@@ -45,6 +54,7 @@ const notify = vi.mocked(notificationsService.notify);
 const restore = vi.mocked(restoreQuarantined);
 const removeFile = vi.mocked(deleteQuarantined);
 const filePath = vi.mocked(quarantineFilePath);
+const requarantine = vi.mocked(quarantineMediaImage);
 const announce = vi.mocked(messagingService.announceChange);
 
 const MEDIA = '/api/media/2026/09/01J8ZQ4K7M3VX5R2T9W6Y1B0CD.webp';
@@ -909,6 +919,8 @@ describe('contestações na mão do admin (ADR 41)', () => {
 
       expect(removeFile).toHaveBeenCalledTimes(1);
       expect(removeFile).toHaveBeenCalledWith('31.webp');
+      // O arquivo não saiu: a remoção não é marcada como expurgada.
+      expect(repo.markFilePurged).not.toHaveBeenCalled();
       expect(r).toEqual({
         status: 'upheld',
         restoredReferences: 0,
@@ -927,6 +939,95 @@ describe('contestações na mão do admin (ADR 41)', () => {
       expect(restore).not.toHaveBeenCalled();
       expect(repo.overturn).not.toHaveBeenCalled();
       expect(repo.overturnContent).not.toHaveBeenCalled();
+    });
+
+    it('manter com erro de disco ao apagar: a decisão vale e o dono é avisado, mas a remoção não é marcada como expurgada (o expurgo tenta de novo)', async () => {
+      repo.findById.mockResolvedValue(removal({ status: 'appealed' }));
+      const busy = Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+      removeFile.mockRejectedValueOnce(busy);
+      const warn = vi.spyOn(logger, 'warn');
+
+      try {
+        const r = await appealsService.decide(1, 31, 'uphold', null);
+
+        expect(repo.uphold).toHaveBeenCalledWith(31, 1, null);
+        expect(repo.markFilePurged).not.toHaveBeenCalled();
+        expect(r).toMatchObject({ status: 'upheld', fileDeleted: false });
+        expect(notify).toHaveBeenCalledWith(
+          9,
+          expect.objectContaining({ title: 'Contestação analisada: a remoção foi mantida' }),
+        );
+        expect(warn).toHaveBeenCalledWith(
+          { err: busy, removalId: 31, file: '31.webp' },
+          'quarentena: arquivo não apagado, fica para a próxima rodada',
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('reverter imagem: se a reversão não é gravada, o arquivo já devolvido volta para a quarentena e o erro sobe', async () => {
+      repo.findById.mockResolvedValue(removal({ status: 'appealed' }));
+      const deadlock = new Error('ER_LOCK_DEADLOCK');
+      repo.overturn.mockRejectedValueOnce(deadlock);
+      requarantine.mockResolvedValueOnce('31.webp');
+
+      await expect(appealsService.decide(1, 31, 'overturn', null)).rejects.toBe(deadlock);
+
+      // Sem isto a imagem removida ficaria no ar pela URL antiga, com a remoção ainda contestada.
+      expect(restore).toHaveBeenCalledWith('31.webp', '2026/09/01J8ZQ4K7M3VX5R2T9W6Y1B0CD.webp');
+      expect(requarantine).toHaveBeenCalledTimes(1);
+      expect(requarantine).toHaveBeenCalledWith('2026/09/01J8ZQ4K7M3VX5R2T9W6Y1B0CD.webp', 31);
+      expect(requarantine.mock.invocationCallOrder[0]!).toBeGreaterThan(
+        repo.overturn.mock.invocationCallOrder[0]!,
+      );
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('reverter imagem: reversão não gravada sem arquivo devolvido (sumido ou link externo) não mexe na quarentena', async () => {
+      const deadlock = new Error('ER_LOCK_DEADLOCK');
+      repo.overturn.mockRejectedValue(deadlock);
+
+      // Arquivo que não saiu da quarentena (sumiu do disco).
+      repo.findById.mockResolvedValueOnce(removal({ status: 'appealed' }));
+      restore.mockResolvedValueOnce(false);
+      await expect(appealsService.decide(1, 31, 'overturn', null)).rejects.toBe(deadlock);
+      // Link externo: não há arquivo nenhum.
+      repo.findById.mockResolvedValueOnce(
+        removal({ status: 'appealed', image_url: 'https://cdn.exemplo.com/foto.png' }),
+      );
+      await expect(appealsService.decide(1, 31, 'overturn', null)).rejects.toBe(deadlock);
+
+      expect(restore).toHaveBeenCalledTimes(1);
+      expect(requarantine).not.toHaveBeenCalled();
+    });
+
+    it('reverter imagem: se nem a volta para a quarentena dá certo, fica no log e o erro da reversão é o que sobe', async () => {
+      repo.findById.mockResolvedValue(removal({ status: 'appealed' }));
+      const deadlock = new Error('ER_LOCK_DEADLOCK');
+      const denied = new Error('EPERM');
+      const error = vi.spyOn(logger, 'error');
+
+      try {
+        // O move de volta lança (EPERM) ou não acha o arquivo (null): nos dois casos, só o log.
+        for (const [failure, err] of [
+          [() => requarantine.mockRejectedValueOnce(denied), denied],
+          [() => requarantine.mockResolvedValueOnce(null), undefined],
+        ] as const) {
+          error.mockClear();
+          repo.overturn.mockRejectedValueOnce(deadlock);
+          failure();
+          await expect(appealsService.decide(1, 31, 'overturn', null)).rejects.toBe(deadlock);
+          expect(error.mock.calls).toEqual([
+            [
+              { err, removalId: 31, key: '2026/09/01J8ZQ4K7M3VX5R2T9W6Y1B0CD.webp' },
+              'reversão não gravada e o arquivo não voltou para a quarentena',
+            ],
+          ]);
+        }
+      } finally {
+        error.mockRestore();
+      }
     });
 
     it('imagem interna que nunca chegou à quarentena (o arquivo já tinha sumido na remoção): não tenta devolver arquivo nem recoloca referência quebrada', async () => {
@@ -1016,6 +1117,60 @@ describe('expurgo da quarentena', () => {
     // Não depende do prazo de contestação.
     expect(policy).not.toHaveBeenCalled();
     expect(repo.listQuarantineToPurge).not.toHaveBeenCalled();
+  });
+
+  it('arquivo que o disco não deixa apagar não é marcado como expurgado, fica para a próxima rodada e não para as outras', async () => {
+    repo.listQuarantineToPurge.mockResolvedValue([
+      removal({ id: 30, quarantine_file: '30.webp' }),
+      removal({ id: 31, quarantine_file: '31.webp' }),
+      removal({ id: 32, quarantine_file: '32.png' }),
+    ]);
+    const denied = Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+    removeFile
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(denied)
+      .mockResolvedValueOnce(true);
+    const warn = vi.spyOn(logger, 'warn');
+
+    try {
+      // A contagem é a do que saiu de verdade.
+      expect(await appealsService.purgeQuarantine(NOW)).toBe(2);
+
+      expect(removeFile.mock.calls).toEqual([['30.webp'], ['31.webp'], ['32.png']]);
+      expect(repo.markFilePurged.mock.calls).toEqual([[30], [32]]);
+      expect(warn.mock.calls).toEqual([
+        [
+          { err: denied, removalId: 31, file: '31.webp' },
+          'quarentena: arquivo não apagado, fica para a próxima rodada',
+        ],
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('nome que não aponta para a quarentena (o arquivo não saiu) também não é marcado', async () => {
+    repo.listQuarantineToPurge.mockResolvedValue([removal({ id: 30, quarantine_file: '..' })]);
+    removeFile.mockResolvedValueOnce(false);
+
+    expect(await appealsService.purgeQuarantine(NOW)).toBe(0);
+
+    expect(repo.markFilePurged).not.toHaveBeenCalled();
+  });
+
+  it('titular anonimizado (LGPD): arquivo que não sai fica para o expurgo e não entra na contagem do que foi apagado', async () => {
+    repo.listQuarantinedForOwner.mockResolvedValue([
+      removal(),
+      removal({ id: 32, quarantine_file: '32.png', status: 'appealed' }),
+    ]);
+    removeFile
+      .mockRejectedValueOnce(Object.assign(new Error('EIO'), { code: 'EIO' }))
+      .mockResolvedValueOnce(true);
+
+    expect(await appealsService.purgeForOwner(9)).toBe(1);
+
+    expect(removeFile.mock.calls).toEqual([['31.webp'], ['32.png']]);
+    expect(repo.markFilePurged.mock.calls).toEqual([[32]]);
   });
 
   it('sem nada em quarentena não apaga nem marca nada', async () => {

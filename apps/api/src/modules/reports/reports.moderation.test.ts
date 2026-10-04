@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 vi.mock('./reports.repository', () => ({
   reportsRepository: {
@@ -29,8 +29,10 @@ vi.mock('./moderation.strikes', async (importOriginal) => ({
 vi.mock('../media/media.storage', () => ({
   readMediaFile: vi.fn(),
   deleteMediaImage: vi.fn(),
+  deleteQuarantined: vi.fn(),
   quarantineMediaImage: vi.fn(),
 }));
+vi.mock('../../config/sentry', () => ({ captureError: vi.fn() }));
 vi.mock('../media/media.image', () => ({ fingerprint: vi.fn() }));
 vi.mock('../notifications/notifications.service', () => ({
   notificationsService: { notify: vi.fn() },
@@ -42,9 +44,16 @@ vi.mock('../auth/auth.repository', () => ({
   authRepository: { findById: vi.fn() },
 }));
 
+import { logger } from '../../config/logger';
+import { captureError } from '../../config/sentry';
 import { authRepository } from '../auth/auth.repository';
 import { fingerprint } from '../media/media.image';
-import { deleteMediaImage, quarantineMediaImage, readMediaFile } from '../media/media.storage';
+import {
+  deleteMediaImage,
+  deleteQuarantined,
+  quarantineMediaImage,
+  readMediaFile,
+} from '../media/media.storage';
 import { messagingService } from '../messaging/messaging.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { contentRemovalsRepository } from './content-removals.repository';
@@ -57,6 +66,8 @@ const removals = vi.mocked(contentRemovalsRepository);
 const readFile = vi.mocked(readMediaFile);
 const deleteImage = vi.mocked(deleteMediaImage);
 const quarantine = vi.mocked(quarantineMediaImage);
+const dropQuarantined = vi.mocked(deleteQuarantined);
+const sentry = vi.mocked(captureError);
 const print = vi.mocked(fingerprint);
 const notify = vi.mocked(notificationsService.notify);
 const policy = vi.mocked(strikePolicy);
@@ -761,6 +772,8 @@ describe('decisões da fila: o que os casos acima não cobrem', () => {
     repo.imageTarget.mockResolvedValue({ owner_id: 9, image_url: MEDIA, title: null } as never);
     readFile.mockResolvedValue(null);
     quarantine.mockResolvedValue(null);
+    // A exclusão de reserva também não acha o arquivo.
+    deleteImage.mockResolvedValue(false);
 
     const { result } = await moderationService.act(1, 4, 'remove-image', null);
 
@@ -782,6 +795,7 @@ describe('decisões da fila: o que os casos acima não cobrem', () => {
     });
     expect(quarantine).toHaveBeenCalledWith(KEY, 31);
     expect(removals.setQuarantineFile).not.toHaveBeenCalled();
+    expect(deleteImage.mock.calls).toEqual([[KEY]]);
     expect(notify).toHaveBeenCalledWith(
       9,
       expect.objectContaining({
@@ -790,6 +804,28 @@ describe('decisões da fila: o que os casos acima não cobrem', () => {
       }),
     );
     expect(result).toMatchObject({ fileRemoved: false, blocked: false, removalId: 31 });
+  });
+
+  it('o arquivo não foi para a quarentena mas continua no disco (rename falhou): sai de vez, para a URL não servir a imagem removida', async () => {
+    repo.findById.mockResolvedValue(row({ id: 4 }));
+    quarantine.mockResolvedValue(null);
+    deleteImage.mockResolvedValue(true);
+    const warn = vi.spyOn(logger, 'warn');
+
+    const { result } = await moderationService.act(1, 4, 'remove-image', null);
+
+    expect(quarantine.mock.calls).toEqual([[KEY, 31]]);
+    // Só depois de a quarentena falhar, e sem anotar arquivo na remoção: a reversão diz que a
+    // imagem não pôde ser recuperada.
+    expect(deleteImage.mock.calls).toEqual([[KEY]]);
+    expect(firstCall(deleteImage)).toBeGreaterThan(firstCall(quarantine));
+    expect(removals.setQuarantineFile).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'actioned', removalId: 31, fileRemoved: true });
+    expect(warn).toHaveBeenCalledWith(
+      { reportId: 4, removalId: 31, key: KEY },
+      'moderação: quarentena falhou; arquivo apagado de vez, a contestação não o recupera',
+    );
+    warn.mockRestore();
   });
 
   it('motivo fora da lista sai no aviso como violação das regras', async () => {
@@ -1195,5 +1231,270 @@ describe('decisões da fila: guardas e configuração (ADR 39, 41 e 44)', () => 
       uploadsBlockedUntil: null,
       accountReviewOpened: false,
     });
+  });
+});
+
+describe('depois do commit: falha num passo não desfaz nem esconde a decisão gravada', () => {
+  /** Mensagem do log de um passo que falhou depois da decisão. */
+  const stepFailed = (step: string): string =>
+    `moderação: ${step} falhou depois da decisão gravada`;
+  const deadline = 'Se discordar, conteste pelo seu perfil até 29/09/2026 às 12:00.';
+
+  let error: MockInstance<typeof logger.error>;
+  beforeEach(() => {
+    error = vi.spyOn(logger, 'error');
+  });
+  afterEach(() => error.mockRestore());
+
+  it('o arquivo não pôde ir para a quarentena (pasta sem permissão): a remoção vale, o arquivo sai de vez, sem arquivo anotado, e o dono é avisado', async () => {
+    repo.findById.mockResolvedValue(row({ id: 4 }));
+    const denied = Object.assign(new Error('EACCES'), { code: 'EACCES' });
+    quarantine.mockRejectedValueOnce(denied);
+
+    const { result } = await moderationService.act(1, 4, 'remove-image', null);
+
+    // Sem a quarentena, o arquivo continuaria servido pela URL até o expurgo de órfãos.
+    expect(deleteImage.mock.calls).toEqual([[KEY]]);
+    expect(result).toMatchObject({ status: 'actioned', removalId: 31, fileRemoved: true });
+    expect(removals.setQuarantineFile).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({ body: expect.stringContaining(deadline) }),
+    );
+    expect(error).toHaveBeenCalledWith(
+      { err: denied, reportId: 4, removalId: 31 },
+      stepFailed('quarentena do arquivo'),
+    );
+    expect(sentry).toHaveBeenCalledWith(denied);
+  });
+
+  it('se nem a quarentena nem a exclusão de reserva tiram o arquivo, o resultado diz que ele não saiu e as duas falhas vão para o log', async () => {
+    repo.findById.mockResolvedValue(row({ id: 4 }));
+    const denied = Object.assign(new Error('EACCES'), { code: 'EACCES' });
+    const busy = Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    quarantine.mockRejectedValueOnce(denied);
+    deleteImage.mockRejectedValueOnce(busy);
+
+    const { result } = await moderationService.act(1, 4, 'remove-image', null);
+
+    expect(result).toMatchObject({ status: 'actioned', removalId: 31, fileRemoved: false });
+    expect(error.mock.calls.slice(0, 2)).toEqual([
+      [{ err: denied, reportId: 4, removalId: 31 }, stepFailed('quarentena do arquivo')],
+      [
+        { err: busy, reportId: 4, removalId: 31 },
+        stepFailed('remoção do arquivo (quarentena falhou)'),
+      ],
+    ]);
+    expect(sentry).toHaveBeenCalledWith(busy);
+    // A decisão segue: o dono é avisado mesmo assim.
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
+
+  it('o arquivo foi para a quarentena mas não ficou anotado na remoção: ele é apagado (nada mais o acharia) e o resto segue', async () => {
+    repo.findById.mockResolvedValue(row({ id: 4 }));
+    const boom = new Error('banco fora');
+    removals.setQuarantineFile.mockRejectedValueOnce(boom);
+    dropQuarantined.mockResolvedValueOnce(true);
+
+    const { result } = await moderationService.act(1, 4, 'remove-image', null);
+
+    expect(removals.setQuarantineFile).toHaveBeenCalledWith(31, '31.webp');
+    // Apagado, e não devolvido à pasta pública: lá a imagem removida voltaria ao ar pela URL.
+    expect(dropQuarantined).toHaveBeenCalledTimes(1);
+    expect(dropQuarantined).toHaveBeenCalledWith('31.webp');
+    expect(result).toMatchObject({ status: 'actioned', removalId: 31, fileRemoved: true });
+    expect(summary).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith(
+      { err: boom, reportId: 4, removalId: 31, file: '31.webp' },
+      'moderação: arquivo da quarentena não anotado na remoção; vai ser apagado',
+    );
+    expect(sentry).toHaveBeenCalledWith(boom);
+  });
+
+  it('se nem o arquivo sem anotação pode ser apagado, vai para o log e a decisão ainda sai', async () => {
+    repo.findById.mockResolvedValue(row({ id: 4 }));
+    removals.setQuarantineFile.mockRejectedValueOnce(new Error('banco fora'));
+    const busy = Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    dropQuarantined.mockRejectedValueOnce(busy);
+
+    const { result } = await moderationService.act(1, 4, 'remove-image', null);
+
+    expect(result).toMatchObject({ status: 'actioned', removalId: 31 });
+    expect(error).toHaveBeenLastCalledWith(
+      { err: busy, reportId: 4, removalId: 31 },
+      stepFailed('limpeza da quarentena'),
+    );
+  });
+
+  it('sem dono, o arquivo que não pôde ser apagado não derruba a decisão', async () => {
+    repo.findById.mockResolvedValue(row({ target_type: 'portfolio_item', target_id: 3 }));
+    repo.imageTarget.mockResolvedValue(undefined);
+    repo.removeImageAndClose.mockResolvedValue({ cleared: 0, reports: 1, removalId: null });
+    const busy = Object.assign(new Error('EBUSY'), { code: 'EBUSY' });
+    deleteImage.mockRejectedValueOnce(busy);
+
+    const { result } = await moderationService.act(1, 4, 'remove-image', null);
+
+    expect(result).toMatchObject({ status: 'actioned', removalId: null, fileRemoved: false });
+    expect(error).toHaveBeenCalledWith(
+      { err: busy, reportId: 4, removalId: null },
+      stepFailed('remoção do arquivo'),
+    );
+  });
+
+  it('a política de reincidência não pôde ser lida: sem reincidência nem revisão, e o aviso sai sem a data do prazo', async () => {
+    repo.findById.mockResolvedValue(row({ id: 4 }));
+    const boom = new Error('banco fora');
+    policy.mockRejectedValueOnce(boom);
+
+    const { result } = await moderationService.act(1, 4, 'remove-image', null);
+
+    expect(summary).not.toHaveBeenCalled();
+    expect(repo.hasOpenAccountReview).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: 'actioned',
+      fileRemoved: true,
+      ownerStrikes: null,
+      uploadsBlockedUntil: null,
+      accountReviewOpened: false,
+    });
+    expect(notify).toHaveBeenCalledWith(9, {
+      type: 'content_removed',
+      title: 'Sua foto de perfil foi removida',
+      body: 'A moderação removeu a imagem por conteúdo ofensivo. A mesma imagem não pode ser enviada de novo. Se discordar, conteste pelo seu perfil.',
+      data: { contentRemoved: 'avatar', reportId: 4, removalId: 31 },
+    });
+    expect(error).toHaveBeenCalledWith(
+      { err: boom, reportId: 4, removalId: 31 },
+      stepFailed('política de reincidência'),
+    );
+  });
+
+  it('a reincidência não pôde ser contada: o aviso sai com o prazo, sem bloqueio, e a conta não vai para revisão', async () => {
+    repo.findById.mockResolvedValue(row({ id: 4 }));
+    summary.mockRejectedValueOnce(new Error('banco fora'));
+
+    const { result } = await moderationService.act(1, 4, 'remove-image', null);
+
+    expect(repo.hasOpenAccountReview).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ ownerStrikes: null, accountReviewOpened: false });
+    expect(notify).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({
+        body: `A moderação removeu a imagem por conteúdo ofensivo. A mesma imagem não pode ser enviada de novo. ${deadline}`,
+      }),
+    );
+    expect(error.mock.calls.map((c) => c[1])).toEqual([stepFailed('reincidência')]);
+  });
+
+  it('a revisão da conta não pôde ser aberta: a reincidência sai no resultado e o dono é avisado', async () => {
+    repo.findById.mockResolvedValue(row({ id: 4 }));
+    summary.mockResolvedValue({
+      strikes: 3,
+      imageStrikes: 3,
+      windowDays: 180,
+      reviewThreshold: 3,
+      uploadsBlockedUntil: '2026-09-29T15:00:00.000Z',
+    });
+    repo.create.mockRejectedValueOnce(new Error('banco fora'));
+
+    const { result } = await moderationService.act(1, 4, 'remove-image', null);
+
+    expect(result).toMatchObject({
+      ownerStrikes: 3,
+      uploadsBlockedUntil: '2026-09-29T15:00:00.000Z',
+      accountReviewOpened: false,
+    });
+    expect(notify).toHaveBeenCalledWith(
+      9,
+      expect.objectContaining({
+        body: expect.stringContaining('o envio de imagens fica bloqueado até 29/09/2026 às 12:00.'),
+      }),
+    );
+    expect(error.mock.calls.map((c) => c[1])).toEqual([stepFailed('revisão da conta')]);
+  });
+
+  it('o aviso ao dono falhou: a decisão sai do mesmo jeito', async () => {
+    repo.findById.mockResolvedValue(row({ id: 4 }));
+    const boom = new Error('notificação fora');
+    notify.mockRejectedValueOnce(boom);
+
+    const { result } = await moderationService.act(1, 4, 'remove-image', null);
+
+    expect(result).toMatchObject({ status: 'actioned', removalId: 31, ownerStrikes: 1 });
+    expect(error).toHaveBeenCalledWith(
+      { err: boom, reportId: 4, removalId: 31 },
+      stepFailed('aviso ao dono'),
+    );
+  });
+
+  it('mensagem: sem a política e sem o aviso, a remoção ainda sai e o chat ainda é atualizado', async () => {
+    repo.findById.mockResolvedValue(
+      row({ id: 8, target_type: 'message', target_id: 55, image_url: null, reason: 'spam' }),
+    );
+    repo.textTarget.mockResolvedValue({
+      owner_id: 12,
+      text: 'Compre já',
+      rating: null,
+      file_name: null,
+      removed_at: null,
+    } as never);
+    repo.removeContentAndClose.mockResolvedValue({ reports: 1, removalId: 40 });
+    policy.mockRejectedValueOnce(new Error('banco fora'));
+    notify.mockRejectedValueOnce(new Error('notificação fora'));
+
+    const { result } = await moderationService.act(1, 8, 'remove-content', null);
+
+    expect(result).toMatchObject({
+      status: 'actioned',
+      removalId: 40,
+      ownerStrikes: null,
+      accountReviewOpened: false,
+    });
+    expect(notify).toHaveBeenCalledWith(
+      12,
+      expect.objectContaining({
+        body: 'A moderação removeu a mensagem por spam. Se discordar, conteste pelo seu perfil.',
+      }),
+    );
+    expect(announce).toHaveBeenCalledWith(55);
+    expect(error.mock.calls.map((c) => c[1])).toEqual([
+      stepFailed('política de reincidência'),
+      stepFailed('aviso ao autor'),
+    ]);
+  });
+
+  it('avaliação: a revisão da conta que falha não impede o aviso ao autor', async () => {
+    repo.findById.mockResolvedValue(
+      row({ id: 9, target_type: 'review', target_id: 70, image_url: null, reason: 'offensive' }),
+    );
+    repo.textTarget.mockResolvedValue({
+      owner_id: 12,
+      text: 'Péssimo',
+      rating: 1,
+      file_name: null,
+      removed_at: null,
+    } as never);
+    repo.removeContentAndClose.mockResolvedValue({ reports: 1, removalId: 41 });
+    summary.mockResolvedValue({
+      strikes: 3,
+      imageStrikes: 0,
+      windowDays: 180,
+      reviewThreshold: 3,
+      uploadsBlockedUntil: null,
+    });
+    repo.create.mockRejectedValueOnce(new Error('banco fora'));
+
+    const { result } = await moderationService.act(1, 9, 'remove-content', null);
+
+    expect(result).toMatchObject({ removalId: 41, ownerStrikes: 3, accountReviewOpened: false });
+    expect(notify).toHaveBeenCalledWith(
+      12,
+      expect.objectContaining({
+        body: `A moderação removeu a avaliação por conteúdo ofensivo. ${deadline}`,
+      }),
+    );
+    expect(error.mock.calls.map((c) => c[1])).toEqual([stepFailed('revisão da conta')]);
   });
 });

@@ -55,7 +55,10 @@ import {
 } from './approval-notices';
 import { settingsService } from '../settings/settings.service';
 import { settingsRepository } from '../settings/settings.repository';
+import { authRepository } from '../auth/auth.repository';
 import { userZone } from '../auth/user-zone';
+import { profilesRepository } from '../profiles/profiles.repository';
+import { servicesRepository } from '../services/services.repository';
 import { cancelTerms, money, type CancelInput } from './cancel-policy';
 import { clientZoneOf, dayZoneOf, freelancerZoneOf } from './contract-zones';
 import {
@@ -434,6 +437,42 @@ export const contractsService = {
   async create(clientId: number, input: CreateContractInput): Promise<Contract> {
     if (input.freelancerId === clientId) {
       throw new HttpError(400, 'Você não pode contratar a si mesmo', 'self_contract');
+    }
+    // Quem é contratado existe, está ativo e é freelancer de verdade, e o serviço, quando vem, é
+    // dele e está no ar: pausado não aceita proposta (RN-013). Sem isso, um id inexistente virava
+    // 500 pela FK, e qualquer conta (cliente, admin) recebia proposta direta (ADR 60).
+    const notFound = () => new HttpError(404, 'Freelancer não encontrado', 'freelancer_not_found');
+    const freelancer = await authRepository.findById(input.freelancerId);
+    if (
+      !freelancer ||
+      freelancer.deleted_at ||
+      freelancer.status === 'suspended' ||
+      freelancer.status === 'banned' ||
+      // Admin nunca é contratado: ele mediaria a disputa da própria contratação.
+      freelancer.role === 'admin'
+    ) {
+      throw notFound();
+    }
+    if (input.serviceId != null) {
+      // Pelo serviço (o caminho do web): ser dono dele basta. Publicar serviço não exige perfil.
+      const service = await servicesRepository.findById(input.serviceId);
+      if (!service || service.user_id !== input.freelancerId) {
+        throw new HttpError(404, 'Serviço não encontrado', 'service_not_found');
+      }
+      if (!Number(service.is_active)) {
+        throw new HttpError(
+          409,
+          'Este serviço está pausado e não aceita novas propostas (RN-013).',
+          'service_inactive',
+        );
+      }
+    } else if (
+      // Direta (sem serviço): só para quem se cadastrou como freelancer ou criou o perfil de
+      // freelancer (a conta de cliente pode ter os dois, RN-006).
+      freelancer.role !== 'freelancer' &&
+      !(await profilesRepository.findFreelancerByUserId(input.freelancerId))
+    ) {
+      throw notFound();
     }
     const now = clock.now();
     // Contratos em créditos (time-bank) são P2P e não cobram taxa da plataforma.

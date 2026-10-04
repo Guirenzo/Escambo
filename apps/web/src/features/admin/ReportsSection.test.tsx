@@ -385,6 +385,22 @@ describe('ReportsSection: a decisão', () => {
     expect(adminReportAction).toHaveBeenCalledWith(11, 'remove-image', { note: null });
   });
 
+  it('imagem enviada cujo arquivo não saiu do disco: a decisão vale, e o aviso diz que o endereço ainda abre até o expurgo (ADR 60)', async () => {
+    adminReportAction.mockResolvedValue(result({ blocked: true, fileRemoved: false }));
+    const user = userEvent.setup();
+    render(wrap(<ReportsSection />));
+    await screen.findByText('Foto de perfil');
+
+    const dialog = await openDecision(user, 'Foto de perfil', 'Remover imagem', 'Remover imagem');
+    await user.click(dialog.getByRole('button', { name: 'Remover e bloquear' }));
+
+    expect(
+      await screen.findByText(
+        'Imagem removida e bloqueada. O arquivo não saiu do disco agora: a imagem ainda abre pelo endereço até o expurgo diário de imagens sem uso.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('remoção que bloqueia os envios do dono diz até quando', async () => {
     const until = '2026-10-01T03:00:00.000Z';
     adminReportAction.mockResolvedValue(result({ ownerStrikes: 2, uploadsBlockedUntil: until }));

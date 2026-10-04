@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Documento OpenAPI 3.0 da API do Escambo (RNF-010). Servido em /api/openapi.json e /api/docs.
 
+import { dirname } from 'node:path';
+
 const bearer = [{ bearerAuth: [] as string[] }];
 const res200 = { '200': { description: 'OK' } };
 const res201 = { '201': { description: 'Criado' } };
@@ -48,6 +50,7 @@ export const openapiDocument: Record<string, any> = {
     { name: 'Categorias' },
     { name: 'Serviços' },
     { name: 'Contratações' },
+    { name: 'Chat' },
     { name: 'Carteira' },
     { name: 'Impulsionamento' },
     { name: 'Saques' },
@@ -59,6 +62,7 @@ export const openapiDocument: Record<string, any> = {
     { name: 'Disputas' },
     { name: 'Admin' },
     { name: 'LGPD' },
+    { name: 'Plataforma' },
   ],
   components: {
     securitySchemes: {
@@ -606,14 +610,14 @@ export const openapiDocument: Record<string, any> = {
 
     '/media': {
       post: op(
-        'Perfil',
+        'Perfis',
         'Envia imagem para avatar ou portfólio (multipart file + purpose avatar|portfolio, padrão portfolio; JPG, PNG, GIF ou WebP até 5 MB e 50 MP). A API reencoda em WebP orientado e sem metadados: avatar quadrado de até 512 px, portfólio de até 1600 px. Devolve URL, largura e altura. 422 image_blocked para imagem removida pela moderação e 403 uploads_restricted durante o bloqueio por reincidência',
         { auth: true, responses: res201 },
       ),
     },
     '/media/{year}/{month}/{file}': {
       get: op(
-        'Perfil',
+        'Perfis',
         'Imagem pública de perfil ou portfólio (cache imutável de um ano); ?w=128, ?w=480 ou ?w=960 devolve a miniatura em WebP, gerada na primeira leitura',
       ),
     },
@@ -712,20 +716,48 @@ export const openapiDocument: Record<string, any> = {
   },
 };
 
-/** Página do Swagger UI (assets via CDN — carregados pelo navegador). */
+/**
+ * Arquivos do pacote swagger-ui-dist que a página usa. A API serve os dois em /api/docs/ (e não
+ * por CDN): o CSP do helmet só aceita script da própria origem.
+ */
+export const SWAGGER_UI_FILES = ['swagger-ui.css', 'swagger-ui-bundle.js'] as const;
+
+/**
+ * Pasta do swagger-ui-dist instalado, ou null sem o pacote: aí a página avisa que o Swagger UI
+ * não está disponível, e o documento continua em /api/openapi.json.
+ */
+export function swaggerUiDistDir(resolve: (id: string) => string = require.resolve): string | null {
+  try {
+    return dirname(resolve('swagger-ui-dist'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Inicialização do Swagger UI, servida como arquivo em /api/docs/swagger-init.js: script inline
+ * é barrado pelo CSP (script-src 'self'). Sem validador externo (o selo viria de outro domínio).
+ */
+export const swaggerInitJs = `var root = document.getElementById('swagger-ui');
+if (typeof window.SwaggerUIBundle === 'function') {
+  window.ui = window.SwaggerUIBundle({ url: '/api/openapi.json', dom_id: '#swagger-ui', validatorUrl: null });
+} else {
+  root.textContent = 'Swagger UI indisponível neste servidor. O documento OpenAPI está em /api/openapi.json.';
+}
+`;
+
+/** Página do Swagger UI: tudo servido pela própria API, sem script inline (CSP do helmet). */
 export const swaggerHtml = `<!doctype html>
 <html lang="pt-BR">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Escambo API — Docs</title>
-    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+    <link rel="stylesheet" href="/api/docs/swagger-ui.css" />
   </head>
   <body>
     <div id="swagger-ui"></div>
-    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js" crossorigin></script>
-    <script>
-      window.ui = SwaggerUIBundle({ url: '/api/openapi.json', dom_id: '#swagger-ui' });
-    </script>
+    <script src="/api/docs/swagger-ui-bundle.js"></script>
+    <script src="/api/docs/swagger-init.js"></script>
   </body>
 </html>`;

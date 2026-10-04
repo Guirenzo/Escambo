@@ -1,8 +1,10 @@
+import { existsSync } from 'node:fs';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { runExpireExports } from '../../src/jobs/expire-exports';
+import { exportFilePath } from '../../src/modules/lgpd/lgpd.export';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
 
@@ -217,6 +219,15 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       .send({ quietHours: { start: 22, end: 7 }, quietPass: ['deadline'] })
       .expect(200);
 
+    // Ele também tem uma cópia dos dados pronta para baixar (e-mail, extratos, mensagens).
+    const copy = await request(app).post('/api/lgpd/export-requests').set(auth(freelancer.token));
+    expect(copy.body).toMatchObject({ status: 'ready' });
+    const [[exportRow]] = (await pool.query(
+      'SELECT file_url FROM data_export_requests WHERE id = :id',
+      { id: copy.body.id },
+    )) as unknown as [{ file_url: string }[]];
+    expect(existsSync(exportFilePath(exportRow!.file_url))).toBe(true);
+
     // Admin conclui: conta anonimizada, token vigente bloqueado, login e refresh negados, perfil some.
     const done = await request(app)
       .post(`/api/admin/deletion-requests/${deletionId}/complete`)
@@ -233,6 +244,13 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       { endpoint: pushEndpoint },
     );
     expect(pushRows).toHaveLength(0);
+    // A cópia dos dados sai do disco na hora, sem esperar vencer, e o pedido fica expirado.
+    expect(existsSync(exportFilePath(exportRow!.file_url))).toBe(false);
+    const [copies] = await pool.query(
+      'SELECT status, file_url FROM data_export_requests WHERE user_id = :userId',
+      { userId: freelancer.id },
+    );
+    expect(copies).toEqual([{ status: 'expired', file_url: null }]);
     await request(app).get(`/api/profiles/freelancer/${freelancerUlid}`).expect(404);
     const [users] = await pool.query<unknown[]>(
       `SELECT email, phone, password_hash, status, deleted_at, push_quiet_pass FROM users WHERE id = :id`,
@@ -292,5 +310,28 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       .set(auth(another.token))
       .send({})
       .expect(201);
+  });
+
+  it('exclusão: dois pedidos ao mesmo tempo abrem uma solicitação só, e o segundo recebe 409', async () => {
+    // Algumas rodadas: sem a trava na linha do titular, os dois passavam pela checagem juntos.
+    for (let round = 0; round < 3; round++) {
+      const user = await registerAndLogin('client');
+      const ask = (): request.Test =>
+        request(app).post('/api/lgpd/deletion-requests').set(auth(user.token)).send({});
+      const answers = await Promise.all([ask(), ask()]);
+
+      expect(answers.map((a) => a.status).sort()).toEqual([201, 409]);
+      expect(answers.find((a) => a.status === 409)!.body).toEqual({
+        error: 'deletion_already_requested',
+        message: 'Já existe uma solicitação de exclusão em andamento',
+      });
+      const [rows] = await pool.query(
+        `SELECT id, status FROM data_deletion_requests WHERE user_id = :userId`,
+        { userId: user.id },
+      );
+      expect(rows).toEqual([
+        { id: answers.find((a) => a.status === 201)!.body.id, status: 'pending' },
+      ]);
+    }
   });
 });

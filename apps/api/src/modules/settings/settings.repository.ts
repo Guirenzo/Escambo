@@ -1,5 +1,6 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
+import { parseNumberSetting } from './settings.parse';
 
 export interface SettingRow extends RowDataPacket {
   key_name: string;
@@ -24,9 +25,7 @@ export const settingsRepository = {
   },
 
   async getNumber(key: string, fallback: number): Promise<number> {
-    const raw = await this.get(key);
-    const n = raw == null ? NaN : Number(raw);
-    return Number.isFinite(n) ? n : fallback;
+    return parseNumberSetting(await this.get(key), fallback);
   },
 
   /** Grava (ou cria) uma chave — usado por jobs para guardar estado que sobrevive a reinícios. */

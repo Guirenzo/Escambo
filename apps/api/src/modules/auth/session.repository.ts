@@ -37,12 +37,18 @@ export const sessionRepository = {
     return rows[0];
   },
 
-  async revokeByHash(tokenHash: string): Promise<void> {
-    await pool.query<ResultSetHeader>(
+  /**
+   * Revoga a sessão daquele token se ainda estiver aberta e diz se foi esta chamada que revogou.
+   * Na rotação, é o que impede duas requisições com o mesmo refresh token de saírem as duas com
+   * um par novo: o UPDATE trava a linha, e a segunda já encontra `revoked_at` preenchido (0 linhas).
+   */
+  async revokeByHash(tokenHash: string): Promise<boolean> {
+    const [res] = await pool.query<ResultSetHeader>(
       `UPDATE user_sessions SET revoked_at = NOW()
         WHERE refresh_token = :tokenHash AND revoked_at IS NULL`,
       { tokenHash },
     );
+    return res.affectedRows > 0;
   },
 
   /** Revoga todas as sessões ativas do usuário (logout global / troca de senha — RN-008). */

@@ -130,5 +130,7 @@ describe('propriedades do slot (20.000 casos de semente fixa)', () => {
       expect(due.getTime() - slot.getTime()).toBeLessThan(48 * 3_600_000);
     }
     expect(withSlot).toBeGreaterThan(10_000);
-  });
+    // 20.000 casos com Intl levam ~1 s sozinhos; com a máquina ou o runner do CI carregados, passam dos
+    // 5 s padrão sem nada de errado.
+  }, 30_000);
 });

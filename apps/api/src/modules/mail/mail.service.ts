@@ -133,7 +133,15 @@ export const mailService = {
         delivered = true;
       } catch (err) {
         logger.warn({ err, to: params.to, template: params.template }, 'envio de e-mail falhou');
-        await mailRepository.markFailed(id, err instanceof Error ? err.message : String(err));
+        try {
+          await mailRepository.markFailed(id, err instanceof Error ? err.message : String(err));
+        } catch (markErr) {
+          // A linha existe, mas a falha não coube nela: fica 'queued', nem sent nem failed.
+          logger.warn(
+            { err: markErr, id, template: params.template },
+            'e-mail não enviado, e a falha não foi anotada na caixa de saída',
+          );
+        }
       }
       // O provedor aceitou: é entrega, mesmo que a caixa de saída não consiga registrar (senão
       // quem reenvia em falha — o relatório da moderação — mandaria de novo o que já saiu).

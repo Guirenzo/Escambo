@@ -27,7 +27,15 @@ import { timezoneOf } from '../../utils/timezone';
 /** JSON da coluna available_days (array, string ou NULL) → lista de dias 0–6. */
 export function parseDays(v: number[] | string | null | undefined): number[] | null {
   if (v == null) return null;
-  const arr = typeof v === 'string' ? (JSON.parse(v) as unknown) : v;
+  let arr: unknown = v;
+  if (typeof v === 'string') {
+    // Texto que não é JSON (dado corrompido) vira "sem dias", como em parsePeriods: o perfil abre.
+    try {
+      arr = JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
   return Array.isArray(arr) ? arr.filter((d): d is number => Number.isInteger(d)) : null;
 }
 

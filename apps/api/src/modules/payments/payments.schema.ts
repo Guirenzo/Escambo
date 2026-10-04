@@ -14,7 +14,8 @@ export type CreateDepositInput = z.infer<typeof createDepositSchema>;
 export const depositIdParamSchema = z.object({ id: z.coerce.number().int().positive() });
 
 export const listDepositsSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
+  // Teto na página: sem ele, ?page=1e20 vira OFFSET 2e+21 e o MySQL recusa (500).
+  page: z.coerce.number().int().positive().max(10_000).default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
 

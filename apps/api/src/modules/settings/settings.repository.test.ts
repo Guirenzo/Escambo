@@ -55,6 +55,19 @@ describe('settingsRepository', () => {
       expect(await settingsRepository.getNumber('deadline_grace_hours', 24)).toBe(24);
       expect(await settingsRepository.getNumber('deadline_grace_hours', 24)).toBe(24);
     });
+
+    it('valor em branco (vazio ou só espaços) é chave sem valor: cai no padrão, e não em zero', async () => {
+      fakeDb.reply([{ value: '' }], [{ value: '   ' }], [{ value: '\n\t' }]);
+
+      expect(await settingsRepository.getNumber('deadline_grace_hours', 24)).toBe(24);
+      expect(await settingsRepository.getNumber('proposal_expiry_hours', 72)).toBe(72);
+      expect(await settingsRepository.getNumber('tacit_approval_days', 7)).toBe(7);
+    });
+
+    it('número com espaços em volta continua valendo', async () => {
+      fakeDb.reply([{ value: ' 48 ' }]);
+      expect(await settingsRepository.getNumber('deadline_grace_hours', 24)).toBe(48);
+    });
   });
 
   describe('set', () => {

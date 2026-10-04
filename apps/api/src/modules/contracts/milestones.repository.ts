@@ -447,7 +447,7 @@ export const milestonesRepository = {
     return rows;
   },
 
-  /** Títulos dos marcos, entregues ou não: o aviso de atraso e a descrição da disputa listam. */
+  /** Títulos dos marcos entregues e dos que faltam entregar: o aviso de atraso e a disputa listam. */
   async titlesByDelivery(
     contractId: number,
     conn?: PoolConnection,
@@ -461,8 +461,10 @@ export const milestonesRepository = {
     const delivered: string[] = [];
     const missing: string[] = [];
     for (const r of rows) {
-      if (r.status === 'funded' && r.delivered_at === null) missing.push(String(r.title));
-      else delivered.push(String(r.title));
+      // Entregue é o que tem data de entrega (inclusive o que voltou para revisão); falta o
+      // financiado nunca entregue. Marco ainda não financiado (pending) não entra em nenhum dos dois.
+      if (r.delivered_at != null) delivered.push(String(r.title));
+      else if (r.status === 'funded') missing.push(String(r.title));
     }
     return { delivered, missing };
   },

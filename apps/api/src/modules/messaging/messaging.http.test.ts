@@ -6,6 +6,7 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { blocklist } from '../../config/blocklist';
 import { env } from '../../config/env';
+import { logger } from '../../config/logger';
 import { MAX_UPLOAD_BYTES } from '../../middlewares/upload';
 import { bearer, routerApp } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
@@ -518,18 +519,25 @@ describe('chat: borda HTTP', () => {
   });
 
   describe('GET /api/messaging/attachments/:id (download do anexo)', () => {
+    const realDataDir = env.DATA_DIR;
     let dir: string;
 
     beforeEach(async () => {
       dir = await mkdtemp(path.join(os.tmpdir(), 'escambo-chat-http-'));
+      env.DATA_DIR = dir;
     });
     afterEach(async () => {
+      env.DATA_DIR = realDataDir;
       await rm(dir, { recursive: true, force: true });
     });
 
-    /** Arquivo de verdade no diretório temporário + o que o service devolveria para ele. */
+    /**
+     * Arquivo de verdade em DATA_DIR/uploads + o que o service devolveria para ele. `name` é o
+     * caminho dentro da pasta de uploads, com barra normal.
+     */
     async function stored(name: string, bytes: Buffer, mime: string, disposition: string) {
-      const file = path.join(dir, name);
+      const file = path.join(env.DATA_DIR, 'uploads', ...name.split('/'));
+      await mkdir(path.dirname(file), { recursive: true });
       await writeFile(file, bytes);
       service.attachment.mockResolvedValue({ path: file, mime, size: bytes.length, disposition });
     }
@@ -626,25 +634,31 @@ describe('chat: borda HTTP', () => {
       expect(service.attachment).toHaveBeenCalledTimes(refusals.length);
     });
 
-    it('se o arquivo some do disco entre a checagem e o envio, a requisição não fica pendurada: o erro vai para o tratamento global, em JSON e sem o caminho do arquivo', async () => {
-      const missing = path.join(dir, 'sumiu.png');
+    it('se o arquivo some do disco entre a checagem e o envio, é o mesmo 404 attachment_missing do caminho normal, sem erro interno nem caminho do arquivo', async () => {
+      const missing = path.join(dir, 'uploads', '2026', '09', 'sumiu.png');
       service.attachment.mockResolvedValue({
         path: missing,
         mime: 'image/png',
         size: 10,
         disposition: 'inline; filename="sumiu.png"',
       });
+      const error = vi.spyOn(logger, 'error');
 
       const res = await request(app).get('/api/messaging/attachments/7').set(bearer(20));
 
-      // Hoje sai como erro interno (o 404 do sendFile não é "exposto"); ver o retorno da tarefa.
-      expect(res.status).toBe(500);
+      expect(res.status).toBe(404);
       expect(res.type).toBe('application/json');
-      expect(res.body).toEqual({ error: 'internal_error', message: 'Erro interno do servidor' });
+      expect(res.body).toEqual({
+        error: 'attachment_missing',
+        message: 'O arquivo deste anexo não está mais disponível',
+      });
+      // Não é falha do servidor: nada vai para o log de erro (nem para o Sentry, que anda junto).
+      expect(error).not.toHaveBeenCalled();
       // Nada do anexo vaza na resposta de erro: nem os cabeçalhos do arquivo, nem onde ele ficava.
       expect(res.headers['content-disposition']).toBeUndefined();
       expect(res.headers['cache-control']).toBeUndefined();
       expect(res.text).not.toContain('sumiu.png');
+      error.mockRestore();
     });
 
     it('arquivo oculto (nome começando com ponto) nunca é servido', async () => {
@@ -663,15 +677,29 @@ describe('chat: borda HTTP', () => {
       expect(res.text).not.toContain('.env');
     });
 
-    it('a recusa de arquivo oculto vale para o caminho inteiro: arquivo dentro de pasta oculta também não sai', async () => {
-      await mkdir(path.join(dir, '.oculta'));
-      await stored(path.join('.oculta', '01KEY.png'), PNG, 'image/png', 'inline; filename="x.png"');
+    it('dentro da pasta de uploads, arquivo em subpasta oculta também não sai', async () => {
+      await stored('2026/.oculta/01KEY.png', PNG, 'image/png', 'inline; filename="x.png"');
 
       const res = await request(app).get('/api/messaging/attachments/7').set(bearer(20));
 
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ error: 'bad_request', message: 'Requisição inválida' });
       expect(res.headers['content-disposition']).toBeUndefined();
+    });
+
+    it('DATA_DIR dentro de uma pasta começada por ponto (ex.: /home/app/.escambo) não bloqueia o download: a recusa de oculto olha só dentro de uploads', async () => {
+      env.DATA_DIR = path.join(dir, '.escambo', 'data');
+      await stored('2026/09/01KEY.png', PNG, 'image/png', 'inline; filename="foto.png"');
+
+      const res = await request(app)
+        .get('/api/messaging/attachments/7')
+        .set(bearer(20))
+        .buffer(true)
+        .parse(binary)
+        .expect(200);
+
+      expect((res.body as Buffer).equals(PNG)).toBe(true);
+      expect(res.headers['content-type']).toBe('image/png');
     });
 
     describe('falha no meio do envio (controller direto, com uma resposta falsa)', () => {
@@ -685,16 +713,20 @@ describe('chat: borda HTTP', () => {
         return res;
       }
       const req = { params: { id: '7' }, user: { sub: 'ulid-20', uid: 20, role: 'client' } };
-      const file = {
-        path: '/data/uploads/k.png',
+      /** O que o service devolve: o caminho absoluto, dentro de DATA_DIR/uploads. */
+      const file = () => ({
+        path: path.join(dir, 'uploads', '2026', '09', 'k.png'),
         mime: 'image/png',
         size: 3,
         disposition: 'inline',
-      };
+      });
 
       it('erro antes de começar a responder sobe para o tratamento global', async () => {
-        service.attachment.mockResolvedValue(file);
-        const boom = new Error('EACCES');
+        service.attachment.mockResolvedValue(file());
+        const boom = Object.assign(new Error('EACCES: permission denied'), {
+          code: 'EACCES',
+          status: 500,
+        });
         const res = failingResponse(boom, false);
 
         await expect(
@@ -703,13 +735,47 @@ describe('chat: borda HTTP', () => {
 
         expect(service.attachment).toHaveBeenCalledWith(7, 20);
         const [sentPath, options] = res.sendFile.mock.calls[0]!;
-        expect(sentPath).toBe('/data/uploads/k.png');
+        // A chave, relativa à pasta de uploads (opção root): o envio não sai dela.
+        expect(sentPath).toBe(path.join('2026', '09', 'k.png'));
         // Arquivo oculto nunca sai, e o Cache-Control é o do controller (não o padrão do sendFile).
-        expect(options).toMatchObject({ dotfiles: 'deny', cacheControl: false });
+        expect(options).toMatchObject({
+          root: path.join(dir, 'uploads'),
+          dotfiles: 'deny',
+          cacheControl: false,
+        });
+      });
+
+      it('arquivo que sumiu na hora do envio é 404 attachment_missing, venha o aviso pelo status do send ou pelo ENOENT', async () => {
+        for (const gone of [
+          Object.assign(new Error('Not Found'), { status: 404 }),
+          Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' }),
+        ]) {
+          service.attachment.mockResolvedValue(file());
+          const res = failingResponse(gone, false);
+          await expect(
+            getAttachment(req as unknown as Request, res as unknown as Response),
+            gone.message,
+          ).rejects.toMatchObject({
+            name: 'HttpError',
+            statusCode: 404,
+            code: 'attachment_missing',
+            message: 'O arquivo deste anexo não está mais disponível',
+          });
+        }
+      });
+
+      it('recusa do send que não é "não existe" (403 de arquivo oculto) sobe como veio, sem virar 404', async () => {
+        service.attachment.mockResolvedValue(file());
+        const forbidden = Object.assign(new Error('Forbidden'), { status: 403 });
+        const res = failingResponse(forbidden, false);
+
+        await expect(
+          getAttachment(req as unknown as Request, res as unknown as Response),
+        ).rejects.toBe(forbidden);
       });
 
       it('cliente que desiste no meio do download (cabeçalhos já enviados) não vira erro: não há mais o que responder', async () => {
-        service.attachment.mockResolvedValue(file);
+        service.attachment.mockResolvedValue(file());
         const res = failingResponse(new Error('ECONNABORTED'), true);
 
         await expect(

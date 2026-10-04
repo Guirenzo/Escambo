@@ -95,9 +95,25 @@ describe('paymentsRepository', () => {
     expect(fakeDb.calls[0]!.sql).toContain('FROM payments WHERE id = :id LIMIT 1');
     expect(fakeDb.calls[0]!.params).toEqual({ id: 7 });
     expect(fakeDb.calls[2]!.sql).toContain(
-      'FROM payments WHERE gateway_payment_id = :gatewayPaymentId LIMIT 1',
+      "FROM payments WHERE kind = 'topup' AND gateway_payment_id = :gatewayPaymentId LIMIT 1",
     );
     expect(fakeDb.calls[2]!.params).toEqual({ gatewayPaymentId: 'sim_ABC' });
+  });
+
+  it('o aviso do gateway só acha depósito: a busca pela referência e a trava da liquidação filtram kind = topup', async () => {
+    // Um pagamento de outro tipo pendente com referência de gateway não vira depósito creditado.
+    fakeDb.reply([], []);
+
+    expect(await paymentsRepository.findByGatewayId('sim_ABC')).toBeUndefined();
+    expect(await paymentsRepository.settle(7, 'paid')).toBe(false);
+
+    expect(fakeDb.sqls()).toEqual([
+      `SELECT ${COLUMNS.join(', ')} FROM payments WHERE kind = 'topup' AND gateway_payment_id = :gatewayPaymentId LIMIT 1`,
+      `SELECT ${COLUMNS.join(', ')} FROM payments WHERE id = :id AND kind = 'topup' FOR UPDATE`,
+    ]);
+    // Sem linha, a liquidação para na trava: nada muda e a transação é desfeita.
+    expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+    expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
   });
 
   it('toda leitura de cobrança traz as colunas de que o depósito precisa (situação, prazo, código PIX)', async () => {
@@ -158,7 +174,9 @@ describe('paymentsRepository', () => {
 
       const calls = fakeDb.calls;
       expect(calls).toHaveLength(6);
-      expect(calls[0]!.sql).toMatch(/^SELECT .* FROM payments WHERE id = :id FOR UPDATE$/);
+      expect(calls[0]!.sql).toMatch(
+        /^SELECT .* FROM payments WHERE id = :id AND kind = 'topup' FOR UPDATE$/,
+      );
       expect(calls[0]!.params).toEqual({ id: 7 });
       expect(calls[1]!.sql).toBe(
         'UPDATE payments SET status = :status, paid_at = :paidAt WHERE id = :id',

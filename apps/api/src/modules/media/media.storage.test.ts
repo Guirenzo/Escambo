@@ -1,4 +1,4 @@
-import type { PathLike, Stats } from 'node:fs';
+import { existsSync, type PathLike, type Stats } from 'node:fs';
 import {
   mkdir,
   mkdtemp,
@@ -104,6 +104,20 @@ const png = (width: number, height: number): Promise<Buffer> =>
 
 const fsError = (code: string): NodeJS.ErrnoException =>
   Object.assign(new Error(`${code}: simulado`), { code });
+
+/**
+ * A cada miniatura apagada, anota se o original de `key` ainda estava no disco naquele instante (o
+ * unlink de verdade acontece do mesmo jeito).
+ */
+function originalWhenVariantsGo(key: string): boolean[] {
+  const seen: boolean[] = [];
+  vi.mocked(unlink).mockImplementation((async (p: PathLike) => {
+    if (/\.w\d+\.webp$/.test(String(p))) seen.push(existsSync(inMedia(key)));
+    const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    return actual.unlink(p);
+  }) as typeof unlink);
+  return seen;
+}
 
 /**
  * Armazenamento das imagens de perfil e portfólio (ADR 36, 38, 39 e 41) contra uma pasta temporária:
@@ -253,6 +267,19 @@ describe('armazenamento de mídia', () => {
       expect(await deleteMediaImage('../segredo.png')).toBe(false);
       expect(await tree()).toEqual(['segredo.png']);
     });
+
+    it('o original sai antes das miniaturas: enquanto elas saem, uma leitura com ?w= já não acha a imagem para gerar outra', async () => {
+      const key = `2026/09/${A}.png`;
+      await put(key);
+      await put(`2026/09/${A}.w128.webp`);
+      await put(`2026/09/${A}.w480.webp`);
+      const originalAtVariantUnlink = originalWhenVariantsGo(key);
+
+      expect(await deleteMediaImage(key)).toBe(true);
+
+      expect(originalAtVariantUnlink).toEqual([false, false, false]);
+      expect(await tree()).toEqual([]);
+    });
   });
 
   describe('quarentena (ADR 41)', () => {
@@ -266,6 +293,18 @@ describe('armazenamento de mídia', () => {
 
       expect(await tree()).toEqual([`media/2026/09/${B}.webp`, 'quarantine/77.png']);
       expect(await readFile(inQuarantine('77.png'))).toEqual(Buffer.from('original'));
+    });
+
+    it('o original vai para a quarentena antes de as miniaturas saírem (nenhuma nasce de novo no meio)', async () => {
+      const key = `2026/09/${A}.png`;
+      await put(key, 'original');
+      await put(`2026/09/${A}.w128.webp`);
+      const originalAtVariantUnlink = originalWhenVariantsGo(key);
+
+      expect(await quarantineMediaImage(key, 77)).toBe('77.png');
+
+      expect(originalAtVariantUnlink).toEqual([false, false, false]);
+      expect(await tree()).toEqual(['quarantine/77.png']);
     });
 
     it('o nome na quarentena leva a extensão do original', async () => {
@@ -310,19 +349,37 @@ describe('armazenamento de mídia', () => {
       expect(await tree()).toEqual(['quarantine/77.png']);
     });
 
-    it('apagar da quarentena: true quando havia arquivo, false quando não', async () => {
+    it('apagar da quarentena: true quando o arquivo saiu, apagado agora ou que já não existia; false só para nome que não é da quarentena', async () => {
       await mkdir(path.join(dir, 'quarantine'), { recursive: true });
       await writeFile(inQuarantine('77.png'), 'guardado');
 
       expect(await deleteQuarantined('77.png')).toBe(true);
-      expect(await deleteQuarantined('77.png')).toBe(false);
+      // Já não existe: o arquivo está fora do disco, então pode ser marcado como expurgado.
+      expect(await deleteQuarantined('77.png')).toBe(true);
       expect(await deleteQuarantined('')).toBe(false);
+      expect(await tree()).toEqual([]);
+    });
+
+    it('arquivo da quarentena que não pôde ser apagado (preso, sem permissão, erro de disco): LANÇA e o arquivo fica, para não ser marcado como expurgado', async () => {
+      await mkdir(path.join(dir, 'quarantine'), { recursive: true });
+      await writeFile(inQuarantine('77.png'), 'guardado');
+
+      for (const code of ['EBUSY', 'EPERM', 'EACCES', 'EIO']) {
+        const err = fsError(code);
+        vi.mocked(unlink).mockRejectedValueOnce(err);
+        await expect(deleteQuarantined('77.png'), code).rejects.toBe(err);
+      }
+
+      expect(await tree()).toEqual(['quarantine/77.png']);
+      // Na rodada seguinte, com o disco de volta, sai.
+      expect(await deleteQuarantined('77.png')).toBe(true);
       expect(await tree()).toEqual([]);
     });
 
     it('apagar da quarentena nunca alcança a pasta de mídia', async () => {
       await put(`2026/09/${A}.png`);
-      expect(await deleteQuarantined(`../media/2026/09/${A}.png`)).toBe(false);
+      // Só o nome vale: na quarentena não há esse arquivo (true, nada a apagar) e a mídia fica.
+      expect(await deleteQuarantined(`../media/2026/09/${A}.png`)).toBe(true);
       expect(await tree()).toEqual([`media/2026/09/${A}.png`]);
     });
   });
@@ -418,6 +475,29 @@ describe('armazenamento de mídia', () => {
     it('original que não existe: null (a leitura responde 404) e nada é gerado', async () => {
       expect(await mediaVariantPath(key, 128)).toBeNull();
       expect(makeVariant).not.toHaveBeenCalled();
+      expect(await tree()).toEqual([]);
+    });
+
+    it('miniatura que ficou no disco sem o original (imagem removida pela moderação) não é servida: null, e nada é gerado', async () => {
+      await put(variantKey, 'sobra gravada durante a remoção');
+
+      expect(await mediaVariantPath(key, 128)).toBeNull();
+
+      expect(makeVariant).not.toHaveBeenCalled();
+    });
+
+    it('geração em andamento quando a moderação tira o original: a miniatura gravada depois não é entregue e sai do disco (ADR 41)', async () => {
+      await put(key, await png(300, 200));
+      vi.mocked(makeVariant).mockImplementationOnce(async (original, width) => {
+        // A remoção chega no meio da geração, com o original já lido.
+        expect(await deleteMediaImage(key)).toBe(true);
+        const actual = await vi.importActual<typeof import('./media.image')>('./media.image');
+        return actual.makeVariant(original, width);
+      });
+
+      expect(await mediaVariantPath(key, 128)).toBeNull();
+
+      expect(makeVariant).toHaveBeenCalledTimes(1);
       expect(await tree()).toEqual([]);
     });
 
@@ -627,10 +707,12 @@ describe('armazenamento de mídia', () => {
       expect(await tree()).toEqual([]);
     });
 
-    it('miniatura sem original é sobra: sai na hora, mesmo recente', async () => {
+    it('miniatura sem original é sobra: sai na hora, mesmo recente, e não conta como imagem removida', async () => {
       await put(`2026/09/${A}.w128.webp`);
       await put(`2026/09/${A}.w480.webp`);
+      await put(`2026/09/${B}.png`, 'x', 25);
 
+      // Só a órfã B era uma imagem; as miniaturas de A eram sobra.
       expect(await removeMediaOrphans()).toBe(1);
 
       expect(await tree()).toEqual([]);
@@ -677,7 +759,8 @@ describe('armazenamento de mídia', () => {
           ? Promise.reject(fsError('EBUSY'))
           : realUnlink(p)) as typeof unlink);
 
-      await removeMediaOrphans();
+      // Só B saiu de fato: o original de A ficou preso, então A não conta como removida.
+      expect(await removeMediaOrphans()).toBe(1);
 
       // Só os dois presos ficam; a miniatura da imagem presa, a outra imagem e o outro temporário saem.
       expect(await tree()).toEqual([

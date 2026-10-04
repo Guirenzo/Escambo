@@ -1,9 +1,22 @@
 import { z } from 'zod';
 
+/** Teto de DECIMAL(10,2), a coluna do valor da contratação e do marco. */
+export const MAX_CONTRACT_AMOUNT = 99_999_999.99;
+const MAX_AMOUNT_MESSAGE = 'O valor máximo é R$ 99.999.999,99';
+/**
+ * Centavo exato (ADR 60): a coluna é DECIMAL(10,2) e a carteira soma o número que chega. Com
+ * 10,005 a contratação gravava 10,01, reservava 10,00 do saldo e devolvia 10,01 no cancelamento.
+ */
+const CENTS_MESSAGE = 'O valor vai até os centavos: no máximo duas casas decimais';
+
 const milestoneSchema = z.object({
   title: z.string().min(3).max(150),
   description: z.string().max(1000).nullable().optional(),
-  amount: z.number().positive().multipleOf(0.01),
+  amount: z
+    .number()
+    .positive()
+    .multipleOf(0.01, CENTS_MESSAGE)
+    .max(MAX_CONTRACT_AMOUNT, MAX_AMOUNT_MESSAGE),
   dueAt: z.string().datetime().nullable().optional(),
 });
 
@@ -13,7 +26,12 @@ export const createContractSchema = z
     serviceId: z.number().int().positive().nullable().optional(),
     title: z.string().min(3).max(150),
     description: z.string().min(10),
-    price: z.number().positive().min(10, 'Contratação mínima é R$ 10,00 (RN-027)'),
+    price: z
+      .number()
+      .positive()
+      .multipleOf(0.01, CENTS_MESSAGE)
+      .min(10, 'Contratação mínima é R$ 10,00 (RN-027)')
+      .max(MAX_CONTRACT_AMOUNT, MAX_AMOUNT_MESSAGE),
     paymentMode: z.enum(['cash', 'credits']).default('cash'),
     deadlineAt: z.string().datetime().nullable().optional(),
     // Escrow por marcos (RN-069): 2 a 10 marcos, só em dinheiro, soma igual ao valor.
@@ -79,6 +97,19 @@ export const deliverSchema = z.object({
 });
 export type DeliverInput = z.infer<typeof deliverSchema>;
 
+/**
+ * Entrega de um marco: só a mensagem (o marco guarda delivery_note); arquivo vai pelo chat da
+ * contratação. files ou outra chave qualquer é 422, em vez de aceito e descartado em silêncio.
+ */
+export const deliverMilestoneSchema = z
+  .object({
+    message: z.string().min(1),
+    files: z
+      .never({ invalid_type_error: 'A entrega de um marco não leva arquivos: mande pelo chat' })
+      .optional(),
+  })
+  .strict();
+
 export const noteSchema = z.object({ note: z.string().max(1000).optional() });
 export type NoteInput = z.infer<typeof noteSchema>;
 
@@ -111,7 +142,7 @@ export const cancelBodySchema = z
 export type CancelBody = z.infer<typeof cancelBodySchema>;
 
 export const listContractsSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
+  page: z.coerce.number().int().positive().max(10_000).default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
 export type ListContractsInput = z.infer<typeof listContractsSchema>;

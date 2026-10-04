@@ -211,6 +211,34 @@ describe('contratações: borda HTTP', () => {
       expect(service.create).not.toHaveBeenCalled();
     });
 
+    it('valor com fração de centavo é recusado antes do service: 10,005 não cria 1 centavo a cada cancelamento', async () => {
+      for (const price of [10.005, 150.001]) {
+        const res = await request(app)
+          .post('/api/contracts')
+          .set(bearer(CLIENT))
+          .send({ ...proposal, price })
+          .expect(422);
+        expect(res.body).toEqual({
+          error: 'validation_error',
+          message: 'Dados de entrada inválidos',
+          details: { price: ['O valor vai até os centavos: no máximo duas casas decimais'] },
+        });
+      }
+      expect(service.create).not.toHaveBeenCalled();
+
+      service.create.mockResolvedValue({ id: 12, status: 'pending' });
+      await request(app)
+        .post('/api/contracts')
+        .set(bearer(CLIENT))
+        .send({ ...proposal, price: 10.01 })
+        .expect(201);
+      expect(service.create).toHaveBeenCalledWith(CLIENT, {
+        ...proposal,
+        price: 10.01,
+        paymentMode: 'cash',
+      });
+    });
+
     it('marcos que não somam o valor da contratação são recusados (RN-069)', async () => {
       const res = await request(app)
         .post('/api/contracts')
@@ -239,6 +267,62 @@ describe('contratações: borda HTTP', () => {
         .send(proposal)
         .expect(402);
       expect(res.body).toEqual({ error: 'insufficient_balance', message: 'Saldo insuficiente' });
+    });
+
+    it('serviço pausado: o 409 do service chega com o código e a mensagem da RN-013, sem aviso nem auditoria', async () => {
+      service.create.mockRejectedValue(
+        new HttpError(
+          409,
+          'Este serviço está pausado e não aceita novas propostas (RN-013).',
+          'service_inactive',
+        ),
+      );
+      const res = await request(app)
+        .post('/api/contracts')
+        .set(bearer(CLIENT))
+        .send({ ...proposal, serviceId: 9 })
+        .expect(409);
+      expect(res.body).toEqual({
+        error: 'service_inactive',
+        message: 'Este serviço está pausado e não aceita novas propostas (RN-013).',
+      });
+      // O serviço da proposta chega ao service, que é quem confere se está no ar.
+      expect(service.create).toHaveBeenCalledWith(CLIENT, {
+        ...proposal,
+        serviceId: 9,
+        paymentMode: 'cash',
+      });
+      expect(notify).not.toHaveBeenCalled();
+      expect(audit).not.toHaveBeenCalled();
+    });
+
+    it('freelancer ou serviço que não existe: o 404 do service chega com o código dele', async () => {
+      service.create.mockRejectedValueOnce(
+        new HttpError(404, 'Freelancer não encontrado', 'freelancer_not_found'),
+      );
+      const noFreelancer = await request(app)
+        .post('/api/contracts')
+        .set(bearer(CLIENT))
+        .send(proposal)
+        .expect(404);
+      expect(noFreelancer.body).toEqual({
+        error: 'freelancer_not_found',
+        message: 'Freelancer não encontrado',
+      });
+
+      service.create.mockRejectedValueOnce(
+        new HttpError(404, 'Serviço não encontrado', 'service_not_found'),
+      );
+      const noService = await request(app)
+        .post('/api/contracts')
+        .set(bearer(CLIENT))
+        .send({ ...proposal, serviceId: 404 })
+        .expect(404);
+      expect(noService.body).toEqual({
+        error: 'service_not_found',
+        message: 'Serviço não encontrado',
+      });
+      expect(notify).not.toHaveBeenCalled();
     });
   });
 
@@ -691,6 +775,28 @@ describe('contratações: borda HTTP', () => {
         .send({})
         .expect(422);
       expect(noMessage.body.details).toHaveProperty('message');
+      expect(service.deliverMilestone).not.toHaveBeenCalled();
+    });
+
+    it('a entrega do marco não leva arquivos: files é 422 no campo files, em vez de aceito e descartado, e chave desconhecida também é recusada', async () => {
+      const withFiles = await request(app)
+        .post('/api/contracts/12/milestones/5/deliver')
+        .set(bearer(FREELANCER))
+        .send({ message: 'Layout no Figma', files: ['https://arquivos.escambo.test/layout.fig'] })
+        .expect(422);
+      expect(withFiles.body).toEqual({
+        error: 'validation_error',
+        message: 'Dados de entrada inválidos',
+        details: { files: ['A entrega de um marco não leva arquivos: mande pelo chat'] },
+      });
+
+      const unknownKey = await request(app)
+        .post('/api/contracts/12/milestones/5/deliver')
+        .set(bearer(FREELANCER))
+        .send({ message: 'Layout no Figma', anexo: 'x' })
+        .expect(422);
+      expect(unknownKey.body.error).toBe('validation_error');
+
       expect(service.deliverMilestone).not.toHaveBeenCalled();
     });
 

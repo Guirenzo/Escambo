@@ -65,7 +65,7 @@ const RESOLUTIONS: { value: DisputeResolution; label: string; hint: string }[] =
   {
     value: 'partial_split',
     label: 'Dividir',
-    hint: 'Parte do valor volta ao cliente e o restante vai ao freelancer.',
+    hint: 'Parte do valor volta ao cliente e o restante vai ao freelancer (de 5% a 95%; tudo de um lado é liberar ou devolver).',
   },
 ];
 
@@ -124,8 +124,8 @@ function ResolveModal({ dispute, onClose }: { dispute: Dispute; onClose: () => v
           <Field label={`Percentual devolvido ao cliente: ${refund}%`}>
             <input
               type="range"
-              min={0}
-              max={100}
+              min={5}
+              max={95}
               step={5}
               value={refund}
               onChange={(e) => setRefund(Number(e.target.value))}

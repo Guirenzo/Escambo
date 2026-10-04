@@ -67,8 +67,10 @@ export const mediaRepository = {
   async restoreReferences(conn: PoolConnection, url: string, refs: ImageRef[]): Promise<number> {
     let restored = 0;
     for (const ref of refs) {
+      // Só as tabelas da lista: chave herdada (constructor, toString, __proto__) vinda de um JSON
+      // corrompido não pode virar nome de tabela no SQL.
+      if (!Object.hasOwn(IMAGE_COLUMNS, ref.table)) continue;
       const column = IMAGE_COLUMNS[ref.table];
-      if (!column) continue;
       const [res] = await conn.query<ResultSetHeader>(
         `UPDATE ${ref.table} SET ${column} = :url WHERE id = :id AND ${column} IS NULL`,
         { url, id: ref.id },

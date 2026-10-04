@@ -19,6 +19,29 @@ function app() {
   a.get('/zod', () => {
     z.object({ n: z.number() }).parse({ n: 'x' });
   });
+  // Regra do objeto inteiro, sem path: o erro cai em formErrors, e não num campo.
+  const atLeastOne = z
+    .object({ name: z.string().optional(), alert: z.boolean().optional() })
+    .refine((v) => Object.keys(v).length > 0, { message: 'Nada para alterar' })
+    .refine((v) => v.alert !== undefined, { message: 'Diga se quer o alerta' });
+  a.post('/zod-form', (req) => {
+    atLeastOne.parse(req.body);
+  });
+  // Campo inválido junto de uma regra do objeto: vale a mensagem genérica, com os campos.
+  a.get('/zod-misto', () => {
+    z.object({ n: z.string().min(3) })
+      .superRefine((_v, ctx) => ctx.addIssue({ code: 'custom', message: 'Regra do objeto' }))
+      .parse({ n: 'x' });
+  });
+  // Erros da raiz que não são regra do objeto: chave a mais no .strict(), corpo que é lista.
+  const strictBody = z.object({ message: z.string().optional() }).strict();
+  a.post('/zod-estrito', (req) => {
+    strictBody.parse(req.body);
+  });
+  // Sem corpo nenhum para validar (o schema recebe undefined).
+  a.get('/zod-sem-corpo', () => {
+    z.object({ n: z.number() }).parse(undefined);
+  });
   a.get('/quebra', () => {
     throw new Error("Duplicate entry 'fulano@email.com' for key 'users.email'");
   });
@@ -45,6 +68,46 @@ describe('errorHandler', () => {
     const res = await request(app()).get('/zod').expect(422);
     expect(res.body.error).toBe('validation_error');
     expect(res.body.details).toHaveProperty('n');
+    expect(captureError).not.toHaveBeenCalled();
+  });
+
+  it('regra do objeto inteiro (refine sem path) leva a mensagem dela, e não a genérica; details continua o dos campos', async () => {
+    const res = await request(app()).post('/zod-form').send({}).expect(422);
+    expect(res.body).toEqual({
+      error: 'validation_error',
+      message: 'Nada para alterar',
+      details: {},
+    });
+    // Com o corpo vazio as duas regras falham, e vale a primeira; com só o nome, a segunda.
+    const two = await request(app()).post('/zod-form').send({ name: 'Ana' }).expect(422);
+    expect(two.body.message).toBe('Diga se quer o alerta');
+    expect(captureError).not.toHaveBeenCalled();
+  });
+
+  it('com campo inválido, a mensagem é a genérica e os campos vão em details, mesmo havendo regra do objeto', async () => {
+    const res = await request(app()).get('/zod-misto').expect(422);
+    expect(res.body.message).toBe('Dados de entrada inválidos');
+    expect(Object.keys(res.body.details)).toEqual(['n']);
+  });
+
+  it('erro da raiz que não é regra do objeto fica com a mensagem genérica, e não com o texto padrão do zod em inglês', async () => {
+    const generic = {
+      error: 'validation_error',
+      message: 'Dados de entrada inválidos',
+      details: {},
+    };
+    // Chave desconhecida no .strict() (o zod diria "Unrecognized key(s) in object: 'extra'").
+    const extra = await request(app())
+      .post('/zod-estrito')
+      .send({ message: 'ok', extra: 1 })
+      .expect(422);
+    expect(extra.body).toEqual(generic);
+    // Corpo que é lista ("Expected object, received array").
+    const list = await request(app()).post('/zod-estrito').send([]).expect(422);
+    expect(list.body).toEqual(generic);
+    // Corpo que falta ("Required").
+    const none = await request(app()).get('/zod-sem-corpo').expect(422);
+    expect(none.body).toEqual(generic);
     expect(captureError).not.toHaveBeenCalled();
   });
 

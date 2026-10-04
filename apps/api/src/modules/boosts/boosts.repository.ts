@@ -22,6 +22,12 @@ export interface BoostRow extends RowDataPacket {
   created_at: Date;
 }
 
+/** O que a compra fez: o impulsionamento criado, ou por que foi recusada (nada é cobrado). */
+export type BoostPurchase =
+  | { boostId: number }
+  | { refused: 'insufficient_credits' }
+  | { refused: 'boost_active'; activeUntil: Date };
+
 export const boostsRepository = {
   async listPlans(): Promise<BoostPlanRow[]> {
     const [rows] = await pool.query<BoostPlanRow[]>(
@@ -42,8 +48,8 @@ export const boostsRepository = {
 
   /**
    * Compra um impulsionamento pagando em CRÉDITOS Escambo — débito + ledger +
-   * criação do boost, tudo numa transação. Retorna o id do boost, ou null se
-   * o usuário não tiver créditos suficientes.
+   * criação do boost, tudo numa transação. Recusa sem cobrar se o serviço já tem um
+   * impulsionamento ativo (RN-017) ou se faltam créditos.
    */
   async purchase(params: {
     userId: number;
@@ -51,13 +57,36 @@ export const boostsRepository = {
     planId: number;
     cost: number;
     durationDays: number;
-  }): Promise<number | null> {
+  }): Promise<BoostPurchase> {
     const conn = await pool.getConnection();
     try {
-      await conn.beginTransaction();
+      // Fora da transação: o INSERT IGNORE que acha a linha deixa nela uma trava compartilhada, e
+      // duas compras segurando essa trava e pedindo o FOR UPDATE se travariam (deadlock).
       await conn.query<ResultSetHeader>(`INSERT IGNORE INTO wallets (user_id) VALUES (:userId)`, {
         userId: params.userId,
       });
+      await conn.beginTransaction();
+      // RN-017: um impulsionamento ativo por serviço. Só o dono compra para o serviço dele, então a
+      // trava na carteira de quem compra enfileira as compras do mesmo serviço: a segunda só
+      // confere depois que a primeira terminou e vê o boost criado (a consulta abaixo é a primeira
+      // leitura sem trava da transação, e o retrato dela nasce depois da espera). Não travar o
+      // serviço: o aceite da troca trava a carteira e depois toca o serviço (chave estrangeira do
+      // contrato), e a exclusão da conta trava o usuário e depois os serviços. Uma compra que
+      // segurasse o serviço esperando a carteira ou o usuário fecharia um ciclo com eles (deadlock).
+      await conn.query<RowDataPacket[]>(
+        `SELECT credits_balance FROM wallets WHERE user_id = :userId FOR UPDATE`,
+        { userId: params.userId },
+      );
+      const [active] = await conn.query<RowDataPacket[]>(
+        `SELECT expires_at FROM boosts
+          WHERE service_id = :serviceId AND status = 'active' AND expires_at > NOW()
+          ORDER BY expires_at DESC LIMIT 1`,
+        { serviceId: params.serviceId },
+      );
+      if (active[0]) {
+        await conn.rollback();
+        return { refused: 'boost_active', activeUntil: new Date(active[0].expires_at) };
+      }
       const [debit] = await conn.query<ResultSetHeader>(
         `UPDATE wallets SET credits_balance = credits_balance - :cost
           WHERE user_id = :userId AND credits_balance >= :cost`,
@@ -65,7 +94,7 @@ export const boostsRepository = {
       );
       if (debit.affectedRows === 0) {
         await conn.rollback();
-        return null; // créditos insuficientes
+        return { refused: 'insufficient_credits' };
       }
       const [w] = await conn.query<RowDataPacket[]>(
         `SELECT credits_balance + credits_pending AS total FROM wallets WHERE user_id = :userId`,
@@ -87,9 +116,10 @@ export const boostsRepository = {
         },
       );
       await conn.commit();
-      return res.insertId;
+      return { boostId: res.insertId };
     } catch (err) {
-      await conn.rollback();
+      // Um rollback que falha não pode trocar o erro original pelo dele.
+      await conn.rollback().catch(() => undefined);
       throw err;
     } finally {
       conn.release();

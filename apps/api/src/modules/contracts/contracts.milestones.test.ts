@@ -45,6 +45,11 @@ vi.mock('../gamification/gamification.service', () => ({
 vi.mock('../reviews/reviews.repository', () => ({
   reviewsRepository: { findByContractIdWithResponse: vi.fn().mockResolvedValue(undefined) },
 }));
+// O create confere quem é contratado antes de gravar (ADR 60); as propostas daqui vêm sem serviço.
+vi.mock('../auth/auth.repository', () => ({ authRepository: { findById: vi.fn() } }));
+vi.mock('../services/services.repository', () => ({
+  servicesRepository: { findById: vi.fn() },
+}));
 
 import { logger } from '../../config/logger';
 import { setClockForTests } from '../../utils/clock';
@@ -52,11 +57,26 @@ import { notificationsService } from '../notifications/notifications.service';
 import { contractsService } from './contracts.service';
 import { contractsRepository, type ContractRow } from './contracts.repository';
 import { milestonesRepository } from './milestones.repository';
+import { authRepository, type UserRow } from '../auth/auth.repository';
 import { gamificationService } from '../gamification/gamification.service';
+import { servicesRepository } from '../services/services.repository';
 import { settingsRepository } from '../settings/settings.repository';
 
 const repo = vi.mocked(contractsRepository);
 const ms = vi.mocked(milestonesRepository);
+
+/** O freelancer 2 dos exemplos como o authRepository.findById devolve: conta ativa, não excluída. */
+const FREELANCER = {
+  id: 2,
+  ulid: '01FREELANCER00000000000000',
+  email: 'freela@escambo.test',
+  password_hash: '$2a$12$hashdasenhadofreelancer',
+  role: 'freelancer',
+  status: 'active',
+  deleted_at: null,
+  email_verified_at: new Date('2025-12-01T00:00:00Z'),
+  timezone: null,
+} as UserRow;
 
 function row(
   o: Partial<{
@@ -92,6 +112,8 @@ function row(
 beforeEach(() => vi.clearAllMocks());
 
 describe('criação com marcos (RN-069)', () => {
+  beforeEach(() => vi.mocked(authRepository.findById).mockResolvedValue(FREELANCER));
+
   it('cada marco recebe o líquido com a taxa; o último absorve o arredondamento', async () => {
     repo.create.mockResolvedValue(1);
     repo.findById.mockResolvedValue(row({ status: 'pending' }));
@@ -166,6 +188,9 @@ describe('criação com marcos (RN-069)', () => {
         { title: 'Visita 2', amount: 20 },
       ],
     });
+    // Proposta direta: o freelancer é conferido, e nenhum serviço é buscado.
+    expect(vi.mocked(authRepository.findById).mock.calls).toEqual([[2]]);
+    expect(servicesRepository.findById).not.toHaveBeenCalled();
     const arg = repo.create.mock.calls[0]![0];
     expect(arg.paymentMode).toBe('credits');
     expect(arg.hold).toBeNull();

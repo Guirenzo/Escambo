@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'node:http';
 import jwt from 'jsonwebtoken';
 import { Server } from 'socket.io';
 import type { AuthPayload } from '../middlewares/authenticate';
+import { sendMessageSchema } from '../modules/messaging/messaging.schema';
 import { messagingService } from '../modules/messaging/messaging.service';
 import { blocklist } from './blocklist';
 import { env } from './env';
@@ -10,6 +11,32 @@ import { realtime } from './realtime';
 
 interface SocketData {
   uid: number;
+}
+
+type Ack = (r: unknown) => void;
+
+/**
+ * O ack que o cliente mandou, ou um que não faz nada. O 2º argumento vem do cliente e pode ser
+ * qualquer coisa (`socket.emit('message:send', {}, 1)`): `ack?.()` só protege null e undefined, e
+ * chamar um número lança.
+ */
+const replyTo = (ack: unknown): Ack => (typeof ack === 'function' ? (ack as Ack) : () => undefined);
+
+/**
+ * Listener async que nunca rejeita: o que escapar vai para o log. O socket.io não trata a Promise
+ * do listener, e uma rejeição solta cai no unhandledRejection do server.ts, que derruba a API.
+ */
+function guarded<A extends unknown[]>(
+  event: string,
+  listener: (...args: A) => Promise<void>,
+): (...args: A) => Promise<void> {
+  return async (...args: A): Promise<void> => {
+    try {
+      await listener(...args);
+    } catch (err) {
+      logger.warn({ err, event }, 'listener do socket falhou');
+    }
+  };
 }
 
 /**
@@ -47,32 +74,54 @@ export function createSocketServer(httpServer: HttpServer): Server {
     void socket.join(`user:${uid}`);
 
     // Entra na sala do contrato após checar que o usuário é parte dele.
-    socket.on('contract:join', async (contractId: number, ack?: (r: unknown) => void) => {
-      try {
-        await messagingService.history(Number(contractId), uid); // valida participação (403 se não)
-        await socket.join(`contract:${contractId}`);
-        ack?.({ ok: true });
-      } catch {
-        ack?.({ ok: false, error: 'forbidden' });
-      }
-    });
+    socket.on(
+      'contract:join',
+      guarded('contract:join', async (contractId: unknown, ack?: unknown) => {
+        const reply = replyTo(ack);
+        const id = Number(contractId);
+        try {
+          await messagingService.history(id, uid); // valida participação (403 se não)
+          await socket.join(`contract:${id}`);
+        } catch {
+          reply({ ok: false, error: 'forbidden' });
+          return;
+        }
+        reply({ ok: true });
+      }),
+    );
 
-    // Envia mensagem via socket (mesmo caminho do REST: persiste + broadcast).
+    // Envia mensagem via socket (mesmo caminho do REST: valida, persiste + broadcast).
     socket.on(
       'message:send',
-      async (payload: { contractId: number; content: string }, ack?: (r: unknown) => void) => {
-        try {
-          const message = await messagingService.send(
-            Number(payload.contractId),
-            uid,
-            String(payload.content ?? ''),
-          );
-          ack?.({ ok: true, message });
-        } catch (err) {
-          logger.warn({ err }, 'message:send falhou');
-          ack?.({ ok: false, error: 'send_failed' });
-        }
-      },
+      guarded(
+        'message:send',
+        async (payload: { contractId?: unknown; content?: unknown } | undefined, ack?: unknown) => {
+          const reply = replyTo(ack);
+          // A mesma regra da rota REST: vazia, só de espaços ou acima do limite não entra.
+          const input = sendMessageSchema.safeParse({ content: payload?.content });
+          if (!input.success) {
+            reply({
+              ok: false,
+              error: 'validation_error',
+              details: input.error.flatten().fieldErrors,
+            });
+            return;
+          }
+          let message: Awaited<ReturnType<typeof messagingService.send>>;
+          try {
+            message = await messagingService.send(
+              Number(payload?.contractId),
+              uid,
+              input.data.content,
+            );
+          } catch (err) {
+            logger.warn({ err }, 'message:send falhou');
+            reply({ ok: false, error: 'send_failed' });
+            return;
+          }
+          reply({ ok: true, message });
+        },
+      ),
     );
   });
 

@@ -1,5 +1,12 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { openapiDocument, swaggerHtml } from './openapi';
+import {
+  openapiDocument,
+  SWAGGER_UI_FILES,
+  swaggerHtml,
+  swaggerInitJs,
+  swaggerUiDistDir,
+} from './openapi';
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
 
@@ -110,6 +117,18 @@ describe('documento OpenAPI', () => {
     expect(declared.filter((name) => !used.has(name))).toEqual([]);
   });
 
+  it('toda tag usada por uma operação está declarada (senão o Swagger a mostra sem ordem nem grupo)', () => {
+    const declared = new Set((openapiDocument.tags as Array<{ name: string }>).map((t) => t.name));
+    const undeclared = operations()
+      .flatMap(({ op }) => op.tags)
+      .filter((tag) => !declared.has(tag));
+    expect([...new Set(undeclared)]).toEqual([]);
+    // As imagens de perfil e portfólio ficam no grupo dos perfis, e não num "Perfil" à parte.
+    expect(operation('/media', 'post').tags).toEqual(['Perfis']);
+    expect(operation('/media/{year}/{month}/{file}', 'get').tags).toEqual(['Perfis']);
+    expect(operation('/settings/public', 'get').tags).toEqual(['Plataforma']);
+  });
+
   it('rota protegida pede o Bearer; rota pública não leva a marca', () => {
     expect(operation('/auth/me', 'get').security).toEqual([{ bearerAuth: [] }]);
     expect(operation('/contracts', 'post').security).toEqual([{ bearerAuth: [] }]);
@@ -211,17 +230,69 @@ describe('documento OpenAPI', () => {
 });
 
 describe('página do Swagger UI', () => {
-  it('é HTML em português, com o lugar do Swagger e apontando para o documento da própria API', () => {
+  it('é HTML em português, com o lugar do Swagger', () => {
     expect(swaggerHtml.startsWith('<!doctype html>')).toBe(true);
     expect(swaggerHtml).toContain('<html lang="pt-BR">');
     expect(swaggerHtml).toContain('<div id="swagger-ui"></div>');
-    expect(swaggerHtml).toContain(
-      "SwaggerUIBundle({ url: '/api/openapi.json', dom_id: '#swagger-ui' })",
+  });
+
+  it('carrega tudo da própria API e não tem script inline: o CSP (script-src self) deixa rodar', () => {
+    expect(swaggerHtml).toContain('<link rel="stylesheet" href="/api/docs/swagger-ui.css" />');
+    // Toda tag <script> é de arquivo da própria API, e vazia por dentro.
+    expect(swaggerHtml.match(/<script[^>]*>[\s\S]*?<\/script>/g)).toEqual([
+      '<script src="/api/docs/swagger-ui-bundle.js"></script>',
+      '<script src="/api/docs/swagger-init.js"></script>',
+    ]);
+    expect(swaggerHtml).not.toMatch(/https?:\/\//);
+    expect(swaggerHtml).not.toMatch(/\son\w+=/); // nem manipulador inline (script-src-attr 'none')
+  });
+
+  it('os arquivos que a página pede são os que a API serve do swagger-ui-dist', () => {
+    expect(SWAGGER_UI_FILES).toEqual(['swagger-ui.css', 'swagger-ui-bundle.js']);
+    for (const file of SWAGGER_UI_FILES) expect(swaggerHtml).toContain(`/api/docs/${file}`);
+  });
+
+  it('a inicialização aponta para o documento da própria API, sem validador externo', () => {
+    expect(swaggerInitJs).toContain(
+      "window.SwaggerUIBundle({ url: '/api/openapi.json', dom_id: '#swagger-ui', validatorUrl: null })",
     );
   });
 
-  it('carrega o Swagger UI (folha de estilo e script) da mesma versão principal', () => {
-    expect(swaggerHtml).toContain('https://unpkg.com/swagger-ui-dist@5/swagger-ui.css');
-    expect(swaggerHtml).toContain('https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js');
+  it('sem o Swagger UI carregado (pacote ausente), a página diz onde está o documento em vez de ficar em branco', () => {
+    const root = { textContent: '' };
+    const win: { SwaggerUIBundle?: unknown; ui?: unknown } = {};
+    new Function('window', 'document', swaggerInitJs)(win, { getElementById: () => root });
+
+    expect(win.ui).toBeUndefined();
+    expect(root.textContent).toBe(
+      'Swagger UI indisponível neste servidor. O documento OpenAPI está em /api/openapi.json.',
+    );
+
+    // Com o pacote, quem desenha é o Swagger UI, com as opções da inicialização.
+    const bundle = (opts: unknown) => ({ opts });
+    const ok: { SwaggerUIBundle?: unknown; ui?: unknown } = { SwaggerUIBundle: bundle };
+    new Function('window', 'document', swaggerInitJs)(ok, { getElementById: () => root });
+    expect(ok.ui).toEqual({
+      opts: { url: '/api/openapi.json', dom_id: '#swagger-ui', validatorUrl: null },
+    });
+  });
+
+  it('acha a pasta do swagger-ui-dist pelo módulo principal dele; sem o pacote, null', () => {
+    const found = swaggerUiDistDir((id) => {
+      expect(id).toBe('swagger-ui-dist');
+      return join('/repo', 'node_modules', 'swagger-ui-dist', 'index.js');
+    });
+    expect(found).toBe(join('/repo', 'node_modules', 'swagger-ui-dist'));
+
+    const missing = swaggerUiDistDir(() => {
+      throw Object.assign(new Error("Cannot find module 'swagger-ui-dist'"), {
+        code: 'MODULE_NOT_FOUND',
+      });
+    });
+    expect(missing).toBeNull();
+
+    // Com o resolvedor do Node (o padrão), não lança: devolve a pasta ou null.
+    const real = swaggerUiDistDir();
+    expect(real === null || real.endsWith('swagger-ui-dist')).toBe(true);
   });
 });

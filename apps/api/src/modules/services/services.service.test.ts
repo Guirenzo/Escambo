@@ -7,6 +7,7 @@ vi.mock('../settings/settings.service', () => ({
 vi.mock('./services.repository', () => ({
   servicesRepository: {
     create: vi.fn(),
+    categoryIsActive: vi.fn().mockResolvedValue(true),
     findById: vi.fn(),
     list: vi.fn(),
     update: vi.fn(),
@@ -441,6 +442,31 @@ describe('servicesService.create — o que é gravado e o preço mínimo (RN-016
     await expect(servicesService.create(7, input)).rejects.toBe(boom);
     expect(repo.findById).not.toHaveBeenCalled();
   });
+
+  it('só se publica em categoria que existe e está ativa: a consulta é pela categoria enviada', async () => {
+    repo.create.mockResolvedValue(31);
+    repo.findById.mockResolvedValue(fakeRow());
+
+    await servicesService.create(7, input);
+
+    expect(repo.categoryIsActive.mock.calls).toEqual([[10]]);
+    expect(repo.categoryIsActive.mock.invocationCallOrder[0]!).toBeLessThan(
+      repo.create.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('categoria inexistente ou inativa é 422 invalid_category e nada é gravado (e não o 500 da FK)', async () => {
+    repo.categoryIsActive.mockResolvedValueOnce(false);
+
+    await expect(servicesService.create(7, { ...input, categoryId: 999 })).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'invalid_category',
+      message: 'Categoria inexistente ou inativa',
+    });
+
+    expect(repo.categoryIsActive.mock.calls).toEqual([[999]]);
+    expect(repo.create).not.toHaveBeenCalled();
+  });
 });
 
 describe('servicesService.getById — o serviço como a API devolve', () => {
@@ -635,6 +661,74 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
       [1, { is_active: 0 }],
       [1, { is_active: 1 }],
     ]);
+  });
+
+  it('tirar o preço (null) de um serviço de preço fixo é 422 price_required: preço fixo sem preço não existe (RN-016)', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7 }));
+
+    await expect(servicesService.update(1, 7, { price: null })).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'price_required',
+      message: 'Preço obrigatório para preço fixo (RN-016)',
+    });
+
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('passar para preço fixo um serviço a combinar sem preço, sem mandar o preço, é 422 price_required (RN-016)', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7, price_type: 'negotiable', price: null }));
+
+    await expect(servicesService.update(1, 7, { priceType: 'fixed' })).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'price_required',
+    });
+    await expect(
+      servicesService.update(1, 7, { priceType: 'fixed', price: null }),
+    ).rejects.toMatchObject({ statusCode: 422, code: 'price_required' });
+
+    expect(repo.update).not.toHaveBeenCalled();
+    // A recusa vem antes da consulta do mínimo: não há preço para comparar.
+    expect(settings.minServicePrice).not.toHaveBeenCalled();
+  });
+
+  it('passar para preço fixo mandando o preço junto passa, e o mínimo vale para o preço novo', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7, price_type: 'negotiable', price: null }));
+
+    await servicesService.update(1, 7, { priceType: 'fixed', price: 50 });
+
+    expect(repo.update.mock.calls).toEqual([[1, { price_type: 'fixed', price: 50 }]]);
+    expect(settings.minServicePrice).toHaveBeenCalledTimes(1);
+  });
+
+  it('tirar o preço de um serviço por hora continua valendo: RN-016 só cobra preço do preço fixo', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7, price_type: 'hourly', price: '80.00' }));
+
+    await servicesService.update(1, 7, { price: null });
+
+    expect(repo.update.mock.calls).toEqual([[1, { price: null }]]);
+  });
+
+  it('trocar para uma categoria inexistente ou inativa é 422 invalid_category e nada é gravado', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7, category_id: 10 }));
+    repo.categoryIsActive.mockResolvedValueOnce(false);
+
+    await expect(servicesService.update(1, 7, { categoryId: 99 })).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'invalid_category',
+      message: 'Categoria inexistente ou inativa',
+    });
+
+    expect(repo.categoryIsActive.mock.calls).toEqual([[99]]);
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it('manter a categoria atual não consulta a categoria: o serviço já está nela', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7, category_id: 10 }));
+
+    await servicesService.update(1, 7, { categoryId: 10, title: 'Site completo' });
+
+    expect(repo.categoryIsActive).not.toHaveBeenCalled();
+    expect(repo.update.mock.calls).toEqual([[1, { category_id: 10, title: 'Site completo' }]]);
   });
 });
 

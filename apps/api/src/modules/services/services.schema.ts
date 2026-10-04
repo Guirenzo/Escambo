@@ -38,27 +38,34 @@ export const updateServiceSchema = z
   .partial();
 export type UpdateServiceInput = z.infer<typeof updateServiceSchema>;
 
+/**
+ * Número opcional da busca vindo da query string: vazio (?lat=) vale como ausente. Sem isto o
+ * z.coerce.number() faz de '' um 0, e ?lat=&lng= vira busca em (0, 0), ?minPrice= tira os sem preço.
+ */
+const queryNumber = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), schema);
+
 export const listServicesSchema = z.object({
-  categoryId: z.coerce.number().int().positive().optional(),
+  categoryId: queryNumber(z.coerce.number().int().positive().optional()),
   /** Serviços de um freelancer específico (perfil público). */
-  ownerId: z.coerce.number().int().positive().optional(),
+  ownerId: queryNumber(z.coerce.number().int().positive().optional()),
   q: z.string().trim().min(1).optional(),
   isRemote: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .optional(),
   // Descoberta local: com lat+lng, ranqueia por proximidade dentro de radiusKm.
-  lat: z.coerce.number().min(-90).max(90).optional(),
-  lng: z.coerce.number().min(-180).max(180).optional(),
-  radiusKm: z.coerce.number().positive().max(500).default(25),
+  lat: queryNumber(z.coerce.number().min(-90).max(90).optional()),
+  lng: queryNumber(z.coerce.number().min(-180).max(180).optional()),
+  radiusKm: queryNumber(z.coerce.number().positive().max(500).default(25)),
   // Filtros: faixa de preço (serviço sem preço fica de fora quando há filtro), prazo e nota do prestador.
-  minPrice: z.coerce.number().min(0).optional(),
-  maxPrice: z.coerce.number().positive().optional(),
-  maxDeliveryDays: z.coerce.number().int().positive().optional(),
-  minRating: z.coerce.number().min(0).max(5).optional(),
+  minPrice: queryNumber(z.coerce.number().min(0).optional()),
+  maxPrice: queryNumber(z.coerce.number().positive().optional()),
+  maxDeliveryDays: queryNumber(z.coerce.number().int().positive().optional()),
+  minRating: queryNumber(z.coerce.number().min(0).max(5).optional()),
   // Dia da semana em que o prestador atende (0=domingo … 6=sábado). Quem não informou os
   // dias fica de fora quando há filtro: "atende sábado" é uma afirmação, não um palpite.
-  day: z.coerce.number().int().min(0).max(6).optional(),
+  day: queryNumber(z.coerce.number().int().min(0).max(6).optional()),
   // Período do dia em que atende, junto com `day` (ADR 34), no fuso do freelancer. Dia sem períodos = o dia todo.
   period: z.enum(['morning', 'afternoon', 'evening']).optional(),
   // Atende agora: aceitando pedidos, no dia e no período de agora no fuso de cada freelancer (ADR 48).
@@ -71,8 +78,8 @@ export const listServicesSchema = z.object({
   sort: z
     .enum(['relevance', 'price_asc', 'price_desc', 'rating', 'newest', 'distance'])
     .default('relevance'),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  page: queryNumber(z.coerce.number().int().positive().max(10_000).default(1)),
+  limit: queryNumber(z.coerce.number().int().positive().max(100).default(20)),
 });
 export type ListServicesInput = z.infer<typeof listServicesSchema>;
 export type ServiceSort = ListServicesInput['sort'];

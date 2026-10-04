@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -460,5 +460,20 @@ describe('arquivos da exportação (DATA_DIR/exports)', () => {
   it('apagar o que já não existe (nem a pasta) não é erro: o job de expiração segue em frente', async () => {
     await expect(deleteExportFile('nunca-existiu.json')).resolves.toBeUndefined();
     expect(existsSync(exportsDir())).toBe(false);
+  });
+
+  it('falha que não é "não existe" LANÇA: quem chama não pode marcar como expirada a cópia que ficou no disco', async () => {
+    // Uma pasta com nome de cópia: o unlink falha (EPERM no Windows e no macOS, EISDIR no Linux).
+    await mkdir(path.join(exportsDir(), 'presa.json'), { recursive: true });
+
+    const err = await deleteExportFile('presa.json').then(
+      () => null,
+      (e: NodeJS.ErrnoException) => e,
+    );
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err!.code).toMatch(/^E[A-Z]+$/);
+    expect(err!.code).not.toBe('ENOENT');
+    expect(existsSync(path.join(exportsDir(), 'presa.json'))).toBe(true);
   });
 });

@@ -670,7 +670,7 @@ describe('admin: disputas (RN-063)', () => {
     );
   });
 
-  it('divisão parcial exige a porcentagem (0 a 100, inteira)', async () => {
+  it('divisão parcial exige a porcentagem (1 a 99, inteira)', async () => {
     const missing = await asAdmin('post', '/disputes/4/resolve')
       .send({ resolution: 'partial_split' })
       .expect(422);
@@ -692,9 +692,9 @@ describe('admin: disputas (RN-063)', () => {
     }
     expect(adminSvc.resolveDispute).not.toHaveBeenCalled();
 
-    // As pontas valem: 0% e 100% são divisões aceitas.
+    // As pontas da divisão são 1% e 99%.
     adminSvc.resolveDispute.mockResolvedValue({ id: 4 });
-    for (const refundPercentage of [0, 100]) {
+    for (const refundPercentage of [1, 99]) {
       await asAdmin('post', '/disputes/4/resolve')
         .send({ resolution: 'partial_split', refundPercentage })
         .expect(200);
@@ -703,6 +703,33 @@ describe('admin: disputas (RN-063)', () => {
         refundPercentage,
       });
     }
+  });
+
+  it('divisão com 0% ou 100% é recusada: tudo para um lado é release_freelancer ou refund_client', async () => {
+    // Com 100% a contratação terminaria 'completed' (e no GMV) tendo devolvido tudo ao cliente.
+    for (const refundPercentage of [0, 100]) {
+      const res = await asAdmin('post', '/disputes/4/resolve')
+        .send({ resolution: 'partial_split', refundPercentage })
+        .expect(422);
+      expect(res.body.error).toBe('validation_error');
+      expect(res.body.details).toEqual({
+        refundPercentage: [
+          'Em partial_split a porcentagem vai de 1 a 99; para devolver tudo use refund_client, para liberar tudo use release_freelancer',
+        ],
+      });
+    }
+    expect(adminSvc.resolveDispute).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+
+    // Fora da divisão a porcentagem que vier junto não é barrada (o service a ignora).
+    adminSvc.resolveDispute.mockResolvedValue({ id: 4 });
+    await asAdmin('post', '/disputes/4/resolve')
+      .send({ resolution: 'refund_client', refundPercentage: 0 })
+      .expect(200);
+    await asAdmin('post', '/disputes/4/resolve')
+      .send({ resolution: 'release_freelancer', refundPercentage: 100 })
+      .expect(200);
+    expect(adminSvc.resolveDispute).toHaveBeenCalledTimes(2);
   });
 
   it('decisão desconhecida, nota acima de 1000 caracteres, corpo vazio ou id inválido não chegam ao service', async () => {
@@ -746,6 +773,29 @@ describe('admin: disputas (RN-063)', () => {
       .send({ resolution: 'refund_client' })
       .expect(409);
     expect(res.body).toEqual({ error: 'already_resolved', message: 'Disputa já resolvida' });
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it('divisão que arredonda para um lado só: o 422 split_one_sided do service chega ao painel e nada é auditado', async () => {
+    adminSvc.resolveDispute.mockRejectedValue(
+      new HttpError(
+        422,
+        'Com essa porcentagem nada vai ao freelancer e tudo volta ao cliente: use "Devolver ao cliente" (refund_client).',
+        'split_one_sided',
+      ),
+    );
+    const res = await asAdmin('post', '/disputes/4/resolve')
+      .send({ resolution: 'partial_split', refundPercentage: 95 })
+      .expect(422);
+    expect(res.body).toEqual({
+      error: 'split_one_sided',
+      message:
+        'Com essa porcentagem nada vai ao freelancer e tudo volta ao cliente: use "Devolver ao cliente" (refund_client).',
+    });
+    expect(adminSvc.resolveDispute).toHaveBeenCalledWith(ADMIN_ID, 4, {
+      resolution: 'partial_split',
+      refundPercentage: 95,
+    });
     expect(audit).not.toHaveBeenCalled();
   });
 });

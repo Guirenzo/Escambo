@@ -1,9 +1,12 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Express } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from './app';
 import { registry } from './config/metrics';
-import { openapiDocument, swaggerHtml } from './config/openapi';
+import { openapiDocument, swaggerHtml, swaggerInitJs } from './config/openapi';
 import { settingsService } from './modules/settings/settings.service';
 import { router } from './routes';
 import { fakeDb } from './test-support/fake-db';
@@ -108,6 +111,80 @@ describe('aplicação Express', () => {
 
       expect(res.type).toBe('text/html');
       expect(res.text).toBe(swaggerHtml);
+    });
+
+    it('o CSP da página é o mesmo do resto da API (script só da própria origem), e a inicialização sai como arquivo JS', async () => {
+      const page = await request(app).get('/api/docs').expect(200);
+      const api = await request(app).get('/api/health/live').expect(200);
+      const csp = page.headers['content-security-policy'];
+      expect(csp).toContain("script-src 'self';");
+      expect(csp).toContain("script-src-attr 'none'");
+      expect(csp).toBe(api.headers['content-security-policy']);
+
+      const init = await request(app).get('/api/docs/swagger-init.js').expect(200);
+      expect(init.headers['content-type']).toBe('application/javascript; charset=utf-8');
+      expect(init.text).toBe(swaggerInitJs);
+    });
+
+    it('o CSP não manda subir os pedidos para https: aberta por http fora do loopback, a página carrega os próprios scripts', async () => {
+      const page = await request(app).get('/api/docs').expect(200);
+      const csp = page.headers['content-security-policy'] as string;
+
+      // Com upgrade-insecure-requests, o navegador pediria swagger-ui-bundle.js e swagger-init.js
+      // por https num endereço só http, e a página ficaria em branco.
+      expect(csp).not.toContain('upgrade-insecure-requests');
+      // O resto do CSP padrão do helmet continua.
+      expect(csp).toContain("default-src 'self';");
+      expect(csp).toContain("object-src 'none';");
+      expect(csp).toContain("frame-ancestors 'self';");
+    });
+
+    it('com o swagger-ui-dist instalado, a folha de estilo e o script do Swagger UI saem da pasta do pacote', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'escambo-swagger-'));
+      try {
+        await writeFile(join(dir, 'swagger-ui.css'), '.swagger-ui { color: #333; }');
+        await writeFile(
+          join(dir, 'swagger-ui-bundle.js'),
+          'window.SwaggerUIBundle = function () {};',
+        );
+        await writeFile(join(dir, 'index.html'), '<p>petstore</p>');
+        vi.doMock('./config/openapi', async (importOriginal) => ({
+          ...(await importOriginal<typeof import('./config/openapi')>()),
+          swaggerUiDistDir: () => dir,
+        }));
+        vi.resetModules();
+        const docs = (await import('./app')).createApp();
+
+        const css = await request(docs).get('/api/docs/swagger-ui.css').expect(200);
+        expect(css.type).toBe('text/css');
+        expect(css.text).toBe('.swagger-ui { color: #333; }');
+        const js = await request(docs).get('/api/docs/swagger-ui-bundle.js').expect(200);
+        expect(js.type).toBe('application/javascript');
+        expect(js.text).toBe('window.SwaggerUIBundle = function () {};');
+        // Só os dois arquivos que a página usa: o resto do pacote (a página de exemplo) não sai.
+        await request(docs).get('/api/docs/index.html').expect(404);
+      } finally {
+        vi.doUnmock('./config/openapi');
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('sem o swagger-ui-dist, os arquivos do Swagger UI são 404 (a página avisa e aponta o documento)', async () => {
+      vi.doMock('./config/openapi', async (importOriginal) => ({
+        ...(await importOriginal<typeof import('./config/openapi')>()),
+        swaggerUiDistDir: () => null,
+      }));
+      try {
+        vi.resetModules();
+        const docs = (await import('./app')).createApp();
+        for (const file of ['swagger-ui.css', 'swagger-ui-bundle.js']) {
+          const res = await request(docs).get(`/api/docs/${file}`).expect(404);
+          expect(res.body).toEqual(NOT_FOUND);
+        }
+        await request(docs).get('/api/docs/swagger-init.js').expect(200);
+      } finally {
+        vi.doUnmock('./config/openapi');
+      }
     });
 
     it('toda rota documentada existe na API, com o mesmo método', () => {

@@ -62,6 +62,12 @@ describe('payments.schema', () => {
     expect(listDepositsSchema.safeParse({ page: '2.5' }).success).toBe(false);
   });
 
+  it('a página da lista de depósitos vai até 10000 (1e20 viraria OFFSET 2e+21 no SQL)', () => {
+    expect(listDepositsSchema.parse({ page: '10000' })).toEqual({ page: 10000, limit: 20 });
+    expect(listDepositsSchema.safeParse({ page: '10001' }).success).toBe(false);
+    expect(listDepositsSchema.safeParse({ page: '1e20' }).success).toBe(false);
+  });
+
   describe('webhookSchema', () => {
     it('o gateway só avisa pago ou falhou; o nome do evento é opcional', () => {
       expect(webhookSchema.parse({ gatewayPaymentId: 'sim_ABC', status: 'paid' })).toEqual({

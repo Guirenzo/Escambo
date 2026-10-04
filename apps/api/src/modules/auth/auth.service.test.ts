@@ -206,6 +206,26 @@ describe('authService.register', () => {
     expect(bcrypt.getRounds(createArg.passwordHash)).toBeGreaterThanOrEqual(12);
   });
 
+  it('User-Agent maior que a coluna (512) é cortado no consentimento e na auditoria, e o cadastro registra o aceite', async () => {
+    repo.findByEmail.mockResolvedValue(undefined);
+    repo.create.mockResolvedValue(3);
+
+    await authService.register(
+      {
+        email: 'longo@exemplo.com',
+        password: 'senha12345',
+        role: 'client',
+        legalAccepted: true as const,
+      },
+      { ip: CTX.ip, userAgent: 'U'.repeat(600) },
+    );
+
+    const consents = vi.mocked(lgpdRepository).recordConsent.mock.calls.map((c) => c[0]);
+    expect(consents.map((c) => c.userAgent)).toEqual(['U'.repeat(512), 'U'.repeat(512)]);
+    const audits = vi.mocked(auditService).log.mock.calls.map((c) => c[0]);
+    expect(audits.map((a) => a.userAgent)).toEqual(['U'.repeat(512), 'U'.repeat(512)]);
+  });
+
   it('com o fuso do aparelho (ADR 51) a conta nasce com ele gravado e marcado como escolha', async () => {
     repo.findByEmail.mockResolvedValue(undefined);
     repo.create.mockResolvedValue(2);
@@ -316,6 +336,19 @@ describe('authService.login', () => {
     });
   });
 
+  it('User-Agent maior que a coluna (512) é cortado antes de gravar a sessão; até 512 vai inteiro', async () => {
+    repo.findByEmail.mockResolvedValue(fakeUser({ password_hash: KNOWN_HASH }));
+    const credentials = { email: 'rafael@exemplo.com', password: 'senha12345' };
+
+    await authService.login(credentials, { ip: '1.2.3.4', userAgent: 'M'.repeat(2000) });
+    await authService.login(credentials, { ip: '1.2.3.4', userAgent: 'N'.repeat(512) });
+
+    expect(sessions.create.mock.calls.map((c) => c[0].userAgent)).toEqual([
+      'M'.repeat(512),
+      'N'.repeat(512),
+    ]);
+  });
+
   it('conta sem senha gravada não entra com senha nenhuma: 401 invalid_credentials, sem sessão', async () => {
     repo.findByEmail.mockResolvedValue(fakeUser({ password_hash: null }));
     const compare = vi.spyOn(bcrypt, 'compare');
@@ -386,7 +419,7 @@ describe('authService.refresh', () => {
   it('rotaciona: revoga o token antigo e emite um novo par', async () => {
     sessions.findValidByHash.mockResolvedValue(fakeSession());
     repo.findById.mockResolvedValue(fakeUser());
-    sessions.revokeByHash.mockResolvedValue(undefined);
+    sessions.revokeByHash.mockResolvedValue(true);
     sessions.create.mockResolvedValue(undefined);
 
     const before = Date.now();
@@ -434,16 +467,46 @@ describe('authService.refresh', () => {
     expect(sessions.revokeByHash).not.toHaveBeenCalled();
     expect(sessions.create).not.toHaveBeenCalled();
   });
+
+  it('a sessão nova também grava o User-Agent cortado em 512 caracteres', async () => {
+    sessions.findValidByHash.mockResolvedValue(fakeSession());
+    repo.findById.mockResolvedValue(fakeUser());
+    sessions.revokeByHash.mockResolvedValue(true);
+
+    await authService.refresh('refresh-antigo', { ip: '5.6.7.8', userAgent: 'R'.repeat(513) });
+
+    expect(sessions.create.mock.calls[0]![0].userAgent).toBe('R'.repeat(512));
+  });
+
+  it('só uma rotação vale por token: se outra requisição revogou antes, esta é 401 invalid_refresh e não sai par novo', async () => {
+    // As duas acharam a sessão aberta; a revogação desta não pegou linha (a outra chegou antes).
+    sessions.findValidByHash.mockResolvedValue(fakeSession());
+    repo.findById.mockResolvedValue(fakeUser());
+    sessions.revokeByHash.mockResolvedValue(false);
+
+    await expect(authService.refresh('refresh-antigo')).rejects.toMatchObject({
+      statusCode: 401,
+      code: 'invalid_refresh',
+      message: 'Refresh token inválido ou expirado',
+    });
+    expect(sessions.revokeByHash).toHaveBeenCalledWith(hashToken('refresh-antigo'));
+    expect(sessions.create).not.toHaveBeenCalled();
+  });
 });
 
 describe('authService.logout / logoutAll', () => {
   it('logout revoga a sessão pelo hash do token', async () => {
-    sessions.revokeByHash.mockResolvedValue(undefined);
+    sessions.revokeByHash.mockResolvedValue(true);
     await authService.logout('meu-refresh');
     expect(sessions.revokeByHash).toHaveBeenCalledTimes(1);
     expect(sessions.revokeByHash).toHaveBeenCalledWith(hashToken('meu-refresh'));
     // Sair de um aparelho não derruba os outros.
     expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+  });
+
+  it('logout de token já revogado (ou que nunca existiu) não é erro: sair duas vezes dá no mesmo', async () => {
+    sessions.revokeByHash.mockResolvedValue(false);
+    await expect(authService.logout('meu-refresh')).resolves.toBeUndefined();
   });
 
   it('logoutAll revoga todas as sessões do usuário (RN-008)', async () => {

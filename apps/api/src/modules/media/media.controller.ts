@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { logger } from '../../config/logger';
@@ -9,7 +10,7 @@ import { strikeSummary } from '../reports/moderation.strikes';
 import { mediaBlocklist } from './media.blocklist';
 import { fingerprint, processUpload } from './media.image';
 import { MEDIA_MIME, mediaKeyFromParts, parseMediaWidth } from './media.paths';
-import { mediaFilePath, mediaVariantPath, saveMedia } from './media.storage';
+import { mediaDir, mediaFilePath, mediaVariantPath, saveMedia } from './media.storage';
 
 const uploadSchema = z.object({
   /** Sem o campo, vale portfólio: quem chamava a API antes do ADR 38 não recebe um recorte. */
@@ -63,10 +64,14 @@ export async function uploadMedia(req: Request, res: Response): Promise<void> {
 const notFound = (): HttpError => new HttpError(404, 'Imagem não encontrada', 'media_not_found');
 
 function sendImage(res: Response, abs: string, ext: string): Promise<void> {
+  // Relativo à pasta de mídia (opção root): o dotfiles: 'deny' olha só o caminho dentro dela, e não
+  // recusa toda imagem quando o DATA_DIR mora numa pasta começada por ponto.
+  const root = mediaDir();
   return new Promise<void>((resolve, reject) => {
     res.sendFile(
-      abs,
+      path.relative(root, abs),
       {
+        root,
         dotfiles: 'deny',
         cacheControl: false,
         headers: {

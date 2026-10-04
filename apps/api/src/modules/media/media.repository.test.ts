@@ -171,6 +171,24 @@ describe('mediaRepository', () => {
       ]);
     });
 
+    it('chave herdada de objeto (constructor, toString, __proto__) vinda de um JSON corrompido também é ignorada, sem derrubar a reversão', async () => {
+      const refs = [
+        { table: 'constructor', id: 1 },
+        { table: 'toString', id: 2 },
+        { table: '__proto__', id: 3 },
+        { table: 'hasOwnProperty', id: 4 },
+        { table: 'freelancer_portfolio_items', id: 5 },
+      ] as unknown as ImageRef[];
+      fakeDb.reply({ affectedRows: 1 });
+
+      expect(await mediaRepository.restoreReferences(conn, URL, refs)).toBe(1);
+
+      expect(fakeDb.sqls()).toEqual([
+        'UPDATE freelancer_portfolio_items SET image_url = :url WHERE id = :id AND image_url IS NULL',
+      ]);
+      expect(fakeDb.calls[0]!.params).toEqual({ url: URL, id: 5 });
+    });
+
     it('sem linhas para recolocar, não toca no banco', async () => {
       expect(await mediaRepository.restoreReferences(conn, URL, [])).toBe(0);
       expect(fakeDb.calls).toHaveLength(0);

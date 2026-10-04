@@ -119,6 +119,36 @@ describe('serviços: borda HTTP', () => {
       ]);
     });
 
+    it('número vazio na URL vale como ausente: ?lat=&lng= não vira busca em (0, 0), ?minPrice= não vira 0, ?day= não vira domingo', async () => {
+      service.list.mockResolvedValue({ items: [], page: 1, limit: 20 });
+      const empty = [
+        'categoryId',
+        'ownerId',
+        'lat',
+        'lng',
+        'radiusKm',
+        'minPrice',
+        'maxPrice',
+        'maxDeliveryDays',
+        'minRating',
+        'day',
+        'page',
+        'limit',
+      ];
+
+      await request(app)
+        .get(`/api/services?${empty.map((k) => `${k}=`).join('&')}`)
+        .expect(200);
+      // Só espaços também é vazio.
+      await request(app).get('/api/services?lat=%20&lng=%20%20&minPrice=%20').expect(200);
+
+      // Nenhum filtro chega ao service; raio, página e limite ficam no padrão.
+      expect(service.list.mock.calls).toEqual([
+        [{ radiusKm: 25, sort: 'relevance', page: 1, limit: 20 }],
+        [{ radiusKm: 25, sort: 'relevance', page: 1, limit: 20 }],
+      ]);
+    });
+
     it('domingo (day=0) e os extremos válidos são aceitos: limite 100, raio 500, nota 0 e 5, lat/lng nas bordas', async () => {
       service.list.mockResolvedValue({ items: [], page: 1, limit: 100 });
       await request(app)

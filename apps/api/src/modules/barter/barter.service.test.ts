@@ -7,9 +7,16 @@ vi.mock('../settings/settings.service', () => ({
   },
 }));
 
+const { logger } = vi.hoisted(() => ({
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('../../config/logger', () => ({ logger }));
+
 vi.mock('./barter.repository', () => ({
   barterRepository: {
     create: vi.fn(),
+    canReceiveProposal: vi.fn(),
+    findCatalogService: vi.fn(),
     findById: vi.fn(),
     listForUser: vi.fn(),
     setStatusFromProposed: vi.fn(),
@@ -73,7 +80,17 @@ function fakeBarter(o: FakeBarterFields = {}): BarterRow {
 
 const contractStatus = (status: string): ContractRow => ({ status }) as unknown as ContractRow;
 
-beforeEach(() => vi.clearAllMocks());
+/** Serviços do catálogo nos testes, no ar: o 31 é do proponente (1), o 32 do receptor (2). */
+const CATALOG: Record<number, { userId: number; isActive: boolean }> = {
+  31: { userId: 1, isActive: true },
+  32: { userId: 2, isActive: true },
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  repo.canReceiveProposal.mockResolvedValue(true);
+  repo.findCatalogService.mockImplementation(async (id: number) => CATALOG[id] ?? null);
+});
 
 describe('propose', () => {
   it('receptor paga a torna: taxa de 15% só sobre a torna, reserva fica pendente até o aceite', async () => {
@@ -903,6 +920,19 @@ describe('onLinkedContractCancelled: quando não disputa e o que avisa', () => {
     }
   });
 
+  it('se a carteira recusa devolver a torna, o gancho registra erro com a troca e ninguém é avisado', async () => {
+    const walletError = new Error('Troca 7: a carteira do usuário 2 recusou a devolução da torna');
+    repo.findById.mockResolvedValue(fakeBarter({ status: 'active', torna_status: 'held' }));
+    repo.disputeAndRefund.mockRejectedValue(walletError);
+
+    await expect(barterService.onLinkedContractCancelled(7)).resolves.toBeUndefined();
+
+    expect(logger.error.mock.calls).toEqual([
+      [{ err: walletError, barterId: 7 }, 'troca: falha ao abrir disputa e devolver a torna'],
+    ]);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
   it('a disputa é do acordo do contrato cancelado: lê e disputa pelo id recebido', async () => {
     repo.findById.mockResolvedValue(fakeBarter({ status: 'active', torna_status: 'held' }));
     repo.disputeAndRefund.mockResolvedValue(true);
@@ -1013,6 +1043,110 @@ describe('propose: condições isoladas', () => {
   });
 });
 
+describe('propose: destinatário e serviços do catálogo', () => {
+  it('destinatário que não existe, excluído, suspenso ou banido é 404 user_not_found, sem consultar a taxa nem gravar', async () => {
+    // O repository responde false para os quatro casos (barter.repository.test confere o SQL).
+    repo.canReceiveProposal.mockResolvedValue(false);
+    await expect(barterService.propose(1, { ...proposal, receiverId: 999 })).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'user_not_found',
+      message: 'Usuário não encontrado',
+    });
+    expect(repo.canReceiveProposal.mock.calls).toEqual([[999]]);
+    expect(repo.findCatalogService).not.toHaveBeenCalled();
+    expect(settings.feeRate).not.toHaveBeenCalled();
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('serviço oferecido que não existe, foi removido ou é de outra pessoa é 422 invalid_offered_service', async () => {
+    // 404: não existe ou removido (o repository devolve null); 32: é do receptor; 77: de um
+    // terceiro, mesmo pausado (não conta a quem não é dono que ele está pausado).
+    repo.findCatalogService.mockImplementation(
+      async (id: number) =>
+        ({ 32: { userId: 2, isActive: true }, 77: { userId: 5, isActive: false } })[id] ?? null,
+    );
+    for (const offeredServiceId of [404, 32, 77]) {
+      await expect(
+        barterService.propose(1, { ...proposal, offeredServiceId }),
+      ).rejects.toMatchObject({
+        statusCode: 422,
+        code: 'invalid_offered_service',
+        message: 'O serviço oferecido não existe, foi removido ou não é seu',
+      });
+      expect(repo.findCatalogService).toHaveBeenLastCalledWith(offeredServiceId);
+    }
+    expect(settings.feeRate).not.toHaveBeenCalled();
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('serviço pedido que não existe, foi removido ou não é do receptor é 422 invalid_requested_service', async () => {
+    // 404: não existe ou removido; 31: é do próprio proponente; 78: de um terceiro, pausado.
+    repo.findCatalogService.mockImplementation(
+      async (id: number) =>
+        ({ 31: { userId: 1, isActive: true }, 78: { userId: 5, isActive: false } })[id] ?? null,
+    );
+    for (const requestedServiceId of [404, 31, 78]) {
+      await expect(
+        barterService.propose(1, { ...proposal, requestedServiceId }),
+      ).rejects.toMatchObject({
+        statusCode: 422,
+        code: 'invalid_requested_service',
+        message: 'O serviço pedido não existe, foi removido ou não é de quem recebe a proposta',
+      });
+      expect(repo.findCatalogService).toHaveBeenLastCalledWith(requestedServiceId);
+    }
+    expect(settings.feeRate).not.toHaveBeenCalled();
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('serviço pedido pausado pelo receptor: 409 service_inactive com a mensagem da contratação (RN-013), nada gravado', async () => {
+    repo.findCatalogService.mockImplementation(async (id: number) =>
+      id === 32 ? { userId: 2, isActive: false } : (CATALOG[id] ?? null),
+    );
+    await expect(
+      barterService.propose(1, { ...proposal, offeredServiceId: 31, requestedServiceId: 32 }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'service_inactive',
+      message: 'Este serviço está pausado e não aceita novas propostas (RN-013).',
+    });
+    expect(repo.findCatalogService.mock.calls).toEqual([[31], [32]]);
+    expect(settings.feeRate).not.toHaveBeenCalled();
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('serviço oferecido pausado pelo próprio proponente: 409 service_inactive, e o pedido nem é consultado', async () => {
+    repo.findCatalogService.mockImplementation(async (id: number) =>
+      id === 31 ? { userId: 1, isActive: false } : (CATALOG[id] ?? null),
+    );
+    await expect(
+      barterService.propose(1, { ...proposal, offeredServiceId: 31, requestedServiceId: 32 }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'service_inactive',
+      message: 'O serviço oferecido está pausado: reative-o para propor a troca (RN-013).',
+    });
+    expect(repo.findCatalogService.mock.calls).toEqual([[31]]);
+    expect(settings.feeRate).not.toHaveBeenCalled();
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('serviço oferecido do proponente e pedido do receptor, os dois no ar, passam; só descrição não consulta o catálogo', async () => {
+    repo.create.mockResolvedValue(1);
+    repo.findById.mockResolvedValue(fakeBarter());
+
+    await barterService.propose(1, { ...proposal, offeredServiceId: 31, requestedServiceId: 32 });
+    expect(repo.findCatalogService.mock.calls).toEqual([[31], [32]]);
+    expect(repo.create).toHaveBeenCalledTimes(1);
+
+    repo.findCatalogService.mockClear();
+    await barterService.propose(1, proposal);
+    expect(repo.findCatalogService).not.toHaveBeenCalled();
+    expect(repo.canReceiveProposal).toHaveBeenLastCalledWith(2);
+    expect(repo.create).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('accept: condições isoladas', () => {
   it('só o receptor aceita: a recusa diz isso, e nem um terceiro nem o proponente passam', async () => {
     repo.findById.mockResolvedValue(fakeBarter());
@@ -1111,6 +1245,17 @@ describe('reject e cancel: o que chega ao repository', () => {
       code: 'invalid_status',
     });
   });
+
+  it('carteira que recusa devolver a torna não vira o 409 de "troca não disponível": o erro sobe para o 500 com log', async () => {
+    const walletError = new Error(
+      'Troca 1: a carteira do usuário 2 recusou a devolução da torna de 200 (retido inconsistente)',
+    );
+    repo.findById.mockResolvedValue(fakeBarter({ status: 'proposed', torna_status: 'held' }));
+    repo.setStatusFromProposed.mockRejectedValue(walletError);
+
+    await expect(barterService.reject(1, 2)).rejects.toBe(walletError);
+    await expect(barterService.cancel(1, 1)).rejects.toBe(walletError);
+  });
 });
 
 describe('onLinkedContractCompleted: condições isoladas', () => {
@@ -1128,6 +1273,20 @@ describe('onLinkedContractCompleted: condições isoladas', () => {
     body: 'Os dois lados entregaram e aprovaram. Troca fechada.',
     data: { barterId: 1 },
   };
+
+  it('se a carteira recusa a liquidação, o gancho registra erro com a troca e ninguém é avisado', async () => {
+    const walletError = new Error('Troca 1: a carteira recusou a liquidação da torna de 200');
+    repo.findById.mockResolvedValue(active());
+    contracts.findById.mockResolvedValue(contractStatus('completed'));
+    repo.completeAndRelease.mockRejectedValue(walletError);
+
+    await expect(barterService.onLinkedContractCompleted(1)).resolves.toBeUndefined();
+
+    expect(logger.error.mock.calls).toEqual([
+      [{ err: walletError, barterId: 1 }, 'troca: falha ao concluir e liquidar a torna'],
+    ]);
+    expect(notify).not.toHaveBeenCalled();
+  });
 
   it('lê e conclui o acordo pelo id recebido', async () => {
     repo.findById.mockResolvedValue(active());

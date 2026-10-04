@@ -81,15 +81,19 @@ describe('messagingRepository', () => {
     expect(fakeDb.calls[1]!.params).toEqual({ conversationId: 5, beforeId: 1 });
   });
 
-  it('listMessages: só as mensagens da conversa, da mais antiga para a mais nova, até o limite', async () => {
-    const rows = [{ id: 1 }, { id: 2 }];
-    fakeDb.reply(rows);
+  it('listMessages: as mensagens MAIS RECENTES da conversa, até o limite, devolvidas da mais antiga para a mais nova', async () => {
+    // O banco entrega da mais nova para a mais antiga (é assim que o limite pega as últimas).
+    fakeDb.reply([{ id: 3 }, { id: 2 }, { id: 1 }]);
 
-    expect(await messagingRepository.listMessages(5, 200)).toBe(rows);
+    expect(await messagingRepository.listMessages(5, 200)).toEqual([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 },
+    ]);
 
     const { sql, params } = fakeDb.calls[0]!;
     expect(sql).toContain(
-      'FROM messages WHERE conversation_id = :conversationId ORDER BY id ASC LIMIT 200',
+      'FROM messages WHERE conversation_id = :conversationId ORDER BY id DESC LIMIT 200',
     );
     // O histórico precisa da remoção pela moderação (ADR 44), dos sinais (ADR 45) e do expurgo (ADR 31).
     for (const column of ['removed_at', 'off_platform', 'file_purged_at', 'file_purged_reason']) {
@@ -103,7 +107,7 @@ describe('messagingRepository', () => {
   it('listMessages: conversa sem mensagem devolve lista vazia, e o limite pedido é o que vai no SQL', async () => {
     expect(await messagingRepository.listMessages(9, 50)).toEqual([]);
 
-    expect(fakeDb.calls[0]!.sql.endsWith('ORDER BY id ASC LIMIT 50')).toBe(true);
+    expect(fakeDb.calls[0]!.sql.endsWith('ORDER BY id DESC LIMIT 50')).toBe(true);
     expect(fakeDb.calls[0]!.params).toEqual({ conversationId: 9 });
   });
 
@@ -319,23 +323,38 @@ describe('messagingRepository', () => {
     });
   });
 
-  it('findWithContract: a mensagem com o contrato da conversa DELA (para avisar a sala), ou undefined', async () => {
-    const row = { id: 31, conversation_id: 5, contract_id: 3 };
+  it('findById: a mensagem inteira pelo id (para avisar as salas), ou undefined', async () => {
+    const row = { id: 31, conversation_id: 5 };
     fakeDb.reply([row], []);
 
-    expect(await messagingRepository.findWithContract(31)).toBe(row);
-    expect(await messagingRepository.findWithContract(404)).toBeUndefined();
+    expect(await messagingRepository.findById(31)).toBe(row);
+    expect(await messagingRepository.findById(404)).toBeUndefined();
 
     const { sql, params } = fakeDb.calls[0]!;
-    expect(sql).toContain(
-      '(SELECT cv.contract_id FROM conversations cv WHERE cv.id = messages.conversation_id) AS contract_id',
-    );
     expect(sql).toContain('FROM messages WHERE id = :id LIMIT 1');
-    expect(sql).toContain('removed_at');
-    // O aviso leva a mensagem inteira: as mesmas colunas do histórico, mais o contrato.
-    expect(selected(sql, ', (SELECT cv.contract_id')).toEqual(MESSAGE_FIELDS);
+    // O aviso leva a mensagem inteira: as mesmas colunas do histórico.
+    expect(selected(sql, ' FROM messages')).toEqual(MESSAGE_FIELDS);
     expect(params).toEqual({ id: 31 });
     expect(fakeDb.calls[1]!.params).toEqual({ id: 404 });
+  });
+
+  it('pairContractIds: TODAS as contratações entre as duas pessoas da conversa, nos dois papéis, como número', async () => {
+    fakeDb.reply([{ id: 3 }, { id: '8' }], []);
+
+    expect(await messagingRepository.pairContractIds(5)).toEqual([3, 8]);
+    expect(await messagingRepository.pairContractIds(6)).toEqual([]);
+
+    const { sql, params } = fakeDb.calls[0]!;
+    expect(sql).toBe(
+      'SELECT c.id FROM conversations cv JOIN contracts c ' +
+        'ON (c.client_id = cv.participant_a AND c.freelancer_id = cv.participant_b) ' +
+        'OR (c.client_id = cv.participant_b AND c.freelancer_id = cv.participant_a) ' +
+        'WHERE cv.id = :conversationId ORDER BY c.id',
+    );
+    // Não é o contract_id guardado na conversa (só o primeiro): é o par que decide.
+    expect(sql).not.toContain('cv.contract_id');
+    expect(params).toEqual({ conversationId: 5 });
+    expect(fakeDb.calls[1]!.params).toEqual({ conversationId: 6 });
   });
 
   it('findAttachment: só mensagem que TEM arquivo, com as duas partes da conversa (quem pode baixar)', async () => {
@@ -384,15 +403,16 @@ describe('messagingRepository', () => {
 
   it('as leituras não engolem falha do banco: o erro sobe para quem chamou', async () => {
     const boom = new Error('ECONNREFUSED');
-    fakeDb.reply(boom, boom, boom, boom);
+    fakeDb.reply(boom, boom, boom, boom, boom);
 
     await expect(messagingRepository.getOrCreate(10, 20, 3)).rejects.toBe(boom);
     await expect(messagingRepository.listMessages(5, 200)).rejects.toBe(boom);
     await expect(messagingRepository.findAttachment(7)).rejects.toBe(boom);
-    await expect(messagingRepository.findWithContract(31)).rejects.toBe(boom);
+    await expect(messagingRepository.findById(31)).rejects.toBe(boom);
+    await expect(messagingRepository.pairContractIds(5)).rejects.toBe(boom);
 
     // Uma tentativa por chamada, sem repetir a instrução.
-    expect(fakeDb.calls).toHaveLength(4);
+    expect(fakeDb.calls).toHaveLength(5);
   });
 
   describe('expurgo de anexos (ADR 31)', () => {

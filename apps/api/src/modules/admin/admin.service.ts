@@ -75,6 +75,26 @@ export const adminService = {
       refundToClient = s.refundClient;
     }
 
+    // A divisão é decidida pelo valor, não pela porcentagem: no arredondamento, 99% de 10 créditos
+    // libera 0 e devolve tudo, e a contratação fecharia 'completed' (XP, avaliação). Troca não tem
+    // escrow e segue como está.
+    if (input.resolution === 'partial_split' && !isBarter) {
+      if (releaseToFreelancer <= 0) {
+        throw new HttpError(
+          422,
+          'Com essa porcentagem nada vai ao freelancer e tudo volta ao cliente: use "Devolver ao cliente" (refund_client).',
+          'split_one_sided',
+        );
+      }
+      if (refundToClient <= 0) {
+        throw new HttpError(
+          422,
+          'Com essa porcentagem nada volta ao cliente e tudo vai ao freelancer: use "Liberar ao freelancer" (release_freelancer).',
+          'split_one_sided',
+        );
+      }
+    }
+
     const ok = await disputesRepository.resolve({
       disputeId,
       adminId,
@@ -117,19 +137,27 @@ export const adminService = {
     action: 'suspend' | 'ban' | 'reactivate',
   ): Promise<void> {
     const statusMap = { suspend: 'suspended', ban: 'banned', reactivate: 'active' } as const;
+    const user = await authRepository.findByUlid(ulid);
+    if (!user) throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
+    // Admin (inclusive o próprio) não é suspenso nem banido por aqui: sem essa trava, um clique
+    // tira o único admin do painel e a saída é mexer no banco. Reativar continua valendo.
+    if (action !== 'reactivate' && user.role === 'admin') {
+      throw new HttpError(
+        409,
+        'Administradores não são suspensos nem banidos pelo painel.',
+        'cannot_moderate_admin',
+      );
+    }
     const ok = await adminRepository.setUserStatus(ulid, statusMap[action]);
     if (!ok) throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
     // Efeito imediato: derruba sessões (refresh) e bloqueia o access token vigente.
-    const user = await authRepository.findByUlid(ulid);
-    if (user) {
-      if (action === 'reactivate') {
-        blocklist.delete(user.id);
-      } else {
-        blocklist.add(user.id);
-        await sessionRepository.revokeAllForUser(user.id);
-      }
+    if (action === 'reactivate') {
+      blocklist.delete(user.id);
+    } else {
+      blocklist.add(user.id);
+      await sessionRepository.revokeAllForUser(user.id);
     }
-    await adminRepository.recordAction(adminId, `user_${action}`, 'user', null, `ulid=${ulid}`);
+    await adminRepository.recordAction(adminId, `user_${action}`, 'user', user.id, `ulid=${ulid}`);
   },
 
   async getMetrics(): Promise<AdminMetrics> {

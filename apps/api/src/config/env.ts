@@ -101,8 +101,10 @@ const envSchema = z.object({
   // Avisos push no navegador (ADR 52): 'simulated' (padrão, nada sai da máquina), 'webpush'
   // (Web Push de verdade com as chaves VAPID) ou 'off' (não envia nada).
   PUSH_PROVIDER: z.enum(['simulated', 'webpush', 'off']).default('simulated'),
-  PUSH_PUBLIC_KEY: z.string().default(''),
-  PUSH_PRIVATE_KEY: z.string().default(''),
+  // Aparadas: com espaço nas pontas (valor entre aspas no .env, ou injetado assim) a API subiria e o
+  // web-push recusaria a chave em cada envio.
+  PUSH_PUBLIC_KEY: z.string().trim().default(''),
+  PUSH_PRIVATE_KEY: z.string().trim().default(''),
   PUSH_SUBJECT: z.string().default('mailto:nao-responda@escambo.demo'),
   EMAIL_VERIFY_TTL_HOURS: z.coerce.number().int().positive().default(24),
   PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(60),
@@ -121,7 +123,24 @@ const envSchema = z.object({
   SENTRY_ENVIRONMENT: z.string().default(''),
 });
 
-const parsed = envSchema.safeParse(process.env);
+/**
+ * Web Push de verdade precisa do par VAPID fixo: sem ele a API subiria e todo push falharia só no
+ * uso (gerar um par por processo quebraria as inscrições a cada reinício e entre instâncias).
+ */
+const envWithPush = envSchema.superRefine((e, ctx) => {
+  if (e.PUSH_PROVIDER !== 'webpush') return;
+  for (const key of ['PUSH_PUBLIC_KEY', 'PUSH_PRIVATE_KEY'] as const) {
+    if (e[key] === '') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `PUSH_PROVIDER=webpush exige ${key} (gere o par com "npx web-push generate-vapid-keys")`,
+      });
+    }
+  }
+});
+
+const parsed = envWithPush.safeParse(process.env);
 
 if (!parsed.success) {
   console.error('❌ Variáveis de ambiente inválidas:');
