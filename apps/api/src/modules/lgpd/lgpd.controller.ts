@@ -1,4 +1,6 @@
 import type { Request, Response } from 'express';
+import { logger } from '../../config/logger';
+import { HttpError } from '../../utils/http-error';
 import { auditService } from '../audit/audit.service';
 import { deletionRequestSchema, exportIdParamSchema, recordConsentSchema } from './lgpd.schema';
 import { lgpdService } from './lgpd.service';
@@ -73,5 +75,30 @@ export async function downloadExport(req: Request, res: Response): Promise<void>
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
   res.setHeader('Cache-Control', 'no-store');
-  stream.pipe(res);
+  await new Promise<void>((resolve, reject) => {
+    // O arquivo pode sumir entre a checagem e a abertura (o job de expiração apaga em paralelo) ou
+    // falhar na leitura. Sem este listener, o 'error' do stream derrubaria a API inteira.
+    stream.once('error', (err: NodeJS.ErrnoException) => {
+      if (!res.headersSent) {
+        res.removeHeader('Content-Type');
+        res.removeHeader('Content-Disposition');
+        reject(
+          err.code === 'ENOENT'
+            ? new HttpError(410, 'Exportação expirada; solicite uma nova', 'export_expired')
+            : err,
+        );
+        return;
+      }
+      // Parte do arquivo já saiu: corta a conexão para o download não parecer completo.
+      logger.warn({ err, exportId: id }, 'download da exportação interrompido');
+      res.destroy();
+      resolve();
+    });
+    // Quem baixa pode desistir no meio: o arquivo é fechado junto com a resposta.
+    res.once('close', () => {
+      stream.destroy();
+      resolve();
+    });
+    stream.pipe(res);
+  });
 }

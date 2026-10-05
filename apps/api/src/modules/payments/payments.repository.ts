@@ -57,9 +57,11 @@ export const paymentsRepository = {
     return rows[0];
   },
 
+  /** Só depósito: o webhook do gateway liquida top-up, nunca outro tipo de pagamento. */
   async findByGatewayId(gatewayPaymentId: string): Promise<PaymentRow | undefined> {
     const [rows] = await pool.query<PaymentRow[]>(
-      `SELECT ${COLS} FROM payments WHERE gateway_payment_id = :gatewayPaymentId LIMIT 1`,
+      `SELECT ${COLS} FROM payments
+        WHERE kind = 'topup' AND gateway_payment_id = :gatewayPaymentId LIMIT 1`,
       { gatewayPaymentId },
     );
     return rows[0];
@@ -79,14 +81,14 @@ export const paymentsRepository = {
   /**
    * Liquida a cobrança (pago/falhou) de forma IDEMPOTENTE: só sai de 'pending'. Se pago,
    * credita a carteira do pagador e grava o extrato na mesma transação (RNF-038).
-   * Retorna false se a cobrança já não estava pendente.
+   * Retorna false se a cobrança já não estava pendente (ou não é um depósito).
    */
   async settle(id: number, status: 'paid' | 'failed'): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
       const [rows] = await conn.query<PaymentRow[]>(
-        `SELECT ${COLS} FROM payments WHERE id = :id FOR UPDATE`,
+        `SELECT ${COLS} FROM payments WHERE id = :id AND kind = 'topup' FOR UPDATE`,
         { id },
       );
       const row = rows[0];

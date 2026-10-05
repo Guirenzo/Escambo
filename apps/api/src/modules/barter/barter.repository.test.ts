@@ -265,6 +265,40 @@ describe('barterRepository', () => {
       expect(await barterRepository.listForUser(7, 100, 0)).toEqual([]);
       expect(fakeDb.calls[0]!.sql).toContain('LIMIT 100 OFFSET 0');
     });
+
+    it('canReceiveProposal confere o destinatário pelo id: conta não excluída, nem suspensa nem banida, e que não é de administrador (como na contratação, ADR 60)', async () => {
+      fakeDb.reply([{ id: 2 }], []);
+
+      expect(await barterRepository.canReceiveProposal(2)).toBe(true);
+      expect(await barterRepository.canReceiveProposal(999)).toBe(false);
+
+      const sql =
+        "SELECT id FROM users WHERE id = :id AND deleted_at IS NULL AND status NOT IN ('suspended', 'banned') AND role <> 'admin' LIMIT 1";
+      expect(fakeDb.calls).toEqual([
+        { sql, params: { id: 2 } },
+        { sql, params: { id: 999 } },
+      ]);
+      expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+    });
+
+    it('findCatalogService devolve o dono em número e se o serviço está no ar, ou null se não existe ou foi removido', async () => {
+      // BIGINT pode vir em texto do driver: o dono sai em número para comparar com o id do usuário.
+      // is_active é TINYINT: 1 no ar, 0 pausado (às vezes em texto).
+      fakeDb.reply([{ user_id: '7', is_active: 1 }], [{ user_id: 8, is_active: '0' }], []);
+
+      expect(await barterRepository.findCatalogService(31)).toEqual({ userId: 7, isActive: true });
+      expect(await barterRepository.findCatalogService(32)).toEqual({ userId: 8, isActive: false });
+      expect(await barterRepository.findCatalogService(33)).toBeNull();
+
+      const sql =
+        'SELECT user_id, is_active FROM services WHERE id = :id AND deleted_at IS NULL LIMIT 1';
+      expect(fakeDb.calls).toEqual([
+        { sql, params: { id: 31 } },
+        { sql, params: { id: 32 } },
+        { sql, params: { id: 33 } },
+      ]);
+      expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+    });
   });
 
   describe('setStatusFromProposed (recusar / cancelar)', () => {
@@ -336,11 +370,13 @@ describe('barterRepository', () => {
       expect(applyWalletEffect).not.toHaveBeenCalled();
     });
 
-    it('se a carteira recusa a devolução, desfaz a mudança de status e devolve false', async () => {
+    it('se a carteira recusa a devolução, desfaz a mudança de status e lança erro (não é o false de "o status mudou")', async () => {
       walletAccepts(['refund']);
       fakeDb.reply([barterRow({ torna_status: 'held' })]);
 
-      expect(await barterRepository.setStatusFromProposed(5, 'cancelled')).toBe(false);
+      await expect(barterRepository.setStatusFromProposed(5, 'cancelled')).rejects.toThrow(
+        'Troca 5: a carteira do usuário 2 recusou a devolução da torna de 200 (retido inconsistente)',
+      );
 
       // Para na recusa da carteira: o status trocado some no rollback, e o refunded não é gravado.
       expect(fakeDb.sqls()).toEqual([
@@ -740,13 +776,15 @@ describe('barterRepository', () => {
       expect(applyWalletEffect).not.toHaveBeenCalled();
     });
 
-    it('se a carteira recusa a baixa do pagador ou o crédito de quem recebe, desfaz e devolve false', async () => {
+    it('se a carteira recusa a baixa do pagador ou o crédito de quem recebe, desfaz e lança erro (não é o false de "já concluída")', async () => {
       for (const refused of ['barter_payment', 'barter_in']) {
         fakeDb.reset();
         walletAccepts([refused]);
         fakeDb.reply([barterRow({ status: 'active' })]);
 
-        expect(await barterRepository.completeAndRelease(5), refused).toBe(false);
+        await expect(barterRepository.completeAndRelease(5), refused).rejects.toThrow(
+          'Troca 5: a carteira recusou a liquidação da torna de 200 (retido inconsistente)',
+        );
 
         // A conclusão já gravada some no rollback, e o paid não chega a ser gravado.
         expect(fakeDb.sqls()).toEqual([
@@ -828,11 +866,13 @@ describe('barterRepository', () => {
       expect(applyWalletEffect).not.toHaveBeenCalled();
     });
 
-    it('se a carteira recusa a devolução, a troca não entra em disputa e devolve false', async () => {
+    it('se a carteira recusa a devolução, a troca não entra em disputa e o erro sobe (não é o false de "não está ativa")', async () => {
       walletAccepts(['refund']);
       fakeDb.reply([barterRow({ status: 'active' })]);
 
-      expect(await barterRepository.disputeAndRefund(5)).toBe(false);
+      await expect(barterRepository.disputeAndRefund(5)).rejects.toThrow(
+        'Troca 5: a carteira do usuário 2 recusou a devolução da torna de 200 (retido inconsistente)',
+      );
 
       expect(fakeDb.sqls()).toEqual([
         'SELECT * FROM barter_agreements WHERE id = :id FOR UPDATE',

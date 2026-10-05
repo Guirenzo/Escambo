@@ -168,6 +168,67 @@ describe('saques: borda HTTP', () => {
       expect(auditLog).not.toHaveBeenCalled();
     });
 
+    it('o valor tem no máximo duas casas: fração de centavo não vira um centavo a mais no saque', async () => {
+      // 20,005 seria gravado 20,01 no saque e debitado 20,00 da carteira.
+      for (const amount of [20.005, 150.001, 99.999]) {
+        const res = await request(app)
+          .post('/api/withdrawals')
+          .set(bearer(7))
+          .send({ ...pix, amount })
+          .expect(422);
+        expect(res.body.error).toBe('validation_error');
+        expect(res.body.details).toHaveProperty('amount');
+      }
+      expect(service.request).not.toHaveBeenCalled();
+
+      service.request.mockResolvedValue(withdrawal);
+      for (const amount of [20.01, 150.5, 1234.56]) {
+        await request(app)
+          .post('/api/withdrawals')
+          .set(bearer(7))
+          .send({ ...pix, amount })
+          .expect(201);
+      }
+      expect(service.request).toHaveBeenCalledTimes(3);
+    });
+
+    it('destino só com espaços é destino em branco: recusado; espaços nas pontas saem antes de chegar ao service', async () => {
+      const blankPix = await request(app)
+        .post('/api/withdrawals')
+        .set(bearer(7))
+        .send({ ...pix, pixKey: '   ' })
+        .expect(422);
+      expect(blankPix.body.details).toHaveProperty('pixKey');
+      for (const field of ['bankName', 'bankAgency', 'bankAccount'] as const) {
+        const res = await request(app)
+          .post('/api/withdrawals')
+          .set(bearer(7))
+          .send({ ...bank, [field]: '  \t ' })
+          .expect(422);
+        expect(res.body.details).toEqual({ bankAccount: ['Dados bancários obrigatórios'] });
+      }
+      expect(service.request).not.toHaveBeenCalled();
+
+      service.request.mockResolvedValue(withdrawal);
+      await request(app)
+        .post('/api/withdrawals')
+        .set(bearer(7))
+        .send({ ...pix, pixKey: '  chave@escambo.test ' })
+        .expect(201);
+      expect(service.request).toHaveBeenLastCalledWith(7, pix);
+      await request(app)
+        .post('/api/withdrawals')
+        .set(bearer(7))
+        .send({
+          ...bank,
+          bankName: ' Banco do Brasil ',
+          bankAgency: ' 0001',
+          bankAccount: '12345-6 ',
+        })
+        .expect(201);
+      expect(service.request).toHaveBeenLastCalledWith(7, bank);
+    });
+
     it('o método é pix ou bank', async () => {
       for (const method of ['boleto', 'PIX', undefined]) {
         const res = await request(app)
@@ -376,6 +437,21 @@ describe('saques: borda HTTP', () => {
         expect(res.body.details).toHaveProperty(field);
       }
       expect(service.listMine).not.toHaveBeenCalled();
+    });
+
+    it('a página vai até 10000: acima disso (1e20 incluso) é erro de validação, não 500 do OFFSET', async () => {
+      for (const page of ['10001', '1e20']) {
+        const res = await request(app)
+          .get(`/api/withdrawals?page=${page}`)
+          .set(bearer(7))
+          .expect(422);
+        expect(res.body.details).toHaveProperty('page');
+      }
+      expect(service.listMine).not.toHaveBeenCalled();
+
+      service.listMine.mockResolvedValue({ items: [], page: 10000, limit: 20 });
+      await request(app).get('/api/withdrawals?page=10000').set(bearer(7)).expect(200);
+      expect(service.listMine).toHaveBeenCalledWith(7, { page: 10000, limit: 20 });
     });
   });
 

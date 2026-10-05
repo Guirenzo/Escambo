@@ -257,6 +257,13 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
+### Atualizar para a 1.41.1 (correções, ADR 60)
+
+Sem migration: a atualização é a de sempre. Um ponto muda a subida: com `PUSH_PROVIDER=webpush`, a API
+exige `PUSH_PUBLIC_KEY` e `PUSH_PRIVATE_KEY` no `.env` e não sobe sem elas, dizendo qual falta (antes subia
+e todo aviso no navegador falhava em silêncio). O padrão do compose de produção é `simulated`, que não pede
+chave. Para gerar o par: `npx web-push generate-vapid-keys`.
+
 ### Atualizar para a 1.41.0 (lembretes de prazo, ADR 58)
 
 A 1.41.0 traz os lembretes antes de cada vencimento, o aviso da aprovação automática às duas partes e o

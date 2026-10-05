@@ -1,5 +1,6 @@
 import { ulid } from 'ulid';
 import type { BarterAgreement, BarterStatus, Paginated, TornaStatus } from '@escambo/types';
+import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { contractsRepository } from '../contracts/contracts.repository';
 import { notificationsService } from '../notifications/notifications.service';
@@ -7,9 +8,6 @@ import { barterRepository, type BarterRow, type TornaHold } from './barter.repos
 import type { CreateBarterInput, ListBartersInput } from './barter.schema';
 import { settingsService } from '../settings/settings.service';
 
-/** Taxa da plataforma sobre a torna (RN-066): troca equilibrada não tem taxa. */
-/** Comissão padrão sobre a torna; a vigente vem de platform_settings (ADR 32). */
-export const BARTER_FEE_RATE = 0.15;
 /** Arredonda em centavos, meio centavo para cima, sem cair no 28333.4999… do ponto flutuante. */
 const money = (v: number): number => Math.sign(v) * (Math.round(Math.abs(v) * 100 + 1e-6) / 100);
 const brl = (v: number): string =>
@@ -78,6 +76,47 @@ export const barterService = {
     if (input.receiverId === proposerId) {
       throw new HttpError(400, 'Você não pode propor uma troca consigo mesmo', 'self_barter');
     }
+    // Destinatário com a mesma regra da contratação direta: conta excluída, suspensa ou banida
+    // não recebe proposta.
+    if (!(await barterRepository.canReceiveProposal(input.receiverId))) {
+      throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
+    }
+    // Serviço do catálogo: o oferecido é do proponente, o pedido é do receptor, nenhum removido e
+    // nenhum pausado (RN-013, a mesma recusa da contratação: a troca gera contratações deles).
+    if (input.offeredServiceId) {
+      const offeredService = await barterRepository.findCatalogService(input.offeredServiceId);
+      if (offeredService?.userId !== proposerId) {
+        throw new HttpError(
+          422,
+          'O serviço oferecido não existe, foi removido ou não é seu',
+          'invalid_offered_service',
+        );
+      }
+      if (!offeredService.isActive) {
+        throw new HttpError(
+          409,
+          'O serviço oferecido está pausado: reative-o para propor a troca (RN-013).',
+          'service_inactive',
+        );
+      }
+    }
+    if (input.requestedServiceId) {
+      const requestedService = await barterRepository.findCatalogService(input.requestedServiceId);
+      if (requestedService?.userId !== input.receiverId) {
+        throw new HttpError(
+          422,
+          'O serviço pedido não existe, foi removido ou não é de quem recebe a proposta',
+          'invalid_requested_service',
+        );
+      }
+      if (!requestedService.isActive) {
+        throw new HttpError(
+          409,
+          'Este serviço está pausado e não aceita novas propostas (RN-013).',
+          'service_inactive',
+        );
+      }
+    }
     const offered = input.estimatedValueOffered;
     const requested = input.estimatedValueRequested;
 
@@ -87,6 +126,7 @@ export const barterService = {
     if (offered > requested) cashPayerId = input.receiverId;
     else if (requested > offered) cashPayerId = proposerId;
 
+    // Taxa vigente (platform_settings, ADR 32) só sobre a torna (RN-066): troca equilibrada não tem taxa.
     const platformFee = money((await settingsService.feeRate()) * cashDifference);
     const proposerPays = cashPayerId === proposerId && cashDifference > 0;
     const hold: TornaHold | null = proposerPays
@@ -222,7 +262,15 @@ export const barterService = {
     ]);
     if (a?.status !== 'completed' || b?.status !== 'completed') return;
 
-    const done = await barterRepository.completeAndRelease(agreementId);
+    let done: boolean;
+    try {
+      done = await barterRepository.completeAndRelease(agreementId);
+    } catch (err) {
+      // Carteira recusou ou o banco falhou: a troca fica 'active' com a torna retida, e só
+      // alguém olhando resolve. O contrato que disparou o gancho já foi concluído; não volta.
+      logger.error({ err, barterId: agreementId }, 'troca: falha ao concluir e liquidar a torna');
+      return;
+    }
     if (!done) return;
     const torna = Number(row.cash_difference);
     const net = money(torna - Number(row.platform_fee));
@@ -247,7 +295,17 @@ export const barterService = {
   async onLinkedContractCancelled(agreementId: number): Promise<void> {
     const row = await barterRepository.findById(agreementId);
     if (!row || row.status !== 'active') return;
-    const done = await barterRepository.disputeAndRefund(agreementId);
+    let done: boolean;
+    try {
+      done = await barterRepository.disputeAndRefund(agreementId);
+    } catch (err) {
+      // Mesma situação da conclusão: a troca segue 'active' com a torna presa no retido.
+      logger.error(
+        { err, barterId: agreementId },
+        'troca: falha ao abrir disputa e devolver a torna',
+      );
+      return;
+    }
     if (!done) return;
     const refunded = row.torna_status === 'held' && Number(row.cash_difference) > 0;
     for (const uid of [row.proposer_id, row.receiver_id]) {

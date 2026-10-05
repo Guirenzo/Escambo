@@ -16,7 +16,7 @@ export const reviewIdSchema = z.object({ id: z.coerce.number().int().positive() 
 
 export const listReviewsSchema = z.object({
   freelancerId: z.coerce.number().int().positive(),
-  page: z.coerce.number().int().positive().default(1),
+  page: z.coerce.number().int().positive().max(10_000).default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
 export type ListReviewsInput = z.infer<typeof listReviewsSchema>;

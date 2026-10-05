@@ -1,22 +1,25 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '../../config/logger';
 import { bearer, routerApp } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
 import { adminRoutes } from '../admin/admin.routes';
 import { reportsRoutes } from './reports.routes';
 
-const { service, moderation, health, recordAction, audit } = vi.hoisted(() => ({
+const { service, moderation, health, recordAction, audit, captureError } = vi.hoisted(() => ({
   service: { create: vi.fn(), listMine: vi.fn() },
   moderation: { listQueue: vi.fn(), act: vi.fn() },
   health: { report: vi.fn(), history: vi.fn() },
   recordAction: vi.fn(),
   audit: vi.fn(),
+  captureError: vi.fn(),
 }));
 vi.mock('./reports.service', () => ({ reportsService: service }));
 vi.mock('./reports.moderation', () => ({ moderationService: moderation }));
 vi.mock('./moderation.health', () => ({ moderationHealthService: health }));
 vi.mock('../admin/admin.repository', () => ({ adminRepository: { recordAction } }));
 vi.mock('../audit/audit.service', () => ({ auditService: { log: audit } }));
+vi.mock('../../config/sentry', () => ({ captureError }));
 
 const app = routerApp('/api/reports', reportsRoutes);
 // As rotas do admin são as de verdade (admin.routes.ts), para o 403 vir do requireAdmin real.
@@ -557,6 +560,35 @@ describe('moderação pelo admin: borda HTTP', () => {
           newValue: { reportId: 12, imageUrl: null, note: 'Pagamento por fora.', ...result },
         }),
       );
+    });
+
+    it('decisão já gravada cujo registro nas ações do admin falha: 200 com a decisão, a auditoria ainda grava e a falha vai para o log e o Sentry', async () => {
+      moderation.act.mockResolvedValue({ result, target });
+      const boom = new Error('banco fora');
+      recordAction.mockRejectedValueOnce(boom);
+      const error = vi.spyOn(logger, 'error');
+
+      try {
+        const res = await request(adminApp)
+          .post('/api/admin/reports/12/remove-image')
+          .set(ADMIN)
+          .send({ note: 'Imagem ofensiva.' })
+          .expect(200);
+
+        // A nova tentativa daria 409 (já analisada): a resposta tem de ser a decisão, não um 500.
+        expect(res.body).toEqual(result);
+        expect(audit).toHaveBeenCalledTimes(1);
+        expect(audit).toHaveBeenCalledWith(
+          expect.objectContaining({ action: 'image_removed', entityType: 'avatar', entityId: 9 }),
+        );
+        expect(error).toHaveBeenCalledWith(
+          { err: boom, adminId: 1, reportId: 12, action: 'image_removed' },
+          'decisão sem registro nas ações do admin',
+        );
+        expect(captureError).toHaveBeenCalledWith(boom);
+      } finally {
+        error.mockRestore();
+      }
     });
 
     it('decisão que a moderação recusa (já analisada) não fica registrada como ação do admin', async () => {

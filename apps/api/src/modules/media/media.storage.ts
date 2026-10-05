@@ -71,33 +71,37 @@ async function removeVariants(key: string): Promise<void> {
 
 /**
  * Apaga agora o original e as miniaturas: remoção sem dono para contestar (ADR 39). Devolve se o
- * original existia.
+ * original existia. O original sai PRIMEIRO: sem ele, nenhuma miniatura é servida nem gerada de novo
+ * enquanto as outras saem.
  */
 export async function deleteMediaImage(key: string): Promise<boolean> {
   const abs = mediaFilePath(key);
   if (!abs) return false;
-  await removeVariants(key);
-  return unlink(abs).then(
+  const existed = await unlink(abs).then(
     () => true,
     () => false,
   );
+  await removeVariants(key);
+  return existed;
 }
 
 /**
  * Tira a imagem do ar e guarda o original em quarentena como <removalId>.<ext> (ADR 41). As
  * miniaturas saem de vez: se a remoção cair, elas nascem de novo na primeira leitura. Devolve o
- * nome na quarentena, ou null se o original já não existia.
+ * nome na quarentena, ou null se o original já não existia. Como na exclusão, o original sai antes
+ * das miniaturas.
  */
 export async function quarantineMediaImage(key: string, removalId: number): Promise<string | null> {
   const abs = mediaFilePath(key);
   if (!abs) return null;
-  await removeVariants(key);
   const name = `${removalId}.${key.slice(key.lastIndexOf('.') + 1)}`;
   await mkdir(quarantineDir(), { recursive: true });
-  return rename(abs, path.join(quarantineDir(), name)).then(
+  const moved = await rename(abs, path.join(quarantineDir(), name)).then(
     () => name,
     () => null,
   );
+  await removeVariants(key);
+  return moved;
 }
 
 /** Devolve o arquivo da quarentena para o endereço público original (remoção revertida). */
@@ -112,14 +116,21 @@ export async function restoreQuarantined(name: string, key: string): Promise<boo
   );
 }
 
-/** Apaga um arquivo da quarentena (remoção mantida, prazo vencido ou titular anonimizado). */
+/**
+ * Apaga um arquivo da quarentena (remoção mantida, prazo vencido ou titular anonimizado). true quando
+ * o arquivo saiu: apagado agora ou que já não existia. Qualquer outra falha (preso, sem permissão,
+ * erro de disco) LANÇA: quem chama não pode marcar como expurgado o que continua no disco. false só
+ * para nome que não é de arquivo da quarentena (nada foi apagado).
+ */
 export async function deleteQuarantined(name: string): Promise<boolean> {
   const abs = quarantineFilePath(name);
   if (!abs) return false;
-  return unlink(abs).then(
-    () => true,
-    () => false,
-  );
+  try {
+    await unlink(abs);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+  return true;
 }
 
 const exists = (abs: string): Promise<boolean> =>
@@ -144,24 +155,31 @@ async function writeAtomic(abs: string, bytes: Buffer): Promise<void> {
 }
 
 /** Gerações em andamento: pedidos simultâneos da mesma miniatura esperam a mesma. */
-const pending = new Map<string, Promise<string>>();
+const pending = new Map<string, Promise<string | null>>();
 
 /**
  * Caminho da miniatura de um original, gerada na primeira leitura (ADR 38). null quando o original
  * não existe (404). Erro da sharp sobe para quem chamou decidir (a leitura serve o original).
+ *
+ * A miniatura só vale enquanto o original existir: uma geração que estava em andamento quando a
+ * moderação tirou a imagem do ar (ADR 41) grava depois da remoção, e essa sobra não pode ser servida.
  */
 export async function mediaVariantPath(key: string, width: MediaWidth): Promise<string | null> {
   const variantKey = mediaVariantKey(key, width);
   const abs = mediaFilePath(variantKey);
   const source = mediaFilePath(key);
   if (!abs || !source) return null;
+  if (!(await exists(source))) return null;
   if (await exists(abs)) return abs;
   let job = pending.get(variantKey);
   if (!job) {
     job = (async () => {
       const original = await readFile(source);
       await writeAtomic(abs, await makeVariant(original, width));
-      return abs;
+      // O original saiu enquanto a miniatura era gerada: ela também sai.
+      if (await exists(source)) return abs;
+      await unlink(abs).catch(() => undefined);
+      return null;
     })().finally(() => pending.delete(variantKey));
     pending.set(variantKey, job);
   }
@@ -261,8 +279,14 @@ export async function removeMediaOrphans(now: Date = new Date()): Promise<number
     // O prazo conta do envio (o original); miniatura sem original já é sobra.
     const original = group.find((f) => !f.variant);
     if (original && !expired(original)) continue;
-    for (const f of group) await unlink(f.path).catch(() => undefined);
-    removed++;
+    for (const f of group) {
+      const gone = await unlink(f.path).then(
+        () => true,
+        () => false,
+      );
+      // Conta imagem que saiu de fato: miniatura sem original não era imagem, e original preso ficou.
+      if (gone && !f.variant) removed++;
+    }
   }
   return removed;
 }

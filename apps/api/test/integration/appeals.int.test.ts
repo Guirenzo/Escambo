@@ -390,4 +390,58 @@ describe('Contestação e reincidência (ADR 41)', () => {
       descriptions: ['Reincidência: 3 remoções de conteúdo nos últimos 180 dias. Revise a conta.'],
     });
   });
+  it('titular anonimizado com contestação pendente: reverter a remoção não recoloca a foto dele no perfil "Usuário removido"', async () => {
+    // Imagem externa: não há arquivo em quarentena, e a reversão recolocaria a URL de onde ela saiu.
+    const owner = await actor('freelancer');
+    const url = `https://imagens.escambo.test/titular-${Date.now()}-${seq++}.png`;
+    await request(app)
+      .put('/api/profiles/freelancer')
+      .set(auth(owner.token))
+      .send({ fullName: 'Titular Que Sai', city: 'Joinville', avatarUrl: url })
+      .expect(200);
+    const client = await actor('client');
+    const admin = await actor('client', 'admin.escambo.test');
+    const removed = await removeImage(client, admin, 'avatar', owner.id);
+    const id = removed.removalId;
+    const text = 'A foto é minha e não tem nada de ofensivo, peço que seja revista.';
+    expect((await appeal(owner, id, text)).status).toBe(200);
+
+    // O titular pede a exclusão e o admin conclui, com a contestação ainda na fila.
+    const asked = await request(app)
+      .post('/api/lgpd/deletion-requests')
+      .set(auth(owner.token))
+      .send({});
+    expect(asked.status, JSON.stringify(asked.body)).toBe(201);
+    const done = await request(app)
+      .post(`/api/admin/deletion-requests/${asked.body.id}/complete`)
+      .set(auth(admin.token));
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+
+    const decided = await decide(admin, id, 'overturn', 'Revista depois da exclusão.');
+    expect(decided.status, JSON.stringify(decided.body)).toBe(200);
+    expect(decided.body).toMatchObject({
+      status: 'overturned',
+      restoredReferences: 0,
+      imageRestored: false,
+    });
+    const [profile] = await pool.query(
+      'SELECT full_name, avatar_url FROM profiles_freelancer WHERE user_id = ?',
+      [owner.id],
+    );
+    expect((profile as { full_name: string; avatar_url: string | null }[])[0]).toEqual({
+      full_name: 'Usuário removido',
+      avatar_url: null,
+    });
+    const [rows] = await pool.query(
+      'SELECT status, appeal_text, cleared_refs FROM content_removals WHERE id = ?',
+      [id],
+    );
+    // A remoção fica como registro da moderação (revertida), sem o texto do titular e sem de onde a
+    // imagem saiu.
+    expect((rows as Record<string, unknown>[])[0]).toEqual({
+      status: 'overturned',
+      appeal_text: null,
+      cleared_refs: null,
+    });
+  });
 });

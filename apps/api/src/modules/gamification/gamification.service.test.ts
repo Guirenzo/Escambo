@@ -9,13 +9,15 @@ vi.mock('./gamification.repository', () => ({
     findBadgeBySlug: vi.fn(),
     awardBadge: vi.fn(),
     getFreelancerStats: vi.fn(),
-    incrementContracts: vi.fn(),
     recentEvents: vi.fn(),
-    activityDates: vi.fn(),
+    activityTimes: vi.fn(),
     rankOf: vi.fn(),
     leaderboard: vi.fn(),
   },
 }));
+
+const { zone } = vi.hoisted(() => ({ zone: vi.fn() }));
+vi.mock('../auth/user-zone', () => ({ userZone: zone }));
 
 import { computeStreak, gamificationService, levelProgress } from './gamification.service';
 import {
@@ -75,21 +77,31 @@ describe('computeStreak', () => {
   it('zero quando a última atividade foi anteontem', () => {
     expect(computeStreak(['2026-03-08'], today)).toBe(0);
   });
+
+  it('o dia vira à meia-noite de Brasília, e não às 21h (meia-noite em UTC)', () => {
+    // 22:30 de 10/03 em Brasília (01:30 de 11/03 em UTC): hoje ainda é 10/03, ontem 09/03.
+    const night = new Date('2026-03-11T01:30:00Z');
+    expect(computeStreak(['2026-03-09', '2026-03-08'], night)).toBe(2);
+  });
+
+  it('o dia é o do fuso da pessoa: 23:30 em Manaus ainda é o dia anterior ao de Brasília', () => {
+    // 03:30 UTC de 11/03: 23:30 de 10/03 em Manaus e 00:30 de 11/03 em Brasília.
+    const at = new Date('2026-03-11T03:30:00Z');
+    expect(computeStreak(['2026-03-09'], at, 'America/Manaus')).toBe(1);
+    expect(computeStreak(['2026-03-09'], at, 'America/Sao_Paulo')).toBe(0);
+  });
 });
 
 describe('awardXp', () => {
-  it('credita XP e detecta level up', async () => {
-    repo.getOrCreateXp.mockResolvedValue(xp({ total_xp: 250, level: 1 }));
-    repo.applyXp.mockResolvedValue(undefined);
+  it('credita XP e detecta level up pelo nível que o crédito devolve', async () => {
+    repo.applyXp.mockResolvedValue({ previousLevel: 1, level: 2 });
 
     const res = await gamificationService.awardXp(1, 100, 'contract_completed', 5);
 
-    // 250 + 100 = 350 -> nível 2 (Aprendiz, min 300)
+    // O nível é calculado no crédito, do total travado: o service só manda o ganho.
     expect(repo.applyXp).toHaveBeenCalledWith({
       userId: 1,
       delta: 100,
-      level: 2,
-      levelName: 'Aprendiz',
       reason: 'contract_completed',
       referenceId: 5,
     });
@@ -116,8 +128,7 @@ describe('evaluateBadges (engine por critério)', () => {
       { id: 3, slug: 'fast-delivery', xp_reward: 100, criteria: { on_time_deliveries: 20 } },
     ] as unknown as BadgeCatalogRow[]);
     repo.awardBadge.mockResolvedValue(true);
-    repo.getOrCreateXp.mockResolvedValue(xp());
-    repo.applyXp.mockResolvedValue(undefined);
+    repo.applyXp.mockResolvedValue({ previousLevel: 1, level: 1 });
 
     await gamificationService.evaluateBadges(1);
 
@@ -153,8 +164,9 @@ describe('getProfile', () => {
     repo.listBadges.mockResolvedValue([
       { slug: 'first-deal', name: 'First Deal', awarded_at: new Date('2026-01-01T00:00:00Z') },
     ] as unknown as UserBadgeRow[]);
-    repo.activityDates.mockResolvedValue([]);
+    repo.activityTimes.mockResolvedValue([]);
     repo.rankOf.mockResolvedValue(5);
+    zone.mockResolvedValue('America/Sao_Paulo');
 
     const p = await gamificationService.getProfile(1);
 
@@ -190,6 +202,7 @@ describe('gamificação: regras por evento e por critério', () => {
     vi.resetAllMocks();
     repo.listBadges.mockResolvedValue([]);
     repo.listActiveBadges.mockResolvedValue([]);
+    repo.applyXp.mockResolvedValue({ previousLevel: 1, level: 1 });
   });
   afterEach(() => vi.useRealTimers());
 
@@ -296,22 +309,26 @@ describe('gamificação: regras por evento e por critério', () => {
   });
 
   describe('awardXp: o que é gravado', () => {
-    it('ganho que não muda de nível: grava o nível atual, sem referência, e não acusa level up', async () => {
-      repo.getOrCreateXp.mockResolvedValue(xp({ total_xp: 100, level: 1 }));
+    it('ganho que não muda de nível: credita sem referência e não acusa level up', async () => {
+      repo.applyXp.mockResolvedValue({ previousLevel: 1, level: 1 });
 
       const res = await gamificationService.awardXp(7, 50, 'review_5_stars');
 
-      expect(repo.getOrCreateXp).toHaveBeenCalledWith(7);
       expect(repo.applyXp).toHaveBeenCalledTimes(1);
       expect(repo.applyXp).toHaveBeenCalledWith({
         userId: 7,
         delta: 50,
-        level: 1,
-        levelName: 'Iniciante',
         reason: 'review_5_stars',
         referenceId: null,
       });
       expect(res).toEqual({ leveledUp: false, level: 1 });
+    });
+
+    it('o total não é lido fora da transação do crédito: um total velho daria o nível errado', async () => {
+      await gamificationService.awardXp(7, 50, 'review_5_stars');
+
+      expect(repo.getOrCreateXp).not.toHaveBeenCalled();
+      expect(repo.applyXp).toHaveBeenCalledTimes(1);
     });
 
     it('ganho de zero XP não grava nada e devolve o nível atual', async () => {
@@ -326,8 +343,8 @@ describe('gamificação: regras por evento e por critério', () => {
       expect(repo.applyXp).not.toHaveBeenCalled();
     });
 
-    it('chegar exatamente no piso do próximo nível já sobe de nível (RN-052)', async () => {
-      repo.getOrCreateXp.mockResolvedValue(xp({ total_xp: 200, level: 1 }));
+    it('subir de nível é o nível de depois do crédito maior que o de antes (RN-052)', async () => {
+      repo.applyXp.mockResolvedValue({ previousLevel: 1, level: 2 });
 
       expect(await gamificationService.awardXp(7, 100, 'contract_completed', 9)).toEqual({
         leveledUp: true,
@@ -336,55 +353,33 @@ describe('gamificação: regras por evento e por critério', () => {
       expect(repo.applyXp).toHaveBeenCalledWith({
         userId: 7,
         delta: 100,
-        level: 2,
-        levelName: 'Aprendiz',
         reason: 'contract_completed',
         referenceId: 9,
       });
     });
 
-    it('um ganho grande pula níveis: vale o nível do total novo', async () => {
-      repo.getOrCreateXp.mockResolvedValue(xp({ total_xp: 250, level: 1 }));
+    it('um ganho grande que pula níveis devolve o nível do total novo', async () => {
+      repo.applyXp.mockResolvedValue({ previousLevel: 1, level: 4 });
 
       expect(await gamificationService.awardXp(7, 2000, 'bonus')).toEqual({
         leveledUp: true,
         level: 4,
       });
       expect(repo.applyXp).toHaveBeenCalledTimes(1);
-      expect(repo.applyXp).toHaveBeenCalledWith({
-        userId: 7,
-        delta: 2000,
-        level: 4,
-        levelName: 'Especialista',
-        reason: 'bonus',
-        referenceId: null,
-      });
     });
 
     it('ganho dentro do mesmo nível, já acima do primeiro, não acusa level up', async () => {
-      repo.getOrCreateXp.mockResolvedValue(
-        xp({ total_xp: 900, level: 3, level_name: 'Profissional' }),
-      );
+      repo.applyXp.mockResolvedValue({ previousLevel: 3, level: 3 });
 
       expect(await gamificationService.awardXp(7, 100, 'contract_completed', 9)).toEqual({
         leveledUp: false,
         level: 3,
       });
-      expect(repo.applyXp).toHaveBeenCalledWith({
-        userId: 7,
-        delta: 100,
-        level: 3,
-        levelName: 'Profissional',
-        reason: 'contract_completed',
-        referenceId: 9,
-      });
     });
 
-    it('só subir conta como level up: perda de XP que rebaixa grava o nível novo sem acusar level up', async () => {
+    it('só subir conta como level up: perda de XP que rebaixa devolve o nível novo sem acusar level up', async () => {
       // xp_transactions aceita valor negativo ("positivo = ganho, negativo = perda", no schema).
-      repo.getOrCreateXp.mockResolvedValue(
-        xp({ total_xp: 900, level: 3, level_name: 'Profissional' }),
-      );
+      repo.applyXp.mockResolvedValue({ previousLevel: 3, level: 2 });
 
       expect(await gamificationService.awardXp(7, -200, 'penalty', 12)).toEqual({
         leveledUp: false,
@@ -394,28 +389,13 @@ describe('gamificação: regras por evento e por critério', () => {
       expect(repo.applyXp).toHaveBeenCalledWith({
         userId: 7,
         delta: -200,
-        level: 2,
-        levelName: 'Aprendiz',
         reason: 'penalty',
         referenceId: 12,
       });
     });
 
-    it('se a leitura do XP atual falha, nada é gravado', async () => {
-      const boom = new Error('ER_NO_REFERENCED_ROW_2');
-      repo.getOrCreateXp.mockRejectedValue(boom);
-
-      await expect(gamificationService.awardXp(404, 100, 'contract_completed', 9)).rejects.toBe(
-        boom,
-      );
-
-      expect(repo.getOrCreateXp).toHaveBeenCalledWith(404);
-      expect(repo.applyXp).not.toHaveBeenCalled();
-    });
-
     it('se a gravação falha, o erro sobe: não devolve level up de um XP que não entrou', async () => {
       const boom = new Error('deadlock');
-      repo.getOrCreateXp.mockResolvedValue(xp({ total_xp: 250, level: 1 }));
       repo.applyXp.mockRejectedValue(boom);
 
       await expect(gamificationService.awardXp(7, 100, 'contract_completed', 9)).rejects.toBe(boom);
@@ -502,17 +482,13 @@ describe('gamificação: regras por evento e por critério', () => {
       expect(repo.applyXp).not.toHaveBeenCalled();
     });
 
-    it('cada badge concedida na mesma avaliação credita a sua recompensa sobre o total já atualizado', async () => {
+    it('cada badge concedida na mesma avaliação credita a sua recompensa, num crédito próprio', async () => {
       repo.getFreelancerStats.mockResolvedValue(stats(50, 50, '4.80'));
       repo.listActiveBadges.mockResolvedValue([
         badge({ id: 4, slug: 'veteran', xp_reward: 300, criteria: { contracts_completed: 50 } }),
         badge({ id: 2, slug: 'top-rated', xp_reward: 200, criteria: { reviews_min: 50 } }),
       ]);
       repo.awardBadge.mockResolvedValue(true);
-      // O total é relido a cada crédito: 400 + 300 = 700 (nível 2), depois 700 + 200 = 900 (nível 3).
-      repo.getOrCreateXp
-        .mockResolvedValueOnce(xp({ user_id: 7, total_xp: 400, level: 2, level_name: 'Aprendiz' }))
-        .mockResolvedValueOnce(xp({ user_id: 7, total_xp: 700, level: 2, level_name: 'Aprendiz' }));
 
       await gamificationService.evaluateBadges(7);
 
@@ -520,28 +496,10 @@ describe('gamificação: regras por evento e por critério', () => {
         [7, 4],
         [7, 2],
       ]);
-      expect(repo.getOrCreateXp).toHaveBeenCalledTimes(2);
+      // Cada crédito soma ao total travado na sua transação: o segundo vê o primeiro.
       expect(repo.applyXp.mock.calls).toEqual([
-        [
-          {
-            userId: 7,
-            delta: 300,
-            level: 2,
-            levelName: 'Aprendiz',
-            reason: 'badge_earned',
-            referenceId: 4,
-          },
-        ],
-        [
-          {
-            userId: 7,
-            delta: 200,
-            level: 3,
-            levelName: 'Profissional',
-            reason: 'badge_earned',
-            referenceId: 2,
-          },
-        ],
+        [{ userId: 7, delta: 300, reason: 'badge_earned', referenceId: 4 }],
+        [{ userId: 7, delta: 200, reason: 'badge_earned', referenceId: 2 }],
       ]);
     });
 
@@ -551,7 +509,6 @@ describe('gamificação: regras por evento e por critério', () => {
         badge({ id: 4, slug: 'veteran', xp_reward: 300, criteria: { contracts_completed: 50 } }),
       ]);
       repo.awardBadge.mockResolvedValue(true);
-      repo.getOrCreateXp.mockResolvedValue(xp({ user_id: 7, total_xp: 100, level: 1 }));
 
       await gamificationService.evaluateBadges(7);
 
@@ -560,8 +517,6 @@ describe('gamificação: regras por evento e por critério', () => {
       expect(repo.applyXp).toHaveBeenCalledWith({
         userId: 7,
         delta: 300,
-        level: 2,
-        levelName: 'Aprendiz',
         reason: 'badge_earned',
         referenceId: 4,
       });
@@ -601,8 +556,14 @@ describe('gamificação: regras por evento e por critério', () => {
       repo.listBadges.mockResolvedValue([
         { slug: 'first-deal', name: 'Primeiro Negócio', awarded_at: '2026-01-01T00:00:00Z' },
       ] as unknown as UserBadgeRow[]);
-      repo.activityDates.mockResolvedValue(['2026-03-10', '2026-03-09', '2026-03-07']);
+      // Em Manaus: 10/03, 09/03 (23:30, já 10/03 em UTC) e 07/03.
+      repo.activityTimes.mockResolvedValue([
+        new Date('2026-03-10T14:00:00Z'),
+        new Date('2026-03-10T03:30:00Z'),
+        new Date('2026-03-07T15:00:00Z'),
+      ]);
       repo.rankOf.mockResolvedValue(5);
+      zone.mockResolvedValue('America/Manaus');
 
       const profile = await gamificationService.getProfile(7);
 
@@ -627,9 +588,27 @@ describe('gamificação: regras por evento e por critério', () => {
       });
       expect(repo.getOrCreateXp).toHaveBeenCalledWith(7);
       expect(repo.listBadges).toHaveBeenCalledWith(7);
-      // A sequência olha os últimos 60 dias com atividade.
-      expect(repo.activityDates).toHaveBeenCalledWith(7, 60);
+      // A sequência olha os últimos 60 dias (mais um, para o primeiro caber inteiro no fuso).
+      expect(repo.activityTimes).toHaveBeenCalledWith(7, new Date('2026-01-08T12:00:00Z'));
       expect(repo.rankOf).toHaveBeenCalledWith(7);
+      expect(zone).toHaveBeenCalledWith(7);
+    });
+
+    it('a sequência conta os dias no fuso da pessoa: atividade às 22h de Brasília não pula para o dia seguinte', async () => {
+      // 11/03, 10:00 em Brasília. Atividade às 10h de 09/03 e às 22h de 10/03 (01:00 de 11/03 em UTC).
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-03-11T13:00:00Z'));
+      repo.getOrCreateXp.mockResolvedValue(xp({ user_id: 7 }));
+      repo.activityTimes.mockResolvedValue([
+        new Date('2026-03-11T01:00:00Z'),
+        new Date('2026-03-09T13:00:00Z'),
+      ]);
+      zone.mockResolvedValue('America/Sao_Paulo');
+
+      const profile = await gamificationService.getProfile(7);
+
+      // 10/03 e 09/03 em Brasília: dois dias seguidos até ontem. Em UTC seriam 11/03 e 09/03 (um).
+      expect(profile.streakDays).toBe(2);
     });
   });
 
@@ -684,53 +663,37 @@ describe('gamificação: regras por evento e por critério', () => {
 
   describe('onContractCompleted (RN-051)', () => {
     const firstDeal = badge({ id: 1, slug: 'first-deal', xp_reward: 50 });
+    /** O crédito do contrato: os 100 XP e a contagem do contrato vão juntos, numa transação só. */
+    const contractCredit = (contractId: number): Record<string, unknown> => ({
+      userId: 7,
+      delta: 100,
+      reason: 'contract_completed',
+      referenceId: contractId,
+      countContract: true,
+    });
 
-    it('conta o contrato, dá 100 XP com o contrato como referência, concede a first-deal e reavalia as badges', async () => {
-      repo.getOrCreateXp
-        .mockResolvedValueOnce(xp({ user_id: 7, total_xp: 250, level: 1 }))
-        .mockResolvedValueOnce(xp({ user_id: 7, total_xp: 350, level: 2, level_name: 'Aprendiz' }));
+    it('conta o contrato e dá 100 XP no mesmo crédito, concede a first-deal e reavalia as badges', async () => {
       repo.findBadgeBySlug.mockResolvedValue(firstDeal);
       repo.awardBadge.mockResolvedValue(true);
       repo.getFreelancerStats.mockResolvedValue(stats(1, 0, '0.00'));
 
       await gamificationService.onContractCompleted(7, 55);
 
-      expect(repo.incrementContracts).toHaveBeenCalledTimes(1);
-      expect(repo.incrementContracts).toHaveBeenCalledWith(7);
       expect(repo.findBadgeBySlug).toHaveBeenCalledWith('first-deal');
       expect(repo.awardBadge).toHaveBeenCalledWith(7, 1);
       expect(repo.applyXp.mock.calls).toEqual([
-        [
-          {
-            userId: 7,
-            delta: 100,
-            level: 2,
-            levelName: 'Aprendiz',
-            reason: 'contract_completed',
-            referenceId: 55,
-          },
-        ],
-        [
-          {
-            userId: 7,
-            delta: 50,
-            level: 2,
-            levelName: 'Aprendiz',
-            reason: 'badge_earned',
-            referenceId: 1,
-          },
-        ],
+        [contractCredit(55)],
+        [{ userId: 7, delta: 50, reason: 'badge_earned', referenceId: 1 }],
       ]);
       // As badges por critério são avaliadas depois de o contrato entrar na contagem.
       expect(repo.getFreelancerStats).toHaveBeenCalledWith(7);
-      expect(repo.incrementContracts.mock.invocationCallOrder[0]!).toBeLessThan(
+      expect(repo.applyXp.mock.invocationCallOrder[0]!).toBeLessThan(
         repo.getFreelancerStats.mock.invocationCallOrder[0]!,
       );
       expect(repo.listActiveBadges).toHaveBeenCalledTimes(1);
     });
 
-    it('do segundo contrato em diante a first-deal já existe: só os 100 XP do contrato', async () => {
-      repo.getOrCreateXp.mockResolvedValue(xp({ user_id: 7, total_xp: 0, level: 1 }));
+    it('do segundo contrato em diante a first-deal já existe: só o crédito do contrato', async () => {
       repo.findBadgeBySlug.mockResolvedValue(firstDeal);
       repo.awardBadge.mockResolvedValue(false);
 
@@ -738,56 +701,35 @@ describe('gamificação: regras por evento e por critério', () => {
 
       // A concessão é tentada de novo (o banco é quem diz que já existia), mas não rende XP.
       expect(repo.awardBadge.mock.calls).toEqual([[7, 1]]);
-      expect(repo.applyXp).toHaveBeenCalledTimes(1);
-      expect(repo.applyXp).toHaveBeenCalledWith({
-        userId: 7,
-        delta: 100,
-        level: 1,
-        levelName: 'Iniciante',
-        reason: 'contract_completed',
-        referenceId: 56,
-      });
+      expect(repo.applyXp.mock.calls).toEqual([[contractCredit(56)]]);
     });
 
-    it('se o crédito do XP do contrato falha, o erro sobe para quem chamou e nenhuma badge é concedida', async () => {
+    it('se o crédito do contrato falha, o erro sobe: nem a contagem nem os XP entram, e nenhuma badge é concedida', async () => {
       const boom = new Error('deadlock');
-      repo.getOrCreateXp.mockResolvedValue(xp({ user_id: 7, total_xp: 0, level: 1 }));
       repo.applyXp.mockRejectedValue(boom);
       repo.findBadgeBySlug.mockResolvedValue(firstDeal);
 
       await expect(gamificationService.onContractCompleted(7, 59)).rejects.toBe(boom);
 
+      // A contagem não tem chamada própria: ela é desfeita junto com os XP, na mesma transação.
+      expect(repo.applyXp.mock.calls).toEqual([[contractCredit(59)]]);
       expect(repo.findBadgeBySlug).not.toHaveBeenCalled();
       expect(repo.awardBadge).not.toHaveBeenCalled();
       expect(repo.getFreelancerStats).not.toHaveBeenCalled();
     });
 
     it('sem a first-deal no catálogo (ou desativada), nada é concedido e o contrato vale XP do mesmo jeito', async () => {
-      repo.getOrCreateXp.mockResolvedValue(xp({ user_id: 7, total_xp: 0, level: 1 }));
       repo.findBadgeBySlug.mockResolvedValue(undefined);
 
       await gamificationService.onContractCompleted(7, 57);
 
       expect(repo.findBadgeBySlug).toHaveBeenCalledWith('first-deal');
       expect(repo.awardBadge).not.toHaveBeenCalled();
-      expect(repo.incrementContracts).toHaveBeenCalledWith(7);
-      expect(repo.applyXp.mock.calls).toEqual([
-        [
-          {
-            userId: 7,
-            delta: 100,
-            level: 1,
-            levelName: 'Iniciante',
-            reason: 'contract_completed',
-            referenceId: 57,
-          },
-        ],
-      ]);
+      expect(repo.applyXp.mock.calls).toEqual([[contractCredit(57)]]);
       expect(repo.getFreelancerStats).toHaveBeenCalledWith(7);
     });
 
     it('first-deal sem recompensa é concedida sem crédito de XP extra', async () => {
-      repo.getOrCreateXp.mockResolvedValue(xp({ user_id: 7, total_xp: 0, level: 1 }));
       repo.findBadgeBySlug.mockResolvedValue(badge({ id: 1, slug: 'first-deal', xp_reward: 0 }));
       repo.awardBadge.mockResolvedValue(true);
 
@@ -795,31 +737,7 @@ describe('gamificação: regras por evento e por critério', () => {
 
       expect(repo.awardBadge).toHaveBeenCalledWith(7, 1);
       // O único crédito é o do contrato: nenhum lançamento 'badge_earned' de 0 XP.
-      expect(repo.applyXp.mock.calls).toEqual([
-        [
-          {
-            userId: 7,
-            delta: 100,
-            level: 1,
-            levelName: 'Iniciante',
-            reason: 'contract_completed',
-            referenceId: 58,
-          },
-        ],
-      ]);
-    });
-
-    it('se a contagem do contrato falha, nenhum XP é creditado e nenhuma badge é concedida', async () => {
-      const boom = new Error('deadlock');
-      repo.incrementContracts.mockRejectedValue(boom);
-
-      await expect(gamificationService.onContractCompleted(7, 60)).rejects.toBe(boom);
-
-      expect(repo.incrementContracts).toHaveBeenCalledWith(7);
-      expect(repo.getOrCreateXp).not.toHaveBeenCalled();
-      expect(repo.applyXp).not.toHaveBeenCalled();
-      expect(repo.findBadgeBySlug).not.toHaveBeenCalled();
-      expect(repo.awardBadge).not.toHaveBeenCalled();
+      expect(repo.applyXp.mock.calls).toEqual([[contractCredit(58)]]);
     });
   });
 
@@ -828,19 +746,11 @@ describe('gamificação: regras por evento e por critério', () => {
       [5, 50, 'review_5_stars'],
       [4, 20, 'review_4_stars'],
     ])('nota %i dá +%i XP, com a avaliação como referência', async (rating, delta, reason) => {
-      repo.getOrCreateXp.mockResolvedValue(xp({ user_id: 7, total_xp: 0, level: 1 }));
-
       await gamificationService.onReviewReceived(7, rating, 31);
 
       expect(repo.applyXp).toHaveBeenCalledTimes(1);
-      expect(repo.applyXp).toHaveBeenCalledWith({
-        userId: 7,
-        delta,
-        level: 1,
-        levelName: 'Iniciante',
-        reason,
-        referenceId: 31,
-      });
+      // Avaliação não é contrato: o crédito não mexe na contagem de contratos.
+      expect(repo.applyXp).toHaveBeenCalledWith({ userId: 7, delta, reason, referenceId: 31 });
       expect(repo.getFreelancerStats).toHaveBeenCalledWith(7);
     });
 
@@ -856,7 +766,6 @@ describe('gamificação: regras por evento e por critério', () => {
     });
 
     it('a avaliação que completa o critério concede a badge por nota', async () => {
-      repo.getOrCreateXp.mockResolvedValue(xp({ user_id: 7, total_xp: 0, level: 1 }));
       repo.getFreelancerStats.mockResolvedValue(stats(60, 50, '4.80'));
       repo.listActiveBadges.mockResolvedValue([
         badge({

@@ -5,6 +5,7 @@ import {
   cancelBodySchema,
   contractIdSchema,
   createContractSchema,
+  deliverMilestoneSchema,
   deliverSchema,
   listContractsSchema,
   extensionDecisionBodySchema,
@@ -113,7 +114,7 @@ export async function resolveExtension(req: Request, res: Response): Promise<voi
 
 export async function deliverMilestone(req: Request, res: Response): Promise<void> {
   const { id, milestoneId } = milestoneParamsSchema.parse(req.params);
-  const input = deliverSchema.parse(req.body);
+  const input = deliverMilestoneSchema.parse(req.body);
   // O aviso ao cliente sai do service, com a hora da aprovação automática do marco (ADR 57).
   res.json(await contractsService.deliverMilestone(id, milestoneId, uid(req), input.message));
 }

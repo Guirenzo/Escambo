@@ -9,6 +9,22 @@ export interface FavoriteRow extends RowDataPacket {
 }
 
 export const favoritesRepository = {
+  /**
+   * Dono do alvo do favorito (o freelancer é o próprio usuário), ou undefined se o alvo não existe:
+   * serviço removido ou conta excluída não contam. A tabela favorites não tem FK para o alvo.
+   */
+  async targetOwner(targetType: string, targetId: number): Promise<number | undefined> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      targetType === 'service'
+        ? `SELECT user_id FROM services WHERE id = :targetId AND deleted_at IS NULL LIMIT 1`
+        : `SELECT u.id AS user_id FROM users u
+             JOIN profiles_freelancer pf ON pf.user_id = u.id
+            WHERE u.id = :targetId AND u.deleted_at IS NULL LIMIT 1`,
+      { targetId },
+    );
+    return rows[0] ? Number(rows[0].user_id) : undefined;
+  },
+
   async create(userId: number, targetType: string, targetId: number): Promise<void> {
     await pool.query<ResultSetHeader>(
       `INSERT IGNORE INTO favorites (user_id, target_type, target_id)

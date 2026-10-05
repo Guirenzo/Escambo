@@ -122,8 +122,34 @@ async function recordResponseTime(ctx: ConversationContext, messageId: number): 
   await profilesRepository.blendResponseTime(ctx.contract.freelancer_id, hours);
 }
 
+/**
+ * Transmite a mensagem nova. A conversa é a mesma em todas as contratações do par e cada parte
+ * acompanha o chat na sala do contrato que está aberto na tela (que só aceita evento com o id dele):
+ * vai para a sala de cada contratação, com o id dela, como o aviso de mudança (announceChange). Se
+ * a lista não puder ser lida, vai ao menos para a sala de onde a mensagem saiu.
+ */
+async function broadcastNew(ctx: ConversationContext, message: ChatMessage): Promise<void> {
+  let contractIds: number[];
+  try {
+    contractIds = await messagingRepository.pairContractIds(ctx.conversationId);
+  } catch (err) {
+    logger.warn(
+      { err, conversationId: ctx.conversationId },
+      'tempo real: contratações do par não lidas; a mensagem vai só para a sala de origem',
+    );
+    contractIds = [ctx.contract.id];
+  }
+  for (const contractId of contractIds) {
+    realtime.emitToContract(contractId, 'message:new', { ...message, contractId });
+  }
+}
+
 /** Depois de persistir: responsividade, tempo real e notificação — igual para texto e anexo. */
-function deliver(ctx: ConversationContext, uid: number, row: MessageRow): ChatMessage {
+async function deliver(
+  ctx: ConversationContext,
+  uid: number,
+  row: MessageRow,
+): Promise<ChatMessage> {
   const message = toMessage(row);
   const contractId = ctx.contract.id;
 
@@ -135,8 +161,8 @@ function deliver(ctx: ConversationContext, uid: number, row: MessageRow): ChatMe
     );
   }
 
-  // Broadcast para a sala do contrato (no-op se não houver Socket.IO anexado).
-  realtime.emitToContract(contractId, 'message:new', { ...message, contractId });
+  // Broadcast para a sala de cada contratação do par (no-op se não houver Socket.IO anexado).
+  await broadcastNew(ctx, message);
 
   // Notificação in-app best-effort para o destinatário.
   void notificationsService.notify(ctx.otherPartyId, {
@@ -171,14 +197,18 @@ async function flagOffPlatform(messageId: number, signals: OffPlatformSignal[]):
 }
 
 export const messagingService = {
-  /** Avisa a sala do contrato que a mensagem mudou: removida ou devolvida pela moderação (ADR 44). */
+  /**
+   * Avisa que a mensagem mudou: removida ou devolvida pela moderação (ADR 44). A conversa é a mesma
+   * em todas as contratações do par, então o aviso vai para a sala de cada uma, com o id dela: a
+   * tela só aceita aviso do contrato que está aberto.
+   */
   async announceChange(messageId: number): Promise<void> {
-    const row = await messagingRepository.findWithContract(messageId);
-    if (!row?.contract_id) return;
-    realtime.emitToContract(row.contract_id, 'message:updated', {
-      ...toMessage(row),
-      contractId: row.contract_id,
-    });
+    const row = await messagingRepository.findById(messageId);
+    if (!row) return;
+    const message = toMessage(row);
+    for (const contractId of await messagingRepository.pairContractIds(row.conversation_id)) {
+      realtime.emitToContract(contractId, 'message:updated', { ...message, contractId });
+    }
   },
 
   /** Histórico do chat do contrato (somente para as partes). */

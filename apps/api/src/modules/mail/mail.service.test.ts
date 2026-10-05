@@ -442,7 +442,7 @@ describe('mailService: registro, falhas e caixa de saída do admin', () => {
     expect(repo.markSent).not.toHaveBeenCalled();
   });
 
-  it('provedor falhou e nem a falha coube na caixa de saída: ainda assim não lança, e o id existe', async () => {
+  it('provedor falhou e nem a falha coube na caixa de saída: não lança, o id existe e o log diz que a falha não foi anotada (não que o e-mail não foi registrado)', async () => {
     const warn = vi.spyOn(logger, 'warn');
     const refused = new Error('SMTP 535');
     const dropped = new Error('conexão caiu');
@@ -453,20 +453,18 @@ describe('mailService: registro, falhas e caixa de saída do admin', () => {
 
     expect(repo.markFailed).toHaveBeenCalledWith(11, 'SMTP 535');
     expect(repo.markSent).not.toHaveBeenCalled();
-    // As duas falhas ficam no log: a do provedor (com o destinatário) e a da caixa de saída. O
-    // texto da segunda não é conferido de propósito: hoje ela sai como "não foi possível
-    // registrar o e-mail", que não descreve o que houve.
-    expect(warn).toHaveBeenCalledTimes(2);
-    expect(warn).toHaveBeenNthCalledWith(
-      1,
-      { err: refused, to: 'ana@escambo.test', template: 'notification' },
-      'envio de e-mail falhou',
-    );
-    expect(warn).toHaveBeenNthCalledWith(
-      2,
-      { err: dropped, template: 'notification' },
-      expect.any(String),
-    );
+    // As duas falhas ficam no log: a do provedor (com o destinatário) e a da caixa de saída, com
+    // o id da linha que ficou com o status inicial.
+    expect(warn.mock.calls).toEqual([
+      [
+        { err: refused, to: 'ana@escambo.test', template: 'notification' },
+        'envio de e-mail falhou',
+      ],
+      [
+        { err: dropped, id: 11, template: 'notification' },
+        'e-mail não enviado, e a falha não foi anotada na caixa de saída',
+      ],
+    ]);
   });
 
   it('a ordem é registrar, enviar e só então marcar como enviado; entrega certa não deixa aviso no log', async () => {

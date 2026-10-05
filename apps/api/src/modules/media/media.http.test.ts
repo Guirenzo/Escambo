@@ -618,6 +618,39 @@ describe('mídia: borda HTTP', () => {
       expect(res.body).toEqual(notFound);
     });
 
+    it('DATA_DIR dentro de uma pasta começada por ponto (ex.: /home/app/.escambo) não bloqueia a imagem nem a miniatura', async () => {
+      env.DATA_DIR = path.join(dir, '.escambo', 'data');
+      const original = path.join(env.DATA_DIR, 'media', '2026', '09', `${A}.png`);
+      const variant = path.join(env.DATA_DIR, 'media', '2026', '09', `${A}.w128.webp`);
+      await mkdir(path.dirname(original), { recursive: true });
+      await writeFile(original, 'original em png');
+      await writeFile(variant, 'miniatura em webp');
+      mediaVariantPath.mockResolvedValue(variant);
+
+      const full = await request(app)
+        .get(`/api/media/${key}`)
+        .buffer(true)
+        .parse(binary)
+        .expect(200);
+      const thumb = await request(app)
+        .get(`/api/media/${key}?w=128`)
+        .buffer(true)
+        .parse(binary)
+        .expect(200);
+
+      expect((full.body as Buffer).toString()).toBe('original em png');
+      expect((thumb.body as Buffer).toString()).toBe('miniatura em webp');
+    });
+
+    it('dentro da pasta de mídia, arquivo em subpasta oculta continua recusado', async () => {
+      mediaVariantPath.mockResolvedValue(await put(`2026/.oculta/${A}.w128.webp`, 'miniatura'));
+
+      const res = await request(app).get(`/api/media/${key}?w=128`);
+
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ error: 'bad_request', message: 'Requisição inválida' });
+    });
+
     it('falha de leitura que não é "arquivo não existe" não é mascarada como 404', async () => {
       // Uma pasta com nome de imagem: o envio do arquivo falha com EISDIR.
       await mkdir(inMedia(key), { recursive: true });
@@ -651,10 +684,14 @@ describe('mídia: borda HTTP', () => {
 
       await expect(serveMedia(req, res)).resolves.toBeUndefined();
 
-      // O arquivo pedido é o da chave, dentro da pasta de mídia; arquivo oculto nunca é servido.
+      // O arquivo pedido é o da chave, relativo à pasta de mídia (opção root); arquivo oculto nunca
+      // é servido.
       expect(sendFile).toHaveBeenCalledTimes(1);
-      expect(sendFile.mock.calls[0]![0]).toBe(inMedia(key));
-      expect(sendFile.mock.calls[0]![1]).toMatchObject({ dotfiles: 'deny' });
+      expect(sendFile.mock.calls[0]![0]).toBe(path.join(...key.split('/')));
+      expect(sendFile.mock.calls[0]![1]).toMatchObject({
+        root: path.join(dir, 'media'),
+        dotfiles: 'deny',
+      });
     });
 
     it('a mesma falha antes de qualquer byte sair sobe como erro, para o cliente não ficar sem resposta', async () => {

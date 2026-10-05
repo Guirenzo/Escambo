@@ -356,6 +356,61 @@ describe('pushService: assinaturas e envio (ADR 52)', () => {
       expect(subs.markError.mock.calls).toEqual([[3, 'provedor simulated']]);
     });
 
+    it('provedor que lança num aparelho não impede os seguintes: a tentativa conta como falha, fica anotada e o log diz qual assinatura', async () => {
+      subs.listForUser.mockResolvedValue([device(1), device(2), device(3)]);
+      const warn = vi.spyOn(logger, 'warn');
+      const boom = new Error('chave VAPID faltando');
+      provider.send
+        .mockResolvedValueOnce('sent')
+        .mockRejectedValueOnce(boom)
+        .mockResolvedValueOnce('gone');
+
+      expect(await pushService.send(7, payload)).toEqual({ sent: 1, removed: 1, failed: 1 });
+
+      expect(provider.send.mock.calls.map((c) => c[0])).toEqual([target(1), target(2), target(3)]);
+      expect(subs.markSent.mock.calls).toEqual([[1]]);
+      expect(subs.markError.mock.calls).toEqual([[2, 'provedor simulated']]);
+      expect(subs.removeById.mock.calls).toEqual([[3]]);
+      expect(warn.mock.calls).toEqual([
+        [{ err: boom, subscriptionId: 2 }, 'push: o provedor lançou ao entregar'],
+      ]);
+    });
+
+    it('banco fora ao anotar um aparelho: os seguintes ainda saem e a contagem é o que o serviço de push respondeu', async () => {
+      subs.listForUser.mockResolvedValue([device(1), device(2), device(3), device(4)]);
+      const warn = vi.spyOn(logger, 'warn');
+      const down = new Error('banco fora');
+      provider.send
+        .mockResolvedValueOnce('sent')
+        .mockResolvedValueOnce('gone')
+        .mockResolvedValueOnce('failed')
+        .mockResolvedValueOnce('sent');
+      subs.markSent.mockRejectedValueOnce(down);
+      subs.removeById.mockRejectedValueOnce(down);
+      subs.markError.mockRejectedValueOnce(down);
+
+      expect(await pushService.send(7, payload)).toEqual({ sent: 2, removed: 1, failed: 1 });
+
+      expect(provider.send).toHaveBeenCalledTimes(4);
+      expect(subs.markSent.mock.calls).toEqual([[1], [4]]);
+      expect(subs.removeById.mock.calls).toEqual([[2]]);
+      expect(subs.markError.mock.calls).toEqual([[3, 'provedor simulated']]);
+      expect(warn.mock.calls).toEqual([
+        [
+          { err: down, subscriptionId: 1, result: 'sent' },
+          'push: resultado do aparelho não anotado na assinatura',
+        ],
+        [
+          { err: down, subscriptionId: 2, result: 'gone' },
+          'push: resultado do aparelho não anotado na assinatura',
+        ],
+        [
+          { err: down, subscriptionId: 3, result: 'failed' },
+          'push: resultado do aparelho não anotado na assinatura',
+        ],
+      ]);
+    });
+
     it('sem opções, o provedor recebe opções vazias (o TTL padrão é dele)', async () => {
       subs.listForUser.mockResolvedValue([device(1)]);
       provider.send.mockResolvedValue('sent');
@@ -419,7 +474,7 @@ describe('pushService: assinaturas e envio (ADR 52)', () => {
       expect(provider.send).not.toHaveBeenCalled();
     });
 
-    it('falha no envio (provedor fora) também não derruba quem notificou', async () => {
+    it('falha no envio (provedor fora) também não derruba quem notificou: fica anotada no aparelho e no log', async () => {
       users.findById.mockResolvedValue(account());
       subs.listForUser.mockResolvedValue([device(1)]);
       const warn = vi.spyOn(logger, 'warn');
@@ -436,14 +491,14 @@ describe('pushService: assinaturas e envio (ADR 52)', () => {
         ],
       ]);
       expect(subs.markSent).not.toHaveBeenCalled();
-      expect(subs.markError).not.toHaveBeenCalled();
+      expect(subs.markError.mock.calls).toEqual([[1, 'provedor simulated']]);
       expect(subs.removeById).not.toHaveBeenCalled();
       expect(warn.mock.calls).toEqual([
-        [{ err: offline, type: 'contract_proposal' }, 'push da notificação falhou'],
+        [{ err: offline, subscriptionId: 1 }, 'push: o provedor lançou ao entregar'],
       ]);
     });
 
-    it('falha ao anotar a entrega (banco fora depois do envio) também fica só no log de quem notificou', async () => {
+    it('falha ao anotar a entrega (banco fora depois do envio) também fica só no log, com o aparelho', async () => {
       users.findById.mockResolvedValue(account());
       subs.listForUser.mockResolvedValue([device(1)]);
       provider.send.mockResolvedValue('sent');
@@ -455,7 +510,10 @@ describe('pushService: assinaturas e envio (ADR 52)', () => {
 
       expect(subs.markSent.mock.calls).toEqual([[1]]);
       expect(warn.mock.calls).toEqual([
-        [{ err: down, type: 'contract_proposal' }, 'push da notificação falhou'],
+        [
+          { err: down, subscriptionId: 1, result: 'sent' },
+          'push: resultado do aparelho não anotado na assinatura',
+        ],
       ]);
     });
 

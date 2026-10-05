@@ -75,6 +75,22 @@ describe('GET /api/credits/transactions', () => {
     expect(service.listTransactions).not.toHaveBeenCalled();
   });
 
+  it('a página vai até 10000: acima disso (1e20 incluso) é erro de validação, não 500 do OFFSET', async () => {
+    for (const page of ['10001', '1e20']) {
+      const res = await request(app)
+        .get(`/api/credits/transactions?page=${page}`)
+        .set(bearer(7))
+        .expect(422);
+      expect(res.body.error).toBe('validation_error');
+      expect(res.body.details).toHaveProperty('page');
+    }
+    expect(service.listTransactions).not.toHaveBeenCalled();
+
+    service.listTransactions.mockResolvedValue({ items: [], page: 10000, limit: 20 });
+    await request(app).get('/api/credits/transactions?page=10000').set(bearer(7)).expect(200);
+    expect(service.listTransactions).toHaveBeenCalledWith(7, 10000, 20);
+  });
+
   it('token adulterado é recusado como inválido, sem consultar o extrato', async () => {
     const res = await request(app)
       .get('/api/credits/transactions')

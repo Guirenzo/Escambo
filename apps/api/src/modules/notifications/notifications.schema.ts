@@ -82,7 +82,7 @@ export const pushStatusQuerySchema = z.object({
 });
 
 export const listNotificationsSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
+  page: z.coerce.number().int().positive().max(10_000).default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
 export type ListNotificationsInput = z.infer<typeof listNotificationsSchema>;

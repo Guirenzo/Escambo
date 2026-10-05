@@ -43,16 +43,28 @@ vi.mock('../gamification/gamification.service', () => ({
 vi.mock('../barter/barter.service', () => ({
   barterService: { onLinkedContractCompleted: vi.fn(), onLinkedContractCancelled: vi.fn() },
 }));
+// Quem é contratado e o serviço da proposta: o create confere os dois antes de gravar (ADR 60).
+vi.mock('../auth/auth.repository', () => ({ authRepository: { findById: vi.fn() } }));
+vi.mock('../services/services.repository', () => ({
+  servicesRepository: { findById: vi.fn() },
+}));
+// Na proposta direta, conta que não se cadastrou como freelancer precisa do perfil de freelancer.
+vi.mock('../profiles/profiles.repository', () => ({
+  profilesRepository: { findFreelancerByUserId: vi.fn() },
+}));
 
 import { logger } from '../../config/logger';
 import { setClockForTests } from '../../utils/clock';
 import { cashSettlement, contractsService } from './contracts.service';
 import { contractsRepository, type ContractRow, type HistoryRow } from './contracts.repository';
 import { milestonesRepository } from './milestones.repository';
+import { authRepository, type UserRow } from '../auth/auth.repository';
 import { barterService } from '../barter/barter.service';
 import { gamificationService } from '../gamification/gamification.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { reviewsRepository } from '../reviews/reviews.repository';
+import { profilesRepository, type FreelancerRow } from '../profiles/profiles.repository';
+import { servicesRepository, type ServiceRow } from '../services/services.repository';
 import { walletService } from '../wallet/wallet.service';
 
 // getById anexa a avaliação do contrato; sem banco no teste unitário, vem vazia.
@@ -61,6 +73,70 @@ vi.mock('../reviews/reviews.repository', () => ({
 }));
 
 const repo = vi.mocked(contractsRepository);
+const users = vi.mocked(authRepository);
+const services = vi.mocked(servicesRepository);
+const profiles = vi.mocked(profilesRepository);
+
+/** Perfil de freelancer como o profilesRepository.findFreelancerByUserId devolve. */
+const freelancerProfile = (): FreelancerRow =>
+  ({
+    full_name: 'Ana Cliente e Freela',
+    avatar_url: null,
+    bio: null,
+    headline: null,
+    city: 'Joinville',
+    state: 'SC',
+    latitude: null,
+    longitude: null,
+    is_available: 1,
+    available_days: null,
+    available_periods: null,
+    avg_rating: '0.00',
+    total_reviews: 0,
+    total_contracts: 0,
+    response_time_hours: null,
+    timezone: null,
+  }) as FreelancerRow;
+
+/** O freelancer 2 dos exemplos como o authRepository.findById devolve: conta ativa, não excluída. */
+const freelancerRow = (o: Partial<Omit<UserRow, 'constructor'>> = {}): UserRow =>
+  ({
+    id: 2,
+    ulid: '01FREELANCER00000000000000',
+    email: 'freela@escambo.test',
+    password_hash: '$2a$12$hashdasenhadofreelancer',
+    role: 'freelancer',
+    status: 'active',
+    deleted_at: null,
+    email_verified_at: new Date('2025-12-01T00:00:00Z'),
+    email_frequency: 'instant',
+    digest_hour: null,
+    timezone: null,
+    push_quiet_start: null,
+    push_quiet_end: null,
+    push_quiet_pass: null,
+    push_quiet_summary_id: null,
+    ...o,
+  }) as UserRow;
+
+/** Serviço 9, do freelancer 2, no ar; findById não devolve serviço removido (deleted_at). */
+const serviceRow = (o: Partial<Omit<ServiceRow, 'constructor'>> = {}): ServiceRow =>
+  ({
+    id: 9,
+    user_id: 2,
+    category_id: 3,
+    title: 'Landing page em React',
+    description: 'Página de vendas responsiva, com formulário e integração ao CRM',
+    price_type: 'fixed',
+    price: '1000.00',
+    delivery_days: 7,
+    is_remote: 1,
+    is_active: 1,
+    views_count: 12,
+    created_at: new Date('2025-11-20T15:00:00Z'),
+    deleted_at: null,
+    ...o,
+  }) as ServiceRow;
 
 type FakeFields = Partial<{
   id: number;
@@ -104,7 +180,12 @@ function fakeRow(o: FakeFields = {}): ContractRow {
   } as unknown as ContractRow;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  users.findById.mockResolvedValue(freelancerRow());
+  services.findById.mockResolvedValue(serviceRow());
+  profiles.findFreelancerByUserId.mockResolvedValue(undefined);
+});
 
 describe('create', () => {
   it('calcula taxa de 15% e líquido (RN-031)', async () => {
@@ -117,6 +198,9 @@ describe('create', () => {
       price: 1000,
       paymentMode: 'cash',
     });
+    // Quem é contratado é conferido pelo id da proposta; sem serviço, nenhum é buscado.
+    expect(users.findById.mock.calls).toEqual([[2]]);
+    expect(services.findById).not.toHaveBeenCalled();
     const arg = repo.create.mock.calls[0]![0];
     expect(arg.platformFee).toBe(150);
     expect(arg.freelancerNet).toBe(850);
@@ -176,8 +260,169 @@ describe('create', () => {
         paymentMode: 'cash',
       }),
     ).rejects.toMatchObject({ statusCode: 400, code: 'self_contract' });
+    // A auto-contratação é barrada antes de qualquer leitura.
+    expect(users.findById).not.toHaveBeenCalled();
     expect(repo.create).not.toHaveBeenCalled();
     expect(walletService.ensure).not.toHaveBeenCalled();
+  });
+});
+
+describe('create: quem é contratado e o serviço da proposta (RN-013, ADR 60)', () => {
+  const proposal = {
+    freelancerId: 2,
+    serviceId: 9,
+    title: 'Landing page',
+    description: 'Preciso de uma landing page responsiva',
+    price: 1000,
+    paymentMode: 'cash' as const,
+  };
+
+  /** Recusada antes de gravar: nada reservado, nada criado, ninguém avisado. */
+  const expectNothingDone = () => {
+    expect(walletService.ensure).not.toHaveBeenCalled();
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(repo.findById).not.toHaveBeenCalled();
+    expect(notificationsService.notify).not.toHaveBeenCalled();
+  };
+
+  it.each([
+    ['não existe', undefined],
+    ['excluiu a conta (LGPD)', freelancerRow({ deleted_at: new Date('2026-02-10T12:00:00Z') })],
+    ['está suspenso', freelancerRow({ status: 'suspended' })],
+    ['está banido', freelancerRow({ status: 'banned' })],
+  ])('freelancer que %s: 404 freelancer_not_found, e o serviço nem é buscado', async (_, row) => {
+    users.findById.mockResolvedValue(row);
+    await expect(contractsService.create(1, proposal)).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'freelancer_not_found',
+      message: 'Freelancer não encontrado',
+    });
+    expect(users.findById.mock.calls).toEqual([[2]]);
+    expect(services.findById).not.toHaveBeenCalled();
+    expectNothingDone();
+  });
+
+  it.each([
+    // O repository não devolve serviço com deleted_at (services.repository.test confere o SQL).
+    ['não existe ou foi removido', undefined],
+    ['é de outra pessoa', serviceRow({ user_id: 55 })],
+    // De outra pessoa e pausado: 404 também, sem contar a quem não é dono que ele está pausado.
+    ['é de outra pessoa e está pausado', serviceRow({ user_id: 55, is_active: 0 })],
+  ])('serviço que %s: 404 service_not_found', async (_, row) => {
+    services.findById.mockResolvedValue(row);
+    await expect(contractsService.create(1, proposal)).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'service_not_found',
+      message: 'Serviço não encontrado',
+    });
+    expect(services.findById.mock.calls).toEqual([[9]]);
+    expectNothingDone();
+  });
+
+  it('serviço pausado pelo freelancer: 409 service_inactive com a mensagem da RN-013', async () => {
+    services.findById.mockResolvedValue(serviceRow({ is_active: 0 }));
+    const err = await contractsService.create(1, proposal).catch((e: unknown) => e);
+    expect(err).toMatchObject({
+      statusCode: 409,
+      code: 'service_inactive',
+      message: 'Este serviço está pausado e não aceita novas propostas (RN-013).',
+    });
+    expectNothingDone();
+  });
+
+  it('serviço no ar e do freelancer: a proposta é gravada com o serviço e o freelancer é avisado', async () => {
+    repo.create.mockResolvedValue(1);
+    repo.findById.mockResolvedValue(fakeRow({ service_id: 9 }));
+    const contract = await contractsService.create(1, proposal);
+    expect(users.findById.mock.calls).toEqual([[2]]);
+    expect(services.findById.mock.calls).toEqual([[9]]);
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: 1, freelancerId: 2, serviceId: 9 }),
+    );
+    expect(vi.mocked(notificationsService.notify).mock.calls.map((c) => c[0])).toEqual([2]);
+    expect(contract.status).toBe('pending');
+  });
+
+  it.each([
+    ['sem o campo', undefined],
+    ['com serviceId null', null],
+  ])(
+    'contratação direta (%s): nenhum serviço é buscado e a proposta vai sem serviço',
+    async (_, serviceId) => {
+      // Mesmo que existisse um serviço pausado, ele não entra na conta de quem contrata direto.
+      services.findById.mockResolvedValue(serviceRow({ is_active: 0 }));
+      repo.create.mockResolvedValue(1);
+      repo.findById.mockResolvedValue(fakeRow());
+      await contractsService.create(1, { ...proposal, serviceId });
+      expect(services.findById).not.toHaveBeenCalled();
+      // Cadastrado como freelancer: nem precisa do perfil para receber a proposta direta.
+      expect(profiles.findFreelancerByUserId).not.toHaveBeenCalled();
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ serviceId: null }));
+      expect(vi.mocked(notificationsService.notify).mock.calls.map((c) => c[0])).toEqual([2]);
+    },
+  );
+
+  it.each([
+    ['direta', undefined],
+    ['pelo serviço dele', 9],
+  ])(
+    'conta admin nunca é contratada (%s): 404 freelancer_not_found, sem buscar serviço nem perfil',
+    async (_, serviceId) => {
+      // Mesmo com perfil de freelancer: o admin mediaria a disputa da própria contratação.
+      users.findById.mockResolvedValue(freelancerRow({ role: 'admin' }));
+      profiles.findFreelancerByUserId.mockResolvedValue(freelancerProfile());
+      await expect(contractsService.create(1, { ...proposal, serviceId })).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'freelancer_not_found',
+        message: 'Freelancer não encontrado',
+      });
+      expect(services.findById).not.toHaveBeenCalled();
+      expect(profiles.findFreelancerByUserId).not.toHaveBeenCalled();
+      expectNothingDone();
+    },
+  );
+
+  it.each([['client'], ['company']])(
+    'proposta direta para conta %s sem perfil de freelancer: 404 freelancer_not_found, nada gravado',
+    async (role) => {
+      users.findById.mockResolvedValue(freelancerRow({ role }));
+      await expect(
+        contractsService.create(1, { ...proposal, serviceId: undefined }),
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'freelancer_not_found',
+        message: 'Freelancer não encontrado',
+      });
+      expect(profiles.findFreelancerByUserId.mock.calls).toEqual([[2]]);
+      expect(services.findById).not.toHaveBeenCalled();
+      expectNothingDone();
+    },
+  );
+
+  it('conta de cliente que também tem perfil de freelancer (RN-006) recebe a proposta direta', async () => {
+    users.findById.mockResolvedValue(freelancerRow({ role: 'client' }));
+    profiles.findFreelancerByUserId.mockResolvedValue(freelancerProfile());
+    repo.create.mockResolvedValue(1);
+    repo.findById.mockResolvedValue(fakeRow());
+    await contractsService.create(1, { ...proposal, serviceId: undefined });
+    expect(profiles.findFreelancerByUserId.mock.calls).toEqual([[2]]);
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ freelancerId: 2, serviceId: null }),
+    );
+    expect(vi.mocked(notificationsService.notify).mock.calls.map((c) => c[0])).toEqual([2]);
+  });
+
+  it('conta de cliente sem perfil, contratada pelo serviço que ela publicou: a proposta passa sem olhar o perfil', async () => {
+    // Publicar serviço não exige perfil, e a busca lista o serviço: o web contrata por ele.
+    users.findById.mockResolvedValue(freelancerRow({ role: 'client' }));
+    repo.create.mockResolvedValue(1);
+    repo.findById.mockResolvedValue(fakeRow({ service_id: 9 }));
+    await contractsService.create(1, proposal);
+    expect(services.findById.mock.calls).toEqual([[9]]);
+    expect(profiles.findFreelancerByUserId).not.toHaveBeenCalled();
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ freelancerId: 2, serviceId: 9 }),
+    );
   });
 });
 

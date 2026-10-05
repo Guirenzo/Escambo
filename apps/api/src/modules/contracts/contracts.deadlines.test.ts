@@ -48,11 +48,18 @@ vi.mock('../auth/user-zone', () => ({
 vi.mock('../settings/settings.repository', () => ({
   settingsRepository: { getNumber: vi.fn().mockResolvedValue(24) },
 }));
+// O create confere quem é contratado e o serviço da proposta antes de gravar (ADR 60).
+vi.mock('../auth/auth.repository', () => ({ authRepository: { findById: vi.fn() } }));
+vi.mock('../services/services.repository', () => ({
+  servicesRepository: { findById: vi.fn() },
+}));
 
 import { setClockForTests } from '../../utils/clock';
 import { contractsService } from './contracts.service';
 import { contractsRepository, type ContractRow } from './contracts.repository';
 import { milestonesRepository } from './milestones.repository';
+import { authRepository, type UserRow } from '../auth/auth.repository';
+import { servicesRepository, type ServiceRow } from '../services/services.repository';
 import { disputesRepository } from '../disputes/disputes.repository';
 import { gamificationService } from '../gamification/gamification.service';
 import { notificationsService } from '../notifications/notifications.service';
@@ -65,6 +72,39 @@ const repo = vi.mocked(contractsRepository);
 const disputes = vi.mocked(disputesRepository);
 const notify = vi.mocked(notificationsService.notify);
 const settings = vi.mocked(settingsRepository.getNumber);
+const users = vi.mocked(authRepository);
+const services = vi.mocked(servicesRepository);
+
+/** A conta de quem é contratado, como o authRepository.findById devolve: ativa, não excluída. */
+const freelancerAccount = (id: number): UserRow =>
+  ({
+    id,
+    ulid: `01FREELANCER${String(id).padStart(14, '0')}`,
+    email: `freela${id}@escambo.test`,
+    password_hash: '$2a$12$hashdasenhadofreelancer',
+    role: 'freelancer',
+    status: 'active',
+    deleted_at: null,
+    email_verified_at: new Date('2026-09-01T12:00:00Z'),
+    timezone: 'America/Sao_Paulo',
+  }) as UserRow;
+
+/** Serviço 5, do freelancer 44, no ar (o da proposta de "o que é gravado"). */
+const SERVICE_5 = {
+  id: 5,
+  user_id: 44,
+  category_id: 2,
+  title: 'Vídeo institucional',
+  description: 'Roteiro, captação e edição de vídeo de até 3 minutos',
+  price_type: 'fixed',
+  price: '900.00',
+  delivery_days: 10,
+  is_remote: 1,
+  is_active: 1,
+  views_count: 40,
+  created_at: new Date('2026-09-15T12:00:00Z'),
+  deleted_at: null,
+} as ServiceRow;
 
 /** Horário de Brasília (UTC−3). */
 const brt = (s: string): Date => new Date(`${s.replace(' ', 'T')}-03:00`);
@@ -126,6 +166,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   setClockForTests(NOW, { frozen: true });
   settings.mockResolvedValue(24);
+  users.findById.mockImplementation(async (id: number) => freelancerAccount(id));
+  services.findById.mockResolvedValue(SERVICE_5);
 });
 afterEach(() => setClockForTests(null));
 
@@ -1631,6 +1673,9 @@ describe('create: o que é gravado e quem é avisado (RN-021, RN-031)', () => {
       deadlineAt: '2026-10-20T02:59:59.700Z', // 19/10 23:59:59,7 em Brasília
     });
 
+    // Antes de gravar: o freelancer 44 existe e está ativo, e o serviço 5 é dele e está no ar.
+    expect(users.findById.mock.calls).toEqual([[44]]);
+    expect(services.findById.mock.calls).toEqual([[5]]);
     // A validade conta no fuso de quem responde, com as horas do painel (72 de padrão); o fuso do
     // cliente entra para dizer o prazo como dia (ADR 58).
     expect(vi.mocked(userZone).mock.calls).toEqual([[44], [7]]);

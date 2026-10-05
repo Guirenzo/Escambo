@@ -9,10 +9,19 @@ import { HttpError } from '../utils/http-error';
  */
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof ZodError) {
+    const { fieldErrors } = err.flatten();
+    // Regra do objeto inteiro (refine sem path) não tem campo para apontar: a mensagem dela é que
+    // explica a recusa, e não o texto genérico. Só a regra escrita por nós (custom): os outros
+    // erros da raiz (chave desconhecida no .strict(), corpo que é lista ou que falta) trazem o
+    // texto padrão do zod, em inglês, e ficam com a mensagem genérica.
+    const rule =
+      Object.keys(fieldErrors).length === 0
+        ? err.issues.find((i) => i.path.length === 0 && i.code === 'custom')
+        : undefined;
     res.status(422).json({
       error: 'validation_error',
-      message: 'Dados de entrada inválidos',
-      details: err.flatten().fieldErrors,
+      message: rule?.message ?? 'Dados de entrada inválidos',
+      details: fieldErrors,
     });
     return;
   }

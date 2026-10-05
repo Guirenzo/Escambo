@@ -1,3 +1,4 @@
+import type { Readable } from 'node:stream';
 import type {
   AdminDeletionRequest,
   Consent,
@@ -89,6 +90,29 @@ function toExport(r: ExportRow): DataExportRequest {
   };
 }
 
+/**
+ * Apaga o arquivo de cada cópia e só então marca o pedido como expirado. Cópia cujo arquivo não
+ * saiu (ou cuja marcação falhou) fica como está, com o nome do arquivo, para a próxima rodada do job
+ * de expiração: o banco nunca diz que saiu um arquivo que continua no disco. Devolve quantas
+ * expiraram e quantas ficaram.
+ */
+async function expireAll(rows: ExportRow[]): Promise<{ expired: number; kept: number }> {
+  let expired = 0;
+  for (const r of rows) {
+    try {
+      if (r.file_url) await deleteExportFile(r.file_url);
+      await lgpdRepository.markExportExpired(r.id);
+      expired++;
+    } catch (err) {
+      logger.warn(
+        { err, exportId: r.id, userId: r.user_id },
+        'cópia de dados não expirada; fica para a próxima rodada',
+      );
+    }
+  }
+  return { expired, kept: rows.length - expired };
+}
+
 export const lgpdService = {
   /** Registra consentimento explícito e versionado (RN-071). */
   async recordConsent(
@@ -119,34 +143,37 @@ export const lgpdService = {
   // ---------- exclusão (direito ao esquecimento, RN-072) ----------
 
   /**
-   * Uma solicitação ativa por vez. Contratações abertas ou dinheiro na carteira impedem o
+   * Uma solicitação ativa por vez, garantida pela trava na linha do titular (dois pedidos
+   * simultâneos não abrem duas). Contratações abertas ou dinheiro na carteira impedem o
    * pedido: o titular precisa fechar/sacar antes (a plataforma não pode "sumir" com escrow).
    */
   async requestDeletion(userId: number, reason: string | null): Promise<DataDeletionRequest> {
-    const active = await lgpdRepository.findActiveDeletion(userId);
-    if (active) {
-      throw new HttpError(
-        409,
-        'Já existe uma solicitação de exclusão em andamento',
-        'deletion_already_requested',
-      );
-    }
-    const b = await lgpdRepository.deletionBlockers(userId);
-    if (b.activeContracts > 0 || b.balance > 0 || b.balancePending > 0) {
-      const parts: string[] = [];
-      if (b.activeContracts > 0) {
-        parts.push(`${b.activeContracts} contratação(ões) em andamento`);
+    const id = await lgpdRepository.withUserLock(userId, async (conn) => {
+      const active = await lgpdRepository.findActiveDeletion(userId, conn);
+      if (active) {
+        throw new HttpError(
+          409,
+          'Já existe uma solicitação de exclusão em andamento',
+          'deletion_already_requested',
+        );
       }
-      if (b.balance > 0 || b.balancePending > 0) {
-        parts.push(`${brl(b.balance + b.balancePending)} na carteira`);
+      const b = await lgpdRepository.deletionBlockers(userId, conn);
+      if (b.activeContracts > 0 || b.balance > 0 || b.balancePending > 0) {
+        const parts: string[] = [];
+        if (b.activeContracts > 0) {
+          parts.push(`${b.activeContracts} contratação(ões) em andamento`);
+        }
+        if (b.balance > 0 || b.balancePending > 0) {
+          parts.push(`${brl(b.balance + b.balancePending)} na carteira`);
+        }
+        throw new HttpError(
+          409,
+          `Antes de excluir a conta, encerre o que ainda está aberto: ${parts.join(' e ')}. Conclua ou cancele as contratações e saque o saldo.`,
+          'deletion_blocked',
+        );
       }
-      throw new HttpError(
-        409,
-        `Antes de excluir a conta, encerre o que ainda está aberto: ${parts.join(' e ')}. Conclua ou cancele as contratações e saque o saldo.`,
-        'deletion_blocked',
-      );
-    }
-    const id = await lgpdRepository.createDeletion(userId, reason);
+      return lgpdRepository.createDeletion(userId, reason, conn);
+    });
     return {
       id,
       reason,
@@ -199,6 +226,23 @@ export const lgpdService = {
     } catch (err) {
       logger.error({ err, userId: row.user_id }, 'quarentena do titular: falha ao remover');
     }
+    // As cópias de dados que ele pediu (portabilidade) também, sem esperar vencer: o arquivo sai e
+    // o pedido fica expirado, como no job de expiração. A que não sair agora fica disponível no
+    // banco, com o arquivo, e o job a apaga quando vencer.
+    try {
+      const { expired, kept } = await expireAll(await lgpdRepository.listLiveExports(row.user_id));
+      if (expired) {
+        logger.info({ userId: row.user_id, expired }, 'cópias de dados do titular removidas');
+      }
+      if (kept) {
+        logger.error(
+          { userId: row.user_id, kept },
+          'cópias de dados do titular não removidas; o job de expiração tenta de novo quando vencerem',
+        );
+      }
+    } catch (err) {
+      logger.error({ err, userId: row.user_id }, 'cópias de dados do titular: falha ao remover');
+    }
     return toDeletion((await lgpdRepository.findDeletion(id))!);
   },
 
@@ -229,10 +273,11 @@ export const lgpdService = {
    */
   async requestExport(userId: number): Promise<DataExportRequest> {
     const id = await lgpdRepository.createExport(userId);
+    let fileName: string | null = null;
     try {
       const user = await authRepository.findById(userId);
       const data = await buildExport(userId);
-      const fileName = `${user?.ulid ?? userId}-${id}.json`;
+      fileName = `${user?.ulid ?? userId}-${id}.json`;
       await writeExportFile(fileName, data);
       const expiresAt = new Date(Date.now() + env.EXPORT_TTL_DAYS * 86_400_000);
       await lgpdRepository.markExportReady(id, fileName, expiresAt);
@@ -244,6 +289,19 @@ export const lgpdService = {
       });
     } catch (err) {
       logger.error({ err, userId, exportId: id }, 'falha ao gerar a exportação de dados');
+      // Pedido com falha não tem file_url e nenhum job o procura: o arquivo (inteiro ou pela
+      // metade), com todos os dados do titular, sai agora ou ficaria no disco para sempre. Se nem
+      // isso der, o pedido ainda é marcado como falha, e o arquivo órfão fica no log de erro.
+      if (fileName) {
+        try {
+          await deleteExportFile(fileName);
+        } catch (e) {
+          logger.error(
+            { err: e, userId, exportId: id, file: fileName },
+            'arquivo da exportação com falha não apagado',
+          );
+        }
+      }
       await lgpdRepository.markExportFailed(id);
     }
     return toExport((await lgpdRepository.findExport(id))!);
@@ -254,10 +312,7 @@ export const lgpdService = {
   },
 
   /** Stream do arquivo (só o titular, só enquanto válido). */
-  async openExport(
-    id: number,
-    userId: number,
-  ): Promise<{ stream: NodeJS.ReadableStream; fileName: string }> {
+  async openExport(id: number, userId: number): Promise<{ stream: Readable; fileName: string }> {
     const row = await lgpdRepository.findExport(id);
     if (!row) throw new HttpError(404, 'Exportação não encontrada', 'export_not_found');
     if (row.user_id !== userId) throw new HttpError(403, 'Esta exportação não é sua', 'forbidden');
@@ -272,13 +327,8 @@ export const lgpdService = {
     return { stream: openExportFile(row.file_url), fileName: `escambo-dados-${stamp}.json` };
   },
 
-  /** Job: apaga arquivos vencidos e marca como expirados. */
+  /** Job: apaga arquivos vencidos e marca como expirados; devolve quantas expiraram. */
   async expireExports(): Promise<number> {
-    const rows = await lgpdRepository.listExpiredExports();
-    for (const r of rows) {
-      if (r.file_url) await deleteExportFile(r.file_url);
-      await lgpdRepository.markExportExpired(r.id);
-    }
-    return rows.length;
+    return (await expireAll(await lgpdRepository.listExpiredExports())).expired;
   },
 };

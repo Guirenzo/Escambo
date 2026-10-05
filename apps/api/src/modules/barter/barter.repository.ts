@@ -41,6 +41,12 @@ export interface TornaHold {
   amount: number;
 }
 
+/** Serviço do catálogo citado na proposta: de quem é e se está no ar. */
+export interface CatalogService {
+  userId: number;
+  isActive: boolean;
+}
+
 export type AcceptResult =
   | { ok: true; contractOfferedId: number; contractRequestedId: number }
   | { ok: false; reason: 'conflict' | 'insufficient_balance' };
@@ -90,9 +96,13 @@ async function holdTorna(
   return true;
 }
 
-/** Devolve a torna reservada ao pagador (só se estiver 'held') e marca 'refunded'. */
-async function refundTorna(conn: PoolConnection, row: BarterRow): Promise<boolean> {
-  if (row.torna_status !== 'held' || !row.cash_payer_id) return true;
+/**
+ * Devolve a torna reservada ao pagador (só se estiver 'held') e marca 'refunded'. A carteira só
+ * recusa devolver um retido que deveria existir se ela está inconsistente (sem carteira ou retido
+ * menor que a torna): isso é erro, não "o status mudou", e sobe como exceção para o rollback.
+ */
+async function refundTorna(conn: PoolConnection, row: BarterRow): Promise<void> {
+  if (row.torna_status !== 'held' || !row.cash_payer_id) return;
   const amount = Number(row.cash_difference);
   const ok = await applyWalletEffect(conn, {
     userId: row.cash_payer_id,
@@ -100,12 +110,15 @@ async function refundTorna(conn: PoolConnection, row: BarterRow): Promise<boolea
     pendingDelta: -amount,
     reason: 'refund',
   });
-  if (!ok) return false;
+  if (!ok) {
+    throw new Error(
+      `Troca ${row.id}: a carteira do usuário ${row.cash_payer_id} recusou a devolução da torna de ${amount} (retido inconsistente)`,
+    );
+  }
   await conn.query<ResultSetHeader>(
     `UPDATE barter_agreements SET torna_status = 'refunded' WHERE id = :id`,
     { id: row.id },
   );
-  return true;
 }
 
 /** Acordo + títulos dos serviços envolvidos (LEFT JOIN: serviço pode ter sido removido). */
@@ -174,6 +187,35 @@ export const barterRepository = {
     }
   },
 
+  /**
+   * O destinatário pode receber proposta: a conta existe, não foi excluída e não está suspensa nem
+   * banida (a mesma regra da contratação direta). Suspensa ou banida não entra para responder, e a
+   * torna reservada pelo proponente ficaria presa até ele cancelar.
+   */
+  async canReceiveProposal(id: number): Promise<boolean> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM users
+        WHERE id = :id AND deleted_at IS NULL AND status NOT IN ('suspended', 'banned')
+          AND role <> 'admin'
+        LIMIT 1`,
+      { id },
+    );
+    return rows.length > 0;
+  },
+
+  /**
+   * Serviço do catálogo, com o dono e se está no ar (pausado não aceita proposta, RN-013), ou
+   * null se ele não existe ou foi removido.
+   */
+  async findCatalogService(id: number): Promise<CatalogService | null> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT user_id, is_active FROM services WHERE id = :id AND deleted_at IS NULL LIMIT 1`,
+      { id },
+    );
+    const row = rows[0];
+    return row ? { userId: Number(row.user_id), isActive: Boolean(Number(row.is_active)) } : null;
+  },
+
   async findById(id: number): Promise<BarterRow | undefined> {
     const [rows] = await pool.query<BarterRow[]>(`${WITH_TITLES} WHERE b.id = :id LIMIT 1`, {
       id,
@@ -194,7 +236,8 @@ export const barterRepository = {
 
   /**
    * Recusa/cancela uma troca ainda 'proposed' e devolve a torna se estava reservada —
-   * tudo numa transação. Retorna false se o status já mudou.
+   * tudo numa transação. Retorna false só se o status já mudou; a carteira recusar a
+   * devolução é exceção (desfaz tudo).
    */
   async setStatusFromProposed(id: number, to: 'rejected' | 'cancelled'): Promise<boolean> {
     const conn = await pool.getConnection();
@@ -209,10 +252,7 @@ export const barterRepository = {
         `UPDATE barter_agreements SET status = :to WHERE id = :id`,
         { to, id },
       );
-      if (!(await refundTorna(conn, row))) {
-        await conn.rollback();
-        return false;
-      }
+      await refundTorna(conn, row);
       await conn.commit();
       return true;
     } catch (err) {
@@ -287,7 +327,8 @@ export const barterRepository = {
   /**
    * Conclui a troca (os dois contratos aprovados) e LIQUIDA a torna reservada: o pagador deixa
    * de ter o valor retido, o outro lado recebe torna − taxa no disponível, e a plataforma
-   * fica com a taxa. Uma transação; false se a troca já não estava ativa.
+   * fica com a taxa. Uma transação; false se a troca já não estava ativa, exceção (com rollback)
+   * se a carteira recusar a liquidação.
    */
   async completeAndRelease(id: number): Promise<boolean> {
     const conn = await pool.getConnection();
@@ -323,8 +364,10 @@ export const barterRepository = {
           reason: 'barter_in',
         });
         if (!paid || !received) {
-          await conn.rollback();
-          return false;
+          // Retido do pagador menor que a torna (ou carteira sumida): inconsistência, não corrida.
+          throw new Error(
+            `Troca ${id}: a carteira recusou a liquidação da torna de ${torna} (retido inconsistente)`,
+          );
         }
         await conn.query<ResultSetHeader>(
           `UPDATE barter_agreements SET torna_status = 'paid' WHERE id = :id`,
@@ -343,7 +386,8 @@ export const barterRepository = {
 
   /**
    * Um dos contratos foi cancelado: a troca entra em disputa (RN-067) e a torna reservada volta
-   * ao pagador — o dinheiro não fica preso enquanto a troca está quebrada.
+   * ao pagador — o dinheiro não fica preso enquanto a troca está quebrada. False se a troca já
+   * não estava ativa; a carteira recusar a devolução é exceção (com rollback).
    */
   async disputeAndRefund(id: number): Promise<boolean> {
     const conn = await pool.getConnection();
@@ -358,10 +402,7 @@ export const barterRepository = {
         `UPDATE barter_agreements SET status = 'disputed' WHERE id = :id`,
         { id },
       );
-      if (!(await refundTorna(conn, row))) {
-        await conn.rollback();
-        return false;
-      }
+      await refundTorna(conn, row);
       await conn.commit();
       return true;
     } catch (err) {

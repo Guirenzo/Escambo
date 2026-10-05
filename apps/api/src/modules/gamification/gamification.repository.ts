@@ -1,5 +1,6 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
+import { levelFor } from './gamification.levels';
 
 export interface XpRow extends RowDataPacket {
   user_id: number;
@@ -41,6 +42,9 @@ export interface FreelancerStatsRow extends RowDataPacket {
   avg_rating: string;
 }
 
+/** Quem entra no ranking: conta não excluída, nem suspensa ou banida (u = users). */
+const RANKED_USER = `u.deleted_at IS NULL AND u.status NOT IN ('suspended', 'banned')`;
+
 export const gamificationRepository = {
   async getOrCreateXp(userId: number): Promise<XpRow> {
     await pool.query<ResultSetHeader>(`INSERT IGNORE INTO user_xp (user_id) VALUES (:userId)`, {
@@ -53,21 +57,34 @@ export const gamificationRepository = {
     return rows[0]!;
   },
 
-  /** Credita XP: registra a transação e incrementa o total (atômico). */
+  /**
+   * Credita XP numa transação: trava o total (FOR UPDATE), registra o lançamento e grava o total
+   * novo com o nível dele. O nível sai do total travado, e não de uma leitura anterior: dois
+   * créditos ao mesmo tempo não deixam o nível abaixo do total (RN-052). Com countContract, o
+   * contrato concluído entra na contagem do perfil na mesma transação dos XP dele (RN-051).
+   * Devolve o nível de antes e o de depois.
+   */
   async applyXp(params: {
     userId: number;
     delta: number;
-    level: number;
-    levelName: string;
     reason: string;
     referenceId: number | null;
-  }): Promise<void> {
+    countContract?: boolean;
+  }): Promise<{ previousLevel: number; level: number }> {
     const conn = await pool.getConnection();
     try {
-      await conn.beginTransaction();
+      // Fora da transação: o INSERT IGNORE que acha a linha deixa nela uma trava compartilhada, e
+      // dois créditos segurando essa trava e pedindo o FOR UPDATE se travariam (deadlock).
       await conn.query<ResultSetHeader>(`INSERT IGNORE INTO user_xp (user_id) VALUES (:userId)`, {
         userId: params.userId,
       });
+      await conn.beginTransaction();
+      const [rows] = await conn.query<RowDataPacket[]>(
+        `SELECT total_xp, level FROM user_xp WHERE user_id = :userId FOR UPDATE`,
+        { userId: params.userId },
+      );
+      const previousLevel = Number(rows[0]?.level ?? 1);
+      const next = levelFor(Number(rows[0]?.total_xp ?? 0) + params.delta);
       await conn.query<ResultSetHeader>(
         `INSERT INTO xp_transactions (user_id, amount, reason, reference_id)
          VALUES (:userId, :delta, :reason, :referenceId)`,
@@ -84,14 +101,22 @@ export const gamificationRepository = {
           WHERE user_id = :userId`,
         {
           delta: params.delta,
-          level: params.level,
-          levelName: params.levelName,
+          level: next.level,
+          levelName: next.name,
           userId: params.userId,
         },
       );
+      if (params.countContract) {
+        await conn.query<ResultSetHeader>(
+          `UPDATE profiles_freelancer SET total_contracts = total_contracts + 1 WHERE user_id = :userId`,
+          { userId: params.userId },
+        );
+      }
       await conn.commit();
+      return { previousLevel, level: next.level };
     } catch (err) {
-      await conn.rollback();
+      // Um rollback que falha não pode trocar o erro original pelo dele.
+      await conn.rollback().catch(() => undefined);
       throw err;
     } finally {
       conn.release();
@@ -143,13 +168,6 @@ export const gamificationRepository = {
     return rows[0];
   },
 
-  async incrementContracts(userId: number): Promise<void> {
-    await pool.query<ResultSetHeader>(
-      `UPDATE profiles_freelancer SET total_contracts = total_contracts + 1 WHERE user_id = :userId`,
-      { userId },
-    );
-  },
-
   async recentEvents(userId: number, limit: number): Promise<XpEventRow[]> {
     const [rows] = await pool.query<XpEventRow[]>(
       `SELECT amount, reason, created_at FROM xp_transactions
@@ -159,21 +177,26 @@ export const gamificationRepository = {
     return rows;
   },
 
-  /** Datas (YYYY-MM-DD) distintas com atividade de XP, para calcular a sequência. */
-  async activityDates(userId: number, limit: number): Promise<string[]> {
+  /**
+   * Instantes com atividade de XP a partir de `since`, do mais recente para trás. O dia de cada um
+   * é contado no fuso da pessoa, fora daqui: o DATE_FORMAT do banco seria o dia em UTC.
+   */
+  async activityTimes(userId: number, since: Date): Promise<Date[]> {
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT DISTINCT DATE_FORMAT(created_at, '%Y-%m-%d') AS d
-         FROM xp_transactions WHERE user_id = :userId
-        ORDER BY d DESC LIMIT ${limit}`,
-      { userId },
+      `SELECT created_at FROM xp_transactions
+        WHERE user_id = :userId AND created_at >= :since
+        ORDER BY created_at DESC`,
+      { userId, since },
     );
-    return rows.map((r) => r.d as string);
+    return rows.map((r) => new Date(r.created_at));
   },
 
   async rankOf(userId: number): Promise<number> {
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(*) + 1 AS rnk FROM user_xp
-        WHERE total_xp > (SELECT total_xp FROM user_xp WHERE user_id = :userId)`,
+      `SELECT COUNT(*) + 1 AS rnk FROM user_xp ux
+         JOIN users u ON u.id = ux.user_id
+        WHERE ${RANKED_USER}
+          AND ux.total_xp > (SELECT total_xp FROM user_xp WHERE user_id = :userId)`,
       { userId },
     );
     return Number(rows[0]?.rnk ?? 1);
@@ -185,6 +208,7 @@ export const gamificationRepository = {
          FROM user_xp ux
          JOIN users u ON u.id = ux.user_id
          LEFT JOIN profiles_freelancer pf ON pf.user_id = ux.user_id
+        WHERE ${RANKED_USER}
         ORDER BY ux.total_xp DESC, ux.user_id ASC
         LIMIT ${limit}`,
     );

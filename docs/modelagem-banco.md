@@ -1488,7 +1488,7 @@ plataforma — o diferencial que nenhum concorrente brasileiro (GetNinjas, Worka
 **Como funciona (modo híbrido):** um usuário propõe entregar um serviço seu em troca de outro. O sistema
 estima o valor dos dois lados; quando não são equivalentes, a diferença (a *torna*) é paga em dinheiro via
 escrow. Ao aceitar, são gerados **dois contratos recíprocos vinculados** (cada um percorre o fluxo normal de
-contratação/entrega/aprovação). A comissão de 15% incide sobre o maior valor estimado da troca.
+contratação/entrega/aprovação). A comissão (hoje 15%) incide só sobre a torna (RN-066); sem torna, a troca não paga taxa.
 
 ### `barter_agreements`
 
@@ -1506,7 +1506,7 @@ CREATE TABLE barter_agreements (
   estimated_value_requested DECIMAL(10, 2)  NOT NULL,      -- valor estimado do que é pedido
   cash_difference           DECIMAL(10, 2)  NOT NULL DEFAULT 0.00, -- torna (diferença em dinheiro)
   cash_payer_id             BIGINT UNSIGNED NULL,          -- quem paga a torna (NULL em troca par)
-  platform_fee              DECIMAL(10, 2)  NOT NULL DEFAULT 0.00, -- 15% sobre o maior valor estimado
+  platform_fee              DECIMAL(10, 2)  NOT NULL DEFAULT 0.00, -- comissão sobre a torna (RN-066)
   status                    ENUM('proposed', 'accepted', 'rejected', 'active', 'completed', 'cancelled', 'disputed') NOT NULL DEFAULT 'proposed',
   contract_offered_id       BIGINT UNSIGNED NULL,          -- contrato gerado (lado proponente)
   contract_requested_id     BIGINT UNSIGNED NULL,          -- contrato gerado (lado receptor)

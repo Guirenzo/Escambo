@@ -17,6 +17,7 @@ import { authRepository, type UserRow } from './auth.repository';
 import { sessionRepository } from './session.repository';
 import { tokensRepository } from './tokens.repository';
 import type { LoginInput, RegisterInput } from './auth.schema';
+import { userAgentOf } from '../../utils/user-agent';
 
 export interface SessionContext {
   ip?: string | null;
@@ -94,7 +95,7 @@ async function issueSession(user: UserRow, ctx: SessionContext): Promise<Refresh
     tokenHash: hashToken(refreshToken),
     expiresAt,
     ip: ctx.ip ?? null,
-    userAgent: ctx.userAgent ?? null,
+    userAgent: userAgentOf(ctx.userAgent),
   });
 
   return { accessToken: signAccessToken(user), refreshToken };
@@ -149,6 +150,7 @@ export const authService = {
     // O aceite dos Termos e da Política vira registro na versão vigente, com IP e navegador
     // (ADR 54). Gravado pelo servidor, e não pelo cliente: toda conta nasce com a trilha. Falha
     // aqui não derruba o cadastro — a faixa de atualização da política cura na próxima entrada.
+    const userAgent = userAgentOf(ctx.userAgent);
     for (const type of ['terms_of_use', 'privacy_policy'] as const) {
       const version = CURRENT_LEGAL_VERSION[type];
       try {
@@ -158,7 +160,7 @@ export const authService = {
           version,
           accepted: true,
           ip: ctx.ip,
-          userAgent: ctx.userAgent,
+          userAgent,
         });
         void auditService.log({
           userId: id,
@@ -166,7 +168,7 @@ export const authService = {
           entityType: 'consent',
           newValue: { type, version, accepted: true },
           ip: ctx.ip,
-          userAgent: ctx.userAgent,
+          userAgent,
         });
       } catch (err) {
         logger.warn({ err, userId: id, type }, 'consentimento do cadastro não gravado');
@@ -288,7 +290,11 @@ export const authService = {
     }
     assertActive(user);
 
-    await sessionRepository.revokeByHash(tokenHash); // rotação
+    // Rotação: só quem de fato revogou o token antigo leva o par novo. Outra requisição com o
+    // mesmo token, ao mesmo tempo, chega aqui com a sessão já revogada e é recusada.
+    if (!(await sessionRepository.revokeByHash(tokenHash))) {
+      throw new HttpError(401, 'Refresh token inválido ou expirado', 'invalid_refresh');
+    }
     return issueSession(user, ctx);
   },
 

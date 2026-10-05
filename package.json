@@ -1,6 +1,6 @@
 {
   "name": "escambo",
-  "version": "1.41.0",
+  "version": "1.41.1",
   "private": true,
   "description": "Escambo — monorepo (API + Web + tipos compartilhados)",
   "license": "MIT",
@@ -47,5 +47,8 @@
     "body-parser": {
       "qs": "^6.16.0"
     }
+  },
+  "scarfSettings": {
+    "enabled": false
   }
 }

@@ -1,4 +1,8 @@
+import type { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+
+/** A conexão da transação com a linha do titular travada (o que withUserLock entrega). */
+const { TX } = vi.hoisted(() => ({ TX: { conexao: 'da trava do titular' } }));
 
 vi.mock('../messaging/attachments.purge', () => ({ purgeForUser: vi.fn().mockResolvedValue(0) }));
 vi.mock('../reports/appeals.service', () => ({
@@ -9,6 +13,7 @@ vi.mock('./lgpd.repository', () => ({
   lgpdRepository: {
     recordConsent: vi.fn(),
     listConsents: vi.fn(),
+    withUserLock: vi.fn((_userId: number, work: (conn: unknown) => Promise<unknown>) => work(TX)),
     findActiveDeletion: vi.fn(),
     findDeletion: vi.fn(),
     createDeletion: vi.fn(),
@@ -24,6 +29,7 @@ vi.mock('./lgpd.repository', () => ({
     markExportFailed: vi.fn(),
     markExportDownloaded: vi.fn(),
     listExpiredExports: vi.fn(),
+    listLiveExports: vi.fn().mockResolvedValue([]),
     markExportExpired: vi.fn(),
   },
 }));
@@ -151,7 +157,33 @@ describe('requestDeletion (RN-072)', () => {
     repo.createDeletion.mockResolvedValue(42);
     const r = await lgpdService.requestDeletion(1, 'não uso mais');
     expect(r).toMatchObject({ id: 42, status: 'pending', adminNote: null });
-    expect(repo.createDeletion).toHaveBeenCalledWith(1, 'não uso mais');
+    expect(repo.createDeletion).toHaveBeenCalledWith(1, 'não uso mais', TX);
+  });
+
+  it('a checagem e o INSERT rodam com a linha do titular travada, todos na conexão da trava', async () => {
+    repo.findActiveDeletion.mockResolvedValue(undefined);
+    repo.deletionBlockers.mockResolvedValue(noBlockers);
+    repo.createDeletion.mockResolvedValue(42);
+
+    await lgpdService.requestDeletion(1, null);
+
+    // Sem a trava, dois pedidos simultâneos passavam juntos pela checagem e abriam duas.
+    expect(repo.withUserLock).toHaveBeenCalledTimes(1);
+    expect(repo.withUserLock).toHaveBeenCalledWith(1, expect.any(Function));
+    expect(repo.findActiveDeletion).toHaveBeenCalledWith(1, TX);
+    expect(repo.deletionBlockers).toHaveBeenCalledWith(1, TX);
+    expect(repo.createDeletion).toHaveBeenCalledWith(1, null, TX);
+  });
+
+  it('a recusa sai de dentro da trava como está (a transação é desfeita pelo repository)', async () => {
+    repo.findActiveDeletion.mockResolvedValue(deletionRow());
+
+    await expect(lgpdService.requestDeletion(1, null)).rejects.toMatchObject({
+      code: 'deletion_already_requested',
+    });
+
+    expect(repo.withUserLock).toHaveBeenCalledTimes(1);
+    expect(repo.createDeletion).not.toHaveBeenCalled();
   });
 });
 
@@ -247,7 +279,7 @@ describe('portabilidade: exportação', () => {
 
     repo.findExport.mockResolvedValue(exportRow());
     files.exportFileExists.mockResolvedValue(true);
-    files.openExportFile.mockReturnValue({} as unknown as NodeJS.ReadableStream);
+    files.openExportFile.mockReturnValue({} as unknown as Readable);
     const { fileName } = await lgpdService.openExport(7, 1);
     expect(fileName).toBe('escambo-dados-2026-09-01.json');
     expect(repo.markExportDownloaded).toHaveBeenCalledWith(7);
@@ -380,7 +412,7 @@ describe('requestDeletion: o que prende o titular e o que ele lê (RN-072)', () 
       code: 'deletion_already_requested',
       message: 'Já existe uma solicitação de exclusão em andamento',
     });
-    expect(repo.findActiveDeletion).toHaveBeenCalledWith(1);
+    expect(repo.findActiveDeletion).toHaveBeenCalledWith(1, TX);
     expect(repo.deletionBlockers).not.toHaveBeenCalled();
     expect(repo.createDeletion).not.toHaveBeenCalled();
   });
@@ -427,8 +459,8 @@ describe('requestDeletion: o que prende o titular e o que ele lê (RN-072)', () 
       createdAt: '2026-10-01T12:00:00.000Z',
       processedAt: null,
     });
-    expect(repo.deletionBlockers).toHaveBeenCalledWith(1);
-    expect(repo.createDeletion).toHaveBeenCalledWith(1, null);
+    expect(repo.deletionBlockers).toHaveBeenCalledWith(1, TX);
+    expect(repo.createDeletion).toHaveBeenCalledWith(1, null, TX);
   });
 });
 
@@ -667,6 +699,94 @@ describe('admin: concluir a exclusão, bordas', () => {
       [{ err: boom, userId: 31 }, 'quarentena do titular: falha ao remover'],
     ]);
   });
+
+  it('as cópias de dados do titular saem na hora, sem esperar vencer: cada arquivo é apagado e cada pedido fica expirado', async () => {
+    completable();
+    repo.listLiveExports.mockResolvedValueOnce([
+      exportRow({ id: 7, user_id: 31, file_url: '01TITULAR-7.json' }),
+      exportRow({ id: 8, user_id: 31, status: 'downloaded', file_url: '01TITULAR-8.json' }),
+      exportRow({ id: 9, user_id: 31, file_url: null }),
+    ]);
+
+    const done = await lgpdService.completeDeletion(99, 5);
+
+    expect(done.status).toBe('completed');
+    expect(repo.listLiveExports.mock.calls).toEqual([[31]]);
+    expect(files.deleteExportFile.mock.calls).toEqual([['01TITULAR-7.json'], ['01TITULAR-8.json']]);
+    expect(repo.markExportExpired.mock.calls).toEqual([[7], [8], [9]]);
+    expect(info).toHaveBeenLastCalledWith(
+      { userId: 31, expired: 3 },
+      'cópias de dados do titular removidas',
+    );
+    expect(error).not.toHaveBeenCalled();
+    // Só depois de a anonimização estar gravada, e cada arquivo antes de o pedido virar expirado.
+    expect(repo.listLiveExports.mock.invocationCallOrder[0]!).toBeGreaterThan(
+      repo.completeDeletion.mock.invocationCallOrder[0]!,
+    );
+    expect(files.deleteExportFile.mock.invocationCallOrder[0]!).toBeLessThan(
+      repo.markExportExpired.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('cópia cujo arquivo não sai do disco não vira expirada: fica com o arquivo para o job, e a conclusão registra quantas ficaram', async () => {
+    completable();
+    repo.listLiveExports.mockResolvedValueOnce([
+      exportRow({ id: 7, user_id: 31, file_url: '01TITULAR-7.json' }),
+      exportRow({ id: 8, user_id: 31, file_url: '01TITULAR-8.json' }),
+    ]);
+    const denied = Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+    files.deleteExportFile.mockRejectedValueOnce(denied);
+    const warn = vi.spyOn(logger, 'warn');
+
+    const done = await lgpdService.completeDeletion(99, 5);
+
+    expect(done.status).toBe('completed');
+    expect(files.deleteExportFile.mock.calls).toEqual([['01TITULAR-7.json'], ['01TITULAR-8.json']]);
+    // Só a que saiu do disco é marcada; a 7 continua com o nome do arquivo.
+    expect(repo.markExportExpired.mock.calls).toEqual([[8]]);
+    expect(warn.mock.calls).toEqual([
+      [
+        { err: denied, exportId: 7, userId: 31 },
+        'cópia de dados não expirada; fica para a próxima rodada',
+      ],
+    ]);
+    expect(info).toHaveBeenLastCalledWith(
+      { userId: 31, expired: 1 },
+      'cópias de dados do titular removidas',
+    );
+    expect(error.mock.calls).toEqual([
+      [
+        { userId: 31, kept: 1 },
+        'cópias de dados do titular não removidas; o job de expiração tenta de novo quando vencerem',
+      ],
+    ]);
+    warn.mockRestore();
+  });
+
+  it('sem cópia disponível, não apaga nem marca nada e não registra remoção no log', async () => {
+    completable();
+
+    await lgpdService.completeDeletion(99, 5);
+
+    expect(repo.listLiveExports).toHaveBeenCalledWith(31);
+    expect(files.deleteExportFile).not.toHaveBeenCalled();
+    expect(repo.markExportExpired).not.toHaveBeenCalled();
+    expect(info).not.toHaveBeenCalled();
+  });
+
+  it('falha ao limpar as cópias de dados também não desfaz a conclusão e vai para o log', async () => {
+    completable();
+    const boom = new Error('banco fora');
+    repo.listLiveExports.mockRejectedValueOnce(boom);
+
+    const done = await lgpdService.completeDeletion(99, 5);
+
+    expect(done.status).toBe('completed');
+    expect(blocklist.has(31)).toBe(true);
+    expect(error.mock.calls).toEqual([
+      [{ err: boom, userId: 31 }, 'cópias de dados do titular: falha ao remover'],
+    ]);
+  });
 });
 
 describe('admin: recusar a exclusão, bordas', () => {
@@ -781,8 +901,64 @@ describe('portabilidade: bordas da exportação', () => {
 
     expect(repo.markExportReady).not.toHaveBeenCalled();
     expect(repo.markExportFailed).toHaveBeenCalledWith(8);
+    // A gravação pode ter parado no meio: o que ficou do arquivo sai junto.
+    expect(files.deleteExportFile.mock.calls).toEqual([['01USER-8.json']]);
     expect(notify).not.toHaveBeenCalled();
     expect(failed).toMatchObject({ id: 8, status: 'failed', downloadUrl: null });
+  });
+
+  it('falha ao marcar como pronta: o arquivo já gravado, com todos os dados do titular, é apagado antes de marcar a falha', async () => {
+    repo.createExport.mockResolvedValue(8);
+    files.buildExport.mockResolvedValue({ titular: { email: 'ana@escambo.test' } });
+    files.writeExportFile.mockResolvedValue(2);
+    repo.markExportReady.mockRejectedValueOnce(new Error('lock wait timeout'));
+    repo.findExport.mockResolvedValue(exportRow({ id: 8, status: 'failed', file_url: null }));
+
+    await lgpdService.requestExport(1);
+
+    // Pedido com falha não tem file_url e nenhum job o procura: sem isto, o arquivo ficaria órfão.
+    expect(files.deleteExportFile.mock.calls).toEqual([['01USER-8.json']]);
+    expect(files.deleteExportFile.mock.invocationCallOrder[0]!).toBeLessThan(
+      repo.markExportFailed.mock.invocationCallOrder[0]!,
+    );
+    expect(repo.markExportFailed.mock.calls).toEqual([[8]]);
+  });
+
+  it('se nem o arquivo da exportação com falha pode ser apagado, o pedido ainda fica como falha e o arquivo órfão vai para o log de erro', async () => {
+    repo.createExport.mockResolvedValue(8);
+    files.buildExport.mockResolvedValue({});
+    files.writeExportFile.mockResolvedValue(2);
+    const boom = new Error('lock wait timeout');
+    repo.markExportReady.mockRejectedValueOnce(boom);
+    const busy = Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' });
+    files.deleteExportFile.mockRejectedValueOnce(busy);
+    repo.findExport.mockResolvedValue(exportRow({ id: 8, status: 'failed', file_url: null }));
+    const error = vi.spyOn(logger, 'error');
+
+    const failed = await lgpdService.requestExport(1);
+
+    expect(repo.markExportFailed.mock.calls).toEqual([[8]]);
+    expect(failed).toMatchObject({ id: 8, status: 'failed', downloadUrl: null });
+    expect(error.mock.calls).toEqual([
+      [{ err: boom, userId: 1, exportId: 8 }, 'falha ao gerar a exportação de dados'],
+      [
+        { err: busy, userId: 1, exportId: 8, file: '01USER-8.json' },
+        'arquivo da exportação com falha não apagado',
+      ],
+    ]);
+    error.mockRestore();
+  });
+
+  it('falha ao montar a cópia (antes de haver arquivo): nada a apagar, só marca a falha', async () => {
+    repo.createExport.mockResolvedValue(8);
+    files.buildExport.mockRejectedValueOnce(new Error('banco fora'));
+    repo.findExport.mockResolvedValue(exportRow({ id: 8, status: 'failed', file_url: null }));
+
+    await lgpdService.requestExport(1);
+
+    expect(files.writeExportFile).not.toHaveBeenCalled();
+    expect(files.deleteExportFile).not.toHaveBeenCalled();
+    expect(repo.markExportFailed.mock.calls).toEqual([[8]]);
   });
 
   it('falha ao marcar como pronta: fica como falha, ninguém é avisado, e o erro vai para o log com o titular e o pedido', async () => {
@@ -856,7 +1032,7 @@ describe('portabilidade: bordas da exportação', () => {
       exportRow({ id: 2, expires_at: new Date(NOW.getTime() - 1) }),
     ]);
     files.exportFileExists.mockResolvedValue(true);
-    files.openExportFile.mockReturnValue({} as unknown as NodeJS.ReadableStream);
+    files.openExportFile.mockReturnValue({} as unknown as Readable);
 
     const list = await lgpdService.getExportRequests(1);
     expect(list.map((e) => [e.id, e.status, e.downloadUrl])).toEqual([
@@ -986,7 +1162,7 @@ describe('portabilidade: bordas da exportação', () => {
     });
 
     it('quem já baixou pode baixar de novo enquanto vale; devolve o stream do arquivo guardado, com o nome pela data do pedido', async () => {
-      const stream = { marker: 'stream' } as unknown as NodeJS.ReadableStream;
+      const stream = { marker: 'stream' } as unknown as Readable;
       repo.findExport.mockResolvedValue(exportRow({ status: 'downloaded' }));
       files.exportFileExists.mockResolvedValue(true);
       files.openExportFile.mockReturnValue(stream);
@@ -1003,7 +1179,7 @@ describe('portabilidade: bordas da exportação', () => {
     it('exportação sem data de validade não vence', async () => {
       repo.findExport.mockResolvedValue(exportRow({ expires_at: null }));
       files.exportFileExists.mockResolvedValue(true);
-      files.openExportFile.mockReturnValue({} as unknown as NodeJS.ReadableStream);
+      files.openExportFile.mockReturnValue({} as unknown as Readable);
       await expect(lgpdService.openExport(7, 1)).resolves.toMatchObject({
         fileName: 'escambo-dados-2026-09-01.json',
       });
@@ -1035,5 +1211,49 @@ describe('portabilidade: bordas da exportação', () => {
     expect(await lgpdService.expireExports()).toBe(0);
     expect(files.deleteExportFile).not.toHaveBeenCalled();
     expect(repo.markExportExpired).not.toHaveBeenCalled();
+  });
+
+  it('job de expiração: arquivo que não sai do disco deixa a cópia como está para a próxima rodada, e as outras seguem', async () => {
+    repo.listExpiredExports.mockResolvedValue([
+      exportRow({ id: 1, user_id: 4, file_url: 'a-1.json' }),
+      exportRow({ id: 2, user_id: 5, file_url: 'b-2.json' }),
+      exportRow({ id: 3, user_id: 6, file_url: 'c-3.json' }),
+    ]);
+    const denied = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    files.deleteExportFile.mockResolvedValueOnce(undefined).mockRejectedValueOnce(denied);
+    const warn = vi.spyOn(logger, 'warn');
+
+    // Só as que saíram contam como expiradas.
+    expect(await lgpdService.expireExports()).toBe(2);
+
+    expect(files.deleteExportFile.mock.calls).toEqual([['a-1.json'], ['b-2.json'], ['c-3.json']]);
+    // A 2 não é marcada: continua 'ready' com o nome do arquivo, e o job a acha de novo.
+    expect(repo.markExportExpired.mock.calls).toEqual([[1], [3]]);
+    expect(warn.mock.calls).toEqual([
+      [
+        { err: denied, exportId: 2, userId: 5 },
+        'cópia de dados não expirada; fica para a próxima rodada',
+      ],
+    ]);
+    warn.mockRestore();
+  });
+
+  it('job de expiração: falha ao marcar uma cópia não para as outras (o arquivo já saiu; na próxima rodada, só a marcação)', async () => {
+    repo.listExpiredExports.mockResolvedValue([
+      exportRow({ id: 1, file_url: 'a-1.json' }),
+      exportRow({ id: 2, file_url: 'b-2.json' }),
+    ]);
+    const boom = new Error('banco fora');
+    repo.markExportExpired.mockRejectedValueOnce(boom);
+    const warn = vi.spyOn(logger, 'warn');
+
+    expect(await lgpdService.expireExports()).toBe(1);
+
+    expect(repo.markExportExpired.mock.calls).toEqual([[1], [2]]);
+    expect(warn).toHaveBeenCalledWith(
+      { err: boom, exportId: 1, userId: 1 },
+      'cópia de dados não expirada; fica para a próxima rodada',
+    );
+    warn.mockRestore();
   });
 });

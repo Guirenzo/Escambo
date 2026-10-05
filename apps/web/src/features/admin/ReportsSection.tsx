@@ -73,8 +73,14 @@ const COPY: Record<
 
 /** O que a remoção causou além de tirar a imagem: bloqueio de envio e revisão da conta (ADR 41). */
 function removalMessage(r: AdminReportActionResult): string {
+  // Imagem enviada ao Escambo cujo arquivo não saiu do disco (quarentena e remoção falharam, ADR 60):
+  // a decisão vale, mas o endereço ainda abre até o expurgo diário de imagens sem uso.
+  const stuck =
+    r.blocked && !r.fileRemoved
+      ? ' O arquivo não saiu do disco agora: a imagem ainda abre pelo endereço até o expurgo diário de imagens sem uso.'
+      : '';
   const base = r.blocked
-    ? 'Imagem removida e bloqueada.'
+    ? `Imagem removida e bloqueada.${stuck}`
     : 'Imagem removida. Era um link externo, então não há arquivo para bloquear.';
   if (r.accountReviewOpened) {
     return `${base} O dono chegou a ${r.ownerStrikes} remoções e a conta entrou na fila para revisão.`;

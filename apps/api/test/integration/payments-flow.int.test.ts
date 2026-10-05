@@ -1,3 +1,4 @@
+import type { RowDataPacket } from 'mysql2';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
@@ -150,6 +151,30 @@ describe('Pagamentos: depósito PIX, carteira pré-paga, reembolso e saques', ()
       .send({ gatewayPaymentId: reference, status: 'paid' });
     expect(again.body).toMatchObject({ ok: true, applied: false });
     expect(await wallet(client.token)).toMatchObject({ balance: 90 });
+  });
+
+  it('webhook só liquida depósito: pagamento de outro tipo pendente com referência de gateway não vira crédito', async () => {
+    const client = await registerAndLogin('client');
+    const reference = `sim_contrato_${Date.now()}_${seq++}`;
+    await pool.query(
+      `INSERT INTO payments (kind, payer_id, amount, platform_fee, net_amount, method, status, gateway, gateway_payment_id)
+       VALUES ('contract', ?, 75, 0, 75, 'pix', 'pending', 'simulado', ?)`,
+      [client.id, reference],
+    );
+
+    const res = await request(app)
+      .post('/api/payments/webhook')
+      .set('x-webhook-secret', WEBHOOK_SECRET)
+      .send({ gatewayPaymentId: reference, status: 'paid' });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('payment_not_found');
+
+    const [rows] = await pool.query<RowDataPacket[]>(
+      'SELECT status, paid_at FROM payments WHERE gateway_payment_id = ?',
+      [reference],
+    );
+    expect(rows).toEqual([{ status: 'pending', paid_at: null }]);
+    expect(await wallet(client.token)).toMatchObject({ balance: 0, balancePending: 0 });
   });
 
   it('proposta em dinheiro exige saldo (402); a reserva volta se o freelancer recusar', async () => {

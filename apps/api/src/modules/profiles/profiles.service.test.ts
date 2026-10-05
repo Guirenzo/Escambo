@@ -81,6 +81,20 @@ describe('profilesService.getPublicFreelancer', () => {
     expect(p.avgRating).toBe(4.5);
     expect(p.portfolio).toEqual([]);
   });
+
+  it('dias da agenda corrompidos no banco não derrubam o perfil público: saem como sem dias', async () => {
+    repo.findPublicFreelancerByUlid.mockResolvedValue({
+      ...freelancerRow({ available_days: '[1,3' }),
+      ulid: '01HZXULIDEXAMPLE0000000000',
+      level: 1,
+      level_name: 'Iniciante',
+    } as unknown as PublicFreelancerRow);
+
+    const p = await profilesService.getPublicFreelancer('01HZXULIDEXAMPLE0000000000');
+
+    expect(p.availableDays).toBeNull();
+    expect(p.fullName).toBe('Rafael');
+  });
 });
 
 describe('profilesService.upsertFreelancer: o que vai para o banco e o que volta', () => {
@@ -213,6 +227,12 @@ describe('parseDays (coluna available_days)', () => {
     expect(parseDays('{"1":true}')).toBeNull();
     expect(parseDays('5')).toBeNull();
     expect(parseDays('[1,"2",2.5,null,4]')).toEqual([1, 4]);
+  });
+
+  it('texto que não é JSON (dado corrompido) vira null, sem derrubar a leitura do perfil', () => {
+    expect(parseDays('[1,2')).toBeNull();
+    expect(parseDays('seg,qua')).toBeNull();
+    expect(parseDays('')).toBeNull();
   });
 });
 

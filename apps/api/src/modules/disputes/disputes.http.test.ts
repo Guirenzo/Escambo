@@ -245,6 +245,26 @@ describe('disputas: borda HTTP', () => {
       }
     });
 
+    it('a descrição conta sem os espaços das pontas: só espaços não abre disputa nem trava o escrow (RN-038)', async () => {
+      for (const description of [' '.repeat(10), ' '.repeat(2000), `  ${'a'.repeat(9)}  `]) {
+        const res = await request(app)
+          .post('/api/disputes')
+          .set(bearer(7))
+          .send({ ...body, description })
+          .expect(422);
+        expect(res.body.details).toHaveProperty('description');
+      }
+      expect(service.open).not.toHaveBeenCalled();
+
+      service.open.mockResolvedValue(dispute);
+      await request(app)
+        .post('/api/disputes')
+        .set(bearer(7))
+        .send({ ...body, description: `  ${body.description}\n` })
+        .expect(201);
+      expect(service.open).toHaveBeenLastCalledWith(7, body);
+    });
+
     it('a recusa do service vira a resposta com o código dele, e nada vai para a auditoria', async () => {
       service.open.mockRejectedValue(
         new HttpError(

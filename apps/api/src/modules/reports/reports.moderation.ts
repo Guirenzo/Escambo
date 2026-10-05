@@ -2,20 +2,33 @@ import { userZone } from '../auth/user-zone';
 import type {
   AdminReportActionResult,
   AdminReportGroup,
+  BrazilTimezone,
   ReportReason,
   ReportStatus,
   ReportTargetType,
   StrikeSummary,
 } from '@escambo/types';
+import { logger } from '../../config/logger';
+import { captureError } from '../../config/sentry';
 import { HttpError } from '../../utils/http-error';
 import { formatDateTime } from '../../utils/timezone';
 import { fingerprint } from '../media/media.image';
 import { mediaKeyFromUrl } from '../media/media.paths';
-import { deleteMediaImage, quarantineMediaImage, readMediaFile } from '../media/media.storage';
+import {
+  deleteMediaImage,
+  deleteQuarantined,
+  quarantineMediaImage,
+  readMediaFile,
+} from '../media/media.storage';
 import { messagingService } from '../messaging/messaging.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { contentRemovalsRepository } from './content-removals.repository';
-import { appealDeadline, strikePolicy, strikeSummary } from './moderation.strikes';
+import {
+  appealDeadline,
+  strikePolicy,
+  strikeSummary,
+  type StrikePolicy,
+} from './moderation.strikes';
 import { reportsRepository, type ContentReportRow, type TargetInfoRow } from './reports.repository';
 import { isImageTarget, isTextTarget, type ReportAction } from './reports.schema';
 
@@ -142,6 +155,54 @@ export function contentSnapshot(
   return body.length > 1000 ? `${body.slice(0, 999)}…` : body;
 }
 
+/** De qual decisão é o passo, para o log. */
+interface StepCtx {
+  reportId: number;
+  removalId: number | null;
+}
+
+/**
+ * Passo depois do commit da remoção (quarentena, reincidência, revisão da conta, aviso). A decisão
+ * já está gravada e a nova tentativa daria 409, então a falha de um passo não vira 500: vai para o
+ * log e o Sentry, o passo vale `fallback` e os seguintes seguem.
+ */
+async function afterCommit<T>(
+  step: string,
+  ctx: StepCtx,
+  work: () => Promise<T>,
+  fallback: T,
+): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    logger.error({ err, ...ctx }, `moderação: ${step} falhou depois da decisão gravada`);
+    captureError(err);
+    return fallback;
+  }
+}
+
+/**
+ * Anota na remoção o arquivo que foi para a quarentena. Sem a anotação nada mais acharia o arquivo
+ * (nem a reversão, nem o expurgo): se ela falha, o arquivo é apagado na hora, como numa remoção
+ * mantida, e a contestação aceita avisa que a imagem não pôde ser recuperada. Devolver o arquivo
+ * para a pasta pública deixaria a imagem removida no ar pela URL antiga até o expurgo de órfãos.
+ */
+async function noteQuarantineFile(
+  ctx: StepCtx & { removalId: number },
+  file: string,
+): Promise<void> {
+  try {
+    await contentRemovalsRepository.setQuarantineFile(ctx.removalId, file);
+  } catch (err) {
+    logger.error(
+      { err, ...ctx, file },
+      'moderação: arquivo da quarentena não anotado na remoção; vai ser apagado',
+    );
+    captureError(err);
+    await afterCommit('limpeza da quarentena', ctx, () => deleteQuarantined(file), false);
+  }
+}
+
 /**
  * O dono chegou ao limite de reincidência com esta remoção? Abre a denúncia da conta para revisão,
  * uma vez enquanto ela estiver aberta. Conta qualquer conteúdo removido (ADR 41 e 44).
@@ -163,6 +224,44 @@ async function openAccountReview(
     description: `Reincidência: ${strikes.strikes} remoções de conteúdo nos últimos ${strikes.windowDays} dias. Revise a conta.`,
   });
   return true;
+}
+
+/**
+ * Reincidência do dono depois da remoção e, no limite, a revisão da conta. Sem a política (falha ao
+ * ler a configuração) não há como contar: segue sem reincidência, e o aviso sai sem a data.
+ */
+async function ownerFollowUp(
+  adminId: number,
+  ownerId: number,
+  ctx: StepCtx,
+): Promise<{
+  now: Date;
+  policy: StrikePolicy | null;
+  strikes: StrikeSummary | null;
+  accountReviewOpened: boolean;
+}> {
+  const now = new Date();
+  const policy = await afterCommit('política de reincidência', ctx, () => strikePolicy(), null);
+  const strikes = policy
+    ? await afterCommit('reincidência', ctx, () => strikeSummary(ownerId, now, policy), null)
+    : null;
+  const accountReviewOpened =
+    policy && strikes
+      ? await afterCommit(
+          'revisão da conta',
+          ctx,
+          () => openAccountReview(adminId, ownerId, strikes, policy.reviewThreshold),
+          false,
+        )
+      : false;
+  return { now, policy, strikes, accountReviewOpened };
+}
+
+/** A frase do prazo para contestar, na hora do dono; sem a política, só diz onde contestar. */
+function appealLine(policy: StrikePolicy | null, now: Date, zone: BrazilTimezone): string {
+  return policy
+    ? `Se discordar, conteste pelo seu perfil até ${formatDateTime(appealDeadline(now, policy.appealWindowDays), zone)}.`
+    : 'Se discordar, conteste pelo seu perfil.';
 }
 
 /**
@@ -206,29 +305,32 @@ async function removeContent(
   let strikes: StrikeSummary | null = null;
   let accountReviewOpened = false;
   if (author && removalId !== null) {
-    const policy = await strikePolicy();
-    const now = new Date();
-    strikes = await strikeSummary(author.id, now, policy);
+    // Daqui em diante a remoção já está gravada: cada passo é isolado (afterCommit).
+    const ctx = { reportId, removalId };
+    const followUp = await ownerFollowUp(adminId, author.id, ctx);
+    ({ strikes, accountReviewOpened } = followUp);
     const zone = await zoneOf(author.id);
-    accountReviewOpened = await openAccountReview(
-      adminId,
-      author.id,
-      strikes,
-      policy.reviewThreshold,
+    await afterCommit(
+      'aviso ao autor',
+      ctx,
+      () =>
+        notificationsService.notify(author.id, {
+          type: 'content_removed',
+          title:
+            type === 'review'
+              ? 'Sua avaliação foi removida'
+              : 'Uma mensagem sua no chat foi removida',
+          body: [
+            `A moderação removeu ${type === 'review' ? 'a avaliação' : 'a mensagem'} por ${REASON_TEXT[report.reason] ?? REASON_TEXT.other}.`,
+            group.note,
+            appealLine(followUp.policy, followUp.now, zone),
+          ]
+            .filter(Boolean)
+            .join(' '),
+          data: { contentRemoved: type, reportId, removalId },
+        }),
+      undefined,
     );
-    await notificationsService.notify(author.id, {
-      type: 'content_removed',
-      title:
-        type === 'review' ? 'Sua avaliação foi removida' : 'Uma mensagem sua no chat foi removida',
-      body: [
-        `A moderação removeu ${type === 'review' ? 'a avaliação' : 'a mensagem'} por ${REASON_TEXT[report.reason] ?? REASON_TEXT.other}.`,
-        group.note,
-        `Se discordar, conteste pelo seu perfil até ${formatDateTime(appealDeadline(now, policy.appealWindowDays), zone)}.`,
-      ]
-        .filter(Boolean)
-        .join(' '),
-      data: { contentRemoved: type, reportId, removalId },
-    });
     if (type === 'message') {
       await messagingService.announceChange(report.target_id).catch(() => undefined);
     }
@@ -345,50 +447,81 @@ export const moderationService = {
       reason: report.reason,
     });
 
+    // Daqui em diante a remoção já está gravada: cada passo é isolado (afterCommit).
+    const ctx = { reportId, removalId };
     // Com registro, o arquivo vai para a quarentena enquanto cabe contestação; sem dono, sai de vez.
     let fileRemoved = false;
     if (key && removalId !== null) {
-      const quarantined = await quarantineMediaImage(key, removalId);
-      if (quarantined) await contentRemovalsRepository.setQuarantineFile(removalId, quarantined);
-      fileRemoved = quarantined !== null;
+      const quarantined = await afterCommit(
+        'quarentena do arquivo',
+        ctx,
+        () => quarantineMediaImage(key, removalId),
+        null,
+      );
+      if (quarantined) {
+        await noteQuarantineFile({ reportId, removalId }, quarantined);
+        fileRemoved = true;
+      } else {
+        // A quarentena falhou (pasta sem permissão, disco cheio, arquivo preso) ou o arquivo já não
+        // estava lá. A remoção está gravada e as referências saíram, mas o arquivo continuaria
+        // servido pela URL até o expurgo de órfãos: sai de vez agora, e a contestação aceita avisa
+        // que a imagem não pôde ser recuperada (como sem arquivo anotado na remoção).
+        fileRemoved = await afterCommit(
+          'remoção do arquivo (quarentena falhou)',
+          ctx,
+          () => deleteMediaImage(key),
+          false,
+        );
+        if (fileRemoved) {
+          logger.warn(
+            { ...ctx, key },
+            'moderação: quarentena falhou; arquivo apagado de vez, a contestação não o recupera',
+          );
+        }
+      }
     } else if (key) {
-      fileRemoved = await deleteMediaImage(key);
+      fileRemoved = await afterCommit(
+        'remoção do arquivo',
+        ctx,
+        () => deleteMediaImage(key),
+        false,
+      );
     }
 
     let strikes: StrikeSummary | null = null;
     let accountReviewOpened = false;
     if (owner && removalId !== null) {
-      const policy = await strikePolicy();
-      const now = new Date();
-      strikes = await strikeSummary(owner.owner_id, now, policy);
+      const followUp = await ownerFollowUp(adminId, owner.owner_id, ctx);
+      ({ strikes, accountReviewOpened } = followUp);
+      const counted = followUp.strikes;
       const zone = await zoneOf(owner.owner_id);
-      accountReviewOpened = await openAccountReview(
-        adminId,
-        owner.owner_id,
-        strikes,
-        policy.reviewThreshold,
+      await afterCommit(
+        'aviso ao dono',
+        ctx,
+        () =>
+          notificationsService.notify(owner.owner_id, {
+            type: 'content_removed',
+            title:
+              report.target_type === 'avatar'
+                ? 'Sua foto de perfil foi removida'
+                : owner.title
+                  ? `A imagem do trabalho “${owner.title}” foi removida`
+                  : 'Uma imagem do seu portfólio foi removida',
+            body: [
+              `A moderação removeu a imagem por ${REASON_TEXT[report.reason] ?? REASON_TEXT.other}.`,
+              note,
+              print ? 'A mesma imagem não pode ser enviada de novo.' : null,
+              appealLine(followUp.policy, followUp.now, zone),
+              counted?.uploadsBlockedUntil
+                ? `Como é a ${counted.imageStrikes}ª imagem removida nos últimos ${counted.windowDays} dias, o envio de imagens fica bloqueado até ${formatDateTime(new Date(counted.uploadsBlockedUntil), zone)}.`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' '),
+            data: { contentRemoved: report.target_type, reportId, removalId },
+          }),
+        undefined,
       );
-      await notificationsService.notify(owner.owner_id, {
-        type: 'content_removed',
-        title:
-          report.target_type === 'avatar'
-            ? 'Sua foto de perfil foi removida'
-            : owner.title
-              ? `A imagem do trabalho “${owner.title}” foi removida`
-              : 'Uma imagem do seu portfólio foi removida',
-        body: [
-          `A moderação removeu a imagem por ${REASON_TEXT[report.reason] ?? REASON_TEXT.other}.`,
-          note,
-          print ? 'A mesma imagem não pode ser enviada de novo.' : null,
-          `Se discordar, conteste pelo seu perfil até ${formatDateTime(appealDeadline(now, policy.appealWindowDays), zone)}.`,
-          strikes.uploadsBlockedUntil
-            ? `Como é a ${strikes.imageStrikes}ª imagem removida nos últimos ${strikes.windowDays} dias, o envio de imagens fica bloqueado até ${formatDateTime(new Date(strikes.uploadsBlockedUntil), zone)}.`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(' '),
-        data: { contentRemoved: report.target_type, reportId, removalId },
-      });
     }
     return {
       target,

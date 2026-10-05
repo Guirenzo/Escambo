@@ -272,6 +272,43 @@ describe('trocas: borda HTTP', () => {
       expect(service.propose).toHaveBeenCalledWith(7, body);
     });
 
+    it('valor estimado com fração de centavo ou acima de R$ 99.999.999,99 (limite da coluna) é recusado', async () => {
+      const invalid: Array<[string, Record<string, unknown>]> = [
+        // 100,004 x 100,006 seriam gravados 100,00 x 100,01 com torna 0,00 e pagador preenchido.
+        ['estimatedValueOffered', { estimatedValueOffered: 100.004 }],
+        ['estimatedValueRequested', { estimatedValueRequested: 100.006 }],
+        ['estimatedValueOffered', { estimatedValueOffered: 100_000_000 }],
+        ['estimatedValueRequested', { estimatedValueRequested: 1e12 }],
+      ];
+      for (const [field, override] of invalid) {
+        const res = await request(app)
+          .post('/api/barters')
+          .set(bearer(7))
+          .send({ ...proposal, ...override });
+        expect(res.status, `${field} = ${JSON.stringify(override)}`).toBe(422);
+        expect(Object.keys(res.body.details)).toEqual([field]);
+      }
+      const tooBig = await request(app)
+        .post('/api/barters')
+        .set(bearer(7))
+        .send({ ...proposal, estimatedValueOffered: 100_000_000 })
+        .expect(422);
+      expect(tooBig.body.details.estimatedValueOffered).toEqual([
+        'Valor estimado máximo é R$ 99.999.999,99',
+      ]);
+      expect(service.propose).not.toHaveBeenCalled();
+
+      // No limite da coluna, com centavos, passa.
+      service.propose.mockResolvedValue({ id: 9, receiverId: 2 });
+      const atLimit = {
+        ...proposal,
+        estimatedValueOffered: 99_999_999.99,
+        estimatedValueRequested: 1234.56,
+      };
+      await request(app).post('/api/barters').set(bearer(7)).send(atLimit).expect(201);
+      expect(service.propose).toHaveBeenCalledWith(7, atLimit);
+    });
+
     it('a recusa do service vira a resposta com o código dele, e ninguém é avisado', async () => {
       service.propose.mockRejectedValue(
         new HttpError(402, 'Saldo insuficiente para reservar a torna', 'insufficient_balance'),
@@ -333,6 +370,19 @@ describe('trocas: borda HTTP', () => {
         expect(Object.keys(res.body.details), qs).toEqual([field]);
       }
       expect(service.listMine).not.toHaveBeenCalled();
+    });
+
+    it('a página vai até 10000: acima disso (1e20 incluso) é erro de validação, não 500 do OFFSET', async () => {
+      for (const qs of ['page=10001', 'page=1e20']) {
+        const res = await request(app).get(`/api/barters?${qs}`).set(bearer(7));
+        expect(res.status, qs).toBe(422);
+        expect(Object.keys(res.body.details), qs).toEqual(['page']);
+      }
+      expect(service.listMine).not.toHaveBeenCalled();
+
+      service.listMine.mockResolvedValue({ items: [], page: 10000, limit: 20 });
+      await request(app).get('/api/barters?page=10000').set(bearer(7)).expect(200);
+      expect(service.listMine).toHaveBeenCalledWith(7, { page: 10000, limit: 20 });
     });
   });
 

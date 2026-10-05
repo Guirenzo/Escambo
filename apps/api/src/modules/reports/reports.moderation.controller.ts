@@ -1,4 +1,6 @@
 import type { Request, Response } from 'express';
+import { logger } from '../../config/logger';
+import { captureError } from '../../config/sentry';
 import { adminRepository } from '../admin/admin.repository';
 import { auditService } from '../audit/audit.service';
 import { moderationCsvFileName, moderationHistoryCsv } from './moderation.csv';
@@ -62,13 +64,23 @@ export async function actOnReport(req: Request, res: Response): Promise<void> {
   const { note } = reportActionBodySchema.parse(req.body ?? {});
   const adminId = req.user!.uid;
   const { result, target } = await moderationService.act(adminId, id, action, note || null);
-  await adminRepository.recordAction(
-    adminId,
-    RECORDED_AS[action],
-    target.type,
-    target.id,
-    note || null,
-  );
+  try {
+    await adminRepository.recordAction(
+      adminId,
+      RECORDED_AS[action],
+      target.type,
+      target.id,
+      note || null,
+    );
+  } catch (err) {
+    // A decisão já foi gravada (e o dono avisado); a nova tentativa daria 409. A falha do registro
+    // vai para o log e o Sentry, a auditoria abaixo ainda guarda a decisão e o admin recebe 200.
+    logger.error(
+      { err, adminId, reportId: id, action: RECORDED_AS[action] },
+      'decisão sem registro nas ações do admin',
+    );
+    captureError(err);
+  }
   void auditService.log({
     userId: adminId,
     action: RECORDED_AS[action],

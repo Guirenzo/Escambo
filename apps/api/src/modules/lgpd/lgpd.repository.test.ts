@@ -48,6 +48,22 @@ describe('lgpdRepository', () => {
       expect(fakeDb.calls[0]!.params).toEqual(data);
     });
 
+    it('navegador acima de 512 caracteres é gravado cortado no tamanho da coluna (o aceite não cai por isso)', async () => {
+      fakeDb.reply({ insertId: 2, affectedRows: 1 });
+      const data = {
+        userId: 7,
+        type: 'terms_of_use',
+        version: '1.4',
+        accepted: true,
+        ip: '10.0.0.1',
+        userAgent: 'U'.repeat(513),
+      };
+
+      await lgpdRepository.recordConsent(data);
+
+      expect(fakeDb.calls[0]!.params).toEqual({ ...data, userAgent: 'U'.repeat(512) });
+    });
+
     it('a lista é só do titular, do mais novo para o mais antigo', async () => {
       const rows = [
         { type: 'marketing', version: '1', accepted: 0 },
@@ -119,6 +135,71 @@ describe('lgpdRepository', () => {
         `${DELETION_FIELDS} FROM data_deletion_requests d WHERE d.user_id = :userId ORDER BY d.id DESC`,
       );
       expect(fakeDb.calls[0]!.params).toEqual({ userId: 7 });
+    });
+
+    describe('withUserLock: uma solicitação por vez, mesmo com pedidos simultâneos', () => {
+      it('trava a linha do titular (FOR UPDATE) numa transação, roda o trabalho na mesma conexão e devolve o que ele devolve', async () => {
+        const seen: unknown[] = [];
+
+        const out = await lgpdRepository.withUserLock(7, async (conn) => {
+          seen.push(conn);
+          return 42;
+        });
+
+        expect(out).toBe(42);
+        expect(seen).toEqual([fakeDb.conn]);
+        expect(fakeDb.calls).toEqual([
+          { sql: 'SELECT id FROM users WHERE id = :userId FOR UPDATE', params: { userId: 7 } },
+        ]);
+        // A trava vem dentro da transação, antes do trabalho, e o commit só depois dele.
+        expect(fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!).toBeLessThan(
+          fakeDb.conn.query.mock.invocationCallOrder[0]!,
+        );
+        expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
+        expect(fakeDb.conn.rollback).not.toHaveBeenCalled();
+        expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
+      });
+
+      it('recusa dentro da trava (pedido repetido, pendências) desfaz a transação, solta a trava e repassa o erro', async () => {
+        const refusal = new Error('deletion_already_requested');
+
+        await expect(
+          lgpdRepository.withUserLock(7, async () => {
+            throw refusal;
+          }),
+        ).rejects.toBe(refusal);
+
+        expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+        expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+        expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
+      });
+
+      it('com a conexão da trava, a checagem e o INSERT vão por ela, e não pelo pool', async () => {
+        const query = vi
+          .fn()
+          .mockResolvedValueOnce([[], []])
+          .mockResolvedValueOnce([
+            [{ active_contracts: 0, balance: '0', balance_pending: '0' }],
+            [],
+          ])
+          .mockResolvedValueOnce([{ insertId: 44, affectedRows: 1 }, []]);
+        const conn = { query } as unknown as Parameters<typeof lgpdRepository.createDeletion>[2];
+
+        expect(await lgpdRepository.findActiveDeletion(7, conn)).toBeUndefined();
+        expect(await lgpdRepository.deletionBlockers(7, conn)).toEqual({
+          activeContracts: 0,
+          balance: 0,
+          balancePending: 0,
+        });
+        expect(await lgpdRepository.createDeletion(7, null, conn)).toBe(44);
+
+        expect(fakeDb.calls).toEqual([]);
+        expect(query.mock.calls.map((c) => (c[0] as string).replace(/\s+/g, ' ').trim())).toEqual([
+          `${DELETION_FIELDS} FROM data_deletion_requests d WHERE d.user_id = :userId AND d.status IN ('pending', 'processing') LIMIT 1`,
+          expect.stringContaining('AS active_contracts'),
+          'INSERT INTO data_deletion_requests (user_id, reason) VALUES (:userId, :reason)',
+        ]);
+      });
     });
 
     describe('deletionBlockers: o que impede a exclusão agora', () => {
@@ -308,9 +389,10 @@ describe('lgpdRepository', () => {
         expect(stmt('UPDATE services').sql).toBe(
           'UPDATE services SET is_active = 0, deleted_at = COALESCE(deleted_at, NOW()) WHERE user_id = :userId',
         );
-        // A remoção da moderação fica como registro; só o texto da contestação (do titular) sai.
+        // A remoção da moderação fica como registro; o texto da contestação (do titular) e os lugares
+        // de onde a imagem saiu (para nenhuma reversão a recolocar no perfil anonimizado) saem.
         expect(stmt('UPDATE content_removals').sql).toBe(
-          'UPDATE content_removals SET appeal_text = NULL WHERE owner_id = :userId',
+          'UPDATE content_removals SET appeal_text = NULL, cleared_refs = NULL WHERE owner_id = :userId',
         );
         // Só as sessões ainda vivas são revogadas (a data de quem já saiu não é reescrita).
         expect(stmt('UPDATE user_sessions').sql).toBe(
@@ -551,6 +633,21 @@ describe('lgpdRepository', () => {
         `${EXPORT_FIELDS} FROM data_export_requests WHERE status IN ('ready', 'downloaded') AND expires_at IS NOT NULL AND expires_at < NOW() LIMIT 200`,
       );
       expect(params).toBeUndefined();
+    });
+
+    it('cópias ainda disponíveis do titular: prontas ou baixadas, vencidas ou não, só as dele', async () => {
+      const rows = [{ id: 3, file_url: 'a.json' }];
+      fakeDb.reply(rows);
+
+      expect(await lgpdRepository.listLiveExports(7)).toBe(rows);
+
+      // Na anonimização não se espera a validade: tudo o que ainda tem arquivo sai.
+      expect(fakeDb.calls).toEqual([
+        {
+          sql: `${EXPORT_FIELDS} FROM data_export_requests WHERE user_id = :userId AND status IN ('ready', 'downloaded')`,
+          params: { userId: 7 },
+        },
+      ]);
     });
 
     it('job de expiração sem nada vencido devolve lista vazia', async () => {

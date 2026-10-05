@@ -19,6 +19,13 @@ import {
   uploadsDir,
 } from './attachments.storage';
 
+// Disco de verdade (pasta temporária); o stat passa direto, salvo quando o teste simula o arquivo
+// que some entre a listagem e a leitura do tamanho (o expurgo rodando ao mesmo tempo).
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...real, stat: vi.fn(real.stat) };
+});
+
 // O ulid de verdade, mas observável: um teste fixa a chave para provar que nada é sobrescrito.
 vi.mock('ulid', async (importOriginal) => {
   const real = await importOriginal<typeof import('ulid')>();
@@ -241,6 +248,7 @@ describe('anexos no disco', () => {
   afterEach(async () => {
     vi.useRealTimers();
     vi.mocked(ulid).mockClear();
+    vi.mocked(stat).mockReset();
     env.DATA_DIR = realDataDir;
     await rm(dataDir, { recursive: true, force: true });
   });
@@ -251,6 +259,18 @@ describe('anexos no disco', () => {
     await mkdir(path.dirname(abs), { recursive: true });
     await writeFile(abs, bytes);
     return abs;
+  }
+
+  /**
+   * A leitura do tamanho do arquivo cujo nome termina em `suffix` falha com `code` (os outros
+   * passam direto); devolve o erro simulado.
+   */
+  async function statFails(suffix: string, code: string): Promise<NodeJS.ErrnoException> {
+    const err = Object.assign(new Error(`${code}: simulado`), { code });
+    const real = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    vi.mocked(stat).mockImplementation(((p: Parameters<typeof stat>[0]) =>
+      String(p).endsWith(suffix) ? Promise.reject(err) : real.stat(p)) as typeof stat);
+    return err;
   }
 
   const png = detectType(PNG)!;
@@ -405,6 +425,25 @@ describe('anexos no disco', () => {
       expect(await listUploadedFiles()).toEqual([]);
       expect(await dataDirUsage('uploads')).toEqual({ files: 0, bytes: 0 });
     });
+
+    it('arquivo apagado entre a listagem e a leitura do tamanho (expurgo ao mesmo tempo) fica de fora, sem derrubar o inventário', async () => {
+      const a = await put('uploads/2026/09/a.png', PNG);
+      await put('uploads/2026/09/b.pdf', PDF);
+      await statFails('b.pdf', 'ENOENT');
+
+      const files = await listUploadedFiles();
+
+      expect(files.map((f) => f.key)).toEqual(['2026/09/a.png']);
+      expect(files[0]!.path).toBe(a);
+      expect(files[0]!.size).toBe(PNG.length);
+    });
+
+    it('outra falha ao ler o arquivo (sem permissão) sobe: o inventário não esconde problema de disco', async () => {
+      await put('uploads/2026/09/a.png', PNG);
+      const denied = await statFails('a.png', 'EACCES');
+
+      await expect(listUploadedFiles()).rejects.toBe(denied);
+    });
   });
 
   describe('dataDirUsage (painel de armazenamento)', () => {
@@ -421,6 +460,21 @@ describe('anexos no disco', () => {
 
       expect(await dataDirUsage('uploads')).toEqual({ files: 2, bytes: PNG.length + PDF.length });
       expect(await dataDirUsage('exports')).toEqual({ files: 1, bytes: ZIP.length });
+    });
+
+    it('arquivo apagado entre a listagem e a leitura do tamanho não entra na conta, e o painel não cai', async () => {
+      await put('uploads/2026/03/a.png', PNG);
+      await put('uploads/2026/09/b.pdf', PDF);
+      await statFails('b.pdf', 'ENOENT');
+
+      expect(await dataDirUsage('uploads')).toEqual({ files: 1, bytes: PNG.length });
+    });
+
+    it('outra falha ao ler o arquivo (sem permissão) sobe, em vez de virar uma conta errada', async () => {
+      await put('exports/dados-7.zip', ZIP);
+      const denied = await statFails('dados-7.zip', 'EACCES');
+
+      await expect(dataDirUsage('exports')).rejects.toBe(denied);
     });
   });
 });

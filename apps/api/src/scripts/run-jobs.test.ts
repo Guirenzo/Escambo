@@ -106,6 +106,21 @@ describe('script que roda os jobs uma vez', () => {
     expect(exit.mock.calls).toEqual([[1]]);
   });
 
+  it('rodada que falha com o pool que também não fecha: ainda espera o Sentry e sai com 1', async () => {
+    const boom = new Error('falhou');
+    h.runAllJobs.mockRejectedValue(boom);
+    h.poolEnd.mockRejectedValue(new Error('pool já fechado'));
+
+    await runScript();
+
+    // Só o erro da rodada é registrado; o do pool, no caminho de falha, é engolido.
+    expect(h.logger.error.mock.calls).toEqual([[{ err: boom }, 'Falha ao rodar jobs']]);
+    expect(h.captureError.mock.calls).toEqual([[boom]]);
+    expect(h.poolEnd).toHaveBeenCalledTimes(1);
+    inOrder(h.captureError, h.poolEnd, h.flushSentry, exit);
+    expect(exit.mock.calls).toEqual([[1]]);
+  });
+
   it('na falha, o Sentry fora do ar não prende o processo: sai com 1 do mesmo jeito', async () => {
     h.runAllJobs.mockRejectedValue(new Error('falhou'));
     h.flushSentry.mockRejectedValue(new Error('timeout no envio'));

@@ -1,3 +1,6 @@
+import { createReadStream } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { Readable } from 'node:stream';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
@@ -523,6 +526,77 @@ describe('LGPD: borda HTTP', () => {
       expect(res.body).toEqual({ error: 'forbidden', message: 'Esta exportação não é sua' });
       expect(res.headers['content-disposition']).toBeUndefined();
       expect(audit).not.toHaveBeenCalled();
+    });
+
+    it('arquivo que some entre a checagem e a leitura (o job de expiração apagou): 410 de exportação vencida, sem cabeçalho de download e sem derrubar a API', async () => {
+      // Um ReadStream de verdade, criado na hora como no service, de um arquivo que não existe:
+      // emite 'error' com ENOENT ao abrir.
+      service.openExport.mockImplementation(async () => ({
+        stream: createReadStream(path.join(os.tmpdir(), `escambo-nao-existe-${Date.now()}.json`)),
+        fileName: 'escambo-dados-2026-09-01.json',
+      }));
+
+      const res = await request(app)
+        .get('/api/lgpd/export-requests/12/download')
+        .set(bearer(7))
+        .expect(410);
+
+      expect(res.body).toEqual({
+        error: 'export_expired',
+        message: 'Exportação expirada; solicite uma nova',
+      });
+      expect(res.headers['content-type']).toBe('application/json; charset=utf-8');
+      expect(res.headers['content-disposition']).toBeUndefined();
+      // A API segue de pé: o pedido seguinte é atendido.
+      service.openExport.mockResolvedValue({
+        stream: Readable.from([JSON.stringify(content)]),
+        fileName: 'escambo-dados-2026-09-01.json',
+      });
+      const next = await request(app)
+        .get('/api/lgpd/export-requests/12/download')
+        .set(bearer(7))
+        .expect(200);
+      expect(next.body).toEqual(content);
+    });
+
+    it('erro de leitura antes de sair qualquer byte (que não é arquivo sumido) é erro interno padronizado', async () => {
+      const stream = new Readable({
+        read() {
+          this.destroy(Object.assign(new Error('EIO: i/o error, read'), { code: 'EIO' }));
+        },
+      });
+      service.openExport.mockResolvedValue({ stream, fileName: 'escambo-dados-2026-09-01.json' });
+
+      const res = await request(app)
+        .get('/api/lgpd/export-requests/12/download')
+        .set(bearer(7))
+        .expect(500);
+
+      expect(res.body).toEqual({ error: 'internal_error', message: 'Erro interno do servidor' });
+      expect(res.headers['content-disposition']).toBeUndefined();
+    });
+
+    it('erro de leitura no meio do arquivo corta a conexão: o download nunca parece completo', async () => {
+      async function* halfway(): AsyncGenerator<string> {
+        yield '{"formato":"escambo-export/1.7",';
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        throw Object.assign(new Error('EIO: i/o error, read'), { code: 'EIO' });
+      }
+      service.openExport.mockResolvedValue({
+        stream: Readable.from(halfway()),
+        fileName: 'escambo-dados-2026-09-01.json',
+      });
+
+      const outcome = await request(app)
+        .get('/api/lgpd/export-requests/12/download')
+        .set(bearer(7))
+        .then(
+          () => 'resposta completa',
+          (err: Error) => err.message,
+        );
+
+      // O cliente vê a conexão cair, nunca um JSON pela metade com status 200 de arquivo inteiro.
+      expect(outcome).not.toBe('resposta completa');
     });
 
     it('exportação vencida, ainda não pronta ou inexistente volta com o código do service', async () => {

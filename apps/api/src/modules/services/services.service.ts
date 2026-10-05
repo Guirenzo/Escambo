@@ -59,9 +59,17 @@ async function assertMinPrice(priceType: string, price: number | null | undefine
   }
 }
 
+/** Só se publica em categoria que existe e está ativa (a inexistente estouraria a FK em 500). */
+async function assertCategory(categoryId: number): Promise<void> {
+  if (!(await servicesRepository.categoryIsActive(categoryId))) {
+    throw new HttpError(422, 'Categoria inexistente ou inativa', 'invalid_category');
+  }
+}
+
 export const servicesService = {
   async create(ownerId: number, input: CreateServiceInput): Promise<Service> {
     await assertMinPrice(input.priceType, input.price);
+    await assertCategory(input.categoryId);
     const id = await servicesRepository.create({
       userId: ownerId,
       categoryId: input.categoryId,
@@ -115,10 +123,17 @@ export const servicesService = {
     if (row.user_id !== ownerId) {
       throw new HttpError(403, 'Você não é o dono deste serviço', 'forbidden');
     }
-    await assertMinPrice(
-      input.priceType ?? row.price_type,
-      input.price ?? (row.price == null ? null : Number(row.price)),
-    );
+    // RN-016 vale para o serviço como fica depois da edição: price null é tirar o preço.
+    const priceType = input.priceType ?? row.price_type;
+    const price =
+      input.price !== undefined ? input.price : row.price == null ? null : Number(row.price);
+    if (priceType === 'fixed' && price == null) {
+      throw new HttpError(422, 'Preço obrigatório para preço fixo (RN-016)', 'price_required');
+    }
+    await assertMinPrice(priceType, price);
+    if (input.categoryId !== undefined && input.categoryId !== row.category_id) {
+      await assertCategory(input.categoryId);
+    }
 
     // Mapeamento fixo input -> colunas (nunca chaves cruas do usuário).
     const fields: Record<string, unknown> = {};

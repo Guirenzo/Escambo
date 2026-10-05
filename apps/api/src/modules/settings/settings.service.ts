@@ -1,6 +1,7 @@
 import type { PlatformSetting, PublicSettings } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
 import { EXTENSION_RESPONSE_HOURS } from '../contracts/deadline-grace';
+import { parseNumberSetting } from './settings.parse';
 import { settingsRepository } from './settings.repository';
 import { SETTING_DEFS, SETTING_KEYS, type SettingKey } from './settings.schema';
 
@@ -22,10 +23,10 @@ async function rawValue(key: SettingKey, now = Date.now()): Promise<string | nul
 
 function parseValue(key: SettingKey, raw: string | null | undefined): number | boolean {
   const def = SETTING_DEFS[key];
-  if (raw == null) return def.defaultValue;
-  if (def.type === 'boolean') return raw === 'true' || raw === '1';
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : def.defaultValue;
+  if (def.type === 'boolean') return raw == null ? def.defaultValue : raw === 'true' || raw === '1';
+  // A mesma regra do settingsRepository.getNumber (valor em branco é o padrão, e não zero): os
+  // jobs leem a chave por lá, e a tela não pode mostrar outro prazo.
+  return parseNumberSetting(raw, def.defaultValue as number);
 }
 
 function toItem(

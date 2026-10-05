@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { boostsService } from './boosts.service';
 
-const { repo, services } = vi.hoisted(() => ({
+const { repo, services, zone } = vi.hoisted(() => ({
   repo: {
     listPlans: vi.fn(),
     findPlan: vi.fn(),
@@ -10,9 +10,11 @@ const { repo, services } = vi.hoisted(() => ({
     findById: vi.fn(),
   },
   services: { findById: vi.fn() },
+  zone: vi.fn(),
 }));
 vi.mock('./boosts.repository', () => ({ boostsRepository: repo }));
 vi.mock('../services/services.repository', () => ({ servicesRepository: services }));
+vi.mock('../auth/user-zone', () => ({ userZone: zone }));
 
 const planRow = (o: Record<string, unknown> = {}): Record<string, unknown> => ({
   id: 1,
@@ -79,6 +81,26 @@ describe('boostsService', () => {
       ]);
     });
 
+    it('impulsionamento nunca sai de graça: plano abaixo de R$ 0,50 custa 1 crédito, não 0', async () => {
+      repo.listPlans.mockResolvedValue([
+        planRow({ id: 1, price: '0.49' }),
+        planRow({ id: 2, price: '0.10' }),
+        planRow({ id: 3, price: '0.00' }),
+        planRow({ id: 4, price: '0.50' }),
+        planRow({ id: 5, price: '1.49' }),
+      ]);
+
+      const plans = await boostsService.plans();
+
+      expect(plans.map((p) => [p.price, p.costCredits])).toEqual([
+        [0.49, 1],
+        [0.1, 1],
+        [0, 1],
+        [0.5, 1],
+        [1.49, 1],
+      ]);
+    });
+
     it('features: aceita JSON em texto ou já convertido; nulo ou texto inválido vira null', async () => {
       repo.listPlans.mockResolvedValue([
         planRow({ id: 1, features: '{"homepage":true}' }),
@@ -107,9 +129,9 @@ describe('boostsService', () => {
 
   describe('buy', () => {
     it('compra para um serviço próprio: cobra o custo do plano em créditos pela duração dele', async () => {
-      services.findById.mockResolvedValue({ id: 3, user_id: 7 });
+      services.findById.mockResolvedValue({ id: 3, user_id: 7, is_active: 1 });
       repo.findPlan.mockResolvedValue(planRow({ id: 2, price: '29.90', duration_days: 7 }));
-      repo.purchase.mockResolvedValue(91);
+      repo.purchase.mockResolvedValue({ boostId: 91 });
       repo.findById.mockResolvedValue(boostRow({ plan_id: 2 }));
 
       const boost = await boostsService.buy(7, 3, 2);
@@ -153,7 +175,7 @@ describe('boostsService', () => {
     });
 
     it('só o dono pode impulsionar o serviço: o de outra pessoa dá 403 e nada é cobrado', async () => {
-      services.findById.mockResolvedValue({ id: 3, user_id: 8 });
+      services.findById.mockResolvedValue({ id: 3, user_id: 8, is_active: 1 });
 
       await expect(boostsService.buy(7, 3, 2)).rejects.toMatchObject({
         statusCode: 403,
@@ -166,7 +188,7 @@ describe('boostsService', () => {
     });
 
     it('plano inexistente ou desativado: 404 e nada é cobrado', async () => {
-      services.findById.mockResolvedValue({ id: 3, user_id: 7 });
+      services.findById.mockResolvedValue({ id: 3, user_id: 7, is_active: 1 });
       repo.findPlan.mockResolvedValue(undefined);
 
       await expect(boostsService.buy(7, 3, 2)).rejects.toMatchObject({
@@ -180,7 +202,7 @@ describe('boostsService', () => {
     });
 
     it('o dono é conferido antes do plano: serviço de outra pessoa com plano inexistente dá 403, não 404', async () => {
-      services.findById.mockResolvedValue({ id: 3, user_id: 8 });
+      services.findById.mockResolvedValue({ id: 3, user_id: 8, is_active: 1 });
       repo.findPlan.mockResolvedValue(undefined);
 
       await expect(boostsService.buy(7, 3, 999)).rejects.toMatchObject({
@@ -190,9 +212,9 @@ describe('boostsService', () => {
     });
 
     it('o custo e a duração vêm do plano gravado, na regra de arredondamento da vitrine', async () => {
-      services.findById.mockResolvedValue({ id: 3, user_id: 7 });
+      services.findById.mockResolvedValue({ id: 3, user_id: 7, is_active: 1 });
       repo.findPlan.mockResolvedValue(planRow({ id: 5, price: '10.49', duration_days: 15 }));
-      repo.purchase.mockResolvedValue(92);
+      repo.purchase.mockResolvedValue({ boostId: 92 });
       repo.findById.mockResolvedValue(boostRow({ id: 92, plan_id: 5 }));
 
       const boost = await boostsService.buy(7, 3, 5);
@@ -212,7 +234,7 @@ describe('boostsService', () => {
 
     it('falha do banco na compra sobe como veio, e nenhum impulsionamento é devolvido', async () => {
       const boom = new Error('ER_LOCK_DEADLOCK');
-      services.findById.mockResolvedValue({ id: 3, user_id: 7 });
+      services.findById.mockResolvedValue({ id: 3, user_id: 7, is_active: 1 });
       repo.findPlan.mockResolvedValue(planRow({ id: 2 }));
       repo.purchase.mockRejectedValue(boom);
 
@@ -221,10 +243,10 @@ describe('boostsService', () => {
       expect(repo.findById).not.toHaveBeenCalled();
     });
 
-    it('créditos insuficientes (a compra devolve null): 409 e não procura impulsionamento nenhum', async () => {
-      services.findById.mockResolvedValue({ id: 3, user_id: 7 });
+    it('créditos insuficientes (a compra recusa): 409 e não procura impulsionamento nenhum', async () => {
+      services.findById.mockResolvedValue({ id: 3, user_id: 7, is_active: 1 });
       repo.findPlan.mockResolvedValue(planRow({ id: 2, price: '99.90', duration_days: 30 }));
-      repo.purchase.mockResolvedValue(null);
+      repo.purchase.mockResolvedValue({ refused: 'insufficient_credits' });
 
       await expect(boostsService.buy(7, 3, 2)).rejects.toMatchObject({
         statusCode: 409,
@@ -239,6 +261,57 @@ describe('boostsService', () => {
         cost: 100,
         durationDays: 30,
       });
+      expect(repo.findById).not.toHaveBeenCalled();
+    });
+
+    it('serviço pausado não é impulsionado: 409 service_inactive e nada é cobrado', async () => {
+      services.findById.mockResolvedValue({ id: 3, user_id: 7, is_active: 0 });
+      repo.findPlan.mockResolvedValue(planRow({ id: 2 }));
+
+      await expect(boostsService.buy(7, 3, 2)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'service_inactive',
+        message: 'Serviço pausado não pode ser impulsionado: reative-o antes',
+      });
+
+      expect(repo.findPlan).not.toHaveBeenCalled();
+      expect(repo.purchase).not.toHaveBeenCalled();
+    });
+
+    it('plano abaixo de R$ 0,50 cobra 1 crédito na compra: o débito de 0 passaria sempre', async () => {
+      services.findById.mockResolvedValue({ id: 3, user_id: 7, is_active: 1 });
+      repo.findPlan.mockResolvedValue(planRow({ id: 6, price: '0.30', duration_days: 1 }));
+      repo.purchase.mockResolvedValue({ boostId: 93 });
+      repo.findById.mockResolvedValue(boostRow({ id: 93, plan_id: 6 }));
+
+      await boostsService.buy(7, 3, 6);
+
+      expect(repo.purchase).toHaveBeenCalledWith({
+        userId: 7,
+        serviceId: 3,
+        planId: 6,
+        cost: 1,
+        durationDays: 1,
+      });
+    });
+
+    it('serviço com impulsionamento ativo: 409 boost_active dizendo até quando vale o atual, no fuso de quem compra (RN-017)', async () => {
+      services.findById.mockResolvedValue({ id: 3, user_id: 7, is_active: 1 });
+      repo.findPlan.mockResolvedValue(planRow({ id: 2 }));
+      repo.purchase.mockResolvedValue({
+        refused: 'boost_active',
+        activeUntil: new Date('2026-03-17T12:00:00Z'),
+      });
+      zone.mockResolvedValue('America/Manaus');
+
+      await expect(boostsService.buy(7, 3, 2)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'boost_active',
+        message:
+          'Este serviço já tem um impulsionamento ativo até 17/03/2026 às 08:00; um novo só depois que ele terminar (RN-017)',
+      });
+
+      expect(zone).toHaveBeenCalledWith(7);
       expect(repo.findById).not.toHaveBeenCalled();
     });
   });

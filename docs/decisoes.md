@@ -375,3 +375,65 @@ Serve para a banca e para quem for evoluir o sistema: cada item explica **por qu
 - **Decisão (observabilidade):** a API expõe métricas Prometheus (`@prometheus-io/client`, o sucessor do `prom-client`) numa porta própria (`METRICS_PORT`, 9464), fora do Express, do rate limit e do Caddy, alcançável só pela rede interna: latência por **rota declarada** (nunca a URL crua, para não criar uma série por id; o rótulo é guardado quando a rota casa, porque o Express desfaz o prefixo antes do tratamento de erro), a requisição abandonada pelo cliente com o status 499, rodadas e duração de cada job (rótulo `job_name`, porque `job` é do Prometheus; as séries nascem em zero, para a primeira falha contar), versão no ar e as métricas padrão do processo. Um perfil opcional do compose (`monitoring`), o mesmo na produção e na demo local, sobe o Prometheus, uma sonda blackbox que consulta o `/api/health` como um usuário (uptime contra a meta de 99,5% da RNF-007) e o Grafana com o painel e cinco alertas provisionados, **avaliados pelo Grafana e enviados por e-mail** pelo SMTP do sistema (site fora do ar ou sonda parada, API sem métricas, mais de 2% de 5xx, p95 acima de 1 s, job falhando, com o nome do job). Na produção o Grafana só escuta no `127.0.0.1` da VPS (túnel SSH) e não sobe sem senha, e os arquivos de configuração são montados sem `create_host_path`: se faltarem, a subida para com erro em vez de o Docker criar pastas no lugar deles. As falhas do servidor (os 500, as falhas de job, inclusive no modo `jobs:run`, a queda do processo e a falha na subida) vão ao Sentry quando há `SENTRY_DSN`; erro do cliente (validação, origem recusada pelo CORS, URL ou corpo malformado) responde 4xx e não vai. Nenhum dado pessoal sai: usuário, cookies, cabeçalhos, corpos, query string, SQL, variáveis locais e o rastro das chamadas anteriores ficam desligados, a mensagem de erro do banco vira só o código e qualquer e-mail no texto vira `[email]`. Sem o DSN o pacote nem é carregado. No encerramento, a fila do Sentry é enviada antes de fechar o servidor, que deixa de ser fechado duas vezes. **Rejeitados:** `/metrics` na porta pública com token (mais uma credencial para vazar); o Grafana exposto pelo Caddy num subdomínio (mais superfície de ataque para um painel de uma pessoa); regras de alerta no Prometheus com Alertmanager (um contêiner e um arquivo de segredos a mais para entregar o mesmo e-mail); Datadog/New Relic (pagos e com agente na VPS pequena). A sonda roda na mesma VPS; um monitor externo gratuito fica recomendado na Wiki para o caso de a máquina inteira cair.
 - **Decisão (Wiki):** as páginas escritas para a Wiki ficam em `docs/wiki/` e, com os documentos do repositório, são geradas por `scripts/wiki-build.mjs` (links relativos reescritos, código deixado como está; link relativo quebrado ou documento que sumiu é erro; a pasta de saída só pode ser uma `.wiki-*` na raiz, porque é apagada antes de gerar) e publicadas pelo workflow `wiki.yml` a cada push na `main` que mexe na documentação. A Wiki é espelho: editar direto nela é sobrescrito. **Rejeitado:** escrever a Wiki à mão (divergiria do repositório na primeira mudança). O RFC (v2.4) passa a descrever o que foi construído e marca os cinco itens como atendidos.
 - **Consequências:** o deploy deixa de depender de alguém na VPS e fica rastreável (cada deploy é uma execução no Actions, com o commit conferido no ar), e uma subida que falha não deixa a produção pela metade. O deploy, o SonarCloud, o Sentry e a Wiki dependem de passos que só o dono do repositório faz (segredos da VPS, conta e token do SonarCloud, DSN do Sentry e, na Wiki, criar a primeira página à mão, uma vez); até lá os jobs terminam verdes avisando, o que é dito nas páginas da Wiki para o verde não ser lido como entrega ligada. A imagem da API passa a copiar também as dependências instaladas dentro do workspace: ao trocar a versão do `nodemailer`, o npm o instalou em `apps/api/node_modules`, a imagem subiu sem ele e nenhum teste avisou, porque nenhum roda a imagem; quem pegou foi a demo local, subida para conferir o monitoramento. Duas dependências de produção novas na API (`@prometheus-io/client`, `@sentry/node`), três de desenvolvimento na raiz (istanbul) e o `@vitest/coverage-v8` nos dois apps; o Node mínimo passa a ser o 22. Nenhuma migration, tipo de aviso, rota pública ou tela nova. O CI fica cerca de 1 min mais longo (cobertura e o job de união). A revisão por pares continua dependendo de gente: o fluxo por Pull Request e os modelos de PR e de issue estão no repositório, mas a proteção da `main` com aprovação obrigatória só faz sentido quando houver um segundo revisor.
+
+## 60. A varredura de testes vira correção: regras que o código furava, travas de concorrência e entrada inválida que respondia 500
+
+- **Contexto:** os agentes que escreveram os testes de unidade do ADR 59 leram cada módulo ao lado do código e apontaram cerca de 55 pontos, cada um conferido por um revisor. A triagem separou os defeitos reais dos caminhos inalcançáveis. Os reais se agrupam em cinco classes:
+  - **regras escritas que o código furava:** proposta para serviço pausado (RN-013), serviço de preço fixo sem preço pela edição (RN-016), dois impulsionamentos ao mesmo tempo (RN-017), ranking com conta banida;
+  - **dinheiro:** saque e contratação com fração de centavo criavam um centavo a cada pedido ou proposta cancelados;
+  - **corridas:** dois refresh simultâneos com o mesmo token saíam com dois pares válidos; dois pedidos de exclusão simultâneos criavam duas solicitações; o nível de XP era gravado de um total lido fora da transação;
+  - **LGPD e quarentena:** arquivo marcado como expurgado sem ter saído do disco; a cópia de dados do titular ficava no disco depois da anonimização ou de uma falha; o download de uma cópia que sumia derrubava a API inteira;
+  - **entrada inválida respondia 500:** página 1e20, multipart cortado, User-Agent longo, categoria ou destinatário de troca inexistente.
+
+  Além disso, `/api/docs` saía em branco pelo CSP.
+- **Decisão (regras):**
+  - A API recusa proposta para serviço pausado (409 `service_inactive`), na contratação e na troca (o serviço pedido e o oferecido).
+  - Recusa também serviço que não é do freelancer contratado e quem não pode ser contratado (404 `freelancer_not_found`): conta inexistente, excluída, suspensa, banida ou de administrador, que mediaria a própria disputa. Com serviço, ser dono do serviço no ar basta; na contratação direta, a conta precisa ser de freelancer (o tipo da conta ou o perfil de freelancer, RN-006). A troca não é proposta a conta suspensa, banida ou de administrador.
+  - O serviço pausado continua abrindo pelo link, como o perfil de quem está indisponível (RN-014): é ver, não contratar.
+  - A edição valida o estado final contra a RN-016.
+  - A segunda compra de impulsionamento é recusada enquanto a primeira vale (409 `boost_active`, com até quando), na transação que trava a carteira de quem compra: só o dono impulsiona o próprio serviço, e travar o serviço fechava um ciclo de deadlock com o aceite da troca e com a exclusão da conta. Serviço pausado não é impulsionado. O custo tem piso de 1 crédito.
+  - O ranking deixa de fora conta suspensa, banida ou excluída. A sequência de dias conta no fuso da pessoa.
+  - Favoritar exige alvo que existe, e não vale favoritar a si mesmo.
+- **Decisão (admin):**
+  - Administradores não são suspensos nem banidos pelo painel, nem por si mesmos. Reativar continua possível, porque é a saída de quem foi bloqueado antes da trava.
+  - A moderação grava o alvo em `admin_actions`.
+  - A divisão numa disputa vai de 1% a 99% e precisa dar algo aos dois lados também em valor: num resto pequeno, a porcentagem pode arredondar para um lado só (422 `split_one_sided`). Tudo de um lado é liberar ou devolver, que encerram a contratação com o status certo. O painel oferece de 5% a 95%.
+  - A RN-007 continua **Parcial**: a suspensão bloqueia como o banimento, e o acesso só de leitura para a conta suspensa fica para depois. Escrever isso na regra é mais honesto que fingir.
+- **Decisão (concorrência e dinheiro):**
+  - A rotação do refresh token só emite o par novo para quem de fato revogou o antigo (UPDATE condicional conferindo `affectedRows`).
+  - O pedido de exclusão trava a linha do titular. O XP trava a linha do total e grava o nível calculado dele, com a contagem de contratos na mesma transação.
+  - Saque, troca e contratação só aceitam valores de dois centavos, com o teto da coluna (R$ 99.999.999,99). A troca confere quem recebe e de quem é cada serviço. No modo créditos, o preço continua em reais e a quantidade de créditos é o arredondamento, como o web mostra.
+  - A recusa da carteira deixa de se passar por "o status mudou": vira erro com log.
+  - O webhook só liquida depósitos (`kind = 'topup'`).
+- **Decisão (LGPD, mídia e chat):**
+  - O expurgo da quarentena e o das cópias de dados só marcam o arquivo que saiu: apagado, ou que já não existia. Erro de disco fica para a próxima rodada, com log.
+  - A anonimização apaga as cópias de dados do titular e esquece as referências das remoções dele, para nenhuma reversão recolocar imagem no perfil anonimizado. A falha ao concluir uma cópia apaga o arquivo. O download trata o arquivo que some (410 `export_expired`).
+  - A decisão de moderação já gravada não responde 500 por causa de um passo posterior (registro do admin, quarentena, aviso): cada passo é isolado, com log. Se a quarentena falha, o arquivo é apagado de vez (a contestação avisa que a imagem não pôde ser recuperada); se nem isso sai, o painel avisa que o endereço ainda abre até o expurgo diário. A reversão que falha devolve o arquivo à quarentena.
+  - A miniatura de uma imagem removida não é mais servida nem recriada.
+  - O histórico do chat traz as 200 mensagens mais recentes, e não as mais antigas.
+  - O socket valida a mensagem com o mesmo schema da rota, só chama o retorno do cliente quando ele é função, e nenhum ouvinte rejeita solto: um retorno que não era função derrubava a API.
+  - A mensagem nova e a moderação de uma mensagem vão para a sala de cada contratação do par.
+  - Anexo que some do disco é 404, e o `sendFile` usa `root` nos anexos, nas imagens e na imagem da quarentena (com pasta começada por ponto no caminho, todo download dava 403).
+  - O nome de arquivo com acento chega certo (o multer lia latin1).
+- **Decisão (entrada e configuração):**
+  - Toda lista tem teto de página. Número vazio na busca vale como ausente. `%` e `_` na busca são literais.
+  - Multipart malformado é 400 `invalid_upload`, sem Sentry.
+  - O User-Agent é cortado em 512 antes de ir para sessão, consentimento e auditoria.
+  - Uma regra do objeto (refine sem campo) chega com a mensagem dela, e só ela: os textos padrão do zod continuam com a mensagem genérica.
+  - `PUSH_PROVIDER=webpush` sem o par de chaves não sobe (as chaves são aparadas). Valor em branco no painel vale o padrão, também na tela de configurações. Um aparelho que falha no envio não para os seguintes.
+  - O Swagger UI passa a vir da própria API (`swagger-ui-dist`, Apache-2.0), sem CDN nem script inline, e o CSP fica igual para todas as rotas, sem `upgrade-insecure-requests`: as respostas da API não carregam sub-recursos, a produção já força https no Caddy com HSTS, e com ele a página ficava em branco em http fora do localhost.
+- **Rejeitados:**
+  - Afrouxar o CSP de `/api/docs` para o unpkg.
+  - Esconder o serviço pausado do link.
+  - Estender o impulsionamento ativo na segunda compra: a RN-017 manda esperar o término.
+  - Um índice único para o XP de contrato concluído (pede migration, e nenhum caminho reexecuta o evento).
+  - Implementar agora o acesso só de leitura da conta suspensa.
+- **Consequências:**
+  - Sem migration; uma dependência nova (`swagger-ui-dist`), com a estatística de instalação que ela traz (`@scarf/scarf`) desligada no `package.json` da raiz.
+  - Códigos de erro novos na API: `freelancer_not_found`, `service_not_found`, `service_inactive`, `boost_active`, `split_one_sided`, `price_required`, `invalid_category`, `cannot_favorite_self`, `user_not_found`, `invalid_offered_service`, `invalid_requested_service`, `cannot_moderate_admin`, `export_expired` no download, `invalid_upload` para multipart malformado.
+  - Quem chamava a API com valores que antes eram aceitos (página enorme, fração de centavo, divisão de 0% ou 100%) passa a receber 422.
+  - Ficam para depois:
+    - o `INSERT IGNORE INTO wallets` dentro das transações de dinheiro, que pode travar duas operações simultâneas da mesma pessoa;
+    - o acesso só de leitura da conta suspensa;
+    - RN-023, a reputação da RN-026, RN-030 e RN-062;
+    - o gateway de pagamento real, por último.

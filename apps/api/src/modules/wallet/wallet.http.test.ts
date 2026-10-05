@@ -178,6 +178,22 @@ describe('carteira e depósitos: borda HTTP', () => {
       expect(wallet.listTransactions).not.toHaveBeenCalled();
     });
 
+    it('a página vai até 10000: acima disso (1e20 incluso) é erro de validação, não 500 do OFFSET', async () => {
+      for (const page of ['10001', '1e20']) {
+        const res = await request(app)
+          .get(`/api/wallet/transactions?page=${page}`)
+          .set(bearer(7))
+          .expect(422);
+        expect(res.body.error).toBe('validation_error');
+        expect(res.body.details).toHaveProperty('page');
+      }
+      expect(wallet.listTransactions).not.toHaveBeenCalled();
+
+      wallet.listTransactions.mockResolvedValue({ items: [], page: 10000, limit: 20 });
+      await request(app).get('/api/wallet/transactions?page=10000').set(bearer(7)).expect(200);
+      expect(wallet.listTransactions).toHaveBeenCalledWith(7, 10000, 20);
+    });
+
     it('o limite máximo é 100, e o extrato é o do token mesmo com outro usuário na URL', async () => {
       wallet.listTransactions.mockResolvedValue({ items: [], page: 1, limit: 100 });
 
@@ -347,6 +363,21 @@ describe('carteira e depósitos: borda HTTP', () => {
         expect(res.body.details).toHaveProperty(field);
       }
       expect(payments.listDeposits).not.toHaveBeenCalled();
+    });
+
+    it('a página dos depósitos também vai até 10000: 10001 e 1e20 são recusados', async () => {
+      for (const page of ['10001', '1e20']) {
+        const res = await request(app)
+          .get(`/api/wallet/deposits?page=${page}`)
+          .set(bearer(7))
+          .expect(422);
+        expect(res.body.details).toHaveProperty('page');
+      }
+      expect(payments.listDeposits).not.toHaveBeenCalled();
+
+      payments.listDeposits.mockResolvedValue({ items: [], page: 10000, limit: 20 });
+      await request(app).get('/api/wallet/deposits?page=10000').set(bearer(7)).expect(200);
+      expect(payments.listDeposits).toHaveBeenLastCalledWith(7, 10000, 20);
     });
   });
 

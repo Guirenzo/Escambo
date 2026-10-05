@@ -208,6 +208,27 @@ describe('milestonesRepository', () => {
       );
       expect(params).toEqual({ contractId: 12 });
     });
+
+    it('marco ainda não financiado (pending) não conta como entregue nem como faltando; entregue é só o que tem data de entrega', async () => {
+      fakeDb.reply([
+        { title: 'Briefing', status: 'pending', delivered_at: null },
+        { title: 'Layout', status: 'pending', delivered_at: null },
+      ]);
+      expect(await milestonesRepository.titlesByDelivery(12)).toEqual({
+        delivered: [],
+        missing: [],
+      });
+
+      fakeDb.reply([
+        { title: 'Briefing', status: 'released', delivered_at: NOW },
+        { title: 'Layout', status: 'pending', delivered_at: null },
+        { title: 'Textos', status: 'funded', delivered_at: null },
+      ]);
+      expect(await milestonesRepository.titlesByDelivery(12)).toEqual({
+        delivered: ['Briefing'],
+        missing: ['Textos'],
+      });
+    });
   });
 
   describe('deliver', () => {

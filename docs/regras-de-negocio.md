@@ -20,7 +20,7 @@
 9. [RN-66 a RN-70 — Troca, Pacotes e Confiança](#81-rn-66-a-rn-70--troca-pacotes-e-confiança)
 10. [RN-71 a RN-81 — Conformidade, LGPD, avisos e prazos](#9-rn-71-a-rn-81--conformidade-lgpd-avisos-e-prazos)
 11. [Tabela Consolidada](#10-tabela-consolidada)
-12. [Matriz de situação (ADR 58)](#11-matriz-de-situação-adr-58)
+12. [Matriz de situação (ADR 60)](#11-matriz-de-situação-adr-60)
 
 ---
 
@@ -34,7 +34,7 @@ Cada regra possui:
 - **Descrição** — a regra em linguagem precisa
 - **Impacto** — consequência do não cumprimento
 - **Casos de Uso relacionados**
-- **Situação** — nas regras revistas contra o código (a partir do ADR 57): implementada, parcial, não implementada ou corrigida no texto; a [matriz da seção 11](#11-matriz-de-situação-adr-58) reúne essas regras
+- **Situação** — nas regras revistas contra o código (a partir do ADR 57): implementada, parcial, não implementada ou corrigida no texto; a [matriz da seção 11](#11-matriz-de-situação-adr-60) reúne essas regras
 - **Origem** — quando a regra nasceu de uma decisão registrada em `docs/decisoes.md`
 
 O documento reúne **81 regras**, de RN-001 a RN-081.
@@ -119,6 +119,7 @@ O documento reúne **81 regras**, de RN-001 a RN-081.
 | **Descrição** | Contas suspensas perdem acesso a todas as funcionalidades transacionais mas mantêm acesso para visualização e contato com suporte. Contas banidas perdem acesso total à plataforma |
 | **Impacto** | Apenas administradores podem suspender, banir ou reativar contas |
 | **UC Relacionado** | UC-11 |
+| **Situação** | Parcial (ADR 60): hoje a suspensão bloqueia o acesso como o banimento (as sessões caem e o login é recusado até o admin reativar); o acesso só de leitura e ao suporte para a conta suspensa não foi implementado. Administradores não são suspensos nem banidos pelo painel, nem por si mesmos |
 
 ---
 
@@ -189,6 +190,7 @@ O documento reúne **81 regras**, de RN-001 a RN-081.
 | **Descrição** | Serviços com status **inativo ou pausado** não aparecem na busca e não aceitam novas propostas de contratação |
 | **Impacto** | Freelancers podem pausar serviços temporariamente sem perder o histórico |
 | **UC Relacionado** | UC-03 |
+| **Situação** | Implementada (ADR 60): a API recusa proposta de contratação e de troca para serviço pausado (`service_inactive`). O serviço pausado continua abrindo pelo link, para ver |
 
 ---
 
@@ -222,6 +224,7 @@ O documento reúne **81 regras**, de RN-001 a RN-081.
 | **Descrição** | O valor mínimo de um serviço com preço fixo é de **R$ 10,00**. Serviços abaixo desse valor não podem ser publicados |
 | **Impacto** | Evita transações não viáveis operacionalmente para a plataforma |
 | **UC Relacionado** | UC-03 |
+| **Situação** | Implementada; corrigida na edição (ADR 60): a mudança de tipo ou de preço é conferida no estado final |
 
 ---
 
@@ -233,6 +236,7 @@ O documento reúne **81 regras**, de RN-001 a RN-081.
 | **Descrição** | Um freelancer pode ter **apenas um impulsionamento ativo** por serviço ou por perfil simultaneamente. Novos impulsionamentos só podem ser contratados após o término do atual |
 | **Impacto** | Garante equidade no sistema de destaque |
 | **UC Relacionado** | UC-03 |
+| **Situação** | Implementada (ADR 60): a segunda compra é recusada enquanto a primeira vale, dizendo até quando; serviço pausado não é impulsionado |
 
 ---
 
@@ -768,6 +772,7 @@ O documento reúne **81 regras**, de RN-001 a RN-081.
 | **Descrição** | A decisão do administrador em uma disputa é **final e vinculante** para ambas as partes, conforme aceite nos Termos de Uso no momento do cadastro |
 | **Impacto** | Garante resolução definitiva; evita impasse |
 | **UC Relacionado** | UC-10, UC-11 |
+| **Situação** | Implementada. A divisão vai de 1% a 99% e precisa dar algo aos dois lados (ADR 60): tudo de um lado é liberar ou devolver |
 
 ---
 
@@ -1076,12 +1081,16 @@ O documento reúne **81 regras**, de RN-001 a RN-081.
 
 ---
 
-## 11. Matriz de situação (ADR 58)
+## 11. Matriz de situação (ADR 60)
 
-Regras revistas contra o código na v1.39.0 (ADR 57) e na v1.41.0 (ADR 58). Os arquivos da API ficam em `apps/api/src/` (as contratações em `modules/contracts/`), e os do web em `apps/web/src/features/`.
+Regras revistas contra o código na v1.39.0 (ADR 57), na v1.41.0 (ADR 58) e na v1.41.1 (ADR 60). Os arquivos da API ficam em `apps/api/src/` (as contratações em `modules/contracts/`), e os do web em `apps/web/src/features/`.
 
 | RN | Situação | Onde | ADR |
 |---|---|---|---|
+| RN-007 | Parcial | `modules/admin/admin.service.ts` (`moderateUser`), `middlewares/authenticate.ts` (a suspensão bloqueia como o banimento) | 60 |
+| RN-013 | Implementada | `contracts.service.ts` (criação: serviço do freelancer e no ar), `modules/barter/barter.service.ts` (proposta de troca) | 60 |
+| RN-016 | Implementada; corrigida na edição | `modules/services/services.service.ts` (`update`) | 60 |
+| RN-017 | Implementada | `modules/boosts/boosts.repository.ts` (`purchase`, com a trava da carteira de quem compra) | 60 |
 | RN-021 | Implementada | `contracts.service.ts` (criação e aceite da proposta), `jobs/expire-proposals.ts` | 57, 58 |
 | RN-023 | Não implementada | Nenhum limite de revisões; a revisão não abre disputa automática | 57 |
 | RN-024 | Implementada; "dias úteis" corrigido para dias corridos | `contracts.service.ts` (entrega e marco), `jobs/tacit-approval.ts`, `approval-notices.ts` | 57, 58 |
@@ -1091,6 +1100,7 @@ Regras revistas contra o código na v1.39.0 (ADR 57) e na v1.41.0 (ADR 58). Os a
 | RN-029 | Implementada | `deadline-sql.ts` (`rn029Eligible`), `deadline-grace.ts`, `jobs/overdue-contracts.ts` | 57, 58 |
 | RN-043 | Implementada | `modules/reviews/reviews.service.ts` (`REVIEW_WINDOW_DAYS`, relógio da plataforma) | 58 |
 | RN-039 | Corrigida no texto | `cancel-policy.ts` (`cashSettlement`), `modules/admin/admin.service.ts` (decisão de disputa) | 15, 57 |
+| RN-063 | Implementada | `modules/admin/admin.schema.ts` (divisão de 1% a 99%), `admin.service.ts` | 60 |
 | RN-062 | Não implementada | `modules/disputes/disputes.repository.ts` (status em que a disputa abre) | 57 |
 | RN-069 | Implementada | `deadline-sql.ts`, `jobs/overdue-contracts.ts` (marco atrasado), `jobs/tacit-approval.ts` (marcos agrupados) | 57, 58 |
 | RN-076 | Implementada | `shell/LegalUpdateBanner.tsx`, `shell/banners.ts`, `legal/content.ts` | 54, 57, 58 |

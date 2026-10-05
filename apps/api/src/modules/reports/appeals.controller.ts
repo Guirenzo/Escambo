@@ -1,9 +1,13 @@
+import path from 'node:path';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import { logger } from '../../config/logger';
+import { captureError } from '../../config/sentry';
 import { HttpError } from '../../utils/http-error';
 import { adminRepository } from '../admin/admin.repository';
 import { auditService } from '../audit/audit.service';
 import { MEDIA_MIME } from '../media/media.paths';
+import { quarantineDir } from '../media/media.storage';
 import { APPEAL_MIN_CHARS, appealsService } from './appeals.service';
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
@@ -44,10 +48,14 @@ export async function appealImage(req: Request, res: Response): Promise<void> {
   const { id } = idParam.parse(req.params);
   const abs = await appealsService.quarantineImage(id);
   const ext = abs.slice(abs.lastIndexOf('.') + 1);
+  // Relativo à pasta da quarentena (opção root): o dotfiles: 'deny' olha só o caminho dentro dela, e
+  // não recusa toda imagem quando o DATA_DIR mora numa pasta começada por ponto.
+  const root = quarantineDir();
   await new Promise<void>((resolve, reject) => {
     res.sendFile(
-      abs,
+      path.relative(root, abs),
       {
+        root,
         dotfiles: 'deny',
         cacheControl: false,
         headers: {
@@ -71,7 +79,17 @@ export async function decideAppeal(req: Request, res: Response): Promise<void> {
   const adminId = req.user!.uid;
   const result = await appealsService.decide(adminId, id, decision, note || null);
   const action = decision === 'uphold' ? 'appeal_upheld' : 'appeal_overturned';
-  await adminRepository.recordAction(adminId, action, 'image_removal', id, note || null);
+  try {
+    await adminRepository.recordAction(adminId, action, 'image_removal', id, note || null);
+  } catch (err) {
+    // A decisão já foi gravada e o dono avisado; a nova tentativa daria 409. A falha do registro
+    // vai para o log e o Sentry, a auditoria abaixo ainda guarda a decisão e o admin recebe 200.
+    logger.error(
+      { err, adminId, removalId: id, action },
+      'decisão sem registro nas ações do admin',
+    );
+    captureError(err);
+  }
   void auditService.log({
     userId: adminId,
     action,

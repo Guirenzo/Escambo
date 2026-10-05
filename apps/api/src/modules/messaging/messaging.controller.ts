@@ -1,5 +1,7 @@
+import path from 'node:path';
 import type { Request, Response } from 'express';
 import { HttpError } from '../../utils/http-error';
+import { uploadsDir } from './attachments.storage';
 import {
   attachmentBodySchema,
   contractIdParamSchema,
@@ -40,10 +42,14 @@ export async function postAttachment(req: Request, res: Response): Promise<void>
 export async function getAttachment(req: Request, res: Response): Promise<void> {
   const { id } = messageIdParamSchema.parse(req.params);
   const file = await messagingService.attachment(id, req.user!.uid);
+  // Relativo à pasta de uploads (opção root): o dotfiles: 'deny' olha só o caminho dentro dela, e
+  // não recusa todo download quando o DATA_DIR mora numa pasta começada por ponto.
+  const root = uploadsDir();
   await new Promise<void>((resolve, reject) => {
     res.sendFile(
-      file.path,
+      path.relative(root, file.path),
       {
+        root,
         dotfiles: 'deny',
         cacheControl: false,
         headers: {
@@ -56,8 +62,20 @@ export async function getAttachment(req: Request, res: Response): Promise<void> 
       },
       (err) => {
         // Erro depois de começar a responder (cliente desistiu no meio) não tem mais o que fazer.
-        if (err && !res.headersSent) reject(err);
-        else resolve();
+        if (!err || res.headersSent) return resolve();
+        // O arquivo saiu do disco entre a checagem do service e o envio (expurgo ao mesmo tempo):
+        // é o mesmo 404 do caminho normal, não falha do servidor.
+        const status = (err as { status?: number }).status;
+        const code = (err as NodeJS.ErrnoException).code;
+        reject(
+          status === 404 || code === 'ENOENT'
+            ? new HttpError(
+                404,
+                'O arquivo deste anexo não está mais disponível',
+                'attachment_missing',
+              )
+            : err,
+        );
       },
     );
   });

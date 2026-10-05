@@ -1,23 +1,18 @@
-import type { GamificationProfile, LeaderboardEntry, LevelProgress, XpEvent } from '@escambo/types';
+import type {
+  BrazilTimezone,
+  GamificationProfile,
+  LeaderboardEntry,
+  LevelProgress,
+  XpEvent,
+} from '@escambo/types';
+import { addDaysToDay, dayIn, DEFAULT_TIMEZONE } from '../../utils/timezone';
+import { userZone } from '../auth/user-zone';
 import { gamificationRepository, type FreelancerStatsRow } from './gamification.repository';
+import { LEVELS, levelFor } from './gamification.levels';
 
-/** Tabela de níveis (RN-052). */
-const LEVELS = [
-  { level: 1, name: 'Iniciante', min: 0 },
-  { level: 2, name: 'Aprendiz', min: 300 },
-  { level: 3, name: 'Profissional', min: 800 },
-  { level: 4, name: 'Especialista', min: 2000 },
-  { level: 5, name: 'Mestre', min: 5000 },
-  { level: 6, name: 'Lenda', min: 12000 },
-] as const;
-
-function levelFor(totalXp: number): { level: number; name: string; min: number } {
-  let current: (typeof LEVELS)[number] = LEVELS[0];
-  for (const l of LEVELS) {
-    if (totalXp >= l.min) current = l;
-  }
-  return { level: current.level, name: current.name, min: current.min };
-}
+/** Janela da sequência de dias: a atividade dos últimos 60 dias (a sequência não passa disso). */
+const STREAK_WINDOW_DAYS = 60;
+const DAY_MS = 86_400_000;
 
 export function levelProgress(totalXp: number): LevelProgress {
   const current = levelFor(totalXp);
@@ -38,20 +33,26 @@ export function levelProgress(totalXp: number): LevelProgress {
   };
 }
 
-/** Sequência de dias ativos terminando hoje ou ontem (RN de streak). */
-export function computeStreak(dates: string[], today = new Date()): number {
+/**
+ * Sequência de dias ativos terminando hoje ou ontem (RN de streak). Os dias ("AAAA-MM-DD") e o
+ * hoje são os do fuso da pessoa: em UTC o dia viraria às 21h de Brasília.
+ */
+export function computeStreak(
+  dates: string[],
+  today = new Date(),
+  zone: BrazilTimezone = DEFAULT_TIMEZONE,
+): number {
   if (dates.length === 0) return 0;
   const set = new Set(dates);
-  const iso = (d: Date): string => d.toISOString().slice(0, 10);
-  const cursor = new Date(today);
-  if (!set.has(iso(cursor))) {
-    cursor.setUTCDate(cursor.getUTCDate() - 1);
-    if (!set.has(iso(cursor))) return 0;
+  let day = dayIn(zone, today);
+  if (!set.has(day)) {
+    day = addDaysToDay(day, -1);
+    if (!set.has(day)) return 0;
   }
   let streak = 0;
-  while (set.has(iso(cursor))) {
+  while (set.has(day)) {
     streak += 1;
-    cursor.setUTCDate(cursor.getUTCDate() - 1);
+    day = addDaysToDay(day, -1);
   }
   return streak;
 }
@@ -92,21 +93,21 @@ async function awardXp(
   delta: number,
   reason: string,
   referenceId: number | null = null,
+  opts: { countContract?: boolean } = {},
 ): Promise<{ leveledUp: boolean; level: number }> {
-  const xp = await gamificationRepository.getOrCreateXp(userId);
-  if (delta === 0) return { leveledUp: false, level: xp.level };
-  const oldLevel = xp.level;
-  const newTotal = xp.total_xp + delta;
-  const lvl = levelFor(newTotal);
-  await gamificationRepository.applyXp({
+  if (delta === 0) {
+    const xp = await gamificationRepository.getOrCreateXp(userId);
+    return { leveledUp: false, level: xp.level };
+  }
+  // O nível novo sai do total travado na transação do crédito, não de uma leitura anterior.
+  const { previousLevel, level } = await gamificationRepository.applyXp({
     userId,
     delta,
-    level: lvl.level,
-    levelName: lvl.name,
     reason,
     referenceId,
+    ...opts,
   });
-  return { leveledUp: lvl.level > oldLevel, level: lvl.level };
+  return { leveledUp: level > previousLevel, level };
 }
 
 /** Avalia e concede badges cujos critérios já foram atingidos (RN-053). */
@@ -139,17 +140,25 @@ export const gamificationService = {
 
   async getProfile(userId: number): Promise<GamificationProfile> {
     const xp = await gamificationRepository.getOrCreateXp(userId);
-    const [badges, dates, rank] = await Promise.all([
+    const now = new Date();
+    // Um dia a mais na janela: o primeiro dia dela, no fuso da pessoa, entra inteiro.
+    const since = new Date(now.getTime() - (STREAK_WINDOW_DAYS + 1) * DAY_MS);
+    const [badges, times, rank, zone] = await Promise.all([
       gamificationRepository.listBadges(userId),
-      gamificationRepository.activityDates(userId, 60),
+      gamificationRepository.activityTimes(userId, since),
       gamificationRepository.rankOf(userId),
+      userZone(userId),
     ]);
     return {
       totalXp: xp.total_xp,
       level: xp.level,
       levelName: xp.level_name,
       progress: levelProgress(xp.total_xp),
-      streakDays: computeStreak(dates),
+      streakDays: computeStreak(
+        times.map((at) => dayIn(zone, at)),
+        now,
+        zone,
+      ),
       rank,
       badges: badges.map((b) => ({
         slug: b.slug,
@@ -180,10 +189,9 @@ export const gamificationService = {
     }));
   },
 
-  /** Evento: contrato concluído → +100 XP + badge (RN-051). */
+  /** Evento: contrato concluído → +100 XP + badge (RN-051). A contagem e os XP entram juntos. */
   async onContractCompleted(freelancerId: number, contractId: number): Promise<void> {
-    await gamificationRepository.incrementContracts(freelancerId);
-    await awardXp(freelancerId, 100, 'contract_completed', contractId);
+    await awardXp(freelancerId, 100, 'contract_completed', contractId, { countContract: true });
     await awardBadgeBySlug(freelancerId, 'first-deal');
     await evaluateBadges(freelancerId);
   },

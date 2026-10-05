@@ -1,10 +1,15 @@
 import express, { type ErrorRequestHandler, type Express, type RequestHandler } from 'express';
 import multer from 'multer';
 import request from 'supertest';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { logger } from '../config/logger';
 import { HttpError } from '../utils/http-error';
 import { errorHandler } from './error-handler';
 import { MAX_UPLOAD_BYTES, singleFile } from './upload';
+
+// O error-handler é o de verdade: o Sentry entra falso para conferir o que vai (e o que não vai) a ele.
+const { captureError } = vi.hoisted(() => ({ captureError: vi.fn() }));
+vi.mock('../config/sentry', () => ({ captureError }));
 
 // Teto padrão de 1 MB (UPLOAD_MAX_MB), para o teste não depender do .env de quem roda nem
 // precisar de um arquivo de 10 MB. O resto do env é o de verdade.
@@ -42,6 +47,11 @@ function appWith(upload: RequestHandler, onError: ErrorRequestHandler = errorHan
 
 /** Leitura de UM arquivo multipart em memória, com teto por rota e erros de código estável. */
 describe('singleFile (upload)', () => {
+  beforeEach(() => {
+    captureError.mockClear();
+    vi.restoreAllMocks();
+  });
+
   it('o teto padrão é UPLOAD_MAX_MB em bytes', () => {
     expect(MAX_UPLOAD_BYTES).toBe(MB);
   });
@@ -199,26 +209,44 @@ describe('singleFile (upload)', () => {
     expect(res.body.error).toBe('invalid_upload');
   });
 
-  it('campos de texto demais (mais de 5) ou grandes demais (acima de 4096 bytes) são 422 invalid_upload', async () => {
+  it('campos de texto demais (mais de 5) ou grandes demais (acima de 4096 bytes) são 422 invalid_upload, com a mensagem do limite que passou', async () => {
     const app = appWith(singleFile('file'));
 
     const many = request(app).post('/upload');
     for (let i = 1; i <= 6; i++) many.field(`campo${i}`, 'x');
     const tooMany = await many.attach('file', Buffer.from('x'), 'a.txt').expect(422);
-    expect(tooMany.body.error).toBe('invalid_upload');
+    expect(tooMany.body).toEqual({
+      error: 'invalid_upload',
+      message: 'Envio inválido: no máximo 5 campos de texto junto do arquivo',
+    });
 
     const tooLong = await request(app)
       .post('/upload')
       .field('caption', 'x'.repeat(4097))
       .attach('file', Buffer.from('x'), 'a.txt')
       .expect(422);
-    expect(tooLong.body.error).toBe('invalid_upload');
+    expect(tooLong.body).toEqual({
+      error: 'invalid_upload',
+      message: 'Envio inválido: o campo "caption" passa de 4096 bytes',
+    });
 
-    // Cinco campos abaixo de 4096 bytes cabem.
+    // Cinco campos de exatamente 4096 bytes cabem (o limite em si passa).
     const fits = request(app).post('/upload');
-    for (let i = 1; i <= 5; i++) fits.field(`campo${i}`, 'x'.repeat(4095));
+    for (let i = 1; i <= 5; i++) fits.field(`campo${i}`, 'x'.repeat(4096));
     const ok = await fits.attach('file', Buffer.from('x'), 'a.txt').expect(200);
     expect(Object.keys(ok.body.body)).toHaveLength(5);
+    expect(ok.body.body.campo5).toHaveLength(4096);
+  });
+
+  it('nome de arquivo com acento chega como foi escrito (UTF-8), e não trocado como latin1', async () => {
+    const res = await request(appWith(singleFile('file')))
+      .post('/upload')
+      .attach('file', Buffer.from('x'), {
+        filename: 'relatório de ação — março.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(200);
+    expect(res.body.file.originalname).toBe('relatório de ação — março.pdf');
   });
 
   it('requisição que não é multipart passa direto: sem req.file, e o corpo JSON chega intacto', async () => {
@@ -237,7 +265,35 @@ describe('singleFile (upload)', () => {
     expect(res.body).toEqual({ file: null, body: { caption: 'sem anexo' } });
   });
 
-  it('erro que não é do multer (multipart cortado no meio) segue como veio, sem virar invalid_upload', async () => {
+  it('multipart malformado (cortado no meio ou sem boundary) é erro do cliente: 400 invalid_upload, sem log de erro nem Sentry', async () => {
+    const logError = vi.spyOn(logger, 'error');
+    const app = appWith(singleFile('file'));
+    const MALFORMED = {
+      error: 'invalid_upload',
+      message: 'Envio inválido: o formulário multipart está malformado ou incompleto',
+    };
+
+    // Corpo que acaba antes do boundary final (o busboy acusa "Unexpected end of form").
+    const cut = await request(app)
+      .post('/upload')
+      .set('Content-Type', 'multipart/form-data; boundary=corte')
+      .send('--corte\r\nContent-Disposition: form-data; name="file"; filename="a.txt"\r\n\r\nabc')
+      .expect(400);
+    expect(cut.body).toEqual(MALFORMED);
+
+    // multipart/form-data sem o parâmetro boundary.
+    const noBoundary = await request(app)
+      .post('/upload')
+      .set('Content-Type', 'multipart/form-data')
+      .send('qualquer coisa')
+      .expect(400);
+    expect(noBoundary.body).toEqual(MALFORMED);
+
+    expect(logError).not.toHaveBeenCalled();
+    expect(captureError).not.toHaveBeenCalled();
+  });
+
+  it('o erro de corpo malformado vira HttpError antes do error-handler (o original não passa adiante)', async () => {
     const seen: unknown[] = [];
     const capture: ErrorRequestHandler = (err, _req, res, _next) => {
       seen.push(err);
@@ -251,8 +307,8 @@ describe('singleFile (upload)', () => {
       .expect(599);
 
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toBeInstanceOf(Error);
-    expect(seen[0]).not.toBeInstanceOf(HttpError);
+    expect(seen[0]).toBeInstanceOf(HttpError);
     expect(seen[0]).not.toBeInstanceOf(multer.MulterError);
+    expect(seen[0]).toMatchObject({ statusCode: 400, code: 'invalid_upload' });
   });
 });
