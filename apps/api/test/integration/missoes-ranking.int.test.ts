@@ -239,10 +239,10 @@ describe('Missões com prazo pelo fluxo (RF-066, RN-054)', () => {
       ['Presença diária', 10],
       ['Maratona da semana', 200],
     ]);
+    // A presença do dia dá XP sem aviso: quem a cumpriu está olhando o cartão (ADR 63).
     await vi.waitFor(async () =>
       expect(await noticesOf(f.id)).toEqual([
         'Missão cumprida: Resposta rápida',
-        'Missão cumprida: Presença diária',
         'Missão cumprida: Maratona da semana',
       ]),
     );

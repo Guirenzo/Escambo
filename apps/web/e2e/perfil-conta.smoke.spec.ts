@@ -32,6 +32,18 @@ test('perfil público mostra o XP e a badge do primeiro contrato, em destaque e 
     headers: { Authorization: `Bearer ${freelancer.token}` },
   });
   const { ulid } = (await me.json()) as { ulid: string };
+  // O extrato de XP diz de onde veio cada ponto: cada fonte uma vez só.
+  const history = await request.get('/api/gamification/me/history', {
+    headers: { Authorization: `Bearer ${freelancer.token}` },
+  });
+  const events = ((await history.json()) as { reason: string; amount: number }[])
+    .map((e) => `${e.reason}:${e.amount}`)
+    .sort();
+  expect(events, 'extrato de XP do freelancer').toEqual([
+    'badge_earned:50',
+    'contract_completed:100',
+    'mission_completed:100',
+  ]);
   await openAs(page, client, `/freelancers/${ulid}`);
   await settled(page);
 
