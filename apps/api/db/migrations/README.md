@@ -25,7 +25,7 @@ npm run -w @escambo/api db:migrate -- --status  # lista aplicadas x pendentes
 
 Usa as mesmas credenciais da API (`DB_*`). Idempotente: rodar de novo não repete nada.
 
-## ADR 61 — candidata 1.42.0
+## ADR 61 — 1.42.0
 
 | Migration                                 | Efeito                                                                                                                                                                           |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

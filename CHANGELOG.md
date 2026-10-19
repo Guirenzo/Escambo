@@ -5,6 +5,33 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.43.0] — 2026-10-19
+
+Lacunas de interface e de fluxo achadas na auditoria de requisitos de 19/10/2026: cada RF e RNF conferido no código e nos testes, com a evidência e o que falta em `docs/rastreabilidade.md`.
+
+### Adicionado
+
+- **Entregas na Sala (RF-035):** o cliente passa a ver a mensagem de cada entrega (e os links, quando houver), da primeira à reentrega mais recente, e o aviso de entrega traz o começo da mensagem.
+- **Meus serviços (RF-030):** aba própria com os pausados marcados e os botões pausar e reativar. Pausado sai da busca e não recebe proposta, mas continua abrindo pelo link (RN-013).
+- **Formulário de serviço completo e edição (RF-022, RF-023):** tipo de preço (fixo, por hora ou a combinar), prazo de entrega em dias e modalidade remota ou presencial.
+- **Saque por transferência bancária (RF-045)**, além do PIX.
+- **Extrato com período e "Carregar mais" (RF-047)**, com os dias no horário da conta.
+- **Lista de contratações com filtro por status, total certo e "Carregar mais" (RF-040).**
+- **Conquistas e XP no perfil público (RF-015, RF-068)**, com as 3 mais recentes em destaque (RN-058).
+- **Trocar a senha estando logado (RF-017):** encerra as outras sessões e avisa por e-mail.
+- `docs/rastreabilidade.md` e a coluna de situação nos documentos de requisitos.
+
+### Alterado
+
+- O modal de contratar mostra a taxa real da plataforma e quanto vai ao freelancer, em vez de "85%" fixo (RF-043).
+- Mensagens de erro legíveis: sem conexão e serviço fora do ar viram texto em português, em vez de "Failed to fetch" ou "Erro 502" (RNF-028).
+- O botão de saque diz o mínimo configurado no painel, em vez de "R$20" fixo.
+- O CI passa a conferir a formatação do código com o Prettier (RNF-032), e o OpenAPI documenta todas as rotas (RNF-031).
+
+### Corrigido
+
+- A 320 px de largura, o último ícone da barra de navegação inferior saía da tela; um teste de ponta a ponta passa a conferir as telas principais a 320 e a 768 px (RNF-026).
+
 ## [1.42.0] — 2026-10-19
 
 Implementação do ADR 61: as regras de negócio pendentes (RN-023, RN-026, RN-030 e RN-062), a conta suspensa só de leitura (RN-007), o suporte privado e a proposta única por par (RN-020). A demonstração pública muda quando o deploy for feito.
@@ -48,7 +75,7 @@ Implementação do ADR 61: as regras de negócio pendentes (RN-023, RN-026, RN-0
 
 ### Implantação
 
-Migrations 0031–0034, aditivas e sem backfill de desistências ou limite retroativo. O reparo recupera evidências/snapshots de entrega, oferta 1 faltante e ofertas abertas fora de pending. O agendador tem 16 jobs. Consultas, detector de reserva e limites da reversão para 1.41.1 estão no DEPLOY.md. As correções posteriores de contas/carteiras e acesso de suspensos não acrescentam migration; seus cenários e limites estão na [validação de entrega](./docs/validacao-entrega-adr61.md). A suspensão não pausa prazos/jobs nem cancela atomicamente operações já admitidas. O suporte geral da RN-007 e a RN-020 estão implementados na candidata local; gateway real e validação da infraestrutura de destino continuam pendentes.
+Migrations 0031–0034, aditivas e sem backfill de desistências ou limite retroativo. O reparo recupera evidências/snapshots de entrega, oferta 1 faltante e ofertas abertas fora de pending. O agendador tem 16 jobs. Consultas, detector de reserva e limites da reversão para 1.41.1 estão no DEPLOY.md. As correções posteriores de contas/carteiras e acesso de suspensos não acrescentam migration; seus cenários e limites estão na [validação de entrega](./docs/validacao-entrega-adr61.md). A suspensão não pausa prazos/jobs nem cancela atomicamente operações já admitidas. O suporte geral da RN-007 e a RN-020 estão implementados na 1.42.0; gateway real e validação da infraestrutura de destino continuam pendentes.
 
 ## [1.41.1] — 2026-10-04
 

@@ -21,7 +21,7 @@ compilado no servidor, e ninguém entra nele para atualizar.
 Tags publicadas: `latest`, o sha curto do commit (ex.: `a1b2c3d`) e a versão do `package.json` (ex.: `1.2.0`).
 `GET /api/health` devolve `version` e `commit` — é assim que se confere o que está no ar.
 
-**Candidata local 1.42.0 (ADR 61):** a etapa 11 corrigiu a ordem de contas/carteiras e construiu novas imagens API/web do snapshot `966ef3956e2fe90a`, rótulo `local-adr61-966ef3956e2fe90a`. Smoke MySQL/migração/reparo idempotente, exportação persistente e 34 E2Es desktop/mobile passaram nessas imagens. Imagens, cobertura e seis E2Es da etapa 10 identificam o snapshot anterior, sem a correção posterior. A validação `config -q` do Compose de produção/monitoramento também pertence à etapa 10. Essas provas locais não publicam imagens nem validam o destino da VPS, o Caddy/HTTPS ou a restauração de backup. Provas completas, identificação dos snapshots e limites em [validação de entrega](./docs/validacao-entrega-adr61.md). A demonstração pública permanece na 1.41.1.
+**1.42.0 (ADR 61):** a etapa 11 corrigiu a ordem de contas/carteiras e construiu novas imagens API/web do snapshot `966ef3956e2fe90a`, rótulo `local-adr61-966ef3956e2fe90a`. Smoke MySQL/migração/reparo idempotente, exportação persistente e 34 E2Es desktop/mobile passaram nessas imagens. Imagens, cobertura e seis E2Es da etapa 10 identificam o snapshot anterior, sem a correção posterior. A validação `config -q` do Compose de produção/monitoramento também pertence à etapa 10. Essas provas locais não publicam imagens nem validam o destino da VPS, o Caddy/HTTPS ou a restauração de backup. Provas completas, identificação dos snapshots e limites em [validação de entrega](./docs/validacao-entrega-adr61.md). A demonstração pública permanece na 1.41.1.
 
 ## 1. Pré-requisitos
 
@@ -259,7 +259,7 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
-### Preparar a candidata 1.42.0 (ADR 61)
+### Atualizar para a 1.42.0 (ADR 61)
 
 **Estado em 13/10/2026:** código e documentação locais, sem publicação/tag/deploy. A etapa 11 passou com 4.382 unitários API, 376 integrações MySQL completas e 34 E2Es desktop/mobile sobre as novas imagens Docker; união de cobertura com 99,06% das linhas e gate de 75% aprovado. Lint/typecheck/build passaram. Revisão de produção sem achado acionável, snapshot identificado e recursos QA exclusivos encerrados. A campanha G.5, os 176 E2Es completos da etapa 8 e a reprodução dos prints 23–26 são provas históricas separadas, não somadas a esses totais. Resultados, hashes e limites estão em [validação de entrega](./docs/validacao-entrega-adr61.md), [evidencias-validacao.md](./docs/evidencias-validacao.md) e [mutacoes-adr61.md](./docs/mutacoes-adr61.md). As instruções abaixo são para a futura implantação aprovada. Antes de executá-la, confira o candidato, backup, imagem/commit efetivamente publicados e mostre o comando e destino a quem autoriza. Não trate o número de versão local como uma imagem disponível no GHCR.
 
