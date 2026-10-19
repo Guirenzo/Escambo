@@ -30,7 +30,8 @@ Lacunas de interface e de fluxo achadas na auditoria de requisitos de 19/10/2026
 
 ### Corrigido
 
-- A 320 px de largura, o último ícone da barra de navegação inferior saía da tela; um teste de ponta a ponta passa a conferir as telas principais a 320 e a 768 px (RNF-026).
+- A 320 px de largura, o último ícone da barra de navegação inferior e o botão de enviar do chat da Sala saíam da tela; um teste de ponta a ponta passa a conferir as telas principais a 320 e a 768 px (RNF-026).
+- O teste de ponta a ponta do "esqueci minha senha" falhava às vezes: preenchia o e-mail do login enquanto a tela ainda trocava.
 
 ## [1.42.0] — 2026-10-19
 
