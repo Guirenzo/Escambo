@@ -25,7 +25,10 @@ export class ErrorBoundary extends Component<Props, State> {
       <main className="splash">
         <div className="card" style={{ maxWidth: 420 }}>
           <h3>Algo deu errado 😕</h3>
-          <p className="muted">{this.state.error.message}</p>
+          {/* A mensagem do erro ("Cannot read properties of undefined") fica só no console. */}
+          <p className="muted">
+            Esta tela não abriu direito. Recarregue a página; se continuar, fale com o suporte.
+          </p>
           <button onClick={() => window.location.reload()}>Recarregar</button>
         </div>
       </main>

@@ -18,6 +18,10 @@ export async function listServices(req: Request, res: Response): Promise<void> {
   res.json(await servicesService.list(query));
 }
 
+export async function listMyServices(req: Request, res: Response): Promise<void> {
+  res.json(await servicesService.listMine(req.user!.uid));
+}
+
 export async function getService(req: Request, res: Response): Promise<void> {
   const { id } = serviceIdSchema.parse(req.params);
   res.json(await servicesService.getById(id));

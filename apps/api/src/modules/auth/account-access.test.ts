@@ -109,6 +109,7 @@ describe('matriz somente leitura', () => {
   });
   it.each([
     ['POST', '/api/auth/logout-all'],
+    ['POST', '/api/auth/change-password'],
     ['POST', '/api/lgpd/consents'],
     ['POST', '/api/lgpd/deletion-requests/'],
     ['POST', '/api/lgpd/export-requests'],
@@ -135,6 +136,8 @@ describe('matriz somente leitura', () => {
     ['DELETE', '/api/services/3'],
     ['DELETE', '/api/notifications/push/test'],
     ['POST', '/api/lgpd/consents/extra'],
+    ['POST', '/api/auth/change-password/extra'],
+    ['PUT', '/api/auth/change-password'],
     ['POST', '/api/moderation/removals/21/appeal/extra'],
     ['POST', '/api/profiles/me/dropouts/12/agree'],
     ['POST', '/api/support/tickets/21/messages/extra'],

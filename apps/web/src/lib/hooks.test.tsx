@@ -90,17 +90,10 @@ describe('consultas: chave do cache e método da API', () => {
       'listServices',
       [undefined],
     ],
-    ['useContracts', () => hooks.useContracts(), ['contracts'], 'contracts', []],
+    ['useMyServices', () => hooks.useMyServices(), ['services', 'mine'], 'myServices', []],
     ['useContractDetail', () => hooks.useContractDetail(7), ['contract', 7], 'contractDetail', [7]],
     ['useChatHistory', () => hooks.useChatHistory(7), ['chat', 7], 'chatHistory', [7]],
     ['useWithdrawals', () => hooks.useWithdrawals(), ['withdrawals'], 'withdrawals', []],
-    [
-      'useWalletTransactions',
-      () => hooks.useWalletTransactions(),
-      ['walletTransactions'],
-      'walletTransactions',
-      [],
-    ],
     ['useDeposits', () => hooks.useDeposits(), ['deposits'], 'deposits', []],
     ['useDeposit', () => hooks.useDeposit(3, false), ['deposit', 3], 'deposit', [3]],
     ['useNotifications', () => hooks.useNotifications(), ['notifications'], 'notifications', []],
@@ -442,6 +435,67 @@ describe('o que já veio da API e outra tela reaproveita', () => {
   });
 });
 
+describe('lista de contratações do painel ("Carregar mais", RF-040)', () => {
+  const page = (number: number, size: number, total: number) => ({
+    items: Array.from({ length: size }, (_, i) => ({ id: number * 100 + i })),
+    page: number,
+    limit: hooks.CONTRACTS_PAGE,
+    total,
+  });
+
+  it('pede 20 por vez e oferece a próxima página enquanto o total da API não foi carregado', async () => {
+    mocked('contracts')
+      .mockResolvedValueOnce(page(1, 20, 25))
+      .mockResolvedValueOnce(page(2, 5, 25));
+    const { client, wrapper } = setup();
+
+    const { result } = renderHook(() => hooks.useContractList(), { wrapper });
+
+    await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+    expect(mocked('contracts')).toHaveBeenLastCalledWith({ page: 1, limit: 20 });
+    expect(result.current.hasNextPage).toBe(true);
+    // Sob a chave ['contracts']: as ações que invalidam a lista também alcançam esta.
+    expect(client.getQueryData(['contracts', 'list', []])).toBeDefined();
+
+    await act(async () => {
+      await result.current.fetchNextPage();
+    });
+
+    expect(mocked('contracts')).toHaveBeenLastCalledWith({ page: 2, limit: 20 });
+    await waitFor(() =>
+      expect(result.current.data?.pages.map((p) => p.items.length)).toEqual([20, 5]),
+    );
+    // 25 de 25: não há mais o que carregar.
+    expect(result.current.hasNextPage).toBe(false);
+  });
+
+  it('com filtro, manda os status e guarda numa chave própria; total na primeira página encerra', async () => {
+    mocked('contracts').mockResolvedValueOnce(page(1, 3, 3));
+    const { client, wrapper } = setup();
+
+    const { result } = renderHook(() => hooks.useContractList(['completed']), { wrapper });
+
+    await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+    expect(mocked('contracts')).toHaveBeenCalledWith({
+      page: 1,
+      limit: 20,
+      status: ['completed'],
+    });
+    expect(result.current.hasNextPage).toBe(false);
+    expect(client.getQueryData(['contracts', 'list', ['completed']])).toBeDefined();
+  });
+
+  it('página vazia encerra mesmo que o total diga que faltam (a lista mudou no meio)', async () => {
+    mocked('contracts').mockResolvedValueOnce(page(1, 0, 4));
+    const { wrapper } = setup();
+
+    const { result } = renderHook(() => hooks.useContractList(), { wrapper });
+
+    await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+    expect(result.current.hasNextPage).toBe(false);
+  });
+});
+
 describe('busca paginada de serviços ("Carregar mais")', () => {
   const page = (number: number, size: number) => ({
     items: Array.from({ length: size }, (_, i) => ({ id: number * 100 + i })),
@@ -483,6 +537,82 @@ describe('busca paginada de serviços ("Carregar mais")', () => {
     expect(mocked('listServices')).toHaveBeenCalledWith({ page: 1, limit: 12 });
     expect(result.current.hasNextPage).toBe(false);
     expect(client.getQueryData(['services', 'infinite', {}])).toBeDefined();
+  });
+});
+
+describe('extrato de R$ por período ("Carregar mais", RF-047)', () => {
+  const page = (number: number, ids: number[], hasMore: boolean) => ({
+    items: ids.map((id) => ({ id })),
+    page: number,
+    limit: hooks.WALLET_TX_PAGE,
+    hasMore,
+  });
+
+  it('pede 20 por vez com o período e só oferece a próxima página quando a API diz que há mais', async () => {
+    mocked('walletTransactions')
+      .mockResolvedValueOnce(page(1, [9, 8], true))
+      .mockResolvedValueOnce(page(2, [7], false));
+    const { client, wrapper } = setup();
+    const period = { from: '2026-10-01', to: '2026-10-15' };
+
+    const { result } = renderHook(() => hooks.useWalletTransactions(period), { wrapper });
+
+    await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+    expect(mocked('walletTransactions')).toHaveBeenLastCalledWith({
+      from: '2026-10-01',
+      to: '2026-10-15',
+      page: 1,
+      limit: 20,
+    });
+    expect(result.current.hasNextPage).toBe(true);
+    // A chave começa por ['walletTransactions']: invalidar o extrato alcança todo período.
+    expect(client.getQueryData(['walletTransactions', period])).toBeDefined();
+
+    await act(async () => {
+      await result.current.fetchNextPage();
+    });
+
+    expect(mocked('walletTransactions')).toHaveBeenLastCalledWith({
+      from: '2026-10-01',
+      to: '2026-10-15',
+      page: 2,
+      limit: 20,
+    });
+    await waitFor(() => expect(result.current.data?.pages).toHaveLength(2));
+    expect(result.current.hasNextPage).toBe(false);
+  });
+
+  it('sem período (ou com os campos vazios) pede o extrato inteiro, na mesma chave', async () => {
+    mocked('walletTransactions').mockResolvedValue(page(1, [3], false));
+    const { client, wrapper } = setup();
+
+    const { result } = renderHook(() => hooks.useWalletTransactions({ from: '', to: '' }), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+    expect(mocked('walletTransactions')).toHaveBeenCalledWith({
+      from: undefined,
+      to: undefined,
+      page: 1,
+      limit: 20,
+    });
+    expect(result.current.hasNextPage).toBe(false);
+    expect(client.getQueryData(['walletTransactions', {}])).toBeDefined();
+  });
+
+  it('período invertido não vai para a API', async () => {
+    const { wrapper } = setup();
+
+    const { result } = renderHook(
+      () => hooks.useWalletTransactions({ from: '2026-10-15', to: '2026-10-01' }),
+      { wrapper },
+    );
+
+    await act(async () => undefined);
+    expect(mocked('walletTransactions')).not.toHaveBeenCalled();
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(result.current.data).toBeUndefined();
   });
 });
 
@@ -666,6 +796,15 @@ describe('gravações: o que vai para a API e o que é recarregado depois', () =
       'createService',
       [{ categoryId: 2, title: 'Logo', description: 'Marca' }],
       { id: 11 },
+      [['services']],
+    ],
+    [
+      'useUpdateService (editar ou pausar recarrega a busca e "meus serviços")',
+      () => hooks.useUpdateService(),
+      { id: 11, body: { isActive: false } },
+      'updateService',
+      [11, { isActive: false }],
+      { id: 11, isActive: false },
       [['services']],
     ],
     [

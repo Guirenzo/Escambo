@@ -25,6 +25,7 @@ import { DesistenciasCard } from '../profile/DesistenciasCard';
 import { PortfolioCard } from '../profile/PortfolioCard';
 import { PushCard } from '../profile/PushCard';
 import { PrivacidadeCard } from '../profile/PrivacidadeCard';
+import { SenhaCard } from '../profile/SenhaCard';
 import { ImageUploadButton } from '../../components/ImageUploadButton';
 
 /** Avaliações que o freelancer recebeu, com resposta pública (uma por avaliação). */
@@ -445,6 +446,7 @@ export function PerfilView() {
             {p.freelancer && <PortfolioCard />}
             <EmailPreferencesCard />
             <PushCard />
+            <SenhaCard />
             <PrivacidadeCard />
           </div>
         )}

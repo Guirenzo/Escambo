@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { ErrorBoundary } from './ErrorBoundary';
 
-/** Última linha de defesa: erro de render vira uma tela com a mensagem e o botão de recarregar. */
+/** Última linha de defesa: erro de render vira uma tela com um texto amigável e o botão de recarregar. */
 
 function Broken(): never {
   throw new Error('Saldo veio sem valor');
@@ -36,7 +36,7 @@ describe('ErrorBoundary', () => {
     expect(screen.queryByRole('button', { name: 'Recarregar' })).not.toBeInTheDocument();
   });
 
-  it('erro de render vira a tela amigável com a mensagem do erro, no lugar dos filhos', () => {
+  it('erro de render vira a tela amigável no lugar dos filhos, sem a mensagem técnica do erro', () => {
     render(
       <ErrorBoundary>
         <p>Carteira</p>
@@ -44,7 +44,13 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>,
     );
     expect(screen.getByRole('heading', { name: 'Algo deu errado 😕' })).toBeInTheDocument();
-    expect(screen.getByText('Saldo veio sem valor')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Esta tela não abriu direito. Recarregue a página; se continuar, fale com o suporte.',
+      ),
+    ).toBeInTheDocument();
+    // RNF-028: "Cannot read properties of undefined" e afins ficam só no console.
+    expect(screen.queryByText('Saldo veio sem valor')).not.toBeInTheDocument();
     expect(screen.queryByText('Carteira')).not.toBeInTheDocument();
   });
 

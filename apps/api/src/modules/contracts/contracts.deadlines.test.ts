@@ -27,6 +27,7 @@ vi.mock('./contracts.repository', () => ({
     create: vi.fn(),
     findById: vi.fn(),
     listHistory: vi.fn().mockResolvedValue([]),
+    listDeliveries: vi.fn().mockResolvedValue([]),
     transition: vi.fn(),
     deliver: vi.fn(),
     requestExtension: vi.fn(),
@@ -758,7 +759,8 @@ describe('entrega única (RN-024, ADR 57)', () => {
       {
         type: 'contract_delivered',
         title: 'Entrega registrada: Vídeo institucional',
-        body: 'Aprove ou peça revisão até seg, 12/10 às 09:00. A disputa abre a partir de qui, 08/10 às 21:00, se vocês não se acertarem pelo chat. Depois de seg, 12/10 às 09:00, a entrega é aprovada automaticamente.',
+        // O começo da mensagem do freelancer fecha o corpo (RF-035): o que importa vem antes.
+        body: 'Aprove ou peça revisão até seg, 12/10 às 09:00. A disputa abre a partir de qui, 08/10 às 21:00, se vocês não se acertarem pelo chat. Depois de seg, 12/10 às 09:00, a entrega é aprovada automaticamente. Mensagem: Pronto para revisar',
         data: { contractId: 1 },
       },
       {},
@@ -1848,6 +1850,7 @@ describe('a contratação como a API devolve (ADR 57)', () => {
       dropout: null,
       negotiation: null,
       offers: [],
+      deliveries: [],
       revisions: { used: 0, limit: null },
       disputeOpensAt: at('2026-10-07 10:00:00'),
       id: 31,

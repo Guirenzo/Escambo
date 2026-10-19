@@ -1,6 +1,7 @@
 import { BusinessButton, BusinessIconButton } from '../../components/BusinessActions';
 import {
   ArrowLeft,
+  Award,
   Briefcase,
   CalendarDays,
   Clock,
@@ -24,7 +25,7 @@ import { Button, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
 import { DropoutsSummary } from '../profile/DropoutsSummary';
-import { dtm, formatAvailability, formatHours } from '../../lib/format';
+import { dt, dtm, formatAvailability, formatHours } from '../../lib/format';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
 import { zoneNote } from '../../lib/timezones';
 import {
@@ -111,6 +112,9 @@ export function FreelancerView() {
                     <span className="chip level">
                       Nível {p.level} · {p.levelName}
                     </span>
+                    <span className="muted tiny" data-testid="total-xp">
+                      {p.totalXp.toLocaleString('pt-BR')} XP
+                    </span>
                     {(p.city || p.state) && (
                       <span className="muted tiny">
                         <MapPin size={12} /> {[p.city, p.state].filter(Boolean).join(', ')}
@@ -137,6 +141,20 @@ export function FreelancerView() {
                     )}
                     {!p.isAvailable && <span className="pill">indisponível</span>}
                   </div>
+                  {/* RN-058: até 3 badges em destaque; a lista inteira fica em "Conquistas". */}
+                  {p.featuredBadges.length > 0 && (
+                    <ul
+                      className="badges"
+                      aria-label="Conquistas em destaque"
+                      style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}
+                    >
+                      {p.featuredBadges.map((b) => (
+                        <li key={b.slug} className="badge">
+                          <Award size={12} aria-hidden="true" /> {b.name}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 <div className="stack">
                   <ScoreBadge score={p.escamboScore} />
@@ -334,6 +352,29 @@ export function FreelancerView() {
                     </h3>
                   </div>
                   <ScoreBadge score={p.escamboScore} detailed />
+                </section>
+
+                <section className="card" data-testid="achievements">
+                  <div className="card-head">
+                    <h3>
+                      <Award size={16} /> Conquistas
+                    </h3>
+                    <span className="muted tiny">
+                      {p.badges.length} badge{p.badges.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  {p.badges.length === 0 ? (
+                    <p className="muted tiny">Nenhuma badge conquistada ainda.</p>
+                  ) : (
+                    <ul className="req-list" aria-label="Badges conquistadas">
+                      {p.badges.map((b) => (
+                        <li key={b.slug}>
+                          <span>{b.name}</span>
+                          <span className="muted tiny">desde {dt(b.awardedAt)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </section>
 
                 <section className="card">

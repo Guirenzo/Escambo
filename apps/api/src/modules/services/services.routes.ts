@@ -5,11 +5,15 @@ import {
   createService,
   deleteService,
   getService,
+  listMyServices,
   listServices,
   updateService,
 } from './services.controller';
 
 export const servicesRoutes = Router();
+
+// Do dono: antes de /:id, senão "mine" seria lido como id.
+servicesRoutes.get('/mine', authenticate, asyncHandler(listMyServices));
 
 // Públicas (descoberta)
 servicesRoutes.get('/', asyncHandler(listServices));

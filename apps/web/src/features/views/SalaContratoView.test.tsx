@@ -673,6 +673,51 @@ describe('SalaContratoView: valores e linha do tempo', () => {
   });
 });
 
+describe('SalaContratoView: entregas (RF-035)', () => {
+  const withDeliveries = (): ContractWithHistory =>
+    contract({
+      status: 'delivered',
+      deliveries: [
+        {
+          id: 3,
+          message: 'Primeira versão do vídeo.',
+          files: ['https://cdn.escambo.test/v1.mp4'],
+          deliveredAt: '2026-10-02T15:00:00.000Z',
+        },
+        {
+          id: 5,
+          message: 'Trilha trocada, como pedido.',
+          files: [],
+          deliveredAt: '2026-10-04T18:30:00.000Z',
+        },
+      ],
+    });
+
+  it.each([
+    ['o cliente', CLIENT],
+    ['o freelancer', FREELANCER],
+  ])('%s vê a mensagem de cada entrega e o histórico das reentregas', async (_who, as) => {
+    api.contractDetail.mockResolvedValue(withDeliveries());
+    await openSala(as);
+
+    const section = card('Entregas');
+    expect(within(section).getByText('2 entregas')).toBeInTheDocument();
+    expect(read(within(section).getByTestId('delivery-2'))).toContain(
+      'Entrega 2 (reentrega) · mais recente',
+    );
+    expect(within(section).getByText('Trilha trocada, como pedido.')).toBeVisible();
+    expect(within(section).getByText('Primeira versão do vídeo.')).toBeVisible();
+    expect(
+      within(section).getByRole('link', { name: /cdn\.escambo\.test\/v1\.mp4/ }),
+    ).toHaveAttribute('href', 'https://cdn.escambo.test/v1.mp4');
+  });
+
+  it('sem entrega registrada, a Sala não mostra a seção', async () => {
+    await openSala(CLIENT);
+    expect(screen.queryByRole('heading', { name: 'Entregas' })).not.toBeInTheDocument();
+  });
+});
+
 describe('SalaContratoView: até quando cada lado age', () => {
   // O relógio fica antes das horas dos exemplos, como na seção de prazo.
   beforeAll(() => {

@@ -30,6 +30,11 @@ jobs:
       - name: Lint (ESLint)
         run: npm run lint
 
+      # RNF-032: código fora do padrão do Prettier reprova o CI. Markdown e arquivos gerados ficam
+      # de fora (.prettierignore). Para corrigir, rode `npm run format` e confira o diff.
+      - name: Formatação (Prettier)
+        run: npx prettier --check .
+
       - name: Typecheck (tsc)
         run: npm run typecheck
 

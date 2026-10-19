@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiRequestError, setToken } from './api';
+import {
+  api,
+  ApiRequestError,
+  NETWORK_ERROR_MESSAGE,
+  setToken,
+  statusMessage,
+  UNAVAILABLE_MESSAGE,
+} from './api';
 
 interface FetchCall {
   headers: Record<string, string>;
@@ -98,15 +105,17 @@ describe('api client', () => {
         }),
       );
 
+      // Sem mensagem da API, o código interno não vai para a tela: fica em `code`.
       await expect(api.wallet()).rejects.toMatchObject({
-        message: 'active_contract_exists',
+        message: 'Não foi possível concluir. Tente de novo.',
         status: 409,
+        code: 'active_contract_exists',
         contractId: undefined,
       });
     },
   );
 
-  it('mantém a mensagem genérica quando a falha não traz JSON', async () => {
+  it('resposta sem JSON (502 do proxy) diz que o serviço está indisponível, e não "Erro 502"', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -118,6 +127,79 @@ describe('api client', () => {
       }),
     );
 
-    await expect(api.wallet()).rejects.toThrow('Erro 502');
+    await expect(api.wallet()).rejects.toMatchObject({
+      message: 'Serviço indisponível no momento. Tente de novo em instantes.',
+      status: 502,
+      code: undefined,
+    });
+  });
+
+  it('falha de rede ("Failed to fetch") vira a mensagem de sem conexão, com status 0', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    const failure = await api.wallet().catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ApiRequestError);
+    expect(failure).toMatchObject({
+      message: 'Sem conexão com o servidor. Confira sua internet e tente de novo.',
+      status: 0,
+      code: 'network_error',
+    });
+  });
+
+  it('cancelamento (AbortError) não vira falha de rede: segue como veio', async () => {
+    const abort = new DOMException('The operation was aborted.', 'AbortError');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abort));
+
+    await expect(api.wallet()).rejects.toBe(abort);
+  });
+
+  it('mensagem da API vazia, que não é texto ou corpo null cai no texto do status', async () => {
+    const replies = [
+      { status: 500, body: { error: 'internal_error', message: '   ' } },
+      { status: 404, body: { message: { texto: 'objeto' } } },
+      { status: 429, body: null },
+      { status: 413, body: ['lista'] },
+    ];
+    const fetchMock = vi.fn();
+    for (const { status, body } of replies)
+      fetchMock.mockResolvedValueOnce({ ok: false, status, json: async () => body });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(api.wallet()).rejects.toMatchObject({
+      message: 'Serviço indisponível no momento. Tente de novo em instantes.',
+      code: 'internal_error',
+    });
+    await expect(api.wallet()).rejects.toThrow('Não encontramos o que você pediu.');
+    await expect(api.wallet()).rejects.toThrow(
+      'Muitas tentativas. Tente novamente em alguns minutos.',
+    );
+    await expect(api.wallet()).rejects.toThrow('O envio passou do tamanho permitido.');
+  });
+});
+
+describe('statusMessage', () => {
+  it.each([
+    [500, 'Serviço indisponível no momento. Tente de novo em instantes.'],
+    [502, 'Serviço indisponível no momento. Tente de novo em instantes.'],
+    [503, 'Serviço indisponível no momento. Tente de novo em instantes.'],
+    [504, 'Serviço indisponível no momento. Tente de novo em instantes.'],
+    [401, 'Sua sessão terminou. Entre de novo para continuar.'],
+    [403, 'Você não tem permissão para fazer isso.'],
+    [404, 'Não encontramos o que você pediu.'],
+    [413, 'O envio passou do tamanho permitido.'],
+    [429, 'Muitas tentativas. Tente novamente em alguns minutos.'],
+    [400, 'Não foi possível concluir. Tente de novo.'],
+    [409, 'Não foi possível concluir. Tente de novo.'],
+    [422, 'Não foi possível concluir. Tente de novo.'],
+  ])('%i → %s', (status, message) => {
+    expect(statusMessage(status)).toBe(message);
+  });
+
+  it('as mensagens de rede e de indisponibilidade são as exportadas', () => {
+    expect(NETWORK_ERROR_MESSAGE).toBe(
+      'Sem conexão com o servidor. Confira sua internet e tente de novo.',
+    );
+    expect(UNAVAILABLE_MESSAGE).toBe(statusMessage(503));
   });
 });

@@ -352,6 +352,13 @@ p {
     flex-direction: row;
     width: 100%;
     justify-content: space-around;
+    gap: 0;
+  }
+  /* Os 8 ícones dividem a largura: a 320 px, com padding fixo, o último saía da tela. */
+  .side-link {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 10px 2px;
   }
   .page,
   .view {

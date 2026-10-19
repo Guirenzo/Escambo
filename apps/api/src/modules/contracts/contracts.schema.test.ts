@@ -5,6 +5,7 @@ import {
   counterOfferSchema,
   createContractSchema,
   grantRevisionBodySchema,
+  listContractsSchema,
   offerAcceptParamsSchema,
   offerDecisionBodySchema,
   type CounterOfferInput,
@@ -380,5 +381,32 @@ describe('createContractSchema: prazos', () => {
     expect(messages({ ...base, milestones: ms([iso(3), iso(6), iso(12)]) })).toContain(
       'O prazo do marco 3 não pode passar do prazo da contratação',
     );
+  });
+});
+
+describe('listContractsSchema: filtro por status da lista (RF-040)', () => {
+  it('sem status, não filtra; página e limite têm padrão', () => {
+    expect(listContractsSchema.parse({})).toEqual({ page: 1, limit: 20 });
+  });
+
+  it('aceita a lista separada por vírgula ou o parâmetro repetido, sem repetir status', () => {
+    expect(listContractsSchema.parse({ status: 'accepted, in_progress,accepted' }).status).toEqual([
+      'accepted',
+      'in_progress',
+    ]);
+    expect(
+      listContractsSchema.parse({ status: ['completed', 'cancelled,rejected'] }).status,
+    ).toEqual(['completed', 'cancelled', 'rejected']);
+  });
+
+  it('status vazio vale como sem filtro', () => {
+    expect(listContractsSchema.parse({ status: '' }).status).toBeUndefined();
+    expect(listContractsSchema.parse({ status: ' , ' }).status).toBeUndefined();
+  });
+
+  it('status desconhecido é recusado com a mensagem em português', () => {
+    const r = listContractsSchema.safeParse({ status: 'pending,pago' });
+    expect(r.success).toBe(false);
+    expect(r.error!.issues.map((i) => i.message)).toEqual(['Status de contratação desconhecido']);
   });
 });

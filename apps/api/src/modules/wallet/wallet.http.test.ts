@@ -150,7 +150,7 @@ describe('carteira e depósitos: borda HTTP', () => {
       const res = await request(app).get('/api/wallet/transactions').set(bearer(7)).expect(200);
 
       expect(res.body).toEqual(page);
-      expect(wallet.listTransactions).toHaveBeenCalledWith(7, 1, 20);
+      expect(wallet.listTransactions).toHaveBeenCalledWith(7, 1, 20, {});
     });
 
     it('converte página e limite da URL para número', async () => {
@@ -158,7 +158,7 @@ describe('carteira e depósitos: borda HTTP', () => {
 
       await request(app).get('/api/wallet/transactions?page=3&limit=50').set(bearer(7)).expect(200);
 
-      expect(wallet.listTransactions).toHaveBeenCalledWith(7, 3, 50);
+      expect(wallet.listTransactions).toHaveBeenCalledWith(7, 3, 50, {});
     });
 
     it('limite acima de 100, página zero ou valor não numérico é erro de validação', async () => {
@@ -211,7 +211,7 @@ describe('carteira e depósitos: borda HTTP', () => {
 
       wallet.listTransactions.mockResolvedValue({ items: [], page: 10000, limit: 20 });
       await request(app).get('/api/wallet/transactions?page=10000').set(bearer(7)).expect(200);
-      expect(wallet.listTransactions).toHaveBeenCalledWith(7, 10000, 20);
+      expect(wallet.listTransactions).toHaveBeenCalledWith(7, 10000, 20, {});
     });
 
     it('o limite máximo é 100, e o extrato é o do token mesmo com outro usuário na URL', async () => {
@@ -223,7 +223,63 @@ describe('carteira e depósitos: borda HTTP', () => {
         .expect(200);
 
       expect(wallet.listTransactions).toHaveBeenCalledTimes(1);
-      expect(wallet.listTransactions).toHaveBeenCalledWith(31, 1, 100);
+      expect(wallet.listTransactions).toHaveBeenCalledWith(31, 1, 100, {});
+    });
+
+    it('o período (de/até, RF-047) vai para o service como dias, junto da página', async () => {
+      const page = { items: [], page: 2, limit: 20, hasMore: false };
+      wallet.listTransactions.mockResolvedValue(page);
+
+      const res = await request(app)
+        .get('/api/wallet/transactions?page=2&from=2026-10-01&to=2026-10-15')
+        .set(bearer(7))
+        .expect(200);
+
+      expect(res.body).toEqual(page);
+      expect(wallet.listTransactions).toHaveBeenCalledWith(7, 2, 20, {
+        from: '2026-10-01',
+        to: '2026-10-15',
+      });
+
+      await request(app).get('/api/wallet/transactions?to=2026-10-15').set(bearer(7)).expect(200);
+      expect(wallet.listTransactions).toHaveBeenLastCalledWith(7, 1, 20, { to: '2026-10-15' });
+    });
+
+    it('dia que não existe ou fora do formato AAAA-MM-DD é erro de validação no campo', async () => {
+      const cases: [string, 'from' | 'to'][] = [
+        ['from=2026-02-30', 'from'],
+        ['from=01/10/2026', 'from'],
+        ['from=', 'from'],
+        ['to=2026-13-01', 'to'],
+        ['to=2026-10-01T03:00:00Z', 'to'],
+      ];
+      for (const [query, field] of cases) {
+        const res = await request(app).get(`/api/wallet/transactions?${query}`).set(bearer(7));
+        expect(res.status).toBe(422);
+        expect(res.body.error).toBe('validation_error');
+        expect(res.body.details[field]).toEqual(['Informe um dia válido no formato AAAA-MM-DD']);
+      }
+      expect(wallet.listTransactions).not.toHaveBeenCalled();
+    });
+
+    it('período invertido: a recusa do service (400 invalid_range) chega em JSON', async () => {
+      wallet.listTransactions.mockRejectedValue(
+        new HttpError(
+          400,
+          'Período inválido: a data inicial precisa ser até a final',
+          'invalid_range',
+        ),
+      );
+
+      const res = await request(app)
+        .get('/api/wallet/transactions?from=2026-10-15&to=2026-10-01')
+        .set(bearer(7))
+        .expect(400);
+
+      expect(res.body).toEqual({
+        error: 'invalid_range',
+        message: 'Período inválido: a data inicial precisa ser até a final',
+      });
     });
   });
 
@@ -419,7 +475,7 @@ describe('carteira e depósitos: borda HTTP', () => {
         });
       }
       expect(wallet.getBalance).toHaveBeenCalledWith(7);
-      expect(wallet.listTransactions).toHaveBeenCalledWith(7, 1, 20);
+      expect(wallet.listTransactions).toHaveBeenCalledWith(7, 1, 20, {});
       expect(payments.listDeposits).toHaveBeenCalledWith(7, 1, 20);
     });
   });

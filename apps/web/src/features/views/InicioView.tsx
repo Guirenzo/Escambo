@@ -10,12 +10,12 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { PageHeader, QueryState } from '../../components/ui';
+import { PageHeader } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
 import { brl, displayName } from '../../lib/format';
-import { useContracts, useGamification, useProfilesMe, useWallet } from '../../lib/hooks';
-import { ContractsCard } from '../dashboard/ContractsCard';
+import { useGamification, useProfilesMe, useWallet } from '../../lib/hooks';
+import { MyContracts } from '../dashboard/MyContracts';
 
 function Kpi({
   Icon,
@@ -63,7 +63,6 @@ export function InicioView() {
   const { user } = useAuth();
   const wallet = useWallet();
   const gam = useGamification();
-  const contracts = useContracts();
   const profiles = useProfilesMe();
   const w = wallet.data;
   const g = gam.data;
@@ -128,24 +127,7 @@ export function InicioView() {
       </div>
 
       <div className="two-col">
-        <section className="card">
-          <div className="card-head">
-            <h3>Minhas contratações</h3>
-            {contracts.data && (
-              <span className="muted tiny">{contracts.data.items.length} no total</span>
-            )}
-          </div>
-          <QueryState
-            isLoading={contracts.isLoading}
-            error={contracts.error}
-            data={contracts.data}
-            isEmpty={(d) => d.items.length === 0}
-            empty="Nenhuma contratação ainda. Encontre um serviço em Serviços."
-            onRetry={() => void contracts.refetch()}
-          >
-            {(d) => <ContractsCard contracts={d.items} />}
-          </QueryState>
-        </section>
+        <MyContracts />
 
         <section className="card">
           <div className="card-head">

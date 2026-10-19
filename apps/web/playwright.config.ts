@@ -8,7 +8,9 @@ import { defineConfig, devices } from '@playwright/test';
  *   CI             no CI baixa o Chromium do Playwright; local usa o Google Chrome instalado
  *
  * Projetos:
- *   desktop      smoke (login, contratar → sala → chat) + acessibilidade (axe)
+ *   desktop      smoke (login, contratar → sala → chat) + acessibilidade (axe) + responsividade
+ *                (responsivo.spec.ts: as telas principais a 320 px e a 768 px, RNF-026; a largura
+ *                vem do test.use do próprio spec)
  *   mobile       mesmo smoke em um Pixel 7 (barra de navegação inferior, toque)
  *   screenshots  gera os prints de docs/screenshots (precisa dos dados de `npm run demo:seed`)
  */
@@ -34,7 +36,7 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop',
-      testMatch: /smoke\.spec\.ts|a11y\.spec\.ts/,
+      testMatch: /smoke\.spec\.ts|a11y\.spec\.ts|responsivo\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
     },
     {

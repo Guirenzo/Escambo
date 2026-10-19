@@ -77,6 +77,16 @@ describe('consultas (GET): cada método lê do caminho certo', () => {
     ['contractDetail', () => api.contractDetail(7), '/api/contracts/7'],
     ['chatHistory', () => api.chatHistory(7), '/api/messaging/contracts/7'],
     ['walletTransactions', () => api.walletTransactions(), '/api/wallet/transactions'],
+    [
+      'walletTransactions com página e período',
+      () => api.walletTransactions({ page: 2, limit: 20, from: '2026-10-01', to: '2026-10-15' }),
+      '/api/wallet/transactions?page=2&limit=20&from=2026-10-01&to=2026-10-15',
+    ],
+    [
+      'walletTransactions só com o fim do período (o vazio não vai)',
+      () => api.walletTransactions({ page: 1, from: '', to: '2026-10-15' }),
+      '/api/wallet/transactions?page=1&to=2026-10-15',
+    ],
     ['deposits', () => api.deposits(), '/api/wallet/deposits'],
     ['deposit', () => api.deposit(3), '/api/wallet/deposits/3'],
     ['withdrawals', () => api.withdrawals(), '/api/withdrawals'],
@@ -238,6 +248,21 @@ describe('gravações: verbo, caminho e corpo de cada método', () => {
       'POST',
       '/api/services',
       { categoryId: 2, title: 'Logo', description: 'Marca completa' },
+    ],
+    ['myServices', () => api.myServices(), 'GET', '/api/services/mine'],
+    [
+      'updateService',
+      () => api.updateService(11, { priceType: 'hourly', price: 80, deliveryDays: 2 }),
+      'PATCH',
+      '/api/services/11',
+      { priceType: 'hourly', price: 80, deliveryDays: 2 },
+    ],
+    [
+      'updateService (pausar)',
+      () => api.updateService(11, { isActive: false }),
+      'PATCH',
+      '/api/services/11',
+      { isActive: false },
     ],
     [
       'createContract',
@@ -425,6 +450,26 @@ describe('gravações: verbo, caminho e corpo de cada método', () => {
       'POST',
       '/api/withdrawals',
       { amount: 80, method: 'pix', pixKey: 'a@b.com' },
+    ],
+    [
+      'requestWithdrawal por transferência bancária',
+      () =>
+        api.requestWithdrawal({
+          amount: 80,
+          method: 'bank',
+          bankName: 'Banco do Brasil',
+          bankAgency: '1234',
+          bankAccount: '56789-0',
+        }),
+      'POST',
+      '/api/withdrawals',
+      {
+        amount: 80,
+        method: 'bank',
+        bankName: 'Banco do Brasil',
+        bankAgency: '1234',
+        bankAccount: '56789-0',
+      },
     ],
     ['cancelWithdrawal', () => api.cancelWithdrawal(6), 'POST', '/api/withdrawals/6/cancel'],
     [
@@ -721,6 +766,16 @@ describe('busca de serviços e relatório financeiro: só os filtros preenchidos
     expect(sent(fetchMock, 1).url).toBe('/api/services');
   });
 
+  it('contracts manda página, limite e os status separados por vírgula; filtro vazio fica de fora (RF-040)', async () => {
+    const fetchMock = stubFetch();
+    await api.contracts({ page: 2, limit: 20, status: ['accepted', 'in_progress'] });
+    await api.contracts({ page: 1, status: [] });
+    expect(sent(fetchMock, 0).url).toBe(
+      '/api/contracts?page=2&limit=20&status=accepted%2Cin_progress',
+    );
+    expect(sent(fetchMock, 1).url).toBe('/api/contracts?page=1');
+  });
+
   it('adminFinance manda o período e a granularidade; data em branco fica de fora', async () => {
     const fetchMock = stubFetch();
     await api.adminFinance({ from: '2026-09-01', to: '2026-09-30', granularity: 'day' });
@@ -851,7 +906,7 @@ describe('downloads com o token (blob + nome do arquivo)', () => {
     );
     await expect(api.downloadExport(4)).rejects.toThrow('Exportação expirada');
     await expect(api.attachmentBlob('/api/messaging/attachments/9', 'a')).rejects.toThrow(
-      'Erro 500 ao baixar o anexo',
+      'Não foi possível baixar o anexo. Serviço indisponível no momento. Tente de novo em instantes.',
     );
   });
 
@@ -875,7 +930,9 @@ describe('downloads com o token (blob + nome do arquivo)', () => {
     setSession({ accessToken: 'velho', refreshToken: 'refresh-1' });
     const fetchMock = stubFetch(blobReply(401, file), reply(401, { error: 'refresh_invalid' }));
 
-    await expect(api.downloadExport(4)).rejects.toThrow('Erro 401 ao baixar a exportação');
+    await expect(api.downloadExport(4)).rejects.toThrow(
+      'Não foi possível baixar a exportação. Sua sessão terminou. Entre de novo para continuar.',
+    );
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(sent(fetchMock, 1).url).toBe('/api/auth/refresh');
@@ -885,8 +942,19 @@ describe('downloads com o token (blob + nome do arquivo)', () => {
   it('401 sem refresh token não tenta renovar: o download falha com o erro', async () => {
     setToken('velho');
     const fetchMock = stubFetch(blobReply(401, file));
-    await expect(api.downloadModerationCsv(30)).rejects.toThrow('Erro 401 ao exportar a série');
+    await expect(api.downloadModerationCsv(30)).rejects.toThrow(
+      'Não foi possível exportar a série. Sua sessão terminou. Entre de novo para continuar.',
+    );
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('download sem rede diz que não há conexão, e não "Failed to fetch"', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    await expect(api.downloadExport(4)).rejects.toMatchObject({
+      message: 'Sem conexão com o servidor. Confira sua internet e tente de novo.',
+      status: 0,
+      code: 'network_error',
+    });
   });
 });
 
@@ -896,7 +964,10 @@ describe('erros da API', () => {
     stubFetch(reply(403, { error: 'account_suspended' }));
     const status = listen(ACCOUNT_STATUS_EVENT);
     const expired = listen(SESSION_EXPIRED_EVENT);
-    await expect(api.createService({} as never)).rejects.toThrow('account_suspended');
+    await expect(api.createService({} as never)).rejects.toMatchObject({
+      message: 'Você não tem permissão para fazer isso.',
+      code: 'account_suspended',
+    });
     expect((status.handler.mock.calls[0]?.[0] as CustomEvent).detail).toBe('suspended');
     expect(expired.handler).not.toHaveBeenCalled();
     expect(getToken()).toBe('tok');
@@ -942,7 +1013,7 @@ describe('erros da API', () => {
     expect(status.handler).not.toHaveBeenCalled();
     status.stop();
   });
-  it('sem "message" usa o código do erro; sem corpo JSON, o status', async () => {
+  it('sem "message" o código fica em code e a tela lê o texto do status; sem JSON, também', async () => {
     stubFetch(reply(409, { error: 'extension_changed' }), {
       ok: false,
       status: 500,
@@ -950,8 +1021,13 @@ describe('erros da API', () => {
         throw new Error('html');
       },
     });
-    await expect(api.contracts()).rejects.toThrow('extension_changed');
-    await expect(api.contracts()).rejects.toThrow('Erro 500');
+    await expect(api.contracts()).rejects.toMatchObject({
+      message: 'Não foi possível concluir. Tente de novo.',
+      code: 'extension_changed',
+    });
+    await expect(api.contracts()).rejects.toThrow(
+      'Serviço indisponível no momento. Tente de novo em instantes.',
+    );
   });
 
   it.each(['account_blocked', 'account_banned', 'account_deleted'])(
@@ -1014,7 +1090,10 @@ describe('erros da API', () => {
   it('503 por outro motivo é só um erro: a tela de manutenção não aparece', async () => {
     stubFetch(reply(503, { error: 'unavailable' }));
     const maintenance = listen(MAINTENANCE_EVENT);
-    await expect(api.categories()).rejects.toThrow('unavailable');
+    await expect(api.categories()).rejects.toMatchObject({
+      message: 'Serviço indisponível no momento. Tente de novo em instantes.',
+      code: 'unavailable',
+    });
     expect(maintenance.handler).not.toHaveBeenCalled();
     maintenance.stop();
   });

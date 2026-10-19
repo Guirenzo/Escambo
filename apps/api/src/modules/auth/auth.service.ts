@@ -22,7 +22,7 @@ import { mailService } from '../mail/mail.service';
 import { authRepository, type UserRow } from './auth.repository';
 import { sessionRepository } from './session.repository';
 import { tokensRepository } from './tokens.repository';
-import type { LoginInput, RegisterInput } from './auth.schema';
+import type { ChangePasswordInput, LoginInput, RegisterInput } from './auth.schema';
 import { userAgentOf } from '../../utils/user-agent';
 
 export interface SessionContext {
@@ -256,6 +256,56 @@ export const authService = {
     await sessionRepository.revokeAllForUser(userId);
     // Quem redefine a senha pode estar tirando o acesso de um aparelho perdido: o push vai junto.
     await pushRepository.removeAllForUser(userId);
+  },
+
+  /**
+   * Troca de senha com login (RF-017). A senha atual confirma que é o titular, e não alguém com
+   * o aparelho aberto. Grava a nova, encerra todas as sessões (RN-008) e abre uma nova só para
+   * quem trocou: as outras caem, esta segue. Fica na auditoria e o titular é avisado por e-mail.
+   */
+  async changePassword(
+    userId: number,
+    input: ChangePasswordInput,
+    ctx: RequestContext,
+  ): Promise<RefreshResponse> {
+    const user = await authRepository.findById(userId);
+    if (!user) throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
+    const ok =
+      user.password_hash != null &&
+      (await bcrypt.compare(input.currentPassword, user.password_hash));
+    if (!ok) throw new HttpError(400, 'Senha atual incorreta', 'wrong_password');
+    if (input.newPassword === input.currentPassword) {
+      throw new HttpError(400, 'A nova senha precisa ser diferente da atual', 'same_password');
+    }
+
+    const passwordHash = await bcrypt.hash(input.newPassword, env.BCRYPT_SALT_ROUNDS);
+    await authRepository.updatePassword(userId, passwordHash);
+    const revoked = await sessionRepository.revokeAllForUser(userId);
+    const tokens = await issueSession(user, ctx);
+
+    const userAgent = userAgentOf(ctx.userAgent);
+    void auditService.log({
+      userId,
+      action: 'password_changed',
+      entityType: 'user',
+      entityId: userId,
+      newValue: { sessionsRevoked: revoked },
+      ip: ctx.ip,
+      userAgent,
+    });
+    // Aviso de segurança: vai mesmo com os e-mails de novidades desligados. Melhor esforço.
+    await mailService.send({
+      userId,
+      to: user.email,
+      template: 'notification',
+      vars: {
+        title: 'Sua senha foi alterada',
+        body: 'A senha da sua conta no Escambo acabou de ser trocada, e as outras sessões abertas foram encerradas. Se não foi você, redefina a senha agora e fale com o suporte.',
+        link: appLink('/esqueci-senha'),
+        cta: 'Redefinir senha',
+      },
+    });
+    return tokens;
   },
 
   async login(input: LoginInput, ctx: SessionContext = {}): Promise<AuthResponse> {

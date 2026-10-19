@@ -1,8 +1,23 @@
+# O CI roda `prettier --check .` (RNF-032). O que está aqui fica de fora da checagem e do
+# `npm run format`. O Prettier também respeita o .gitignore.
+
+# Dependências, builds e relatórios gerados
 node_modules
 dist
 build
 coverage
 package-lock.json
+apps/web/test-results
+apps/web/playwright-report
+apps/web/blob-report
+.wiki-*/
+
+# Gerado/mantido fora do Prettier
 apps/api/db/schema.sql
 *.conf
 Dockerfile
+
+# Documentos (README.md, apps/api/README.md, apps/api/db/README.md, docs/**, CHANGELOG...):
+# tabelas alinhadas à mão, quebras de linha e listas que o Prettier reescreveria. Todo markdown
+# fica de fora.
+*.md

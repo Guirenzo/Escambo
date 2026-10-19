@@ -122,6 +122,11 @@ export interface ResetPasswordRequest {
   token: string;
   password: string;
 }
+/** Troca de senha com login (RF-017); a resposta é o par novo desta sessão (RefreshResponse). */
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
 export interface VerifyEmailRequest {
   token: string;
 }
@@ -869,6 +874,12 @@ export interface PublicFreelancerProfile extends FreelancerProfile {
   userUlid: string;
   level: number;
   levelName: string;
+  /** XP acumulado (RF-068). */
+  totalXp: number;
+  /** Badges conquistadas, da mais recente para a mais antiga (RF-015). */
+  badges: Badge[];
+  /** Até 3 em destaque (RN-058): sem escolha do freelancer, as mais recentes. */
+  featuredBadges: Badge[];
   portfolio: PortfolioItem[];
   /** RN-026: resumo público sem títulos, datas ou contestações. */
   dropouts?: DropoutSummary;
@@ -1257,8 +1268,25 @@ export interface ContractStatusHistoryEntry {
   at: string;
 }
 
+/** Uma entrega única registrada (RF-035): a primeira e cada reentrega depois de uma revisão. */
+export interface ContractDelivery {
+  id: number;
+  /** O que o freelancer escreveu ao entregar. */
+  message: string;
+  /** Links informados na entrega; vazio quando a entrega foi só a mensagem. */
+  files: string[];
+  deliveredAt: string;
+}
+
+/** Lista paginada das contratações de quem pede (RF-040): `total` já conta o filtro de status. */
+export interface ContractList extends Paginated<Contract> {
+  total: number;
+}
+
 export interface ContractWithHistory extends Contract {
   history: ContractStatusHistoryEntry[];
+  /** Entregas únicas, da primeira à mais recente; vazio por marcos e ausente na API anterior. */
+  deliveries?: ContractDelivery[];
   /** Ofertas em ordem de sequência; ausente nas versões anteriores da API. */
   offers?: ContractOffer[];
   /** Só as partes veem a confirmação; contestação e decisão permanecem privadas. */
@@ -1424,6 +1452,22 @@ export interface WalletTransaction {
   paymentId: number | null;
   withdrawalId: number | null;
   createdAt: string;
+}
+
+/**
+ * Filtro do extrato de R$ (RF-047): `from` e `to` são dias "AAAA-MM-DD" no fuso da conta, os
+ * dois inclusivos; sem eles, o extrato inteiro.
+ */
+export interface WalletTransactionsQuery {
+  page?: number;
+  limit?: number;
+  from?: string;
+  to?: string;
+}
+
+/** Uma página do extrato de R$; `hasMore` diz se há lançamentos depois dela ("Carregar mais"). */
+export interface WalletTransactionsPage extends Paginated<WalletTransaction> {
+  hasMore: boolean;
 }
 
 export type DepositStatus = 'pending' | 'processing' | 'paid' | 'failed' | 'refunded' | 'cancelled';
