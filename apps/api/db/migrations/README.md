@@ -59,5 +59,6 @@ As cinco conferem o `information_schema` antes de cada mudança e podem rodar de
 | 0044_troca_email.sql                        | Tabela `email_change_requests`: pedidos de troca de e-mail com o hash do token de confirmação (RF-017)                                              |
 | 0045_missoes_periodo.sql                    | `user_missions.period_key` e a chave única por período, no lugar da antiga por `expires_at` (RF-066)                                                |
 | 0046_ledger_imutavel.sql                    | Triggers que recusam UPDATE e DELETE nos extratos e em `payment_events`, e DELETE de `audit_logs` com menos de 90 dias (RNF-036, RNF-037)            |
+| 0047_catalogo_unico.sql                     | Junta missões e planos repetidos (o seed reaplicado duplicava o catálogo e a missão pagava em dobro) e cria as chaves únicas que faltavam              |
 
 Todas podem rodar de novo sem erro. A 0046 cria triggers: com o binlog ligado (padrão do MySQL 8), o usuário das migrations precisa de `log_bin_trust_function_creators=1` no servidor, que os dois compose passam ao `db` a partir da 1.45.0. Passo a passo no DEPLOY.md ("Atualizar para a 1.45.0").

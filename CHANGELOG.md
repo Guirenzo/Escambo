@@ -26,6 +26,10 @@ Terceira leva da auditoria de requisitos (ADR 63): sobram só os requisitos que 
 - **Listagem de serviços (RNF-004):** com 100 mil serviços, a busca sem texto caiu de 761 ms para 66 ms. Toda ordenação passa a desempatar pelo id, e a busca por proximidade não repete nem pula serviço entre páginas.
 - A cópia de dados (LGPD) passa ao formato 1.11, com os pedidos de troca de e-mail.
 
+### Corrigido
+
+- Os catálogos de missões e de planos de impulsionamento não tinham chave única, e o `seed.sql` reaplicado (o CI faz isso) os duplicava: com as missões, a mesma missão pagava o XP duas vezes. A 0047 junta os repetidos e cria as chaves (`uq_missions_title`, `uq_boost_plans_name`).
+
 ### Segurança e dados
 
 - **Extrato imutável no banco (RNF-036):** triggers recusam alterar ou apagar lançamentos de R$, de créditos e do gateway.
@@ -33,7 +37,7 @@ Terceira leva da auditoria de requisitos (ADR 63): sobram só os requisitos que 
 
 ### Para atualizar
 
-Sete migrations (0040 a 0046). A 0046 cria triggers: o banco precisa subir com `log_bin_trust_function_creators=1`, que o compose já passa, e por isso o deploy recria o container do MySQL. A alternativa é um `SET PERSIST` antes. Passo a passo no DEPLOY.md ("Atualizar para a 1.45.0").
+Oito migrations (0040 a 0047). A 0046 cria triggers: o banco precisa subir com `log_bin_trust_function_creators=1`, que o compose já passa, e por isso o deploy recria o container do MySQL. A alternativa é um `SET PERSIST` antes. Passo a passo no DEPLOY.md ("Atualizar para a 1.45.0").
 
 ## [1.44.0] — 2026-10-19
 

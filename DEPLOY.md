@@ -264,7 +264,7 @@ a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
 ### Atualizar para a 1.45.0 (ADR 63)
 
-Sete migrations (0040 a 0046), todas aditivas e seguras de rodar de novo, e nenhum script manual.
+Oito migrations (0040 a 0047), todas aditivas e seguras de rodar de novo, e nenhum script manual.
 
 **1. Backup antes** (`scripts/backup-db.sh`, seção 4).
 
