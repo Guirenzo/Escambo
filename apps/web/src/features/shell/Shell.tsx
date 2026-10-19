@@ -4,6 +4,7 @@ import {
   Briefcase,
   Home,
   LogOut,
+  LifeBuoy,
   MailWarning,
   ShieldAlert,
   Trophy,
@@ -12,7 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { displayName } from '../../lib/format';
@@ -61,6 +62,7 @@ const NAV: { to: string; label: string; Icon: LucideIcon; end?: boolean; adminOn
   { to: '/carteira', label: 'Carteira', Icon: Wallet },
   { to: '/notificacoes', label: 'Notificações', Icon: Bell },
   { to: '/perfil', label: 'Perfil', Icon: User },
+  { to: '/suporte', label: 'Suporte', Icon: LifeBuoy },
   { to: '/admin', label: 'Admin', Icon: ShieldAlert, adminOnly: true },
 ];
 
@@ -102,23 +104,23 @@ export function Shell() {
         </NavLink>
 
         <nav className="side-nav" aria-label="Principal">
-          {NAV.filter((n) => !n.adminOnly || user?.role === 'admin').map(
-            ({ to, label, Icon, end }) => (
-              <NavLink key={to} to={to} end={end} className="side-link" title={label}>
-                <Icon size={18} strokeWidth={2} />
-                <span>{label}</span>
-                {to === '/notificacoes' && unread > 0 && (
-                  <span
-                    className="nav-badge"
-                    aria-label={`${unread} não lida${unread > 1 ? 's' : ''}`}
-                    data-testid="nav-badge"
-                  >
-                    {unread > 99 ? '99+' : unread}
-                  </span>
-                )}
-              </NavLink>
-            ),
-          )}
+          {NAV.filter(
+            (n) => !n.adminOnly || (user?.role === 'admin' && user.status !== 'suspended'),
+          ).map(({ to, label, Icon, end }) => (
+            <NavLink key={to} to={to} end={end} className="side-link" title={label}>
+              <Icon size={18} strokeWidth={2} />
+              <span>{label}</span>
+              {to === '/notificacoes' && unread > 0 && (
+                <span
+                  className="nav-badge"
+                  aria-label={`${unread} não lida${unread > 1 ? 's' : ''}`}
+                  data-testid="nav-badge"
+                >
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              )}
+            </NavLink>
+          ))}
         </nav>
 
         <div className="side-user">
@@ -134,6 +136,17 @@ export function Shell() {
       </aside>
 
       <main className="main">
+        {user && banner === 'suspended' && (
+          <div className="verify-banner" role="status" data-testid="suspended-banner">
+            <ShieldAlert size={16} aria-hidden="true" />
+            <span>
+              <strong>Conta suspensa: acesso somente para consulta.</strong> Contratações,
+              alterações e movimentações estão bloqueadas. Seus dados e as contestações disponíveis
+              continuam acessíveis no <Link to="/perfil">Perfil</Link>. Você também pode{' '}
+              <Link to="/suporte">falar com o suporte</Link>.
+            </span>
+          </div>
+        )}
         {user && banner === 'legal' && consents.data && (
           <LegalUpdateBanner kind="privacidade" consents={consents.data} />
         )}

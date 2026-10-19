@@ -106,7 +106,9 @@ test('contratar com prazo, pedir extensão duas vezes (recusa, depois aceite): o
   await expect(page.locator('.toast', { hasText: 'Prazo estendido' })).toBeVisible();
   await expect(page.getByTestId('deadline-date')).toHaveText(deadlineTextPlus(12));
   await expect(page.getByTestId('deadline')).toContainText('extensão usada');
-  await expect(page.locator('.timeline')).toContainText('Prazo estendido de');
+  await expect(page.getByRole('list', { name: 'Histórico da contratação' })).toContainText(
+    'Prazo estendido de',
+  );
 
   // Freelancer não pode pedir de novo; o Início mostra o prazo novo correndo.
   await openAs(page, freelancer, `/contratos/${contractId}`);

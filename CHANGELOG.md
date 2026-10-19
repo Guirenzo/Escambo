@@ -5,6 +5,51 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.42.0] — 2026-10-16
+
+**Candidata local, ainda não publicada.** Implementação do ADR 61; esta entrada não confirma tag, imagens no GHCR ou implantação. A demonstração pública continua na versão anterior até autorização de publicação/deploy.
+
+### Adicionado
+
+- RN-020: uma contratação direta aberta por par cliente→freelancer em dinheiro/créditos, inclusive em envios simultâneos. A recusa não reserva saldo; a tela conserva o formulário e oferece abrir a contratação existente. Legados preservados, trocas independentes, sem migration nova.
+
+- Suporte privado no app e no painel, disponível ao titular suspenso: categoria/assunto/contratação opcional, conversa paginada, notas internas restritas, até três chamados não encerrados, prioridade/SLA e encerramento cinco dias após resolução. Migration 0034 retomável, sem tocar no fluxo financeiro; Termos/Política 1.6, exportação 1.9 e anonimização dos textos de suporte.
+
+- Negociação antes do aceite: até cinco ofertas em três rodadas, vez e validade por oferta, contraproposta de valor/prazo e dos mesmos marcos, prévia de reserva e histórico privado na Sala. Lembrete/expiração seguem o fuso de quem responde; a taxa conserva a da proposta inicial.
+- Duas revisões incluídas por entrega única ou por marco, também em troca; o freelancer pode liberar mais uma quando o limite está esgotado. Contratos já registrados com limite NULL ficam ilimitados. Uma proposta de troca antiga aceita após a implantação cria dois contratos novos, cada um com duas revisões incluídas; a data da proposta de troca não torna esses contratos novos ilimitados.
+- Janela da disputa manual: 48 h da primeira entrega, ou do aceite se não houve entrega, limitada pela tácita −24 h e mostrada na Sala; snapshots conservados em revisão/reentrega. A disputa automática continua independente.
+- Desistências após aceite: somente contagem inclusiva dos últimos 60 dias no perfil/modal; três geram alerta e revisão humana. Confirmação pelo cliente em sete dias, contestação privada pelo titular e decisão auditada no painel; sem suspensão automática ou preenchimento retroativo.
+- Reconciliação durável da revisão de desistências, com review_checked_at e job reconcile-dropout-reviews. Falhas posteriores não desfazem o cancelamento confirmado; uma conta com falha não bloqueia o lote inteiro.
+- Parâmetros counter_offer_response_hours e extension_response_hours (padrão 48, faixa 24–168 h). Painel mostra para leitura as constantes das regras de revisão, ofertas, disputa e desistência.
+- Termos de Uso 1.5, Política de Privacidade 1.5 e exportação escambo-export/1.8, com ofertas dos contratos participantes e desistências apenas do freelancer titular.
+- Conta suspensa mantém login, sessão e consulta de contratos, chat, carteira e dados. A Web mostra a suspensão e desativa comandos/formulários/modais; a API e o socket bloqueiam negócios. LGPD, contestações próprias e saída continuam disponíveis. O suporte geral foi acrescentado na etapa 13.
+- Avisos opcionais por evento, resumo diário e resumo do silêncio não entregam conteúdo a banidos/excluídos. Ao suspender durante a criação de depósito, o modal fecha; cobranças já existentes continuam consultáveis. RN-007 validada localmente com 403 integrações e 62 E2Es; o suporte geral foi acrescentado e validado na etapa 13.
+
+### Alterado
+
+- A reserva em dinheiro acompanha a última oferta do cliente. Aumento/redução e aceite da contraproposta ajustam a diferença na transação; redução aparece como hold_release no extrato. Saídas de pending reconferem sequência e preço lidos.
+- Prévia da desistência informa a consequência pública e reconfere a contagem após as travas e antes do commit. Acordo/decisão reputacional não alteram dinheiro.
+- Avisos de entrega/revisão dizem o limite e a abertura da disputa; aceite/recusa saem do serviço com os valores. Mapas completos de e-mail/push têm 42 tipos, com preferências normais e sem nova passagem pelo silêncio.
+- Saúde/meta da moderação reconhecem revisão de conta pela origem e causa; denúncia comum imitando prefixo continua na meta. Contestações de desistência de contas ativas aparecem como pendência específica.
+- Anonimização apaga contestação/nota de desistência. A cópia da justificativa em admin_actions.description também é substituída por uma indicação de remoção, apenas nas ações dropout_excused/dropout_upheld ligadas às desistências do titular; tipo, autor, alvo e data da ação são preservados, assim como os registros de outras contas. Mutações, avisos e outbox impedem repor texto em conta excluída sob a trava do usuário, mantendo envio pelo provedor fora da transação.
+
+### Corrigido
+
+- Revisões de conta encerradas ficam fora das decisões e da mediana da meta de moderação; denúncias humanas que imitam o prefixo continuam contando. Evita relatório diário indevido após uma revisão de desistências ou reincidência.
+- Dependências atualizadas sem mudança de major: compression 1.8.2, sharp 0.35.5, concurrently 9.2.5 e correções transitivas de proxy-addr, source-map-js e shell-quote. Auditoria local sem vulnerabilidades; instalação e processamento nativo de imagem conferidos em Windows e na imagem Linux.
+- Criação de carteira por INSERT IGNORE passa a autocommit antes das transações financeiras, evitando a espera entre operações da mesma pessoa e funcionando com pool de uma conexão.
+- Operações financeiras adquirem contas e depois carteiras em ordem crescente de ID, após a trava do contrato/acordo existente. A desistência mantém a trava exclusiva da conta cuja contagem muda; acordo segue a mesma ordem. Corrige ciclos 1213 reproduzidos entre aceite/cancelamento/disputa, aprovação de marco/desistência e desistências recíprocas, preservando cálculos, ordem dos efeitos e extrato. As provas controladas não garantem ausência de todo deadlock.
+- Primeira entrega de marcos é recuperada do histórico antes de reentrega; conversão de agregados para DATETIME mantém leitura UTC.
+- Ação antiga de revisão/liberação não atravessa ciclos de reentrega para consumir ou liberar outro pedido; contadores INT UNSIGNED comportam a revisão 256.
+- Erro de limite de revisões de entrega única informa a data/hora futura da disputa no fuso do cliente, inclusive após releitura do snapshot; na abertura exata já orienta a disputa disponível.
+- Filas administrativas de desistências identificam a contratação pelo número e título; deixam de oferecer um link para a Sala privada que retornava acesso negado ao administrador.
+- Autorização HTTP/socket passa a vincular `uid` e `sub` ao usuário atual no banco e usa seu papel/status atuais, inclusive em conexões abertas e no recebimento de eventos. Banidos e excluídos perdem o acesso autenticado; reativação restaura comandos sem exigir recarga manual. Consultar como suspenso não cria carteira, concede créditos/XP ou cria conversa. Renovação do JWT refaz o handshake do socket; respostas antigas não repõem sessão após sair.
+- Detalhes de desistências na moderação ocupam uma linha própria, com a largura da tabela. O histórico da contratação recebe nome acessível próprio para se distinguir do histórico de ofertas.
+
+### Implantação
+
+Migrations 0031–0034, aditivas e sem backfill de desistências ou limite retroativo. O reparo recupera evidências/snapshots de entrega, oferta 1 faltante e ofertas abertas fora de pending. O agendador tem 16 jobs. Consultas, detector de reserva e limites da reversão para 1.41.1 estão no DEPLOY.md. As correções posteriores de contas/carteiras e acesso de suspensos não acrescentam migration; seus cenários e limites estão na [validação de entrega](./docs/validacao-entrega-adr61.md). A suspensão não pausa prazos/jobs nem cancela atomicamente operações já admitidas. O suporte geral da RN-007 e a RN-020 estão implementados na candidata local; gateway real e validação da infraestrutura de destino continuam pendentes.
+
 ## [1.41.1] — 2026-10-04
 
 Correções da varredura de testes (ADR 60): os pontos que os testes de unidade do ADR 59 acharam no código,
@@ -115,7 +160,7 @@ rota pública, migration ou regra de negócio muda.
 - **Métricas Prometheus** da API numa porta interna: latência por rota declarada, requisições abandonadas
   (status 499), rodadas e duração dos jobs, versão no ar, processo.
 - **Monitoramento** num perfil do compose, igual na produção e na demo (`docker compose --profile monitoring up
-  -d`, Grafana em <http://localhost:3030>): Prometheus, sonda de uptime e Grafana com o painel "Escambo" e
+-d`, Grafana em <http://localhost:3030>): Prometheus, sonda de uptime e Grafana com o painel "Escambo" e
   cinco alertas, que saem **por e-mail** pelo SMTP do sistema.
 - **Erros no Sentry** com `SENTRY_DSN`: só as falhas do servidor, sem nenhum dado pessoal (nem e-mail na
   mensagem, nem o texto de erro do banco, nem o rastro das chamadas).

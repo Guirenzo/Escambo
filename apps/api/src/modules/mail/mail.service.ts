@@ -8,11 +8,13 @@ import { renderEmail, type MailTemplate, type TemplateVars } from './mail.templa
 /** Notificações in-app que também vão por e-mail (chat e ruído de baixo valor ficam de fora). */
 export const EMAILED_NOTIFICATION_TYPES = new Set([
   'contract_proposal',
+  'contract_counter_offer',
   'contract_accepted',
   'contract_rejected',
   'contract_delivered',
   'contract_completed',
   'contract_revision',
+  'contract_revision_granted',
   'contract_cancelled',
   'contract_expired',
   'contract_overdue',
@@ -39,8 +41,12 @@ export const EMAILED_NOTIFICATION_TYPES = new Set([
   'review_received',
   'content_removed',
   'appeal_decided',
+  'dropout_decided',
+  'support_reply',
+  'support_resolved',
   // ADR 58
   'contract_proposal_reminder',
+  'contract_counter_offer_reminder',
   'contract_deadline_reminder',
   'contract_approval_reminder',
   'contract_extension_reminder',
@@ -51,6 +57,17 @@ export const EMAILED_NOTIFICATION_TYPES = new Set([
 /** Para onde o e-mail de notificação aponta, a partir dos dados da notificação. */
 export function notificationLink(data: Record<string, unknown> | null | undefined): string {
   const base = env.APP_URL.replace(/\/$/, '');
+  const supportTicketId = data?.supportTicketId;
+  if (
+    typeof supportTicketId === 'number' &&
+    Number.isSafeInteger(supportTicketId) &&
+    supportTicketId > 0
+  ) {
+    return data?.supportAdmin === true
+      ? `${base}/admin?ticket=${supportTicketId}#suporte`
+      : `${base}/suporte?ticket=${supportTicketId}`;
+  }
+  if (data?.dropoutId != null) return `${base}/perfil`;
   const contractId = data?.contractId;
   if (typeof contractId === 'number') return `${base}/contratos/${contractId}`;
   if (data?.barterId != null) return `${base}/trocas`;
@@ -102,6 +119,8 @@ export const mailService = {
     to: string;
     template: MailTemplate;
     vars: TemplateVars;
+    /** RN-026: conferir a conta sob trava na persistência da nota privada. */
+    requireActiveUser?: boolean;
   }): Promise<number | null> {
     return (await this.deliver(params)).id;
   },
@@ -112,6 +131,7 @@ export const mailService = {
     to: string;
     template: MailTemplate;
     vars: TemplateVars;
+    requireActiveUser?: boolean;
   }): Promise<{ id: number | null; delivered: boolean }> {
     const provider = activeMailProvider();
     if (!provider) return { id: null, delivered: false };
@@ -119,7 +139,7 @@ export const mailService = {
     let delivered = false;
     try {
       const mail = renderEmail(params.template, params.vars);
-      id = await mailRepository.create({
+      const draft = {
         userId: params.userId,
         to: params.to,
         subject: mail.subject,
@@ -127,7 +147,13 @@ export const mailService = {
         text: mail.text,
         html: mail.html,
         provider: provider.name,
-      });
+      };
+      id = params.requireActiveUser
+        ? params.userId === null
+          ? null
+          : await mailRepository.createIfActive({ ...draft, userId: params.userId })
+        : await mailRepository.create(draft);
+      if (id === null) return { id: null, delivered: false };
       try {
         await provider.send({ to: params.to, ...mail });
         delivered = true;

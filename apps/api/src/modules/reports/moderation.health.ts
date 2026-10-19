@@ -12,6 +12,7 @@ import { settingsRepository } from '../settings/settings.repository';
 import { settingsService } from '../settings/settings.service';
 import { DAY_MS, dayKey, startOfTodayBrt } from './moderation.day';
 import { parseState, REPORT_STATE_KEY } from './moderation.sla-state';
+import { ACCOUNT_REVIEW_SQL } from './reports.repository';
 
 export { dayKey };
 
@@ -188,25 +189,27 @@ const hoursOf = (rows: SecondsRow[], q: number): number | null => {
 
 type Window = { since: Date; until: Date };
 
-/** Decisões da fila por dia e resultado, no dia de Brasília da decisão. */
+/** Decisões de conteúdo por dia e resultado; revisões de conta não entram na meta. */
 const decisionsByDay = async (window: Window): Promise<DayStatusCountRow[]> =>
   (
     await pool.query<DayStatusCountRow[]>(
       `SELECT ${DAY_BRT('reviewed_at')} AS d, status, COUNT(*) AS n FROM content_reports
-        WHERE status IN ('actioned', 'dismissed') AND reviewed_at >= :since
+        WHERE status IN ('actioned', 'dismissed') AND NOT ${ACCOUNT_REVIEW_SQL()}
+          AND reviewed_at >= :since
           AND reviewed_at < :until
         GROUP BY d, status`,
       window,
     )
   )[0];
 
-/** Durações até decidir, as mais recentes do período (amostra da mediana), com o dia. */
+/** Durações de conteúdo até decidir (amostra da mediana), sem revisões de conta. */
 const decisionSeconds = async (window: Window): Promise<DaySecondsRow[]> =>
   (
     await pool.query<DaySecondsRow[]>(
       `SELECT ${DAY_BRT('reviewed_at')} AS d, TIMESTAMPDIFF(SECOND, created_at, reviewed_at) AS secs
          FROM content_reports
-        WHERE status IN ('actioned', 'dismissed') AND reviewed_at >= :since
+        WHERE status IN ('actioned', 'dismissed') AND NOT ${ACCOUNT_REVIEW_SQL()}
+          AND reviewed_at >= :since
           AND reviewed_at < :until
         ORDER BY reviewed_at DESC
         LIMIT ${SAMPLE_LIMIT}`,
@@ -219,7 +222,7 @@ const reportsByDay = async (window: Window): Promise<DayReceivedRow[]> =>
   (
     await pool.query<DayReceivedRow[]>(
       `SELECT ${DAY_BRT('created_at')} AS d, COUNT(*) AS n,
-              COALESCE(SUM(reporter_id IS NULL), 0) AS flagged
+              COALESCE(SUM(reporter_id IS NULL AND NOT ${ACCOUNT_REVIEW_SQL()}), 0) AS flagged
          FROM content_reports
         WHERE created_at >= :since AND created_at < :until
         GROUP BY d`,
@@ -233,7 +236,7 @@ export interface QueueSnapshot {
   pending: number;
   oldest: Date | null;
   automatic: number;
-  /** Contas em revisão por reincidência (ADR 41): ficam abertas de propósito, sem meta. */
+  /** Contas em revisão por reincidência ou desistências: ficam abertas de propósito, sem meta. */
   reviews: number;
   /** A denúncia de conteúdo mais antiga esperando (fora as revisões). */
   oldestContent: Date | null;
@@ -254,21 +257,21 @@ interface QueueSnapshotRow extends RowDataPacket {
 }
 
 /**
- * Uma consulta para o painel e para o relatório diário. Revisões de conta por reincidência são
+ * Uma consulta para o painel e para o relatório diário. Revisões de conta são
  * contadas à parte e não entram na meta: elas ficam abertas enquanto a revisão durar.
  */
 export async function openQueue(now: Date, slaHours: number): Promise<QueueSnapshot> {
   const threshold = new Date(now.getTime() - slaHours * 3_600_000);
   const [rows] = await pool.query<QueueSnapshotRow[]>(
     `SELECT COUNT(*) AS pending, MIN(created_at) AS oldest,
-            COALESCE(SUM(reporter_id IS NULL), 0) AS automatic,
+            COALESCE(SUM(reporter_id IS NULL AND NOT is_review), 0) AS automatic,
             COALESCE(SUM(is_review), 0) AS reviews,
             MIN(CASE WHEN NOT is_review THEN created_at END) AS oldest_content,
             COALESCE(SUM(NOT is_review AND created_at < :threshold), 0) AS over_sla,
             COUNT(DISTINCT CASE WHEN NOT is_review AND created_at < :threshold
                                 THEN CONCAT(target_type, ':', target_id, ':', COALESCE(image_url, '')) END) AS over_sla_items
        FROM (SELECT created_at, reporter_id, target_type, target_id, image_url,
-                    (target_type = 'user' AND COALESCE(description, '') LIKE 'Reincidência:%') AS is_review
+                    ${ACCOUNT_REVIEW_SQL()} AS is_review
                FROM content_reports WHERE status IN ('pending', 'reviewing')) r`,
     { threshold },
   );
@@ -330,7 +333,13 @@ export const moderationHealthService = {
       openQueue(now, slaHours),
       pool.query<AppealQueueRow[]>(
         `SELECT COUNT(*) AS pending, MIN(appealed_at) AS oldest
-           FROM content_removals WHERE status = 'appealed'`,
+           FROM (SELECT appealed_at FROM content_removals WHERE status = 'appealed'
+                 UNION ALL
+                 SELECT d.appealed_at FROM freelancer_dropouts d
+                   JOIN users u ON u.id = d.freelancer_id
+                  WHERE d.appealed_at IS NOT NULL AND d.decided_at IS NULL
+                    AND d.decision IS NULL AND d.client_agreed_at IS NULL
+                    AND u.deleted_at IS NULL) appeals`,
       ),
       decisionsByDay(window),
       decisionSeconds(window),
@@ -338,7 +347,8 @@ export const moderationHealthService = {
         `SELECT r.status, m.off_platform, COUNT(*) AS n
            FROM content_reports r
            LEFT JOIN messages m ON r.target_type = 'message' AND m.id = r.target_id
-          WHERE r.reporter_id IS NULL AND r.created_at >= :since AND r.created_at < :until
+          WHERE r.reporter_id IS NULL AND NOT ${ACCOUNT_REVIEW_SQL('r')}
+            AND r.created_at >= :since AND r.created_at < :until
           GROUP BY r.status, m.off_platform`,
         window,
       ),

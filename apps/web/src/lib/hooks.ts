@@ -1,9 +1,15 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  SupportTicketQuery,
+  CreateSupportTicketRequest,
+  ReplySupportTicketRequest,
+  AdminReplySupportTicketRequest,
+  UpdateSupportTicketRequest,
   CreateBarterRequest,
   CreateBoostRequest,
   CreateContentReportRequest,
   CreateContractRequest,
+  CounterOfferRequest,
   AdminReportAction,
   AppealDecision,
   CreateDepositRequest,
@@ -24,6 +30,11 @@ import { orderByIds } from './reorder';
 
 /** Chaves de cache — centralizadas para invalidação consistente. */
 export const qk = {
+  support: (admin: boolean) => ['support', admin ? 'admin' : 'own'] as const,
+  supportTickets: (admin: boolean, query: SupportTicketQuery) =>
+    ['support', admin ? 'admin' : 'own', 'list', query] as const,
+  supportTicket: (admin: boolean, id: number | null) =>
+    ['support', admin ? 'admin' : 'own', 'ticket', id] as const,
   wallet: ['wallet'] as const,
   gamification: ['gamification'] as const,
   leaderboard: ['leaderboard'] as const,
@@ -45,6 +56,9 @@ export const qk = {
   adminReports: (status: string) => ['adminReports', status] as const,
   adminAppeals: (status: string) => ['adminAppeals', status] as const,
   myModeration: ['myModeration'] as const,
+  myDropouts: ['myDropouts'] as const,
+  adminDropouts: ['adminDropouts'] as const,
+  adminUserDropouts: (ulid: string) => ['adminUserDropouts', ulid] as const,
   notifications: ['notifications'] as const,
   barters: ['barters'] as const,
   profiles: ['profiles'] as const,
@@ -65,6 +79,64 @@ export const qk = {
 };
 
 // ---------- Queries ----------
+/** Só consulta periodicamente com a aba visível; TanStack também atualiza ao recuperar o foco. */
+export const useSupportTickets = (query: SupportTicketQuery, admin = false) =>
+  useQuery({
+    queryKey: qk.supportTickets(admin, query),
+    queryFn: () => (admin ? api.adminSupportTickets(query) : api.supportTickets(query)),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+
+/** A primeira janela é a conversa recente; as anteriores são carregadas sem perder as novas. */
+export const useSupportTicket = (id: number | null, admin = false) =>
+  useInfiniteQuery({
+    queryKey: qk.supportTicket(admin, id),
+    queryFn: ({ pageParam }) =>
+      admin ? api.adminSupportTicket(id!, pageParam) : api.supportTicket(id!, pageParam),
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (last) => last.nextBeforeId ?? undefined,
+    enabled: id != null,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+
+export function useSupportActions(admin = false) {
+  const qc = useQueryClient();
+  const refresh = (): void => {
+    void qc.invalidateQueries({ queryKey: qk.support(admin) });
+    void qc.invalidateQueries({ queryKey: qk.notifications });
+  };
+  return {
+    create: useMutation({
+      mutationFn: (body: CreateSupportTicketRequest) => api.createSupportTicket(body),
+      onSuccess: refresh,
+    }),
+    reply: useMutation({
+      mutationFn: ({
+        id,
+        body,
+      }: {
+        id: number;
+        body: ReplySupportTicketRequest | AdminReplySupportTicketRequest;
+      }) =>
+        admin
+          ? api.adminReplySupportTicket(id, body)
+          : api.replySupportTicket(id, { message: body.message }),
+      onSuccess: refresh,
+    }),
+    close: useMutation({
+      mutationFn: (id: number) => api.closeSupportTicket(id),
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, body }: { id: number; body: UpdateSupportTicketRequest }) =>
+        api.adminUpdateSupportTicket(id, body),
+      onSuccess: refresh,
+    }),
+  };
+}
+
 export const useWallet = () => useQuery({ queryKey: qk.wallet, queryFn: () => api.wallet() });
 export const useGamification = () =>
   useQuery({ queryKey: qk.gamification, queryFn: () => api.gamification() });
@@ -122,13 +194,45 @@ type ContractAction = 'accept' | 'reject' | 'approve';
 export function useContractAction() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, action }: { id: number; action: ContractAction }) =>
-      api.contractAction(id, action),
-    onSuccess: (_d, { id }) => {
+    mutationFn: ({ id, action, seq }: { id: number; action: ContractAction; seq?: number }) =>
+      seq === undefined ? api.contractAction(id, action) : api.contractAction(id, action, seq),
+    onSettled: (_d, _e, { id }) => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.contract(id) });
       void qc.invalidateQueries({ queryKey: qk.wallet });
       void qc.invalidateQueries({ queryKey: qk.gamification });
+      void qc.invalidateQueries({ queryKey: qk.walletTransactions });
+      void qc.invalidateQueries({ queryKey: qk.creditTransactions });
+    },
+  });
+}
+
+/** Toda decisão usa a oferta vista; erros também recarregam a Sala e a reserva. */
+export function useCounterOffer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: CounterOfferRequest & { id: number }) =>
+      api.counterOffer(id, body),
+    onSettled: (_d, _e, { id }) => {
+      for (const queryKey of [qk.contracts, qk.contract(id), qk.wallet, qk.walletTransactions])
+        void qc.invalidateQueries({ queryKey });
+    },
+  });
+}
+
+export function useAcceptCounterOffer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, seq }: { id: number; seq: number }) => api.acceptCounterOffer(id, seq),
+    onSettled: (_d, _e, { id }) => {
+      for (const queryKey of [
+        qk.contracts,
+        qk.contract(id),
+        qk.wallet,
+        qk.walletTransactions,
+        qk.creditTransactions,
+      ])
+        void qc.invalidateQueries({ queryKey });
     },
   });
 }
@@ -140,13 +244,89 @@ export function useContractAction() {
 export function useCancelContract() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, expectedRefund }: { id: number; expectedRefund?: number }) =>
-      api.cancelContract(id, expectedRefund === undefined ? {} : { expectedRefund }),
+    mutationFn: ({
+      id,
+      expectedRefund,
+      expectedDropoutCount,
+      seq,
+    }: {
+      id: number;
+      expectedRefund?: number;
+      expectedDropoutCount?: number;
+      seq?: number;
+    }) =>
+      api.cancelContract(id, {
+        ...(expectedRefund === undefined ? {} : { expectedRefund }),
+        ...(expectedDropoutCount === undefined ? {} : { expectedDropoutCount }),
+        ...(seq === undefined ? {} : { seq }),
+      }),
     onSettled: (_d, _e, { id }) => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.contract(id) });
       void qc.invalidateQueries({ queryKey: qk.wallet });
+      void qc.invalidateQueries({ queryKey: qk.myDropouts });
+      void qc.invalidateQueries({ queryKey: ['publicFreelancer'] });
     },
+  });
+}
+
+export const useMyDropouts = () =>
+  useQuery({ queryKey: qk.myDropouts, queryFn: () => api.myDropouts() });
+
+function invalidateDropouts(qc: ReturnType<typeof useQueryClient>): void {
+  for (const key of [
+    qk.myDropouts,
+    ['publicFreelancer'],
+    qk.contracts,
+    ['contract'],
+    qk.adminDropouts,
+    ['adminUserDropouts'],
+    ['moderationHealth'],
+    ['adminReports'],
+  ]) {
+    void qc.invalidateQueries({ queryKey: key });
+  }
+}
+
+export function useAgreeDropout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.agreeDropout(id),
+    onSettled: () => invalidateDropouts(qc),
+  });
+}
+
+export function useAppealDropout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, text }: { id: number; text: string }) => api.appealDropout(id, text),
+    onSettled: () => invalidateDropouts(qc),
+  });
+}
+
+export const useAdminDropouts = () =>
+  useQuery({ queryKey: qk.adminDropouts, queryFn: () => api.adminDropouts() });
+
+export const useAdminUserDropouts = (ulid: string) =>
+  useQuery({
+    queryKey: qk.adminUserDropouts(ulid),
+    queryFn: () => api.adminUserDropouts(ulid),
+    enabled: Boolean(ulid),
+  });
+
+export function useAdminDropoutDecision() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      decision,
+      note,
+    }: {
+      id: number;
+      decision: 'excuse' | 'uphold';
+      note: string;
+    }) => api.adminDecideDropout(id, decision, note),
+    onSettled: () => invalidateDropouts(qc),
   });
 }
 
@@ -155,9 +335,32 @@ export function useRequestRevision() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, note }: { id: number; note: string }) => api.requestRevision(id, note),
-    onSuccess: (_d, { id }) => {
+    onSettled: (_d, _e, { id }) => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.contract(id) });
+    },
+  });
+}
+
+export function useGrantContractRevision() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: number }) => api.grantContractRevision(id),
+    onSettled: (_d, _e, { id }) => {
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: qk.contract(id) });
+    },
+  });
+}
+
+export function useGrantMilestoneRevision(contractId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ milestoneId }: { milestoneId: number }) =>
+      api.grantMilestoneRevision(contractId, milestoneId),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: qk.contract(contractId) });
     },
   });
 }
@@ -227,6 +430,10 @@ export function useMilestoneAction(contractId: number) {
       void qc.invalidateQueries({ queryKey: qk.wallet });
       void qc.invalidateQueries({ queryKey: qk.walletTransactions });
       void qc.invalidateQueries({ queryKey: qk.gamification });
+    },
+    onError: () => {
+      void qc.invalidateQueries({ queryKey: qk.contracts });
+      void qc.invalidateQueries({ queryKey: qk.contract(contractId) });
     },
   });
 }
@@ -473,10 +680,12 @@ export function useOpenDispute() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: OpenDisputeRequest) => api.openDispute(body),
-    onSuccess: (d) => {
+    onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.disputes });
+    },
+    onSettled: (_d, _e, { contractId }) => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
-      void qc.invalidateQueries({ queryKey: qk.contract(d.contractId) });
+      void qc.invalidateQueries({ queryKey: qk.contract(contractId) });
     },
   });
 }

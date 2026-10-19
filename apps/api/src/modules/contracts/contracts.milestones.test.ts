@@ -1,4 +1,18 @@
+vi.mock('../dropouts/dropouts.repository', () => ({
+  dropoutsRepository: {
+    listCounting: vi.fn().mockResolvedValue([]),
+    findByContractId: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+vi.mock('../dropouts/dropouts.service', () => ({
+  dropoutsService: { afterDropout: vi.fn().mockResolvedValue(undefined) },
+}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('./offers.repository', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./offers.repository')>()),
+  offersRepository: { list: vi.fn().mockResolvedValue([]) },
+}));
 
 vi.mock('../settings/settings.service', () => ({
   settingsService: {
@@ -28,6 +42,7 @@ vi.mock('./contracts.repository', () => ({
 }));
 vi.mock('./milestones.repository', () => ({
   milestonesRepository: {
+    findById: vi.fn(),
     listForContract: vi.fn().mockResolvedValue([]),
     escrowRemaining: vi.fn(),
     deliver: vi.fn(),
@@ -61,6 +76,7 @@ import { authRepository, type UserRow } from '../auth/auth.repository';
 import { gamificationService } from '../gamification/gamification.service';
 import { servicesRepository } from '../services/services.repository';
 import { settingsRepository } from '../settings/settings.repository';
+import { settingsService } from '../settings/settings.service';
 
 const repo = vi.mocked(contractsRepository);
 const ms = vi.mocked(milestonesRepository);
@@ -109,10 +125,51 @@ function row(
   } as unknown as ContractRow;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  ms.listForContract.mockReset().mockResolvedValue([]);
+  ms.findById.mockReset().mockResolvedValue({
+    id: 7,
+    title: 'Layout',
+    status: 'delivered',
+    revisions_used: 0,
+    revision_limit: null,
+  } as never);
+});
 
 describe('criação com marcos (RN-069)', () => {
   beforeEach(() => vi.mocked(authRepository.findById).mockResolvedValue(FREELANCER));
+
+  it.each([
+    [9.91, ...Array<number>(9).fill(0.01)],
+    [...Array<number>(9).fill(1.11), 0.01],
+    [...Array<number>(9).fill(0.01), 9.91],
+  ])('parcelas de centavos fecham o líquido sem debitar um marco: %j', async (...amounts) => {
+    vi.mocked(settingsService.feeRate).mockResolvedValueOnce(0.5);
+    repo.create.mockResolvedValue(1);
+    repo.findById.mockResolvedValue(row({ status: 'pending' }));
+    await contractsService.create(1, {
+      freelancerId: 2,
+      title: 'Rateio de centavos',
+      description: 'Entrega em dez etapas com valores assimétricos',
+      price: 10,
+      paymentMode: 'cash',
+      milestones: amounts.map((amount, i) => ({ title: `Etapa ${i + 1}`, amount })),
+    });
+    const created = repo.create.mock.calls[0]![0];
+    expect(created.platformFee).toBe(5);
+    expect(created.freelancerNet).toBe(5);
+    expect(created.milestones).toHaveLength(10);
+    const parts = created.milestones!;
+    expect(parts.reduce((total, m) => total + Math.round(m.freelancerNet * 100), 0)).toBe(500);
+    parts.forEach((m, i) => {
+      expect(m.freelancerNet).toBeGreaterThanOrEqual(0);
+      expect(m.freelancerNet).toBeLessThanOrEqual(m.amount);
+      expect(m.amount).toBe(amounts[i]);
+      expect(m.title).toBe(`Etapa ${i + 1}`);
+      expect(m.sortOrder).toBe(i);
+    });
+  });
 
   it('cada marco recebe o líquido com a taxa; o último absorve o arredondamento', async () => {
     repo.create.mockResolvedValue(1);
@@ -252,7 +309,7 @@ describe('entrega e aprovação por marco', () => {
       1,
       expect.objectContaining({
         type: 'milestone_delivered',
-        body: 'Aprove ou peça revisão até dom, 11/10 às 18:20; depois disso, o marco é aprovado automaticamente. Mensagem: Layout no Figma',
+        body: 'Aprove, peça revisão ou abra disputa até dom, 11/10 às 18:20. Depois disso, o marco é aprovado automaticamente. Mensagem: Layout no Figma',
       }),
       {},
     );
@@ -550,6 +607,7 @@ describe('revisão por marco', () => {
       contractId: 1,
       milestoneId: 7,
       changedBy: 1,
+      expectedRevisionsUsed: 0,
       note: 'Ajustar o topo',
       // O aviso de revisão parada conta a partir daqui (ADR 58).
       now: REVISION_AT,
@@ -575,6 +633,7 @@ describe('revisão por marco', () => {
         dueZone: 'America/Sao_Paulo',
         // Financiado e já entregue antes: está em revisão, desde o pedido.
         revisionRequestedAt: '2026-10-07T13:00:00.000Z',
+        revisions: { used: 0, limit: null },
       },
       {
         id: 8,
@@ -593,6 +652,7 @@ describe('revisão por marco', () => {
         // Sem prazo: o fuso de quem entrega.
         dueZone: 'America/Sao_Paulo',
         revisionRequestedAt: null,
+        revisions: { used: 0, limit: null },
       },
       {
         id: 9,
@@ -610,6 +670,7 @@ describe('revisão por marco', () => {
         approvalDueAt: null,
         dueZone: 'America/Sao_Paulo',
         revisionRequestedAt: null,
+        revisions: { used: 0, limit: null },
       },
     ]);
   });
@@ -735,7 +796,7 @@ describe('marcos: quem age, quem recebe e quem é avisado (RN-069)', () => {
       {
         type: 'milestone_delivered',
         title: 'Marco entregue: Layout',
-        body: 'Aprove ou peça revisão até dom, 11/10 às 19:45; depois disso, o marco é aprovado automaticamente. Mensagem: Layout no Figma',
+        body: 'Aprove, peça revisão ou abra disputa até dom, 11/10 às 19:45. Depois disso, o marco é aprovado automaticamente. Mensagem: Layout no Figma',
         data: { contractId: 31, milestoneId: 5 },
       },
       {},
@@ -904,6 +965,7 @@ describe('marcos: quem age, quem recebe e quem é avisado (RN-069)', () => {
       contractId: 31,
       milestoneId: 5,
       changedBy: 7,
+      expectedRevisionsUsed: 0,
       note: null,
       now: AT,
     });

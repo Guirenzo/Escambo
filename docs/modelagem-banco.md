@@ -1,10 +1,10 @@
 # Modelagem do Banco de Dados — Escambo
 
-> **Versão:** 1.1.0  
-> **SGBD:** MySQL 8.0+  
-> **Encoding:** utf8mb4 / utf8mb4_unicode_ci  
-> **Total de tabelas:** 51  
-> **Atualizado em:** Junho de 2026
+> **Versão:** 1.2.0\
+> **SGBD:** MySQL 8.0+\
+> **Encoding:** utf8mb4 / utf8mb4_unicode_ci\
+> **Total de tabelas de aplicação:** 60 (baseline + migrations até 0033, sem a tabela técnica `schema_migrations`)\
+> **Atualizado em:** 9 de outubro de 2026
 
 > **Changelog 1.1.0 (Jun/2026):** correção da contagem (a v1.0.0 declarava 48 tabelas mas modelava 40);
 > introdução da **troca de serviços (escambo)** como modo de pagamento — diferencial central da plataforma —
@@ -13,6 +13,8 @@
 > `review_criteria_scores`, `data_export_requests` e `user_mfa`. Total passa a **50 tabelas** em **15 módulos**.
 
 ---
+
+> **Fonte executável:** `apps/api/db/schema.sql` e `apps/api/db/migrations/`. Os blocos abaixo documentam as entidades; migrations conservam nomes, tipos, índices e evolução exatos. A contagem atual inclui ledgers, outbox, confirmação de e-mail, bloqueio/moderação de mídia e livro de lembretes adicionados depois do desenho inicial. ADR 61 acrescenta `contract_offers` e `freelancer_dropouts`.
 
 ## Índice
 
@@ -38,17 +40,17 @@
 
 ## 1. Convenções e Padrões
 
-| Convenção | Padrão adotado |
-|---|---|
-| Nomenclatura de tabelas | `snake_case`, plural (ex: `users`, `service_categories`) |
-| Chave primária | `id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY` |
-| Chaves estrangeiras | `{tabela_referenciada_singular}_id` (ex: `user_id`, `service_id`) |
-| Timestamps | Todas as tabelas possuem `created_at` e `updated_at` |
-| Soft delete | Tabelas críticas possuem `deleted_at` (nullable) |
-| Enums | Definidos diretamente no MySQL via `ENUM(...)` |
-| Valores monetários | `DECIMAL(10, 2)` — nunca `FLOAT` |
-| UUIDs externos | `VARCHAR(36)` para IDs de gateways externos |
-| Índices | Criados em todas as FK e colunas de busca frequente |
+| Convenção               | Padrão adotado                                                    |
+| ----------------------- | ----------------------------------------------------------------- |
+| Nomenclatura de tabelas | `snake_case`, plural (ex: `users`, `service_categories`)          |
+| Chave primária          | `id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY`                   |
+| Chaves estrangeiras     | `{tabela_referenciada_singular}_id` (ex: `user_id`, `service_id`) |
+| Timestamps              | Todas as tabelas possuem `created_at` e `updated_at`              |
+| Soft delete             | Tabelas críticas possuem `deleted_at` (nullable)                  |
+| Enums                   | Definidos diretamente no MySQL via `ENUM(...)`                    |
+| Valores monetários      | `DECIMAL(10, 2)` — nunca `FLOAT`                                  |
+| UUIDs externos          | `VARCHAR(36)` para IDs de gateways externos                       |
+| Índices                 | Criados em todas as FK e colunas de busca frequente               |
 
 ---
 
@@ -67,6 +69,8 @@ users (base)
  ├── contracts               (cliente contrata freelancer)
  │    ├── contract_status_history
  │    ├── contract_milestones (escrow por etapa)
+ │    ├── contract_offers     (ofertas privadas da negociação)
+ │    ├── freelancer_dropouts (desistência após aceite e direitos)
  │    ├── disputes           (mediação first-class)
  │    └── deliveries
  │
@@ -121,6 +125,7 @@ report_snapshots              (relatórios)
 ## 3. Módulo 01 — Autenticação
 
 ### `users`
+
 Tabela central de todos os usuários da plataforma. A preferência de e-mail (`email_frequency`, ADR 27) e a hora do resumo do dia (`digest_hour`, ADR 42) e o fuso da conta (`timezone`, ADR 46; é nele que a agenda de atendimento do freelancer vale, ADR 48) moram aqui, junto com `last_digest_at`, a trava de um resumo por dia.
 
 ```sql
@@ -158,6 +163,7 @@ CREATE TABLE users (
 ---
 
 ### `user_social_logins`
+
 Vínculos de login social (Google, Facebook etc).
 
 ```sql
@@ -180,6 +186,7 @@ CREATE TABLE user_social_logins (
 ---
 
 ### `user_sessions`
+
 Sessões ativas com refresh tokens.
 
 ```sql
@@ -224,6 +231,7 @@ CREATE TABLE password_reset_tokens (
 ---
 
 ### `user_mfa`
+
 Verificação em duas etapas (2FA). O `secret` do TOTP é cifrado em **AES-256** na aplicação antes
 de persistir; os `recovery_codes` guardam apenas o **hash** de cada código (nunca em texto plano).
 
@@ -428,6 +436,7 @@ CREATE TABLE service_tags (
 ---
 
 ### `service_tag_pivot`
+
 Tabela de junção many-to-many entre serviços e tags.
 
 ```sql
@@ -444,6 +453,7 @@ CREATE TABLE service_tag_pivot (
 ---
 
 ### `service_packages`
+
 Pacotes por serviço no estilo Basic / Standard / Premium, cada um com preço, prazo e nº de revisões próprios.
 
 ```sql
@@ -471,6 +481,7 @@ CREATE TABLE service_packages (
 ---
 
 ### `favorites`
+
 Serviços e freelancers salvos pelo usuário. `target_id` é polimórfico (não tem FK direta) — a integridade
 é validada na aplicação conforme `target_type`.
 
@@ -492,6 +503,7 @@ CREATE TABLE favorites (
 ---
 
 ### `saved_searches`
+
 Buscas salvas com alerta opcional (notifica quando surgem novos serviços que casam com os filtros), na frequência escolhida por busca: na hora, de hora em hora ou uma vez por dia.
 
 ```sql
@@ -531,7 +543,8 @@ CREATE TABLE contracts (
   price          DECIMAL(10, 2)  NOT NULL,
   platform_fee   DECIMAL(10, 2)  NOT NULL,             -- taxa da plataforma
   freelancer_net DECIMAL(10, 2)  NOT NULL,             -- valor líquido ao freelancer
-  payment_mode   ENUM('cash', 'barter', 'hybrid') NOT NULL DEFAULT 'cash', -- dinheiro / troca / troca+torna
+  fee_percentage DECIMAL(5, 2)   NULL,                 -- taxa da proposta; NULL no legado (0031)
+  payment_mode   ENUM('cash', 'barter', 'hybrid', 'credits') NOT NULL DEFAULT 'cash', -- dinheiro / troca / troca+torna
   barter_agreement_id BIGINT UNSIGNED NULL,            -- preenchido quando o contrato faz parte de uma troca
   status         ENUM('pending', 'accepted', 'rejected', 'in_progress', 'delivered', 'revision_requested', 'completed', 'cancelled', 'disputed') NOT NULL DEFAULT 'pending',
   deadline_at    DATETIME        NULL,
@@ -547,7 +560,12 @@ CREATE TABLE contracts (
   grace_ends_at          DATETIME     NULL,             -- fim da carência, gravado no aviso: a hora avisada é a cumprida (migration 0027)
   approval_due_at        DATETIME     NULL,             -- aprovação tácita da entrega única (RN-024), gravada na entrega (migration 0027)
   proposal_expires_at    DATETIME     NULL,             -- validade da proposta (RN-021), gravada na criação (migration 0027)
-  revision_requested_at  DATETIME     NULL,             -- quando o cliente pediu a revisão em aberto: aviso de revisão parada (RN-081, migration 0029)
+  offer_seq TINYINT UNSIGNED NOT NULL DEFAULT 1,        -- oferta vigente: 1..5, vez pela paridade (0031)
+  revision_requested_at DATETIME NULL,                 -- revisão em aberto (0029)
+  revision_limit INT UNSIGNED NULL,                    -- 2 na contratação nova; NULL mantém contrato já registrado ilimitado (0031)
+  revisions_used INT UNSIGNED NOT NULL DEFAULT 0,      -- consumo por entrega única (0031)
+  first_delivery_at DATETIME NULL,                     -- primeira evidência, preservada na reentrega (0031)
+  delivery_dispute_opens_at DATETIME NULL,              -- abertura da entrega única, conservada na revisão (0031)
   accepted_at    DATETIME        NULL,
   completed_at   DATETIME        NULL,
   cancelled_at   DATETIME        NULL,
@@ -567,6 +585,7 @@ CREATE TABLE contracts (
   INDEX idx_contract_status_proposal  (status, proposal_expires_at), -- migration 0027
   INDEX idx_contract_extension_respond (extension_status, extension_respond_by), -- migration 0027
   INDEX idx_contract_status_revision (status, revision_requested_at), -- migration 0029
+  CONSTRAINT chk_contract_offer_seq CHECK (offer_seq BETWEEN 1 AND 5),
   CONSTRAINT fk_contract_client     FOREIGN KEY (client_id)     REFERENCES users(id),
   CONSTRAINT fk_contract_freelancer FOREIGN KEY (freelancer_id) REFERENCES users(id),
   CONSTRAINT fk_contract_service    FOREIGN KEY (service_id)    REFERENCES services(id) ON DELETE SET NULL
@@ -590,6 +609,7 @@ CREATE TABLE contracts (
 ---
 
 ### `contract_status_history`
+
 Rastreabilidade completa de mudanças de status.
 
 ```sql
@@ -631,6 +651,7 @@ CREATE TABLE deliveries (
 ---
 
 ### `contract_milestones`
+
 Liberação de pagamento por etapas (escrow por marco) para contratos maiores. Cada marco é financiado e
 liberado de forma independente, reduzindo o risco das duas partes em projetos longos.
 
@@ -647,7 +668,10 @@ CREATE TABLE contract_milestones (
   overdue_notified_at DATETIME NULL,                   -- aviso de marco atrasado, uma vez, só para marco nunca entregue (migration 0009)
   delivered_at    DATETIME    NULL,                    -- última entrega; continua preenchida se o marco voltar para revisão (migration 0006)
   approval_due_at DATETIME    NULL,                    -- aprovação tácita do marco, gravada na entrega; a revisão zera (migration 0028, ADR 57)
-  revision_requested_at DATETIME NULL,                -- quando o cliente pediu a revisão do marco (migration 0030, ADR 58)
+  revision_requested_at DATETIME NULL,                -- revisão do marco (0030)
+  revision_limit INT UNSIGNED NULL,                   -- 2 no marco novo; NULL legado ilimitado (0032)
+  revisions_used INT UNSIGNED NOT NULL DEFAULT 0,     -- contagem própria do marco (0032)
+  dispute_opens_at DATETIME NULL,                     -- snapshot preservado em revisão/reentrega (0032)
   released_at DATETIME        NULL,
   created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -663,6 +687,7 @@ CREATE TABLE contract_milestones (
 ```
 
 ### `deadline_reminders`
+
 O livro dos lembretes de prazo (ADR 58, RN-079 e RN-081): uma linha por lembrete enviado, gravada na mesma
 transação que confere o estado da contratação e grava a notificação, o que garante no máximo um por
 vencimento. Um vencimento novo (extensão aceita, nova entrega, novo pedido, nova revisão) é uma chave nova.
@@ -672,10 +697,10 @@ Sem `user_id` e sem dado pessoal: quem foi avisado está em `notifications`.
 CREATE TABLE deadline_reminders (
   id        BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,
   kind      ENUM('proposal', 'delivery', 'approval', 'milestone_approval', 'extension',
-                 'revision', 'milestone_revision') NOT NULL,
+                 'revision', 'milestone_revision', 'counter_offer') NOT NULL,
   entity_id BIGINT UNSIGNED  NOT NULL,              -- contracts.id; contract_milestones.id nos tipos milestone_*
   due_at    DATETIME         NOT NULL,              -- o vencimento lembrado; nas revisões, a hora do pedido
-  seq       TINYINT UNSIGNED NOT NULL DEFAULT 0,    -- no pedido de extensão, o número do pedido; nos demais, 0
+  seq       TINYINT UNSIGNED NOT NULL DEFAULT 0,    -- pedido de extensão ou oferta em negociação; no restante, 0
   sent_at   DATETIME         NOT NULL,
 
   PRIMARY KEY (id),
@@ -685,9 +710,66 @@ CREATE TABLE deadline_reminders (
 
 ---
 
+### `contract_offers`
+
+Histórico privado dos participantes (RN-030, migration 0031). UNIQUE por contratação/seq e CHECK 1..5. A contratação conserva a última oferta do cliente; uma oferta do freelancer não altera sua reserva. O JSON dos marcos guarda IDs/valores/líquidos/datas da mesma estrutura, e os desfechos incluem encerramento pela API legada (`closed`).
+
+```sql
+CREATE TABLE IF NOT EXISTS contract_offers (
+  id             BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,
+  contract_id    BIGINT UNSIGNED  NOT NULL,
+  seq            TINYINT UNSIGNED NOT NULL,
+  made_by        ENUM('client', 'freelancer') NOT NULL,
+  price          DECIMAL(10, 2)   NOT NULL,
+  platform_fee   DECIMAL(10, 2)   NOT NULL,
+  freelancer_net DECIMAL(10, 2)   NOT NULL,
+  deadline_at    DATETIME         NULL,
+  milestones     JSON             NULL,
+  message        VARCHAR(500)     NULL,
+  respond_by     DATETIME         NULL,
+  outcome        ENUM('open', 'countered', 'accepted', 'declined', 'withdrawn', 'expired', 'closed') NOT NULL DEFAULT 'open',
+  created_at     DATETIME         NOT NULL,
+  resolved_at    DATETIME         NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_offer_seq (contract_id, seq),
+  CONSTRAINT chk_offer_seq CHECK (seq BETWEEN 1 AND 5),
+  CONSTRAINT fk_offer_contract FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+### `freelancer_dropouts`
+
+Um evento único por contratação, gravado no cancelamento do freelancer depois do aceite (RN-026, 0031). A tabela nasce vazia. A contagem pública é derivada de dropped_at na janela inclusiva de 60 dias, sem client_agreed_at e com decision NULL ou upheld, excluindo datas futuras. Texto e nota são privados ao titular/equipe; anonimização os apaga. A cópia da justificativa em admin_actions.description também é substituída por uma indicação de remoção, apenas nas ações dropout_excused/dropout_upheld ligadas às desistências do titular; tipo, autor, alvo e data da ação são preservados, assim como os registros de outras contas. review_checked_at NULL é a pendência durável de conferência da revisão humana, concluída na mesma transação da abertura/deduplicação da revisão.
+
+```sql
+CREATE TABLE IF NOT EXISTS freelancer_dropouts (
+  id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  contract_id      BIGINT UNSIGNED NOT NULL,
+  freelancer_id    BIGINT UNSIGNED NOT NULL,
+  dropped_at       DATETIME        NOT NULL,
+  client_agreed_at DATETIME        NULL,
+  appeal_text      VARCHAR(1000)   NULL,
+  appealed_at      DATETIME        NULL,
+  decision         ENUM('excused', 'upheld') NULL,
+  decided_by       BIGINT UNSIGNED NULL,
+  decided_at       DATETIME        NULL,
+  decision_note    VARCHAR(500)    NULL,
+  review_checked_at DATETIME       NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_dropout_contract (contract_id),
+  INDEX idx_dropout_freelancer (freelancer_id, dropped_at),
+  INDEX idx_dropout_appeal (appealed_at, decided_at),
+  INDEX idx_dropout_review_pending (review_checked_at, id),
+  CONSTRAINT fk_dropout_contract FOREIGN KEY (contract_id) REFERENCES contracts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_dropout_freelancer FOREIGN KEY (freelancer_id) REFERENCES users(id),
+  CONSTRAINT fk_dropout_decider FOREIGN KEY (decided_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
 ## 7. Módulo 05 — Pagamentos
 
 ### `wallets`
+
 Uma carteira digital por usuário.
 
 ```sql
@@ -821,6 +903,7 @@ CREATE TABLE review_responses (
 ---
 
 ### `review_criteria_scores`
+
 Detalha a nota geral (`reviews.rating`) em critérios — dá ao cliente uma avaliação mais rica e ao freelancer
 um feedback acionável. A nota geral continua sendo a fonte para `avg_rating`.
 
@@ -868,6 +951,7 @@ CREATE TABLE conversations (
 ---
 
 ### `messages`
+
 Mensagens do chat da contratação. `removed_at` marca a mensagem tirada do ar pela moderação (migration 0020, ADR 44), e `off_platform` guarda os sinais de negociação por fora achados no texto, como `pix,phone` (migration 0021, ADR 45).
 
 ```sql
@@ -898,6 +982,7 @@ CREATE TABLE messages (
 ## 10. Módulo 08 — Gamificação
 
 ### `badges`
+
 Catálogo de badges disponíveis na plataforma.
 
 ```sql
@@ -960,6 +1045,7 @@ CREATE TABLE user_xp (
 ---
 
 ### `xp_transactions`
+
 Histórico de ganhos e perdas de XP.
 
 ```sql
@@ -980,6 +1066,7 @@ CREATE TABLE xp_transactions (
 ---
 
 ### `missions`
+
 Catálogo de missões disponíveis.
 
 ```sql
@@ -1056,6 +1143,7 @@ CREATE TABLE notifications (
 ---
 
 ### `push_tokens`
+
 Tokens de dispositivos para push notification. **Do desenho original e sem uso**: era para app nativo (um token por aparelho). O push do navegador (ADR 52) precisa do endpoint do serviço de push e das chaves de cifra do aparelho, e mora em `push_subscriptions`.
 
 ```sql
@@ -1075,6 +1163,7 @@ CREATE TABLE push_tokens (
 ```
 
 ### `push_subscriptions`
+
 Assinaturas de push do navegador (ADR 52, migration 0023). Uma linha por aparelho que aceitou receber: a assinatura é a preferência, não há coluna na conta. Sai quando a pessoa desliga ou quando o serviço de push recusa o endpoint (404/410).
 
 ```sql
@@ -1152,6 +1241,7 @@ CREATE TABLE support_ticket_messages (
 ---
 
 ### `disputes`
+
 Disputa como entidade de primeira classe (antes era apenas um `support_ticket` genérico). Liga-se ao
 contrato, registra o motivo, a resolução do mediador e o percentual de reembolso — base do fluxo de escrow.
 
@@ -1188,6 +1278,7 @@ CREATE TABLE disputes (
 ---
 
 ### `content_reports`
+
 Denúncias de conteúdo/usuário (trust & safety). `target_id` é polimórfico conforme `target_type`. Foto de perfil (`avatar`, com `target_id` = usuário) e imagem do portfólio (`portfolio_item`) guardam a imagem denunciada em `image_url`, e a decisão do admin fica em `resolution_note` (migration 0017, ADR 39). Imagens removidas vão para `media_blocklist` (assinatura SHA-256 e impressão perceptual), que barra o reenvio, e cada remoção com dono vira um registro contestável em `content_removals` (ADR 41 e 44). Avaliações e mensagens removidas pela moderação ganham `removed_at` e saem do ar sem perder a linha (migration 0020, ADR 44). A denúncia automática da detecção de negociação por fora não tem denunciante: `reporter_id` NULL (migration 0021, ADR 45).
 
 ```sql
@@ -1213,6 +1304,7 @@ CREATE TABLE content_reports (
 ```
 
 ### `content_removals`
+
 Conteúdo removido pela moderação: imagem, avaliação ou mensagem (migrations 0018 e 0020, ADR 41 e 44). Até a 0020 a tabela se chamava `image_removals` e só guardava imagens; `content_snapshot` guarda o texto removido de avaliação e mensagem. Guarda de onde a imagem saiu (`cleared_refs`, para recolocar se a remoção for revertida), o arquivo em quarentena fora do ar (`quarantine_file`) enquanto cabe contestação e a vida da remoção em `status`: `removed` (sem contestação), `appealed` (esperando o admin), `upheld` (mantida) e `overturned` (revertida). Remoções não revertidas dentro de `strike_window_days` contam como reincidência, calculada na hora, sem contador guardado.
 
 ```sql
@@ -1255,6 +1347,7 @@ CREATE TABLE content_removals (
 ## 13. Módulo 11 — Impulsionamento
 
 ### `boost_plans`
+
 Planos de impulsionamento disponíveis para compra.
 
 ```sql
@@ -1276,6 +1369,7 @@ CREATE TABLE boost_plans (
 ---
 
 ### `boosts`
+
 Impulsionamentos ativos por usuário/serviço.
 
 ```sql
@@ -1308,6 +1402,7 @@ CREATE TABLE boosts (
 ## 14. Módulo 12 — Administração
 
 ### `admin_actions`
+
 Log de ações administrativas para auditoria.
 
 ```sql
@@ -1331,6 +1426,7 @@ CREATE TABLE admin_actions (
 ---
 
 ### `platform_settings`
+
 Configurações globais da plataforma gerenciadas pelo admin.
 
 ```sql
@@ -1351,6 +1447,8 @@ CREATE TABLE platform_settings (
 > **Exemplos de settings:** `platform_fee_percentage`, `min_withdrawal_amount`, `max_boost_days`, `maintenance_mode`
 
 ---
+
+> ADR 61: `counter_offer_response_hours` e `extension_response_hours` têm padrão 48 e faixa administrativa 24–168 h. Alteram somente contagens novas. Os limites de revisão/rodada/disputa/desistência são constantes de código, somente para leitura em `/settings/public.fixedContractRules`; não são linhas editáveis de `platform_settings`.
 
 ## 15. Módulo 13 — Compliance / LGPD
 
@@ -1400,6 +1498,7 @@ CREATE TABLE data_deletion_requests (
 ---
 
 ### `data_export_requests`
+
 Direito à **portabilidade** dos dados (LGPD, Art. 18, V). O usuário solicita uma cópia dos seus dados;
 o sistema gera um arquivo com link temporário (`expires_at`) e registra todo o ciclo para auditoria.
 
@@ -1424,6 +1523,7 @@ CREATE TABLE data_export_requests (
 ---
 
 ### `audit_logs`
+
 Rastreabilidade geral de ações críticas no sistema.
 
 ```sql
@@ -1452,6 +1552,7 @@ CREATE TABLE audit_logs (
 ## 16. Módulo 14 — Relatórios
 
 ### `report_snapshots`
+
 Snapshots periódicos de métricas da plataforma.
 
 ```sql
@@ -1482,11 +1583,11 @@ CREATE TABLE report_snapshots (
 
 ## 17. Módulo 15 — Troca de Serviços (Escambo)
 
-O nome **Escambo** significa *troca*. Este módulo torna a troca de serviços um cidadão de primeira classe da
+O nome **Escambo** significa _troca_. Este módulo torna a troca de serviços um cidadão de primeira classe da
 plataforma — o diferencial que nenhum concorrente brasileiro (GetNinjas, Workana, 99Freelas) oferece.
 
 **Como funciona (modo híbrido):** um usuário propõe entregar um serviço seu em troca de outro. O sistema
-estima o valor dos dois lados; quando não são equivalentes, a diferença (a *torna*) é paga em dinheiro via
+estima o valor dos dois lados; quando não são equivalentes, a diferença (a _torna_) é paga em dinheiro via
 escrow. Ao aceitar, são gerados **dois contratos recíprocos vinculados** (cada um percorre o fluxo normal de
 contratação/entrega/aprovação). A comissão (hoje 15%) incide só sobre a torna (RN-066); sem torna, a troca não paga taxa.
 
@@ -1530,6 +1631,7 @@ CREATE TABLE barter_agreements (
 ```
 
 > **FK recíproca:** após criar `barter_agreements`, adiciona-se a FK de volta em `contracts`:
+>
 > ```sql
 > ALTER TABLE contracts
 >   ADD CONSTRAINT fk_contract_barter
@@ -1540,30 +1642,30 @@ CREATE TABLE barter_agreements (
 
 ## Resumo Geral
 
-| Módulo | Tabelas | Qtd |
-|---|---|---|
-| 01 — Autenticação | `users`, `user_social_logins`, `user_sessions`, `password_reset_tokens`, `user_mfa` | 5 |
-| 02 — Perfis | `profiles_client`, `profiles_freelancer`, `freelancer_portfolio_items`, `profiles_company` | 4 |
-| 03 — Categorias e Serviços | `service_categories`, `services`, `service_packages`, `service_tags`, `service_tag_pivot`, `favorites`, `saved_searches` | 7 |
-| 04 — Contratações | `contracts`, `contract_status_history`, `contract_milestones`, `deliveries` | 4 |
-| 05 — Pagamentos | `wallets`, `payments`, `withdrawals` | 3 |
-| 06 — Avaliações | `reviews`, `review_responses`, `review_criteria_scores` | 3 |
-| 07 — Chat | `conversations`, `messages` | 2 |
-| 08 — Gamificação | `badges`, `user_badges`, `user_xp`, `xp_transactions`, `missions`, `user_missions` | 6 |
-| 09 — Notificações | `notifications`, `push_subscriptions`, `push_tokens` (sem uso) | 3 |
-| 10 — Suporte e Mediação | `support_tickets`, `support_ticket_messages`, `disputes`, `content_reports` | 4 |
-| 11 — Impulsionamento | `boost_plans`, `boosts` | 2 |
-| 12 — Administração | `admin_actions`, `platform_settings` | 2 |
-| 13 — LGPD | `lgpd_consents`, `data_deletion_requests`, `data_export_requests`, `audit_logs` | 4 |
-| 14 — Relatórios | `report_snapshots` | 1 |
-| 15 — Troca de Serviços (Escambo) | `barter_agreements` | 1 |
-| **Total** | | **51 tabelas** |
+| Módulo                           | Tabelas                                                                                                                                     | Qtd            |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| 01 — Autenticação                | `users`, `user_social_logins`, `user_sessions`, `password_reset_tokens`, `user_mfa`, `email_verification_tokens`                            | 6              |
+| 02 — Perfis                      | `profiles_client`, `profiles_freelancer`, `freelancer_portfolio_items`, `profiles_company`                                                  | 4              |
+| 03 — Categorias e Serviços       | `service_categories`, `services`, `service_packages`, `service_tags`, `service_tag_pivot`, `favorites`, `saved_searches`                    | 7              |
+| 04 — Contratações                | `contracts`, `contract_status_history`, `contract_milestones`, `deliveries`, `deadline_reminders`, `contract_offers`, `freelancer_dropouts` | 7              |
+| 05 — Pagamentos                  | `wallets`, `payments`, `withdrawals`, `wallet_transactions`, `credit_transactions`                                                          | 5              |
+| 06 — Avaliações                  | `reviews`, `review_responses`, `review_criteria_scores`                                                                                     | 3              |
+| 07 — Chat                        | `conversations`, `messages`                                                                                                                 | 2              |
+| 08 — Gamificação                 | `badges`, `user_badges`, `user_xp`, `xp_transactions`, `missions`, `user_missions`                                                          | 6              |
+| 09 — Notificações                | `notifications`, `push_subscriptions`, `push_tokens` (sem uso), `email_outbox`                                                              | 4              |
+| 10 — Suporte e Mediação          | `support_tickets`, `support_ticket_messages`, `disputes`, `content_reports`, `media_blocklist`, `content_removals`                          | 6              |
+| 11 — Impulsionamento             | `boost_plans`, `boosts`                                                                                                                     | 2              |
+| 12 — Administração               | `admin_actions`, `platform_settings`                                                                                                        | 2              |
+| 13 — LGPD                        | `lgpd_consents`, `data_deletion_requests`, `data_export_requests`, `audit_logs`                                                             | 4              |
+| 14 — Relatórios                  | `report_snapshots`                                                                                                                          | 1              |
+| 15 — Troca de Serviços (Escambo) | `barter_agreements`                                                                                                                         | 1              |
+| **Total**                        |                                                                                                                                             | **60 tabelas** |
 
 ### Notas de segurança e LGPD na modelagem
 
 - **Cifragem em repouso (AES-256):** os campos sensíveis — CPF (`profiles_freelancer`), dados bancários e
   chave PIX (`withdrawals`), token OAuth (`user_social_logins.token`) e segredo TOTP (`user_mfa.secret`) —
-  são cifrados na aplicação; a chave de cifragem fica em *secrets manager*, **nunca** no banco.
+  são cifrados na aplicação; a chave de cifragem fica em _secrets manager_, **nunca** no banco.
 - **Senhas:** `users.password_hash` com bcrypt (salt ≥ 12). Códigos de recuperação de MFA guardam só o hash.
 - **Direitos do titular (LGPD):** `data_deletion_requests` (esquecimento, Art. 18 VI) e `data_export_requests`
   (portabilidade, Art. 18 V); consentimento versionado em `lgpd_consents`.
@@ -1576,6 +1678,6 @@ CREATE TABLE barter_agreements (
 
 <div align="center">
 
-*modelagem-banco.md — Escambo v1.1.0 — PAC Extensionista VII — Católica SC — 2026*
+_modelagem-banco.md — Escambo v1.2.0 — PAC Extensionista VII — Católica SC — 2026_
 
 </div>

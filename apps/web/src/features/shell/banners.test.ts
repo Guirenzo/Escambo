@@ -7,6 +7,7 @@ const user = (o: Partial<PublicUser> = {}): PublicUser => ({
   ulid: 'u1',
   email: 'a@escambo.test',
   role: 'client',
+  status: 'active',
   emailVerified: true,
   emailFrequency: 'instant',
   digestHour: 8,
@@ -17,18 +18,24 @@ const user = (o: Partial<PublicUser> = {}): PublicUser => ({
   ...o,
 });
 const ok: Consent[] = [
-  { type: 'privacy_policy', version: '1.4', accepted: true, at: '' },
-  { type: 'terms_of_use', version: '1.4', accepted: true, at: '' },
+  { type: 'privacy_policy', version: '1.6', accepted: true, at: '' },
+  { type: 'terms_of_use', version: '1.6', accepted: true, at: '' },
 ];
-// Termos 1.3: quem respondeu antes do ADR 58 tem a faixa dos Termos 1.4.
+// A 1.5 permanece no histórico; a ciência do suporte é comunicada na 1.6.
 const termosVelhos: Consent[] = [
-  { type: 'privacy_policy', version: '1.4', accepted: true, at: '' },
-  { type: 'terms_of_use', version: '1.3', accepted: true, at: '' },
+  { type: 'privacy_policy', version: '1.6', accepted: true, at: '' },
+  { type: 'terms_of_use', version: '1.5', accepted: true, at: '' },
 ];
 const velho: Consent[] = [{ type: 'privacy_policy', version: '1.2', accepted: true, at: '' }];
 
 /** Uma faixa por vez no topo do app (ADR 54 e 57): Política, Termos, fuso, e-mail. */
 describe('pickBanner', () => {
+  it('a suspensão tem prioridade e não depende da consulta de consentimentos', () => {
+    expect(pickBanner(user({ status: 'suspended', emailVerified: false }), undefined, null)).toBe(
+      'suspended',
+    );
+    expect(pickBanner(user({ status: 'suspended' }), velho, 'America/Manaus')).toBe('suspended');
+  });
   it('sem sessão, nada', () => {
     expect(pickBanner(null, ok, 'America/Manaus')).toBeNull();
   });
@@ -45,6 +52,17 @@ describe('pickBanner', () => {
       'terms',
     );
     expect(pickBanner(user(), [velho[0]!, termosVelhos[1]!], null)).toBe('legal');
+  });
+
+  it('recusar a Política 1.6 encerra só a faixa dela: os Termos informativos vêm em seguida', () => {
+    const old: Consent[] = [
+      { type: 'privacy_policy', version: '1.4', accepted: true, at: '' },
+      { type: 'terms_of_use', version: '1.4', accepted: true, at: '' },
+    ];
+    expect(pickBanner(user(), old, null)).toBe('legal');
+    const rejected: Consent = { type: 'privacy_policy', version: '1.6', accepted: false, at: '' };
+    expect(pickBanner(user(), [rejected, ...old], null)).toBe('terms');
+    expect(pickBanner(user(), [ok[1]!, rejected, ...old], null)).toBeNull();
   });
 
   it('consentimentos ainda não carregados (ou com erro): a faixa legal cala nesta carga', () => {

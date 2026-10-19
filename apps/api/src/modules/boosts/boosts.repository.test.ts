@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeDb } from '../../test-support/fake-db';
+import { lockWalletRows, lockWalletUsers, lockWallets } from '../wallet/wallet.locks';
 import { boostsRepository } from './boosts.repository';
 
 vi.mock('../../config/db', async () => (await import('../../test-support/fake-db')).dbModule);
+vi.mock('../wallet/wallet.locks', () => ({
+  lockWalletRows: vi.fn(),
+  lockWalletUsers: vi.fn(),
+  lockWallets: vi.fn(),
+}));
 
 /**
  * Repository dos impulsionamentos sem banco: o que cada método pede (tabela, filtro, ordem,
@@ -10,7 +16,11 @@ vi.mock('../../config/db', async () => (await import('../../test-support/fake-db
  * roda no MySQL é assunto da integração.
  */
 describe('boostsRepository', () => {
-  beforeEach(() => fakeDb.reset());
+  beforeEach(() => {
+    fakeDb.reset();
+    for (const lock of [lockWalletRows, lockWalletUsers, lockWallets])
+      vi.mocked(lock).mockReset().mockResolvedValue(undefined);
+  });
 
   it('a vitrine de planos só traz os ativos, do mais curto para o mais longo', async () => {
     const rows = [
@@ -67,6 +77,13 @@ describe('boostsRepository', () => {
       );
 
       expect(await boostsRepository.purchase(input)).toEqual({ boostId: 91 });
+      expect(lockWalletUsers).toHaveBeenCalledExactlyOnceWith(fakeDb.conn, [7]);
+      expect(fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!).toBeLessThan(
+        vi.mocked(lockWalletUsers).mock.invocationCallOrder[0]!,
+      );
+      expect(vi.mocked(lockWalletUsers).mock.invocationCallOrder[0]!).toBeLessThan(
+        fakeDb.conn.query.mock.invocationCallOrder[1]!,
+      );
 
       expect(fakeDb.calls).toHaveLength(7);
       const [wallet, lock, active, debit, balance, ledger, boost] = fakeDb.calls;
@@ -138,7 +155,11 @@ describe('boostsRepository', () => {
       // o débito não seria desfeito junto com o resto. As sete rodam na conexão que a abriu.
       const contexts = fakeDb.pool.query.mock.contexts;
       expect(contexts).toHaveLength(7);
-      expect(contexts.every((ctx) => ctx === fakeDb.conn)).toBe(true);
+      expect(contexts[0]).toBe(fakeDb.pool);
+      expect(contexts.slice(1).every((ctx) => ctx === fakeDb.conn)).toBe(true);
+      expect(fakeDb.pool.query.mock.invocationCallOrder[0]!).toBeLessThan(
+        fakeDb.pool.getConnection.mock.invocationCallOrder[0]!,
+      );
     });
 
     it('serviço com impulsionamento ativo: recusa com o fim do atual, sem debitar, e desfaz a transação (RN-017)', async () => {
@@ -165,7 +186,11 @@ describe('boostsRepository', () => {
       // leitura solta do pool.
       const contexts = fakeDb.pool.query.mock.contexts;
       expect(contexts).toHaveLength(3);
-      expect(contexts.every((ctx) => ctx === fakeDb.conn)).toBe(true);
+      expect(contexts[0]).toBe(fakeDb.pool);
+      expect(contexts.slice(1).every((ctx) => ctx === fakeDb.conn)).toBe(true);
+      expect(fakeDb.pool.query.mock.invocationCallOrder[0]!).toBeLessThan(
+        fakeDb.pool.getConnection.mock.invocationCallOrder[0]!,
+      );
       const queryOrder = fakeDb.pool.query.mock.invocationCallOrder;
       expect(fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!).toBeLessThan(
         queryOrder[1]!,
@@ -224,7 +249,11 @@ describe('boostsRepository', () => {
       // A criação da carteira e a tentativa de débito rodam na conexão da compra, não no pool.
       const contexts = fakeDb.pool.query.mock.contexts;
       expect(contexts).toHaveLength(4);
-      expect(contexts.every((ctx) => ctx === fakeDb.conn)).toBe(true);
+      expect(contexts[0]).toBe(fakeDb.pool);
+      expect(contexts.slice(1).every((ctx) => ctx === fakeDb.conn)).toBe(true);
+      expect(fakeDb.pool.query.mock.invocationCallOrder[0]!).toBeLessThan(
+        fakeDb.pool.getConnection.mock.invocationCallOrder[0]!,
+      );
     });
 
     it('se a transação não chega a abrir, nada é travado nem cobrado e a conexão volta para o pool', async () => {
@@ -265,7 +294,8 @@ describe('boostsRepository', () => {
       expect(fakeDb.sqls()).toEqual(['INSERT IGNORE INTO wallets (user_id) VALUES (:userId)']);
       expect(fakeDb.conn.beginTransaction).not.toHaveBeenCalled();
       expect(fakeDb.conn.commit).not.toHaveBeenCalled();
-      expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
+      expect(fakeDb.conn.release).not.toHaveBeenCalled();
+      expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
     });
 
     it('se o lançamento no extrato falha, o impulsionamento não é criado e o débito é desfeito', async () => {
@@ -300,7 +330,7 @@ describe('boostsRepository', () => {
 
       await expect(boostsRepository.purchase(input)).rejects.toBe(boom);
 
-      expect(fakeDb.calls).toHaveLength(0);
+      expect(fakeDb.sqls()).toEqual(['INSERT IGNORE INTO wallets (user_id) VALUES (:userId)']);
       expect(fakeDb.conn.beginTransaction).not.toHaveBeenCalled();
       // Não há conexão para desfazer nem para devolver.
       expect(fakeDb.conn.rollback).not.toHaveBeenCalled();

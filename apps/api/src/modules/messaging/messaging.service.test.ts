@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./messaging.repository', () => ({
   messagingRepository: {
     getOrCreate: vi.fn(),
+    findByPair: vi.fn(),
     listMessages: vi.fn(),
     insertMessage: vi.fn(),
     previousMessage: vi.fn(),
@@ -37,7 +38,7 @@ vi.mock('./attachments.storage', async (importOriginal) => ({
 }));
 
 import { messagingService, notificationBody } from './messaging.service';
-import { messagingRepository, type MessageRow } from './messaging.repository';
+import { messagingRepository, type ConversationRow, type MessageRow } from './messaging.repository';
 import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
 import { notificationsService } from '../notifications/notifications.service';
 import { profilesRepository } from '../profiles/profiles.repository';
@@ -82,6 +83,54 @@ beforeEach(() => {
 });
 
 describe('messagingService.history', () => {
+  it('modo leitura devolve conversa existente sem criar nem vincular contrato', async () => {
+    cRepo.findById.mockResolvedValue(fakeContract());
+    mRepo.findByPair.mockResolvedValue({ id: 5, contract_id: null } as unknown as ConversationRow);
+    mRepo.listMessages.mockResolvedValue([fakeMsg()]);
+
+    const history = await messagingService.history(1, 10, { readOnly: true });
+
+    expect(history.conversationId).toBe(5);
+    expect(history.otherPartyId).toBe(20);
+    expect(history.messages[0]?.content).toBe('oi');
+    expect(mRepo.findByPair).toHaveBeenCalledWith(10, 20);
+    expect(mRepo.listMessages).toHaveBeenCalledWith(5, 200);
+    expect(mRepo.getOrCreate).not.toHaveBeenCalled();
+    expect(mRepo.insertMessage).not.toHaveBeenCalled();
+    expect(realtime.emitToContract).not.toHaveBeenCalled();
+    expect(notificationsService.notify).not.toHaveBeenCalled();
+  });
+
+  it('modo leitura sem conversa retorna histórico vazio e id nulo sem inicializar a conversa', async () => {
+    cRepo.findById.mockResolvedValue(fakeContract());
+    mRepo.findByPair.mockResolvedValue(undefined);
+
+    expect(await messagingService.history(1, 20, { readOnly: true })).toEqual({
+      conversationId: null,
+      contractId: 1,
+      otherPartyId: 10,
+      messages: [],
+    });
+    expect(mRepo.findByPair).toHaveBeenCalledWith(10, 20);
+    expect(mRepo.getOrCreate).not.toHaveBeenCalled();
+    expect(mRepo.listMessages).not.toHaveBeenCalled();
+  });
+
+  it('modo leitura exige contrato existente e participação antes de consultar conversa', async () => {
+    cRepo.findById.mockResolvedValue(undefined);
+    await expect(messagingService.history(1, 99, { readOnly: true })).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'contract_not_found',
+    });
+    cRepo.findById.mockResolvedValue(fakeContract());
+    await expect(messagingService.history(1, 99, { readOnly: true })).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'forbidden',
+    });
+    expect(mRepo.findByPair).not.toHaveBeenCalled();
+    expect(mRepo.getOrCreate).not.toHaveBeenCalled();
+  });
+
   it('404 quando o contrato não existe', async () => {
     cRepo.findById.mockResolvedValue(undefined);
     await expect(messagingService.history(1, 10)).rejects.toMatchObject({ statusCode: 404 });

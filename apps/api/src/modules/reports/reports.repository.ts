@@ -9,6 +9,20 @@ import { reviewsRepository } from '../reviews/reviews.repository';
 import { contentRemovalsRepository } from './content-removals.repository';
 import type { ImageTarget, TextTarget } from './reports.schema';
 
+export type AccountReviewPrefix = 'Reincidência:' | 'Desistências:';
+
+/** NULL é o sistema; revisões legadas de reincidência foram criadas pelo administrador. */
+const reviewReporterSql = (alias = ''): string => {
+  const p = alias ? `${alias}.` : '';
+  return `(${p}reporter_id IS NULL OR EXISTS (SELECT 1 FROM users review_reporter WHERE review_reporter.id = ${alias || 'content_reports'}.reporter_id AND review_reporter.role = 'admin'))`;
+};
+
+/** Revisão humana de conta: não é sinalização automática nem denúncia sujeita à meta. */
+export const ACCOUNT_REVIEW_SQL = (alias = ''): string => {
+  const p = alias ? `${alias}.` : '';
+  return `(${p}target_type = 'user' AND ${reviewReporterSql(alias)} AND (COALESCE(${p}description, '') LIKE 'Reincidência:%' OR COALESCE(${p}description, '') LIKE 'Desistências:%'))`;
+};
+
 export interface ContentReportRow extends RowDataPacket {
   id: number;
   /** NULL na denúncia automática da detecção de negociação por fora (ADR 45). */
@@ -284,16 +298,49 @@ export const reportsRepository = {
     });
   },
 
-  /** Revisão de conta por reincidência (ADR 41) ainda aberta: evita abrir outra a cada remoção. */
-  async hasOpenAccountReview(userId: number): Promise<boolean> {
-    const [rows] = await pool.query<RowDataPacket[]>(
+  /** Uma revisão aberta por conta e causa; reincidência e desistências são independentes. */
+  async hasOpenAccountReview(
+    userId: number,
+    prefix: AccountReviewPrefix = 'Reincidência:',
+    conn?: PoolConnection,
+  ): Promise<boolean> {
+    const [rows] = await (conn ?? pool).query<RowDataPacket[]>(
       `SELECT 1 FROM content_reports
         WHERE target_type = 'user' AND target_id = :userId AND status IN ('pending', 'reviewing')
-          AND description LIKE 'Reincidência:%'
+          AND ${reviewReporterSql()}
+          AND description LIKE :reviewPrefix
         LIMIT 1`,
-      { userId },
+      { userId, reviewPrefix: `${prefix}%` },
     );
     return rows.length > 0;
+  },
+
+  /**
+   * Sem conexão, serializa pela conta antes da deduplicação. Com conexão, o chamador já segura
+   * essa trava e confirma também o marcador durável na mesma transação (RN-026).
+   */
+  async openAccountReview(
+    p: { userId: number; prefix: AccountReviewPrefix; description: string },
+    conn?: PoolConnection,
+  ): Promise<boolean> {
+    const insert = async (tx: PoolConnection): Promise<boolean> => {
+      if (await this.hasOpenAccountReview(p.userId, p.prefix, tx)) return false;
+      await tx.query<ResultSetHeader>(
+        `INSERT INTO content_reports (reporter_id, target_type, target_id, image_url, reason, description)
+         VALUES (NULL, 'user', :userId, NULL, 'other', :description)`,
+        { userId: p.userId, description: p.description },
+      );
+      return true;
+    };
+    if (conn) return insert(conn);
+    return inTransaction(async (tx) => {
+      const [users] = await tx.query<RowDataPacket[]>(
+        'SELECT id FROM users WHERE id = :userId FOR UPDATE',
+        { userId: p.userId },
+      );
+      if (users.length === 0) return false;
+      return insert(tx);
+    });
   },
 
   /** Dispensa ou resolve o grupo, sem mexer no conteúdo. Devolve quantas denúncias fechou. */

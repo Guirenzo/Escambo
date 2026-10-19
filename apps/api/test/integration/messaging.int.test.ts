@@ -6,6 +6,7 @@ import { realtime } from '../../src/config/realtime';
 import { messagingRepository } from '../../src/modules/messaging/messaging.repository';
 import { messagingService } from '../../src/modules/messaging/messaging.service';
 import { fundWallet } from './wallet.helpers';
+import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 
 const app = createApp();
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
@@ -117,22 +118,24 @@ describe('Chat do contrato (REST + persistência)', () => {
 });
 
 describe('Conversa única do par, atravessando as contratações', () => {
-  /** Mais uma contratação entre as mesmas duas pessoas. */
+  /** Contratação paralela histórica, anterior à RN-020, preservada na conversa do par. */
   async function hireAgain(
     client: { id: number; token: string },
     freelancer: { id: number; token: string },
   ): Promise<number> {
     await fundWallet(app, client.token, 400);
-    const created = await request(app)
-      .post('/api/contracts')
-      .set(auth(client.token))
-      .send({
-        freelancerId: freelancer.id,
-        title: 'Segundo projeto com a mesma pessoa',
-        description: 'Outra contratação entre o mesmo par, reaproveitando a conversa',
-        price: 400,
-      })
-      .expect(201);
+    const created = await withLegacyParallelContracts(client.id, freelancer.id, async () =>
+      request(app)
+        .post('/api/contracts')
+        .set(auth(client.token))
+        .send({
+          freelancerId: freelancer.id,
+          title: 'Segundo projeto com a mesma pessoa',
+          description: 'Outra contratação entre o mesmo par, reaproveitando a conversa',
+          price: 400,
+        })
+        .expect(201),
+    );
     return created.body.id as number;
   }
 

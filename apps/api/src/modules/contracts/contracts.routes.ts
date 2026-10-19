@@ -1,15 +1,20 @@
 import { Router } from 'express';
 import { authenticate } from '../../middlewares/authenticate';
 import { asyncHandler } from '../../utils/async-handler';
+import { agreeDropout } from '../dropouts/dropouts.controller';
 import {
   acceptContract,
+  acceptCounterOffer,
   approveContract,
   approveMilestone,
   cancelContract,
   createContract,
+  counterOffer,
   deliverContract,
   deliverMilestone,
   getContract,
+  grantRevisionContract,
+  grantMilestoneRevision,
   listContracts,
   rejectContract,
   requestMilestoneRevision,
@@ -27,13 +32,19 @@ contractsRoutes.post('/', asyncHandler(createContract));
 contractsRoutes.get('/', asyncHandler(listContracts));
 contractsRoutes.get('/:id', asyncHandler(getContract));
 
+// Negociação (RN-030): quem tem a vez contrapropõe; o cliente aceita a oferta par.
+contractsRoutes.post('/:id/offers', asyncHandler(counterOffer));
+contractsRoutes.post('/:id/offers/:seq/accept', asyncHandler(acceptCounterOffer));
+
 // Transições da máquina de estados (o service valida quem pode fazer o quê)
 contractsRoutes.post('/:id/accept', asyncHandler(acceptContract));
 contractsRoutes.post('/:id/reject', asyncHandler(rejectContract));
 contractsRoutes.post('/:id/deliver', asyncHandler(deliverContract));
 contractsRoutes.post('/:id/approve', asyncHandler(approveContract));
 contractsRoutes.post('/:id/request-revision', asyncHandler(requestRevisionContract));
+contractsRoutes.post('/:id/revisions/grant', asyncHandler(grantRevisionContract));
 contractsRoutes.post('/:id/cancel', asyncHandler(cancelContract));
+contractsRoutes.post('/:id/dropout/agreed', asyncHandler(agreeDropout));
 
 // Prazo (RN-028): o freelancer pede uma única extensão; o cliente aceita ou recusa.
 contractsRoutes.post('/:id/extension', asyncHandler(requestExtension));
@@ -45,4 +56,8 @@ contractsRoutes.post('/:id/milestones/:milestoneId/approve', asyncHandler(approv
 contractsRoutes.post(
   '/:id/milestones/:milestoneId/request-revision',
   asyncHandler(requestMilestoneRevision),
+);
+contractsRoutes.post(
+  '/:id/milestones/:milestoneId/revisions/grant',
+  asyncHandler(grantMilestoneRevision),
 );

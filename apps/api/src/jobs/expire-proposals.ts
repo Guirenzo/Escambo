@@ -5,10 +5,10 @@ import { clock } from '../utils/clock';
 import { dayZones } from '../utils/human-hours';
 
 /**
- * Job RN-021 (ADR 57): proposta sem resposta do freelancer até a hora gravada na criação
- * (`proposal_expiry_hours` depois, ou antes do prazo de entrega, nunca de noite no fuso dele)
+ * Job RN-021/RN-030 (ADR 57/61): oferta sem resposta de quem tem a vez até a hora gravada
+ * (`proposal_expires_at`, nunca de noite no fuso de quem responde)
  * expira — vira 'cancelled' com a nota do motivo, a reserva da carteira volta ao cliente e os
- * dois são avisados. Só age sobre freelancers num fuso em que é dia. Idempotente: a transição só
+ * dois são avisados. Só age com quem tem a vez num fuso em que é dia. Idempotente: a transição só
  * se aplica se a proposta ainda estiver pendente e vencida.
  */
 

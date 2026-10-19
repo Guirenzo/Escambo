@@ -19,10 +19,10 @@ Guilherme Renzo
 Abril de 2026
 
 **Revisão:**
-Setembro de 2026
+Outubro de 2026
 
 **Versão:**
-2.3
+2.6
 
 **Repositório:**
 https://github.com/Guirenzo/Escambo
@@ -34,15 +34,16 @@ MIT — Open Source
 
 ## Histórico de Revisões
 
-| Versão | Data | Mudanças principais |
-|---|---|---|
-| 1.0 | Mar/2026 | Versão inicial da proposta |
-| 2.0 | Abr/2026 | Documentação completa: requisitos, personas, casos de uso, arquitetura C4, mockups |
-| 2.1 | Jun/2026 | Revisão após avaliação da banca: linha declarada como Web App (mobile movido para Fase 2); benchmark ampliado para três plataformas com fontes rastreáveis; correção da análise de mercado (Workana cobra do cliente); plano técnico de CI/CD, testes (TDD), análise estática e observabilidade detalhado; seção de instalação/deploy adicionada; padronização dos números entre RFC e README; ajuste de tom para registro acadêmico |
-| 2.2 | Jun/2026 | Introdução da **troca de serviços (escambo)** como diferencial central, em modo híbrido (dinheiro + troca, com *torna*); banco ampliado para **50 tabelas em 15 módulos**; +8 RFs (total **90**) e +2 RNFs (total **42**) de confiança e segurança — pacotes de serviço, marcos de escrow, disputas como entidade própria, denúncias, 2FA e portabilidade LGPD; preenchimento das regras RN-066 a RN-070 (total **75**); correção das contagens divergentes e dos caminhos de instalação (`apps/api`, `apps/web`); inclusão do texto da LICENSE MIT |
-| 2.3 | Set/2026 | Fluxos alternativos alinhados aos prazos da v1.39.0 (ADR 57): aprovação tácita em **5 dias corridos** (e não úteis); cancelamento com a desistência do freelancer (devolve tudo ao cliente), reembolso integral no atraso sem entrega a partir do aviso, a metade do prazo contada do aceite e a confirmação com os valores na tela; disputa por prazo aberta pela plataforma depois do aviso das 9h e da carência, direto na mediação, sem ticket de suporte; contagem das regras de negócio atualizada (total **78**); nota de que as Figuras 3 a 5 são da v2.2 |
-| 2.4 | Out/2026 | Engenharia de entrega como construída (ADR 59): checklist das Directions atualizado (CI/CD, cobertura, análise estática, monitoramento e Wiki atendidos, com o ponteiro para cada um); seções 7 e 8 alinhadas ao que está no repositório (Vitest, Docker Compose com imagens no GHCR, Caddy, deploy pelo GitHub Actions, Prometheus e Grafana) |
-| 2.5 | Out/2026 | Lembretes de prazo (ADR 58): o fluxo da aprovação tácita ganha o lembrete ao cliente e o aviso às duas partes quando ela acontece; o prazo de entrega é uma data no horário de quem entrega; revisão parada há 7 dias avisa as duas partes; contagem das regras de negócio de 78 para **81** (RN-079 a RN-081) |
+| Versão | Data     | Mudanças principais                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------ | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0    | Mar/2026 | Versão inicial da proposta                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 2.0    | Abr/2026 | Documentação completa: requisitos, personas, casos de uso, arquitetura C4, mockups                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 2.1    | Jun/2026 | Revisão após avaliação da banca: linha declarada como Web App (mobile movido para Fase 2); benchmark ampliado para três plataformas com fontes rastreáveis; correção da análise de mercado (Workana cobra do cliente); plano técnico de CI/CD, testes (TDD), análise estática e observabilidade detalhado; seção de instalação/deploy adicionada; padronização dos números entre RFC e README; ajuste de tom para registro acadêmico                                                                                                                              |
+| 2.2    | Jun/2026 | Introdução da **troca de serviços (escambo)** como diferencial central, em modo híbrido (dinheiro + troca, com _torna_); banco ampliado para **50 tabelas em 15 módulos**; +8 RFs (total **90**) e +2 RNFs (total **42**) de confiança e segurança — pacotes de serviço, marcos de escrow, disputas como entidade própria, denúncias, 2FA e portabilidade LGPD; preenchimento das regras RN-066 a RN-070 (total **75**); correção das contagens divergentes e dos caminhos de instalação (`apps/api`, `apps/web`); inclusão do texto da LICENSE MIT               |
+| 2.3    | Set/2026 | Fluxos alternativos alinhados aos prazos da v1.39.0 (ADR 57): aprovação tácita em **5 dias corridos** (e não úteis); cancelamento com a desistência do freelancer (devolve tudo ao cliente), reembolso integral no atraso sem entrega a partir do aviso, a metade do prazo contada do aceite e a confirmação com os valores na tela; disputa por prazo aberta pela plataforma depois do aviso das 9h e da carência, direto na mediação, sem ticket de suporte; contagem das regras de negócio atualizada (total **78**); nota de que as Figuras 3 a 5 são da v2.2 |
+| 2.4    | Out/2026 | Engenharia de entrega como construída (ADR 59): checklist das Directions atualizado (CI/CD, cobertura, análise estática, monitoramento e Wiki atendidos, com o ponteiro para cada um); seções 7 e 8 alinhadas ao que está no repositório (Vitest, Docker Compose com imagens no GHCR, Caddy, deploy pelo GitHub Actions, Prometheus e Grafana)                                                                                                                                                                                                                    |
+| 2.5    | Out/2026 | Lembretes de prazo (ADR 58): o fluxo da aprovação tácita ganha o lembrete ao cliente e o aviso às duas partes quando ela acontece; o prazo de entrega é uma data no horário de quem entrega; revisão parada há 7 dias avisa as duas partes; contagem das regras de negócio de 78 para **81** (RN-079 a RN-081)                                                                                                                                                                                                                                                    |
+| 2.6    | Out/2026 | Candidata local 1.42.0 (ADR 61): contraproposta em até 5 ofertas/3 rodadas, reserva acompanhando a última oferta do cliente; 2 revisões por entrega ou marco; disputa manual com hora de abertura; contagem pública de desistências e revisão humana com confirmação/contestação; parâmetros de resposta, Termos e Política 1.5 e exportação 1.8. O detalhamento passa a 92 RFs; permanecem 81 RNs. A implantação aguarda revisão e autorização                                                                                                                   |
 
 ---
 
@@ -56,18 +57,18 @@ Uma observação importante sobre o escopo: apesar de o Escambo ter carteira dig
 
 ### Checklist de aderência (linha Web App)
 
-| Requisito das Directions | Situação | Onde está tratado |
-|---|---|---|
-| Repositório público | Atendido | github.com/Guirenzo/Escambo |
-| README, LICENSE, CONTRIBUTING, pasta `docs/` | Atendido | Raiz do repositório |
-| Documentação: requisitos, casos de uso, arquitetura | Atendido | Seções 2 e 5 + apêndices |
-| Instruções de deploy/instalação | Atendido | Seção 8 (nova) |
-| Benchmark com 3 a 5 soluções | Atendido | Seção 1.3 (três plataformas + referência internacional) |
-| CI/CD | Atendido | Seção 7.3; `.github/workflows/ci.yml` (testes, cobertura, imagens) e `deploy.yml` (deploy contínuo na VPS, ADR 59) |
-| Cobertura de testes (TDD): 75% backend / 25% frontend | Atendido | Seções 7.1 e 7.2; testes de unidade do backend em 99,1% (meta conferida pelo Vitest no CI) e 99,3% com a integração; frontend em 99,5% |
-| Análise estática de código e segurança | Atendido | Seção 7.4; ESLint, TypeScript estrito, SonarCloud (`sonar-project.properties`), `npm audit` no CI e Dependabot |
-| Monitoramento / observabilidade / analytics | Atendido (analytics de produto não entregue) | Seção 7.5; Prometheus, Grafana com alertas por e-mail, sonda de uptime, Sentry e logs estruturados (`docs/wiki/Observabilidade.md`) |
-| Wiki do repositório | Atendido | Gerada da pasta `docs/` a cada push na `main` (`docs/wiki/`, workflow `wiki.yml`) |
+| Requisito das Directions                              | Situação                                     | Onde está tratado                                                                                                                      |
+| ----------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Repositório público                                   | Atendido                                     | github.com/Guirenzo/Escambo                                                                                                            |
+| README, LICENSE, CONTRIBUTING, pasta `docs/`          | Atendido                                     | Raiz do repositório                                                                                                                    |
+| Documentação: requisitos, casos de uso, arquitetura   | Atendido                                     | Seções 2 e 5 + apêndices                                                                                                               |
+| Instruções de deploy/instalação                       | Atendido                                     | Seção 8 (nova)                                                                                                                         |
+| Benchmark com 3 a 5 soluções                          | Atendido                                     | Seção 1.3 (três plataformas + referência internacional)                                                                                |
+| CI/CD                                                 | Atendido                                     | Seção 7.3; `.github/workflows/ci.yml` (testes, cobertura, imagens) e `deploy.yml` (deploy contínuo na VPS, ADR 59)                     |
+| Cobertura de testes (TDD): 75% backend / 25% frontend | Atendido                                     | Seções 7.1 e 7.2; testes de unidade do backend em 99,1% (meta conferida pelo Vitest no CI) e 99,3% com a integração; frontend em 99,5% |
+| Análise estática de código e segurança                | Atendido                                     | Seção 7.4; ESLint, TypeScript estrito, SonarCloud (`sonar-project.properties`), `npm audit` no CI e Dependabot                         |
+| Monitoramento / observabilidade / analytics           | Atendido (analytics de produto não entregue) | Seção 7.5; Prometheus, Grafana com alertas por e-mail, sonda de uptime, Sentry e logs estruturados (`docs/wiki/Observabilidade.md`)    |
+| Wiki do repositório                                   | Atendido                                     | Gerada da pasta `docs/` a cada push na `main` (`docs/wiki/`, workflow `wiki.yml`)                                                      |
 
 A linha Mobile não é avaliada nesta entrega por decisão de escopo. Seus critérios das Directions (arquitetura mobile, testes, build do app) passam a valer na Fase 2, cujo ponto de partida arquitetural está documentado na seção 5.6.
 
@@ -97,16 +98,16 @@ Entre março e abril de 2026 conduzi entrevistas semiestruturadas com 8 pessoas 
 
 **Perfil dos entrevistados:**
 
-| # | Perfil | Cidade | Usa plataforma? |
-|---|---|---|---|
-| F01 | Eletricista autônomo | Itajaí, SC | Não |
-| F02 | Desenvolvedor front-end | Joinville, SC | Sim (Workana) |
-| F03 | Diarista | Itajaí, SC | Não |
-| F04 | Designer gráfico | Blumenau, SC | Sim (GetNinjas) |
-| F05 | Técnico de informática | Itajaí, SC | Sim (GetNinjas) |
-| C01 | Analista de RH | Blumenau, SC | Sim (GetNinjas, experiência negativa) |
-| C02 | Empreendedora / MEI | Itajaí, SC | Sim (Workana) |
-| C03 | Gerente de loja | Blumenau, SC | Grupos de WhatsApp |
+| #   | Perfil                  | Cidade        | Usa plataforma?                       |
+| --- | ----------------------- | ------------- | ------------------------------------- |
+| F01 | Eletricista autônomo    | Itajaí, SC    | Não                                   |
+| F02 | Desenvolvedor front-end | Joinville, SC | Sim (Workana)                         |
+| F03 | Diarista                | Itajaí, SC    | Não                                   |
+| F04 | Designer gráfico        | Blumenau, SC  | Sim (GetNinjas)                       |
+| F05 | Técnico de informática  | Itajaí, SC    | Sim (GetNinjas)                       |
+| C01 | Analista de RH          | Blumenau, SC  | Sim (GetNinjas, experiência negativa) |
+| C02 | Empreendedora / MEI     | Itajaí, SC    | Sim (Workana)                         |
+| C03 | Gerente de loja         | Blumenau, SC  | Grupos de WhatsApp                    |
 
 **Principais dores dos freelancers:**
 
@@ -115,10 +116,10 @@ Entre março e abril de 2026 conduzi entrevistas semiestruturadas com 8 pessoas 
 - 4 de 5 não usam nenhuma ferramenta digital de controle financeiro
 - 5 de 5 não têm portfólio digital organizado e verificável
 
-> *"Meu serviço é bom, todo mundo que me chama volta. Mas como eu faço para chegar em quem nunca me chamou?"*
+> _"Meu serviço é bom, todo mundo que me chama volta. Mas como eu faço para chegar em quem nunca me chamou?"_
 > — F01, eletricista, 42 anos, Itajaí
 
-> *"Paguei R$ 60 em moedas no GetNinjas. Mandei proposta para 8 clientes. Fechei zero. Nunca mais."*
+> _"Paguei R$ 60 em moedas no GetNinjas. Mandei proposta para 8 clientes. Fechei zero. Nunca mais."_
 > — F05, técnico de informática, 36 anos, Itajaí
 
 **Principais dores dos clientes:**
@@ -127,17 +128,17 @@ Entre março e abril de 2026 conduzi entrevistas semiestruturadas com 8 pessoas 
 - 2 de 3 relataram insegurança no pagamento adiantado sem qualquer garantia
 - 3 de 3 descreveram o processo de contratação como lento e burocrático
 
-> *"Paguei metade adiantado para um designer pelo GetNinjas. Ele sumiu depois de mandar uma versão ruim. Não tinha como recuperar o dinheiro."*
+> _"Paguei metade adiantado para um designer pelo GetNinjas. Ele sumiu depois de mandar uma versão ruim. Não tinha como recuperar o dinheiro."_
 > — C01, analista de RH, 34 anos, Blumenau
 
 #### Evidências de comunidade
 
 Durante a fase de pesquisa, observei dois grupos locais de troca de serviços:
 
-| Grupo | Plataforma | Membros | Padrão observado |
-|---|---|---|---|
-| Serviços Itajaí e Região | WhatsApp | ~320 | 15 a 20 pedidos por dia, sem avaliação nem preço padronizado |
-| Freelancers SC | Facebook | ~1.800 | Mistura de portfólio e pedidos, sem intermediação de pagamento |
+| Grupo                    | Plataforma | Membros | Padrão observado                                               |
+| ------------------------ | ---------- | ------- | -------------------------------------------------------------- |
+| Serviços Itajaí e Região | WhatsApp   | ~320    | 15 a 20 pedidos por dia, sem avaliação nem preço padronizado   |
+| Freelancers SC           | Facebook   | ~1.800  | Mistura de portfólio e pedidos, sem intermediação de pagamento |
 
 Nos dois grupos, os clientes pedem recomendações antes de contratar qualquer desconhecido, e há relatos frequentes de calote, não comparecimento e qualidade abaixo do esperado.
 
@@ -156,23 +157,23 @@ Plataforma brasileira de serviços digitais, com funcionamento parecido com o da
 
 **Referência internacional.** Plataformas globais como o Fiverr possuem sistemas de níveis de vendedor (seller levels) baseados em desempenho. Vale registrar que isso é o que existe de mais próximo a uma gamificação no setor, mas trata-se de um sistema de reputação por faixas, e não de uma mecânica de engajamento com XP, missões, conquistas e ranking local como a que o Escambo propõe.
 
-| Critério | GetNinjas | Workana | 99Freelas | Escambo |
-|---|---|---|---|---|
-| Pagamento com escrow | Não | Sim | Sim | Sim |
-| Serviços locais e presenciais | Sim | Não | Não | Sim |
-| Serviços digitais | Parcial | Sim | Sim | Sim |
-| Cadastro gratuito | Sim | Com limite | Com limite | Sim |
-| Cobrança do profissional | Compra de leads | Comissão 5–20% | Comissão 5–20% | Comissão fixa de 15% |
-| Taxa cobrada do cliente | Não | ~4,5% | Incluída na oferta | Não |
-| Chat integrado em tempo real | Não | Parcial | Parcial | Sim |
-| Dashboard financeiro | Não | Básico | Básico | Completo |
-| Gamificação (XP, missões) | Não | Não | Não | Sim |
-| Ranking local por proximidade | Não | Não | Não | Sim |
-| Troca de serviços (escambo) | Não | Não | Não | **Sim** |
+| Critério                      | GetNinjas       | Workana        | 99Freelas          | Escambo              |
+| ----------------------------- | --------------- | -------------- | ------------------ | -------------------- |
+| Pagamento com escrow          | Não             | Sim            | Sim                | Sim                  |
+| Serviços locais e presenciais | Sim             | Não            | Não                | Sim                  |
+| Serviços digitais             | Parcial         | Sim            | Sim                | Sim                  |
+| Cadastro gratuito             | Sim             | Com limite     | Com limite         | Sim                  |
+| Cobrança do profissional      | Compra de leads | Comissão 5–20% | Comissão 5–20%     | Comissão fixa de 15% |
+| Taxa cobrada do cliente       | Não             | ~4,5%          | Incluída na oferta | Não                  |
+| Chat integrado em tempo real  | Não             | Parcial        | Parcial            | Sim                  |
+| Dashboard financeiro          | Não             | Básico         | Básico             | Completo             |
+| Gamificação (XP, missões)     | Não             | Não            | Não                | Sim                  |
+| Ranking local por proximidade | Não             | Não            | Não                | Sim                  |
+| Troca de serviços (escambo)   | Não             | Não            | Não                | **Sim**              |
 
 #### Diferencial do projeto
 
-O Escambo ataca uma combinação que nenhuma das plataformas analisadas oferece hoje: une o alcance de serviços locais do GetNinjas com o pagamento seguro da Workana e do 99Freelas, e acrescenta o que nenhuma das três tem — gamificação real de engajamento, dashboard financeiro completo e um chat integrado em tempo real. Dois pontos do modelo de cobrança reforçam esse diferencial. Primeiro, a comissão do profissional é fixa e transparente (15%) e só é cobrada quando o serviço é concluído, ao contrário da compra de leads sem garantia do GetNinjas. Segundo, o cliente não paga taxa nenhuma, diferente da Workana, que cobra cerca de 4,5% do contratante. Acima de tudo, o Escambo é a única a permitir a **troca de serviços** — pagar um serviço com outro, com a diferença (a *torna*) em dinheiro quando os valores não batem. Esse recurso dá sentido ao próprio nome da plataforma e cria liquidez para profissionais com tempo ocioso e pouco caixa, algo que nenhuma das três concorrentes oferece.
+O Escambo ataca uma combinação que nenhuma das plataformas analisadas oferece hoje: une o alcance de serviços locais do GetNinjas com o pagamento seguro da Workana e do 99Freelas, e acrescenta o que nenhuma das três tem — gamificação real de engajamento, dashboard financeiro completo e um chat integrado em tempo real. Dois pontos do modelo de cobrança reforçam esse diferencial. Primeiro, a comissão do profissional é fixa e transparente (15%) e só é cobrada quando o serviço é concluído, ao contrário da compra de leads sem garantia do GetNinjas. Segundo, o cliente não paga taxa nenhuma, diferente da Workana, que cobra cerca de 4,5% do contratante. Acima de tudo, o Escambo é a única a permitir a **troca de serviços** — pagar um serviço com outro, com a diferença (a _torna_) em dinheiro quando os valores não batem. Esse recurso dá sentido ao próprio nome da plataforma e cria liquidez para profissionais com tempo ocioso e pouco caixa, algo que nenhuma das três concorrentes oferece.
 
 ### 1.4 Público-Alvo
 
@@ -205,8 +206,8 @@ Tornar a contratação de serviços tão simples quanto o uso de um aplicativo d
 - Fluxo completo de contratação funcionando do início ao fim sem erros
 - Pagamento via MercadoPago processado e saldo creditado na carteira do freelancer
 - API respondendo em menos de 300ms em 95% das requisições
-- Banco de dados com 50 tabelas implementado e validado
-- 90 requisitos funcionais e 42 requisitos não funcionais cobertos
+- Banco de dados com 60 tabelas de aplicação (baseline + migrations da candidata 1.42.0), conforme a modelagem atual
+- 92 requisitos funcionais e 42 requisitos não funcionais especificados, com situação de implementação nos documentos de rastreabilidade
 - Cobertura de testes de ao menos 75% no backend e 25% no frontend nos módulos críticos
 - Pipeline de CI/CD ativo, com lint, testes e build executados a cada push
 - Teste de usabilidade com pelo menos 3 usuários reais concluindo as tarefas principais sem ajuda
@@ -223,7 +224,7 @@ Rafael tem 27 anos e trabalha como desenvolvedor front-end freelancer em Joinvil
 
 Não tem portfólio digital organizado e acaba mandando prints por WhatsApp. Controla os ganhos numa planilha manual. Responde clientes pelo WhatsApp pessoal, misturado com conversas de família.
 
-> *"Sei que sou bom no que faço, mas não consigo provar isso para quem ainda não me conhece."*
+> _"Sei que sou bom no que faço, mas não consigo provar isso para quem ainda não me conhece."_
 
 #### Persona 2 — Camila Ferreira (Cliente)
 
@@ -231,7 +232,7 @@ Camila tem 34 anos e é analista de RH em Blumenau. Já foi prejudicada ao pagar
 
 Quer contratar serviços com a mesma facilidade com que pede comida por aplicativo, sem garimpar em grupos de WhatsApp, sem negociar por fora e sem correr risco de calote.
 
-> *"Não é que eu não queira pagar bem. É que não tenho como saber se vai valer a pena antes de contratar."*
+> _"Não é que eu não queira pagar bem. É que não tenho como saber se vai valer a pena antes de contratar."_
 
 #### Persona 3 — Marcos Oliveira (Autônomo Local)
 
@@ -239,7 +240,7 @@ Marcos tem 42 anos e trabalha como eletricista autônomo há 15 anos em Itajaí.
 
 Nos meses fracos, fica duas ou três semanas sem trabalho. Quer aparecer para clientes que precisam de um eletricista agora, perto dele, sem pagar adiantado por lead.
 
-> *"Meu serviço é bom, todo mundo que me chama volta. Mas como eu faço para chegar em quem nunca me chamou?"*
+> _"Meu serviço é bom, todo mundo que me chama volta. Mas como eu faço para chegar em quem nunca me chamou?"_
 
 ### 2.2 Casos de Uso Principais
 
@@ -280,10 +281,10 @@ Os requisitos estão organizados por módulo. Abaixo, os principais de cada um.
 **Módulo de Contratações**
 
 - RF-011 — O sistema deve permitir que o cliente envie proposta de contratação a um freelancer
-- RF-012 — O sistema deve permitir que o freelancer aceite, recuse ou faça contraproposta
+- RF-012 — O sistema deve permitir que o freelancer aceite, recuse ou faça contraproposta — **atendido na candidata 1.42.0**: até 5 ofertas em 3 rodadas, com vez, validade e reserva conferidas (RN-030, ADR 61; RF-032 no documento detalhado)
 - RF-013 — O sistema deve rastrear o status da contratação em cada etapa do fluxo
 - RF-014 — O sistema deve permitir que o freelancer registre a entrega com mensagem e arquivos
-- RF-015 — O sistema deve permitir que o cliente aprove a entrega ou solicite revisão
+- RF-015 — O sistema deve permitir que o cliente aprove a entrega ou solicite revisão — 2 revisões sem custo por entrega ou marco, com liberação extra pelo freelancer e legado sem limite (RN-023, ADR 61)
 - RF-016 — O sistema deve liberar o pagamento ao freelancer somente após a aprovação da entrega
 
 **Módulo de Pagamentos**
@@ -301,13 +302,13 @@ Os requisitos estão organizados por módulo. Abaixo, os principais de cada um.
 - RF-024 — O sistema deve disponibilizar missões semanais com recompensas em XP
 - RF-025 — O sistema deve exibir ranking local de freelancers por categoria dentro de um raio de 50km
 
-**Módulo de Troca de Serviços (Escambo)** *(novo na v2.2 — diferencial central)*
+**Módulo de Troca de Serviços (Escambo)** _(novo na v2.2 — diferencial central)_
 
-- O sistema deve permitir que um usuário proponha uma troca de serviço por serviço, com ou sem diferença em dinheiro (a *torna*)
-- O sistema deve estimar o valor de cada lado e calcular a *torna*, retida em escrow
+- O sistema deve permitir que um usuário proponha uma troca de serviço por serviço, com ou sem diferença em dinheiro (a _torna_)
+- O sistema deve estimar o valor de cada lado e calcular a _torna_, retida em escrow
 - Ao aceitar a troca, o sistema deve gerar dois contratos recíprocos vinculados, cada um no fluxo normal de entrega/aprovação
 
-> A lista completa com os 90 requisitos funcionais está em [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md).
+> A lista completa com os 92 requisitos funcionais está em [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md).
 
 ### 2.4 Requisitos Não Funcionais
 
@@ -373,7 +374,6 @@ Depois da entrega, o cliente pode aprovar o serviço ou solicitar uma revisão. 
 
 <img width="700" alt="Fluxo principal do cliente na contratação de um serviço" src="https://github.com/user-attachments/assets/303f260d-2f46-42bf-9d4f-9ab41abe69b7" />
 
-
 O fluxo do cliente segue as seguintes etapas:
 
 ```text
@@ -431,7 +431,6 @@ Se o cancelamento ocorrer antes do aceite do freelancer, o cliente recebe reembo
 
 > As figuras são da v2.2; onde divergem, vale o texto.
 
-
 As regras de cancelamento são:
 
 ```text
@@ -479,7 +478,6 @@ Com isso, o pagamento é liberado ao freelancer, o contrato é encerrado como co
 
 > As figuras são da v2.2; onde divergem, vale o texto.
 
-
 O comportamento da aprovação tácita é:
 
 ```text
@@ -506,7 +504,6 @@ Esse fluxo é importante para garantir mais segurança e transparência para os 
 <img width="700" alt="Fluxo alternativo de disputa por prazo estourado sem entrega" src="https://github.com/user-attachments/assets/6dcc2b67-05e0-4887-8ebc-b61668e2e0cb" />
 
 > As figuras são da v2.2; onde divergem, vale o texto.
-
 
 O comportamento do fluxo de disputa é:
 
@@ -654,13 +651,13 @@ Fluxo de contratação completo em 5 passos:
 
 Após apresentar os mockups a 3 usuários (2 freelancers e 1 cliente):
 
-> *"Ficou muito fácil de usar. Procurei o serviço, vi o perfil e já quis contratar."*
+> _"Ficou muito fácil de usar. Procurei o serviço, vi o perfil e já quis contratar."_
 > — C01, durante o teste da home e do perfil
 
-> *"O dashboard ficou bem claro. Sei exatamente quanto ganhei e quantos contratos tenho abertos."*
+> _"O dashboard ficou bem claro. Sei exatamente quanto ganhei e quantos contratos tenho abertos."_
 > — F02, durante o teste do dashboard
 
-> *"Esse negócio de XP e missão eu não entendia no começo. Mas depois que explicam, faz sentido. É parecido com um jogo."*
+> _"Esse negócio de XP e missão eu não entendia no começo. Mas depois que explicam, faz sentido. É parecido com um jogo."_
 > — F05, durante o teste das conquistas
 
 Os 3 ajustes identificados foram: o botão de chat estava pouco visível no perfil, o sistema de missões precisava de um tooltip explicativo no primeiro acesso e faltava uma explicação inline sobre o que a taxa de 15% cobre.
@@ -679,13 +676,11 @@ O Escambo é o sistema central que recebe interações de três tipos de atores:
 
 <img width="930" alt="Diagrama de contexto do Escambo (C4 Nível 1)" src="https://github.com/user-attachments/assets/6bc0524e-1dcf-4251-b350-16b21e00c4f2" />
 
-
 #### Nível 2 — Diagrama de Containers
 
 O diagrama de containers apresenta a arquitetura-alvo do Escambo, separando os principais blocos responsáveis pela interface, pela lógica de negócio, pela persistência dos dados, pelo armazenamento de arquivos e pelas integrações externas.
 
 Para a entrega web deste TCC, o escopo principal contempla o **Web App**, a **API Backend**, o **banco de dados MySQL** e o **storage de arquivos DO Spaces**. O **Mobile App** aparece no diagrama apenas como visão evolutiva do produto, planejada para a Fase 2, conforme detalhado na seção 5.6.
-
 
 **Figura 8 — Diagrama de containers (C4 Nível 2).**
 
@@ -721,14 +716,13 @@ A API é organizada em quatro camadas:
 
 <img width="788" alt="Diagrama de componentes da API Backend do Escambo (C4 Nível 3)" src="https://github.com/user-attachments/assets/f4284fe9-3e64-4d33-8dc1-22aaf6c4f289" />
 
-
 ### 5.2 Modelo de Dados
 
 O banco de dados principal do Escambo é o MySQL 8. A escolha por um banco relacional vem da necessidade de consistência forte e integridade referencial, principalmente no fluxo financeiro (carteira, escrow, pagamentos e saques), onde as transações precisam ser atômicas. Toda a modelagem oficial desta entrega é relacional.
 
 A seção apresenta o modelo de dados em três partes: o DER, o esquema relacional e, no final, uma visão conceitual em documentos (NoSQL). Essa última parte não altera a stack nem o escopo da entrega, que continua baseada em MySQL 8. Ela serve apenas para mostrar como alguns módulos de leitura intensa, como o chat e as notificações, poderiam ser otimizados no futuro com uma modelagem denormalizada.
 
-O banco tem 50 tabelas divididas entre os 15 módulos. As entidades centrais do marketplace estão representadas a seguir, e o DDL completo de todas as tabelas fica em [`docs/modelagem-banco.md`](./modelagem-banco.md).
+A candidata 1.42.0 tem 60 tabelas de aplicação nos 15 módulos, sem contar schema_migrations. As figuras seguintes são o desenho conceitual anterior; a evolução com ofertas/desistências está em [`docs/modelagem-banco.md`](./modelagem-banco.md), e o DDL executável é apps/api/db/schema.sql mais apps/api/db/migrations/.
 
 ---
 
@@ -834,50 +828,50 @@ erDiagram
 
 #### 5.2.2 Esquema Relacional
 
-Notação: <ins>chave primária sublinhada</ins>; *FK → tabela(coluna)* indica chave
+Notação: <ins>chave primária sublinhada</ins>; _FK → tabela(coluna)_ indica chave
 estrangeira. Tipos e colunas auxiliares omitidos por brevidade (ver DDL completo).
 
 **Identidade**
 
 - users(<ins>id</ins>, ulid, email, phone, password_hash, role, status, created_at, deleted_at)
-- profiles_client(<ins>id</ins>, *user_id → users(id)*, full_name, city, state, latitude, longitude)
-- profiles_freelancer(<ins>id</ins>, *user_id → users(id)*, full_name, headline, avg_rating, total_reviews, is_available, cpf_verified)
-- profiles_company(<ins>id</ins>, *user_id → users(id)*, company_name, cnpj, website)
-- freelancer_portfolio_items(<ins>id</ins>, *freelancer_id → profiles_freelancer(id)*, title, image_url, sort_order)
+- profiles_client(<ins>id</ins>, _user_id → users(id)_, full_name, city, state, latitude, longitude)
+- profiles_freelancer(<ins>id</ins>, _user_id → users(id)_, full_name, headline, avg_rating, total_reviews, is_available, cpf_verified)
+- profiles_company(<ins>id</ins>, _user_id → users(id)_, company_name, cnpj, website)
+- freelancer_portfolio_items(<ins>id</ins>, _freelancer_id → profiles_freelancer(id)_, title, image_url, sort_order)
 
 **Catálogo**
 
-- service_categories(<ins>id</ins>, *parent_id → service_categories(id)*, name, slug, is_active)
-- services(<ins>id</ins>, *user_id → users(id)*, *category_id → service_categories(id)*, title, description, price_type, price, delivery_days, is_active)
+- service_categories(<ins>id</ins>, _parent_id → service_categories(id)_, name, slug, is_active)
+- services(<ins>id</ins>, _user_id → users(id)_, _category_id → service_categories(id)_, title, description, price_type, price, delivery_days, is_active)
 
 **Contratação**
 
-- contracts(<ins>id</ins>, ulid, *client_id → users(id)*, *freelancer_id → users(id)*, *service_id → services(id)*, price, platform_fee, freelancer_net, status, deadline_at)
-- contract_status_history(<ins>id</ins>, *contract_id → contracts(id)*, *changed_by → users(id)*, old_status, new_status, note, created_at)
+- contracts(<ins>id</ins>, ulid, _client_id → users(id)_, _freelancer_id → users(id)_, _service_id → services(id)_, price, platform_fee, freelancer_net, status, deadline_at)
+- contract_status_history(<ins>id</ins>, _contract_id → contracts(id)_, _changed_by → users(id)_, old_status, new_status, note, created_at)
 
 **Financeiro**
 
-- wallets(<ins>id</ins>, *user_id → users(id)*, balance, balance_pending, currency)
-- payments(<ins>id</ins>, *contract_id → contracts(id)*, *payer_id → users(id)*, *payee_id → users(id)*, amount, platform_fee, net_amount, method, status, gateway_payment_id)
-- withdrawals(<ins>id</ins>, *user_id → users(id)*, *wallet_id → wallets(id)*, amount, pix_key, status)
+- wallets(<ins>id</ins>, _user_id → users(id)_, balance, balance_pending, currency)
+- payments(<ins>id</ins>, _contract_id → contracts(id)_, _payer_id → users(id)_, _payee_id → users(id)_, amount, platform_fee, net_amount, method, status, gateway_payment_id)
+- withdrawals(<ins>id</ins>, _user_id → users(id)_, _wallet_id → wallets(id)_, amount, pix_key, status)
 
 **Avaliações**
 
-- reviews(<ins>id</ins>, *contract_id → contracts(id)* [único], *reviewer_id → users(id)*, *reviewee_id → users(id)*, rating, comment, is_public)
-- review_responses(<ins>id</ins>, *review_id → reviews(id)* [único], *user_id → users(id)*, response)
+- reviews(<ins>id</ins>, _contract_id → contracts(id)_ [único], _reviewer_id → users(id)_, _reviewee_id → users(id)_, rating, comment, is_public)
+- review_responses(<ins>id</ins>, _review_id → reviews(id)_ [único], _user_id → users(id)_, response)
 
 **Chat**
 
-- conversations(<ins>id</ins>, *contract_id → contracts(id)*, *participant_a → users(id)*, *participant_b → users(id)*, last_message_at)
-- messages(<ins>id</ins>, *conversation_id → conversations(id)*, *sender_id → users(id)*, type, content, file_url, is_read)
+- conversations(<ins>id</ins>, _contract_id → contracts(id)_, _participant_a → users(id)_, _participant_b → users(id)_, last_message_at)
+- messages(<ins>id</ins>, _conversation_id → conversations(id)_, _sender_id → users(id)_, type, content, file_url, is_read)
 
 **Gamificação**
 
-- user_xp(<ins>id</ins>, *user_id → users(id)*, total_xp, level, level_name)
+- user_xp(<ins>id</ins>, _user_id → users(id)_, total_xp, level, level_name)
 - badges(<ins>id</ins>, name, slug, xp_reward, condition)
-- user_badges(<ins>id</ins>, *user_id → users(id)*, *badge_id → badges(id)*, awarded_at)
+- user_badges(<ins>id</ins>, _user_id → users(id)_, _badge_id → badges(id)_, awarded_at)
 - missions(<ins>id</ins>, title, xp_reward, type, condition)
-- user_missions(<ins>id</ins>, *user_id → users(id)*, *mission_id → missions(id)*, progress, is_completed, expires_at)
+- user_missions(<ins>id</ins>, _user_id → users(id)_, _mission_id → missions(id)_, progress, is_completed, expires_at)
 
 As tabelas de infraestrutura e conformidade (`notifications`, `support_tickets`,
 `audit_logs`, `lgpd_consents`) seguem o mesmo padrão, todas com FK para `users(id)`.
@@ -904,11 +898,9 @@ No documento `user`, ficam embutidos o perfil, o resumo da carteira e a gamifica
     "avg_rating": 4.87,
     "total_reviews": 132,
     "is_available": true,
-    "portfolio": [
-      { "title": "Identidade visual — Café X", "image_url": "https://cdn/.../1.jpg" }
-    ]
+    "portfolio": [{ "title": "Identidade visual — Café X", "image_url": "https://cdn/.../1.jpg" }]
   },
-  "wallet": { "balance": 1840.50, "balance_pending": 320.00, "currency": "BRL" },
+  "wallet": { "balance": 1840.5, "balance_pending": 320.0, "currency": "BRL" },
   "gamification": { "total_xp": 5400, "level": 7, "badges": ["top_rated", "fast_delivery"] }
 }
 ```
@@ -922,8 +914,18 @@ No documento `conversation`, ficam embutidos os participantes e uma janela com a
   "participants": ["usr_1029", "usr_3310"],
   "last_message_at": "2026-06-10T18:42:00Z",
   "recent_messages": [
-    { "sender_id": "usr_1029", "type": "text", "content": "Pode entregar sexta?", "created_at": "2026-06-10T18:40:00Z" },
-    { "sender_id": "usr_3310", "type": "text", "content": "Consigo sim!", "created_at": "2026-06-10T18:42:00Z" }
+    {
+      "sender_id": "usr_1029",
+      "type": "text",
+      "content": "Pode entregar sexta?",
+      "created_at": "2026-06-10T18:40:00Z"
+    },
+    {
+      "sender_id": "usr_3310",
+      "type": "text",
+      "content": "Consigo sim!",
+      "created_at": "2026-06-10T18:42:00Z"
+    }
   ]
 }
 ```
@@ -936,27 +938,32 @@ No documento `contract`, ficam embutidos o histórico de status (que é curto e 
   "client_id": "usr_1029",
   "freelancer_id": "usr_3310",
   "service_id": "svc_771",
-  "price": 800.00,
-  "platform_fee": 80.00,
+  "price": 800.0,
+  "platform_fee": 80.0,
   "status": "completed",
   "status_history": [
-    { "new_status": "accepted",  "at": "2026-06-01T10:00:00Z" },
+    { "new_status": "accepted", "at": "2026-06-01T10:00:00Z" },
     { "new_status": "completed", "at": "2026-06-08T15:30:00Z" }
   ],
-  "payment": { "status": "paid", "method": "pix", "amount": 800.00, "paid_at": "2026-06-01T10:05:00Z" }
+  "payment": {
+    "status": "paid",
+    "method": "pix",
+    "amount": 800.0,
+    "paid_at": "2026-06-01T10:05:00Z"
+  }
 }
 ```
 
 **Quadro de decisões de modelagem**
 
-| Relação relacional | Decisão no documento | Motivo |
-|---|---|---|
-| users 1:1 profile / wallet / xp | embutir | lido junto, cardinalidade fixa |
-| freelancer 1:N portfólio | embutir | conjunto pequeno e limitado |
-| conversation 1:N messages | referenciar (coleção à parte) | crescimento ilimitado |
-| contract 1:N status_history | embutir | histórico curto e imutável |
-| contract → user / service | referenciar | entidade compartilhada |
-| payments / withdrawals | **manter relacional** | exige consistência ACID e auditoria |
+| Relação relacional              | Decisão no documento          | Motivo                              |
+| ------------------------------- | ----------------------------- | ----------------------------------- |
+| users 1:1 profile / wallet / xp | embutir                       | lido junto, cardinalidade fixa      |
+| freelancer 1:N portfólio        | embutir                       | conjunto pequeno e limitado         |
+| conversation 1:N messages       | referenciar (coleção à parte) | crescimento ilimitado               |
+| contract 1:N status_history     | embutir                       | histórico curto e imutável          |
+| contract → user / service       | referenciar                   | entidade compartilhada              |
+| payments / withdrawals          | **manter relacional**         | exige consistência ACID e auditoria |
 
 Na prática, esse modelo de documentos faria sentido só para a parte de leitura denormalizada, como perfil e chat. O fluxo financeiro continuaria no relacional de qualquer forma, porque ali a consistência das transações e a integridade dos dados são obrigatórias.
 
@@ -972,15 +979,15 @@ Na prática, esse modelo de documentos faria sentido só para a parte de leitura
 
 ### 5.4 Stack Tecnológica
 
-| Tecnologia | Por que foi escolhida |
-|---|---|
-| React + Vite | Stack que domino bem. Todos os meus projetos anteriores usam React, e a produtividade real supera qualquer ganho teórico de trocar de ferramenta |
-| Node.js + Express + TypeScript | Bom desempenho de I/O, tipagem que evita boa parte dos bugs em runtime e ecossistema npm maduro para todas as integrações necessárias |
-| MySQL 8 | Os dados do Escambo são altamente relacionais (contratações, pagamentos e avaliações têm muitos relacionamentos). Um banco relacional com transações ACID é a escolha adequada aqui |
-| MercadoPago | Maior cobertura no Brasil, PIX nativo, SDK bem documentado para Node.js e suporte a escrow via marketplace |
-| DigitalOcean | Bom custo-benefício para um MVP, mais controle do que um PaaS como o Heroku e escalonamento horizontal quando necessário |
-| Cloudflare | CDN global no plano gratuito, proteção contra DDoS e SSL automático sem configuração extra |
-| React Native + Expo *(Fase 2)* | Compartilha lógica e contratos de API com o frontend web, o que acelera o desenvolvimento mobile sem exigir Swift ou Kotlin do zero |
+| Tecnologia                     | Por que foi escolhida                                                                                                                                                               |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| React + Vite                   | Stack que domino bem. Todos os meus projetos anteriores usam React, e a produtividade real supera qualquer ganho teórico de trocar de ferramenta                                    |
+| Node.js + Express + TypeScript | Bom desempenho de I/O, tipagem que evita boa parte dos bugs em runtime e ecossistema npm maduro para todas as integrações necessárias                                               |
+| MySQL 8                        | Os dados do Escambo são altamente relacionais (contratações, pagamentos e avaliações têm muitos relacionamentos). Um banco relacional com transações ACID é a escolha adequada aqui |
+| MercadoPago                    | Maior cobertura no Brasil, PIX nativo, SDK bem documentado para Node.js e suporte a escrow via marketplace                                                                          |
+| DigitalOcean                   | Bom custo-benefício para um MVP, mais controle do que um PaaS como o Heroku e escalonamento horizontal quando necessário                                                            |
+| Cloudflare                     | CDN global no plano gratuito, proteção contra DDoS e SSL automático sem configuração extra                                                                                          |
+| React Native + Expo _(Fase 2)_ | Compartilha lógica e contratos de API com o frontend web, o que acelera o desenvolvimento mobile sem exigir Swift ou Kotlin do zero                                                 |
 
 ### 5.5 Decisões Arquiteturais
 
@@ -1052,11 +1059,11 @@ No frontend, os testes cobrem os componentes e fluxos mais sensíveis (formulár
 
 ### 7.2 Ferramentas de Teste
 
-| Camada | Ferramentas |
-|---|---|
-| Backend (unitário e integração) | Vitest + Supertest |
-| Frontend (componentes) | Vitest + React Testing Library |
-| Cobertura | Relatório de cobertura gerado no CI e verificado contra as metas mínimas |
+| Camada                          | Ferramentas                                                              |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| Backend (unitário e integração) | Vitest + Supertest                                                       |
+| Frontend (componentes)          | Vitest + React Testing Library                                           |
+| Cobertura                       | Relatório de cobertura gerado no CI e verificado contra as metas mínimas |
 
 A cobertura é medida automaticamente no pipeline, e um build que ficar abaixo da meta nos módulos críticos não é promovido.
 
@@ -1153,15 +1160,15 @@ O deploy é acionado pelo pipeline de CI/CD após o merge em `main` (seção 7.3
 
 O planejamento foi reorganizado em torno da entrega web, com os itens de engenharia (CI/CD, testes, análise estática e observabilidade) distribuídos ao longo dos marcos, e não concentrados no fim. O aplicativo mobile aparece como Fase 2, em 2027.
 
-| Marco | Descrição | Prazo |
-|---|---|---|
-| M1 | Documentação completa e aprovação da RFC pela banca | Mai/2026 |
-| M2 | Setup do ambiente e do repositório; pipeline de CI/CD inicial (lint, testes, build); análise estática (ESLint, Prettier, SonarCloud); módulos de autenticação e perfis, já com testes (TDD) | Jun/2026 |
-| M3 | Módulo de serviços, contratações e pagamentos com escrow (MercadoPago); cobertura de testes do backend ≥ 75% nos módulos críticos | Jul–Ago/2026 |
-| M4 | Chat em tempo real (Socket.IO), gamificação e notificações; observabilidade (logging estruturado, Sentry, health-check, monitoramento de uptime e latência) | Set/2026 |
-| M5 | Dashboard financeiro, testes de frontend (≥ 25%), testes de usabilidade com usuários reais, ajustes de UX, documentação de deploy/instalação e Wiki do repositório | Out/2026 |
-| M6 | Deploy em produção (VPS com Docker Compose, Caddy e deploy pelo GitHub Actions), validação com usuários reais, coleta de feedback, hardening de segurança e analytics de conversão | Nov–Dez/2026 |
-| Fase 2 | Aplicativo mobile (React Native + Expo), reaproveitando a API e a lógica já validadas, com arquitetura modular por features | 2027 |
+| Marco  | Descrição                                                                                                                                                                                   | Prazo        |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| M1     | Documentação completa e aprovação da RFC pela banca                                                                                                                                         | Mai/2026     |
+| M2     | Setup do ambiente e do repositório; pipeline de CI/CD inicial (lint, testes, build); análise estática (ESLint, Prettier, SonarCloud); módulos de autenticação e perfis, já com testes (TDD) | Jun/2026     |
+| M3     | Módulo de serviços, contratações e pagamentos com escrow (MercadoPago); cobertura de testes do backend ≥ 75% nos módulos críticos                                                           | Jul–Ago/2026 |
+| M4     | Chat em tempo real (Socket.IO), gamificação e notificações; observabilidade (logging estruturado, Sentry, health-check, monitoramento de uptime e latência)                                 | Set/2026     |
+| M5     | Dashboard financeiro, testes de frontend (≥ 25%), testes de usabilidade com usuários reais, ajustes de UX, documentação de deploy/instalação e Wiki do repositório                          | Out/2026     |
+| M6     | Deploy em produção (VPS com Docker Compose, Caddy e deploy pelo GitHub Actions), validação com usuários reais, coleta de feedback, hardening de segurança e analytics de conversão          | Nov–Dez/2026 |
+| Fase 2 | Aplicativo mobile (React Native + Expo), reaproveitando a API e a lógica já validadas, com arquitetura modular por features                                                                 | 2027         |
 
 ---
 
@@ -1194,7 +1201,7 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 ## 11. Apêndices
 
 - **Apêndice A** — Modelagem completa do banco de dados: [`docs/modelagem-banco.md`](./modelagem-banco.md)
-- **Apêndice B** — Lista completa de requisitos funcionais (90 RFs): [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md)
+- **Apêndice B** — Lista completa de requisitos funcionais (92 RFs): [`docs/requisitos-funcionais.md`](./requisitos-funcionais.md)
 - **Apêndice C** — Lista completa de requisitos não funcionais (42 RNFs): [`docs/requisitos-nao-funcionais.md`](./requisitos-nao-funcionais.md)
 - **Apêndice D** — Regras de negócio (81 RNs): [`docs/regras-de-negocio.md`](./regras-de-negocio.md)
 - **Apêndice E** — Personas detalhadas: [`docs/personas.md`](./personas.md)
@@ -1207,7 +1214,7 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 
 ## 12. Parecer do Comitê de Avaliação
 
-*(A ser preenchido pelos professores avaliadores)*
+_(A ser preenchido pelos professores avaliadores)_
 
 ---
 
@@ -1221,11 +1228,11 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 
 **Observações:**
 
-> _______________________________________________________________________________
+> ---
 >
-> _______________________________________________________________________________
+> ---
 >
-> _______________________________________________________________________________
+> ---
 
 ---
 
@@ -1239,11 +1246,11 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 
 **Observações:**
 
-> _______________________________________________________________________________
+> ---
 >
-> _______________________________________________________________________________
+> ---
 >
-> _______________________________________________________________________________
+> ---
 
 ---
 
@@ -1257,12 +1264,12 @@ O planejamento foi reorganizado em torno da entrega web, com os itens de engenha
 
 **Observações:**
 
-> _______________________________________________________________________________
+> ---
 >
-> _______________________________________________________________________________
+> ---
 >
-> _______________________________________________________________________________
+> ---
 
 ---
 
-*RFC — Escambo v2.4 — PAC Extensionista VII e VIII — Católica SC — 2026 — Guilherme Renzo*
+_RFC — Escambo v2.6 — PAC Extensionista VII e VIII — Católica SC — 2026 — Guilherme Renzo_

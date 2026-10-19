@@ -1,7 +1,13 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { ulid } from 'ulid';
-import type { AuthResponse, PublicUser, RefreshResponse, UserRole } from '@escambo/types';
+import type {
+  AuthResponse,
+  PublicUser,
+  RefreshResponse,
+  UserRole,
+  UserStatus,
+} from '@escambo/types';
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
@@ -36,6 +42,7 @@ function toPublic(user: UserRow): PublicUser {
     ulid: user.ulid,
     email: user.email,
     role: user.role as UserRole,
+    status: user.status as UserStatus,
     emailVerified: user.email_verified_at != null,
     emailFrequency: user.email_frequency ?? 'instant',
     digestHour: user.digest_hour ?? env.DIGEST_HOUR,
@@ -113,13 +120,10 @@ export function isAdminEmail(email: string): boolean {
     .some((entry) => (entry.startsWith('@') ? e.endsWith(entry) : e === entry));
 }
 
-/** Conta suspensa/banida não entra nem renova sessão (RN-007). */
-function assertActive(user: { status: string; deleted_at?: Date | null }): void {
+/** Suspenso mantém sessão de consulta; banimento/exclusão continuam sem acesso. */
+function assertSessionAllowed(user: { status: string; deleted_at?: Date | null }): void {
   if (user.deleted_at) {
     throw new HttpError(403, 'Esta conta foi excluída a pedido do titular.', 'account_deleted');
-  }
-  if (user.status === 'suspended') {
-    throw new HttpError(403, 'Conta suspensa. Fale com o suporte.', 'account_suspended');
   }
   if (user.status === 'banned') {
     throw new HttpError(403, 'Conta banida. Fale com o suporte.', 'account_banned');
@@ -187,6 +191,7 @@ export const authService = {
       ulid: userUlid,
       email: input.email,
       role,
+      status: 'pending_verification',
       emailVerified: false,
       emailFrequency: 'instant',
       digestHour: env.DIGEST_HOUR,
@@ -264,10 +269,10 @@ export const authService = {
       throw new HttpError(401, 'Credenciais inválidas', 'invalid_credentials');
     }
 
-    assertActive(user);
+    assertSessionAllowed(user);
 
     // Promoção a admin por ADMIN_EMAILS vale também para contas já existentes.
-    if (user.role !== 'admin' && isAdminEmail(user.email)) {
+    if (user.status !== 'suspended' && user.role !== 'admin' && isAdminEmail(user.email)) {
       await authRepository.updateRole(user.id, 'admin');
       user.role = 'admin';
     }
@@ -288,7 +293,7 @@ export const authService = {
     if (!user) {
       throw new HttpError(401, 'Refresh token inválido ou expirado', 'invalid_refresh');
     }
-    assertActive(user);
+    assertSessionAllowed(user);
 
     // Rotação: só quem de fato revogou o token antigo leva o par novo. Outra requisição com o
     // mesmo token, ao mesmo tempo, chega aqui com a sessão já revogada e é recusada.

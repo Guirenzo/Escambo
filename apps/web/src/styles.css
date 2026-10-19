@@ -116,6 +116,14 @@ p {
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+.business-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: contents;
+}
+
 .error {
   color: var(--red);
   font-size: 0.86rem;
@@ -4087,4 +4095,98 @@ button.gallery-nav:hover:not(:disabled) {
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid var(--border);
+}
+
+/* Atendimento privado: navegação e conversa continuam utilizáveis durante suspensão. */
+.support-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.8fr);
+  gap: 20px;
+  align-items: start;
+}
+.support-intro,
+.support-ticket-head,
+.support-pagination,
+.support-controls,
+.support-close {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.support-intro > p {
+  flex: 1;
+  min-width: 230px;
+}
+.support-ticket-list,
+.support-messages {
+  margin: 16px 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+button.support-ticket {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 14px;
+}
+button.support-ticket.selected {
+  border-color: var(--green);
+  box-shadow: inset 3px 0 var(--green);
+}
+button.support-ticket:hover:not(:disabled) {
+  background: var(--green-soft);
+  border-color: var(--green);
+}
+.support-ticket strong,
+.support-ticket-head h3 {
+  overflow-wrap: anywhere;
+}
+.support-message {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.support-message p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 12px 0 0;
+}
+.support-message strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.support-answer {
+  border-left: 3px solid var(--green);
+}
+.support-internal {
+  border: 1px dashed #b47717;
+  background: #b4771712;
+}
+.support-controls label {
+  min-width: 160px;
+  flex: 1;
+}
+.support-controls p {
+  flex-basis: 100%;
+}
+.support-close {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.support-conversation {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .support-layout {
+    grid-template-columns: 1fr;
+  }
 }

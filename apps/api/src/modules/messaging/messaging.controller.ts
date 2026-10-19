@@ -13,7 +13,12 @@ import { messagingService } from './messaging.service';
 /** GET /api/messaging/contracts/:id — histórico do chat do contrato. */
 export async function getMessages(req: Request, res: Response): Promise<void> {
   const { id } = contractIdParamSchema.parse(req.params);
-  res.json(await messagingService.history(id, req.user!.uid));
+  const user = req.user!;
+  res.json(
+    await (user.status === 'suspended'
+      ? messagingService.history(id, user.uid, { readOnly: true })
+      : messagingService.history(id, user.uid)),
+  );
 }
 
 /** POST /api/messaging/contracts/:id — envia uma mensagem. */

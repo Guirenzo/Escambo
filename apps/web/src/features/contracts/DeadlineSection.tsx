@@ -1,7 +1,8 @@
+import { BusinessButton, BusinessForm, BusinessModal } from '../../components/BusinessActions';
 import { CalendarClock, Check, Clock, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { ContractWithHistory } from '@escambo/types';
-import { Button, Field, Input, Modal } from '../../components/ui';
+import { Button, Field, Input } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import {
   addDaysToDay,
@@ -18,6 +19,8 @@ import {
 import { DEFAULT_TIMEZONE, timezoneLabel } from '../../lib/timezones';
 import { usePublicSettings, useRequestExtension, useResolveExtension } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { disputeWaiting } from './contractRules';
+import { useContractNow } from './useContractNow';
 
 /** O que falta a quem entrega, na frase: "registre a entrega", "entregue os 2 marcos que faltam". */
 function actionText(c: ContractWithHistory): string {
@@ -46,17 +49,21 @@ function revisionText(
   who: 'client' | 'freelancer',
   moment: (iso: string | null) => string,
   now: number,
+  disputeOpensAt: string | null | undefined,
 ): string {
   const days = Math.floor((now - Date.parse(requestedAt)) / 86_400_000);
   const since = moment(requestedAt);
+  const waiting = disputeWaiting({ disputeOpensAt }, now);
+  const openFrom = waiting ? ` a partir de ${moment(disputeOpensAt!)}` : '';
+  const clientCanOpen = waiting ? `a partir de ${moment(disputeOpensAt!)}` : 'a qualquer momento';
   if (who === 'client') {
     return days >= REVISION_STALL_DAYS
-      ? `Revisão pedida em ${since}, há ${days} dias, sem nova entrega. Nada muda sozinho: combine pelo chat ou abra uma disputa pela Sala.`
-      : `Revisão pedida em ${since}. Não há hora-limite: nada muda sozinho. Se a nova entrega não vier, combine pelo chat ou abra uma disputa pela Sala; se ela não vier em ${REVISION_STALL_DAYS} dias, o Escambo lembra vocês dois, uma vez.`;
+      ? `Revisão pedida em ${since}, há ${days} dias, sem nova entrega. Nada muda sozinho: combine pelo chat ou abra uma disputa pela Sala${openFrom}.`
+      : `Revisão pedida em ${since}. Não há hora-limite: nada muda sozinho. Se a nova entrega não vier, combine pelo chat ou abra uma disputa pela Sala${openFrom}; se ela não vier em ${REVISION_STALL_DAYS} dias, o Escambo lembra vocês dois, uma vez.`;
   }
   return days >= REVISION_STALL_DAYS
-    ? `Revisão pedida em ${since}, há ${days} dias: registre a nova entrega. O cliente pode abrir uma disputa a qualquer momento.`
-    : `Revisão pedida em ${since}: registre a nova entrega. Não há hora-limite, mas o cliente pode abrir uma disputa a qualquer momento.`;
+    ? `Revisão pedida em ${since}, há ${days} dias: registre a nova entrega. O cliente pode abrir uma disputa ${clientCanOpen}.`
+    : `Revisão pedida em ${since}: registre a nova entrega. Não há hora-limite, mas o cliente pode abrir uma disputa ${clientCanOpen}.`;
 }
 
 /**
@@ -121,6 +128,7 @@ function lateText(
  */
 export function RevisionSince({ contract, myId }: { contract: ContractWithHistory; myId: number }) {
   const { user } = useAuth();
+  const now = useContractNow(contract);
   const who =
     contract.freelancerId === myId ? 'freelancer' : contract.clientId === myId ? 'client' : null;
   if (
@@ -143,7 +151,8 @@ export function RevisionSince({ contract, myId }: { contract: ContractWithHistor
           contract.revisionRequestedAt,
           who,
           (iso) => (iso ? momentText(iso, user?.timezone) : ''),
-          Date.now(),
+          now,
+          contract.disputeOpensAt,
         )}
       </p>
     </section>
@@ -167,6 +176,7 @@ export function DeadlineSection({
   const toast = useToast();
   const resolve = useResolveExtension();
   const [asking, setAsking] = useState(false);
+  const now = useContractNow(contract);
   if (!contract.deadlineAt) return null;
 
   const zone = user?.timezone;
@@ -184,7 +194,6 @@ export function DeadlineSection({
   const counting = d.state === 'running' || late;
   const canAsk = isFreelancer && counting && d.extensionRequestsLeft > 0;
   const info = deadlineInfo(contract.deadlineAt, dz);
-  const now = Date.now();
   const deadlinePassed = new Date(contract.deadlineAt).getTime() <= now;
 
   async function decide(decision: 'accept' | 'decline'): Promise<void> {
@@ -261,21 +270,21 @@ export function DeadlineSection({
           </div>
           {isClient ? (
             <div className="svc-actions">
-              <Button
+              <BusinessButton
                 type="button"
                 onClick={() => void decide('accept')}
                 disabled={resolve.isPending}
               >
                 <Check size={14} /> Aceitar novo prazo
-              </Button>
-              <Button
+              </BusinessButton>
+              <BusinessButton
                 type="button"
                 variant="secondary"
                 onClick={() => void decide('decline')}
                 disabled={resolve.isPending}
               >
                 <X size={14} /> Recusar
-              </Button>
+              </BusinessButton>
             </div>
           ) : (
             <span className="muted tiny">
@@ -303,6 +312,7 @@ export function DeadlineSection({
               isFreelancer ? 'freelancer' : 'client',
               moment,
               now,
+              contract.disputeOpensAt,
             )}
           </p>
         )}
@@ -329,9 +339,9 @@ export function DeadlineSection({
 
       {canAsk && (
         <div className="svc-actions">
-          <Button type="button" variant="secondary" onClick={() => setAsking(true)}>
+          <BusinessButton type="button" variant="secondary" onClick={() => setAsking(true)}>
             Pedir extensão de prazo
-          </Button>
+          </BusinessButton>
           <span className="muted tiny" data-testid="extension-left">
             {d.extensionRequestsLeft >= 2
               ? 'até 2 pedidos; só um pode ser aceito'
@@ -388,8 +398,8 @@ function ExtensionModal({
   }
 
   return (
-    <Modal title="Pedir extensão de prazo" onClose={onClose}>
-      <form className="stack" onSubmit={submit}>
+    <BusinessModal title="Pedir extensão de prazo" onClose={onClose}>
+      <BusinessForm className="stack" onSubmit={submit}>
         <p className="muted tiny" data-testid="extension-rules">
           Prazo atual: {deadlineText(contract.deadlineAt!, dz)}
           {deadlineZoneNote(contract.deadlineAt!, dz, viewer)}. Você pode pedir até 2 vezes nesta
@@ -423,7 +433,7 @@ function ExtensionModal({
         <Button type="submit" disabled={ask.isPending || reason.trim().length < 5}>
           {ask.isPending ? 'Enviando…' : 'Enviar pedido'}
         </Button>
-      </form>
-    </Modal>
+      </BusinessForm>
+    </BusinessModal>
   );
 }

@@ -10,7 +10,7 @@ import { logger } from '../../config/logger';
 import { MAX_UPLOAD_BYTES } from '../../middlewares/upload';
 import { bearer, routerApp } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
-import { getAttachment, postAttachment } from './messaging.controller';
+import { getAttachment, getMessages, postAttachment } from './messaging.controller';
 import { messagingRoutes } from './messaging.routes';
 import { MESSAGE_MAX_LENGTH } from './messaging.schema';
 
@@ -54,7 +54,7 @@ describe('chat: borda HTTP', () => {
     for (const fn of Object.values(service)) expect(fn).not.toHaveBeenCalled();
   });
 
-  it('conta suspensa ou banida não lê nem envia no chat, mesmo com o token ainda válido (RN-007)', async () => {
+  it('conta banida não lê nem envia no chat, mesmo com o token ainda válido (RN-007)', async () => {
     blocklist.add(7);
     try {
       const responses = [
@@ -112,6 +112,21 @@ describe('chat: borda HTTP', () => {
   });
 
   describe('GET /api/messaging/contracts/:id (histórico)', () => {
+    it('conta suspensa consulta o histórico em modo somente leitura vindo da autenticação', async () => {
+      const history = { conversationId: null, contractId: 12, otherPartyId: 20, messages: [] };
+      service.history.mockResolvedValue(history);
+      const req = {
+        params: { id: '12' },
+        user: { uid: 7, status: 'suspended' },
+      } as unknown as Request;
+      const res = { json: vi.fn() } as unknown as Response;
+
+      await getMessages(req, res);
+
+      expect(service.history).toHaveBeenCalledWith(12, 7, { readOnly: true });
+      expect(res.json).toHaveBeenCalledWith(history);
+    });
+
     it('exige login', async () => {
       const res = await request(app).get('/api/messaging/contracts/12');
       expect(res.status).toBe(401);

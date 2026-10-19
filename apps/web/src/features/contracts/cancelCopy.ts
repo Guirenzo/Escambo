@@ -12,6 +12,18 @@ export interface CancelCopy {
   confirm: string | null;
 }
 
+function dropoutCopy(t: CancelTerms, zone: string | null | undefined): string {
+  const d = t.dropout;
+  if (!d || t.by !== 'freelancer') return '';
+  const summary =
+    d.countAfter >= d.alertAt
+      ? ` Com esta, são ${d.countAfter} nos últimos 60 dias: o perfil passa a mostrar um alerta${d.alertUntil ? ` até ${momentText(d.alertUntil, zone)}, se não houver outra` : ''}, e a equipe do Escambo revisa a conta.`
+      : d.countAfter === 2
+        ? ' Com esta, são 2 nos últimos 60 dias; com 3, o perfil mostra um alerta e a equipe do Escambo revisa a conta.'
+        : ' Com 3 em 60 dias, o perfil mostra um alerta e a equipe do Escambo revisa a conta.';
+  return ` A desistência fica na linha do tempo e conta no seu perfil público por 60 dias, só como número (sem dizer qual contratação nem com quem).${summary} Se foi combinada com o cliente, ele pode confirmar isso em até 7 dias, e ela deixa de contar; você também pode contestá-la pelo Perfil.`;
+}
+
 /** O texto de cada etapa (ADR 57): o que acontece com o dinheiro, dito antes de confirmar. */
 export function cancelCopy(t: CancelTerms, zone: string | null | undefined): CancelCopy {
   const freelancer = t.by === 'freelancer';
@@ -68,13 +80,13 @@ export function cancelCopy(t: CancelTerms, zone: string | null | undefined): Can
     case 'barter':
       return {
         title: freelancer ? 'Desistir da contratação' : 'Cancelar contratação',
-        body: 'Esta contratação faz parte de uma troca: cancelar não move dinheiro aqui, e a troca segue o próprio fluxo.',
+        body: `Esta contratação faz parte de uma troca: cancelar não move dinheiro aqui, e a troca segue o próprio fluxo.${dropoutCopy(t, zone)}`,
         confirm: freelancer ? 'Desistir' : 'Cancelar contratação',
       };
     case 'withdrawal':
       return {
         title: 'Desistir da contratação',
-        body: `Tudo o que está em garantia (${amount(t, t.refundClient)}) volta para o cliente, e a desistência fica na linha do tempo.`,
+        body: `Tudo o que está em garantia (${amount(t, t.refundClient)}) volta para o cliente${t.dropout ? '.' : ', e a desistência fica na linha do tempo.'}${dropoutCopy(t, zone)}`,
         confirm: 'Desistir',
       };
   }

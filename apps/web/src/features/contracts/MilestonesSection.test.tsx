@@ -24,10 +24,13 @@ import { MilestonesSection } from './MilestonesSection';
  */
 
 const milestoneAction = vi.fn();
+const grantMilestoneRevision = vi.fn();
 vi.mock('../../lib/api', () => ({
   api: {
     milestoneAction: (contractId: number, milestoneId: number, action: string, text?: string) =>
       milestoneAction(contractId, milestoneId, action, text),
+    grantMilestoneRevision: (id: number, milestoneId: number) =>
+      grantMilestoneRevision(id, milestoneId),
   },
 }));
 // Quem lê: o fuso muda por teste (a data do marco é um dia no fuso de quem entrega, ADR 58).
@@ -134,9 +137,106 @@ beforeEach(() => {
   auth.user = { id: 1, timezone: 'America/Sao_Paulo' };
   milestoneAction.mockReset();
   milestoneAction.mockImplementation(async () => contract(three()));
+  grantMilestoneRevision.mockReset();
+  grantMilestoneRevision.mockResolvedValue(contract(three()));
   prompt = vi.spyOn(window, 'prompt').mockReturnValue(null);
 });
 afterEach(() => prompt.mockRestore());
+
+describe('MilestonesSection: revisões por marco', () => {
+  it('um marco esgotado não retira as revisões disponíveis do outro', () => {
+    render(
+      wrap(
+        <MilestonesSection
+          myId={CLIENT}
+          contract={contract(
+            [
+              milestone({ id: 1, status: 'delivered', revisions: { used: 2, limit: 2 } }),
+              milestone({ id: 2, status: 'delivered', revisions: { used: 1, limit: 2 } }),
+            ],
+            { revisions: null },
+          )}
+        />,
+      ),
+    );
+    expect(within(item(0)).queryByRole('button', { name: 'Pedir revisão' })).toBeNull();
+    expect(within(item(0)).getByRole('button', { name: 'Aprovar marco' })).toBeVisible();
+    expect(within(item(1)).getByRole('button', { name: 'Pedir revisão' })).toBeVisible();
+    expect(screen.getByTestId('milestone-revisions-1')).toHaveTextContent('Revisões: 2 de 2');
+    expect(item(0)).toHaveTextContent('As 2 revisões sem custo deste marco foram usadas.');
+  });
+  it('marco legado com limite null conserva revisão e mostra uso acima de 255 sem zerar', () => {
+    render(
+      wrap(
+        <MilestonesSection
+          myId={CLIENT}
+          contract={contract([
+            milestone({ status: 'delivered', revisions: { used: 300, limit: null } }),
+          ])}
+        />,
+      ),
+    );
+    expect(screen.getByTestId('milestone-revisions-1')).toHaveTextContent(
+      'Revisões: 300 usadas · sem limite',
+    );
+    expect(screen.getByRole('button', { name: 'Pedir revisão' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Liberar mais uma revisão' })).toBeNull();
+  });
+  it('freelancer libera só o marco esgotado entregue, após confirmar sem alterar aprovação', async () => {
+    const confirmation = vi
+      .spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    try {
+      render(
+        wrap(
+          <MilestonesSection
+            myId={FREELANCER}
+            contract={contract([
+              milestone({
+                id: 71,
+                status: 'delivered',
+                approvalDueAt: '2026-10-10T15:00:00Z',
+                revisions: { used: 2, limit: 2 },
+              }),
+              milestone({ id: 93, status: 'funded', revisions: { used: 2, limit: 2 } }),
+            ])}
+          />,
+        ),
+      );
+      expect(
+        within(item(1)).queryByRole('button', { name: 'Liberar mais uma revisão' }),
+      ).toBeNull();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: 'Liberar mais uma revisão' }));
+      expect(grantMilestoneRevision).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: 'Liberar mais uma revisão' }));
+      expect(grantMilestoneRevision).toHaveBeenCalledWith(9, 71);
+      expect(
+        await screen.findByText(
+          'Mais uma revisão sem custo liberada neste marco. O prazo de aprovação automática continua o mesmo.',
+        ),
+      ).toBeVisible();
+      expect(milestoneAction).not.toHaveBeenCalled();
+    } finally {
+      confirmation.mockRestore();
+    }
+  });
+  it('contratação disputada não permite liberar revisão de marco entregue', () => {
+    render(
+      wrap(
+        <MilestonesSection
+          myId={FREELANCER}
+          contract={contract(
+            [milestone({ status: 'delivered', revisions: { used: 2, limit: 2 } })],
+            { status: 'disputed' },
+          )}
+        />,
+      ),
+    );
+    expect(screen.queryByRole('button', { name: 'Liberar mais uma revisão' })).toBeNull();
+  });
+});
 
 describe('MilestonesSection: o que a lista mostra', () => {
   it('contratação sem marcos: a seção não aparece', () => {

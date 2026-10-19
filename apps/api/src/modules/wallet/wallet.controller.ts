@@ -16,5 +16,10 @@ export async function listWalletTransactions(req: Request, res: Response): Promi
 
 /** GET /api/wallet — saldo disponível + retido em escrow do usuário logado. */
 export async function getWallet(req: Request, res: Response): Promise<void> {
-  res.json(await walletService.getBalance(req.user!.uid));
+  const user = req.user!;
+  res.json(
+    await (user.status === 'suspended'
+      ? walletService.getBalance(user.uid, { readOnly: true })
+      : walletService.getBalance(user.uid)),
+  );
 }

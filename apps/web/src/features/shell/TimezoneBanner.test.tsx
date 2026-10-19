@@ -26,6 +26,7 @@ const account = (o: Partial<PublicUser> = {}): PublicUser => ({
   ulid: '01J0000000000000000000USER',
   email: 'ana@escambo.test',
   role: 'client',
+  status: 'active',
   emailVerified: true,
   emailFrequency: 'instant',
   digestHour: 8,

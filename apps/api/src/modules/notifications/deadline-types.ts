@@ -10,6 +10,7 @@ export const DEADLINE_FIRST_TYPES: ReadonlySet<string> = new Set([
   'deadline_extension_expired',
   'deadline_extension_requested',
   'contract_proposal_reminder',
+  'contract_counter_offer_reminder',
   'contract_deadline_reminder',
   'contract_approval_reminder',
   'contract_extension_reminder',

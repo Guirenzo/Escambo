@@ -9,18 +9,19 @@ import { realtime } from './realtime';
 import { createSocketServer } from './socket';
 
 type Next = (err?: Error) => void;
-type Middleware = (socket: FakeSocket, next: Next) => void;
+type Middleware = (socket: FakeSocket, next: Next) => Promise<void> | void;
 type Listener = (...args: unknown[]) => Promise<void> | void;
 
 interface FakeSocket {
   handshake: { auth?: { token?: unknown } };
   data: { uid?: number };
   join: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
   on: (event: string, listener: Listener) => void;
   listeners: Map<string, Listener>;
 }
 
-const { FakeServer, created, service, emit } = vi.hoisted(() => {
+const { FakeServer, created, service } = vi.hoisted(() => {
   const emit = vi.fn();
   const created: Array<{
     httpServer: unknown;
@@ -87,6 +88,7 @@ function fakeSocket(over: Partial<FakeSocket> = {}): FakeSocket {
     handshake: { auth: {} },
     data: {},
     join: vi.fn(async () => undefined),
+    disconnect: vi.fn(),
     on: (event, listener) => {
       listeners.set(event, listener);
     },
@@ -96,14 +98,14 @@ function fakeSocket(over: Partial<FakeSocket> = {}): FakeSocket {
 }
 
 /** O handshake com esse token: o que `next` recebeu e o que ficou no socket. */
-function tryHandshake(auth: FakeSocket['handshake']['auth']): {
+async function tryHandshake(auth: FakeSocket['handshake']['auth']): Promise<{
   next: ReturnType<typeof vi.fn>;
   socket: FakeSocket;
-} {
+}> {
   const { handshake } = boot();
   const socket = fakeSocket({ handshake: { auth } });
   const next = vi.fn();
-  handshake(socket, next);
+  await handshake(socket, next);
   return { next, socket };
 }
 
@@ -144,16 +146,10 @@ describe('servidor de sockets', () => {
       expect([...server.handlers.keys()]).toEqual(['connection']);
     });
 
-    it('passa a ser o canal do realtime: avisos ao usuário e ao contrato saem pelas salas certas', () => {
-      boot();
-
-      realtime.emitToUser(7, 'notification:new', { id: 1 });
-      realtime.emitToContract(5, 'message:new', { id: 2 });
-
-      expect(emit.mock.calls).toEqual([
-        ['user:7', 'notification:new', { id: 1 }],
-        ['contract:5', 'message:new', { id: 2 }],
-      ]);
+    it('anexa o servidor à ponte de emissões (filtragem tem teste próprio)', () => {
+      const attach = vi.spyOn(realtime, 'attach');
+      const { io } = boot();
+      expect(attach).toHaveBeenCalledWith(io);
     });
 
     it("CORS_ORIGINS '*' reflete a origem; lista vira as origens exatas, sem os espaços", async () => {
@@ -173,46 +169,46 @@ describe('servidor de sockets', () => {
   });
 
   describe('handshake', () => {
-    it('token de acesso válido entra, e a conexão fica marcada com o id de quem logou', () => {
-      const { next, socket } = tryHandshake({ token: tokenFor(7, 'freelancer') });
+    it('token de acesso válido entra, e a conexão fica marcada com o id de quem logou', async () => {
+      const { next, socket } = await tryHandshake({ token: tokenFor(7, 'freelancer') });
 
       expect(next).toHaveBeenCalledTimes(1);
       expect(next).toHaveBeenCalledWith();
       expect(socket.data.uid).toBe(7);
     });
 
-    it('sem token (ou sem o campo auth) é recusado', () => {
-      const semToken = tryHandshake({});
+    it('sem token (ou sem o campo auth) é recusado', async () => {
+      const semToken = await tryHandshake({});
       expectUnauthorized(semToken.next, semToken.socket);
 
-      const vazio = tryHandshake({ token: '' });
+      const vazio = await tryHandshake({ token: '' });
       expectUnauthorized(vazio.next, vazio.socket);
 
-      const semAuth = tryHandshake(undefined);
+      const semAuth = await tryHandshake(undefined);
       expectUnauthorized(semAuth.next, semAuth.socket);
     });
 
-    it('token assinado com outro segredo é recusado', () => {
+    it('token assinado com outro segredo é recusado', async () => {
       const forged = jwt.sign({ sub: 'ulid-7', uid: 7, role: 'admin' }, 'outro-segredo-qualquer');
-      const { next, socket } = tryHandshake({ token: forged });
+      const { next, socket } = await tryHandshake({ token: forged });
       expectUnauthorized(next, socket);
     });
 
-    it('token expirado é recusado', () => {
+    it('token expirado é recusado', async () => {
       const expired = jwt.sign({ sub: 'ulid-7', uid: 7, role: 'client' }, env.JWT_SECRET, {
         expiresIn: -10,
       });
-      const { next, socket } = tryHandshake({ token: expired });
+      const { next, socket } = await tryHandshake({ token: expired });
       expectUnauthorized(next, socket);
     });
 
-    it('conta suspensa ou banida é recusada mesmo com token válido (RN-007)', () => {
+    it('conta banida é recusada mesmo com token válido (RN-007)', async () => {
       blocklist.add(7);
-      const { next, socket } = tryHandshake({ token: tokenFor(7) });
+      const { next, socket } = await tryHandshake({ token: tokenFor(7) });
       expectUnauthorized(next, socket);
 
       // Outra conta, não bloqueada, continua entrando.
-      const other = tryHandshake({ token: tokenFor(8) });
+      const other = await tryHandshake({ token: tokenFor(8) });
       expect(other.next).toHaveBeenCalledWith();
       expect(other.socket.data.uid).toBe(8);
     });
@@ -221,7 +217,7 @@ describe('servidor de sockets', () => {
   describe('conexão', () => {
     /** Conecta o usuário 7 e devolve o socket com os eventos registrados. */
     function connected(): FakeSocket {
-      const socket = fakeSocket({ data: { uid: 7 } });
+      const socket = fakeSocket({ data: { uid: 7 }, handshake: { auth: { token: tokenFor(7) } } });
       boot().connect(socket);
       return socket;
     }

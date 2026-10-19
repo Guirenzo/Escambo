@@ -134,7 +134,7 @@ describe('LGPD: borda HTTP', () => {
     it('registra em nome de quem está logado, com IP e navegador, e deixa o aceite na auditoria', async () => {
       const consent = {
         type: 'privacy_policy',
-        version: '1.4',
+        version: '1.5',
         accepted: true,
         at: '2026-10-01T12:00:00.000Z',
       };
@@ -144,14 +144,14 @@ describe('LGPD: borda HTTP', () => {
         .post('/api/lgpd/consents')
         .set(bearer(7))
         .set('User-Agent', AGENT)
-        .send({ type: 'privacy_policy', version: '1.4', accepted: true })
+        .send({ type: 'privacy_policy', version: '1.5', accepted: true })
         .expect(201);
 
       expect(res.body).toEqual(consent);
       expect(service.recordConsent).toHaveBeenCalledTimes(1);
       expect(service.recordConsent).toHaveBeenCalledWith(
         7,
-        { type: 'privacy_policy', version: '1.4', accepted: true },
+        { type: 'privacy_policy', version: '1.5', accepted: true },
         origin,
       );
       expect(audit).toHaveBeenCalledTimes(1);
@@ -159,9 +159,34 @@ describe('LGPD: borda HTTP', () => {
         userId: 7,
         action: 'lgpd_consent',
         entityType: 'consent',
-        newValue: { type: 'privacy_policy', version: '1.4', accepted: true },
+        newValue: { type: 'privacy_policy', version: '1.5', accepted: true },
         ...origin,
       });
+    });
+
+    it('a recusa da Política 1.5 também é registrada e auditada, sem impedir a sessão', async () => {
+      service.recordConsent.mockResolvedValue({
+        type: 'privacy_policy',
+        version: '1.5',
+        accepted: false,
+      });
+      await request(app)
+        .post('/api/lgpd/consents')
+        .set(bearer(9))
+        .set('User-Agent', AGENT)
+        .send({ type: 'privacy_policy', version: '1.5', accepted: false })
+        .expect(201);
+      expect(service.recordConsent).toHaveBeenCalledWith(
+        9,
+        { type: 'privacy_policy', version: '1.5', accepted: false },
+        origin,
+      );
+      expect(audit.mock.calls[0]![0]).toMatchObject({
+        userId: 9,
+        newValue: { type: 'privacy_policy', version: '1.5', accepted: false },
+      });
+      service.getConsents.mockResolvedValue([]);
+      await request(app).get('/api/lgpd/consents').set(bearer(9)).expect(200);
     });
 
     it('a retirada do consentimento (accepted: false) também é registrada e auditada', async () => {

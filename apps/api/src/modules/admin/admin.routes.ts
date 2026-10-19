@@ -2,6 +2,11 @@ import { Router } from 'express';
 import { authenticate } from '../../middlewares/authenticate';
 import { requireAdmin } from '../../middlewares/require-admin';
 import { asyncHandler } from '../../utils/async-handler';
+import {
+  decideDropout,
+  listDropoutAppeals,
+  listUserDropouts,
+} from '../dropouts/dropouts.controller';
 import { appealImage, decideAppeal, listAppeals } from '../reports/appeals.controller';
 import {
   actOnReport,
@@ -50,6 +55,9 @@ adminRoutes.post('/reports/:id/:action', asyncHandler(actOnReport));
 adminRoutes.get('/appeals', asyncHandler(listAppeals));
 adminRoutes.get('/appeals/:id/image', asyncHandler(appealImage));
 adminRoutes.post('/appeals/:id/:decision', asyncHandler(decideAppeal));
+adminRoutes.get('/dropouts', asyncHandler(listDropoutAppeals));
+adminRoutes.get('/users/:ulid/dropouts', asyncHandler(listUserDropouts));
+adminRoutes.post('/dropouts/:id/:decision', asyncHandler(decideDropout));
 adminRoutes.get('/disputes', asyncHandler(listOpenDisputes));
 adminRoutes.post('/disputes/:id/resolve', asyncHandler(resolveDispute));
 adminRoutes.post('/users/:ulid/suspend', asyncHandler(suspendUser));

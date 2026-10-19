@@ -1,6 +1,8 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { applyWalletEffect } from '../wallet/wallet.ledger';
+import { walletRepository } from '../wallet/wallet.repository';
+import { lockWallets } from '../wallet/wallet.locks';
 
 export interface PaymentRow extends RowDataPacket {
   id: number;
@@ -84,6 +86,15 @@ export const paymentsRepository = {
    * Retorna false se a cobrança já não estava pendente (ou não é um depósito).
    */
   async settle(id: number, status: 'paid' | 'failed'): Promise<boolean> {
+    if (status === 'paid') {
+      // O pagador é imutável. O status será conferido de novo sob a trava da cobrança.
+      const [payers] = await pool.query<RowDataPacket[]>(
+        `SELECT payer_id FROM payments WHERE id = :id AND kind = 'topup' AND status = 'pending'`,
+        { id },
+      );
+      if (!payers[0]) return false;
+      await walletRepository.ensure(Number(payers[0].payer_id));
+    }
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -96,14 +107,12 @@ export const paymentsRepository = {
         await conn.rollback();
         return false;
       }
+      if (status === 'paid') await lockWallets(conn, [row.payer_id]);
       await conn.query<ResultSetHeader>(
         `UPDATE payments SET status = :status, paid_at = :paidAt WHERE id = :id`,
         { status, paidAt: status === 'paid' ? new Date() : null, id },
       );
       if (status === 'paid') {
-        await conn.query<ResultSetHeader>(`INSERT IGNORE INTO wallets (user_id) VALUES (:userId)`, {
-          userId: row.payer_id,
-        });
         const ok = await applyWalletEffect(conn, {
           userId: row.payer_id,
           balanceDelta: Number(row.amount),

@@ -16,6 +16,7 @@ import { gamificationService } from '../../src/modules/gamification/gamification
 import { setClockForTests } from '../../src/utils/clock';
 import { formatDue } from '../../src/utils/timezone';
 import { DAY, fromNow, HOUR, now, startDaytimeClock, stopClock } from './clock.helpers';
+import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 
 /**
  * Aprovação tácita (RN-024, ADR 57): a hora é gravada na entrega (5 dias corridos, nunca de noite
@@ -59,12 +60,15 @@ async function registerAndLogin(
 
 /** Contratação entregue (create → accept → deliver). */
 async function deliveredContract(client: Actor, freelancer: Actor, title: string): Promise<number> {
-  const created = await request(app).post('/api/contracts').set(auth(client.token)).send({
-    freelancerId: freelancer.id,
-    title,
-    description: 'Contratação do teste de aprovação tácita',
-    price: 200,
-  });
+  // A tácita ainda libera reservas de contratos paralelos históricos pré-RN-020.
+  const created = await withLegacyParallelContracts(client.id, freelancer.id, async () =>
+    request(app).post('/api/contracts').set(auth(client.token)).send({
+      freelancerId: freelancer.id,
+      title,
+      description: 'Contratação do teste de aprovação tácita',
+      price: 200,
+    }),
+  );
   expect(created.status, JSON.stringify(created.body)).toBe(201);
   const id = created.body.id as number;
   const acc = await request(app).post(`/api/contracts/${id}/accept`).set(auth(freelancer.token));
@@ -88,20 +92,23 @@ async function deliveredMilestones(
   credits: [number, number] | null = null,
 ): Promise<{ id: number; m1: number; m2: number }> {
   const [a1, a2] = credits ?? [100, 100];
-  const created = await request(app)
-    .post('/api/contracts')
-    .set(auth(client.token))
-    .send({
-      freelancerId: freelancer.id,
-      title,
-      description: 'Contratação por marcos do teste de aprovação tácita',
-      price: a1 + a2,
-      ...(credits ? { paymentMode: 'credits' } : {}),
-      milestones: [
-        { title: 'Rascunho', amount: a1 },
-        { title: 'Arte final', amount: a2 },
-      ],
-    });
+  // Preserva saldos e avisos dos marcos de contratos paralelos históricos pré-RN-020.
+  const created = await withLegacyParallelContracts(client.id, freelancer.id, async () =>
+    request(app)
+      .post('/api/contracts')
+      .set(auth(client.token))
+      .send({
+        freelancerId: freelancer.id,
+        title,
+        description: 'Contratação por marcos do teste de aprovação tácita',
+        price: a1 + a2,
+        ...(credits ? { paymentMode: 'credits' } : {}),
+        milestones: [
+          { title: 'Rascunho', amount: a1 },
+          { title: 'Arte final', amount: a2 },
+        ],
+      }),
+  );
   expect(created.status, JSON.stringify(created.body)).toBe(201);
   const id = created.body.id as number;
   const acc = await request(app).post(`/api/contracts/${id}/accept`).set(auth(freelancer.token));

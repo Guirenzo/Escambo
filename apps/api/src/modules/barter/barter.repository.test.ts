@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeDb } from '../../test-support/fake-db';
+import { lockWalletRows, lockWalletUsers, lockWallets } from '../wallet/wallet.locks';
 import { barterRepository, type BarterRow } from './barter.repository';
 
 const { applyWalletEffect } = vi.hoisted(() => ({ applyWalletEffect: vi.fn() }));
 vi.mock('../../config/db', async () => (await import('../../test-support/fake-db')).dbModule);
+vi.mock('../wallet/wallet.locks', () => ({
+  lockWalletRows: vi.fn(),
+  lockWalletUsers: vi.fn(),
+  lockWallets: vi.fn(),
+}));
 vi.mock('../wallet/wallet.ledger', () => ({ applyWalletEffect }));
 
 /** Marca do movimento de carteira na sequência das instruções, para conferir a ordem. */
@@ -48,7 +54,10 @@ const lastOrder = (...fns: Spy[]): number =>
  * ao pool depois do desfecho.
  */
 function expectWrapped(outcome: Spy): void {
-  expect(firstOrder(fakeDb.conn.beginTransaction)).toBeLessThan(firstOrder(fakeDb.pool.query));
+  const firstWork = fakeDb.pool.query.mock.invocationCallOrder.find(
+    (order) => order > firstOrder(fakeDb.conn.beginTransaction),
+  );
+  expect(firstWork).toBeDefined();
   expect(firstOrder(outcome)).toBeGreaterThan(lastOrder(fakeDb.pool.query, applyWalletEffect));
   expect(firstOrder(fakeDb.conn.release)).toBeGreaterThan(firstOrder(outcome));
 }
@@ -61,7 +70,10 @@ function expectWrapped(outcome: Spy): void {
 function expectAllOnConnection(): void {
   const contexts = fakeDb.pool.query.mock.contexts;
   expect(contexts).toHaveLength(fakeDb.pool.query.mock.calls.length);
-  for (const ctx of contexts) expect(ctx).toBe(fakeDb.conn);
+  contexts.forEach((ctx, i) => {
+    const order = fakeDb.pool.query.mock.invocationCallOrder[i]!;
+    expect(ctx).toBe(order < firstOrder(fakeDb.conn.beginTransaction) ? fakeDb.pool : fakeDb.conn);
+  });
   // Todo movimento de carteira usa a conexão da transação, senão escaparia do rollback.
   for (const call of applyWalletEffect.mock.calls) expect(call[0]).toBe(fakeDb.conn);
 }
@@ -94,6 +106,8 @@ function expectRolledBack(): void {
 describe('barterRepository', () => {
   beforeEach(() => {
     fakeDb.reset();
+    for (const lock of [lockWalletRows, lockWalletUsers, lockWallets])
+      vi.mocked(lock).mockReset().mockResolvedValue(undefined);
     applyWalletEffect.mockReset();
     walletAccepts();
   });
@@ -115,106 +129,81 @@ describe('barterRepository', () => {
       tornaStatus: 'none' as const,
     };
 
-    it('sem torna a reservar: grava a proposta, não toca na carteira e devolve o id gerado', async () => {
-      fakeDb.reply({ insertId: 77, affectedRows: 1 });
-
-      expect(await barterRepository.create({ ...data, tornaStatus: 'pending' }, null)).toBe(77);
-
+    it('sem torna: grava só a proposta, sem criar nem tocar carteira', async () => {
+      fakeDb.reply({ insertId: 77 });
+      expect(await barterRepository.create(data, null)).toBe(77);
       expect(fakeDb.calls).toHaveLength(1);
-      const { sql, params } = fakeDb.calls[0]!;
-      expect(sql).toContain('INSERT INTO barter_agreements');
-      expect(sql).toContain(
-        '(ulid, proposer_id, receiver_id, offered_service_id, requested_service_id, offered_description, requested_description, estimated_value_offered, estimated_value_requested, cash_difference, cash_payer_id, platform_fee, torna_status)',
-      );
-      expect(sql).toContain(
-        '(:ulid, :proposerId, :receiverId, :offeredServiceId, :requestedServiceId, :offeredDescription, :requestedDescription, :estimatedValueOffered, :estimatedValueRequested, :cashDifference, :cashPayerId, :platformFee, :tornaStatus)',
-      );
-      expect(params).toEqual({ ...data, tornaStatus: 'pending' });
+      expect(fakeDb.calls[0]!.params).toEqual(data);
       expect(applyWalletEffect).not.toHaveBeenCalled();
       expectCommitted();
     });
 
-    it('proponente paga a torna: reserva o valor (disponível → retido) e marca held, na mesma transação', async () => {
-      fakeDb.reply({ insertId: 77, affectedRows: 1 });
-
-      expect(await barterRepository.create(data, { userId: 1, amount: 200 })).toBe(77);
-
-      expect(fakeDb.sqls()).toEqual([
-        expect.stringContaining('INSERT INTO barter_agreements'),
-        'INSERT IGNORE INTO wallets (user_id) VALUES (:userId)',
+    it('torna: garante a carteira antes da conexão e reserva proposta e saldo juntos', async () => {
+      fakeDb.reply({}, { insertId: 77 }, { affectedRows: 1 });
+      expect(await barterRepository.create(data, { userId: 9, amount: 12.34 })).toBe(77);
+      expect(lockWalletUsers).toHaveBeenCalledExactlyOnceWith(
+        fakeDb.conn,
+        expect.arrayContaining([1, 2, 9]),
+      );
+      expect(lockWalletRows).toHaveBeenCalledExactlyOnceWith(fakeDb.conn, [9]);
+      expect(firstOrder(vi.mocked(lockWalletUsers))).toBeLessThan(
+        fakeDb.conn.query.mock.invocationCallOrder[1]!,
+      );
+      expect(firstOrder(vi.mocked(lockWalletUsers))).toBeLessThan(
+        firstOrder(vi.mocked(lockWalletRows)),
+      );
+      expect(firstOrder(vi.mocked(lockWalletRows))).toBeLessThan(firstOrder(applyWalletEffect));
+      expect(fakeDb.calls[0]!.params).toEqual({ userId: 9 });
+      expect(fakeDb.sqls().map((sql) => sql.split(' ').slice(0, 3).join(' '))).toEqual([
+        'INSERT IGNORE INTO',
+        'INSERT INTO barter_agreements',
         ledger('barter_hold'),
-        `UPDATE barter_agreements SET torna_status = 'held' WHERE id = :id`,
+        'UPDATE barter_agreements SET',
       ]);
-      // A carteira é criada antes, se não existir; a reserva sai do disponível e entra no retido.
-      expect(fakeDb.calls[1]!.params).toEqual({ userId: 1 });
-      expect(applyWalletEffect).toHaveBeenCalledTimes(1);
-      expect(applyWalletEffect).toHaveBeenCalledWith(fakeDb.conn, {
-        userId: 1,
-        balanceDelta: -200,
-        pendingDelta: 200,
-        reason: 'barter_hold',
-      });
-      // O held vai para a proposta recém-criada.
-      expect(fakeDb.calls[3]!.params).toEqual({ id: 77 });
-      expectCommitted();
-    });
-
-    it('sem saldo para a torna: devolve null, desfaz a proposta e não marca held', async () => {
-      walletAccepts(['barter_hold']);
-      fakeDb.reply({ insertId: 77, affectedRows: 1 });
-
-      expect(await barterRepository.create(data, { userId: 1, amount: 200 })).toBeNull();
-
-      // Para na recusa da carteira: a proposta inserida some no rollback, e o held não é gravado.
-      expect(fakeDb.sqls()).toEqual([
-        expect.stringContaining('INSERT INTO barter_agreements'),
-        'INSERT IGNORE INTO wallets (user_id) VALUES (:userId)',
-        ledger('barter_hold'),
-      ]);
-      expect(applyWalletEffect).toHaveBeenCalledTimes(1);
-      expect(applyWalletEffect).toHaveBeenCalledWith(fakeDb.conn, {
-        userId: 1,
-        balanceDelta: -200,
-        pendingDelta: 200,
-        reason: 'barter_hold',
-      });
-      expectRolledBack();
-    });
-
-    it('a reserva é de quem o service mandou e no valor mandado, não lida da proposta', async () => {
-      fakeDb.reply({ insertId: 78, affectedRows: 1 });
-
-      expect(await barterRepository.create(data, { userId: 9, amount: 12.34 })).toBe(78);
-
-      expect(fakeDb.calls[1]!.params).toEqual({ userId: 9 });
+      expect(fakeDb.pool.query.mock.invocationCallOrder[0]!).toBeLessThan(
+        firstOrder(fakeDb.pool.getConnection),
+      );
       expect(applyWalletEffect).toHaveBeenCalledWith(fakeDb.conn, {
         userId: 9,
         balanceDelta: -12.34,
         pendingDelta: 12.34,
         reason: 'barter_hold',
       });
-      expect(fakeDb.calls[3]!.params).toEqual({ id: 78 });
+      expect(fakeDb.calls[3]!.params).toEqual({ id: 77 });
       expectCommitted();
     });
 
-    it('erro do banco depois da reserva (ao marcar held): desfaz tudo e repassa o erro', async () => {
+    it('sem saldo: desfaz a proposta e não marca held nem grava contrato', async () => {
+      walletAccepts(['barter_hold']);
+      fakeDb.reply({}, { insertId: 77 });
+      expect(await barterRepository.create(data, { userId: 1, amount: 200 })).toBeNull();
+      expect(fakeDb.calls).toHaveLength(3);
+      expect(fakeDb.sqls().some((sql) => sql.startsWith('UPDATE'))).toBe(false);
+      expectRolledBack();
+    });
+
+    it('erro depois da reserva desfaz proposta e movimento juntos', async () => {
       const boom = new Error('lock wait timeout');
-      fakeDb.reply({ insertId: 77, affectedRows: 1 }, { affectedRows: 1 }, boom);
-
+      fakeDb.reply({}, { insertId: 77 }, boom);
       await expect(barterRepository.create(data, { userId: 1, amount: 200 })).rejects.toBe(boom);
-
       expect(applyWalletEffect).toHaveBeenCalledTimes(1);
       expectRolledBack();
     });
 
-    it('se o INSERT falha, desfaz, devolve a conexão e repassa o erro', async () => {
+    it('erro ao inserir proposta desfaz a transação e devolve a conexão', async () => {
       const boom = new Error('ER_NO_REFERENCED_ROW_2');
-      fakeDb.reply(boom);
-
+      fakeDb.reply({}, boom);
       await expect(barterRepository.create(data, { userId: 1, amount: 200 })).rejects.toBe(boom);
-
       expect(applyWalletEffect).not.toHaveBeenCalled();
       expectRolledBack();
+    });
+
+    it('falha ao garantir carteira não ocupa conexão nem inicia transação', async () => {
+      const boom = new Error('ensure');
+      fakeDb.reply(boom);
+      await expect(barterRepository.create(data, { userId: 1, amount: 200 })).rejects.toBe(boom);
+      expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+      expect(fakeDb.conn.rollback).not.toHaveBeenCalled();
     });
   });
 
@@ -438,374 +427,241 @@ describe('barterRepository', () => {
     };
     const params = { agreementId: 5, acceptorId: 2, contractOffered, contractRequested };
 
-    /** Respostas de um aceite completo: ativação, [reserva], contrato 1 + histórico, contrato 2 + histórico, vínculo. */
     const replyAccept = (withHold: boolean): void => {
+      if (withHold) fakeDb.reply({});
       fakeDb.reply({ affectedRows: 1 });
-      if (withHold) fakeDb.reply({ affectedRows: 1 }, { affectedRows: 1 });
-      fakeDb.reply(
-        { insertId: 101, affectedRows: 1 },
-        { affectedRows: 1 },
-        { insertId: 102, affectedRows: 1 },
-        { affectedRows: 1 },
-        { affectedRows: 1 },
-      );
+      if (withHold) fakeDb.reply({ affectedRows: 1 });
+      fakeDb.reply({ insertId: 101 }, {}, { insertId: 102 }, {}, {});
     };
 
-    it('ativa a troca, gera os dois contratos com o histórico e grava o vínculo, em uma transação', async () => {
+    it('sem reserva nova: ativa, cria dois contratos com histórico e vincula tudo na mesma transação', async () => {
       replyAccept(false);
-
       expect(await barterRepository.accept({ ...params, hold: null })).toEqual({
         ok: true,
         contractOfferedId: 101,
         contractRequestedId: 102,
       });
-
       expect(fakeDb.calls).toHaveLength(6);
-      const [activate, c1, h1, c2, h2, link] = fakeDb.calls;
-      // Só ativa quem ainda está proposed: é a trava contra o aceite em dobro.
-      expect(activate!.sql).toBe(
-        `UPDATE barter_agreements SET status = 'active', accepted_at = NOW() WHERE id = :id AND status = 'proposed'`,
-      );
-      expect(activate!.params).toEqual({ id: 5 });
-
-      // Contrato de troca: já aceito, sem taxa (o líquido é o preço cheio) e preso ao acordo.
-      for (const c of [c1!, c2!]) {
-        expect(c.sql).toContain('INSERT INTO contracts');
-        expect(c.sql).toContain(
-          '(ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, status, payment_mode, barter_agreement_id, accepted_at)',
-        );
-        expect(c.sql).toContain(
-          `(:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, 0, :price, 'accepted', 'barter', :agreementId, NOW())`,
-        );
-      }
-      expect(c1!.params).toEqual({ ...contractOffered, agreementId: 5 });
-      expect(c2!.params).toEqual({ ...contractRequested, agreementId: 5 });
-
-      // O histórico de cada contrato nasce em 'accepted', assinado por quem aceitou.
-      for (const h of [h1!, h2!]) {
-        expect(h.sql).toContain(
-          'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)',
-        );
-        expect(h.sql).toContain(
-          `VALUES (:contractId, :acceptorId, NULL, 'accepted', 'Contrato gerado pela troca')`,
-        );
-      }
-      expect(h1!.params).toEqual({ contractId: 101, acceptorId: 2 });
-      expect(h2!.params).toEqual({ contractId: 102, acceptorId: 2 });
-
-      expect(link!.sql).toBe(
-        'UPDATE barter_agreements SET contract_offered_id = :offeredId, contract_requested_id = :requestedId WHERE id = :id',
-      );
-      expect(link!.params).toEqual({ offeredId: 101, requestedId: 102, id: 5 });
-
+      expect(fakeDb.calls[0]!.sql).toContain("WHERE id = :id AND status = 'proposed'");
+      expect(fakeDb.calls[1]!.params).toEqual({
+        ...contractOffered,
+        agreementId: 5,
+        revisionLimit: 2,
+      });
+      expect(fakeDb.calls[3]!.params).toEqual({
+        ...contractRequested,
+        agreementId: 5,
+        revisionLimit: 2,
+      });
+      expect(fakeDb.calls[2]!.params).toEqual({ contractId: 101, acceptorId: 2 });
+      expect(fakeDb.calls[4]!.params).toEqual({ contractId: 102, acceptorId: 2 });
+      expect(fakeDb.calls[5]!.params).toEqual({ offeredId: 101, requestedId: 102, id: 5 });
       expect(applyWalletEffect).not.toHaveBeenCalled();
       expectCommitted();
     });
 
-    it('torna ainda pendente: reserva na carteira do pagador antes de gerar os contratos', async () => {
+    it('torna pendente: garante carteira antes da conexão, reserva antes dos contratos', async () => {
       replyAccept(true);
-
-      const result = await barterRepository.accept({ ...params, hold: { userId: 2, amount: 200 } });
-
-      expect(result).toEqual({ ok: true, contractOfferedId: 101, contractRequestedId: 102 });
-      expect(fakeDb.sqls().map((s) => s.split(' ').slice(0, 3).join(' '))).toEqual([
-        'UPDATE barter_agreements SET',
-        'INSERT IGNORE INTO',
-        ledger('barter_hold'),
-        'UPDATE barter_agreements SET',
-        'INSERT INTO contracts',
-        'INSERT INTO contract_status_history',
-        'INSERT INTO contracts',
-        'INSERT INTO contract_status_history',
-        'UPDATE barter_agreements SET',
-      ]);
-      expect(fakeDb.calls[1]!.sql).toBe('INSERT IGNORE INTO wallets (user_id) VALUES (:userId)');
-      expect(fakeDb.calls[1]!.params).toEqual({ userId: 2 });
-      expect(applyWalletEffect).toHaveBeenCalledTimes(1);
+      expect(
+        await barterRepository.accept({ ...params, hold: { userId: 2, amount: 200 } }),
+      ).toEqual({ ok: true, contractOfferedId: 101, contractRequestedId: 102 });
+      expect(fakeDb.calls).toHaveLength(9);
+      expect(lockWalletUsers).toHaveBeenCalledExactlyOnceWith(
+        fakeDb.conn,
+        expect.arrayContaining([1, 2]),
+      );
+      expect(lockWalletRows).toHaveBeenCalledExactlyOnceWith(fakeDb.conn, [2]);
+      expect(fakeDb.conn.query.mock.invocationCallOrder[1]!).toBeLessThan(
+        firstOrder(vi.mocked(lockWalletUsers)),
+      );
+      expect(firstOrder(vi.mocked(lockWalletUsers))).toBeLessThan(
+        firstOrder(vi.mocked(lockWalletRows)),
+      );
+      expect(firstOrder(vi.mocked(lockWalletRows))).toBeLessThan(firstOrder(applyWalletEffect));
+      expect(fakeDb.calls[0]!.params).toEqual({ userId: 2 });
+      expect(firstOrder(fakeDb.pool.query)).toBeLessThan(firstOrder(fakeDb.pool.getConnection));
+      expect(fakeDb.calls[3]!.params).toEqual({ id: 5 });
       expect(applyWalletEffect).toHaveBeenCalledWith(fakeDb.conn, {
         userId: 2,
         balanceDelta: -200,
         pendingDelta: 200,
         reason: 'barter_hold',
       });
-      expect(fakeDb.calls[3]!.sql).toBe(
-        `UPDATE barter_agreements SET torna_status = 'held' WHERE id = :id`,
-      );
-      expect(fakeDb.calls[3]!.params).toEqual({ id: 5 });
       expectCommitted();
     });
 
-    it('troca que já não está proposed (aceite em corrida): conflito, sem contrato e sem reserva', async () => {
-      fakeDb.reply({ affectedRows: 0 });
-
+    it('aceite concorrente não ativa duas vezes nem reserva a torna duas vezes', async () => {
+      fakeDb.reply({}, { affectedRows: 0 });
       expect(
         await barterRepository.accept({ ...params, hold: { userId: 2, amount: 200 } }),
       ).toEqual({ ok: false, reason: 'conflict' });
-
-      expect(fakeDb.calls).toHaveLength(1);
+      expect(fakeDb.calls).toHaveLength(2);
       expect(applyWalletEffect).not.toHaveBeenCalled();
       expectRolledBack();
     });
 
-    it('pagador sem saldo para a torna: desfaz a ativação e não gera contrato', async () => {
+    it('pagador sem saldo desfaz a ativação e não gera contrato', async () => {
       walletAccepts(['barter_hold']);
-      fakeDb.reply({ affectedRows: 1 });
-
+      fakeDb.reply({}, { affectedRows: 1 });
       expect(
         await barterRepository.accept({ ...params, hold: { userId: 2, amount: 200 } }),
       ).toEqual({ ok: false, reason: 'insufficient_balance' });
-
-      // Para na recusa da carteira: nem held, nem contrato, nem vínculo.
-      expect(fakeDb.sqls()).toEqual([
-        expect.stringContaining(`SET status = 'active'`),
-        'INSERT IGNORE INTO wallets (user_id) VALUES (:userId)',
-        ledger('barter_hold'),
-      ]);
+      expect(fakeDb.calls).toHaveLength(3);
       expectRolledBack();
     });
 
-    it('se o primeiro contrato falha, desfaz a ativação e a reserva já feita', async () => {
-      const boom = new Error('ER_NO_REFERENCED_ROW_2');
-      fakeDb.reply({ affectedRows: 1 }, { affectedRows: 1 }, { affectedRows: 1 }, boom);
+    it('erro na reserva, contrato ou vínculo desfaz todo o aceite', async () => {
+      for (const stage of ['hold', 'contract', 'link']) {
+        fakeDb.reset();
+        walletAccepts();
+        const boom = new Error(stage);
+        if (stage === 'hold') {
+          fakeDb.reply({}, { affectedRows: 1 });
+          applyWalletEffect.mockRejectedValueOnce(boom);
+        } else {
+          fakeDb.reply({}, { affectedRows: 1 }, {});
+          if (stage === 'link') fakeDb.reply({ insertId: 101 }, {}, { insertId: 102 }, {});
+          fakeDb.reply(boom);
+        }
+        await expect(
+          barterRepository.accept({ ...params, hold: { userId: 2, amount: 200 } }),
+        ).rejects.toBe(boom);
+        expectRolledBack();
+      }
+    });
 
+    it('falha ao garantir carteira não inicia a transação de aceite', async () => {
+      const boom = new Error('ensure');
+      fakeDb.reply(boom);
       await expect(
         barterRepository.accept({ ...params, hold: { userId: 2, amount: 200 } }),
       ).rejects.toBe(boom);
-
-      expect(applyWalletEffect).toHaveBeenCalledTimes(1);
-      expect(fakeDb.sqls().filter((s) => s.startsWith('INSERT INTO contracts'))).toHaveLength(1);
-      expect(fakeDb.sqls().some((s) => s.includes('contract_status_history'))).toBe(false);
-      expectRolledBack();
-    });
-
-    it('se o segundo contrato falha, desfaz tudo (nenhuma troca fica com um contrato só)', async () => {
-      const boom = new Error('ER_DUP_ENTRY');
-      fakeDb.reply(
-        { affectedRows: 1 },
-        { insertId: 101, affectedRows: 1 },
-        { affectedRows: 1 },
-        boom,
-      );
-
-      await expect(barterRepository.accept({ ...params, hold: null })).rejects.toBe(boom);
-
-      expect(fakeDb.sqls().some((s) => s.includes('contract_offered_id = :offeredId'))).toBe(false);
-      expectRolledBack();
-    });
-
-    it('se o histórico de um contrato falha, desfaz o contrato já inserido e a ativação', async () => {
-      const boom = new Error('lock wait timeout');
-      fakeDb.reply({ affectedRows: 1 }, { insertId: 101, affectedRows: 1 }, boom);
-
-      await expect(barterRepository.accept({ ...params, hold: null })).rejects.toBe(boom);
-
-      // Para no histórico do primeiro contrato: o segundo nem é tentado.
-      expect(fakeDb.sqls().map((s) => s.split(' ').slice(0, 3).join(' '))).toEqual([
-        'UPDATE barter_agreements SET',
-        'INSERT INTO contracts',
-        'INSERT INTO contract_status_history',
-      ]);
-      expectRolledBack();
-    });
-
-    it('se gravar o vínculo falha no fim, os dois contratos e a reserva somem no rollback', async () => {
-      const boom = new Error('deadlock');
-      fakeDb.reply({ affectedRows: 1 }, { affectedRows: 1 }, { affectedRows: 1 });
-      fakeDb.reply(
-        { insertId: 101, affectedRows: 1 },
-        { affectedRows: 1 },
-        { insertId: 102, affectedRows: 1 },
-        { affectedRows: 1 },
-        boom,
-      );
-
-      await expect(
-        barterRepository.accept({ ...params, hold: { userId: 2, amount: 200 } }),
-      ).rejects.toBe(boom);
-
-      // Chegou até o vínculo (última instrução) com a reserva e os dois contratos feitos.
-      expect(applyWalletEffect).toHaveBeenCalledTimes(1);
-      expect(fakeDb.sqls().filter((s) => s.startsWith('INSERT INTO contracts'))).toHaveLength(2);
-      expect(fakeDb.sqls().at(-1)).toContain('contract_offered_id = :offeredId');
-      expectRolledBack();
-    });
-
-    it('sem reserva a fazer, o aceite em corrida também é conflito e nada é gravado', async () => {
-      fakeDb.reply({ affectedRows: 0 });
-
-      expect(await barterRepository.accept({ ...params, hold: null })).toEqual({
-        ok: false,
-        reason: 'conflict',
-      });
-
-      expect(fakeDb.sqls()).toEqual([
-        `UPDATE barter_agreements SET status = 'active', accepted_at = NOW() WHERE id = :id AND status = 'proposed'`,
-      ]);
-      expectRolledBack();
-    });
-
-    it('se a carteira lança erro na reserva, desfaz a ativação e repassa o erro', async () => {
-      const boom = new Error('ER_LOCK_DEADLOCK');
-      applyWalletEffect.mockRejectedValue(boom);
-      fakeDb.reply({ affectedRows: 1 }, { affectedRows: 1 });
-
-      await expect(
-        barterRepository.accept({ ...params, hold: { userId: 2, amount: 200 } }),
-      ).rejects.toBe(boom);
-
-      expect(fakeDb.sqls().some((s) => s.startsWith('INSERT INTO contracts'))).toBe(false);
-      expect(fakeDb.sqls().some((s) => s.includes(`torna_status = 'held'`))).toBe(false);
-      expectRolledBack();
+      expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
     });
   });
 
   describe('completeAndRelease (liquidação da torna)', () => {
-    it('receptor pagou a torna: tira do retido dele e credita torna − taxa ao proponente', async () => {
-      fakeDb.reply([barterRow({ status: 'active', cash_payer_id: 2 })]);
+    const ready = (row: BarterRow) => {
+      fakeDb.reply([row]);
+      if (row.cash_payer_id) fakeDb.reply({});
+      fakeDb.reply([row], {});
+    };
 
+    it('as partes imutáveis e a carteira de quem recebe são preparadas antes da conexão', async () => {
+      ready(barterRow({ status: 'active' }));
       expect(await barterRepository.completeAndRelease(5)).toBe(true);
-
-      expect(fakeDb.sqls()).toEqual([
+      expect(lockWallets).toHaveBeenCalledExactlyOnceWith(fakeDb.conn, [2, 1]);
+      expect(fakeDb.conn.query.mock.invocationCallOrder[2]!).toBeLessThan(
+        firstOrder(vi.mocked(lockWallets)),
+      );
+      expect(firstOrder(vi.mocked(lockWallets))).toBeLessThan(firstOrder(applyWalletEffect));
+      expect(fakeDb.calls[0]!.sql).toBe(
+        'SELECT proposer_id, receiver_id, cash_payer_id FROM barter_agreements WHERE id = :id',
+      );
+      expect(fakeDb.calls[1]!.params).toEqual({ userId: 1 });
+      expect(fakeDb.pool.query.mock.invocationCallOrder[1]!).toBeLessThan(
+        firstOrder(fakeDb.pool.getConnection),
+      );
+      expect(fakeDb.calls[2]!.sql).toBe(
         'SELECT * FROM barter_agreements WHERE id = :id FOR UPDATE',
-        `UPDATE barter_agreements SET status = 'completed', completed_at = NOW() WHERE id = :id`,
-        ledger('barter_payment'),
-        'INSERT IGNORE INTO wallets (user_id) VALUES (:userId)',
-        ledger('barter_in'),
-        `UPDATE barter_agreements SET torna_status = 'paid' WHERE id = :id`,
-      ]);
-      expect(fakeDb.calls[0]!.params).toEqual({ id: 5 });
-      expect(fakeDb.calls[1]!.params).toEqual({ id: 5 });
-      expect(applyWalletEffect).toHaveBeenCalledTimes(2);
-      // O pagador só deixa de ter o valor retido: o disponível dele já saiu na reserva.
+      );
       expect(applyWalletEffect).toHaveBeenNthCalledWith(1, fakeDb.conn, {
         userId: 2,
         balanceDelta: 0,
         pendingDelta: -200,
         reason: 'barter_payment',
       });
-      // A carteira de quem recebe é criada se faltar; entra a torna menos a taxa (RN-066).
-      expect(fakeDb.calls[3]!.params).toEqual({ userId: 1 });
       expect(applyWalletEffect).toHaveBeenNthCalledWith(2, fakeDb.conn, {
         userId: 1,
         balanceDelta: 170,
         pendingDelta: 0,
         reason: 'barter_in',
       });
-      expect(fakeDb.calls[5]!.params).toEqual({ id: 5 });
+      expect(fakeDb.sqls().at(-1)).toContain("torna_status = 'paid'");
       expectCommitted();
     });
 
-    it('proponente pagou a torna: quem recebe é o receptor', async () => {
-      fakeDb.reply([barterRow({ status: 'active', cash_payer_id: 1 })]);
-
+    it('se proponente paga, o receptor recebe a torna menos a taxa', async () => {
+      ready(barterRow({ status: 'active', cash_payer_id: 1 }));
       expect(await barterRepository.completeAndRelease(5)).toBe(true);
-
+      expect(fakeDb.calls[1]!.params).toEqual({ userId: 2 });
       expect(applyWalletEffect).toHaveBeenNthCalledWith(
         1,
         fakeDb.conn,
-        expect.objectContaining({ userId: 1, pendingDelta: -200, reason: 'barter_payment' }),
+        expect.objectContaining({ userId: 1, pendingDelta: -200 }),
       );
-      expect(fakeDb.calls[3]!.params).toEqual({ userId: 2 });
       expect(applyWalletEffect).toHaveBeenNthCalledWith(
         2,
         fakeDb.conn,
-        expect.objectContaining({ userId: 2, balanceDelta: 170, reason: 'barter_in' }),
-      );
-      expect(applyWalletEffect).toHaveBeenCalledTimes(2);
-      expect(fakeDb.sqls().at(-1)).toBe(
-        `UPDATE barter_agreements SET torna_status = 'paid' WHERE id = :id`,
+        expect.objectContaining({ userId: 2, balanceDelta: 170 }),
       );
       expectCommitted();
     });
 
-    it('o crédito é arredondado em centavos e nunca fica negativo', async () => {
-      // 0.30 − 0.10 em ponto flutuante dá 0.19999999999999998: o crédito tem de ser 0.2.
-      fakeDb.reply([
-        barterRow({ status: 'active', cash_difference: '0.30', platform_fee: '0.10' }),
-      ]);
-      await barterRepository.completeAndRelease(5);
-      expect(applyWalletEffect.mock.calls[1]![1]).toMatchObject({ balanceDelta: 0.2 });
-
-      // Taxa maior que a torna (acordo inconsistente): credita zero, não debita quem recebe.
-      fakeDb.reset();
-      applyWalletEffect.mockClear();
-      fakeDb.reply([
-        barterRow({ status: 'active', cash_difference: '10.00', platform_fee: '15.00' }),
-      ]);
-      await barterRepository.completeAndRelease(5);
-      expect(applyWalletEffect.mock.calls[0]![1]).toMatchObject({ pendingDelta: -10 });
-      expect(applyWalletEffect.mock.calls[1]![1]).toMatchObject({ balanceDelta: 0 });
+    it('arredonda o crédito em centavos e não debita o destinatário quando a taxa é inconsistente', async () => {
+      for (const [amount, fee, net] of [
+        ['0.30', '0.10', 0.2],
+        ['10.00', '15.00', 0],
+      ] as const) {
+        fakeDb.reset();
+        applyWalletEffect.mockClear();
+        ready(barterRow({ status: 'active', cash_difference: amount, platform_fee: fee }));
+        expect(await barterRepository.completeAndRelease(5)).toBe(true);
+        expect(applyWalletEffect.mock.calls[1]![1]).toMatchObject({ balanceDelta: net });
+      }
     });
 
-    it('troca sem torna reservada: só conclui, sem mexer em carteira', async () => {
-      for (const o of [
-        { torna_status: 'none', cash_payer_id: null, cash_difference: '0.00' },
-        { torna_status: 'pending', cash_payer_id: 2 },
-        { torna_status: 'held', cash_payer_id: null },
+    it('sem pagador ou torna não retida, conclui sem movimentar saldo', async () => {
+      for (const overrides of [
+        { cash_payer_id: null, torna_status: 'none' },
+        { cash_payer_id: 2, torna_status: 'pending' },
       ]) {
         fakeDb.reset();
-        fakeDb.reply([barterRow({ status: 'active', ...o })]);
-
+        ready(barterRow({ status: 'active', ...overrides }));
         expect(await barterRepository.completeAndRelease(5)).toBe(true);
-
-        expect(fakeDb.sqls()).toEqual([
-          'SELECT * FROM barter_agreements WHERE id = :id FOR UPDATE',
-          `UPDATE barter_agreements SET status = 'completed', completed_at = NOW() WHERE id = :id`,
-        ]);
+        expect(applyWalletEffect).not.toHaveBeenCalled();
         expectCommitted();
       }
+    });
+
+    it('acordo ausente não ocupa conexão', async () => {
+      fakeDb.reply([]);
+      expect(await barterRepository.completeAndRelease(5)).toBe(false);
+      expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
       expect(applyWalletEffect).not.toHaveBeenCalled();
     });
 
-    it('troca que não existe ou não está ativa: devolve false sem concluir (não liquida duas vezes)', async () => {
-      for (const reply of [
-        [],
-        [barterRow({ status: 'completed' })],
-        [barterRow({ status: 'proposed' })],
-      ]) {
-        fakeDb.reset();
-        fakeDb.reply(reply);
-
-        expect(await barterRepository.completeAndRelease(5)).toBe(false);
-
-        expect(fakeDb.sqls()).toEqual([
-          'SELECT * FROM barter_agreements WHERE id = :id FOR UPDATE',
-        ]);
-        expectRolledBack();
-      }
-      expect(applyWalletEffect).not.toHaveBeenCalled();
-    });
-
-    it('se a carteira recusa a baixa do pagador ou o crédito de quem recebe, desfaz e lança erro (não é o false de "já concluída")', async () => {
-      for (const refused of ['barter_payment', 'barter_in']) {
-        fakeDb.reset();
-        walletAccepts([refused]);
-        fakeDb.reply([barterRow({ status: 'active' })]);
-
-        await expect(barterRepository.completeAndRelease(5), refused).rejects.toThrow(
-          'Troca 5: a carteira recusou a liquidação da torna de 200 (retido inconsistente)',
-        );
-
-        // A conclusão já gravada some no rollback, e o paid não chega a ser gravado.
-        expect(fakeDb.sqls()).toEqual([
-          'SELECT * FROM barter_agreements WHERE id = :id FOR UPDATE',
-          `UPDATE barter_agreements SET status = 'completed', completed_at = NOW() WHERE id = :id`,
-          ledger('barter_payment'),
-          'INSERT IGNORE INTO wallets (user_id) VALUES (:userId)',
-          ledger('barter_in'),
-        ]);
-        expectRolledBack();
-      }
-    });
-
-    it('erro do banco no meio: desfaz, devolve a conexão e repassa o erro', async () => {
-      const boom = new Error('lock wait timeout');
-      fakeDb.reply([barterRow({ status: 'active' })], boom);
-
-      await expect(barterRepository.completeAndRelease(5)).rejects.toBe(boom);
-
+    it('confere o estado novamente sob trava e não liquida duas vezes', async () => {
+      fakeDb.reply([barterRow({ status: 'active' })], {}, [barterRow({ status: 'completed' })]);
+      expect(await barterRepository.completeAndRelease(5)).toBe(false);
       expect(applyWalletEffect).not.toHaveBeenCalled();
       expectRolledBack();
+    });
+
+    it('recusa do débito ou do crédito desfaz conclusão e os dois movimentos', async () => {
+      for (const reason of ['barter_payment', 'barter_in']) {
+        fakeDb.reset();
+        walletAccepts([reason]);
+        ready(barterRow({ status: 'active' }));
+        await expect(barterRepository.completeAndRelease(5)).rejects.toThrow(
+          'retido inconsistente',
+        );
+        expect(fakeDb.sqls().at(-1)).toBe(ledger('barter_in'));
+        expectRolledBack();
+      }
+    });
+
+    it('falha na preparação não ocupa conexão; falha na trava desfaz a transação', async () => {
+      for (const stage of ['read', 'ensure', 'lock']) {
+        fakeDb.reset();
+        const boom = new Error(stage);
+        if (stage !== 'read') fakeDb.reply([barterRow({ status: 'active' })]);
+        if (stage === 'lock') fakeDb.reply({});
+        fakeDb.reply(boom);
+        await expect(barterRepository.completeAndRelease(5)).rejects.toBe(boom);
+        if (stage === 'lock') expectRolledBack();
+        else expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+      }
     });
   });
 

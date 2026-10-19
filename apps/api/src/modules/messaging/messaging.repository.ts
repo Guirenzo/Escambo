@@ -65,6 +65,17 @@ function orderPair(x: number, y: number): [number, number] {
 }
 
 export const messagingRepository = {
+  /** A conversa atravessa contratos do mesmo par; consultar não cria nem vincula contrato. */
+  async findByPair(uidA: number, uidB: number): Promise<ConversationRow | undefined> {
+    const [a, b] = orderPair(uidA, uidB);
+    const [rows] = await pool.query<ConversationRow[]>(
+      `SELECT id, contract_id, participant_a, participant_b FROM conversations
+        WHERE participant_a = :a AND participant_b = :b LIMIT 1`,
+      { a, b },
+    );
+    return rows[0];
+  },
+
   /**
    * Retorna a conversa entre as duas partes (única por par), criando se não existir, e
    * associa o contrato quando a conversa ainda não tem um. É UMA instrução de propósito: ao

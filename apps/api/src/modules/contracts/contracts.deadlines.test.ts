@@ -1,4 +1,18 @@
+vi.mock('../dropouts/dropouts.repository', () => ({
+  dropoutsRepository: {
+    listCounting: vi.fn().mockResolvedValue([]),
+    findByContractId: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+vi.mock('../dropouts/dropouts.service', () => ({
+  dropoutsService: { afterDropout: vi.fn().mockResolvedValue(undefined) },
+}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('./offers.repository', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./offers.repository')>()),
+  offersRepository: { list: vi.fn().mockResolvedValue([]) },
+}));
 
 vi.mock('../settings/settings.service', () => ({
   settingsService: {
@@ -166,6 +180,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   setClockForTests(NOW, { frozen: true });
   settings.mockResolvedValue(24);
+  vi.mocked(settingsService.number).mockImplementation(async (key) =>
+    key === 'extension_response_hours' ? 48 : 24,
+  );
   users.findById.mockImplementation(async (id: number) => freelancerAccount(id));
   services.findById.mockResolvedValue(SERVICE_5);
 });
@@ -246,6 +263,35 @@ describe('requestExtension (RN-028, ADR 57)', () => {
       code: 'conflict',
     });
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('usa o prazo vigente do painel ao gravar o pedido, sem recalcular pedidos anteriores', async () => {
+    repo.findById.mockResolvedValue(row());
+    repo.requestExtension.mockResolvedValue(true);
+    vi.mocked(settingsService.number).mockImplementation(async (key) =>
+      key === 'extension_response_hours' ? 96 : 24,
+    );
+
+    await contractsService.requestExtension(1, 2, ask());
+
+    expect(settingsService.number).toHaveBeenCalledWith('extension_response_hours');
+    expect(repo.requestExtension).toHaveBeenCalledWith(
+      expect.objectContaining({
+        respondBy: brt('2026-10-10 12:00:00'),
+      }),
+    );
+    // Mudar o parâmetro não altera o snapshot já devolvido pelo repositório.
+    const oldBy = brt('2026-10-08 12:00:00');
+    repo.findById.mockResolvedValue(
+      row({
+        extension_status: 'pending',
+        extension_requested_at: NOW,
+        extension_respond_by: oldBy,
+        extension_deadline_at: brt('2026-10-16 23:59:59'),
+      }),
+    );
+    const existing = await contractsService.getById(1, 2);
+    expect(existing.extension?.respondBy).toBe(oldBy.toISOString());
   });
 });
 
@@ -488,7 +534,10 @@ describe('expireProposal (RN-021)', () => {
         to: 'cancelled',
         timestampColumn: 'cancelled_at',
         now: NOW,
-        guard: { sql: 'AND c.proposal_expires_at IS NOT NULL AND c.proposal_expires_at <= :now' },
+        guard: {
+          sql: 'AND c.proposal_expires_at IS NOT NULL AND c.proposal_expires_at <= :now AND c.offer_seq = :gOfferSeq AND c.price = :gHeldPrice',
+          params: { gOfferSeq: 1, gHeldPrice: 900 },
+        },
         note: 'Proposta expirada: sem resposta do freelancer até 06/10/2026 às 11:00 (horário de Brasília, RN-021)',
         milestonesTo: { from: ['pending', 'funded', 'delivered'], to: 'cancelled' },
         walletEffects: [{ userId: 1, pendingDelta: -900, balanceDelta: 900, reason: 'refund' }],
@@ -679,9 +728,16 @@ describe('entrega única (RN-024, ADR 57)', () => {
   it('grava a hora da aprovação tácita levada para as 9h se cairia de noite no fuso do cliente, e o avisa até quando responder', async () => {
     setClockForTests(AT, { frozen: true });
     settings.mockResolvedValue(5);
-    repo.findById
-      .mockResolvedValueOnce(row())
-      .mockResolvedValueOnce(row({ status: 'delivered', deliveries_count: 1 }));
+    repo.findById.mockResolvedValueOnce(row()).mockResolvedValueOnce(
+      row({
+        status: 'delivered',
+        deliveries_count: 1,
+        first_delivery_at: AT,
+        first_delivered_at: AT,
+        approval_due_at: brt('2026-10-12 09:00:00'),
+        delivery_dispute_opens_at: brt('2026-10-08 21:00:00'),
+      }),
+    );
     repo.deliver.mockResolvedValue(true);
 
     const c = await contractsService.deliver(1, 2, { message: 'Pronto para revisar' });
@@ -702,7 +758,7 @@ describe('entrega única (RN-024, ADR 57)', () => {
       {
         type: 'contract_delivered',
         title: 'Entrega registrada: Vídeo institucional',
-        body: 'Aprove, peça revisão ou abra disputa até seg, 12/10 às 09:00. Depois disso, a entrega é aprovada automaticamente.',
+        body: 'Aprove ou peça revisão até seg, 12/10 às 09:00. A disputa abre a partir de qui, 08/10 às 21:00, se vocês não se acertarem pelo chat. Depois de seg, 12/10 às 09:00, a entrega é aprovada automaticamente.',
         data: { contractId: 1 },
       },
       {},
@@ -1010,7 +1066,10 @@ describe('aceite com o prazo ou a validade vencidos (ADR 57)', () => {
     expect(repo.transition).toHaveBeenCalledWith(
       expect.objectContaining({
         now: NOW,
-        guard: { sql: expect.stringContaining('c.proposal_expires_at > :now') },
+        guard: {
+          sql: expect.stringContaining('c.proposal_expires_at > :now'),
+          params: { gOfferSeq: 1, gHeldPrice: 900 },
+        },
       }),
     );
   });
@@ -1043,7 +1102,7 @@ describe('create: validade da proposta gravada (RN-021, ADR 57)', () => {
       {
         type: 'contract_proposal',
         title: 'Nova proposta de contratação',
-        body: 'Vídeo institucional. Prazo de entrega: ter, 20/10/2026, até 23:59. Responda até sex, 09/10 às 12:00.',
+        body: 'Vídeo institucional. Prazo de entrega: ter, 20/10/2026, até 23:59. Responda até sex, 09/10 às 12:00: aceite, recuse ou faça uma contraproposta.',
         data: { contractId: 1 },
       },
       {},
@@ -1387,7 +1446,11 @@ describe('expireProposal: o que volta e o que cada parte lê (RN-021)', () => {
       note: 'Proposta expirada: sem resposta do freelancer até 06/10/2026 às 11:00 (horário de Brasília, RN-021)',
       timestampColumn: 'cancelled_at',
       now: NOW,
-      guard: { sql: 'AND c.proposal_expires_at IS NOT NULL AND c.proposal_expires_at <= :now' },
+      guard: {
+        sql: 'AND c.proposal_expires_at IS NOT NULL AND c.proposal_expires_at <= :now AND c.offer_seq = :gOfferSeq AND c.price = :gHeldPrice',
+        params: { gOfferSeq: 1, gHeldPrice: 900 },
+      },
+      offerResolution: { seq: 1, heldPrice: 900, outcome: 'expired' },
       walletEffects: [{ userId: 7, pendingDelta: -900, balanceDelta: 900, reason: 'refund' }],
       milestonesTo: CANCEL_MILESTONES,
     });
@@ -1647,7 +1710,7 @@ describe('aceite no instante exato do prazo ou da validade (ADR 57)', () => {
     await contractsService.accept(1, 2);
     expect(repo.transition).toHaveBeenCalledTimes(1);
     expect(flat(repo.transition.mock.calls[0]![0].guard!.sql)).toBe(
-      'AND (c.proposal_expires_at IS NULL OR c.proposal_expires_at > :now) AND (c.deadline_at IS NULL OR c.deadline_at > :now)',
+      'AND (c.proposal_expires_at IS NULL OR c.proposal_expires_at > :now) AND (c.deadline_at IS NULL OR c.deadline_at > :now) AND c.offer_seq = :gOfferSeq AND c.price = :gHeldPrice',
     );
   });
 });
@@ -1690,6 +1753,7 @@ describe('create: o que é gravado e quem é avisado (RN-021, RN-031)', () => {
       title: 'Vídeo',
       description: 'Roteiro e edição do vídeo',
       price: 199.99,
+      feePercentage: 10,
       // 10% de 199,99 = 19,999, arredondado em centavos (RN-031).
       platformFee: 20,
       freelancerNet: 179.99,
@@ -1711,7 +1775,7 @@ describe('create: o que é gravado e quem é avisado (RN-021, RN-031)', () => {
       {
         type: 'contract_proposal',
         title: 'Nova proposta de contratação',
-        body: 'Vídeo institucional. Prazo de entrega: seg, 19/10/2026, até 23:59. Responda até sex, 09/10 às 12:00.',
+        body: 'Vídeo institucional. Prazo de entrega: seg, 19/10/2026, até 23:59. Responda até sex, 09/10 às 12:00: aceite, recuse ou faça uma contraproposta.',
         data: { contractId: 31 },
       },
       {},
@@ -1743,7 +1807,7 @@ describe('create: o que é gravado e quem é avisado (RN-021, RN-031)', () => {
     expect(notify).toHaveBeenCalledWith(
       44,
       expect.objectContaining({
-        body: 'Vídeo institucional. Responda até sex, 09/10 às 19:45.',
+        body: 'Vídeo institucional. Responda até sex, 09/10 às 19:45: aceite, recuse ou faça uma contraproposta.',
       }),
       {},
     );
@@ -1781,6 +1845,11 @@ describe('a contratação como a API devolve (ADR 57)', () => {
     );
 
     expect(await contractsService.getById(31, 44)).toEqual({
+      dropout: null,
+      negotiation: null,
+      offers: [],
+      revisions: { used: 0, limit: null },
+      disputeOpensAt: at('2026-10-07 10:00:00'),
       id: 31,
       ulid: '01CONTRACT',
       clientId: 7,
@@ -2353,11 +2422,11 @@ describe('o dia do prazo e a revisão em aberto (ADR 58)', () => {
     expect(notify.mock.calls.map((c) => [c[0], c[1].body])).toEqual([
       [
         44,
-        'Vídeo institucional. Prazo de entrega: ter, 20/10/2026, até 23:59. Responda até sex, 09/10 às 11:00.',
+        'Vídeo institucional. Prazo de entrega: ter, 20/10/2026, até 23:59. Responda até sex, 09/10 às 11:00: aceite, recuse ou faça uma contraproposta.',
       ],
       [
         44,
-        'Vídeo institucional. Prazo de entrega: ter, 20/10/2026, até 23:59 (horário de Brasília). Responda até sex, 09/10 às 11:00.',
+        'Vídeo institucional. Prazo de entrega: ter, 20/10/2026, até 23:59 (horário de Brasília). Responda até sex, 09/10 às 11:00: aceite, recuse ou faça uma contraproposta.',
       ],
     ]);
   });

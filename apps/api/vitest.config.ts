@@ -9,6 +9,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    setupFiles: ['src/test-support/account-access.setup.ts'],
     // Suíte hermética: não depende de um .env local. O env.ts exige JWT_SECRET
     // (sem default) — injetamos um valor de teste para o parse não abortar.
     env: {

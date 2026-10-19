@@ -12,7 +12,7 @@ import {
 
 /**
  * Contas e conformidade: cadastro com aceite dos termos (consentimento registrado), páginas
- * legais públicas, conta suspensa perde o acesso na hora, avatar por URL. Desktop e mobile.
+ * legais públicas, conta suspensa mantém consulta, avatar por URL. Desktop e mobile.
  */
 
 const unique = (): string => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -116,7 +116,10 @@ test('Termos e Privacidade são páginas públicas', async ({ page }) => {
   ).toBeVisible();
 });
 
-test('conta suspensa perde o acesso na hora e não entra mais', async ({ page, request }) => {
+test('conta suspensa mantém a sessão para consulta e bloqueia movimentações', async ({
+  page,
+  request,
+}) => {
   const target = await createUser(request, 'client');
   const admin = await createAdmin(request);
   const me = await request.get('/api/auth/me', {
@@ -133,13 +136,15 @@ test('conta suspensa perde o acesso na hora e não entra mais', async ({ page, r
   });
   expect(susp.ok()).toBeTruthy();
 
-  // Próxima chamada da sessão aberta toma 403 → sessão encerrada → login.
+  // Suspensão conserva a sessão; o estado atual aparece na faixa e desativa negócios.
   await page.getByRole('link', { name: 'Serviços' }).click();
-  await expect(page).toHaveURL(/\/login/);
-  await page.getByLabel('E-mail').fill(target.email);
-  await page.getByLabel('Senha').fill(PASSWORD);
-  await page.locator('form button[type="submit"]').click();
-  await expect(page.getByText(/Conta suspensa/)).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page).toHaveURL(/\/servicos/);
+  await expect(page.getByTestId('suspended-banner')).toContainText('acesso somente para consulta');
+  await page.goto('/carteira');
+  await settled(page);
+  await expect(page.getByTestId('wallet-balance')).toHaveText('R$ 0,00');
+  await expect(page.getByRole('button', { name: 'Depositar', exact: true })).toBeDisabled();
 });
 
 test('avatar por URL aparece na sidebar e no perfil público', async ({ page, request }) => {

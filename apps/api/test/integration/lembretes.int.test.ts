@@ -29,6 +29,7 @@ import {
   localInstant,
 } from '../../src/utils/timezone';
 import { DAY, HOUR, startDaytimeClock, stopClock } from './clock.helpers';
+import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 import { fundWallet } from './wallet.helpers';
 
 /**
@@ -138,18 +139,21 @@ async function propose(
     credits?: boolean;
   } = {},
 ): Promise<number> {
-  const res = await request(app)
-    .post('/api/contracts')
-    .set(auth(client.token))
-    .send({
-      freelancerId: freelancer.id,
-      title,
-      description: `Contratação do teste de lembretes: ${title}`,
-      price: opts.price ?? 200,
-      deadlineAt: (opts.deadline ?? endOf(5)).toISOString(),
-      ...(opts.milestones ? { milestones: opts.milestones } : {}),
-      ...(opts.credits ? { paymentMode: 'credits' } : {}),
-    });
+  // Os lembretes também processam contratos paralelos históricos, anteriores à RN-020.
+  const res = await withLegacyParallelContracts(client.id, freelancer.id, async () =>
+    request(app)
+      .post('/api/contracts')
+      .set(auth(client.token))
+      .send({
+        freelancerId: freelancer.id,
+        title,
+        description: `Contratação do teste de lembretes: ${title}`,
+        price: opts.price ?? 200,
+        deadlineAt: (opts.deadline ?? endOf(5)).toISOString(),
+        ...(opts.milestones ? { milestones: opts.milestones } : {}),
+        ...(opts.credits ? { paymentMode: 'credits' } : {}),
+      }),
+  );
   expect(res.status, JSON.stringify(res.body)).toBe(201);
   return res.body.id as number;
 }
@@ -330,7 +334,7 @@ describe('Lembrete antes do vencimento', () => {
     expect(sent).toEqual([
       {
         title: `Responda à proposta até ${formatDue(due, SP)}: Logo da padaria`,
-        body: `Aceite ou recuse até lá. Sem resposta, a proposta se encerra e o valor reservado volta ao cliente. Se aceitar, o prazo de entrega é ${formatDeadline(deadline, SP, SP)}.`,
+        body: `Aceite, recuse ou faça uma contraproposta até lá. Sem resposta, a proposta se encerra e o valor reservado volta ao cliente. Se aceitar, o prazo de entrega é ${formatDeadline(deadline, SP, SP)}.`,
         data: { contractId: id },
       },
     ]);

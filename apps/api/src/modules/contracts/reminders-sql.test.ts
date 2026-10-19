@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { rn029Eligible, zoneOf } from './deadline-sql';
 import {
   BEFORE_KINDS,
+  OFFER_START,
   REMINDER_PAGE,
   REMINDERS,
   STALLED_KINDS,
@@ -37,9 +38,18 @@ describe('mapa dos lembretes (ADR 58)', () => {
         row: 'contract',
         recipient: 'freelancer',
         due: 'c.proposal_expires_at',
-        seq: '0',
-        start: 'c.created_at',
-        state: "c.status = 'pending' AND c.barter_agreement_id IS NULL",
+        seq: 'c.offer_seq - 1',
+        start: OFFER_START,
+        state: "c.status = 'pending' AND c.barter_agreement_id IS NULL AND MOD(c.offer_seq, 2) = 1",
+        timing: 'before',
+      },
+      counter_offer: {
+        row: 'contract',
+        recipient: 'client',
+        due: 'c.proposal_expires_at',
+        seq: 'c.offer_seq',
+        start: OFFER_START,
+        state: "c.status = 'pending' AND c.barter_agreement_id IS NULL AND MOD(c.offer_seq, 2) = 0",
         timing: 'before',
       },
       delivery: {
@@ -103,6 +113,7 @@ describe('mapa dos lembretes (ADR 58)', () => {
   it('o job percorre os lembretes antes do vencimento nesta ordem e depois as revisões paradas; nenhum tipo fica de fora', () => {
     expect(BEFORE_KINDS).toEqual([
       'proposal',
+      'counter_offer',
       'delivery',
       'approval',
       'milestone_approval',
@@ -116,6 +127,20 @@ describe('mapa dos lembretes (ADR 58)', () => {
 
   it('a página das candidatas tem 200 linhas', () => {
     expect(REMINDER_PAGE).toBe(200);
+  });
+
+  it('oferta1 conserva seq0 do legado; cada contraproposta usa início imutável e armação própria', () => {
+    expect(OFFER_START).toBe(
+      'COALESCE((SELECT o.created_at FROM contract_offers o WHERE o.contract_id = c.id AND o.seq = c.offer_seq), c.created_at)',
+    );
+    for (const kind of ['proposal', 'counter_offer'] as const) {
+      expect(flat(candidatesSql(kind))).toContain(`${OFFER_START} AS start_at`);
+      expect(flat(claimSql(kind))).toContain(`${OFFER_START} <=> :start`);
+    }
+    expect(REMINDERS.proposal.seq).toBe('c.offer_seq - 1');
+    expect([1, 3, 5].map((seq) => seq - 1)).toEqual([0, 2, 4]);
+    expect(REMINDERS.counter_offer.seq).toBe('c.offer_seq');
+    expect(flat(candidatesSql('counter_offer'))).toContain(`${CLIENT_GATE} AND NOT EXISTS`);
   });
 
   describe.each(KINDS)('%s', (kind) => {

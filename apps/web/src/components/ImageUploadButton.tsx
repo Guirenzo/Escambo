@@ -7,6 +7,7 @@ import { canCrop, IMAGE_MAX_SIDE, MEDIA_MAX_MB, prepareImage } from '../lib/imag
 import { useToast } from '../lib/toast';
 import { AvatarCropper } from './AvatarCropper';
 import { Button } from './ui';
+import { useReadOnlyAccount } from '../lib/account-access';
 
 /**
  * Envia uma imagem do aparelho (ADR 36 e 38). Foto de perfil passa pelo recorte quadrado; imagem
@@ -24,12 +25,16 @@ export function ImageUploadButton({
   onUploaded: (url: string) => void;
   testId?: string;
 }) {
+  const readOnly = useReadOnlyAccount();
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const input = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [cropping, setCropping] = useState<File | null>(null);
   const toast = useToast();
 
   async function send(image: Blob, name: string): Promise<void> {
+    if (readOnlyRef.current) return;
     if (image.size > MEDIA_MAX_MB * 1024 * 1024) {
       toast.error(`Imagem maior que ${MEDIA_MAX_MB} MB`);
       return;
@@ -46,7 +51,7 @@ export function ImageUploadButton({
   }
 
   async function pick(file: File | undefined): Promise<void> {
-    if (!file) return;
+    if (!file || readOnlyRef.current) return;
     if (!file.type.startsWith('image/')) {
       toast.error('Escolha uma imagem JPG, PNG, GIF ou WebP');
       return;
@@ -79,12 +84,13 @@ export function ImageUploadButton({
         variant="secondary"
         className="mini upload-btn"
         onClick={() => input.current?.click()}
-        disabled={busy}
+        disabled={readOnly || busy}
       >
         <ImagePlus size={14} aria-hidden="true" /> {busy ? 'Enviando…' : label}
       </Button>
       {/* Fora do formulário: dentro de um <label>, clicar no recorte jogaria o foco no campo. */}
       {cropping &&
+        !readOnly &&
         createPortal(
           <AvatarCropper
             file={cropping}

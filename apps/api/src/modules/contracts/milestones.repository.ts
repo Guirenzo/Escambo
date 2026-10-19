@@ -2,7 +2,11 @@ import type { BrazilTimezone } from '@escambo/types';
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { pool } from '../../config/db';
 import { applyWalletEffect } from '../wallet/wallet.ledger';
+import { lockWallets } from '../wallet/wallet.locks';
 import { CLOSE_PENDING_EXTENSION, rn029Eligible, zoneOf } from './deadline-sql';
+import { INCLUDED_REVISIONS } from './deadline-grace';
+import { recoverDeliveryRules } from './delivery-snapshots';
+import { deliveryDisputeOpensAt, firstDeliveryAt } from './dispute-window';
 
 /**
  * Escrow por marcos (RN-069): o valor inteiro fica retido no aceite; cada marco aprovado
@@ -24,6 +28,11 @@ export interface MilestoneRow extends RowDataPacket {
   delivered_at: Date | null;
   /** Aprovação tácita do marco entregue (RN-024), gravada na entrega (ADR 57). */
   approval_due_at: Date | null;
+  /** ADR 61: abertura conservada mesmo quando o marco volta para revisão. */
+  dispute_opens_at?: Date | null;
+  /** null conserva revisões ilimitadas do legado. */
+  revision_limit?: number | null;
+  revisions_used?: number;
   /** Revisão em aberto: quando o cliente pediu (ADR 58). */
   revision_requested_at?: Date | null;
   delivery_note: string | null;
@@ -64,7 +73,8 @@ export interface MilestoneSpec {
 }
 
 const COLS = `id, contract_id, title, description, amount, freelancer_net, sort_order, status,
-              due_at, overdue_notified_at, delivered_at, approval_due_at, revision_requested_at,
+              due_at, overdue_notified_at, delivered_at, approval_due_at, dispute_opens_at,
+              revision_limit, revisions_used, revision_requested_at,
               delivery_note, revision_note, released_at, created_at`;
 
 /**
@@ -107,11 +117,12 @@ async function history(
   oldStatus: string | null,
   newStatus: string,
   note: string | null,
+  at?: Date,
 ): Promise<void> {
   await conn.query<ResultSetHeader>(
-    `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
-     VALUES (:contractId, :changedBy, :oldStatus, :newStatus, :note)`,
-    { contractId, changedBy, oldStatus, newStatus, note },
+    `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note${at ? ', created_at' : ''})
+     VALUES (:contractId, :changedBy, :oldStatus, :newStatus, :note${at ? ', :at' : ''})`,
+    { contractId, changedBy, oldStatus, newStatus, note, ...(at ? { at } : {}) },
   );
 }
 
@@ -133,9 +144,14 @@ export const milestonesRepository = {
     for (const m of specs) {
       await conn.query<ResultSetHeader>(
         `INSERT INTO contract_milestones
-           (contract_id, title, description, amount, freelancer_net, sort_order, due_at)
-         VALUES (:contractId, :title, :description, :amount, :freelancerNet, :sortOrder, :dueAt)`,
-        { contractId, ...m, dueAt: m.dueAt ? new Date(m.dueAt) : null },
+           (contract_id, title, description, amount, freelancer_net, sort_order, due_at, revision_limit)
+         VALUES (:contractId, :title, :description, :amount, :freelancerNet, :sortOrder, :dueAt, :revisionLimit)`,
+        {
+          contractId,
+          ...m,
+          dueAt: m.dueAt ? new Date(m.dueAt) : null,
+          revisionLimit: INCLUDED_REVISIONS,
+        },
       );
     }
   },
@@ -196,10 +212,18 @@ export const milestonesRepository = {
         await conn.rollback();
         return false;
       }
+      const recovered = await recoverDeliveryRules(conn, p.contractId);
+      const milestone = recovered.milestones.find((m) => m.id === p.milestoneId);
+      if (!milestone || milestone.status !== 'funded') {
+        await conn.rollback();
+        return false;
+      }
+      const first = firstDeliveryAt(recovered.firstDeliveryAt, [], p.now);
+      const opens = deliveryDisputeOpensAt(first, p.approvalDueAt, milestone.dispute_opens_at);
       const [upd] = await conn.query<ResultSetHeader>(
         `UPDATE contract_milestones
             SET status = 'delivered', delivered_at = :now,
-                approval_due_at = :approvalDueAt, delivery_note = :message
+                approval_due_at = :approvalDueAt, delivery_note = :message, dispute_opens_at = :opens
           WHERE id = :id AND contract_id = :contractId AND status = 'funded'`,
         {
           id: p.milestoneId,
@@ -207,12 +231,17 @@ export const milestonesRepository = {
           message: p.message,
           now: p.now,
           approvalDueAt: p.approvalDueAt,
+          opens,
         },
       );
       if (upd.affectedRows === 0) {
         await conn.rollback();
         return false;
       }
+      await conn.query<ResultSetHeader>(
+        `UPDATE contracts SET first_delivery_at = COALESCE(first_delivery_at, :first) WHERE id = :contractId`,
+        { contractId: p.contractId, first },
+      );
       const [m] = await conn.query<RowDataPacket[]>(
         `SELECT title FROM contract_milestones WHERE id = :id`,
         { id: p.milestoneId },
@@ -235,6 +264,7 @@ export const milestonesRepository = {
         status,
         'in_progress',
         `Marco «${String(m[0]?.title ?? '')}» entregue: ${p.message}`,
+        p.now,
       );
       await conn.commit();
       return true;
@@ -284,6 +314,7 @@ export const milestonesRepository = {
       }
       const net =
         p.mode === 'credits' ? Math.round(Number(m.freelancer_net)) : Number(m.freelancer_net);
+      await lockWallets(conn, [p.freelancerId], [p.changedBy]);
       await conn.query<ResultSetHeader>(
         `UPDATE contract_milestones SET status = 'released', released_at = :now WHERE id = :id`,
         { id: m.id, now: p.now },
@@ -345,6 +376,7 @@ export const milestonesRepository = {
     contractId: number;
     milestoneId: number;
     changedBy: number;
+    expectedRevisionsUsed: number;
     note: string | null;
     now: Date;
   }): Promise<boolean> {
@@ -356,12 +388,21 @@ export const milestonesRepository = {
         await conn.rollback();
         return false;
       }
+      await recoverDeliveryRules(conn, p.contractId);
       const [upd] = await conn.query<ResultSetHeader>(
         `UPDATE contract_milestones
             SET status = 'funded', revision_note = :note, approval_due_at = NULL,
-                revision_requested_at = :now
-          WHERE id = :id AND contract_id = :contractId AND status = 'delivered'`,
-        { id: p.milestoneId, contractId: p.contractId, note: p.note, now: p.now },
+                revision_requested_at = :now, revisions_used = revisions_used + 1
+          WHERE id = :id AND contract_id = :contractId AND status = 'delivered'
+            AND (revision_limit IS NULL OR revisions_used < revision_limit)
+            AND revisions_used < 4294967295 AND revisions_used = :expectedRevisionsUsed`,
+        {
+          id: p.milestoneId,
+          contractId: p.contractId,
+          note: p.note,
+          now: p.now,
+          expectedRevisionsUsed: p.expectedRevisionsUsed,
+        },
       );
       if (upd.affectedRows === 0) {
         await conn.rollback();
@@ -378,12 +419,82 @@ export const milestonesRepository = {
         status,
         status,
         `Revisão pedida no marco «${String(m[0]?.title ?? '')}»${p.note ? `: ${p.note}` : ''}`,
+        p.now,
       );
       await conn.commit();
       return true;
     } catch (err) {
       await conn.rollback();
       throw err;
+    } finally {
+      conn.release();
+    }
+  },
+
+  async grantRevision(p: {
+    contractId: number;
+    milestoneId: number;
+    changedBy: number;
+    now: Date;
+    expectedRevisionsUsed: number;
+    expectedRevisionLimit: number;
+  }): Promise<boolean> {
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const status = await contractStatus(conn, p.contractId);
+      if (status !== 'accepted' && status !== 'in_progress') {
+        await conn.rollback();
+        return false;
+      }
+      const [rows] = await conn.query<MilestoneRow[]>(
+        `SELECT ${COLS} FROM contract_milestones WHERE id = :id AND contract_id = :contractId`,
+        { id: p.milestoneId, contractId: p.contractId },
+      );
+      const row = rows[0];
+      if (
+        !row ||
+        row.status !== 'delivered' ||
+        row.revision_limit == null ||
+        Number(row.revisions_used ?? 0) !== p.expectedRevisionsUsed ||
+        row.revision_limit !== p.expectedRevisionLimit ||
+        Number(row.revisions_used ?? 0) < row.revision_limit ||
+        row.revision_limit >= 4_294_967_295
+      ) {
+        await conn.rollback();
+        return false;
+      }
+      const [updated] = await conn.query<ResultSetHeader>(
+        `UPDATE contract_milestones SET revision_limit = revision_limit + 1
+           WHERE id = :id AND contract_id = :contractId AND status = 'delivered'
+             AND revision_limit IS NOT NULL AND revisions_used >= revision_limit
+             AND revision_limit < 4294967295
+             AND revisions_used = :expectedRevisionsUsed AND revision_limit = :expectedRevisionLimit`,
+        {
+          id: p.milestoneId,
+          contractId: p.contractId,
+          expectedRevisionsUsed: p.expectedRevisionsUsed,
+          expectedRevisionLimit: p.expectedRevisionLimit,
+        },
+      );
+      if (!updated.affectedRows) {
+        await conn.rollback();
+        return false;
+      }
+      await history(
+        conn,
+        p.contractId,
+        p.changedBy,
+        status,
+        status,
+        `O freelancer liberou mais uma revisão sem custo no marco «${row.title}» (RN-023): agora são ${row.revision_limit + 1}`,
+        p.now,
+      );
+      await conn.commit();
+      return true;
+    } catch (error) {
+      await conn.rollback();
+      throw error;
     } finally {
       conn.release();
     }

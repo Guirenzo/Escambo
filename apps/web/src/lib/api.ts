@@ -1,4 +1,11 @@
 import type {
+  SupportTicket,
+  SupportTicketDetail,
+  SupportTicketQuery,
+  CreateSupportTicketRequest,
+  ReplySupportTicketRequest,
+  AdminReplySupportTicketRequest,
+  UpdateSupportTicketRequest,
   CancelRequest,
   CancelResult,
   AdminAppeal,
@@ -28,6 +35,8 @@ import type {
   ContentReport,
   Contract,
   ContractWithHistory,
+  ContractDropout,
+  CounterOfferRequest,
   CreateBarterRequest,
   CreateBoostRequest,
   CreateContentReportRequest,
@@ -48,6 +57,9 @@ import type {
   FavoriteTargetType,
   ContentRemoval,
   MyModeration,
+  MyDropout,
+  MyDropouts,
+  AdminDropout,
   FreelancerProfile,
   GamificationProfile,
   LeaderboardEntry,
@@ -67,6 +79,7 @@ import type {
   PublicFreelancerProfile,
   PublicSettings,
   PublicUser,
+  UserStatus,
   PurgeAttachmentsResult,
   RecordConsentRequest,
   RefreshResponse,
@@ -92,6 +105,7 @@ const REFRESH_KEY = 'escambo_refresh';
 /** Eventos de sessão (ouvidos pelo AuthProvider e pelo socket). */
 export const SESSION_TOKEN_EVENT = 'escambo:token';
 export const SESSION_EXPIRED_EVENT = 'escambo:session-expired';
+export const ACCOUNT_STATUS_EVENT = 'escambo:account-status';
 /** A API respondeu 503 em modo de manutenção (ADR 33): o app mostra a tela de manutenção. */
 export const MAINTENANCE_EVENT = 'escambo:maintenance';
 
@@ -166,6 +180,7 @@ export function setSession(tokens: { accessToken: string; refreshToken: string }
 }
 
 let refreshing: Promise<boolean> | null = null;
+let refreshingToken: string | null = null;
 
 /**
  * Renova o access token (expira em 1h) com o refresh token. Várias requisições que tomam 401
@@ -173,22 +188,28 @@ let refreshing: Promise<boolean> | null = null;
  */
 async function refreshSession(): Promise<boolean> {
   if (!refreshToken) return false;
-  if (!refreshing) {
+  if (!refreshing || refreshingToken !== refreshToken) {
+    const renewingToken = refreshToken;
+    refreshingToken = renewingToken;
     refreshing = (async () => {
       try {
         const res = await fetch(`${BASE_URL}/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
+          body: JSON.stringify({ refreshToken: renewingToken }),
         });
         if (!res.ok) return false;
         const data = (await res.json()) as RefreshResponse;
+        if (refreshToken !== renewingToken) return false;
         setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
         return true;
       } catch {
         return false;
       } finally {
-        refreshing = null;
+        if (refreshingToken === renewingToken) {
+          refreshing = null;
+          refreshingToken = null;
+        }
       }
     })();
   }
@@ -200,13 +221,52 @@ function expireSession(): void {
   emit(SESSION_EXPIRED_EVENT);
 }
 
-// Conta suspensa/banida pela moderação: o servidor nega com estes códigos; a sessão local acaba.
-const BLOCKED_CODES = new Set(['account_blocked', 'account_suspended', 'account_banned']);
+// Suspensão mantém consulta e direitos; banimento/exclusão encerram a sessão.
+const BLOCKED_CODES = new Set(['account_blocked', 'account_banned', 'account_deleted']);
+
+export function isAccountStatus(status: unknown): status is UserStatus {
+  return ['active', 'suspended', 'banned', 'pending_verification'].includes(String(status));
+}
+
+function accountStatusResponse(res: Response, token: string | null): void {
+  if (!token || token !== accessToken) return;
+  const status = res.headers?.get('X-Account-Status');
+  if (isAccountStatus(status)) {
+    if (status === 'banned') expireSession();
+    else emit(ACCOUNT_STATUS_EVENT, status);
+  }
+}
+
+function accountErrorResponse(res: Response, token: string | null, data: unknown): void {
+  if (res.status !== 403 || !token || token !== accessToken) return;
+  const code = (data as { error?: string }).error ?? '';
+  if (code === 'account_suspended') emit(ACCOUNT_STATUS_EVENT, 'suspended');
+  else if (BLOCKED_CODES.has(code)) expireSession();
+}
 
 // Nessas rotas um 401 é resposta legítima (credenciais), não token vencido.
 const NO_REFRESH = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
 
+/** Falha HTTP com os dados necessários para orientar o próximo passo do usuário. */
+export class ApiRequestError extends Error {
+  readonly contractId?: number;
+
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+    contractId?: unknown,
+  ) {
+    super(message);
+    this.name = 'ApiRequestError';
+    if (typeof contractId === 'number' && Number.isSafeInteger(contractId) && contractId > 0) {
+      this.contractId = contractId;
+    }
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
+  const token = accessToken;
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -216,24 +276,31 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
       ...(options.headers ?? {}),
     },
   });
+  accountStatusResponse(res, token);
   // Access token vencido: renova e repete a chamada uma vez; se não der, encerra a sessão.
-  if (res.status === 401 && retry && refreshToken && !NO_REFRESH.includes(path)) {
+  if (
+    res.status === 401 &&
+    retry &&
+    token === accessToken &&
+    refreshToken &&
+    !NO_REFRESH.includes(path)
+  ) {
+    const renewingToken = refreshToken;
     if (await refreshSession()) return request<T>(path, options, false);
-    expireSession();
+    if (refreshToken === renewingToken) expireSession();
   }
   if (res.status === 204) return undefined as T;
   const data: unknown = await res.json().catch(() => ({}));
-  if (
-    res.status === 403 &&
-    accessToken &&
-    BLOCKED_CODES.has((data as { error?: string }).error ?? '')
-  ) {
-    expireSession();
-  }
+  accountErrorResponse(res, token, data);
   if (!res.ok) {
-    const err = data as { error?: string; message?: string };
+    const err = data as { error?: string; message?: string; contractId?: unknown };
     if (res.status === 503 && err.error === 'maintenance') emit(MAINTENANCE_EVENT);
-    throw new Error(err.message ?? err.error ?? `Erro ${res.status}`);
+    throw new ApiRequestError(
+      err.message ?? err.error ?? `Erro ${res.status}`,
+      res.status,
+      err.error,
+      err.contractId,
+    );
   }
   return data as T;
 }
@@ -257,14 +324,22 @@ async function fetchBlob(
   fallbackName: string,
   what: string,
 ): Promise<{ blob: Blob; fileName: string }> {
-  const fetchIt = () =>
-    fetch(`${BASE_URL}${path}`, {
+  let responseToken = accessToken;
+  const fetchIt = async () => {
+    const token = accessToken;
+    responseToken = token;
+    const res = await fetch(`${BASE_URL}${path}`, {
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     });
+    accountStatusResponse(res, token);
+    return res;
+  };
   let res = await fetchIt();
-  if (res.status === 401 && (await refreshSession())) res = await fetchIt();
+  if (res.status === 401 && responseToken === accessToken && (await refreshSession()))
+    res = await fetchIt();
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { message?: string };
+    accountErrorResponse(res, responseToken, body);
     throw new Error(body.message ?? `Erro ${res.status} ao ${what}`);
   }
   const fileName = fileNameFrom(res.headers.get('content-disposition') ?? '', fallbackName);
@@ -278,7 +353,49 @@ const financeQs = (q: { from?: string; to?: string; granularity: string }): stri
     Object.entries(q).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1] !== ''),
   ).toString();
 
+function supportQuery(query: SupportTicketQuery): string {
+  const search = new URLSearchParams();
+  if (query.page != null) search.set('page', String(query.page));
+  if (query.limit != null) search.set('limit', String(query.limit));
+  if (query.status) search.set('status', query.status);
+  return search.size ? `?${search}` : '';
+}
+
 export const api = {
+  supportTickets: (query: SupportTicketQuery = {}) =>
+    request<Paginated<SupportTicket>>(`/support/tickets${supportQuery(query)}`),
+  supportTicket: (id: number, beforeId?: number) =>
+    request<SupportTicketDetail>(
+      `/support/tickets/${id}${beforeId ? `?beforeId=${beforeId}` : ''}`,
+    ),
+  createSupportTicket: (body: CreateSupportTicketRequest) =>
+    request<SupportTicketDetail>('/support/tickets', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  replySupportTicket: (id: number, body: ReplySupportTicketRequest) =>
+    request<SupportTicketDetail>(`/support/tickets/${id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  closeSupportTicket: (id: number) =>
+    request<SupportTicketDetail>(`/support/tickets/${id}/close`, { method: 'POST' }),
+  adminSupportTickets: (query: SupportTicketQuery = {}) =>
+    request<Paginated<SupportTicket>>(`/admin/support/tickets${supportQuery(query)}`),
+  adminSupportTicket: (id: number, beforeId?: number) =>
+    request<SupportTicketDetail>(
+      `/admin/support/tickets/${id}${beforeId ? `?beforeId=${beforeId}` : ''}`,
+    ),
+  adminReplySupportTicket: (id: number, body: AdminReplySupportTicketRequest) =>
+    request<SupportTicketDetail>(`/admin/support/tickets/${id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  adminUpdateSupportTicket: (id: number, body: UpdateSupportTicketRequest) =>
+    request<SupportTicketDetail>(`/admin/support/tickets/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   // auth
   register: (body: RegisterRequest) =>
     request<PublicUser>('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
@@ -349,19 +466,52 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(seq === undefined ? {} : { seq }),
     }),
-  contractAction: (id: number, action: 'accept' | 'reject' | 'approve') =>
-    request<Contract>(`/contracts/${id}/${action}`, { method: 'POST' }),
+  contractAction: (id: number, action: 'accept' | 'reject' | 'approve', seq?: number) =>
+    request<Contract>(`/contracts/${id}/${action}`, {
+      method: 'POST',
+      ...(seq === undefined ? {} : { body: JSON.stringify({ seq }) }),
+    }),
+  counterOffer: (id: number, body: CounterOfferRequest) =>
+    request<ContractWithHistory>(`/contracts/${id}/offers`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  acceptCounterOffer: (id: number, seq: number) =>
+    request<ContractWithHistory>(`/contracts/${id}/offers/${seq}/accept`, { method: 'POST' }),
   /** Cancelar ou desistir com o reembolso que a tela mostrou (ADR 57): mudou, 409. */
   cancelContract: (id: number, body: CancelRequest) =>
     request<CancelResult>(`/contracts/${id}/cancel`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  agreeDropout: (id: number) =>
+    request<ContractDropout>(`/contracts/${id}/dropout/agreed`, { method: 'POST' }),
+  myDropouts: () => request<MyDropouts>('/profiles/me/dropouts'),
+  appealDropout: (id: number, text: string) =>
+    request<MyDropout>(`/profiles/me/dropouts/${id}/appeal`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+  adminDropouts: () => request<AdminDropout[]>('/admin/dropouts?status=appealed'),
+  adminUserDropouts: (ulid: string) =>
+    request<AdminDropout[]>(`/admin/users/${encodeURIComponent(ulid)}/dropouts`),
+  adminDecideDropout: (id: number, decision: 'excuse' | 'uphold', note: string) =>
+    request<MyDropout>(`/admin/dropouts/${id}/${decision}`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    }),
   requestRevision: (id: number, note: string) =>
     request<Contract>(`/contracts/${id}/request-revision`, {
       method: 'POST',
       body: JSON.stringify({ note }),
     }),
+  grantContractRevision: (id: number) =>
+    request<Contract>(`/contracts/${id}/revisions/grant`, { method: 'POST' }),
+  grantMilestoneRevision: (contractId: number, milestoneId: number) =>
+    request<ContractWithHistory>(
+      `/contracts/${contractId}/milestones/${milestoneId}/revisions/grant`,
+      { method: 'POST' },
+    ),
   deliverContract: (id: number, message: string) =>
     request<Contract>(`/contracts/${id}/deliver`, {
       method: 'POST',

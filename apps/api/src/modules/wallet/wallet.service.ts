@@ -20,10 +20,20 @@ function toWalletTransaction(r: WalletTxRow): WalletTransaction {
 export const walletService = {
   /** Cria a carteira se ainda não existir (idempotente). */
   async ensure(userId: number): Promise<void> {
-    await walletRepository.getOrCreate(userId);
+    await walletRepository.ensure(userId);
   },
 
-  async getBalance(userId: number): Promise<Wallet> {
+  async getBalance(userId: number, options: { readOnly?: boolean } = {}): Promise<Wallet> {
+    if (options.readOnly) {
+      const existing = await walletRepository.findByUserId(userId);
+      return {
+        balance: Number(existing?.balance ?? 0),
+        balancePending: Number(existing?.balance_pending ?? 0),
+        currency: existing?.currency ?? 'BRL',
+        credits: Number(existing?.credits_balance ?? 0),
+        creditsPending: Number(existing?.credits_pending ?? 0),
+      };
+    }
     // Bônus de boas-vindas em créditos, concedido uma única vez (bootstrap do time-bank).
     await creditsService.ensureWelcome(userId);
     const w = await walletRepository.getOrCreate(userId);

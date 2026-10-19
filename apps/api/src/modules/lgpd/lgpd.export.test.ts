@@ -23,7 +23,7 @@ import {
 const query = vi.mocked(pool.query);
 
 /**
- * A cópia de dados no formato 1.7 (ADR 54 e 56): o que entra, e o que não pode entrar. O banco é
+ * A cópia de dados no formato 1.9: o que entra, e o que não pode entrar. O banco é
  * mockado: o que se prova é o SQL que a exportação manda e as chaves do arquivo.
  */
 beforeEach(() => {
@@ -33,10 +33,14 @@ beforeEach(() => {
 
 const sqlSent = (): string[] => query.mock.calls.map((c) => String(c[0]));
 
-describe('cópia de dados 1.7 (ADR 54 e 56)', () => {
+describe('cópia de dados 1.9 (ADR 54, 56 e 61)', () => {
   it('declara o formato novo e as seções novas, mesmo vazias', async () => {
     const out = await buildExport(7);
-    expect(EXPORT_FORMAT_VERSION).toBe('1.7');
+    expect(EXPORT_FORMAT_VERSION).toBe('1.9');
+    expect(out.formato).toBe('escambo-export/1.9');
+    expect(out).toHaveProperty('ofertas', []);
+    expect(out).toHaveProperty('desistencias', []);
+    expect(out.suporte).toEqual({ chamados: [], mensagens: [] });
     expect(out).toHaveProperty('avisosNoNavegador', []);
     expect(out).toHaveProperty('sessoes', []);
     expect(out).toHaveProperty('registrosDeSeguranca', []);
@@ -98,6 +102,55 @@ const sentQuery = (fragment: string): string => {
 };
 
 describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
+  it('suporte exporta só chamados próprios e mensagens públicas vinculadas ao titular', async () => {
+    const ticket = { id: 10, subject: 'Meu chamado' };
+    const message = { id: 11, ticket_id: 10, message: 'Conversa pública' };
+    query.mockImplementation((async (sql: string) => [
+      sql.includes('FROM support_tickets WHERE')
+        ? [ticket]
+        : sql.includes('FROM support_ticket_messages m')
+          ? [message]
+          : [],
+      [],
+    ]) as never);
+    const out = await buildExport(7);
+    expect(out.suporte).toEqual({ chamados: [ticket], mensagens: [message] });
+    expect(sentQuery('FROM support_tickets WHERE')).toContain(
+      'WHERE user_id = :userId ORDER BY id',
+    );
+    const messagesSql = sentQuery('FROM support_ticket_messages m');
+    expect(messagesSql).toContain(
+      'WHERE m.is_internal = 0 AND (t.user_id = :userId OR m.sender_id = :userId)',
+    );
+    expect(messagesSql).not.toContain('t.subject');
+    expect(messagesSql).not.toContain('t.contract_id');
+  });
+  it('exporta ofertas da contratação do titular e somente suas desistências, sem expor a contestação ao cliente', async () => {
+    const offer = { contract_id: 19, seq: 2, message: 'Nossa contraproposta' };
+    const dropout = { contract_id: 21, appeal_text: 'Minha contestação', decision_note: 'Decisão' };
+    query.mockImplementation((async (sql: string) => [
+      sql.includes('FROM contract_offers o')
+        ? [offer]
+        : sql.includes('FROM freelancer_dropouts WHERE')
+          ? [dropout]
+          : [],
+      [],
+    ]) as never);
+    const out = await buildExport(7);
+    expect(out.ofertas).toEqual([offer]);
+    expect(out.desistencias).toEqual([dropout]);
+    const offersSql = sentQuery('FROM contract_offers o');
+    expect(offersSql).toContain(
+      'JOIN contracts c ON c.id = o.contract_id WHERE c.client_id = :userId OR c.freelancer_id = :userId ORDER BY o.id',
+    );
+    expect(offersSql).toContain('o.made_by');
+    expect(offersSql).toContain('o.milestones');
+    expect(offersSql).toContain('o.outcome');
+    expect(sentQuery('FROM freelancer_dropouts WHERE')).toContain(
+      'WHERE freelancer_id = :userId ORDER BY id',
+    );
+    expect(sentQuery('FROM freelancer_dropouts WHERE')).not.toContain('client_id');
+  });
   it('toda consulta é presa ao titular: o mesmo userId em todas, e nenhuma sem o filtro', async () => {
     await buildExport(7);
     expect(query.mock.calls.length).toBeGreaterThanOrEqual(26);
@@ -321,7 +374,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
     }
 
     expect(out).toEqual({
-      formato: 'escambo-export/1.7',
+      formato: 'escambo-export/1.9',
       exportadoEm: '2026-10-01T12:00:00.000Z',
       titular: { id: 7, ulid: '01USER', email: 'ana@escambo.test', push_quiet_pass: null },
       perfis: { freelancer: { full_name: 'Ana Freela' }, cliente: { full_name: 'Ana Cliente' } },
@@ -329,6 +382,8 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
       servicos: [{ t: 'services' }],
       contratacoes: [{ t: 'contracts' }],
       historicoDeContratacoes: [{ t: 'history' }],
+      ofertas: [],
+      desistencias: [],
       mensagens: [{ t: 'messages' }],
       avaliacoes: [{ t: 'reviews' }],
       trocas: [{ t: 'barters' }],
@@ -340,6 +395,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
         saques: [{ t: 'withdrawals' }],
       },
       disputas: [{ t: 'disputes' }],
+      suporte: { chamados: [], mensagens: [] },
       denunciasFeitas: [{ t: 'reports' }],
       moderacao: [{ t: 'moderation' }],
       favoritos: [{ t: 'favorites' }],

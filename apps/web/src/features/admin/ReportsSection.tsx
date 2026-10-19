@@ -11,7 +11,7 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { Fragment, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   AdminReportAction,
@@ -24,6 +24,7 @@ import { dtm, REPORT_REASON_LABEL, REPORT_STATUS_LABEL } from '../../lib/format'
 import { useAdminReportAction, useAdminReports } from '../../lib/hooks';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
 import { useToast } from '../../lib/toast';
+import { UserDropoutsReview } from './DropoutsReview';
 
 const TONE: Record<string, string> = {
   pending: 'pending',
@@ -239,101 +240,118 @@ export function ReportsSection() {
               </thead>
               <tbody>
                 {list.map((g) => (
-                  <tr key={`${g.id}-${g.status}`} data-testid={`report-group-${g.id}`}>
-                    <td>
-                      <div className="report-target">
-                        <ReportThumb group={g} />
-                        <div className="cell-title">
-                          <strong>{g.label}</strong>
-                          {g.owner && (
-                            <span className="muted tiny">
-                              de {g.owner.name ?? 'conta sem nome'}
-                              {g.targetType !== 'review' && g.targetType !== 'message' && (
-                                <>
-                                  {' · '}
-                                  <Link to={`/freelancers/${g.owner.ulid}`}>ver perfil</Link>
-                                </>
-                              )}
-                            </span>
-                          )}
-                          {g.excerpt && <span className="muted tiny clamp">“{g.excerpt}”</span>}
-                          {g.imageUrl && !g.imageLive && (
-                            <span className="muted tiny">esta imagem já não está no ar</span>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="report-reasons">
-                        {g.reasons.map((r) => (
-                          <span key={r.reason} className="reason-tag">
-                            {REPORT_REASON_LABEL[r.reason] ?? r.reason}
-                            {r.count > 1 ? ` ×${r.count}` : ''}
-                          </span>
-                        ))}
-                        {g.automatic && (
-                          <span className="reason-tag auto">Sinalização automática</span>
-                        )}
-                      </div>
-                      {g.descriptions[0] && (
-                        <div className="muted tiny clamp">{g.descriptions[0]}</div>
-                      )}
-                      <div className="muted tiny">
-                        {g.reports} denúncia{g.reports > 1 ? 's' : ''} · última em{' '}
-                        {dtm(g.lastReportedAt)}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="cell-title">
-                        <span className={`pill status-${TONE[g.status] ?? ''}`}>
-                          {REPORT_STATUS_LABEL[g.status] ?? g.status}
-                        </span>
-                        {g.resolutionNote && (
-                          <span className="muted tiny clamp">{g.resolutionNote}</span>
-                        )}
-                        {g.reviewedAt && <span className="muted tiny">em {dtm(g.reviewedAt)}</span>}
-                      </div>
-                    </td>
-                    {scope === 'pending' && (
+                  <Fragment key={`${g.id}-${g.status}`}>
+                    <tr data-testid={`report-group-${g.id}`}>
                       <td>
-                        <div className="acts">
-                          {isImage(g) ? (
-                            <Button
-                              variant="danger"
-                              className="mini"
-                              onClick={() => open(g, 'remove-image')}
-                            >
-                              <ImageOff size={14} /> Remover imagem
-                            </Button>
-                          ) : isContent(g) ? (
-                            <Button
-                              variant="danger"
-                              className="mini"
-                              onClick={() => open(g, 'remove-content')}
-                            >
-                              {g.targetType === 'review' ? (
-                                <StarOff size={14} />
-                              ) : (
-                                <MessageSquareOff size={14} />
-                              )}{' '}
-                              {g.targetType === 'review' ? 'Remover avaliação' : 'Remover mensagem'}
-                            </Button>
-                          ) : (
-                            <Button variant="mini" onClick={() => open(g, 'resolve')}>
-                              <CheckCircle2 size={14} /> Resolvida
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            className="mini"
-                            onClick={() => open(g, 'dismiss')}
-                          >
-                            <XCircle size={14} /> Dispensar
-                          </Button>
+                        <div className="report-target">
+                          <ReportThumb group={g} />
+                          <div className="cell-title">
+                            <strong>{g.label}</strong>
+                            {g.owner && (
+                              <span className="muted tiny">
+                                de {g.owner.name ?? 'conta sem nome'}
+                                {g.targetType !== 'review' && g.targetType !== 'message' && (
+                                  <>
+                                    {' · '}
+                                    <Link to={`/freelancers/${g.owner.ulid}`}>ver perfil</Link>
+                                  </>
+                                )}
+                              </span>
+                            )}
+                            {g.excerpt && <span className="muted tiny clamp">“{g.excerpt}”</span>}
+                            {g.imageUrl && !g.imageLive && (
+                              <span className="muted tiny">esta imagem já não está no ar</span>
+                            )}
+                          </div>
                         </div>
                       </td>
-                    )}
-                  </tr>
+                      <td>
+                        <div className="report-reasons">
+                          {g.reasons.map((r) => (
+                            <span key={r.reason} className="reason-tag">
+                              {REPORT_REASON_LABEL[r.reason] ?? r.reason}
+                              {r.count > 1 ? ` ×${r.count}` : ''}
+                            </span>
+                          ))}
+                          {g.automatic && (
+                            <span className="reason-tag auto">Sinalização automática</span>
+                          )}
+                        </div>
+                        {g.descriptions[0] && (
+                          <div className="muted tiny clamp">{g.descriptions[0]}</div>
+                        )}
+                        <div className="muted tiny">
+                          {g.reports} denúncia{g.reports > 1 ? 's' : ''} · última em{' '}
+                          {dtm(g.lastReportedAt)}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="cell-title">
+                          <span className={`pill status-${TONE[g.status] ?? ''}`}>
+                            {REPORT_STATUS_LABEL[g.status] ?? g.status}
+                          </span>
+                          {g.resolutionNote && (
+                            <span className="muted tiny clamp">{g.resolutionNote}</span>
+                          )}
+                          {g.reviewedAt && (
+                            <span className="muted tiny">em {dtm(g.reviewedAt)}</span>
+                          )}
+                        </div>
+                      </td>
+                      {scope === 'pending' && (
+                        <td>
+                          <div className="acts">
+                            {isImage(g) ? (
+                              <Button
+                                variant="danger"
+                                className="mini"
+                                onClick={() => open(g, 'remove-image')}
+                              >
+                                <ImageOff size={14} /> Remover imagem
+                              </Button>
+                            ) : isContent(g) ? (
+                              <Button
+                                variant="danger"
+                                className="mini"
+                                onClick={() => open(g, 'remove-content')}
+                              >
+                                {g.targetType === 'review' ? (
+                                  <StarOff size={14} />
+                                ) : (
+                                  <MessageSquareOff size={14} />
+                                )}{' '}
+                                {g.targetType === 'review'
+                                  ? 'Remover avaliação'
+                                  : 'Remover mensagem'}
+                              </Button>
+                            ) : (
+                              <Button variant="mini" onClick={() => open(g, 'resolve')}>
+                                <CheckCircle2 size={14} /> Resolvida
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              className="mini"
+                              onClick={() => open(g, 'dismiss')}
+                            >
+                              <XCircle size={14} /> Dispensar
+                            </Button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                    {g.owner &&
+                      g.targetType === 'user' &&
+                      g.descriptions.some((description) =>
+                        description.startsWith('Desistências:'),
+                      ) && (
+                        <tr data-testid={`report-dropouts-${g.id}`}>
+                          <td colSpan={scope === 'pending' ? 4 : 3}>
+                            <UserDropoutsReview ulid={g.owner.ulid} />
+                          </td>
+                        </tr>
+                      )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

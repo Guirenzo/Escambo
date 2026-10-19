@@ -74,7 +74,8 @@ export async function createService(
   opts: { title?: string; deliveryDays?: number } = {},
 ): Promise<{ id: number; title: string; categoryId: number }> {
   const categories = await api<{ id: number }[]>(request, 'get', '/categories');
-  const categoryId = categories[categoryIndex]?.id ?? categories[0].id;
+  const categoryId = categories[categoryIndex]?.id ?? categories[0]?.id;
+  if (categoryId === undefined) throw new Error('O seed de referência não contém categorias.');
   const title = opts.title ?? `Serviço e2e ${unique()}`;
   const svc = await api<{ id: number }>(request, 'post', '/services', {
     token: owner.token,

@@ -25,7 +25,7 @@ export const settingsRepository = {
   },
 
   async getNumber(key: string, fallback: number): Promise<number> {
-    return parseNumberSetting(await this.get(key), fallback);
+    return parseNumberSetting(await this.get(key), fallback, key);
   },
 
   /** Grava (ou cria) uma chave — usado por jobs para guardar estado que sobrevive a reinícios. */

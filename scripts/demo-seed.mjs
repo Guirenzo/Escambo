@@ -3,7 +3,7 @@
  * Dados de demonstração do Escambo.
  *
  * Popula uma instância em execução (dev ou docker compose) usando a própria API HTTP,
- * exatamente como o front faz: 6 freelancers com perfil + localização, 1 cliente,
+ * exatamente como o front faz: 6 freelancers com perfil + localização, 3 clientes,
  * serviços, contratações em todos os estados (pendente → aceita → entregue → aprovada),
  * chat, contratação em créditos, impulsionamento, trocas de serviço, depósito PIX (gateway
  * simulado) na carteira da cliente e saques na fila do admin.
@@ -224,6 +224,21 @@ const CLIENT = {
   },
 };
 
+// RN-020: cenários simultâneos com Rafael usam clientes distintos. A conta principal
+// conserva o pedido de extensão; registros já existentes da demo antiga são reutilizados.
+const EXTRA_CLIENTS = [
+  {
+    key: 'beatriz',
+    email: 'beatriz@escambo.demo',
+    profile: { fullName: 'Beatriz Lima', city: 'Joinville', state: 'SC' },
+  },
+  {
+    key: 'caio',
+    email: 'caio@escambo.demo',
+    profile: { fullName: 'Caio Souza', city: 'Joinville', state: 'SC' },
+  },
+];
+
 /** Admin da demo: vira admin por ADMIN_EMAILS (padrão do docker-compose: admin@escambo.demo). */
 const ADMIN_EMAIL = 'admin@escambo.demo';
 
@@ -232,9 +247,10 @@ const ADMIN_EMAIL = 'admin@escambo.demo';
 // ---------------------------------------------------------------------------
 
 class ApiError extends Error {
-  constructor(status, message, path) {
+  constructor(status, message, path, code) {
     super(`${status} ${path}: ${message}`);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -249,7 +265,8 @@ async function call(method, path, { token, body } = {}) {
   });
   if (res.status === 204) return undefined;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, data.message ?? data.error ?? res.statusText, path);
+  if (!res.ok)
+    throw new ApiError(res.status, data.message ?? data.error ?? res.statusText, path, data.error);
   return data;
 }
 
@@ -364,7 +381,9 @@ function endOfDayInZone(zone, days) {
   };
   const offset = (at) => {
     const p = parts(at);
-    return (Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - at.getTime()) / 60_000;
+    return (
+      (Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - at.getTime()) / 60_000
+    );
   };
   const today = parts(new Date());
   const naive = Date.UTC(today.year, today.month - 1, today.day + days, 23, 59, 59);
@@ -517,6 +536,26 @@ async function ensureAttachment(contract, user, { name, type, bytes, caption }) 
     throw new ApiError(res.status, data.message ?? data.error ?? res.statusText, 'attachments');
   }
   log(`  anexo ${name} no chat`);
+}
+
+async function demoClientFor(primary, fallback, freelancer, title, preferPrimary = false) {
+  const mine = items(await call('GET', '/contracts?limit=50', { token: primary.token }));
+  const matches = (c) =>
+    c.freelancerId === freelancer.id &&
+    c.title === title &&
+    !['cancelled', 'rejected'].includes(c.status);
+  if (mine.some(matches)) return primary;
+  // Uma execução anterior pode ter usado o cliente alternativo. Reutilize o cenário
+  // mesmo se a conta principal ficou livre desde então (por conclusão/cancelamento).
+  const alternate = items(await call('GET', '/contracts?limit=50', { token: fallback.token }));
+  if (alternate.some(matches)) return fallback;
+  const open = mine.some(
+    (c) =>
+      c.freelancerId === freelancer.id &&
+      c.paymentMode !== 'barter' &&
+      !['cancelled', 'rejected', 'completed'].includes(c.status),
+  );
+  return preferPrimary && !open ? primary : fallback;
 }
 
 async function ensureContract(
@@ -735,10 +774,19 @@ async function ensureDispute(client, contract, reason, description) {
   const detail = await call('GET', `/contracts/${contract.id}`, { token: client.token });
   if (!['accepted', 'in_progress', 'delivered', 'revision_requested'].includes(detail.status))
     return;
-  await call('POST', '/disputes', {
-    token: client.token,
-    body: { contractId: contract.id, reason, description },
-  });
+  try {
+    await call('POST', '/disputes', {
+      token: client.token,
+      body: { contractId: contract.id, reason, description },
+    });
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 409 || err.code !== 'dispute_too_early')
+      throw err;
+    // RN-062: a demo também respeita a janela real; uma nova execução após a abertura
+    // reutiliza o contrato e cria a disputa. Os demais cenários podem seguir agora.
+    log(`disputa #${contract.id} adiada: ${err.message} Rode a demo novamente após a abertura.`);
+    return;
+  }
   log(`disputa  #${contract.id} (${reason})`);
 }
 
@@ -821,6 +869,8 @@ async function main() {
   const users = {};
   for (const f of FREELANCERS) users[f.key] = await ensureAccount(f.email, 'freelancer');
   users[CLIENT.key] = await ensureAccount(CLIENT.email, 'client');
+  for (const client of EXTRA_CLIENTS)
+    users[client.key] = await ensureAccount(client.email, 'client');
   users.admin = await ensureAccount(ADMIN_EMAIL, 'client');
   for (const u of Object.values(users)) await ensureVerified(u, users.admin);
 
@@ -847,6 +897,10 @@ async function main() {
   const ana = users.ana;
   await call('PUT', '/profiles/client', { token: ana.token, body: CLIENT.profile });
   await call('GET', '/wallet', { token: ana.token });
+  for (const client of EXTRA_CLIENTS) {
+    await call('PUT', '/profiles/client', { token: users[client.key].token, body: client.profile });
+    await call('GET', '/wallet', { token: users[client.key].token });
+  }
 
   step('Carteira da cliente (depósito PIX no gateway simulado)');
   await ensureBalance(ana, 6000);
@@ -905,7 +959,8 @@ async function main() {
     price: 320,
     to: 'revision',
   });
-  await ensureContract(ana, users.rafael, svc['Motion graphics 15s'], {
+  const motionClient = await demoClientFor(ana, users.beatriz, users.rafael, 'Motion graphics 15s');
+  await ensureContract(motionClient, users.rafael, svc['Motion graphics 15s'], {
     title: 'Motion graphics 15s',
     price: 900,
     to: 'accepted',
@@ -914,7 +969,14 @@ async function main() {
       ['freelancer', 'Anotado. Já começo pelo storyboard e te mostro amanhã.'],
     ],
   });
-  const abertura = await ensureContract(ana, users.rafael, svc['Motion graphics 15s'], {
+  const extensionClient = await demoClientFor(
+    ana,
+    users.beatriz,
+    users.rafael,
+    'Abertura animada para o YouTube',
+    true,
+  );
+  const abertura = await ensureContract(extensionClient, users.rafael, svc['Motion graphics 15s'], {
     title: 'Abertura animada para o YouTube',
     price: 600,
     to: 'accepted',
@@ -979,13 +1041,14 @@ async function main() {
   await ensureBoost(users.bruno, svc['Landing page em React']);
 
   step('Disputa (fila de mediação do admin)');
-  const vinheta = await ensureContract(ana, users.rafael, svc['Motion graphics 15s'], {
+  const disputeClient = await demoClientFor(ana, users.caio, users.rafael, 'Vinheta animada 5s');
+  const vinheta = await ensureContract(disputeClient, users.rafael, svc['Motion graphics 15s'], {
     title: 'Vinheta animada 5s',
     price: 300,
     to: 'delivered',
   });
   await ensureDispute(
-    ana,
+    disputeClient,
     vinheta,
     'quality',
     'A vinheta veio com a logo antiga e sem o áudio combinado. Pedi ajuste e não tive retorno.',
@@ -1026,6 +1089,8 @@ async function main() {
 
   console.log('\n✔ Demo pronta. Contas (senha Escambo@123):');
   console.log(`  cliente     ${CLIENT.email}`);
+  for (const client of EXTRA_CLIENTS)
+    console.log(`  cliente     ${client.email} (${client.profile.fullName})`);
   console.log(`  admin       ${ADMIN_EMAIL}`);
   for (const f of FREELANCERS)
     console.log(`  freelancer  ${f.email.padEnd(24)} ${f.profile.fullName}`);

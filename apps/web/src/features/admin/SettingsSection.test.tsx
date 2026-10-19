@@ -10,10 +10,12 @@ import { SettingsSection } from './SettingsSection';
 
 const adminSettings = vi.fn();
 const adminUpdateSetting = vi.fn();
+const publicSettings = vi.fn();
 vi.mock('../../lib/api', () => ({
   api: {
     adminSettings: () => adminSettings(),
     adminUpdateSetting: (key: string, value: number | boolean) => adminUpdateSetting(key, value),
+    publicSettings: () => publicSettings(),
   },
 }));
 
@@ -71,11 +73,50 @@ const row = (key: string) => within(screen.getByTestId(`setting-${key}`));
 beforeEach(() => {
   adminSettings.mockReset();
   adminUpdateSetting.mockReset();
+  publicSettings.mockReset();
+  publicSettings.mockResolvedValue({
+    fixedContractRules: {
+      includedRevisions: 2,
+      maxOffers: 5,
+      disputeWaitHours: 48,
+      disputeTacitMarginHours: 24,
+      dropoutWindowDays: 60,
+      dropoutAlertAt: 3,
+      dropoutAgreementDays: 7,
+    },
+  });
   adminSettings.mockResolvedValue([fee(), tacit(), barter()]);
 });
 
 /** Parâmetros da plataforma (ADR 32/33): cada linha edita um valor dentro dos limites dele. */
 describe('SettingsSection', () => {
+  it('mostra regras fixas vindas da API sem campo editável nem botão Salvar', async () => {
+    render(wrap(<SettingsSection />));
+    const fixed = within(screen.getByTestId('fixed-contract-rules'));
+    expect(await fixed.findByText(/2 revisões sem custo/)).toBeVisible();
+    expect(fixed.getByText(/Até 5 ofertas na negociação \(3 rodadas\)/)).toBeVisible();
+    expect(fixed.getByText(/Disputa manual após 48 horas/)).toHaveTextContent('24 horas antes');
+    expect(fixed.getByText(/Desistências do freelancer contam por 60 dias/)).toHaveTextContent(
+      '3 abrem revisão humana da conta',
+    );
+    expect(fixed.getByText(/Desistências do freelancer contam por 60 dias/)).toHaveTextContent(
+      'até 7 dias',
+    );
+    expect(fixed.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(fixed.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument();
+    expect(fixed.queryByRole('switch')).not.toBeInTheDocument();
+  });
+
+  it('falha na consulta das regras permite tentar de novo sem impedir os parâmetros editáveis', async () => {
+    publicSettings.mockRejectedValueOnce(new Error('Falha temporária'));
+    const user = userEvent.setup();
+    render(wrap(<SettingsSection />));
+    expect(await screen.findByRole('spinbutton', { name: 'Taxa da plataforma' })).toHaveValue(15);
+    await user.click(await screen.findByRole('button', { name: 'Consultar regras novamente' }));
+    expect(await screen.findByText(/2 revisões sem custo/)).toBeVisible();
+    expect(publicSettings).toHaveBeenCalledTimes(2);
+  });
+
   it('enquanto carrega mostra o esqueleto; as linhas entram no lugar dele', async () => {
     let release!: (list: PlatformSetting[]) => void;
     adminSettings.mockReturnValue(new Promise<PlatformSetting[]>((r) => (release = r)));

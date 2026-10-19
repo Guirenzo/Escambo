@@ -6,6 +6,16 @@ import type { Notification } from '@escambo/types';
  */
 export function notificationPath(data: Notification['data']): string | null {
   const d = data ?? {};
+  if (
+    typeof d.supportTicketId === 'number' &&
+    Number.isSafeInteger(d.supportTicketId) &&
+    d.supportTicketId > 0
+  ) {
+    return d.supportAdmin === true
+      ? `/admin?ticket=${d.supportTicketId}#suporte`
+      : `/suporte?ticket=${d.supportTicketId}`;
+  }
+  if (d.dropoutId != null) return '/perfil#desistencias';
   if (typeof d.contractId === 'number') return `/contratos/${d.contractId}`;
   if (typeof d.savedSearchId === 'number') return `/servicos?busca=${d.savedSearchId}`;
   if (d.barterId != null) return '/trocas';

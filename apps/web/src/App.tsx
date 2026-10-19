@@ -28,6 +28,7 @@ import { RankingView } from './features/views/RankingView';
 import { SalaContratoView } from './features/views/SalaContratoView';
 import { ServicosView } from './features/views/ServicosView';
 import { TrocasView } from './features/views/TrocasView';
+import { SuporteView } from './features/views/SuporteView';
 import { useAuth } from './lib/auth';
 import { RouteAnnouncer } from './lib/title';
 import './styles.css';
@@ -50,10 +51,10 @@ function LoginRoute() {
   return <LoginForm />;
 }
 
-/** /admin: só para administradores (ADMIN_EMAILS); os demais voltam para a home. */
+/** /admin: papel atual de administrador e conta sem suspensão. A API revalida os dois. */
 function AdminRoute() {
   const { user } = useAuth();
-  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  if (user?.role !== 'admin' || user.status === 'suspended') return <Navigate to="/" replace />;
   return <AdminView />;
 }
 
@@ -87,6 +88,7 @@ export function App() {
               <Route path="carteira" element={<CarteiraView />} />
               <Route path="notificacoes" element={<NotificacoesView />} />
               <Route path="perfil" element={<PerfilView />} />
+              <Route path="suporte" element={<SuporteView />} />
               <Route path="contratos/:id" element={<SalaContratoRoute />} />
               <Route path="freelancers/:ulid" element={<FreelancerView />} />
               <Route path="admin" element={<AdminRoute />} />

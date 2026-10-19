@@ -4,6 +4,10 @@ import {
   autoDisputeNotice,
   brl,
   cancelledNotice,
+  deliveredNotice,
+  milestoneDeliveredNotice,
+  milestoneRevisionNotice,
+  revisionGrantedNotice,
   extensionAcceptedNotice,
   extensionDeclinedNotice,
   extensionExpiredClientNotice,
@@ -12,10 +16,92 @@ import {
   milestoneList,
   overdueClientNotice,
   overdueFreelancerNotice,
+  proposalNotice,
   revisionNotice,
   type DecisionFacts,
   type OverdueFacts,
 } from './deadline-notices';
+
+describe('revisões e disputa: o aviso só oferece ações disponíveis (ADR 61)', () => {
+  const base = { contractId: 3, title: 'Site', approvalDue: 'sex, 16/10 às 09:00' };
+  it.each([null, 2])(
+    'janela futura não oferece abrir disputa agora (limite %s)',
+    (revisionLimit) => {
+      const body = deliveredNotice({
+        ...base,
+        revisionLimit,
+        revisionsUsed: 0,
+        disputeFrom: 'sab, 10/10 às 12:00',
+      }).params.body!;
+      expect(body).toContain('Aprove ou peça revisão');
+      expect(body).not.toContain('abra disputa');
+      expect(body).toContain('A disputa abre a partir de sab, 10/10 às 12:00');
+      expect(body).toContain('Depois de sex, 16/10 às 09:00, a entrega é aprovada automaticamente');
+    },
+  );
+  it('limite esgotado exige liberação do freelancer e mantém a aprovação e a disputa aberta', () => {
+    const body = deliveredNotice({ ...base, revisionLimit: 2, revisionsUsed: 2, disputeFrom: null })
+      .params.body!;
+    expect(body).toContain('Aprove ou abra disputa');
+    expect(body).not.toContain('peça revisão');
+    expect(body).toContain('outra, só se o freelancer liberar');
+  });
+  it('marco informa sua última revisão e sua própria aprovação', () => {
+    const body = milestoneDeliveredNotice({
+      ...base,
+      milestoneId: 71,
+      milestone: 'Layout',
+      message: 'No Figma',
+      revisionLimit: 2,
+      revisionsUsed: 1,
+      disputeFrom: null,
+    }).params.body!;
+    expect(body).toContain('Resta 1 revisão sem custo');
+    expect(body).toContain('o marco é aprovado automaticamente');
+    expect(body).toContain('Mensagem: No Figma');
+  });
+  it('pedido identifica a última incluída sem inventar prazo de entrega', () => {
+    expect(
+      revisionNotice({ contractId: 3, title: 'Site', note: 'Mudar fonte', used: 2, limit: 2 })
+        .params.body,
+    ).toBe('Revisão 2 de 2 sem custo, a última incluída. Mudar fonte');
+    expect(
+      milestoneRevisionNotice({
+        contractId: 3,
+        milestoneId: 71,
+        title: 'Layout',
+        note: null,
+        used: 2,
+        limit: 2,
+      }).params.body,
+    ).toBe('«Layout»: revisão 2 de 2 sem custo, a última deste marco.');
+    expect(
+      revisionNotice({
+        contractId: 3,
+        title: 'Legado',
+        note: 'Mudar fonte',
+        used: 300,
+        limit: null,
+      }).params.body,
+    ).toBe('Mudar fonte');
+  });
+  it('liberação extra lembra a mesma aprovação; legado sem data não inventa hora', () => {
+    const notice = revisionGrantedNotice({
+      contractId: 3,
+      title: 'Site',
+      milestoneId: 71,
+      milestone: 'Layout',
+      approvalDue: base.approvalDue,
+    });
+    expect(notice.params.type).toBe('contract_revision_granted');
+    expect(notice.params.data).toEqual({ contractId: 3, milestoneId: 71 });
+    expect(notice.params.body).toContain('Peça pela Sala até sex, 16/10 às 09:00');
+    expect(notice.params.body).toContain('o marco é aprovado automaticamente');
+    expect(
+      revisionGrantedNotice({ contractId: 3, title: 'Site', approvalDue: null }).params.body,
+    ).toBe('O freelancer liberou mais uma revisão, sem custo. Peça pela Sala.');
+  });
+});
 
 /**
  * Os avisos do prazo palavra por palavra (ADR 56 e 57): o que dizem, e quem pode receber durante
@@ -313,6 +399,47 @@ describe('revisão, cancelamento e disputa', () => {
     ).toBe('contract_cancelled');
   });
 
+  it.each([
+    {
+      unit: 'BRL' as const,
+      stage: 'withdrawal' as const,
+      before: 'R$ 100,00 voltou para a sua carteira.',
+    },
+    {
+      unit: 'credits' as const,
+      stage: 'withdrawal' as const,
+      before: 'Os 100 créditos voltaram para a sua carteira.',
+    },
+    {
+      unit: 'none' as const,
+      stage: 'barter' as const,
+      before: 'A contratação fazia parte de uma troca; a troca segue o próprio fluxo.',
+    },
+  ])(
+    'desistência em $unit oferece confirmação só quando existe registro com prazo',
+    ({ unit, stage, before }) => {
+      const facts = {
+        contractId: 31,
+        title: 'Entrega',
+        by: 'freelancer' as const,
+        stage,
+        unit,
+        refundClient: 100,
+        releaseFreelancer: 0,
+      };
+      expect(cancelledNotice(facts).params.body).toBe(before);
+      expect(
+        cancelledNotice({ ...facts, dropoutAgreementUntil: '16/10/2026 às 11:00' }).params.body,
+      ).toBe(
+        `${before} Se combinaram a desistência, confirme na Sala até 16/10/2026 às 11:00: ela deixará de contar no perfil do freelancer.`,
+      );
+      expect(
+        cancelledNotice({ ...facts, by: 'client', dropoutAgreementUntil: '16/10/2026 às 11:00' })
+          .params.body,
+      ).not.toContain('confirme na Sala');
+    },
+  );
+
   it('com marco entregue, a disputa, o aviso dela e o cancelamento nunca dizem "sem entrega"', () => {
     const d = autoDisputeDescription({
       deadline: '02/10/2026',
@@ -374,6 +501,23 @@ describe('revisão, cancelamento e disputa', () => {
     ).toBe(
       'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, sex, 02/10/2026, até 23:59 (horário de Manaus), venceu sem entrega, o aviso saiu em 03/10/2026 às 10:03 e, até 04/10/2026 às 10:03, não houve entrega nem extensão aceita. O aviso e o limite estão em horário de Brasília.',
     );
+  });
+
+  it('proposta com resposta gravada oferece contrapropor; troca sem resposta gravada mantém o aviso sem validade', () => {
+    expect(
+      proposalNotice({
+        contractId: 3,
+        title: 'Logo nova',
+        deadline: null,
+        respondBy: 'qui, 08/10 às 16:40',
+      }).params.body,
+    ).toBe(
+      'Logo nova. Responda até qui, 08/10 às 16:40: aceite, recuse ou faça uma contraproposta.',
+    );
+    expect(
+      proposalNotice({ contractId: 3, title: 'Logo nova', deadline: '20/10/2026', respondBy: null })
+        .params.body,
+    ).toBe('Logo nova. Prazo de entrega: 20/10/2026.');
   });
 
   it('milestoneList e brl', () => {

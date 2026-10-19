@@ -1,7 +1,8 @@
+import { BusinessForm, BusinessModal } from '../../components/BusinessActions';
 import { Flag } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
 import type { ReportReason, ReportTargetType } from '@escambo/types';
-import { Button, Field, Modal, Select } from '../../components/ui';
+import { Button, Field, Select } from '../../components/ui';
 import { REPORT_REASON_LABEL } from '../../lib/format';
 import { useCreateReport } from '../../lib/hooks';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
@@ -64,11 +65,11 @@ export function ReportModal({
   }
 
   return (
-    <Modal
+    <BusinessModal
       title={subjects.length === 1 && image ? 'Denunciar imagem' : 'Denunciar'}
       onClose={onClose}
     >
-      <form onSubmit={submit} className="stack">
+      <BusinessForm onSubmit={submit} className="stack">
         {subjects.length > 1 && (
           <fieldset className="pref-list">
             <legend className="muted tiny">O que você quer denunciar?</legend>
@@ -123,7 +124,7 @@ export function ReportModal({
         <Button type="submit" variant="danger" disabled={create.isPending}>
           <Flag size={16} /> {create.isPending ? 'Enviando…' : 'Enviar denúncia'}
         </Button>
-      </form>
-    </Modal>
+      </BusinessForm>
+    </BusinessModal>
   );
 }

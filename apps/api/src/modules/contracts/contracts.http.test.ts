@@ -9,17 +9,21 @@ const { service, notify, audit } = vi.hoisted(() => ({
     create: vi.fn(),
     listMine: vi.fn(),
     getById: vi.fn(),
+    counter: vi.fn(),
+    acceptCounter: vi.fn(),
     accept: vi.fn(),
     reject: vi.fn(),
     deliver: vi.fn(),
     approve: vi.fn(),
     requestRevision: vi.fn(),
+    grantRevision: vi.fn(),
     cancel: vi.fn(),
     requestExtension: vi.fn(),
     resolveExtension: vi.fn(),
     deliverMilestone: vi.fn(),
     approveMilestone: vi.fn(),
     requestMilestoneRevision: vi.fn(),
+    grantMilestoneRevision: vi.fn(),
   },
   notify: vi.fn(),
   audit: vi.fn(),
@@ -63,18 +67,23 @@ describe('contratações: borda HTTP', () => {
       ['post', '/api/contracts'],
       ['get', '/api/contracts'],
       ['get', '/api/contracts/12'],
+      ['post', '/api/contracts/12/offers'],
+      ['post', '/api/contracts/12/offers/2/accept'],
       ['post', '/api/contracts/12/accept'],
       ['post', '/api/contracts/12/reject'],
       ['post', '/api/contracts/12/deliver'],
       ['post', '/api/contracts/12/approve'],
       ['post', '/api/contracts/12/request-revision'],
+      ['post', '/api/contracts/12/revisions/grant'],
       ['post', '/api/contracts/12/cancel'],
+      ['post', '/api/contracts/12/dropout/agreed'],
       ['post', '/api/contracts/12/extension'],
       ['post', '/api/contracts/12/extension/accept'],
       ['post', '/api/contracts/12/extension/decline'],
       ['post', '/api/contracts/12/milestones/5/deliver'],
       ['post', '/api/contracts/12/milestones/5/approve'],
       ['post', '/api/contracts/12/milestones/5/request-revision'],
+      ['post', '/api/contracts/12/milestones/5/revisions/grant'],
     ];
 
     it('toda rota exige login, e sem ele nada chega ao service, ao aviso nem à auditoria', async () => {
@@ -98,7 +107,15 @@ describe('contratações: borda HTTP', () => {
     });
 
     it('as transições são POST: um GET no mesmo endereço não executa nada', async () => {
-      for (const action of ['accept', 'reject', 'approve', 'cancel', 'milestones/5/approve']) {
+      for (const action of [
+        'accept',
+        'reject',
+        'offers',
+        'offers/2/accept',
+        'approve',
+        'cancel',
+        'milestones/5/approve',
+      ]) {
         const res = await request(app).get(`/api/contracts/12/${action}`).set(bearer(CLIENT));
         expect(res.status, action).toBe(404);
         expect(res.body.error).toBe('not_found');
@@ -129,7 +146,7 @@ describe('contratações: borda HTTP', () => {
         .set(bearer(99, 'admin'))
         .expect(403);
       expect(res.body).toEqual({ error: 'forbidden', message: 'Ação exclusiva do freelancer' });
-      expect(service.accept).toHaveBeenCalledWith(12, 99);
+      expect(service.accept).toHaveBeenCalledWith(12, 99, undefined);
       expect(notify).not.toHaveBeenCalled();
     });
   });
@@ -139,14 +156,18 @@ describe('contratações: borda HTTP', () => {
     /** Cada rota com um corpo válido: o que a validação recusa aqui é só o id. */
     const routes: [string, object][] = [
       ['deliver', { message: 'Pronto' }],
+      ['offers', { seq: 1, price: 500, deadlineAt: null, message: 'Ajustar escopo' }],
+      ['offers/2/accept', {}],
       ['approve', {}],
       ['request-revision', { note: 'Trocar a cor' }],
+      ['revisions/grant', {}],
       ['cancel', {}],
       ['extension', { deadlineAt, reason: 'Material atrasou' }],
       ['extension/accept', {}],
       ['milestones/5/deliver', { message: 'Layout' }],
       ['milestones/5/approve', {}],
       ['milestones/5/request-revision', {}],
+      ['milestones/5/revisions/grant', {}],
     ];
 
     it('contratação com id que não é inteiro positivo é recusada em toda transição, antes do service', async () => {
@@ -167,7 +188,7 @@ describe('contratações: borda HTTP', () => {
     });
 
     it('marco com id que não é inteiro positivo é recusado na aprovação e na revisão', async () => {
-      for (const action of ['approve', 'request-revision']) {
+      for (const action of ['approve', 'request-revision', 'revisions/grant']) {
         for (const milestoneId of ['x', '0', '2.5']) {
           const res = await request(app)
             .post(`/api/contracts/12/milestones/${milestoneId}/${action}`)
@@ -398,10 +419,182 @@ describe('contratações: borda HTTP', () => {
     });
   });
 
+  describe('negociação: ofertas e sequência vista (RN-030)', () => {
+    const input = { seq: 1, price: 600, deadlineAt: null, message: 'Ajustar o escopo' };
+    const contract = { id: 12, clientId: CLIENT, freelancerId: FREELANCER, offers: [] };
+
+    it('POST offers devolve 201, leva uid/termos validados ao service e audita a oferta enviada', async () => {
+      service.counter.mockResolvedValue(contract);
+      const res = await request(app)
+        .post('/api/contracts/12/offers')
+        .set(bearer(FREELANCER))
+        .set('User-Agent', AGENT)
+        .send({ ...input, message: '  Ajustar o escopo  ' })
+        .expect(201);
+      expect(res.body).toEqual(contract);
+      expect(service.counter).toHaveBeenCalledWith(12, FREELANCER, input);
+      expect(audit).toHaveBeenCalledOnce();
+      expect(audit).toHaveBeenCalledWith({
+        userId: FREELANCER,
+        action: 'contract_offer_sent',
+        entityType: 'contract',
+        entityId: 12,
+        newValue: { seq: 2, price: 600, deadlineAt: null },
+        ...origin,
+      });
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('aceite da contraproposta leva id/seq do caminho e uid logado, audita e devolve o detalhe', async () => {
+      service.acceptCounter.mockResolvedValue(contract);
+      const res = await request(app)
+        .post('/api/contracts/12/offers/2/accept')
+        .set(bearer(CLIENT))
+        .set('User-Agent', AGENT)
+        .expect(200);
+      expect(res.body).toEqual(contract);
+      expect(service.acceptCounter).toHaveBeenCalledWith(12, CLIENT, 2);
+      expect(audit).toHaveBeenCalledWith({
+        userId: CLIENT,
+        action: 'contract_offer_accepted',
+        entityType: 'contract',
+        entityId: 12,
+        newValue: { seq: 2 },
+        ...origin,
+      });
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('accept/reject entregam a sequência vista; aceite de oferta do cliente também é auditado', async () => {
+      service.accept.mockResolvedValue(contract);
+      service.reject.mockResolvedValue(contract);
+      await request(app)
+        .post('/api/contracts/12/accept')
+        .set(bearer(FREELANCER))
+        .set('User-Agent', AGENT)
+        .send({ seq: 3 })
+        .expect(200);
+      expect(service.accept).toHaveBeenCalledWith(12, FREELANCER, 3);
+      expect(audit).toHaveBeenCalledWith({
+        userId: FREELANCER,
+        action: 'contract_offer_accepted',
+        entityType: 'contract',
+        entityId: 12,
+        newValue: { seq: 3 },
+        ...origin,
+      });
+      await request(app)
+        .post('/api/contracts/12/reject')
+        .set(bearer(FREELANCER))
+        .send({ seq: 2 })
+        .expect(200);
+      expect(service.reject).toHaveBeenCalledWith(12, FREELANCER, 2);
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('contraproposta inválida não alcança service, auditoria ou avisos', async () => {
+      for (const body of [
+        { ...input, seq: undefined },
+        { ...input, seq: 6 },
+        { ...input, price: 10.005 },
+        { ...input, deadlineAt: undefined },
+        { ...input, message: '   ' },
+        { ...input, paymentMode: 'credits' },
+        {
+          ...input,
+          milestones: [
+            { id: 11, amount: 300, dueAt: null, title: 'Renomear' },
+            { id: 12, amount: 300, dueAt: null },
+          ],
+        },
+        {
+          ...input,
+          milestones: [
+            { id: 11, amount: 300, dueAt: null },
+            { id: 12, amount: 299.99, dueAt: null },
+          ],
+        },
+      ]) {
+        await request(app)
+          .post('/api/contracts/12/offers')
+          .set(bearer(FREELANCER))
+          .send(body)
+          .expect(422);
+      }
+      expect(service.counter).not.toHaveBeenCalled();
+      expect(audit).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('seq inválido no caminho ou nas decisões é recusado antes de qualquer service', async () => {
+      for (const seq of ['0', '6', '1.5', 'abc']) {
+        await request(app)
+          .post(`/api/contracts/12/offers/${seq}/accept`)
+          .set(bearer(CLIENT))
+          .expect(422);
+      }
+      for (const action of ['accept', 'reject', 'cancel']) {
+        for (const seq of [0, 6, 1.5, '2']) {
+          await request(app)
+            .post(`/api/contracts/12/${action}`)
+            .set(bearer(FREELANCER))
+            .send({ seq })
+            .expect(422);
+        }
+      }
+      expect(service.acceptCounter).not.toHaveBeenCalled();
+      expect(service.accept).not.toHaveBeenCalled();
+      expect(service.reject).not.toHaveBeenCalled();
+      expect(service.cancel).not.toHaveBeenCalled();
+      expect(audit).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('preserva códigos da regra para vez, oferta velha, prazo e saldo sem emitir auditoria/aviso', async () => {
+      for (const [status, code] of [
+        [409, 'not_your_turn'],
+        [409, 'offer_changed'],
+        [409, 'offer_limit'],
+        [409, 'proposal_expired'],
+        [422, 'offer_shape'],
+        [422, 'milestones_mismatch'],
+        [422, 'offer_unchanged'],
+        [400, 'deadline_too_soon'],
+        [402, 'insufficient_balance'],
+      ] as const) {
+        service.counter.mockRejectedValueOnce(new HttpError(status, code, code));
+        const res = await request(app)
+          .post('/api/contracts/12/offers')
+          .set(bearer(FREELANCER))
+          .send(input)
+          .expect(status);
+        expect(res.body).toEqual({ error: code, message: code });
+      }
+      service.acceptCounter.mockRejectedValueOnce(
+        new HttpError(409, 'Oferta mudou', 'offer_changed'),
+      );
+      await request(app).post('/api/contracts/12/offers/2/accept').set(bearer(CLIENT)).expect(409);
+      expect(audit).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('mantém somente as rotas canônicas da negociação', async () => {
+      for (const path of ['counter-offer', 'decline']) {
+        await request(app)
+          .post(`/api/contracts/12/${path}`)
+          .set(bearer(CLIENT))
+          .send(input)
+          .expect(404);
+      }
+      expect(service.counter).not.toHaveBeenCalled();
+      expect(service.reject).not.toHaveBeenCalled();
+    });
+  });
+
   describe('aceite e recusa da proposta', () => {
     const contract = { id: 12, clientId: CLIENT, freelancerId: FREELANCER };
 
-    it('o aceite vai em nome de quem está logado e avisa o cliente (RF-032)', async () => {
+    it('o aceite inicial vai em nome de quem está logado; o service envia o aviso (RF-032)', async () => {
       service.accept.mockResolvedValue({ ...contract, status: 'accepted' });
       const res = await request(app)
         .post('/api/contracts/12/accept')
@@ -409,16 +602,11 @@ describe('contratações: borda HTTP', () => {
         .expect(200);
 
       expect(res.body).toEqual({ ...contract, status: 'accepted' });
-      expect(service.accept).toHaveBeenCalledWith(12, FREELANCER);
-      expect(notify).toHaveBeenCalledTimes(1);
-      expect(notify).toHaveBeenCalledWith(CLIENT, {
-        type: 'contract_accepted',
-        title: 'Sua proposta foi aceita',
-        data: { contractId: 12 },
-      });
+      expect(service.accept).toHaveBeenCalledWith(12, FREELANCER, undefined);
+      expect(notify).not.toHaveBeenCalled();
     });
 
-    it('a recusa vai em nome de quem está logado e avisa o cliente', async () => {
+    it('a recusa inicial vai em nome de quem está logado; o service envia o aviso', async () => {
       service.reject.mockResolvedValue({ ...contract, status: 'rejected' });
       const res = await request(app)
         .post('/api/contracts/12/reject')
@@ -426,13 +614,8 @@ describe('contratações: borda HTTP', () => {
         .expect(200);
 
       expect(res.body).toEqual({ ...contract, status: 'rejected' });
-      expect(service.reject).toHaveBeenCalledWith(12, FREELANCER);
-      expect(notify).toHaveBeenCalledTimes(1);
-      expect(notify).toHaveBeenCalledWith(CLIENT, {
-        type: 'contract_rejected',
-        title: 'Sua proposta foi recusada',
-        data: { contractId: 12 },
-      });
+      expect(service.reject).toHaveBeenCalledWith(12, FREELANCER, undefined);
+      expect(notify).not.toHaveBeenCalled();
     });
 
     it('quando o service barra (não é o freelancer), ninguém é avisado', async () => {
@@ -543,6 +726,99 @@ describe('contratações: borda HTTP', () => {
     });
   });
 
+  describe('RN-023: freelancer libera mais uma revisão', () => {
+    const routes = [
+      {
+        url: '/api/contracts/12/revisions/grant',
+        method: 'grantRevision' as const,
+        args: [12, FREELANCER],
+        newValue: { limit: 3 },
+      },
+      {
+        url: '/api/contracts/12/milestones/5/revisions/grant',
+        method: 'grantMilestoneRevision' as const,
+        args: [12, 5, FREELANCER],
+        newValue: { milestoneId: 5 },
+      },
+    ];
+    const granted = { id: 12, status: 'delivered', revisions: { used: 2, limit: 3 } };
+
+    it.each(routes)(
+      '$method entrega ids/uid, devolve contrato e audita origem após sucesso',
+      async (route) => {
+        service[route.method].mockResolvedValueOnce(granted);
+        const res = await request(app)
+          .post(route.url)
+          .set(bearer(FREELANCER))
+          .set('User-Agent', AGENT)
+          .expect(200);
+        expect(res.body).toEqual(granted);
+        expect(service[route.method]).toHaveBeenCalledWith(...route.args);
+        expect(audit).toHaveBeenCalledWith({
+          userId: FREELANCER,
+          action: 'revision_granted',
+          entityType: 'contract',
+          entityId: 12,
+          newValue: route.newValue,
+          ...origin,
+        });
+        expect(audit.mock.invocationCallOrder[0]!).toBeGreaterThan(
+          service[route.method].mock.invocationCallOrder[0]!,
+        );
+        expect(notify).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(routes)(
+      '$method recusa alteração arbitrária de limite antes do service',
+      async (route) => {
+        await request(app)
+          .post(route.url)
+          .set(bearer(FREELANCER))
+          .send({ limit: 100, used: 0 })
+          .expect(422);
+        expect(service[route.method]).not.toHaveBeenCalled();
+        expect(audit).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      'revision_unlimited',
+      'revision_grant_not_needed',
+      'revision_grant_limit',
+      'invalid_transition',
+    ])('recusa %s permanece 409 sem auditoria ou aviso duplicado', async (code) => {
+      service.grantRevision.mockRejectedValueOnce(
+        new HttpError(409, 'Não é possível liberar', code),
+      );
+      const res = await request(app)
+        .post(routes[0]!.url)
+        .set(bearer(FREELANCER))
+        .send({})
+        .expect(409);
+      expect(res.body).toEqual({ error: code, message: 'Não é possível liberar' });
+      expect(audit).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('cliente não recebe privilégio de liberar pelo controller', async () => {
+      service.grantMilestoneRevision.mockRejectedValueOnce(
+        new HttpError(403, 'Ação exclusiva do freelancer', 'forbidden'),
+      );
+      await request(app).post(routes[1]!.url).set(bearer(CLIENT)).expect(403);
+      expect(service.grantMilestoneRevision).toHaveBeenCalledWith(12, 5, CLIENT);
+      expect(audit).not.toHaveBeenCalled();
+    });
+
+    it('a auditoria pendente não segura a revisão já liberada', async () => {
+      service.grantRevision.mockResolvedValueOnce(granted);
+      audit.mockReturnValueOnce(new Promise<void>(() => undefined));
+      const res = await request(app).post(routes[0]!.url).set(bearer(FREELANCER)).expect(200);
+      expect(res.body).toEqual(granted);
+      expect(audit).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('POST /api/contracts/:id/request-revision', () => {
     it('a nota do cliente chega ao service; sem nota, vai null', async () => {
       service.requestRevision.mockResolvedValue({ id: 12, status: 'revision_requested' });
@@ -620,6 +896,16 @@ describe('contratações: borda HTTP', () => {
       service.cancel.mockResolvedValue(result);
       await request(app).post('/api/contracts/12/cancel').set(bearer(FREELANCER)).expect(200);
       expect(service.cancel).toHaveBeenCalledWith(12, FREELANCER, {});
+    });
+
+    it('leva sequência e reembolso vistos ao service no cancelamento da negociação', async () => {
+      service.cancel.mockResolvedValue(result);
+      await request(app)
+        .post('/api/contracts/12/cancel')
+        .set(bearer(CLIENT))
+        .send({ expectedRefund: 250, seq: 2 })
+        .expect(200);
+      expect(service.cancel).toHaveBeenCalledWith(12, CLIENT, { expectedRefund: 250, seq: 2 });
     });
 
     it('reembolso esperado negativo ou que não é número é recusado', async () => {
@@ -919,7 +1205,7 @@ describe('contratações: borda HTTP', () => {
       expect(audit).not.toHaveBeenCalled();
     });
 
-    it('a revisão do marco avisa o freelancer com a nota do cliente', async () => {
+    it('a revisão do marco leva a nota ao service, que envia o aviso após commit', async () => {
       service.requestMilestoneRevision.mockResolvedValue(contract);
       const res = await request(app)
         .post('/api/contracts/12/milestones/5/request-revision')
@@ -934,16 +1220,10 @@ describe('contratações: borda HTTP', () => {
         CLIENT,
         'Ajustar o topo',
       );
-      expect(notify).toHaveBeenCalledTimes(1);
-      expect(notify).toHaveBeenCalledWith(FREELANCER, {
-        type: 'milestone_revision',
-        title: 'Revisão solicitada em um marco',
-        body: 'Ajustar o topo',
-        data: { contractId: 12, milestoneId: 5 },
-      });
+      expect(notify).not.toHaveBeenCalled();
     });
 
-    it('revisão sem nota: o service recebe null e o aviso sai sem corpo', async () => {
+    it('revisão sem nota: o service recebe null sem um segundo aviso do controller', async () => {
       service.requestMilestoneRevision.mockResolvedValue(contract);
       await request(app)
         .post('/api/contracts/12/milestones/5/request-revision')
@@ -951,7 +1231,7 @@ describe('contratações: borda HTTP', () => {
         .send({})
         .expect(200);
       expect(service.requestMilestoneRevision).toHaveBeenCalledWith(12, 5, CLIENT, null);
-      expect(notify).toHaveBeenCalledWith(FREELANCER, expect.objectContaining({ body: null }));
+      expect(notify).not.toHaveBeenCalled();
     });
 
     it('revisão recusada pelo service (não é o cliente) não avisa ninguém', async () => {

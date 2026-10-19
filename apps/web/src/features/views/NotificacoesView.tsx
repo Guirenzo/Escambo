@@ -1,3 +1,4 @@
+import { useReadOnlyAccount } from '../../lib/account-access';
 import { Bell, CheckCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button, PageHeader, QueryState } from '../../components/ui';
@@ -11,6 +12,7 @@ import { notificationPath } from '../../lib/notifications';
 import { usePageTitle } from '../../lib/title';
 
 export function NotificacoesView() {
+  const readOnly = useReadOnlyAccount();
   const notifications = useNotifications();
   const markOne = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
@@ -27,7 +29,7 @@ export function NotificacoesView() {
           unread > 0 ? (
             <Button
               variant="secondary"
-              disabled={markAll.isPending}
+              disabled={readOnly || markAll.isPending}
               onClick={() => markAll.mutate()}
             >
               <CheckCheck size={16} /> Marcar todas como lidas
@@ -50,7 +52,7 @@ export function NotificacoesView() {
                 <li
                   key={n.id}
                   className={n.isRead ? '' : 'unread'}
-                  onClick={() => !n.isRead && markOne.mutate(n.id)}
+                  onClick={() => !readOnly && !n.isRead && markOne.mutate(n.id)}
                 >
                   <div className="rank-left">
                     <span className="kpi-ico">
@@ -66,7 +68,7 @@ export function NotificacoesView() {
                           className="tiny notif-link"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (!n.isRead) markOne.mutate(n.id);
+                            if (!readOnly && !n.isRead) markOne.mutate(n.id);
                           }}
                         >
                           {n.type === 'saved_search_match'

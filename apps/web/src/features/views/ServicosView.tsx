@@ -1,3 +1,4 @@
+import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
 import { Heart, MapPin, Plus, Search } from 'lucide-react';
 import { useMemo, useState, type FormEvent, useEffect } from 'react';
 import type {
@@ -259,9 +260,12 @@ export function ServicosView() {
         title="Serviços"
         subtitle="Encontre quem faz — ou publique o que você faz."
         action={
-          <Button variant={open ? 'secondary' : 'primary'} onClick={() => setOpen((o) => !o)}>
+          <BusinessButton
+            variant={open ? 'secondary' : 'primary'}
+            onClick={() => setOpen((o) => !o)}
+          >
             <Plus size={16} /> {open ? 'Fechar' : 'Novo serviço'}
-          </Button>
+          </BusinessButton>
         }
       />
 
@@ -456,7 +460,7 @@ export function ServicosView() {
       </div>
 
       {open && (
-        <form className="card" onSubmit={submit}>
+        <BusinessForm className="card" onSubmit={submit}>
           <h3>Novo serviço</h3>
           <Field label="Título">
             <Input
@@ -499,7 +503,7 @@ export function ServicosView() {
           <Button type="submit" disabled={create.isPending}>
             {create.isPending ? 'Salvando…' : 'Publicar'}
           </Button>
-        </form>
+        </BusinessForm>
       )}
 
       {services.isLoading ? (

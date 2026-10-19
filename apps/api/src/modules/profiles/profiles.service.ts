@@ -22,6 +22,7 @@ import {
 } from './profiles.schema';
 import { isAvailableNow, normalizePeriods, parsePeriods } from './availability';
 import { timezoneOf } from '../../utils/timezone';
+import { dropoutsService } from '../dropouts/dropouts.service';
 
 /** available_days chega como array (mysql2 parseia JSON) ou string; qualquer outra coisa vira null. */
 /** JSON da coluna available_days (array, string ou NULL) → lista de dias 0–6. */
@@ -209,13 +210,19 @@ export const profilesService = {
     const r: PublicFreelancerRow | undefined =
       await profilesRepository.findPublicFreelancerByUlid(ulid);
     if (!r) throw new HttpError(404, 'Perfil não encontrado', 'profile_not_found');
+    const [portfolio, summary] = await Promise.all([
+      profilesRepository.listPortfolio(r.user_id),
+      dropoutsService.publicSummary(r.user_id),
+    ]);
     return {
       ...toFreelancer(r),
       userId: r.user_id,
       userUlid: r.ulid,
       level: r.level,
       levelName: r.level_name,
-      portfolio: (await profilesRepository.listPortfolio(r.user_id)).map(toPortfolioItem),
+      portfolio: portfolio.map(toPortfolioItem),
+      // O perfil público nunca recebe a lista, as datas ou os textos privados da contestação.
+      dropouts: { count: summary.count, windowDays: 60, alert: summary.alert },
     };
   },
 };

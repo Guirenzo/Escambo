@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import type { PlatformSetting } from '@escambo/types';
 import { Button, Input, QueryState } from '../../components/ui';
 import { dtm } from '../../lib/format';
-import { useAdminSettings, useUpdateSetting } from '../../lib/hooks';
+import { useAdminSettings, usePublicSettings, useUpdateSetting } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 
 const show = (s: PlatformSetting, v: number | boolean): string =>
@@ -102,6 +102,8 @@ function SettingRow({ setting }: { setting: PlatformSetting }) {
 /** Parâmetros da plataforma (ADR 32/33): o que a API lê em tempo de execução, editável pelo admin. */
 export function SettingsSection() {
   const settings = useAdminSettings();
+  const publicSettings = usePublicSettings();
+  const rules = publicSettings.data?.fixedContractRules;
   return (
     <section className="card wide" aria-labelledby="settings-title" data-testid="settings-card">
       <div className="card-head">
@@ -124,6 +126,48 @@ export function SettingsSection() {
           </div>
         )}
       </QueryState>
+      <div className="stack" data-testid="fixed-contract-rules">
+        <h4>Regras fixas das contratações</h4>
+        <p className="muted tiny">
+          Somente leitura. Alterar estas regras exige uma atualização do sistema e uma nova versão
+          dos documentos legais.
+        </p>
+        {rules ? (
+          <ul>
+            <li>
+              {rules.includedRevisions} revisões sem custo por entrega ou marco. O freelancer pode
+              liberar mais uma; contratações antigas mantêm o limite combinado.
+            </li>
+            <li>
+              Até {rules.maxOffers} ofertas na negociação ({Math.ceil(rules.maxOffers / 2)}{' '}
+              rodadas).
+            </li>
+            <li>
+              Disputa manual após {rules.disputeWaitHours} horas da primeira entrega ou, sem
+              entrega, do aceite. A espera termina pelo menos {rules.disputeTacitMarginHours} horas
+              antes da aprovação tácita. A disputa automática por atraso segue a carência própria.
+            </li>
+            <li>
+              Desistências do freelancer contam por {rules.dropoutWindowDays} dias;{' '}
+              {rules.dropoutAlertAt} abrem revisão humana da conta. O cliente pode confirmar um
+              encerramento de comum acordo em até {rules.dropoutAgreementDays} dias.
+            </li>
+          </ul>
+        ) : publicSettings.error ? (
+          <p className="muted tiny">
+            Não foi possível consultar as regras fixas.{' '}
+            <Button type="button" variant="mini" onClick={() => void publicSettings.refetch()}>
+              Consultar regras novamente
+            </Button>
+          </p>
+        ) : (
+          <p className="muted tiny">
+            {publicSettings.isLoading
+              ? 'Consultando regras fixas…'
+              : 'As regras fixas não estão disponíveis nesta versão da API.'}
+          </p>
+        )}
+      </div>
     </section>
   );
 }

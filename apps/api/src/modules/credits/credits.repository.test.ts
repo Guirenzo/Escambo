@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeDb } from '../../test-support/fake-db';
+import { lockWalletRows, lockWalletUsers, lockWallets } from '../wallet/wallet.locks';
 import { creditsRepository } from './credits.repository';
 
 vi.mock('../../config/db', async () => (await import('../../test-support/fake-db')).dbModule);
+vi.mock('../wallet/wallet.locks', () => ({
+  lockWalletRows: vi.fn(),
+  lockWalletUsers: vi.fn(),
+  lockWallets: vi.fn(),
+}));
 
 /**
  * Repository dos créditos sem banco: a ordem das instruções do bônus de boas-vindas (carteira,
@@ -10,7 +16,11 @@ vi.mock('../../config/db', async () => (await import('../../test-support/fake-db
  * roda no MySQL, e se a trava segura a concorrência de verdade, é assunto da integração.
  */
 describe('creditsRepository', () => {
-  beforeEach(() => fakeDb.reset());
+  beforeEach(() => {
+    fakeDb.reset();
+    for (const lock of [lockWalletRows, lockWalletUsers, lockWallets])
+      vi.mocked(lock).mockReset().mockResolvedValue(undefined);
+  });
 
   describe('grantWelcomeIfNew (bônus de boas-vindas, uma única vez)', () => {
     it('bônus zero ou negativo não abre conexão nem transação', async () => {
@@ -34,6 +44,13 @@ describe('creditsRepository', () => {
 
       await creditsRepository.grantWelcomeIfNew(7, 100);
 
+      expect(lockWalletUsers).toHaveBeenCalledExactlyOnceWith(fakeDb.conn, [7]);
+      expect(fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!).toBeLessThan(
+        vi.mocked(lockWalletUsers).mock.invocationCallOrder[0]!,
+      );
+      expect(vi.mocked(lockWalletUsers).mock.invocationCallOrder[0]!).toBeLessThan(
+        fakeDb.conn.query.mock.invocationCallOrder[1]!,
+      );
       expect(fakeDb.sqls()).toEqual([
         'INSERT IGNORE INTO wallets (user_id) VALUES (:userId)',
         // A trava da carteira é o que serializa o cheque e a concessão do mesmo usuário.
@@ -58,7 +75,8 @@ describe('creditsRepository', () => {
       // A transação abre antes da primeira instrução (trava fora dela não segura nada) e o commit
       // só vem depois do extrato.
       const queries = fakeDb.conn.query.mock.invocationCallOrder;
-      expect(fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!).toBeLessThan(queries[0]!);
+      expect(queries[0]!).toBeLessThan(fakeDb.pool.getConnection.mock.invocationCallOrder[0]!);
+      expect(fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!).toBeLessThan(queries[1]!);
       expect(fakeDb.conn.commit.mock.invocationCallOrder[0]!).toBeGreaterThan(queries[5]!);
     });
 
@@ -154,7 +172,7 @@ describe('creditsRepository', () => {
 
       await expect(creditsRepository.grantWelcomeIfNew(7, 100)).rejects.toBe(boom);
 
-      expect(fakeDb.calls).toHaveLength(0);
+      expect(fakeDb.sqls()).toEqual(['INSERT IGNORE INTO wallets (user_id) VALUES (:userId)']);
       expect(fakeDb.conn.beginTransaction).not.toHaveBeenCalled();
       // Não há conexão para desfazer nem devolver: o erro do pool não pode ser trocado por outro.
       expect(fakeDb.conn.rollback).not.toHaveBeenCalled();

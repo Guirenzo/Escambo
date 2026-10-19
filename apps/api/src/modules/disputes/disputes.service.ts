@@ -1,6 +1,7 @@
 import { ulid } from 'ulid';
 import type { Dispute, DisputeReason, DisputeResolution, DisputeStatus } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
+import { formatDue } from '../../utils/timezone';
 import { contractsRepository } from '../contracts/contracts.repository';
 import { notificationsService } from '../notifications/notifications.service';
 import { disputesRepository, type DisputeRow } from './disputes.repository';
@@ -28,20 +29,31 @@ export const disputesService = {
     if (contract.client_id !== userId && contract.freelancer_id !== userId) {
       throw new HttpError(403, 'Você não participa desta contratação', 'forbidden');
     }
-    const id = await disputesRepository.create({
+    const result = await disputesRepository.createManual({
       ulid: ulid(),
       contractId: input.contractId,
       openedBy: userId,
       reason: input.reason,
       description: input.description,
     });
-    if (id === null) {
+    if ('refused' in result && result.refused === 'too_early') {
+      throw new HttpError(
+        409,
+        result.opensAt
+          ? `A disputa abre a partir de ${formatDue(result.opensAt, result.requesterZone)}. Até lá, tente se acertar pelo chat.`
+          : 'A disputa ainda não está disponível nesta contratação. Tente se acertar pelo chat.',
+        'dispute_too_early',
+        { opensAt: result.opensAt?.toISOString() ?? null },
+      );
+    }
+    if ('refused' in result) {
       throw new HttpError(
         409,
         'A contratação não está em um estado que permite disputa',
         'not_disputable',
       );
     }
+    const { id } = result;
     // A outra parte fica sabendo na hora; a mediação (admin) vê a disputa no painel.
     const other = contract.client_id === userId ? contract.freelancer_id : contract.client_id;
     void notificationsService.notify(other, {

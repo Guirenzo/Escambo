@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeDb } from '../../test-support/fake-db';
+import { lockWalletRows, lockWalletUsers, lockWallets } from '../wallet/wallet.locks';
 import { withdrawalRepository } from './withdrawal.repository';
 
 const { ledger } = vi.hoisted(() => ({
   ledger: { applyWalletEffect: vi.fn(), recordWalletTx: vi.fn() },
 }));
 vi.mock('../../config/db', async () => (await import('../../test-support/fake-db')).dbModule);
+vi.mock('../wallet/wallet.locks', () => ({
+  lockWalletRows: vi.fn(),
+  lockWalletUsers: vi.fn(),
+  lockWallets: vi.fn(),
+}));
 vi.mock('../wallet/wallet.ledger', () => ledger);
 
 /** Marcas do ledger de R$ na sequência de instruções, para conferir a ordem junto com o SQL. */
@@ -22,9 +28,9 @@ const HOLDER_JOINS =
 
 /** A ordem global de chamada (a do vitest) de tudo o que a transação executou: SQL e ledger. */
 const workOrder = (): number[] =>
-  [fakeDb.conn.query, ledger.applyWalletEffect, ledger.recordWalletTx].flatMap(
-    (m) => m.mock.invocationCallOrder,
-  );
+  [fakeDb.conn.query, ledger.applyWalletEffect, ledger.recordWalletTx]
+    .flatMap((m) => m.mock.invocationCallOrder)
+    .filter((order) => order > orderOf(fakeDb.conn.beginTransaction));
 const orderOf = (fn: { mock: { invocationCallOrder: number[] } }): number =>
   fn.mock.invocationCallOrder[0]!;
 
@@ -58,6 +64,8 @@ function expectRolledBack(): void {
 describe('withdrawalRepository', () => {
   beforeEach(() => {
     fakeDb.reset();
+    for (const lock of [lockWalletRows, lockWalletUsers, lockWallets])
+      vi.mocked(lock).mockReset().mockResolvedValue(undefined);
     ledger.applyWalletEffect.mockReset().mockImplementation(async (_conn, effect) => {
       fakeDb.calls.push({ sql: WALLET_EFFECT, params: effect });
       return true;
@@ -81,6 +89,13 @@ describe('withdrawalRepository', () => {
       fakeDb.reply({ affectedRows: 0 }, [{ id: 31 }], { insertId: 77, affectedRows: 1 });
 
       expect(await withdrawalRepository.createIfSufficient(params)).toBe(77);
+      expect(lockWallets).toHaveBeenCalledExactlyOnceWith(fakeDb.conn, [7]);
+      expect(fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!).toBeLessThan(
+        vi.mocked(lockWallets).mock.invocationCallOrder[0]!,
+      );
+      expect(vi.mocked(lockWallets).mock.invocationCallOrder[0]!).toBeLessThan(
+        ledger.applyWalletEffect.mock.invocationCallOrder[0]!,
+      );
 
       expect(steps()).toEqual([
         'INSERT IGNORE INTO',
@@ -316,6 +331,10 @@ describe('withdrawalRepository', () => {
       fakeDb.reply([row], { affectedRows: 1 });
 
       expect(await withdrawalRepository.closeAndRefund(42, ['requested'], 'cancelled')).toBe(true);
+      expect(lockWallets).toHaveBeenCalledExactlyOnceWith(fakeDb.conn, [4]);
+      const lockedAt = vi.mocked(lockWallets).mock.invocationCallOrder[0]!;
+      expect(fakeDb.conn.query.mock.invocationCallOrder[0]!).toBeLessThan(lockedAt);
+      expect(lockedAt).toBeLessThan(ledger.applyWalletEffect.mock.invocationCallOrder[0]!);
 
       expect(steps()).toEqual(['SELECT w.id, w.user_id,', 'UPDATE withdrawals SET', WALLET_EFFECT]);
       // A leitura trava a linha: cancelamento e processamento ao mesmo tempo não devolvem em dobro.

@@ -46,8 +46,12 @@ vi.mock('../auth/auth.repository', () => ({
 vi.mock('../notifications/notifications.service', () => ({
   notificationsService: { notify: vi.fn().mockResolvedValue(undefined) },
 }));
+vi.mock('../../config/realtime', () => ({
+  realtime: { disconnectUser: vi.fn() },
+}));
 
 import { blocklist } from '../../config/blocklist';
+import { realtime } from '../../config/realtime';
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
@@ -197,6 +201,8 @@ describe('admin: exclusão', () => {
     const r = await lgpdService.completeDeletion(99, 5);
     expect(repo.completeDeletion).toHaveBeenCalledWith(5, 1, 99);
     expect(blocklist.has(1)).toBe(true);
+    expect(blocklist.status(1)).toBe('banned');
+    expect(realtime.disconnectUser).toHaveBeenCalledWith(1);
     expect(r.status).toBe('completed');
   });
 
@@ -634,6 +640,8 @@ describe('admin: concluir a exclusão, bordas', () => {
 
     expect(blocklist.has(31)).toBe(true);
     expect(blocklist.has(99)).toBe(false);
+    expect(realtime.disconnectUser).toHaveBeenCalledTimes(1);
+    expect(realtime.disconnectUser).toHaveBeenCalledWith(31);
     expect(purgeAttachments).toHaveBeenCalledTimes(1);
     expect(purgeAttachments).toHaveBeenCalledWith(31);
     expect(purgeQuarantine).toHaveBeenCalledTimes(1);

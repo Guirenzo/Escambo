@@ -47,6 +47,7 @@ const account = (o: Partial<PublicUser> = {}): PublicUser => ({
   ulid: '01J0000000000000000000USER',
   email: 'conta@escambo.test',
   role: 'client',
+  status: 'active',
   emailVerified: true,
   emailFrequency: 'instant',
   digestHour: 8,
@@ -113,6 +114,23 @@ function renderShell(path = '/') {
   return { ...view, querySettled, consentsSettled };
 }
 
+it('conta suspensa mantém navegação, contestações e contato real com o suporte', async () => {
+  auth.user = account({ status: 'suspended', emailVerified: false });
+  renderShell('/carteira');
+  expect(screen.getByTestId('suspended-banner')).toHaveTextContent('acesso somente para consulta');
+  expect(
+    within(screen.getByTestId('suspended-banner')).getByRole('link', { name: 'Perfil' }),
+  ).toHaveAttribute('href', '/perfil');
+  expect(
+    within(screen.getByTestId('suspended-banner')).getByRole('link', {
+      name: 'falar com o suporte',
+    }),
+  ).toHaveAttribute('href', '/suporte');
+  expect(screen.getByText('conteúdo da carteira')).toBeInTheDocument();
+  expect(screen.getByRole('navigation', { name: 'Principal' })).toBeInTheDocument();
+  expect(screen.queryByTestId('verify-banner')).not.toBeInTheDocument();
+});
+
 /** Promessa que o teste solta quando quiser: para ver o shell enquanto a consulta está no ar. */
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -152,7 +170,14 @@ afterEach(() => {
 });
 
 describe('Shell: navegação', () => {
-  it('mostra as sete áreas do app, na ordem, cada uma com o seu endereço, e a tela da rota', () => {
+  it('administrador suspenso acessa suporte e não recebe link de administração', () => {
+    auth.user = account({ role: 'admin', status: 'suspended' });
+    renderShell();
+    const nav = within(screen.getByRole('navigation', { name: 'Principal' }));
+    expect(nav.queryByRole('link', { name: 'Admin' })).not.toBeInTheDocument();
+    expect(nav.getByRole('link', { name: 'Suporte' })).toHaveAttribute('href', '/suporte');
+  });
+  it('mostra as áreas do app, na ordem, cada uma com o seu endereço, e a tela da rota', () => {
     renderShell();
     const nav = screen.getByRole('navigation', { name: 'Principal' });
     const links = within(nav).getAllByRole('link');
@@ -164,6 +189,7 @@ describe('Shell: navegação', () => {
       ['Carteira', '/carteira'],
       ['Notificações', '/notificacoes'],
       ['Perfil', '/perfil'],
+      ['Suporte', '/suporte'],
     ]);
     // Com a barra recolhida só o ícone aparece: a dica (title) repete o nome da área.
     expect(links.map((a) => a.getAttribute('title'))).toEqual([
@@ -174,6 +200,7 @@ describe('Shell: navegação', () => {
       'Carteira',
       'Notificações',
       'Perfil',
+      'Suporte',
     ]);
     expect(screen.getByRole('link', { name: 'Escambo' })).toHaveAttribute('href', '/');
     expect(screen.getByText('conteúdo da home')).toBeInTheDocument();
@@ -288,7 +315,7 @@ describe('Shell: quem está logado', () => {
     expect(container.querySelector('img')).toBeNull();
     expect(screen.queryByLabelText(/não lida/)).not.toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: 'Principal' });
-    expect(within(nav).getAllByRole('link')).toHaveLength(7);
+    expect(within(nav).getAllByRole('link')).toHaveLength(8);
     expect(screen.getByText('conteúdo da home')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sair' })).toBeEnabled();
   });

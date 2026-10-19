@@ -5,8 +5,8 @@ import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 
 /**
- * Moderação efetiva (RN-007): suspender/banir derruba o acesso na hora (token vigente nega),
- * revoga as sessões (refresh nega) e bloqueia novos logins; reativar libera de novo.
+ * Moderação efetiva (RN-007): suspensão mantém sessão de consulta e bloqueia negócios;
+ * reativação libera o JWT vigente; banimento nega acesso/login e revoga refresh.
  */
 
 const app = createApp();
@@ -52,7 +52,7 @@ afterAll(async () => {
 });
 
 describe('Moderação efetiva', () => {
-  it('suspender bloqueia token vigente, refresh e login; reativar libera; banir bloqueia de novo', async () => {
+  it('suspender mantém consulta/login/refresh, bloqueia negócios; reativar libera o mesmo JWT; banir revoga o acesso', async () => {
     const admin = await registerAndLogin('client', 'admin.escambo.test');
     const target = await registerAndLogin('freelancer');
 
@@ -65,25 +65,44 @@ describe('Moderação efetiva', () => {
       .set(auth(admin.token));
     expect(susp.status, JSON.stringify(susp.body)).toBeLessThan(300);
 
-    // Token vigente é negado na hora; refresh e login também.
+    // Token vigente continua consultando; sessão renovada e login continuam restritos.
     const me = await request(app).get('/api/auth/me').set(auth(target.token));
-    expect(me.status).toBe(403);
-    expect(me.body.error).toBe('account_blocked');
+    expect(me.status).toBe(200);
+    expect(me.body.status).toBe('suspended');
+    expect(me.headers['x-account-status']).toBe('suspended');
+    const blocked = await request(app)
+      .post('/api/wallet/deposits')
+      .set(auth(target.token))
+      .send({ amount: 50 });
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.error).toBe('account_suspended');
     const refresh = await request(app)
       .post('/api/auth/refresh')
       .send({ refreshToken: target.refreshToken });
-    expect(refresh.status).toBeGreaterThanOrEqual(401);
+    expect(refresh.status).toBe(200);
+    expect(refresh.body.accessToken).toEqual(expect.any(String));
+    const renewed = await request(app).get('/api/auth/me').set(auth(refresh.body.accessToken));
+    expect(renewed.status).toBe(200);
+    expect(renewed.body.status).toBe('suspended');
     const login = await request(app)
       .post('/api/auth/login')
       .send({ email: target.email, password: PASSWORD });
-    expect(login.status).toBe(403);
-    expect(login.body.error).toBe('account_suspended');
+    expect(login.status).toBe(200);
+    expect(login.body.user.status).toBe('suspended');
 
-    // Reativar: login volta a funcionar e o token novo passa.
+    // Reativar libera escrita com o token original, sem exigir nova entrada.
     const react = await request(app)
       .post(`/api/admin/users/${target.ulid}/reactivate`)
       .set(auth(admin.token));
     expect(react.status).toBeLessThan(300);
+    const active = await request(app).get('/api/auth/me').set(auth(target.token));
+    expect(active.status).toBe(200);
+    expect(active.body.status).toBe('active');
+    await request(app)
+      .post('/api/wallet/deposits')
+      .set(auth(target.token))
+      .send({ amount: 50 })
+      .expect(201);
     const login2 = await request(app)
       .post('/api/auth/login')
       .send({ email: target.email, password: PASSWORD });
@@ -102,9 +121,30 @@ describe('Moderação efetiva', () => {
       .send({ email: target.email, password: PASSWORD });
     expect(login3.status).toBe(403);
     expect(login3.body.error).toBe('account_banned');
-    expect((await request(app).get('/api/auth/me').set(auth(login2.body.accessToken))).status).toBe(
-      403,
+    for (const token of [
+      target.token,
+      refresh.body.accessToken,
+      login.body.accessToken,
+      login2.body.accessToken,
+    ]) {
+      const denied = await request(app).get('/api/auth/me').set(auth(token));
+      expect(denied.status).toBe(403);
+      expect(denied.body.error).toBe('account_blocked');
+    }
+    for (const refreshToken of [
+      refresh.body.refreshToken,
+      login.body.refreshToken,
+      login2.body.refreshToken,
+    ]) {
+      const revoked = await request(app).post('/api/auth/refresh').send({ refreshToken });
+      expect(revoked.status).toBe(401);
+      expect(revoked.body.error).toBe('invalid_refresh');
+    }
+    const [sessions] = await pool.query<RowDataPacket[]>(
+      'SELECT COUNT(*) AS n FROM user_sessions WHERE user_id = ? AND revoked_at IS NULL',
+      [target.id],
     );
+    expect(Number(sessions[0]!.n)).toBe(0);
   });
 
   it('admin não suspende nem bane a si mesmo nem outro admin (409), e a ação registra o id do moderado', async () => {

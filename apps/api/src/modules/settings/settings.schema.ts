@@ -9,6 +9,8 @@ export const SETTING_KEYS = [
   'platform_fee_percentage',
   'tacit_approval_days',
   'proposal_expiry_hours',
+  'counter_offer_response_hours',
+  'extension_response_hours',
   'deadline_grace_hours',
   'attachment_retention_days',
   'appeal_window_days',
@@ -60,11 +62,31 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     type: 'integer',
     label: 'Validade da proposta',
     description:
-      'Proposta sem resposta do freelancer por esse tempo, ou até o prazo de entrega se ele vier antes, expira e a reserva volta ao cliente (RN-021, job expire-proposals). A hora fica gravada na proposta e dita no aviso, e nunca cai entre 20h30 e 9h no fuso do freelancer (ADR 57).',
+      'Proposta (a 1ª oferta da negociação) sem resposta do freelancer por esse tempo, ou até o prazo de entrega se ele vier antes, expira e a reserva volta ao cliente (RN-021, job expire-proposals). A hora fica gravada na proposta e dita no aviso, e nunca cai entre 20h30 e 9h no fuso do freelancer (ADR 57).',
     unit: 'horas',
     min: 1,
     max: 720,
     defaultValue: 72,
+  },
+  counter_offer_response_hours: {
+    type: 'integer',
+    label: 'Resposta a uma contraproposta',
+    description:
+      'Quem recebe uma contraproposta (RN-030) responde até essa quantidade de horas depois dela, levada para as 9h se cair entre 20h30 e 9h no fuso de quem responde e nunca depois do último instante de dia antes do prazo de entrega proposto; sem resposta, a negociação se encerra e a reserva volta ao cliente (job expire-proposals). A hora fica gravada na oferta e dita no aviso: mudar aqui vale para as contrapropostas feitas depois (ADR 61). Abaixo de 48 h, uma contraproposta feita à noite pode ficar sem lembrete (RN-079).',
+    unit: 'horas',
+    min: 24,
+    max: 168,
+    defaultValue: 48,
+  },
+  extension_response_hours: {
+    type: 'integer',
+    label: 'Resposta a um pedido de extensão',
+    description:
+      'O cliente responde a um pedido de extensão de prazo (RN-028) até essa quantidade de horas depois dele, levada para as 9h se cair entre 20h30 e 9h no fuso dele e nunca depois do último instante de dia 12 h antes da data pedida; sem resposta, o pedido expira e vale como recusa, e enquanto ele espera a carência da disputa automática pausa. A hora fica gravada no pedido: mudar aqui vale para os pedidos feitos depois (ADR 61). Abaixo de 48 h, um pedido feito à noite pode ficar sem lembrete (RN-079).',
+    unit: 'horas',
+    min: 24,
+    max: 168,
+    defaultValue: 48,
   },
   deadline_grace_hours: {
     type: 'integer',
@@ -140,7 +162,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     type: 'boolean',
     label: 'Relatório da meta da moderação',
     description:
-      'Ligado: uma vez por dia, a partir da hora do resumo diário (DIGEST_HOUR, padrão 8h de Brasília), a API confere o dia anterior e a fila; se a mediana de ontem passou da meta ou alguma denúncia espera há mais que a meta, cada admin recebe um e-mail com os números e o link do painel — no máximo um por dia, só quando estoura, com até duas novas tentativas no mesmo dia se o envio falhar (job moderation-sla-report). Contas em revisão por reincidência não contam. Desligado: o painel continua destacando o estouro.',
+      'Ligado: uma vez por dia, a partir da hora do resumo diário (DIGEST_HOUR, padrão 8h de Brasília), a API confere o dia anterior e a fila; se a mediana de ontem passou da meta ou alguma denúncia espera há mais que a meta, cada admin recebe um e-mail com os números e o link do painel — no máximo um por dia, só quando estoura, com até duas novas tentativas no mesmo dia se o envio falhar (job moderation-sla-report). Contas em revisão (reincidência ou desistências) não contam. Desligado: o painel continua destacando o estouro.',
     unit: '',
     min: 0,
     max: 1,

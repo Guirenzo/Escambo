@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { CLOSE_PENDING_EXTENSION } from './deadline-sql';
 
 /**
  * O fluxo de prazos lê a hora de um relógio só (ADR 57, utils/clock.ts): o SQL recebe :now do
@@ -16,6 +17,12 @@ const FLOW = [
   'modules/contracts/cancel-policy.ts',
   'modules/contracts/deadline-grace.ts',
   'modules/contracts/deadline-sql.ts',
+  'modules/contracts/dispute-window.ts',
+  'modules/contracts/delivery-snapshots.ts',
+  'modules/dropouts/dropouts.ts',
+  'modules/dropouts/dropouts.repository.ts',
+  'modules/dropouts/dropouts.service.ts',
+  'jobs/reconcile-dropout-reviews.ts',
   'jobs/overdue-contracts.ts',
   'jobs/tacit-approval.ts',
   'jobs/expire-proposals.ts',
@@ -58,8 +65,42 @@ describe('o fluxo de prazos usa um relógio só', () => {
 
   it('a abertura da disputa (que a RN-029 também usa) grava o status anterior e recebe :now', () => {
     const src = readFileSync(join(ROOT, 'modules/disputes/disputes.repository.ts'), 'utf8');
-    const create = src.slice(src.indexOf('async create('), src.indexOf('async findById('));
-    expect(create).not.toMatch(/\bNOW\(\)/);
-    expect(create).toContain(':oldStatus');
+    const start = src.indexOf('async function openInTx(');
+    const end = src.indexOf('export const disputesRepository');
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const open = src.slice(start, end);
+    expect(open).not.toMatch(/\bNOW\(\)|Date\.now\(\)|new Date\(\)/);
+    expect(open).toContain('now: Date');
+    expect(open).toContain('oldStatus, now');
+    expect(open).toContain('c.status = :oldStatus');
+    expect(open).toContain("VALUES (:contractId, :openedBy, :oldStatus, 'disputed'");
+    expect(open).toContain("CLOSE_PENDING_EXTENSION('c')");
+    expect(CLOSE_PENDING_EXTENSION('c')).toContain(':now');
+
+    const automatic = src.slice(src.indexOf('async create('), src.indexOf('async createManual('));
+    expect(automatic).toContain(
+      'openInTx(conn, d, oldStatus, opts.now ?? clock.now(), opts.guard)',
+    );
+    expect(automatic).not.toMatch(/\bNOW\(\)/);
+    expect(automatic).not.toContain('disputeOpensAt');
+  });
+
+  it('a disputa manual consulta o relógio depois da trava e da recuperação/releitura histórica', () => {
+    const src = readFileSync(join(ROOT, 'modules/disputes/disputes.repository.ts'), 'utf8');
+    const manual = src.slice(src.indexOf('async createManual('), src.indexOf('async findById('));
+    const lock = manual.indexOf('FOR UPDATE');
+    const recovery = manual.indexOf('await recoverDeliveryRules');
+    const reread = manual.indexOf('await contractsRepository.findById');
+    const now = manual.indexOf('clock.now()');
+    const write = manual.indexOf('await openInTx');
+    expect(lock).toBeGreaterThanOrEqual(0);
+    expect(recovery).toBeGreaterThan(lock);
+    expect(reread).toBeGreaterThan(recovery);
+    expect(now).toBeGreaterThan(reread);
+    expect(write).toBeGreaterThan(now);
+    expect(manual.match(/clock\.now\(\)/g)).toHaveLength(1);
+    expect(manual).toContain('openInTx(conn, d, oldStatus, now)');
+    expect(manual).not.toMatch(/\bNOW\(\)|Date\.now\(\)|new Date\(\)/);
   });
 });

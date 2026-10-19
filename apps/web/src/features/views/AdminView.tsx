@@ -49,6 +49,7 @@ import { StorageSection } from '../admin/StorageSection';
 import { AppealsSection } from '../admin/AppealsSection';
 import { ModerationHealthSection } from '../admin/ModerationHealthSection';
 import { ReportsSection } from '../admin/ReportsSection';
+import { SupportSection } from '../admin/SupportSection';
 import { useToast } from '../../lib/toast';
 
 const RESOLUTIONS: { value: DisputeResolution; label: string; hint: string }[] = [
@@ -474,6 +475,7 @@ export function AdminView() {
       <ModerationHealthSection />
       <ReportsSection />
       <AppealsSection />
+      <SupportSection />
 
       <section className="card">
         <div className="card-head">

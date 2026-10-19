@@ -9,6 +9,15 @@ import { SETTING_KEYS } from './settings.schema';
 import { settingsService, validateSettingValue } from './settings.service';
 
 const repo = vi.mocked(settingsRepository);
+const fixedContractRules = {
+  includedRevisions: 2,
+  maxOffers: 5,
+  disputeWaitHours: 48,
+  disputeTacitMarginHours: 24,
+  dropoutWindowDays: 60,
+  dropoutAlertAt: 3,
+  dropoutAgreementDays: 7,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -161,6 +170,57 @@ describe('settingsService (ADR 32/33)', () => {
     expect(repo.list).toHaveBeenCalledWith([...SETTING_KEYS]);
   });
 
+  it.each(['counter_offer_response_hours', 'extension_response_hours'] as const)(
+    '%s entra no catálogo com 48 h e só aceita inteiros entre 24 e 168 h',
+    async (key) => {
+      const items = await settingsService.listForAdmin();
+      expect(items.find((item) => item.key === key)).toMatchObject({
+        type: 'integer',
+        value: 48,
+        defaultValue: 48,
+        min: 24,
+        max: 168,
+        unit: 'horas',
+      });
+      expect(validateSettingValue(key, 24)).toBe('24');
+      expect(validateSettingValue(key, 168)).toBe('168');
+      for (const value of [23, 169, 48.5, true]) {
+        await expect(settingsService.update(key, value, 9)).rejects.toMatchObject({
+          statusCode: 422,
+          code: 'value_out_of_range',
+        });
+      }
+      expect(repo.set).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['counter_offer_response_hours', 'extension_response_hours'] as const)(
+    '%s com dado inválido mostra o mesmo padrão no painel e na API pública',
+    async (key) => {
+      const publicKey =
+        key === 'counter_offer_response_hours'
+          ? 'counterOfferResponseHours'
+          : 'extensionResponseHours';
+      for (const raw of ['23', '169', '48.5', 'abc', 'Infinity', '']) {
+        settingsService.clearCache();
+        repo.get.mockImplementation(async (readKey) => (readKey === key ? raw : null));
+        repo.list.mockResolvedValue([
+          {
+            key_name: key,
+            value: raw,
+            type: 'integer',
+            updated_at: null,
+            updated_by_email: null,
+          },
+        ] as never);
+        expect((await settingsService.listForAdmin()).find((item) => item.key === key)?.value).toBe(
+          48,
+        );
+        expect((await settingsService.publicSettings())[publicKey]).toBe(48);
+      }
+    },
+  );
+
   it('update com valor fora dos limites é 422 value_out_of_range e nada é gravado', async () => {
     await expect(settingsService.update('platform_fee_percentage', 51, 9)).rejects.toMatchObject({
       statusCode: 422,
@@ -270,6 +330,8 @@ describe('settingsService (ADR 32/33)', () => {
       platform_fee_percentage: '12',
       tacit_approval_days: '3',
       proposal_expiry_hours: '48',
+      counter_offer_response_hours: '96',
+      extension_response_hours: '72',
       deadline_grace_hours: '36',
       min_service_price: '25.50',
       min_withdrawal_amount: '50',
@@ -287,8 +349,10 @@ describe('settingsService (ADR 32/33)', () => {
       platformFeePercentage: 12,
       tacitApprovalDays: 3,
       proposalExpiryHours: 48,
+      counterOfferResponseHours: 96,
       deadlineGraceHours: 36,
-      extensionResponseHours: 48,
+      extensionResponseHours: 72,
+      fixedContractRules,
       minServicePrice: 25.5,
       minWithdrawalAmount: 50,
       barterEnabled: false,
@@ -316,8 +380,10 @@ describe('settingsService (ADR 32/33)', () => {
       platformFeePercentage: 15,
       tacitApprovalDays: 5,
       proposalExpiryHours: 72,
+      counterOfferResponseHours: 48,
       deadlineGraceHours: 24,
       extensionResponseHours: 48,
+      fixedContractRules,
       minServicePrice: 10,
       minWithdrawalAmount: 20,
       barterEnabled: true,

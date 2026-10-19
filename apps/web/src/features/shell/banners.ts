@@ -2,7 +2,7 @@ import type { BrazilTimezone, Consent, PublicUser } from '@escambo/types';
 import { legalAckPending } from '../legal/version';
 
 /** Qual faixa o topo do app mostra: uma por vez, para não empilhar três num celular. */
-export type Banner = 'legal' | 'terms' | 'timezone' | 'verify-email' | null;
+export type Banner = 'suspended' | 'legal' | 'terms' | 'timezone' | 'verify-email' | null;
 
 /**
  * Prioridade: a atualização da Política (pede uma resposta e registra), depois a dos Termos
@@ -17,6 +17,7 @@ export function pickBanner(
   detected: BrazilTimezone | null,
 ): Banner {
   if (!user) return null;
+  if (user.status === 'suspended') return 'suspended';
   if (consents && legalAckPending(consents, 'privacidade')) return 'legal';
   if (consents && legalAckPending(consents, 'termos')) return 'terms';
   if (!user.timezoneChosen && detected && detected !== user.timezone) return 'timezone';

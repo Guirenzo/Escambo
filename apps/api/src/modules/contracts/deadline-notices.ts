@@ -1,4 +1,5 @@
 import type { CancelStage, QuietPassCategory } from '@escambo/types';
+import { revisionsLeft } from './deadline-grace';
 
 /**
  * Os avisos do prazo, palavra por palavra (ADR 56 e 57). Puros: quem emite decide o estado e o
@@ -320,7 +321,9 @@ export function proposalNotice(f: {
   respondBy: string | null;
 }): DeadlineNotice {
   const deadline = f.deadline ? ` Prazo de entrega: ${f.deadline}.` : '';
-  const respond = f.respondBy ? ` Responda até ${f.respondBy}.` : '';
+  const respond = f.respondBy
+    ? ` Responda até ${f.respondBy}: aceite, recuse ou faça uma contraproposta.`
+    : '';
   return {
     params: {
       type: 'contract_proposal',
@@ -360,33 +363,73 @@ export function proposalExpiredNotices(f: {
   };
 }
 
-export function deliveredNotice(f: {
-  contractId: number;
-  title: string;
-  approvalDue: string;
-}): DeadlineNotice {
+interface DeliveryReviewFacts {
+  revisionLimit?: number | null;
+  revisionsUsed?: number;
+  /** null se já aberta; ausente conserva o aviso anterior em consumidores antigos. */
+  disputeFrom?: string | null;
+}
+
+function deliveredResponse(
+  f: DeliveryReviewFacts & { approvalDue: string },
+  milestone = false,
+): string {
+  const left = revisionsLeft(f.revisionLimit ?? null, f.revisionsUsed ?? 0);
+  const verbs = [
+    'Aprove',
+    ...(left !== 0 ? ['peça revisão'] : []),
+    ...(f.disputeFrom == null ? ['abra disputa'] : []),
+  ];
+  const actions =
+    verbs.length === 1 ? verbs[0]! : `${verbs.slice(0, -1).join(', ')} ou ${verbs.at(-1)}`;
+  const dispute = f.disputeFrom
+    ? ` A disputa abre a partir de ${f.disputeFrom}, se vocês não se acertarem pelo chat.`
+    : '';
+  const revisions =
+    left === 1
+      ? ' Resta 1 revisão sem custo.'
+      : left === 0
+        ? ` As ${f.revisionLimit} revisões sem custo já foram usadas: outra, só se o freelancer liberar.`
+        : '';
+  const unit = milestone ? 'o marco é aprovado' : 'a entrega é aprovada';
+  return `${actions} até ${f.approvalDue}.${dispute}${revisions} Depois ${dispute || revisions ? `de ${f.approvalDue}` : 'disso'}, ${unit} automaticamente.`;
+}
+
+export function deliveredNotice(
+  f: DeliveryReviewFacts & {
+    contractId: number;
+    title: string;
+    approvalDue: string;
+  },
+): DeadlineNotice {
   return {
     params: {
       type: 'contract_delivered',
       title: `Entrega registrada: ${f.title}`,
-      body: `Aprove, peça revisão ou abra disputa até ${f.approvalDue}. Depois disso, a entrega é aprovada automaticamente.`,
+      body: deliveredResponse(f),
       data: { contractId: f.contractId },
     },
   };
 }
 
-export function milestoneDeliveredNotice(f: {
-  contractId: number;
-  milestoneId: number;
-  milestone: string;
-  approvalDue: string;
-  message: string;
-}): DeadlineNotice {
+export function milestoneDeliveredNotice(
+  f: DeliveryReviewFacts & {
+    contractId: number;
+    milestoneId: number;
+    milestone: string;
+    approvalDue: string;
+    message: string;
+  },
+): DeadlineNotice {
   return {
     params: {
       type: 'milestone_delivered',
       title: `Marco entregue: ${f.milestone}`,
-      body: `Aprove ou peça revisão até ${f.approvalDue}; depois disso, o marco é aprovado automaticamente. Mensagem: ${f.message}`,
+      body: `${
+        f.disputeFrom === undefined && f.revisionLimit === undefined
+          ? `Aprove ou peça revisão até ${f.approvalDue}; depois disso, o marco é aprovado automaticamente.`
+          : deliveredResponse(f, true)
+      } Mensagem: ${f.message}`,
       data: { contractId: f.contractId, milestoneId: f.milestoneId },
     },
   };
@@ -397,13 +440,59 @@ export function revisionNotice(f: {
   contractId: number;
   title: string;
   note: string | null;
+  used?: number;
+  limit?: number | null;
 }): DeadlineNotice {
   return {
     params: {
       type: 'contract_revision',
       title: `Revisão pedida: ${f.title}`,
-      body: f.note,
+      body:
+        f.limit == null
+          ? f.note
+          : `Revisão ${f.used} de ${f.limit} sem custo${f.used === f.limit ? ', a última incluída' : ''}. ${f.note ?? 'Sem detalhes: veja o chat.'}`,
       data: { contractId: f.contractId },
+    },
+  };
+}
+
+export function milestoneRevisionNotice(f: {
+  contractId: number;
+  milestoneId: number;
+  title: string;
+  used: number;
+  limit: number | null;
+  note: string | null;
+}): DeadlineNotice {
+  return {
+    params: {
+      type: 'milestone_revision',
+      title: 'Revisão solicitada em um marco',
+      body:
+        f.limit === null
+          ? f.note
+          : `«${f.title}»: revisão ${f.used} de ${f.limit} sem custo${f.used === f.limit ? ', a última deste marco' : ''}.${f.note ? ` ${f.note}` : ''}`,
+      data: { contractId: f.contractId, milestoneId: f.milestoneId },
+    },
+  };
+}
+
+export function revisionGrantedNotice(f: {
+  contractId: number;
+  title: string;
+  milestoneId?: number;
+  milestone?: string;
+  approvalDue: string | null;
+}): DeadlineNotice {
+  const unit = f.milestoneId ? 'o marco é aprovado' : 'a entrega é aprovada';
+  return {
+    params: {
+      type: 'contract_revision_granted',
+      title: f.milestoneId
+        ? `Mais uma revisão liberada no marco «${f.milestone}»`
+        : `Mais uma revisão liberada: ${f.title}`,
+      body: `O freelancer liberou mais uma revisão, sem custo. Peça pela Sala${f.approvalDue ? ` até ${f.approvalDue}; depois disso, ${unit} automaticamente` : ''}.`,
+      data: { contractId: f.contractId, ...(f.milestoneId ? { milestoneId: f.milestoneId } : {}) },
     },
   };
 }
@@ -419,6 +508,8 @@ export function cancelledNotice(f: {
   unit: 'BRL' | 'credits' | 'none';
   refundClient: number;
   releaseFreelancer: number;
+  /** Só há prazo de acordo quando a desistência foi registrada (RN-026). */
+  dropoutAgreementUntil?: string;
   /** Por marcos, algum marco foi entregue. */
   partial?: boolean;
 }): DeadlineNotice {
@@ -435,7 +526,9 @@ export function cancelledNotice(f: {
       params: {
         type: 'contract_cancelled',
         title: `O freelancer desistiu: ${f.title}`,
-        body,
+        body: f.dropoutAgreementUntil
+          ? `${body} Se combinaram a desistência, confirme na Sala até ${f.dropoutAgreementUntil}: ela deixará de contar no perfil do freelancer.`
+          : body,
         data,
       },
     };

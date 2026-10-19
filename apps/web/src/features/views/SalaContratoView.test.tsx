@@ -7,6 +7,7 @@ import type {
   ChatHistory,
   ChatMessage,
   ContractWithHistory,
+  ContractOffer,
   Dispute,
   Milestone,
   Review,
@@ -16,6 +17,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { dtm } from '../../lib/format';
 import { ToastProvider } from '../../lib/toast';
 import { SalaContratoView } from './SalaContratoView';
+import { AccountAccessProvider } from '../../lib/account-access';
 
 /**
  * Sala da contratação: valores e linha do tempo, os avisos de até quando cada lado age (ADR 57),
@@ -36,6 +38,11 @@ const api = vi.hoisted(() => ({
   disputes: vi.fn(),
   openDispute: vi.fn(),
   contractAction: vi.fn(),
+  counterOffer: vi.fn(),
+  acceptCounterOffer: vi.fn(),
+  wallet: vi.fn(),
+  grantContractRevision: vi.fn(),
+  grantMilestoneRevision: vi.fn(),
   publicSettings: vi.fn(),
 }));
 vi.mock('../../lib/api', () => ({ api }));
@@ -178,18 +185,23 @@ function renderSala(
   as: number = CLIENT,
   onBack: () => void = () => undefined,
   timezone: string | null = 'America/Sao_Paulo',
+  status: 'active' | 'suspended' = 'active',
 ) {
   auth.user = { id: as, timezone };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const tree = (currentStatus: 'active' | 'suspended') => (
     <QueryClientProvider client={client}>
       <ToastProvider>
         <MemoryRouter>
-          <SalaContratoView contractId={ID} onBack={onBack} />
+          <AccountAccessProvider status={currentStatus}>
+            <SalaContratoView contractId={ID} onBack={onBack} />
+          </AccountAccessProvider>
         </MemoryRouter>
       </ToastProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const view = render(tree(status));
+  return { ...view, setStatus: (next: 'active' | 'suspended') => view.rerender(tree(next)) };
 }
 
 /** Renderiza e espera a contratação e o histórico do chat chegarem. */
@@ -217,6 +229,176 @@ beforeEach(() => {
   api.chatHistory.mockResolvedValue(history([]));
   api.disputes.mockResolvedValue([]);
   api.publicSettings.mockResolvedValue({ extensionResponseHours: 48 });
+  api.wallet.mockResolvedValue({ balance: 500, credits: 500 });
+});
+
+describe('SalaContratoView: suspensão', () => {
+  it('suspensão com anexo e disputa abertos fecha a ação e conserva a leitura', async () => {
+    const view = await openSala(CLIENT);
+    const user = userEvent.setup();
+    await user.upload(screen.getByTestId('attachment-input'), pdf('rascunho.pdf'));
+    expect(screen.getByText('rascunho.pdf')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Abrir disputa' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    view.setStatus('suspended');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.queryByText('rascunho.pdf')).not.toBeInTheDocument();
+    expect(sendButton()).toBeDisabled();
+    expect(screen.getByRole('heading', { name: 'Linha do tempo' })).toBeVisible();
+    expect(api.openDispute).not.toHaveBeenCalled();
+    view.setStatus('active');
+    expect(draftInput()).toBeEnabled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('mantém histórico, mensagens e navegação; bloqueia envio, anexo, colar e arrastar', async () => {
+    const back = vi.fn();
+    api.chatHistory.mockResolvedValue(history([message({ content: 'Mensagem já registrada' })]));
+    renderSala(FREELANCER, back, 'America/Sao_Paulo', 'suspended');
+    await screen.findByText('Mensagem já registrada');
+    expect(screen.getByRole('heading', { name: 'Linha do tempo' })).toBeVisible();
+    expect(sendButton()).toBeDisabled();
+    expect(draftInput()).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Anexar arquivo' })).toBeDisabled();
+    fireEvent.paste(draftInput(), { clipboardData: { files: [pdf('colado.pdf')] } });
+    fireEvent.drop(card('Chat'), { dataTransfer: { files: [pdf('arrastado.pdf')] } });
+    fireEvent.change(screen.getByTestId('attachment-input'), {
+      target: { files: [pdf('selecionado.pdf')] },
+    });
+    fireEvent.submit(sendButton().closest('form')!);
+    expect(screen.queryByText('colado.pdf')).not.toBeInTheDocument();
+    expect(screen.queryByText('arrastado.pdf')).not.toBeInTheDocument();
+    expect(screen.queryByText('selecionado.pdf')).not.toBeInTheDocument();
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(api.sendAttachment).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }));
+    expect(back).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SalaContratoView: negociação RN-030', () => {
+  const current = (seq: number): ContractOffer => ({
+    seq,
+    madeBy: seq % 2 ? 'client' : 'freelancer',
+    price: 180,
+    platformFee: 27,
+    freelancerNet: 153,
+    deadlineAt: null,
+    deadlineZone: 'America/Sao_Paulo',
+    milestones: null,
+    message: seq > 1 ? 'Precisamos ajustar o valor' : null,
+    respondBy: '2099-10-10T15:00:00.000Z',
+    outcome: 'open',
+    createdAt: CREATED,
+    resolvedAt: null,
+  });
+  const negotiated = (seq: number) =>
+    contract({
+      status: 'pending',
+      negotiation: {
+        seq,
+        round: Math.ceil(seq / 2) as 1 | 2 | 3,
+        turn: seq % 2 ? 'freelancer' : 'client',
+        canCounter: seq < 5,
+        countersLeft: Math.ceil((5 - seq) / 2),
+        current: current(seq),
+        respondBy: current(seq).respondBy,
+        feePercentage: 15,
+      },
+      offers: [current(seq)],
+    });
+
+  it('o cliente abre o aceite pela Sala e contrata a contraproposta vista', async () => {
+    api.contractDetail.mockResolvedValue(negotiated(2));
+    api.acceptCounterOffer.mockResolvedValue(contract({ status: 'accepted', negotiation: null }));
+    await openSala(CLIENT);
+    expect(screen.getByText('Em negociação')).toBeVisible();
+    expect(screen.getByTestId('payment-state')).toHaveTextContent(
+      'Reservado na carteira do cliente (oferta 1)',
+    );
+    expect(screen.getByText('Valor (oferta do cliente)')).toBeVisible();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Aceitar contraproposta' }));
+    const dialog = screen.getByRole('dialog', { name: 'Aceitar contraproposta' });
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Aceitar e contratar' })).toBeEnabled(),
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Aceitar e contratar' }));
+    expect(api.acceptCounterOffer).toHaveBeenCalledWith(ID, 2);
+    expect(api.contractAction).not.toHaveBeenCalled();
+  });
+
+  it('o freelancer abre o editor mantendo valor e sem introduzir prazo', async () => {
+    api.contractDetail.mockResolvedValue(negotiated(3));
+    await openSala(FREELANCER);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Contrapropor' }));
+    expect(screen.getByRole('dialog', { name: 'Contraproposta · rodada 2 de 3' })).toBeVisible();
+    expect(screen.getByLabelText('Valor (R$)')).toHaveValue(180);
+    expect(screen.queryByLabelText('Prazo de entrega')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Enviar contraproposta' })).toBeDisabled();
+  });
+});
+
+describe('SalaContratoView: revisões e abertura da disputa', () => {
+  it('revisões esgotadas e janela futura não anunciam ações indisponíveis no aviso da entrega', async () => {
+    api.contractDetail.mockResolvedValue(
+      contract({
+        status: 'delivered',
+        revisions: { used: 2, limit: 2 },
+        approvalDueAt: '2099-10-11T15:00:00Z',
+        disputeOpensAt: '2099-10-10T15:00:00Z',
+      }),
+    );
+    await openSala(CLIENT, 'America/Manaus');
+    expect(screen.getByTestId('approval-due')).toHaveTextContent('Entrega registrada. Aprove até');
+    expect(screen.getByTestId('approval-due')).not.toHaveTextContent(/peça revisão|abra disputa/);
+    expect(screen.getByTestId('dispute-opens-at')).toHaveTextContent(
+      'Tentem resolver pelo chat primeiro',
+    );
+    expect(screen.getByTestId('dispute-opens-at')).toHaveTextContent('às 11:00');
+    expect(screen.getByTestId('revisions-summary')).toHaveTextContent(
+      'Revisões sem custo: 2 de 2 usadas.',
+    );
+    expect(screen.queryByRole('button', { name: 'Pedir revisão' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Abrir disputa' })).toBeNull();
+  });
+  it('legado mostra todas as revisões usadas e segue sem limite', async () => {
+    api.contractDetail.mockResolvedValue(
+      contract({
+        status: 'delivered',
+        revisions: { used: 300, limit: null },
+        approvalDueAt: '2099-10-11T15:00:00Z',
+      }),
+    );
+    await openSala(CLIENT);
+    expect(screen.getByTestId('revisions-summary')).toHaveTextContent('300 usadas · sem limite');
+    expect(screen.getByRole('button', { name: 'Pedir revisão' })).toBeVisible();
+  });
+  it('antes da primeira entrega mostra o reembolso atual e a espera, sem promessa sobre perfil', async () => {
+    api.contractDetail.mockResolvedValue(
+      contract({
+        disputeOpensAt: '2099-10-10T15:00:00Z',
+        cancellation: {
+          allowed: true,
+          by: 'client',
+          stage: 'early',
+          refundPercentage: 50,
+          refundClient: 100,
+          releaseFreelancer: 85,
+          unit: 'BRL',
+          code: null,
+          message: null,
+          availableAt: null,
+          noticeAt: null,
+        },
+      }),
+    );
+    await openSala(CLIENT);
+    const notice = screen.getByTestId('dispute-opens-at');
+    expect(notice).toHaveTextContent('48 horas depois do aceite. Até lá, conversem pelo chat.');
+    expect(notice).toHaveTextContent(/Cancelar agora devolve R\$\s100,00/);
+    expect(notice).not.toHaveTextContent(/perfil|desistências/);
+  });
 });
 
 describe('SalaContratoView: carregamento', () => {

@@ -12,14 +12,16 @@ compilado no servidor, e ninguém entra nele para atualizar.
                      └────────────────────────────────────────────────────────────────┘
 ```
 
-| Peça         | Imagem                                         | Quem constrói                                                    |
-| ------------ | ---------------------------------------------- | ---------------------------------------------------------------- |
-| API          | `ghcr.io/guirenzo/escambo-api:<tag>`           | job **Publicar imagens** do CI, só em `main` com os testes, o E2E e a cobertura verdes |
-| Web          | `ghcr.io/guirenzo/escambo-web:<tag>`           | idem                                                             |
-| Banco, borda | `mysql:8.0`, `caddy:2-alpine`                  | oficiais                                                         |
+| Peça         | Imagem                               | Quem constrói                                                                          |
+| ------------ | ------------------------------------ | -------------------------------------------------------------------------------------- |
+| API          | `ghcr.io/guirenzo/escambo-api:<tag>` | job **Publicar imagens** do CI, só em `main` com os testes, o E2E e a cobertura verdes |
+| Web          | `ghcr.io/guirenzo/escambo-web:<tag>` | idem                                                                                   |
+| Banco, borda | `mysql:8.0`, `caddy:2-alpine`        | oficiais                                                                               |
 
 Tags publicadas: `latest`, o sha curto do commit (ex.: `a1b2c3d`) e a versão do `package.json` (ex.: `1.2.0`).
 `GET /api/health` devolve `version` e `commit` — é assim que se confere o que está no ar.
+
+**Candidata local 1.42.0 (ADR 61):** a etapa 11 corrigiu a ordem de contas/carteiras e construiu novas imagens API/web do snapshot `966ef3956e2fe90a`, rótulo `local-adr61-966ef3956e2fe90a`. Smoke MySQL/migração/reparo idempotente, exportação persistente e 34 E2Es desktop/mobile passaram nessas imagens. Imagens, cobertura e seis E2Es da etapa 10 identificam o snapshot anterior, sem a correção posterior. A validação `config -q` do Compose de produção/monitoramento também pertence à etapa 10. Essas provas locais não publicam imagens nem validam o destino da VPS, o Caddy/HTTPS ou a restauração de backup. Provas completas, identificação dos snapshots e limites em [validação de entrega](./docs/validacao-entrega-adr61.md). A demonstração pública permanece na 1.41.1.
 
 ## 1. Pré-requisitos
 
@@ -65,7 +67,7 @@ nano .env
 ```
 
 As imagens são privadas por padrão no GHCR. Ou torne-as públicas uma vez (GitHub → seu perfil →
-**Packages** → `escambo-api` / `escambo-web` → *Package settings* → *Change visibility*), ou faça login
+**Packages** → `escambo-api` / `escambo-web` → _Package settings_ → _Change visibility_), ou faça login
 na VPS com um token que tenha `read:packages`:
 
 ```bash
@@ -257,6 +259,75 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
+### Preparar a candidata 1.42.0 (ADR 61)
+
+**Estado em 13/10/2026:** código e documentação locais, sem publicação/tag/deploy. A etapa 11 passou com 4.382 unitários API, 376 integrações MySQL completas e 34 E2Es desktop/mobile sobre as novas imagens Docker; união de cobertura com 99,06% das linhas e gate de 75% aprovado. Lint/typecheck/build passaram. Revisão de produção sem achado acionável, snapshot identificado e recursos QA exclusivos encerrados. A campanha G.5, os 176 E2Es completos da etapa 8 e a reprodução dos prints 23–26 são provas históricas separadas, não somadas a esses totais. Resultados, hashes e limites estão em [validação de entrega](./docs/validacao-entrega-adr61.md), [evidencias-validacao.md](./docs/evidencias-validacao.md) e [mutacoes-adr61.md](./docs/mutacoes-adr61.md). As instruções abaixo são para a futura implantação aprovada. Antes de executá-la, confira o candidato, backup, imagem/commit efetivamente publicados e mostre o comando e destino a quem autoriza. Não trate o número de versão local como uma imagem disponível no GHCR.
+
+Conferência operacional local: 200 aceites sequenciais sem divergência de reserva e alternância 1.42.0→1.41.1→1.42.0 em banco exclusivo, com detector limpo nos quatro checkpoints, reparo sem mudanças em carteira/ledger e segunda execução idempotente. Isso não valida a infraestrutura de produção nem torna a versão antiga funcionalmente equivalente. As verificações abaixo continuam necessárias no destino real.
+
+A etapa 11 reproduziu ciclos reais 1213 entre operações financeiras concorrentes e ordenou contas e depois carteiras por ID, após o agregado existente. Foram quatro casos RED→GREEN de carteiras, quatro de contas e dois controles adicionais de acordo, com esperas reais no InnoDB; cálculos e lançamentos foram preservados. Não há migration adicional nessa correção. O laço sequencial anterior não é prova de concorrência, e estes dez cenários não garantem ausência de todo deadlock. Consulte os resultados próprios da etapa 11 na [validação de entrega](./docs/validacao-entrega-adr61.md) ao selecionar o snapshot a publicar.
+
+**1. Conferir antes, somente leitura.** O mysql2 lê/grava DATETIME como UTC; confira também sessão e servidor do MySQL. O histórico de entrega é usado para recuperar a primeira evidência, sem deslocamento fixo de fuso. As contagens dão dimensão do reparo e dos contratos que passarão a mostrar uma espera manual; nenhuma desistência antiga será importada.
+
+```sql
+SELECT @@session.time_zone, @@global.time_zone, @@system_time_zone;
+SELECT status, COUNT(*) FROM contracts
+ WHERE status IN ('pending','accepted','in_progress','delivered','revision_requested','disputed')
+ GROUP BY status;
+SELECT COUNT(*) FROM contracts WHERE status = 'pending' AND barter_agreement_id IS NULL;
+SELECT COUNT(*) FROM contracts c WHERE c.status IN ('delivered','revision_requested')
+ AND (SELECT MIN(d.created_at) FROM deliveries d WHERE d.contract_id = c.id)
+     > UTC_TIMESTAMP() - INTERVAL 48 HOUR;
+-- Detector de reserva do cliente: deve retornar zero linhas antes e depois.
+-- LEFT JOIN também encontra proposta sem nenhuma linha de reserva.
+SELECT c.id, c.status, c.price, COALESCE(SUM(t.pending_delta), 0) AS held
+ FROM contracts c LEFT JOIN wallet_transactions t
+   ON t.contract_id = c.id AND t.user_id = c.client_id
+ WHERE c.payment_mode = 'cash' AND c.barter_agreement_id IS NULL
+ GROUP BY c.id, c.status, c.price
+ HAVING held <> IF(c.status = 'pending', c.price, 0);
+```
+
+Essa consulta confere a reserva do cliente, e não a totalidade de todos os ledgers. Se já encontrar divergência antes da implantação, investigue a contratação e o histórico; não corrija saldo por um UPDATE inferido desta página. A lista de entregas recentes acima cobre entrega única; a conferência completa de evidências também inclui marcos e histórico, como o reparo.
+
+**2. Aplicar o candidato aprovado.** O workflow padrão confere commit no health. Para atualização manual, depois de definir IMAGE_TAG para a imagem aprovada no .env e confirmar o destino, os comandos continuam os da seção 3:
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml ps
+```
+
+O serviço migrate aplica 0031 (ofertas/desistências, taxa/vez/revisões/entrega, duas configurações), 0032 (revisões e janela por marco) e 0033 (kind counter_offer no livro de lembretes), e chama repair-deadlines. O reparo recupera primeira entrega e snapshots **antes** de inferir tácitas ausentes; no final cria oferta 1 de pending não troca/seq 1 e fecha ofertas abertas de contratos fora de pending. Taxa/valores históricos são preservados. Contratos já registrados com limite NULL continuam ilimitados; novas contratações gravam dois. Uma proposta de troca antiga aceita após a implantação cria dois contratos novos, cada um com duas revisões incluídas; a data da proposta de troca não torna esses contratos novos ilimitados. freelancer_dropouts nasce vazia.
+
+**3. Conferir depois.** Use o endereço real do ambiente em GET /api/health; confira version 1.42.0 e commit da imagem aprovada, saída zero do migrate e os contadores firstDelivery, deliveryDisputeSnapshot, milestoneDisputeSnapshot, offerOne e closedOffers no log do reparo. Ele é limitado a 200 candidatas por passo e volta em toda rodada; grandes bases podem precisar de mais de uma rodada para zerar pendências.
+
+```sql
+SELECT COUNT(*) FROM contracts c
+ WHERE c.status = 'pending' AND c.barter_agreement_id IS NULL AND c.offer_seq = 1
+   AND NOT EXISTS (SELECT 1 FROM contract_offers o WHERE o.contract_id = c.id);
+SELECT COUNT(*) FROM contracts c
+ WHERE c.status IN ('accepted','in_progress','delivered','revision_requested','disputed')
+   AND c.first_delivery_at IS NULL
+   AND (EXISTS (SELECT 1 FROM deliveries d WHERE d.contract_id = c.id)
+     OR EXISTS (SELECT 1 FROM contract_milestones m WHERE m.contract_id = c.id AND m.delivered_at IS NOT NULL)
+     OR EXISTS (SELECT 1 FROM contract_status_history h WHERE h.contract_id = c.id
+                 AND (h.new_status = 'delivered' OR h.note LIKE 'Marco «%» entregue:%')));
+SELECT COUNT(*) FROM contract_offers o JOIN contracts c ON c.id = o.contract_id
+ WHERE o.outcome = 'open' AND c.status <> 'pending';
+SELECT key_name, value FROM platform_settings
+ WHERE key_name IN ('counter_offer_response_hours','extension_response_hours');
+SELECT COUNT(*) AS reviews_to_reconcile FROM freelancer_dropouts WHERE review_checked_at IS NULL;
+SELECT kind, COUNT(*) FROM deadline_reminders GROUP BY kind;
+-- Repetir o detector de reserva do passo 1: zero linhas.
+```
+
+As três primeiras consultas zeram após o reparo das candidatas, salvo novas mudanças concorrentes. Os parâmetros devem existir com valores dentro de 24–168 h; o padrão é 48 e a reaplicação conserva escolha do admin. Pendências review_checked_at são processadas pelo novo reconcile-dropout-reviews, lote normal de 100; falha deixa pendência para nova rodada. Há 15 jobs, habilitados em **uma instância**. Conferir no app parâmetros, hora de contraproposta/extensão, revisões/abertura manual e faixas legais: Política 1.5 primeiro (aceitar/não aceitar), Termos 1.5 depois (informativa). A recusa da Política não deve ocultar contagem pública.
+
+**4. Reverter para 1.41.1.** Siga a seção 3 com a imagem/commit anteriores, sem desfazer migrations ou apagar tabelas. A API antiga lê o último preço do cliente, que é sua reserva: continua financeiramente consistente. Há limitações funcionais declaradas: ela não registra desistências nem consome revisões novas; numa negociação na vez do cliente oferece ao freelancer a última oferta do cliente e a expiração usa o fuso do freelancer. Isso pode encerrar uma negociação de noite para o cliente (RN-078) enquanto permanecer revertida. As propostas criadas na versão antiga mantêm limite NULL.
+
+**5. Retornar ao candidato.** Não pede SQL manual: o reparo recupera evidências, ofertas faltantes de seq 1 e ofertas abertas de contratos que a API antiga encerrou. Refaça consultas e detector. Os eventos reputacionais que não foram registrados na versão antiga não são recriados. A reversão protege saldo; ela não conserva todas as regras novas de interface/negociação/reputação.
+
 ### Atualizar para a 1.41.1 (correções, ADR 60)
 
 Sem migration: a atualização é a de sempre. Um ponto muda a subida: com `PUSH_PROVIDER=webpush`, a API
@@ -378,16 +449,16 @@ docker compose -f docker-compose.prod.yml start api
 
 ## 5. Operação
 
-| Tarefa                     | Comando                                                                         |
-| -------------------------- | ------------------------------------------------------------------------------- |
-| Estado dos serviços        | `docker compose -f docker-compose.prod.yml ps`                                  |
-| Logs (JSON estruturado)    | `docker compose -f docker-compose.prod.yml logs -f api` (ou `web`, `caddy`)     |
-| O que está no ar           | `curl -s https://SEU_DOMINIO/api/health`                                        |
-| Migrations aplicadas       | `docker compose -f docker-compose.prod.yml run --rm migrate node dist/scripts/migrate.js --status` |
-| Reiniciar só a API         | `docker compose -f docker-compose.prod.yml restart api`                         |
-| Console do MySQL           | `docker compose -f docker-compose.prod.yml exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'` |
-| Atualizar MySQL/Caddy      | `docker compose -f docker-compose.prod.yml pull && up -d` (imagens oficiais, mesmas majors) |
-| Painel de monitoramento    | `ssh -L 3000:127.0.0.1:3000 usuario@vps` e abra `http://localhost:3000` (perfil `monitoring`) |
+| Tarefa                  | Comando                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Estado dos serviços     | `docker compose -f docker-compose.prod.yml ps`                                                                      |
+| Logs (JSON estruturado) | `docker compose -f docker-compose.prod.yml logs -f api` (ou `web`, `caddy`)                                         |
+| O que está no ar        | `curl -s https://SEU_DOMINIO/api/health`                                                                            |
+| Migrations aplicadas    | `docker compose -f docker-compose.prod.yml run --rm migrate node dist/scripts/migrate.js --status`                  |
+| Reiniciar só a API      | `docker compose -f docker-compose.prod.yml restart api`                                                             |
+| Console do MySQL        | `docker compose -f docker-compose.prod.yml exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'` |
+| Atualizar MySQL/Caddy   | `docker compose -f docker-compose.prod.yml pull && up -d` (imagens oficiais, mesmas majors)                         |
+| Painel de monitoramento | `ssh -L 3000:127.0.0.1:3000 usuario@vps` e abra `http://localhost:3000` (perfil `monitoring`)                       |
 
 - **Monitoramento (ADR 59):** com `COMPOSE_PROFILES=monitoring` e `GRAFANA_ADMIN_PASSWORD` no `.env`, sobem o
   Prometheus (lê o `/metrics` da API na rede interna), uma sonda de uptime (o `/api/health` pelo domínio, como um
@@ -418,12 +489,12 @@ docker compose -f docker-compose.prod.yml start api
 
 ## 7. Problemas comuns
 
-| Sintoma                                          | Causa provável e o que fazer                                                                                                     |
-| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| Certificado não emitido / aviso no navegador     | DNS ainda não propagou ou porta 80 fechada. `docker compose … logs caddy`; o Caddy tenta de novo sozinho.                       |
-| 502 no site                                      | `api` não está healthy: `docker compose … logs api`. Quase sempre banco (senha do `.env` ≠ do volume já criado) ou migration.     |
-| `migrate` saiu com erro e a API não sobe         | `docker compose … logs migrate`. Corrija e rode `docker compose … up -d` de novo (o job é idempotente).                          |
-| `denied` ao fazer `pull`                         | Pacote privado no GHCR: torne público ou `docker login ghcr.io` com token `read:packages`.                                       |
-| E-mails não chegam                               | Painel admin → **E-mails**: status `failed` traz o erro do SMTP. Confira `SMTP_*`, porta 587 liberada, `SMTP_SECURE` (465 = true). |
-| Rate limit pegando todo mundo junto              | Proxy extra na frente do Caddy (Cloudflare etc.): aumente `TRUST_PROXY` para o número real de saltos.                            |
-| Trocou `DB_PASSWORD` e o banco não sobe          | A senha vale só na criação do volume. Ou volte a senha, ou altere o usuário dentro do MySQL, ou recrie o volume (com backup).    |
+| Sintoma                                      | Causa provável e o que fazer                                                                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Certificado não emitido / aviso no navegador | DNS ainda não propagou ou porta 80 fechada. `docker compose … logs caddy`; o Caddy tenta de novo sozinho.                          |
+| 502 no site                                  | `api` não está healthy: `docker compose … logs api`. Quase sempre banco (senha do `.env` ≠ do volume já criado) ou migration.      |
+| `migrate` saiu com erro e a API não sobe     | `docker compose … logs migrate`. Corrija e rode `docker compose … up -d` de novo (o job é idempotente).                            |
+| `denied` ao fazer `pull`                     | Pacote privado no GHCR: torne público ou `docker login ghcr.io` com token `read:packages`.                                         |
+| E-mails não chegam                           | Painel admin → **E-mails**: status `failed` traz o erro do SMTP. Confira `SMTP_*`, porta 587 liberada, `SMTP_SECURE` (465 = true). |
+| Rate limit pegando todo mundo junto          | Proxy extra na frente do Caddy (Cloudflare etc.): aumente `TRUST_PROXY` para o número real de saltos.                              |
+| Trocou `DB_PASSWORD` e o banco não sobe      | A senha vale só na criação do volume. Ou volte a senha, ou altere o usuário dentro do MySQL, ou recrie o volume (com backup).      |

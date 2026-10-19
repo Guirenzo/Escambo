@@ -82,3 +82,9 @@ INSERT INTO platform_settings (key_name, value, type, description) VALUES
   ('strike_upload_block_days', '7',   'integer', 'Dias sem enviar imagens a partir da segunda imagem removida na janela, multiplicados a cada nova imagem removida, com 0 desligando o bloqueio (ADR 41)'),
   ('strike_review_threshold',  '3',   'integer', 'Remoções de conteúdo na janela que abrem uma denúncia da conta para revisão do admin (ADR 41 e 44)')
 ON DUPLICATE KEY UPDATE value = VALUES(value);
+
+-- Regras pendentes (ADR 61): grupo próprio para preservar valores do admin.
+INSERT INTO platform_settings (key_name, value, type, description) VALUES
+  ('counter_offer_response_hours', '48', 'integer', 'Horas para responder a uma contraproposta; sem resposta, a negociação se encerra e a reserva volta ao cliente (RN-030, ADR 61)'),
+  ('extension_response_hours',     '48', 'integer', 'Horas para o cliente responder a um pedido de extensão; sem resposta, ele expira e vale como recusa (RN-028, ADR 61)')
+ON DUPLICATE KEY UPDATE description = VALUES(description);

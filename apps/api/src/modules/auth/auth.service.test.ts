@@ -135,6 +135,7 @@ describe('authService.register', () => {
       ulid: expect.stringMatching(/^[0-9A-HJKMNP-TV-Z]{26}$/),
       email: 'novo@exemplo.com',
       role: 'client',
+      status: 'pending_verification',
       ...PUBLIC_DEFAULTS,
     });
     // O aceite do cadastro vira dois consentimentos na versão vigente, com IP e navegador (ADR 54).
@@ -286,12 +287,13 @@ describe('authService.login', () => {
     const after = Date.now();
 
     expect(repo.findByEmail).toHaveBeenCalledWith('rafael@exemplo.com');
-    // O usuário devolvido é o público: sem o hash da senha nem o status da conta.
+    // O usuário público informa o status atual, sem devolver o hash da senha.
     expect(res.user).toStrictEqual({
       id: 1,
       ulid: '01HZXULIDEXAMPLE0000000000',
       email: 'rafael@exemplo.com',
       role: 'freelancer',
+      status: 'active',
       ...PUBLIC_DEFAULTS,
     });
     expect(res.refreshToken.length).toBeGreaterThan(20);
@@ -526,12 +528,13 @@ describe('authService.getByUlid', () => {
     repo.findByUlid.mockResolvedValue(fakeUser());
     const user = await authService.getByUlid('01HZXULIDEXAMPLE0000000000');
     expect(repo.findByUlid).toHaveBeenCalledWith('01HZXULIDEXAMPLE0000000000');
-    // toStrictEqual: nada além disto sai (o hash da senha e o status ficam de fora).
+    // toStrictEqual: nada além disto sai; o status é público, o hash da senha continua privado.
     expect(user).toStrictEqual({
       id: 1,
       ulid: '01HZXULIDEXAMPLE0000000000',
       email: 'rafael@exemplo.com',
       role: 'freelancer',
+      status: 'active',
       ...PUBLIC_DEFAULTS,
     });
   });
@@ -554,6 +557,7 @@ describe('authService.getByUlid', () => {
       ulid: '01HZXULIDEXAMPLE0000000000',
       email: 'rafael@exemplo.com',
       role: 'freelancer',
+      status: 'active',
       emailVerified: true,
       emailFrequency: 'daily',
       digestHour: 18,

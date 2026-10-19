@@ -24,11 +24,21 @@ const settings = (maintenanceMode: boolean): PublicSettings => ({
   platformFeePercentage: 15,
   tacitApprovalDays: 5,
   proposalExpiryHours: 72,
+  counterOfferResponseHours: 48,
   minServicePrice: 10,
   minWithdrawalAmount: 20,
   barterEnabled: true,
   deadlineGraceHours: 24,
   extensionResponseHours: 48,
+  fixedContractRules: {
+    includedRevisions: 2,
+    maxOffers: 5,
+    disputeWaitHours: 48,
+    disputeTacitMarginHours: 24,
+    dropoutWindowDays: 60,
+    dropoutAlertAt: 3,
+    dropoutAgreementDays: 7,
+  },
   maintenanceMode,
 });
 

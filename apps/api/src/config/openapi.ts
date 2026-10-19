@@ -2,6 +2,13 @@
 // Documento OpenAPI 3.0 da API do Escambo (RNF-010). Servido em /api/openapi.json e /api/docs.
 
 import { dirname } from 'node:path';
+import type {
+  BrazilTimezone,
+  DropoutDecision,
+  DropoutStatus,
+  NegotiationTurn,
+  OfferOutcome,
+} from '@escambo/types';
 
 const bearer = [{ bearerAuth: [] as string[] }];
 const res200 = { '200': { description: 'OK' } };
@@ -11,7 +18,12 @@ const res204 = { '204': { description: 'Sem conteúdo' } };
 function op(
   tag: string,
   summary: string,
-  opts: { auth?: boolean; responses?: Record<string, unknown>; body?: unknown } = {},
+  opts: {
+    auth?: boolean;
+    responses?: Record<string, unknown>;
+    body?: unknown;
+    bodyRequired?: boolean;
+  } = {},
 ): Record<string, unknown> {
   const o: Record<string, unknown> = {
     tags: [tag],
@@ -21,7 +33,7 @@ function op(
   if (opts.auth) o.security = bearer;
   if (opts.body) {
     o.requestBody = {
-      required: true,
+      required: opts.bodyRequired ?? true,
       content: { 'application/json': { schema: opts.body } },
     };
   }
@@ -34,13 +46,393 @@ const obj = (properties: Record<string, unknown>, required?: string[]) => ({
   properties,
 });
 
+const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+/** OpenAPI 3.0: a alternativa nullable só admite null; a outra conserva o schema completo. */
+const nullableRef = (name: string) => ({
+  oneOf: [ref(name), { type: 'object', nullable: true, enum: [null] }],
+});
+const implemented = (schema: Record<string, unknown>) => ({
+  ...schema,
+  'x-implementation-status': 'active',
+});
+const offerOutcomes = [
+  'open',
+  'countered',
+  'accepted',
+  'declined',
+  'withdrawn',
+  'expired',
+  'closed',
+] as const satisfies readonly OfferOutcome[];
+const negotiationTurns = ['client', 'freelancer'] as const satisfies readonly NegotiationTurn[];
+const dropoutDecisions = ['excused', 'upheld'] as const satisfies readonly DropoutDecision[];
+const dropoutStatuses = [
+  'counting',
+  'agreed',
+  'excused',
+  'expired',
+] as const satisfies readonly DropoutStatus[];
+const brazilTimezones = [
+  'America/Noronha',
+  'America/Sao_Paulo',
+  'America/Cuiaba',
+  'America/Manaus',
+  'America/Rio_Branco',
+] as const satisfies readonly BrazilTimezone[];
+const timestamp = { type: 'string', format: 'date-time' };
+const nullableTimestamp = { ...timestamp, nullable: true };
+const jsonResponse = (status: '200' | '201', schema: string) => ({
+  [status]: {
+    description: status === '201' ? 'Criado' : 'OK',
+    content: { 'application/json': { schema: ref(schema) } },
+  },
+});
+const offerPathParameters = [
+  { name: 'id', in: 'path', required: true, schema: { type: 'integer', minimum: 1 } },
+];
+const nonnegativeInteger = { type: 'integer', minimum: 0 };
+const milestoneAmount = { type: 'number', minimum: 0.01, maximum: 99_999_999.99, multipleOf: 0.01 };
+
+/** Contratos públicos das regras de negociação, revisão e desistência (ADR 61). */
+const preparedContractSchemas = {
+  NegotiationTurn: implemented({ type: 'string', enum: negotiationTurns }),
+  OfferOutcome: implemented({ type: 'string', enum: offerOutcomes }),
+  OfferMilestone: implemented(
+    obj(
+      {
+        id: { type: 'integer', minimum: 1 },
+        title: { type: 'string' },
+        amount: milestoneAmount,
+        freelancerNet: { type: 'number', minimum: 0, multipleOf: 0.01 },
+        dueAt: nullableTimestamp,
+      },
+      ['id', 'title', 'amount', 'freelancerNet', 'dueAt'],
+    ),
+  ),
+  ContractOffer: implemented(
+    obj(
+      {
+        seq: { type: 'integer', minimum: 1, maximum: 5 },
+        madeBy: ref('NegotiationTurn'),
+        price: { type: 'number', minimum: 10, maximum: 99_999_999.99, multipleOf: 0.01 },
+        platformFee: { type: 'number', minimum: 0, multipleOf: 0.01 },
+        freelancerNet: { type: 'number', minimum: 0, multipleOf: 0.01 },
+        deadlineAt: nullableTimestamp,
+        deadlineZone: { type: 'string', enum: brazilTimezones },
+        milestones: { type: 'array', nullable: true, items: ref('OfferMilestone') },
+        message: { type: 'string', nullable: true },
+        respondBy: nullableTimestamp,
+        outcome: ref('OfferOutcome'),
+        createdAt: timestamp,
+        resolvedAt: nullableTimestamp,
+      },
+      [
+        'seq',
+        'madeBy',
+        'price',
+        'platformFee',
+        'freelancerNet',
+        'deadlineAt',
+        'deadlineZone',
+        'milestones',
+        'message',
+        'respondBy',
+        'outcome',
+        'createdAt',
+        'resolvedAt',
+      ],
+    ),
+  ),
+  Negotiation: implemented(
+    obj(
+      {
+        seq: { type: 'integer', minimum: 1, maximum: 5 },
+        round: { type: 'integer', enum: [1, 2, 3] },
+        feePercentage: { type: 'number', minimum: 0, maximum: 50, multipleOf: 0.01 },
+        deadlineZone: {
+          type: 'string',
+          enum: brazilTimezones,
+          description: 'Fuso atual do freelancer para escolher dias em uma nova contraproposta.',
+        },
+        turn: ref('NegotiationTurn'),
+        respondBy: nullableTimestamp,
+        canCounter: { type: 'boolean' },
+        countersLeft: { type: 'integer', minimum: 0, maximum: 2 },
+        current: nullableRef('ContractOffer'),
+      },
+      ['seq', 'round', 'turn', 'respondBy', 'canCounter', 'countersLeft', 'current'],
+    ),
+  ),
+  CounterOfferMilestone: implemented({
+    ...obj(
+      { id: { type: 'integer', minimum: 1 }, amount: milestoneAmount, dueAt: nullableTimestamp },
+      ['id', 'amount', 'dueAt'],
+    ),
+    additionalProperties: false,
+  }),
+  CounterOfferRequest: implemented({
+    ...obj(
+      {
+        seq: { type: 'integer', minimum: 1, maximum: 5 },
+        price: { type: 'number', minimum: 10, maximum: 99_999_999.99, multipleOf: 0.01 },
+        deadlineAt: nullableTimestamp,
+        milestones: {
+          type: 'array',
+          minItems: 2,
+          maxItems: 10,
+          items: ref('CounterOfferMilestone'),
+        },
+        message: { type: 'string', minLength: 5, maxLength: 500 },
+      },
+      ['seq', 'price', 'deadlineAt', 'message'],
+    ),
+    additionalProperties: false,
+    description:
+      'Termos completos da próxima oferta. Conserva entrega única ou os mesmos ids e ordem dos marcos; títulos e forma de pagamento não mudam. Valores em créditos devem ser inteiros. Datas devem estar no futuro, em ordem, e marcos somam o preço.',
+  }),
+  RevisionState: implemented(
+    obj({ used: nonnegativeInteger, limit: { ...nonnegativeInteger, nullable: true } }, [
+      'used',
+      'limit',
+    ]),
+  ),
+  ContractRevisions: implemented({
+    allOf: [ref('RevisionState')],
+    description: 'Alias anterior de RevisionState; limit null mantém o legado ilimitado.',
+  }),
+  ContractDropout: implemented(
+    obj(
+      {
+        at: timestamp,
+        agreedAt: nullableTimestamp,
+        agreeUntil: timestamp,
+        counts: { type: 'boolean' },
+      },
+      ['at', 'agreedAt', 'agreeUntil', 'counts'],
+    ),
+  ),
+  DropoutSummary: implemented({
+    ...obj(
+      {
+        count: nonnegativeInteger,
+        windowDays: { type: 'integer', enum: [60] },
+        alert: { type: 'boolean' },
+      },
+      ['count', 'windowDays', 'alert'],
+    ),
+    description: 'Resumo público sem contratações, participantes, datas ou textos de contestação.',
+  }),
+  DropoutPreview: implemented({
+    ...obj(
+      {
+        countAfter: nonnegativeInteger,
+        windowDays: { type: 'integer', enum: [60] },
+        alertAt: { type: 'integer', enum: [3] },
+        alertUntil: nullableTimestamp,
+      },
+      ['countAfter', 'windowDays', 'alertAt', 'alertUntil'],
+    ),
+    description: 'Prévia informativa; a contagem pode mudar entre a leitura e a desistência.',
+  }),
+  DropoutDecision: implemented({ type: 'string', enum: dropoutDecisions }),
+  DropoutStatus: implemented({ type: 'string', enum: dropoutStatuses }),
+  MyDropout: implemented(
+    obj(
+      {
+        id: { type: 'integer', minimum: 1 },
+        contractId: { type: 'integer', minimum: 1 },
+        contractTitle: { type: 'string' },
+        droppedAt: timestamp,
+        countsUntil: nullableTimestamp,
+        status: ref('DropoutStatus'),
+        appealText: { type: 'string', nullable: true },
+        appealedAt: nullableTimestamp,
+        canAppeal: { type: 'boolean' },
+        decision: nullableRef('DropoutDecision'),
+        decisionNote: { type: 'string', nullable: true },
+      },
+      [
+        'id',
+        'contractId',
+        'contractTitle',
+        'droppedAt',
+        'countsUntil',
+        'status',
+        'appealText',
+        'appealedAt',
+        'canAppeal',
+        'decision',
+        'decisionNote',
+      ],
+    ),
+  ),
+  MyDropouts: implemented(
+    obj(
+      {
+        items: { type: 'array', items: ref('MyDropout') },
+        count: nonnegativeInteger,
+        alert: { type: 'boolean' },
+        alertUntil: nullableTimestamp,
+        acceptedInWindow: nonnegativeInteger,
+      },
+      ['items', 'count', 'alert', 'alertUntil', 'acceptedInWindow'],
+    ),
+  ),
+  AdminDropout: implemented({
+    allOf: [
+      ref('MyDropout'),
+      obj(
+        {
+          freelancer: obj(
+            {
+              id: { type: 'integer', minimum: 1 },
+              ulid: { type: 'string' },
+              name: { type: 'string', nullable: true },
+            },
+            ['id', 'ulid', 'name'],
+          ),
+          clientAgreed: { type: 'boolean' },
+          ownerCount: nonnegativeInteger,
+        },
+        ['freelancer', 'clientAgreed', 'ownerCount'],
+      ),
+    ],
+  }),
+};
+
+const supportStatuses = ['open', 'in_progress', 'waiting_user', 'resolved', 'closed'];
+const supportPriorities = ['low', 'medium', 'high', 'critical'];
+const supportSchemas = {
+  SupportTicket: obj({
+    id: { type: 'integer', minimum: 1 },
+    ulid: { type: 'string' },
+    userId: { type: 'integer', minimum: 1 },
+    ownerDeleted: { type: 'boolean' },
+    contractId: { type: 'integer', minimum: 1, nullable: true },
+    category: { type: 'string', enum: ['payment', 'dispute', 'account', 'fraud', 'other'] },
+    subject: { type: 'string', minLength: 3, maxLength: 150 },
+    status: { type: 'string', enum: supportStatuses },
+    priority: { type: 'string', enum: supportPriorities },
+    assignedTo: { type: 'integer', minimum: 1, nullable: true },
+    firstResponseAt: nullableTimestamp,
+    slaDueAt: timestamp,
+    slaAlertedAt: nullableTimestamp,
+    resolvedAt: nullableTimestamp,
+    closedAt: nullableTimestamp,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }),
+  SupportMessage: obj({
+    id: { type: 'integer', minimum: 1 },
+    ticketId: { type: 'integer', minimum: 1 },
+    senderId: { type: 'integer', minimum: 1 },
+    from: { type: 'string', enum: ['user', 'support'] },
+    message: { type: 'string', minLength: 1, maxLength: 5000 },
+    internal: { type: 'boolean' },
+    createdAt: timestamp,
+  }),
+  SupportTicketDetail: {
+    allOf: [
+      ref('SupportTicket'),
+      obj(
+        {
+          messages: { type: 'array', maxItems: 50, items: ref('SupportMessage') },
+          nextBeforeId: { type: 'integer', minimum: 1, nullable: true },
+        },
+        ['messages', 'nextBeforeId'],
+      ),
+    ],
+  },
+  SupportTicketPage: obj(
+    {
+      items: { type: 'array', items: ref('SupportTicket') },
+      page: { type: 'integer', minimum: 1 },
+      limit: { type: 'integer', minimum: 1, maximum: 50 },
+    },
+    ['items', 'page', 'limit'],
+  ),
+  CreateSupportTicket: {
+    ...obj(
+      {
+        category: { type: 'string', enum: ['payment', 'dispute', 'account', 'fraud', 'other'] },
+        subject: { type: 'string', minLength: 3, maxLength: 150 },
+        description: { type: 'string', minLength: 10, maxLength: 5000 },
+        contractId: {
+          type: 'integer',
+          minimum: 1,
+          nullable: true,
+          description: 'Obrigatório para categoria dispute; exige participação na contratação.',
+        },
+      },
+      ['category', 'subject', 'description'],
+    ),
+    additionalProperties: false,
+  },
+  ReplySupportTicket: {
+    ...obj({ message: { type: 'string', minLength: 1, maxLength: 5000 } }, ['message']),
+    additionalProperties: false,
+  },
+  AdminReplySupportTicket: {
+    ...obj(
+      {
+        message: { type: 'string', minLength: 1, maxLength: 5000 },
+        internal: { type: 'boolean', default: false },
+        resolve: { type: 'boolean', default: false },
+      },
+      ['message'],
+    ),
+    additionalProperties: false,
+    description:
+      'Nota interna não pode resolver, não conta como primeira resposta nem notifica o titular.',
+  },
+  UpdateSupportTicket: {
+    ...obj({
+      priority: { type: 'string', enum: supportPriorities },
+      status: { type: 'string', enum: ['in_progress', 'waiting_user'] },
+    }),
+    minProperties: 1,
+    additionalProperties: false,
+  },
+};
+const supportListParameters = [
+  { name: 'page', in: 'query', schema: { type: 'integer', minimum: 1, default: 1 } },
+  { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 } },
+  { name: 'status', in: 'query', schema: { type: 'string', enum: supportStatuses } },
+];
+const supportDetailParameters = [
+  ...offerPathParameters,
+  {
+    name: 'beforeId',
+    in: 'query',
+    schema: { type: 'integer', minimum: 1 },
+    description:
+      'Mensagens anteriores a este ID; a resposta traz até 50 mensagens em ordem crescente. Notas internas são filtradas antes da paginação pública.',
+  },
+];
+const supportErrors = {
+  '403': {
+    description:
+      'Conta bloqueada ou sem papel administrativo atual; titular removido não pode receber novas alterações.',
+  },
+  '404': { description: 'Chamado ou contratação não encontrado para este titular.' },
+  '409': {
+    description: 'ticket_duplicate, ticket_limit (3 chamados não encerrados) ou ticket_closed.',
+  },
+  '422': {
+    description: 'Dados inválidos; corpos estritos, IDs positivos e mensagens dentro do limite.',
+  },
+  '503': {
+    description: 'support_unavailable; falha temporária sem exposição de conteúdo privado.',
+  },
+};
+
 export const openapiDocument: Record<string, any> = {
   openapi: '3.0.3',
   info: {
     title: 'Escambo API',
     version: '1.1.0',
     description:
-      'API do Escambo — marketplace de serviços com escrow, gamificação e troca de serviços (escambo). Autenticação via Bearer JWT.',
+      'API do Escambo — marketplace de serviços com escrow, gamificação e troca de serviços (escambo). Autenticação via Bearer JWT; identidade, papel e status são conferidos no banco a cada requisição. RN-007: suspensos podem entrar, renovar sessão e consultar; ações de negócio retornam 403 account_suspended, incluindo acesso administrativo. Permanecem disponíveis suporte próprio (abrir, responder e encerrar), logout/logout-all, consentimentos, solicitações LGPD, remoção de push e contestações próprias de remoção/desistência. Banimento ou exclusão bloqueiam o acesso autenticado. Prazos e processamento já iniciado continuam. Atendimento de suporte não altera dinheiro ou prazos de contratos; disputa financeira mantém suas próprias regras.',
   },
   servers: [{ url: '/api', description: 'API' }],
   tags: [
@@ -60,6 +452,7 @@ export const openapiDocument: Record<string, any> = {
     { name: 'Notificações' },
     { name: 'Trust & Safety' },
     { name: 'Disputas' },
+    { name: 'Suporte' },
     { name: 'Admin' },
     { name: 'LGPD' },
     { name: 'Plataforma' },
@@ -70,6 +463,82 @@ export const openapiDocument: Record<string, any> = {
     },
     schemas: {
       Error: obj({ error: { type: 'string' }, message: { type: 'string' } }),
+      UserStatus: {
+        type: 'string',
+        enum: ['active', 'pending_verification', 'suspended', 'banned'],
+      },
+      PublicUser: obj(
+        {
+          id: { type: 'integer', minimum: 1 },
+          ulid: { type: 'string' },
+          email: { type: 'string', format: 'email' },
+          role: { type: 'string', enum: ['client', 'freelancer', 'company', 'admin'] },
+          status: ref('UserStatus'),
+          emailVerified: { type: 'boolean' },
+          emailFrequency: { type: 'string', enum: ['instant', 'daily', 'off'] },
+          digestHour: { type: 'integer', minimum: 0, maximum: 23 },
+          timezone: { type: 'string', enum: brazilTimezones },
+          timezoneChosen: { type: 'boolean' },
+          quietHours: {
+            ...obj(
+              {
+                start: { type: 'integer', minimum: 0, maximum: 23 },
+                end: { type: 'integer', minimum: 0, maximum: 23 },
+              },
+              ['start', 'end'],
+            ),
+            nullable: true,
+          },
+          quietPass: {
+            type: 'array',
+            nullable: true,
+            items: { type: 'string', enum: ['deadline'] },
+          },
+        },
+        [
+          'id',
+          'ulid',
+          'email',
+          'role',
+          'status',
+          'emailVerified',
+          'emailFrequency',
+          'digestHour',
+          'timezone',
+          'timezoneChosen',
+          'quietHours',
+          'quietPass',
+        ],
+      ),
+      AuthResponse: obj(
+        {
+          accessToken: { type: 'string' },
+          refreshToken: { type: 'string' },
+          user: ref('PublicUser'),
+        },
+        ['accessToken', 'refreshToken', 'user'],
+      ),
+      DisputeTooEarlyError: obj(
+        {
+          error: { type: 'string', enum: ['dispute_too_early'] },
+          message: { type: 'string' },
+          opensAt: nullableTimestamp,
+        },
+        ['error', 'message', 'opensAt'],
+      ),
+      ActiveContractError: obj(
+        {
+          error: { type: 'string', enum: ['active_contract_exists'] },
+          message: { type: 'string' },
+          contractId: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Contratação aberta do próprio cliente com este freelancer.',
+          },
+        },
+        ['error', 'message', 'contractId'],
+      ),
+      RevisionGrant: { ...obj({}), additionalProperties: false },
       Register: obj(
         {
           email: { type: 'string', format: 'email' },
@@ -117,14 +586,155 @@ export const openapiDocument: Record<string, any> = {
         },
         ['freelancerId', 'title', 'description', 'price'],
       ),
-      CancelContract: obj({
-        expectedRefund: {
-          type: 'number',
-          minimum: 0,
+      CancelContract: {
+        ...obj({
+          seq: {
+            type: 'integer',
+            minimum: 1,
+            maximum: 5,
+            description:
+              'Sequência da oferta vista. Obrigatória na negociação após a oferta 1; outra oferta no lugar: 409 offer_changed.',
+          },
+          expectedRefund: {
+            type: 'number',
+            minimum: 0,
+            description:
+              'Reembolso ao cliente que a tela mostrou (cancellation.refundClient). Diferente do calculado agora: 409 cancel_quote_changed',
+          },
+          expectedDropoutCount: {
+            type: 'integer',
+            minimum: 1,
+            description:
+              'Contagem exibida na prévia da desistência; campo opcional de compatibilidade.',
+          },
+        }),
+        additionalProperties: false,
+      },
+      DropoutAgreement: { ...obj({}), additionalProperties: false },
+      DropoutAppeal: {
+        ...obj({ text: { type: 'string', minLength: 20, maxLength: 1000 } }, ['text']),
+        additionalProperties: false,
+      },
+      DropoutDecisionRequest: {
+        ...obj({ note: { type: 'string', minLength: 10, maxLength: 500 } }, ['note']),
+        additionalProperties: false,
+      },
+      PublicFreelancerProfile: obj({ dropouts: ref('DropoutSummary') }),
+      CancelTerms: obj({ dropout: nullableRef('DropoutPreview') }),
+      AdminDropouts: { type: 'array', items: ref('AdminDropout') },
+      OfferDecision: {
+        ...obj({ seq: { type: 'integer', minimum: 1, maximum: 5 } }),
+        additionalProperties: false,
+        description:
+          'Sequência da oferta vista; outra oferta no lugar: 409 offer_changed. Corpo vazio só é compatível com a proposta inicial (oferta 1).',
+      },
+      Contract: obj({
+        id: { type: 'integer' },
+        ulid: { type: 'string' },
+        clientId: { type: 'integer' },
+        freelancerId: { type: 'integer' },
+        serviceId: { type: 'integer', nullable: true },
+        title: { type: 'string' },
+        description: { type: 'string' },
+        price: { type: 'number' },
+        platformFee: { type: 'number' },
+        freelancerNet: { type: 'number' },
+        paymentMode: { type: 'string', enum: ['cash', 'credits', 'barter', 'hybrid'] },
+        status: {
+          type: 'string',
+          enum: [
+            'pending',
+            'accepted',
+            'rejected',
+            'in_progress',
+            'delivered',
+            'revision_requested',
+            'completed',
+            'cancelled',
+            'disputed',
+          ],
+        },
+        deadlineAt: nullableTimestamp,
+        createdAt: timestamp,
+        hasReview: { type: 'boolean' },
+        hasMilestones: { type: 'boolean' },
+        deadlineExtendedAt: nullableTimestamp,
+        overdueNotifiedAt: nullableTimestamp,
+        extension: { type: 'object', nullable: true },
+        deadline: { type: 'object' },
+        approvalDueAt: nullableTimestamp,
+        proposalExpiresAt: nullableTimestamp,
+        deadlineZone: { type: 'string', enum: brazilTimezones },
+        revisionRequestedAt: nullableTimestamp,
+        revisions: {
+          ...nullableRef('RevisionState'),
           description:
-            'Reembolso ao cliente que a tela mostrou (cancellation.refundClient). Diferente do calculado agora: 409 cancel_quote_changed',
+            'Entrega única: revisões usadas e limite. null por marcos; limit null no legado ilimitado. Ausente nas versões anteriores.',
+        },
+        disputeOpensAt: {
+          ...nullableTimestamp,
+          description:
+            'Instante da abertura manual (RN-062), incluindo o snapshot da primeira entrega. null fora dos estados disputáveis; a automática da RN-029 não espera esta janela.',
+        },
+        negotiation: {
+          ...nullableRef('Negotiation'),
+          description:
+            'Em pending, fora da troca. Na lista, current é null; no detalhe, traz a oferta atual. Ausente em versões anteriores da API.',
         },
       }),
+      ContractWithHistory: {
+        allOf: [
+          ref('Contract'),
+          obj(
+            {
+              history: { type: 'array', items: { type: 'object' } },
+              milestones: { type: 'array', items: ref('Milestone') },
+              review: { type: 'object', nullable: true },
+              cancellation: nullableRef('CancelTerms'),
+              dropout: nullableRef('ContractDropout'),
+              offers: {
+                type: 'array',
+                items: ref('ContractOffer'),
+                description: 'Ofertas em ordem de sequência; ausente em versões anteriores da API.',
+              },
+            },
+            ['history', 'milestones', 'review', 'cancellation'],
+          ),
+        ],
+      },
+      Milestone: obj({
+        id: { type: 'integer' },
+        title: { type: 'string' },
+        description: { type: 'string', nullable: true },
+        amount: { type: 'number' },
+        freelancerNet: { type: 'number' },
+        sortOrder: nonnegativeInteger,
+        status: {
+          type: 'string',
+          enum: ['pending', 'funded', 'delivered', 'approved', 'released', 'cancelled'],
+        },
+        dueAt: nullableTimestamp,
+        deliveredAt: nullableTimestamp,
+        deliveryNote: { type: 'string', nullable: true },
+        revisionNote: { type: 'string', nullable: true },
+        releasedAt: nullableTimestamp,
+        approvalDueAt: nullableTimestamp,
+        dueZone: { type: 'string', enum: brazilTimezones },
+        revisionRequestedAt: nullableTimestamp,
+        revisions: {
+          ...ref('RevisionState'),
+          description:
+            'Uso/limite deste marco; limit null no legado. Ausente nas versões anteriores.',
+        },
+      }),
+      ContractsPage: obj(
+        {
+          items: { type: 'array', items: ref('Contract') },
+          page: { type: 'integer', minimum: 1 },
+          limit: { type: 'integer', minimum: 1, maximum: 100 },
+        },
+        ['items', 'page', 'limit'],
+      ),
       ExtensionDecision: obj({
         seq: {
           type: 'integer',
@@ -177,9 +787,92 @@ export const openapiDocument: Record<string, any> = {
         },
         ['resolution'],
       ),
+      ...preparedContractSchemas,
+      ...supportSchemas,
     },
   },
   paths: {
+    '/support/tickets': {
+      get: {
+        ...op('Suporte', 'Lista os chamados do titular, inclusive durante suspensão', {
+          auth: true,
+          responses: jsonResponse('200', 'SupportTicketPage'),
+        }),
+        parameters: supportListParameters,
+      },
+      post: op('Suporte', 'Abre chamado privado; até três não encerrados e sem duplicação', {
+        auth: true,
+        body: ref('CreateSupportTicket'),
+        responses: { ...jsonResponse('201', 'SupportTicketDetail'), ...supportErrors },
+      }),
+    },
+    '/support/tickets/{id}': {
+      parameters: supportDetailParameters,
+      get: op('Suporte', 'Conversa pública do titular, sem notas internas', {
+        auth: true,
+        responses: { ...jsonResponse('200', 'SupportTicketDetail'), ...supportErrors },
+      }),
+    },
+    '/support/tickets/{id}/messages': {
+      parameters: offerPathParameters,
+      post: op(
+        'Suporte',
+        'Responde e retoma atendimento resolvido há menos de cinco dias; encerrado é terminal',
+        {
+          auth: true,
+          body: ref('ReplySupportTicket'),
+          responses: { ...jsonResponse('201', 'SupportTicketDetail'), ...supportErrors },
+        },
+      ),
+    },
+    '/support/tickets/{id}/close': {
+      parameters: offerPathParameters,
+      post: op('Suporte', 'Titular encerra o chamado e libera uma vaga', {
+        auth: true,
+        responses: { ...jsonResponse('200', 'SupportTicketDetail'), ...supportErrors },
+      }),
+    },
+    '/admin/support/tickets': {
+      get: {
+        ...op('Admin', 'Fila privada de suporte; exige administrador ativo atual', {
+          auth: true,
+          responses: { ...jsonResponse('200', 'SupportTicketPage'), ...supportErrors },
+        }),
+        parameters: supportListParameters,
+      },
+    },
+    '/admin/support/tickets/{id}': {
+      parameters: supportDetailParameters,
+      get: op(
+        'Admin',
+        'Histórico de suporte com notas internas; titular removido é somente consulta',
+        {
+          auth: true,
+          responses: { ...jsonResponse('200', 'SupportTicketDetail'), ...supportErrors },
+        },
+      ),
+      patch: op(
+        'Admin',
+        'Altera prioridade ou estado; SLA de 72/24/8/2 horas desde a abertura, sem reinício',
+        {
+          auth: true,
+          body: ref('UpdateSupportTicket'),
+          responses: { ...jsonResponse('200', 'SupportTicketDetail'), ...supportErrors },
+        },
+      ),
+    },
+    '/admin/support/tickets/{id}/messages': {
+      parameters: offerPathParameters,
+      post: op(
+        'Admin',
+        'Responde, anota internamente ou resolve; resolução encerra após cinco dias corridos',
+        {
+          auth: true,
+          body: ref('AdminReplySupportTicket'),
+          responses: { ...jsonResponse('201', 'SupportTicketDetail'), ...supportErrors },
+        },
+      ),
+    },
     '/health': { get: op('Health', 'Readiness — status da API + ping no banco') },
     '/health/live': { get: op('Health', 'Liveness — processo responde (sem tocar no banco)') },
 
@@ -192,6 +885,7 @@ export const openapiDocument: Record<string, any> = {
     '/auth/login': {
       post: op('Auth', 'Autentica (accessToken + refreshToken)', {
         body: { $ref: '#/components/schemas/Login' },
+        responses: jsonResponse('200', 'AuthResponse'),
       }),
     },
     '/auth/refresh': { post: op('Auth', 'Rotaciona o refresh token') },
@@ -199,11 +893,54 @@ export const openapiDocument: Record<string, any> = {
     '/auth/logout-all': {
       post: op('Auth', 'Encerra todas as sessões', { auth: true, responses: res200 }),
     },
-    '/auth/me': { get: op('Auth', 'Dados do usuário do token', { auth: true }) },
+    '/auth/me': {
+      get: op('Auth', 'Dados atuais do usuário; suspensão conserva consulta', {
+        auth: true,
+        responses: {
+          '200': {
+            ...jsonResponse('200', 'PublicUser')['200'],
+            headers: {
+              'X-Account-Status': {
+                description:
+                  'Status atual também enviado pelas demais respostas autenticadas permitidas (exposto via CORS).',
+                schema: ref('UserStatus'),
+              },
+            },
+          },
+        },
+      }),
+    },
 
     '/categories': { get: op('Categorias', 'Árvore de categorias') },
 
     '/profiles/me': { get: op('Perfis', 'Meus perfis', { auth: true }) },
+    '/profiles/me/dropouts': {
+      get: op(
+        'Perfis',
+        'Minhas desistências e contagem atual (RN-026); inclui contexto privado e decisão da equipe',
+        {
+          auth: true,
+          responses: jsonResponse('200', 'MyDropouts'),
+        },
+      ),
+    },
+    '/profiles/me/dropouts/{id}/appeal': {
+      post: {
+        ...op(
+          'Perfis',
+          'Contesta uma desistência uma vez enquanto conta; a contestação mantém a contagem (404 dropout_not_found; 409 appeal_closed)',
+          {
+            auth: true,
+            body: ref('DropoutAppeal'),
+            responses: {
+              ...jsonResponse('200', 'MyDropout'),
+              '409': { description: 'appeal_closed' },
+            },
+          },
+        ),
+        parameters: offerPathParameters,
+      },
+    },
     '/profiles/freelancer': {
       put: op('Perfis', 'Cria/edita perfil de freelancer', { auth: true }),
     },
@@ -228,7 +965,11 @@ export const openapiDocument: Record<string, any> = {
     },
     '/profiles/freelancer/{ulid}': {
       get: {
-        ...op('Perfis', 'Perfil público do freelancer (nota + nível)'),
+        ...op(
+          'Perfis',
+          'Perfil público do freelancer (nota, nível e resumo de desistências sem datas ou textos privados)',
+          { responses: jsonResponse('200', 'PublicFreelancerProfile') },
+        ),
         parameters: [{ name: 'ulid', in: 'path', required: true, schema: { type: 'string' } }],
       },
     },
@@ -251,28 +992,117 @@ export const openapiDocument: Record<string, any> = {
     },
 
     '/contracts': {
-      get: op('Contratações', 'Minhas contratações', { auth: true }),
-      post: op('Contratações', 'Cria proposta (taxa 15%)', {
+      get: op(
+        'Contratações',
+        'Minhas contratações, com a vez da negociação (current nulo na lista)',
+        {
+          auth: true,
+          responses: jsonResponse('200', 'ContractsPage'),
+        },
+      ),
+      post: op('Contratações', 'Cria proposta e reserva o valor', {
         auth: true,
         body: { $ref: '#/components/schemas/CreateContract' },
-        responses: res201,
+        responses: {
+          ...jsonResponse('201', 'Contract'),
+          '409': {
+            description:
+              'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive.',
+            content: {
+              'application/json': { schema: { anyOf: [ref('ActiveContractError'), ref('Error')] } },
+            },
+          },
+        },
       }),
     },
     '/contracts/{id}': {
       get: op(
         'Contratações',
-        'Detalhe + histórico, com o prazo (deadline: state, noticeAt, mediationAt, extensionRequestsLeft), approvalDueAt, proposalExpiresAt, extension.respondBy/seq, cancellation: o que cancelar (cliente) ou desistir (freelancer) faria agora (ADR 57), deadlineZone (o fuso em que o prazo é um dia), revisionRequestedAt e, nos marcos, dueZone e revisionRequestedAt (ADR 58)',
-        { auth: true },
+        'Detalhe + histórico e ofertas da negociação (RN-030), com o prazo (deadline: state, noticeAt, mediationAt, extensionRequestsLeft), approvalDueAt, proposalExpiresAt, extension.respondBy/seq, cancellation: o que cancelar (cliente) ou desistir (freelancer) faria agora (ADR 57), deadlineZone (o fuso em que o prazo é um dia), revisionRequestedAt e, nos marcos, dueZone e revisionRequestedAt (ADR 58)',
+        { auth: true, responses: jsonResponse('200', 'ContractWithHistory') },
       ),
+    },
+    '/contracts/{id}/offers': {
+      post: {
+        ...op('Contratações', 'Envia contraproposta na vez de quem chama (RN-030)', {
+          auth: true,
+          body: ref('CounterOfferRequest'),
+          responses: {
+            ...jsonResponse('201', 'ContractWithHistory'),
+            '400': {
+              description:
+                'deadline_too_soon: não cabe ao menos uma hora para responder antes da entrega',
+            },
+            '402': {
+              description:
+                'insufficient_balance: saldo insuficiente para aumentar a reserva do cliente',
+            },
+            '403': { description: 'forbidden: quem chama não participa da contratação' },
+            '409': {
+              description:
+                'invalid_transition, not_your_turn, offer_changed, offer_limit, proposal_expired ou offer_fee_invalid',
+            },
+            '422': {
+              description:
+                'Validação, invalid_offer, offer_deadline_invalid, offer_unchanged, offer_shape ou milestones_mismatch',
+            },
+          },
+        }),
+        parameters: offerPathParameters,
+      },
+    },
+    '/contracts/{id}/offers/{seq}/accept': {
+      post: {
+        ...op('Contratações', 'Cliente aceita a contraproposta par e financia o escrow (RN-030)', {
+          auth: true,
+          responses: {
+            ...jsonResponse('200', 'ContractWithHistory'),
+            '402': {
+              description: 'insufficient_balance: saldo insuficiente para a diferença da oferta',
+            },
+            '403': { description: 'forbidden: ação exclusiva do cliente da contratação' },
+            '409': {
+              description:
+                'invalid_transition, not_your_turn, offer_changed, proposal_expired, deadline_passed, freelancer_unavailable, offer_fee_invalid ou insufficient_credits',
+            },
+            '422': { description: 'Id ou sequência inválidos' },
+          },
+        }),
+        parameters: [
+          ...offerPathParameters,
+          {
+            name: 'seq',
+            in: 'path',
+            required: true,
+            schema: { type: 'integer', minimum: 1, maximum: 5 },
+          },
+        ],
+      },
     },
     '/contracts/{id}/accept': {
       post: op(
         'Contratações',
-        'Freelancer aceita (financia escrow). 409 deadline_passed (prazo de entrega vencido) ou proposal_expired (validade gravada vencida)',
-        { auth: true },
+        'Freelancer aceita a oferta ímpar (financia escrow). 409 not_your_turn, offer_changed, deadline_passed ou proposal_expired',
+        {
+          auth: true,
+          body: ref('OfferDecision'),
+          bodyRequired: false,
+          responses: jsonResponse('200', 'Contract'),
+        },
       ),
     },
-    '/contracts/{id}/reject': { post: op('Contratações', 'Freelancer recusa', { auth: true }) },
+    '/contracts/{id}/reject': {
+      post: op(
+        'Contratações',
+        'Freelancer recusa a oferta ou sai da negociação; 409 offer_changed',
+        {
+          auth: true,
+          body: ref('OfferDecision'),
+          bodyRequired: false,
+          responses: jsonResponse('200', 'Contract'),
+        },
+      ),
+    },
     '/contracts/{id}/deliver': { post: op('Contratações', 'Registra entrega', { auth: true }) },
     '/contracts/{id}/approve': {
       post: op('Contratações', 'Cliente aprova (libera escrow)', { auth: true }),
@@ -283,6 +1113,24 @@ export const openapiDocument: Record<string, any> = {
         'Cancela (cliente) ou desiste (freelancer), RN-025/RN-026 (ADR 57): a desistência devolve tudo ao cliente; prazo vencido sem entrega, a partir do aviso, também. 409 cancel_quote_changed, wait_notice, extension_pending_answer, milestone_open, use_reject, invalid_transition',
         { auth: true, body: { $ref: '#/components/schemas/CancelContract' } },
       ),
+    },
+    '/contracts/{id}/dropout/agreed': {
+      post: {
+        ...op(
+          'Contratações',
+          'Cliente confirma desistência combinada até 7 dias inclusive; o dinheiro não muda (404 dropout_not_found; 409 dropout_agree_closed)',
+          {
+            auth: true,
+            body: ref('DropoutAgreement'),
+            bodyRequired: false,
+            responses: {
+              ...jsonResponse('200', 'ContractDropout'),
+              '409': { description: 'dropout_agree_closed' },
+            },
+          },
+        ),
+        parameters: offerPathParameters,
+      },
     },
     '/notifications/push': {
       get: op(
@@ -391,7 +1239,60 @@ export const openapiDocument: Record<string, any> = {
       }),
     },
     '/contracts/{id}/milestones/{milestoneId}/request-revision': {
-      post: op('Contratações', 'Marco: cliente pede revisão', { auth: true }),
+      post: op('Contratações', 'Marco: cliente pede revisão sem custo (RN-023)', {
+        auth: true,
+        responses: {
+          ...jsonResponse('200', 'ContractWithHistory'),
+          '409': {
+            description:
+              'revision_limit: revisões incluídas usadas; revision_counter_limit: teto técnico do contador',
+          },
+        },
+      }),
+    },
+    '/contracts/{id}/request-revision': {
+      post: op('Contratações', 'Entrega única: cliente pede revisão sem custo (RN-023)', {
+        auth: true,
+        responses: {
+          ...jsonResponse('200', 'Contract'),
+          '409': {
+            description:
+              'revision_limit: revisões incluídas usadas; revision_counter_limit: teto técnico do contador',
+          },
+        },
+      }),
+    },
+    '/contracts/{id}/revisions/grant': {
+      post: op('Contratações', 'Freelancer libera mais uma revisão sem custo na entrega única', {
+        auth: true,
+        body: ref('RevisionGrant'),
+        bodyRequired: false,
+        responses: {
+          ...jsonResponse('200', 'Contract'),
+          '409': {
+            description:
+              'revision_unlimited, revision_grant_not_needed, revision_grant_limit ou invalid_transition. A hora da aprovação automática não muda.',
+          },
+        },
+      }),
+    },
+    '/contracts/{id}/milestones/{milestoneId}/revisions/grant': {
+      post: op(
+        'Contratações',
+        'Freelancer libera mais uma revisão sem custo neste marco entregue',
+        {
+          auth: true,
+          body: ref('RevisionGrant'),
+          bodyRequired: false,
+          responses: {
+            ...jsonResponse('200', 'ContractWithHistory'),
+            '409': {
+              description:
+                'revision_unlimited, revision_grant_not_needed, revision_grant_limit ou invalid_transition. A hora da aprovação automática do marco não muda.',
+            },
+          },
+        },
+      ),
     },
 
     '/auth/verify-email': { post: op('Auth', 'Confirma o e-mail pelo token do link (uso único)') },
@@ -601,10 +1502,85 @@ export const openapiDocument: Record<string, any> = {
         { auth: true },
       ),
     },
+    '/admin/dropouts': {
+      get: {
+        ...op(
+          'Admin',
+          'Contestações de desistência aguardando decisão, das mais antigas; acesso exclusivo de admin',
+          {
+            auth: true,
+            responses: jsonResponse('200', 'AdminDropouts'),
+          },
+        ),
+        parameters: [
+          {
+            name: 'status',
+            in: 'query',
+            schema: { type: 'string', enum: ['appealed'], default: 'appealed' },
+          },
+        ],
+      },
+    },
+    '/admin/users/{ulid}/dropouts': {
+      get: {
+        ...op('Admin', 'Desistências da conta com confirmação, contestação e decisão privadas', {
+          auth: true,
+          responses: jsonResponse('200', 'AdminDropouts'),
+        }),
+        parameters: [
+          {
+            name: 'ulid',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', minLength: 26, maxLength: 26 },
+          },
+        ],
+      },
+    },
+    '/admin/dropouts/{id}/{decision}': {
+      post: {
+        ...op(
+          'Admin',
+          'excuse deixa de contar; uphold mantém uma desistência contestada. Nota privada só para freelancer; ação auditada na transação (409 dropout_decided_already; 422 dropout_appeal_required)',
+          {
+            auth: true,
+            body: ref('DropoutDecisionRequest'),
+            responses: {
+              ...jsonResponse('200', 'MyDropout'),
+              '409': { description: 'dropout_decided_already' },
+              '422': { description: 'dropout_appeal_required ou corpo inválido' },
+            },
+          },
+        ),
+        parameters: [
+          ...offerPathParameters,
+          {
+            name: 'decision',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', enum: ['excuse', 'uphold'] },
+          },
+        ],
+      },
+    },
 
     '/disputes': {
       get: op('Disputas', 'Minhas disputas', { auth: true }),
-      post: op('Disputas', 'Abre disputa de contrato', { auth: true, responses: res201 }),
+      post: op('Disputas', 'Abre disputa manual quando a janela da RN-062 já abriu', {
+        auth: true,
+        responses: {
+          ...res201,
+          '409': {
+            description:
+              'dispute_too_early devolve opensAt em ISO UTC e a hora no fuso de quem pede; not_disputable quando o estado não admite disputa. A automática da RN-029 mantém sua própria guarda.',
+            content: {
+              'application/json': {
+                schema: { anyOf: [ref('DisputeTooEarlyError'), ref('Error')] },
+              },
+            },
+          },
+        },
+      }),
     },
     '/disputes/{id}': { get: op('Disputas', 'Detalhe da disputa', { auth: true }) },
 
@@ -644,7 +1620,7 @@ export const openapiDocument: Record<string, any> = {
     '/settings/public': {
       get: op(
         'Plataforma',
-        'Parâmetros públicos: comissão (%), aprovação tácita (dias), validade da proposta (horas), mínimos de serviço e saque (R$), trocas ligadas, modo de manutenção',
+        'Parâmetros públicos: comissão, aprovação tácita, validade da proposta, horas para responder a contraproposta e extensão, mínimos, trocas, manutenção e regras fixas das contratações (somente leitura)',
       ),
     },
     '/admin/settings': {

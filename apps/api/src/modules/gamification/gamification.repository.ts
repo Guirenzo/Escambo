@@ -46,6 +46,15 @@ export interface FreelancerStatsRow extends RowDataPacket {
 const RANKED_USER = `u.deleted_at IS NULL AND u.status NOT IN ('suspended', 'banned')`;
 
 export const gamificationRepository = {
+  /** Consulta o total sem inicializar XP (RN-007). */
+  async findXp(userId: number): Promise<XpRow | undefined> {
+    const [rows] = await pool.query<XpRow[]>(
+      `SELECT user_id, total_xp, level, level_name FROM user_xp WHERE user_id = :userId LIMIT 1`,
+      { userId },
+    );
+    return rows[0];
+  },
+
   async getOrCreateXp(userId: number): Promise<XpRow> {
     await pool.query<ResultSetHeader>(`INSERT IGNORE INTO user_xp (user_id) VALUES (:userId)`, {
       userId,
@@ -196,7 +205,7 @@ export const gamificationRepository = {
       `SELECT COUNT(*) + 1 AS rnk FROM user_xp ux
          JOIN users u ON u.id = ux.user_id
         WHERE ${RANKED_USER}
-          AND ux.total_xp > (SELECT total_xp FROM user_xp WHERE user_id = :userId)`,
+          AND ux.total_xp > COALESCE((SELECT total_xp FROM user_xp WHERE user_id = :userId), 0)`,
       { userId },
     );
     return Number(rows[0]?.rnk ?? 1);

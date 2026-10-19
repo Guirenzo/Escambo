@@ -1,3 +1,4 @@
+import type { RowDataPacket } from 'mysql2';
 import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
@@ -37,13 +38,16 @@ describe('consentimento no cadastro (ADR 54)', () => {
         c,
       ]),
     );
-    expect(byType.terms_of_use).toMatchObject({ version: '1.4', accepted: true }); // Termos 1.4 (ADR 58)
+    expect(byType.terms_of_use).toMatchObject({
+      version: CURRENT_LEGAL_VERSION.terms_of_use,
+      accepted: true,
+    });
     expect(byType.privacy_policy).toMatchObject({
       version: CURRENT_LEGAL_VERSION.privacy_policy,
       accepted: true,
     });
 
-    const [rows] = await pool.query<({ user_agent: string | null } & { length: number })[]>(
+    const [rows] = await pool.query<(RowDataPacket & { user_agent: string | null })[]>(
       `SELECT c.user_agent FROM lgpd_consents c JOIN users u ON u.id = c.user_id
         WHERE u.email = :email AND c.type = 'privacy_policy'`,
       { email },

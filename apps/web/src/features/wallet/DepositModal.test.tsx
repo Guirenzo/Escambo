@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWallet } from '../../lib/hooks';
 import { ToastProvider } from '../../lib/toast';
 import { DepositModal } from './DepositModal';
+import { AccountAccessProvider } from '../../lib/account-access';
 
 const createDeposit = vi.fn();
 const depositStatus = vi.fn();
@@ -77,6 +78,48 @@ function renderModal(props: Partial<Props> = {}) {
 
 const amountField = () => screen.getByLabelText('Valor (R$)');
 const generateButton = () => screen.getByRole('button', { name: /Gerar cobrança PIX de/ });
+
+describe('DepositModal: suspensão com o modal aberto', () => {
+  function renderWithStatus(initial?: Deposit) {
+    const onClose = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (status: 'active' | 'suspended') => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>
+          <AccountAccessProvider status={status}>
+            <DepositModal onClose={onClose} initial={initial} />
+          </AccountAccessProvider>
+        </ToastProvider>
+      </QueryClientProvider>
+    );
+    return { onClose, tree, view: render(tree('active')) };
+  }
+
+  it('fecha a criação de cobrança ao suspender sem enviar ou simular pagamento', () => {
+    const { view, tree, onClose } = renderWithStatus();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    view.rerender(tree('suspended'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(createDeposit).not.toHaveBeenCalled();
+    expect(simulateDeposit).not.toHaveBeenCalled();
+  });
+
+  it('mantém a cobrança existente consultável e bloqueia a simulação até reativar', () => {
+    const pending = deposit({ canSimulate: true });
+    depositStatus.mockResolvedValue(pending);
+    const { view, tree, onClose } = renderWithStatus(pending);
+    view.rerender(tree('suspended'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText('PIX copia e cola')).toHaveValue(PIX_CODE);
+    expect(screen.getByRole('button', { name: 'Simular pagamento' })).toBeDisabled();
+    expect(onClose).not.toHaveBeenCalled();
+    view.rerender(tree('active'));
+    expect(screen.getByRole('button', { name: 'Simular pagamento' })).toBeEnabled();
+    expect(createDeposit).not.toHaveBeenCalled();
+    expect(simulateDeposit).not.toHaveBeenCalled();
+  });
+});
 
 beforeEach(() => {
   createDeposit.mockReset();

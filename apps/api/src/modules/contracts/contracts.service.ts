@@ -31,6 +31,15 @@ import {
 } from '../../utils/timezone';
 import { barterService } from '../barter/barter.service';
 import { disputesRepository } from '../disputes/disputes.repository';
+import { dropoutsRepository } from '../dropouts/dropouts.repository';
+import { dropoutsService } from '../dropouts/dropouts.service';
+import {
+  agreeUntil,
+  counts,
+  DROPOUT_ALERT_AT,
+  DROPOUT_WINDOW_DAYS,
+  withdrawalPreview,
+} from '../dropouts/dropouts';
 import { notificationsService } from '../notifications/notifications.service';
 import { gamificationService } from '../gamification/gamification.service';
 import type { WalletEffect } from '../wallet/wallet.ledger';
@@ -75,8 +84,33 @@ import {
   overdueNoticeAt,
   projectedNoticeAt,
   owesDelivery,
+  revisionsLeft,
 } from './deadline-grace';
+import { disputeOpensAt, windowFacts } from './dispute-window';
 import { openDeliveredMilestone } from './deadline-sql';
+import {
+  canCounter,
+  countersLeft,
+  feePctOf,
+  holdAdjust,
+  milestoneNets,
+  offerRespondBy,
+  offerTerms,
+  roundOf,
+  sameShape,
+  sameTerms,
+  turnOf,
+} from './offers';
+import { offersRepository, offerMilestones, toOffer } from './offers.repository';
+import {
+  counterOfferNotice,
+  counterOfferHistoryNote,
+  offerAcceptedHistoryNote,
+  offerAcceptedNotice,
+  offerRejectedNotice,
+  offerExpiredNotices,
+  negotiationCancelledNotice,
+} from './offer-notices';
 import {
   autoDisputeDescription,
   autoDisputeNotice,
@@ -91,15 +125,17 @@ import {
   milestoneOverdueNotices,
   overdueClientNotice,
   overdueFreelancerNotice,
-  proposalExpiredNotices,
   proposalNotice,
   revisionNotice,
+  milestoneRevisionNotice,
+  revisionGrantedNotice,
   type DecisionFacts,
   type DeadlineNotice,
   type OverdueFacts,
 } from './deadline-notices';
 import type {
   CancelBody,
+  CounterOfferInput,
   CreateContractInput,
   DeliverInput,
   ExtensionInput,
@@ -146,6 +182,10 @@ function toContract(row: ContractRow, ctx: ViewCtx): Contract {
     createdAt: new Date(row.created_at).toISOString(),
     hasReview: Boolean(Number(row.has_review ?? 0)),
     hasMilestones: Boolean(Number(row.has_milestones ?? 0)),
+    revisions: hasMilestones(row)
+      ? null
+      : { used: Number(row.revisions_used ?? 0), limit: row.revision_limit ?? null },
+    disputeOpensAt: iso(disputeOpensAt(windowFacts(row))),
     deadlineExtendedAt: iso(row.deadline_extended_at),
     overdueNotifiedAt: iso(row.overdue_notified_at),
     extension:
@@ -180,11 +220,72 @@ function toContract(row: ContractRow, ctx: ViewCtx): Contract {
     deadlineZone: dayZoneOf(row, row.deadline_at),
     revisionRequestedAt:
       row.status === 'revision_requested' ? iso(row.revision_requested_at) : null,
+    negotiation:
+      row.status === 'pending' && !row.barter_agreement_id
+        ? {
+            seq: Number(row.offer_seq ?? 1),
+            round: roundOf(Number(row.offer_seq ?? 1)),
+            turn: turnOf(Number(row.offer_seq ?? 1)),
+            respondBy: iso(row.proposal_expires_at),
+            canCounter:
+              canCounter(Number(row.offer_seq ?? 1)) &&
+              (!row.proposal_expires_at || new Date(row.proposal_expires_at) > ctx.now),
+            countersLeft: countersLeft(Number(row.offer_seq ?? 1)),
+            current: null,
+            deadlineZone: freelancerZoneOf(row),
+            feePercentage: readablePct(row),
+          }
+        : null,
+  };
+}
+
+function readablePct(row: ContractRow): number | undefined {
+  try {
+    return feePctOf({ ...row, fee_percentage: row.fee_percentage ?? null });
+  } catch {
+    return undefined;
+  }
+}
+function negotiationPct(row: ContractRow): number {
+  const pct = readablePct(row);
+  if (pct === undefined)
+    throw new HttpError(
+      409,
+      'A taxa histórica desta proposta precisa ser conferida antes de negociar.',
+      'offer_fee_invalid',
+    );
+  return pct;
+}
+function assertOfferSeq(row: ContractRow, seq?: number): number {
+  const current = Number(row.offer_seq ?? 1);
+  if ((current > 1 && seq === undefined) || (seq !== undefined && seq !== current))
+    throw new HttpError(409, 'A oferta mudou. Confira os termos atuais na Sala.', 'offer_changed');
+  return current;
+}
+function assertOfferOpen(row: ContractRow, now: Date, deadline = row.deadline_at): void {
+  if (row.proposal_expires_at && new Date(row.proposal_expires_at).getTime() <= now.getTime())
+    throw new HttpError(
+      409,
+      'Esta oferta expirou: o prazo para responder acabou.',
+      'proposal_expired',
+    );
+  if (deadline && new Date(deadline).getTime() <= now.getTime())
+    throw new HttpError(
+      409,
+      'O prazo desta oferta já passou. Encerre a negociação e envie uma nova proposta.',
+      'deadline_passed',
+    );
+}
+function offerGuard(row: ContractRow): { sql: string; params: Record<string, unknown> } {
+  return {
+    sql: 'AND c.offer_seq = :gOfferSeq AND c.price = :gHeldPrice',
+    params: { gOfferSeq: Number(row.offer_seq ?? 1), gHeldPrice: Number(row.price) },
   };
 }
 
 function toMilestone(m: MilestoneRow, row: ContractRow): Milestone {
   return {
+    revisions: { used: Number(m.revisions_used ?? 0), limit: m.revision_limit ?? null },
     id: m.id,
     title: m.title,
     description: m.description,
@@ -224,6 +325,50 @@ function assertSingleDelivery(row: ContractRow): void {
       'use_milestones',
     );
   }
+}
+
+type RevisionBudget = { revision_limit?: number | null; revisions_used?: number };
+
+function assertRevisionsAvailable(
+  unit: RevisionBudget,
+  milestone = false,
+  contract?: ContractRow,
+): void {
+  if (revisionsLeft(unit.revision_limit ?? null, Number(unit.revisions_used ?? 0)) === 0) {
+    const opens = !milestone && contract ? disputeOpensAt(windowFacts(contract)) : null;
+    const disputeFrom =
+      opens && opens > clock.now() && contract ? formatDue(opens, clientZoneOf(contract)) : null;
+    throw new HttpError(
+      409,
+      milestone
+        ? `As ${unit.revision_limit} revisões sem custo deste marco já foram usadas (RN-023). Aprove o marco ou combine pelo chat: o freelancer pode liberar mais uma.`
+        : `As ${unit.revision_limit} revisões sem custo desta contratação já foram usadas (RN-023). Aprove, combine pelo chat (o freelancer pode liberar mais uma) ou${disputeFrom ? `, a partir de ${disputeFrom},` : ''} abra uma disputa.`,
+      'revision_limit',
+    );
+  }
+  if (Number(unit.revisions_used ?? 0) >= 4_294_967_295)
+    throw new HttpError(
+      409,
+      'O contador de revisões atingiu o limite técnico; fale com a equipe do Escambo.',
+      'revision_counter_limit',
+    );
+}
+
+function assertRevisionGrant(unit: RevisionBudget): void {
+  if (unit.revision_limit == null)
+    throw new HttpError(409, 'Esta entrega já tem revisões sem limite.', 'revision_unlimited');
+  if (Number(unit.revisions_used ?? 0) < unit.revision_limit)
+    throw new HttpError(
+      409,
+      'O cliente ainda tem revisão sem custo para pedir.',
+      'revision_grant_not_needed',
+    );
+  if (unit.revision_limit >= 4_294_967_295)
+    throw new HttpError(
+      409,
+      'O limite de revisões atingiu o teto técnico; fale com a equipe do Escambo.',
+      'revision_grant_limit',
+    );
 }
 
 /** Marcos cancelados quando o contrato encerra sem concluir. */
@@ -277,7 +422,13 @@ async function applyTransition(
 ): Promise<void> {
   const ok = await contractsRepository.transition(params);
   if (!ok) {
-    throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
+    throw new HttpError(
+      409,
+      params.dropout
+        ? 'A contratação ou o total de desistências mudou; confira o cancelamento de novo.'
+        : 'A contratação mudou de estado; recarregue',
+      params.dropout ? 'cancel_quote_changed' : 'conflict',
+    );
   }
 }
 
@@ -383,7 +534,20 @@ async function quote(
     net,
     credits,
   };
-  return { terms: cancelTerms(input), price, net, credits };
+  const terms = cancelTerms(input);
+  if (terms.allowed && by === 'freelancer' && ['withdrawal', 'barter'].includes(terms.stage!)) {
+    const preview = withdrawalPreview(
+      await dropoutsRepository.listCounting(row.freelancer_id, now),
+      now,
+    );
+    terms.dropout = {
+      countAfter: preview.countAfter,
+      windowDays: DROPOUT_WINDOW_DAYS,
+      alertAt: DROPOUT_ALERT_AT,
+      alertUntil: iso(preview.alertUntil),
+    };
+  }
+  return { terms, price, net, credits };
 }
 
 const CANCEL_NOTE: Record<CancelStage, string> = {
@@ -479,6 +643,8 @@ export const contractsService = {
     const isCredits = input.paymentMode === 'credits';
     // RN-031: comissão vigente (platform_settings), gravada no contrato — mudar depois não altera.
     const feeRate = await settingsService.feeRate();
+    if (isCredits && !Number.isInteger(input.price))
+      throw new HttpError(422, 'Créditos devem ser inteiros.', 'invalid_offer');
     const platformFee = isCredits ? 0 : money(input.price * feeRate);
     const freelancerNet = money(input.price - platformFee);
 
@@ -508,23 +674,25 @@ export const contractsService = {
     // Cash (carteira pré-paga, como no iFood): o valor sai do saldo do cliente e fica reservado
     // já na proposta; volta integralmente se o freelancer recusar ou o cliente cancelar antes do
     // aceite. Créditos são retidos só no aceite (o cliente já os tem na carteira).
-    // Marcos (RN-069): líquido de cada um com a mesma taxa; o último absorve o arredondamento
-    // para a soma dos líquidos bater exatamente com o líquido do contrato.
+    // Marcos (RN-069): mesma taxa e soma exata, sem líquido negativo em parcelas de centavos.
     let milestones = null;
     if (input.milestones && input.milestones.length > 0) {
       // Em créditos não há taxa: o líquido do marco é o próprio valor (inteiro).
+      const nets = isCredits
+        ? input.milestones.map((m) => m.amount)
+        : milestoneNets(
+            input.milestones.map((m) => m.amount),
+            freelancerNet,
+            feeRate * 100,
+          );
       const specs = input.milestones.map((m, i) => ({
         title: m.title,
         description: m.description ?? null,
         amount: isCredits ? m.amount : money(m.amount),
-        freelancerNet: isCredits ? m.amount : money(m.amount * (1 - feeRate)),
+        freelancerNet: nets[i]!,
         sortOrder: i,
         dueAt: m.dueAt ?? null,
       }));
-      if (!isCredits) {
-        const partial = specs.slice(0, -1).reduce((acc, m) => acc + m.freelancerNet, 0);
-        specs[specs.length - 1]!.freelancerNet = money(freelancerNet - partial);
-      }
       milestones = specs;
     }
 
@@ -539,6 +707,7 @@ export const contractsService = {
       price: input.price,
       platformFee,
       freelancerNet,
+      feePercentage: isCredits ? 0 : feeRate * 100,
       paymentMode: isCredits ? 'credits' : 'cash',
       deadlineAt: deadline ? deadline.toISOString() : null,
       proposalExpiresAt: expiresAt,
@@ -599,13 +768,234 @@ export const contractsService = {
     const cancellation = cancellable
       ? (await quote(row, row.client_id === uid ? 'client' : 'freelancer', ctx.now)).terms
       : null;
-    return { ...toContract(row, ctx), history: entries, review, milestones, cancellation };
+    const offers = row.barter_agreement_id
+      ? []
+      : (await offersRepository.list(id)).map((o) => toOffer(o, row));
+    const contract = toContract(row, ctx);
+    if (contract.negotiation?.seq === 1 && offers.length === 0) {
+      // Legado ainda não reparado: expõe a proposta existente sem escrever durante o GET.
+      offers.push({
+        seq: 1,
+        madeBy: 'client',
+        price: contract.price,
+        platformFee: contract.platformFee,
+        freelancerNet: contract.freelancerNet,
+        deadlineAt: contract.deadlineAt,
+        deadlineZone: contract.deadlineZone,
+        milestones: milestones.length
+          ? milestones.map((m) => ({
+              id: m.id,
+              title: m.title,
+              amount: m.amount,
+              freelancerNet: m.freelancerNet,
+              dueAt: m.dueAt,
+            }))
+          : null,
+        message: null,
+        respondBy: contract.proposalExpiresAt,
+        outcome: 'open',
+        createdAt: contract.createdAt,
+        resolvedAt: null,
+      });
+    }
+    if (contract.negotiation)
+      contract.negotiation.current =
+        offers.find((o) => o.seq === contract.negotiation!.seq) ?? null;
+    const dropoutRow =
+      row.status === 'cancelled' ? await dropoutsRepository.findByContractId(id) : undefined;
+    const dropout = dropoutRow
+      ? {
+          at: iso(dropoutRow.dropped_at)!,
+          agreedAt: iso(dropoutRow.client_agreed_at),
+          agreeUntil: agreeUntil(dropoutRow.dropped_at).toISOString(),
+          counts: counts(dropoutRow, ctx.now),
+        }
+      : null;
+    return { ...contract, history: entries, review, milestones, cancellation, offers, dropout };
   },
 
-  async accept(id: number, uid: number): Promise<Contract> {
+  async counter(id: number, uid: number, input: CounterOfferInput): Promise<ContractWithHistory> {
+    const row = await loadOr404(id);
+    assertParty(row, uid);
+    assertStatus(row, ['pending']);
+    if (row.barter_agreement_id)
+      throw new HttpError(409, 'Trocas não têm contrapropostas nesta Sala.', 'invalid_transition');
+    const seq = assertOfferSeq(row, input.seq);
+    const by = row.client_id === uid ? 'client' : 'freelancer';
+    if (turnOf(seq) !== by)
+      throw new HttpError(409, 'Aguarde a resposta da outra parte.', 'not_your_turn');
+    if (!canCounter(seq))
+      throw new HttpError(
+        409,
+        'Esta é a última oferta: aceite ou encerre a negociação.',
+        'offer_limit',
+      );
+    const now = floorSecond(clock.now());
+    // A contraproposta pode trocar uma data de entrega vencida; a validade da resposta continua obrigatória.
+    assertOfferOpen(row, now, null);
+    const milestones = await milestonesRepository.listForContract(id);
+    if (!sameShape(row, milestones.length ? milestones.map((m) => m.id) : null, input))
+      throw new HttpError(
+        422,
+        'Preserve o tipo de entrega, a presença de prazo e os mesmos marcos na mesma ordem.',
+        'offer_shape',
+      );
+    const fz = freelancerZoneOf(row);
+    const deadline = input.deadlineAt ? floorSecond(new Date(input.deadlineAt)) : null;
+    const proposedMilestones = input.milestones?.map((m, i) => ({
+      ...m,
+      title: milestones[i]!.title,
+      dueAt: m.dueAt ? floorSecond(new Date(m.dueAt)).toISOString() : null,
+    }));
+    const dates = [deadline, ...(proposedMilestones ?? []).map((m) => date(m.dueAt))].filter(
+      (d): d is Date => d !== null,
+    );
+    for (const d of dates) {
+      if (d.getTime() <= now.getTime() || d.getTime() !== endOfDayIn(fz, dayIn(fz, d)).getTime())
+        throw new HttpError(
+          422,
+          'Escolha dias futuros até 23:59 no fuso do freelancer.',
+          'offer_deadline_invalid',
+        );
+    }
+    if (proposedMilestones) {
+      let previous = 0;
+      for (const m of proposedMilestones) {
+        const d = date(m.dueAt);
+        if ((d && deadline && d > deadline) || (d && d.getTime() < previous))
+          throw new HttpError(
+            422,
+            'As datas dos marcos devem seguir a ordem e o prazo final.',
+            'offer_deadline_invalid',
+          );
+        if (d) previous = d.getTime();
+      }
+    }
+    const pct = negotiationPct(row);
+    let terms;
+    try {
+      terms = offerTerms({
+        price: input.price,
+        pct,
+        mode: row.payment_mode === 'credits' ? 'credits' : 'cash',
+        milestones: proposedMilestones,
+      });
+    } catch (error) {
+      throw new HttpError(
+        422,
+        error instanceof Error ? error.message : 'Termos inválidos.',
+        'invalid_offer',
+      );
+    }
+    const previousOffer = (await offersRepository.list(id)).find((o) => o.seq === seq);
+    if (previousOffer?.respond_by && new Date(previousOffer.respond_by).getTime() <= now.getTime())
+      throw new HttpError(
+        409,
+        'Esta oferta expirou: o prazo para responder acabou.',
+        'proposal_expired',
+      );
+    const previous = previousOffer
+      ? {
+          price: Number(previousOffer.price),
+          deadlineAt: previousOffer.deadline_at,
+          milestones: offerMilestones(previousOffer),
+        }
+      : {
+          price: Number(row.price),
+          deadlineAt: row.deadline_at,
+          milestones: milestones.map((m) => ({
+            id: m.id,
+            amount: Number(m.amount),
+            dueAt: m.due_at,
+          })),
+        };
+    if (seq > 1 && (!previousOffer || previousOffer.outcome !== 'open'))
+      throw new HttpError(409, 'A oferta mudou. Confira a Sala.', 'offer_changed');
+    if (
+      sameTerms(previous, {
+        price: terms.price,
+        deadlineAt: deadline,
+        milestones: terms.milestones,
+      })
+    )
+      throw new HttpError(
+        422,
+        'Altere o valor ou uma data para enviar uma contraproposta.',
+        'offer_unchanged',
+      );
+    const recipient = by === 'client' ? row.freelancer_id : row.client_id;
+    const zone = by === 'client' ? fz : clientZoneOf(row);
+    const hours = await settingsRepository.getNumber('counter_offer_response_hours', 48);
+    const respondBy = offerRespondBy({ now, hours, zone, deadline });
+    if (!respondBy)
+      throw new HttpError(
+        400,
+        'O prazo está perto demais: reserve ao menos uma hora para a resposta.',
+        'deadline_too_soon',
+      );
+    if (by === 'client' && row.payment_mode === 'cash') await walletService.ensure(row.client_id);
+    const result = await offersRepository.counter({
+      expected: row,
+      terms,
+      deadlineAt: deadline,
+      respondBy,
+      message: input.message.trim(),
+      note: counterOfferHistoryNote({
+        by,
+        seq: seq + 1,
+        mode: row.payment_mode === 'credits' ? 'credits' : 'cash',
+        price: terms.price,
+        deadline: deadline ? formatDeadline(deadline, fz, DEFAULT_TIMEZONE) : null,
+        milestones: terms.milestones?.map((m) => ({
+          title: m.title!,
+          amount: m.amount,
+          due: m.dueAt ? formatDeadline(new Date(m.dueAt), fz, DEFAULT_TIMEZONE) : null,
+        })),
+        message: input.message.trim(),
+      }),
+      pct,
+      uid,
+      now,
+    });
+    if (result !== 'ok') {
+      if (result === 'insufficient')
+        throw new HttpError(
+          402,
+          'Saldo insuficiente para aumentar a reserva. Faça um depósito e tente de novo.',
+          'insufficient_balance',
+        );
+      throw new HttpError(
+        409,
+        'A oferta mudou ou expirou. Confira os termos atuais na Sala.',
+        'offer_changed',
+      );
+    }
+    send(
+      recipient,
+      counterOfferNotice({
+        contractId: id,
+        title: row.title,
+        seq: seq + 1,
+        mode: row.payment_mode === 'credits' ? 'credits' : 'cash',
+        price: terms.price,
+        net: terms.net,
+        heldPrice: Number(row.price),
+        respondBy: formatDue(respondBy, zone),
+        deadline: deadline ? formatDeadline(deadline, fz, zone) : null,
+        milestoneCount: terms.milestones?.length,
+        message: input.message.trim(),
+      }),
+    );
+    return this.getById(id, uid);
+  },
+
+  async accept(id: number, uid: number, requestedSeq?: number): Promise<Contract> {
     const row = await loadOr404(id);
     assertFreelancer(row, uid); // RF-032
     assertStatus(row, ['pending']);
+    const seq = assertOfferSeq(row, requestedSeq);
+    if (turnOf(seq) !== 'freelancer')
+      throw new HttpError(409, 'A resposta desta oferta cabe ao cliente.', 'not_your_turn');
     const now = clock.now();
     if (row.deadline_at && new Date(row.deadline_at).getTime() <= now.getTime()) {
       throw new HttpError(
@@ -624,8 +1014,31 @@ export const contractsService = {
     // A hora avisada é a cumprida: o aceite não passa depois da validade nem do prazo.
     const guard = {
       sql: `AND (c.proposal_expires_at IS NULL OR c.proposal_expires_at > :now)
-            AND (c.deadline_at IS NULL OR c.deadline_at > :now)`,
+            AND (c.deadline_at IS NULL OR c.deadline_at > :now)
+            ${offerGuard(row).sql}`,
+      params: offerGuard(row).params,
     };
+    const offerResolution = row.barter_agreement_id
+      ? undefined
+      : {
+          seq,
+          heldPrice: Number(row.price),
+          outcome: 'accepted' as const,
+          feePercentage: negotiationPct(row),
+        };
+    const note = offerAcceptedHistoryNote({
+      seq,
+      by: 'client',
+      mode: row.payment_mode === 'credits' ? 'credits' : 'cash',
+      price: Number(row.price),
+      deadline: row.deadline_at
+        ? formatDeadline(
+            new Date(row.deadline_at),
+            dayZoneOf(row, row.deadline_at),
+            DEFAULT_TIMEZONE,
+          )
+        : null,
+    });
 
     // Time-bank: os créditos saem do cliente e ficam pendentes para o freelancer.
     if (row.payment_mode === 'credits') {
@@ -637,10 +1050,11 @@ export const contractsService = {
         changedBy: uid,
         from: row.status,
         to: 'accepted',
-        note: null,
+        note,
         timestampColumn: 'accepted_at',
         now,
         guard,
+        offerResolution,
         milestonesTo: { from: ['pending'], to: 'funded' }, // marcos financiados no aceite
         creditsEffects: [
           { userId: row.client_id, pendingDelta: 0, balanceDelta: -credits, reason: 'escrow_hold' },
@@ -659,6 +1073,24 @@ export const contractsService = {
           'insufficient_credits',
         );
       }
+      send(
+        row.client_id,
+        offerAcceptedNotice({
+          contractId: id,
+          title: row.title,
+          seq,
+          mode: 'credits',
+          price: Number(row.price),
+          net: Number(row.freelancer_net),
+          deadline: row.deadline_at
+            ? formatDeadline(
+                new Date(row.deadline_at),
+                dayZoneOf(row, row.deadline_at),
+                clientZoneOf(row),
+              )
+            : null,
+        }),
+      );
       return load(id);
     }
 
@@ -670,10 +1102,11 @@ export const contractsService = {
       changedBy: uid,
       from: row.status,
       to: 'accepted',
-      note: null,
+      note,
       timestampColumn: 'accepted_at',
       now,
       guard,
+      offerResolution,
       milestonesTo: { from: ['pending'], to: 'funded' }, // marcos financiados no aceite
       walletEffects: [
         {
@@ -690,22 +1123,239 @@ export const contractsService = {
         },
       ],
     });
+    send(
+      row.client_id,
+      offerAcceptedNotice({
+        contractId: id,
+        title: row.title,
+        seq,
+        mode: 'cash',
+        price: Number(row.price),
+        net: Number(row.freelancer_net),
+        deadline: row.deadline_at
+          ? formatDeadline(
+              new Date(row.deadline_at),
+              dayZoneOf(row, row.deadline_at),
+              clientZoneOf(row),
+            )
+          : null,
+      }),
+    );
     return load(id);
   },
 
-  async reject(id: number, uid: number): Promise<Contract> {
+  async acceptCounter(id: number, uid: number, requestedSeq: number): Promise<ContractWithHistory> {
+    const row = await loadOr404(id);
+    assertClient(row, uid);
+    assertStatus(row, ['pending']);
+    const seq = assertOfferSeq(row, requestedSeq);
+    if (turnOf(seq) !== 'client' || row.barter_agreement_id)
+      throw new HttpError(
+        409,
+        'Não há contraproposta do freelancer para aceitar.',
+        'not_your_turn',
+      );
+    const current = (await offersRepository.list(id)).find((o) => o.seq === seq);
+    if (!current || current.outcome !== 'open' || current.made_by !== 'freelancer')
+      throw new HttpError(409, 'A oferta mudou. Confira a Sala.', 'offer_changed');
+    const now = floorSecond(clock.now());
+    assertOfferOpen(row, now, current.deadline_at);
+    if (!current.respond_by || new Date(current.respond_by).getTime() <= now.getTime())
+      throw new HttpError(
+        409,
+        'Esta oferta expirou: o prazo para responder acabou.',
+        'proposal_expired',
+      );
+    const freelancer = await authRepository.findById(row.freelancer_id);
+    if (
+      !freelancer ||
+      freelancer.deleted_at ||
+      freelancer.status === 'banned' ||
+      freelancer.status === 'suspended' ||
+      freelancer.role === 'admin'
+    )
+      throw new HttpError(
+        409,
+        'Este freelancer não está disponível para aceitar a contratação.',
+        'freelancer_unavailable',
+      );
+    const pct = negotiationPct(row);
+    const mode = row.payment_mode === 'credits' ? 'credits' : 'cash';
+    const terms = offerTerms({
+      price: Number(current.price),
+      pct,
+      mode,
+      milestones: offerMilestones(current) ?? undefined,
+    });
+    if (terms.fee !== Number(current.platform_fee) || terms.net !== Number(current.freelancer_net))
+      throw new HttpError(
+        409,
+        'Os termos financeiros desta oferta precisam ser conferidos.',
+        'offer_fee_invalid',
+      );
+    await walletService.ensure(row.client_id);
+    await walletService.ensure(row.freelancer_id);
+    const guard = offerGuard(row);
+    const ok = await contractsRepository.transition({
+      id,
+      changedBy: uid,
+      from: 'pending',
+      to: 'accepted',
+      note: offerAcceptedHistoryNote({
+        seq,
+        by: 'freelancer',
+        mode,
+        price: terms.price,
+        deadline: current.deadline_at
+          ? formatDeadline(
+              new Date(current.deadline_at),
+              inferDeadlineZone(new Date(current.deadline_at), [
+                freelancerZoneOf(row),
+                clientZoneOf(row),
+              ]),
+              DEFAULT_TIMEZONE,
+            )
+          : null,
+      }),
+      timestampColumn: 'accepted_at',
+      now,
+      guard: {
+        sql: `${guard.sql} AND (c.proposal_expires_at IS NULL OR c.proposal_expires_at > :now)
+        AND (:acceptedDeadline IS NULL OR :acceptedDeadline > :now)`,
+        params: { ...guard.params, acceptedDeadline: current.deadline_at },
+      },
+      offerResolution: {
+        seq,
+        heldPrice: Number(row.price),
+        outcome: 'accepted',
+        feePercentage: pct,
+        activeFreelancerId: row.freelancer_id,
+        terms: { ...terms, deadlineAt: current.deadline_at ? new Date(current.deadline_at) : null },
+      },
+      milestonesTo: { from: ['pending'], to: 'funded' },
+      ...(mode === 'cash'
+        ? {
+            walletEffects: [
+              ...holdAdjust(row.client_id, Number(row.price), terms.price),
+              {
+                userId: row.client_id,
+                balanceDelta: 0,
+                pendingDelta: -terms.price,
+                reason: 'payment' as const,
+              },
+              {
+                userId: row.freelancer_id,
+                balanceDelta: 0,
+                pendingDelta: terms.net,
+                reason: 'escrow_in' as const,
+              },
+            ],
+          }
+        : {
+            creditsEffects: [
+              {
+                userId: row.client_id,
+                balanceDelta: -terms.price,
+                pendingDelta: 0,
+                reason: 'escrow_hold',
+              },
+              {
+                userId: row.freelancer_id,
+                balanceDelta: 0,
+                pendingDelta: terms.net,
+                reason: 'escrow_in',
+              },
+            ],
+          }),
+    });
+    if (!ok) {
+      const fresh = await loadOr404(id);
+      if (
+        fresh.status !== 'pending' ||
+        Number(fresh.offer_seq ?? 1) !== seq ||
+        Number(fresh.price) !== Number(row.price)
+      )
+        throw new HttpError(409, 'A oferta mudou. Confira a Sala.', 'offer_changed');
+      assertOfferOpen(fresh, clock.now(), current.deadline_at);
+      if (new Date(current.respond_by).getTime() <= clock.now().getTime())
+        throw new HttpError(
+          409,
+          'Esta oferta expirou: o prazo para responder acabou.',
+          'proposal_expired',
+        );
+      const available = await authRepository.findById(row.freelancer_id);
+      if (
+        !available ||
+        available.deleted_at ||
+        available.status === 'banned' ||
+        available.status === 'suspended' ||
+        available.role === 'admin'
+      )
+        throw new HttpError(
+          409,
+          'Este freelancer não está disponível para aceitar a contratação.',
+          'freelancer_unavailable',
+        );
+      throw new HttpError(
+        mode === 'cash' ? 402 : 409,
+        mode === 'cash'
+          ? 'Saldo insuficiente para aceitar este valor. Faça um depósito e tente de novo.'
+          : 'Créditos insuficientes para aceitar este valor.',
+        mode === 'cash' ? 'insufficient_balance' : 'insufficient_credits',
+      );
+    }
+    send(
+      row.freelancer_id,
+      offerAcceptedNotice({
+        contractId: id,
+        title: row.title,
+        seq,
+        mode,
+        price: terms.price,
+        net: terms.net,
+        deadline: current.deadline_at
+          ? formatDeadline(
+              new Date(current.deadline_at),
+              inferDeadlineZone(new Date(current.deadline_at), [
+                freelancerZoneOf(row),
+                clientZoneOf(row),
+              ]),
+              freelancerZoneOf(row),
+            )
+          : null,
+      }),
+    );
+    return this.getById(id, uid);
+  },
+
+  async reject(id: number, uid: number, requestedSeq?: number): Promise<Contract> {
     const row = await loadOr404(id);
     assertFreelancer(row, uid);
     assertStatus(row, ['pending']);
+    const seq = assertOfferSeq(row, requestedSeq);
     await applyTransition({
       id,
       changedBy: uid,
       from: row.status,
       to: 'rejected',
       note: null,
+      guard: offerGuard(row),
+      offerResolution: row.barter_agreement_id
+        ? undefined
+        : { seq, heldPrice: Number(row.price), outcome: seq % 2 === 1 ? 'declined' : 'withdrawn' },
       walletEffects: releaseHoldEffects(row), // o valor reservado volta ao cliente
       milestonesTo: MILESTONES_CANCEL,
     });
+    send(
+      row.client_id,
+      offerRejectedNotice({
+        contractId: id,
+        title: row.title,
+        seq,
+        mode: row.payment_mode === 'credits' ? 'credits' : 'cash',
+        heldPrice: Number(row.price),
+      }),
+    );
     return load(id);
   },
 
@@ -735,15 +1385,20 @@ export const contractsService = {
       approvalDueAt,
     });
     if (!ok) throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
+    const delivered = await loadOr404(id);
+    const opens = disputeOpensAt(windowFacts(delivered));
     send(
       row.client_id,
       deliveredNotice({
         contractId: id,
         title: row.title,
         approvalDue: formatDue(approvalDueAt, cz),
+        revisionLimit: delivered.revision_limit ?? null,
+        revisionsUsed: Number(delivered.revisions_used ?? 0),
+        disputeFrom: opens && opens > clock.now() ? formatDue(opens, cz) : null,
       }),
     );
-    return load(id);
+    return toContract(delivered, await viewCtx());
   },
 
   async approve(id: number, uid: number): Promise<Contract> {
@@ -799,7 +1454,8 @@ export const contractsService = {
     assertClient(row, uid);
     assertSingleDelivery(row);
     assertStatus(row, ['delivered']);
-    await applyTransition({
+    assertRevisionsAvailable(row, false, row);
+    const ok = await contractsRepository.transition({
       id,
       changedBy: uid,
       from: row.status,
@@ -807,9 +1463,58 @@ export const contractsService = {
       note,
       timestampColumn: 'revision_requested_at',
       now: clock.now(),
+      countRevision: true,
+      guard: {
+        sql: 'AND c.revisions_used = :revisionUsed',
+        params: { revisionUsed: Number(row.revisions_used ?? 0) },
+      },
     });
+    if (!ok) {
+      const fresh = await loadOr404(id);
+      assertRevisionsAvailable(fresh, false, fresh);
+      throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
+    }
     // Depois da entrega o prazo não cobra mais (R-VEZ): o aviso é simples, sem hora-limite.
-    send(row.freelancer_id, revisionNotice({ contractId: id, title: row.title, note }));
+    send(
+      row.freelancer_id,
+      revisionNotice({
+        contractId: id,
+        title: row.title,
+        note,
+        used: Number(row.revisions_used ?? 0) + 1,
+        limit: row.revision_limit ?? null,
+      }),
+    );
+    return load(id);
+  },
+
+  async grantRevision(id: number, uid: number): Promise<Contract> {
+    const row = await loadOr404(id);
+    assertFreelancer(row, uid);
+    assertSingleDelivery(row);
+    assertStatus(row, ['delivered']);
+    assertRevisionGrant(row);
+    const ok = await contractsRepository.grantRevision({
+      id,
+      changedBy: uid,
+      now: clock.now(),
+      expectedRevisionsUsed: Number(row.revisions_used ?? 0),
+      expectedRevisionLimit: row.revision_limit!,
+    });
+    if (!ok) {
+      const fresh = await loadOr404(id);
+      assertStatus(fresh, ['delivered']);
+      assertRevisionGrant(fresh);
+      throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
+    }
+    send(
+      row.client_id,
+      revisionGrantedNotice({
+        contractId: id,
+        title: row.title,
+        approvalDue: row.approval_due_at ? formatDue(row.approval_due_at, clientZoneOf(row)) : null,
+      }),
+    );
     return load(id);
   },
 
@@ -823,6 +1528,7 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertParty(row, uid);
     const by = row.client_id === uid ? 'client' : 'freelancer';
+    const pendingSeq = row.status === 'pending' ? assertOfferSeq(row, body.seq) : null;
     const now = clock.now();
     const { terms, price, net, credits } = await quote(row, by, now);
     if (!terms.allowed || !terms.stage) {
@@ -843,6 +1549,16 @@ export const contractsService = {
       );
     }
     const stage = terms.stage;
+    if (
+      body.expectedDropoutCount !== undefined &&
+      body.expectedDropoutCount !== terms.dropout?.countAfter
+    ) {
+      throw new HttpError(
+        409,
+        'O total de desistências mudou: confira o cancelamento de novo.',
+        'cancel_quote_changed',
+      );
+    }
     let refundEffect: Pick<
       Parameters<typeof contractsRepository.transition>[0],
       'walletEffects' | 'creditsEffects'
@@ -888,6 +1604,7 @@ export const contractsService = {
       'AND c.extension_status = :gExtStatus',
       'AND c.extension_requests = :gExtRequests',
     ];
+    if (pendingSeq !== null) guard.push(offerGuard(row).sql);
     if (hasMilestones(row)) {
       guard.push(
         `AND NOT ${openDeliveredMilestone('c')}`,
@@ -904,6 +1621,9 @@ export const contractsService = {
       note: `Reembolso: ${terms.refundPercentage}% (${CANCEL_NOTE[stage]})`,
       timestampColumn: 'cancelled_at',
       now,
+      dropout: terms.dropout
+        ? { freelancerId: row.freelancer_id, expectedCountAfter: terms.dropout.countAfter }
+        : undefined,
       closePendingExtension: true,
       guard: {
         sql: guard.join('\n'),
@@ -913,11 +1633,45 @@ export const contractsService = {
           gExtStatus: row.extension_status,
           gExtRequests: Number(row.extension_requests ?? 0),
           gEscrowCents: Math.round(price * 100),
+          ...(pendingSeq !== null ? offerGuard(row).params : {}),
         },
       },
       milestonesTo: MILESTONES_CANCEL,
+      offerResolution:
+        pendingSeq !== null && !row.barter_agreement_id
+          ? {
+              seq: pendingSeq,
+              heldPrice: Number(row.price),
+              outcome:
+                by === 'client'
+                  ? pendingSeq % 2 === 0
+                    ? 'declined'
+                    : 'withdrawn'
+                  : pendingSeq % 2 === 1
+                    ? 'declined'
+                    : 'withdrawn',
+            }
+          : undefined,
       ...refundEffect,
     });
+    let dropoutAgreementUntil: string | undefined;
+    if (terms.dropout) {
+      try {
+        await dropoutsService.afterDropout(row.freelancer_id, id, clock.now());
+      } catch (err) {
+        logger.warn({ err, contractId: id }, 'revisão de desistências pendente de reconciliação');
+      }
+      try {
+        const registered = await dropoutsRepository.findByContractId(id);
+        if (registered)
+          dropoutAgreementUntil = formatDateTime(
+            agreeUntil(registered.dropped_at),
+            clientZoneOf(row),
+          );
+      } catch (err) {
+        logger.warn({ err, contractId: id }, 'leitura do prazo de acordo da desistência falhou');
+      }
+    }
     if (row.barter_agreement_id) {
       try {
         await barterService.onLinkedContractCancelled(row.barter_agreement_id);
@@ -928,16 +1682,19 @@ export const contractsService = {
     // A outra parte fica sabendo (RF-039), com o que aconteceu com o dinheiro dela.
     send(
       by === 'client' ? row.freelancer_id : row.client_id,
-      cancelledNotice({
-        contractId: id,
-        title: row.title,
-        by,
-        stage,
-        partial: partialDelivery(row),
-        unit: terms.unit,
-        refundClient: terms.refundClient,
-        releaseFreelancer: terms.releaseFreelancer,
-      }),
+      pendingSeq !== null && pendingSeq > 1 && by === 'client'
+        ? negotiationCancelledNotice({ contractId: id, title: row.title })
+        : cancelledNotice({
+            contractId: id,
+            title: row.title,
+            by,
+            stage,
+            partial: partialDelivery(row),
+            unit: terms.unit,
+            refundClient: terms.refundClient,
+            releaseFreelancer: terms.releaseFreelancer,
+            dropoutAgreementUntil,
+          }),
     );
     return {
       status: 'cancelled',
@@ -1019,7 +1776,8 @@ export const contractsService = {
     }
     const cz = clientZoneOf(row);
     const dz = dayZoneOf(row, row.deadline_at);
-    const respondBy = extensionRespondBy({ requestedAt: now, proposed, zone: cz });
+    const hours = await settingsService.number('extension_response_hours');
+    const respondBy = extensionRespondBy({ requestedAt: now, proposed, zone: cz, hours });
     if (!respondBy) {
       throw new HttpError(
         400,
@@ -1211,19 +1969,27 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertStatus(row, ['pending']);
     const expiresAt = row.proposal_expires_at ? new Date(row.proposal_expires_at) : now;
+    const seq = Number(row.offer_seq ?? 1);
     await applyTransition({
       id,
       changedBy: row.client_id,
       from: 'pending',
       to: 'cancelled',
-      note: `Proposta expirada: sem resposta do freelancer até ${formatDateTime(expiresAt, DEFAULT_TIMEZONE)} (horário de Brasília, RN-021)`,
+      note: `${seq === 1 ? 'Proposta' : `Oferta ${seq}`} expirada: sem resposta ${seq % 2 === 0 ? 'do cliente' : 'do freelancer'} até ${formatDateTime(expiresAt, DEFAULT_TIMEZONE)} (horário de Brasília, ${seq === 1 ? 'RN-021' : 'RN-030'})`,
       timestampColumn: 'cancelled_at',
       now,
-      guard: { sql: 'AND c.proposal_expires_at IS NOT NULL AND c.proposal_expires_at <= :now' },
+      guard: {
+        sql: `AND c.proposal_expires_at IS NOT NULL AND c.proposal_expires_at <= :now ${offerGuard(row).sql}`,
+        params: offerGuard(row).params,
+      },
+      offerResolution: row.barter_agreement_id
+        ? undefined
+        : { seq, heldPrice: Number(row.price), outcome: 'expired' },
       walletEffects: releaseHoldEffects(row),
       milestonesTo: MILESTONES_CANCEL,
     });
-    const n = proposalExpiredNotices({
+    const n = offerExpiredNotices({
+      seq,
       contractId: id,
       title: row.title,
       cash: row.payment_mode === 'cash',
@@ -1387,6 +2153,12 @@ export const contractsService = {
         milestone: m?.title ?? 'marco',
         approvalDue: formatDue(approvalDueAt, cz),
         message,
+        revisionLimit: m?.revisions?.limit ?? null,
+        revisionsUsed: m?.revisions?.used ?? 0,
+        disputeFrom:
+          contract.disputeOpensAt && Date.parse(contract.disputeOpensAt) > clock.now().getTime()
+            ? formatDue(new Date(contract.disputeOpensAt), cz)
+            : null,
       }),
     );
     return contract;
@@ -1496,15 +2268,84 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertClient(row, uid);
     assertStatus(row, ['accepted', 'in_progress']);
+    const m = await milestonesRepository.findById(id, milestoneId);
+    if (!m) throw new HttpError(404, 'Marco não encontrado', 'milestone_not_found');
+    if (m.status !== 'delivered')
+      throw new HttpError(409, 'Este marco não está aguardando aprovação', 'invalid_transition');
+    assertRevisionsAvailable(m, true);
     const ok = await milestonesRepository.requestRevision({
       contractId: id,
       milestoneId,
       changedBy: uid,
+      expectedRevisionsUsed: Number(m.revisions_used ?? 0),
       note,
       now: clock.now(),
     });
-    if (!ok)
+    if (!ok) {
+      const fresh = await milestonesRepository.findById(id, milestoneId);
+      if (fresh) assertRevisionsAvailable(fresh, true);
       throw new HttpError(409, 'Este marco não está aguardando aprovação', 'invalid_transition');
+    }
+    send(
+      row.freelancer_id,
+      milestoneRevisionNotice({
+        contractId: id,
+        milestoneId,
+        title: m.title,
+        used: Number(m.revisions_used ?? 0) + 1,
+        limit: m.revision_limit ?? null,
+        note,
+      }),
+    );
+    return this.getById(id, uid);
+  },
+
+  async grantMilestoneRevision(
+    id: number,
+    milestoneId: number,
+    uid: number,
+  ): Promise<ContractWithHistory> {
+    const row = await loadOr404(id);
+    assertFreelancer(row, uid);
+    assertStatus(row, ['accepted', 'in_progress']);
+    const m = await milestonesRepository.findById(id, milestoneId);
+    if (!m) throw new HttpError(404, 'Marco não encontrado', 'milestone_not_found');
+    if (m.status !== 'delivered')
+      throw new HttpError(409, 'Este marco não está aguardando aprovação', 'invalid_transition');
+    assertRevisionGrant(m);
+    const ok = await milestonesRepository.grantRevision({
+      contractId: id,
+      milestoneId,
+      changedBy: uid,
+      now: clock.now(),
+      expectedRevisionsUsed: Number(m.revisions_used ?? 0),
+      expectedRevisionLimit: m.revision_limit!,
+    });
+    if (!ok) {
+      const freshContract = await loadOr404(id);
+      assertStatus(freshContract, ['accepted', 'in_progress']);
+      const fresh = await milestonesRepository.findById(id, milestoneId);
+      if (fresh) {
+        if (fresh.status !== 'delivered')
+          throw new HttpError(
+            409,
+            'Este marco não está aguardando aprovação',
+            'invalid_transition',
+          );
+        assertRevisionGrant(fresh);
+      }
+      throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
+    }
+    send(
+      row.client_id,
+      revisionGrantedNotice({
+        contractId: id,
+        title: row.title,
+        milestoneId,
+        milestone: m.title,
+        approvalDue: m.approval_due_at ? formatDue(m.approval_due_at, clientZoneOf(row)) : null,
+      }),
+    );
     return this.getById(id, uid);
   },
 };

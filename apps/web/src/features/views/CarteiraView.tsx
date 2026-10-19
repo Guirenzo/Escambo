@@ -1,3 +1,4 @@
+import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
 import { ArrowDownToLine, Coins, Landmark, Lock, MailWarning, QrCode, Wallet } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { CreditReason, Deposit, WalletTransaction } from '@escambo/types';
@@ -129,9 +130,9 @@ export function CarteiraView() {
         title="Carteira"
         subtitle="Saldo em reais, créditos Escambo, depósitos, extrato e saques."
         action={
-          <Button type="button" onClick={() => setDepositing({})}>
+          <BusinessButton type="button" onClick={() => setDepositing({})}>
             <QrCode size={16} /> Depositar
-          </Button>
+          </BusinessButton>
         }
       />
 
@@ -200,7 +201,7 @@ export function CarteiraView() {
           </div>
         )}
         {canWithdraw && (
-          <form className="kpi" onSubmit={submit}>
+          <BusinessForm className="kpi" onSubmit={submit}>
             <div className="kpi-top">
               <span className="kpi-ico">
                 <Landmark size={18} />
@@ -228,7 +229,7 @@ export function CarteiraView() {
             <Button type="submit" variant="secondary" disabled={request.isPending}>
               {request.isPending ? '…' : 'Sacar (mín. R$20)'}
             </Button>
-          </form>
+          </BusinessForm>
         )}
       </div>
 
@@ -340,14 +341,14 @@ export function CarteiraView() {
                           {WITHDRAWAL_STATUS_LABEL[x.status] ?? x.status}
                         </span>
                         {x.status === 'requested' && (
-                          <Button
+                          <BusinessButton
                             variant="mini"
                             type="button"
                             onClick={() => void cancel(x.id)}
                             disabled={cancelWithdrawal.isPending}
                           >
                             Cancelar
-                          </Button>
+                          </BusinessButton>
                         )}
                       </div>
                     </li>

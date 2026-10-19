@@ -617,7 +617,7 @@ describe('ModerationHealthSection: remoções e sinais', () => {
     const { unmount } = render(wrap(<ModerationHealthSection />));
     expect(
       await screen.findByText(
-        '1 remoção no período: 1 avaliação. 1 conta em revisão por reincidência.',
+        '1 remoção no período: 1 avaliação. 1 conta em revisão (reincidência ou desistências).',
       ),
     ).toBeInTheDocument();
     unmount();
@@ -627,7 +627,9 @@ describe('ModerationHealthSection: remoções e sinais', () => {
     );
     render(wrap(<ModerationHealthSection />));
     expect(
-      await screen.findByText('Nenhuma remoção no período. 3 contas em revisão por reincidência.'),
+      await screen.findByText(
+        'Nenhuma remoção no período. 3 contas em revisão (reincidência ou desistências).',
+      ),
     ).toBeInTheDocument();
   });
 

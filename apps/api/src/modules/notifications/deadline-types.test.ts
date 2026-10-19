@@ -8,9 +8,10 @@ import { QUIET_PASS_BY_TYPE } from './push.service';
  * e no resumo diário por e-mail (ADR 56 a 58). Um conjunto só para os dois resumos.
  */
 describe('tipos que vêm primeiro nos resumos (ADR 58)', () => {
-  it('são exatamente o atraso, a recusa, a expiração e o pedido de extensão, e os quatro lembretes', () => {
+  it('são exatamente o atraso, a recusa, a expiração e o pedido de extensão, e os cinco lembretes', () => {
     expect([...DEADLINE_FIRST_TYPES].sort()).toEqual([
       'contract_approval_reminder',
+      'contract_counter_offer_reminder',
       'contract_deadline_reminder',
       'contract_extension_reminder',
       'contract_overdue',
@@ -28,10 +29,12 @@ describe('tipos que vêm primeiro nos resumos (ADR 58)', () => {
   it('o que abre contagem de dias (proposta, entrega) e o que não tem prazo correndo (revisão parada, aprovação automática) fica na ordem de chegada', () => {
     for (const type of [
       'contract_proposal',
+      'contract_counter_offer',
       'contract_delivered',
       'milestone_delivered',
       'contract_revision_stalled',
       'contract_auto_approved',
+      'dropout_decided',
     ]) {
       expect(DEADLINE_FIRST_TYPES.has(type)).toBe(false);
     }

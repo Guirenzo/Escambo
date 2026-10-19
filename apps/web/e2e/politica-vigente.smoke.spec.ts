@@ -2,9 +2,9 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { createUser, openAs, settled } from './helpers';
 
-/** A versão vigente da Política e a data dela: mudou a política, muda aqui (ADR 54 e 56). */
-const VIGENTE = '1.4';
-const ATUALIZADA = '25/09/2026';
+/** A versão vigente da Política e a data dela: mudou a política, muda aqui (ADR 54, 56 e 61). */
+const VIGENTE = '1.6';
+const ATUALIZADA = '15/10/2026';
 
 /**
  * A Política de Privacidade vigente comunicada na plataforma (ADR 54 e 56): conta nova não vê faixa (o
@@ -25,10 +25,10 @@ test('política vigente: faixa para quem está na versão anterior, aceite regis
   await settled(page);
   await expect(page.getByTestId('legal-banner')).toHaveCount(0);
 
-  // O registro mais recente passa a ser a 1.3: é como quem aceitou a versão anterior entra hoje.
+  // A 1.5 permanece respondida: a faixa comunica só o suporte da 1.6.
   const old = await request.post('/api/lgpd/consents', {
     headers,
-    data: { type: 'privacy_policy', version: '1.3', accepted: true },
+    data: { type: 'privacy_policy', version: '1.5', accepted: true },
   });
   expect(old.ok(), await old.text()).toBeTruthy();
   await page.reload();
@@ -37,8 +37,11 @@ test('política vigente: faixa para quem está na versão anterior, aceite regis
   await expect(banner).toBeVisible();
   await expect(banner).toContainText(`versão ${VIGENTE}`);
   await expect(banner).toContainText(ATUALIZADA);
-  await expect(banner).toContainText('o que sai mesmo durante o silêncio');
-  // Quem respondeu a 1.3 ouve só a linha da 1.4.
+  await expect(banner).toContainText('Suporte privado na plataforma');
+  await expect(banner).toContainText('sem notas internas (formato 1.9)');
+  // Quem respondeu a 1.5 ouve só a linha da 1.6.
+  await expect(banner).not.toContainText('últimos 60 dias');
+  await expect(banner).not.toContainText('o que sai mesmo durante o silêncio');
   await expect(banner).not.toContainText('Seção nova sobre alterações');
 
   // A faixa passa no axe e o link leva ao texto com o histórico.
@@ -79,13 +82,13 @@ test('política vigente: faixa para quem está na versão anterior, aceite regis
   );
   await expect(consents.locator('li').first()).toContainText('aceito em');
 
-  // Termos 1.4 (ADR 58): a conta nova já nasce nela, então não há faixa dos Termos.
+  // A conta nova já nasce nos Termos vigentes, então não há faixa dos Termos.
   await expect(page.getByTestId('terms-banner')).toHaveCount(0);
   await page.goto('/termos');
-  await expect(page.getByText(/Versão 1\.4 · atualizada em 03\/10\/2026/)).toBeVisible();
+  await expect(page.getByText(`Versão ${VIGENTE} · atualizada em ${ATUALIZADA}`)).toBeVisible();
 });
 
-test('termos 1.4: faixa informativa para quem aceitou a 1.2, com a 1.3 e a 1.4, depois da Política e sem "Não aceito"', async ({
+test('termos 1.6: faixa informativa com histórico desde a 1.2, depois da recusa da Política e sem "Não aceito"', async ({
   page,
   request,
 }) => {
@@ -104,14 +107,20 @@ test('termos 1.4: faixa informativa para quem aceitou a 1.2, com a 1.3 e a 1.4, 
   await settled(page);
   await expect(page.getByTestId('legal-banner')).toBeVisible();
   await expect(page.getByTestId('terms-banner')).toHaveCount(0);
-  await page.getByTestId('legal-banner').getByRole('button', { name: 'Li e aceito' }).click();
+  await expect(page.getByTestId('legal-banner')).toContainText('últimos 60 dias');
+  await expect(page.getByTestId('legal-banner')).toContainText(
+    'o que sai mesmo durante o silêncio',
+  );
+  await page.getByTestId('legal-banner').getByRole('button', { name: 'Não aceito' }).click();
   await expect(page.getByTestId('legal-banner')).toHaveCount(0);
 
-  // Depois, os Termos: o que mudou desde a 1.2 (a 1.3 e a 1.4), que o uso continuado vale como
+  // Depois, os Termos: o que mudou desde a 1.2 (incluindo 1.5 e 1.6), que o uso continuado vale como
   // aceite, e só "Li e aceito".
   const banner = page.getByRole('region', { name: 'Atualização dos Termos de Uso' });
   await expect(banner).toBeVisible();
-  await expect(banner).toContainText('versão 1.4');
+  await expect(banner).toContainText(`versão ${VIGENTE}`);
+  await expect(banner).toContainText('Atendimento pelo menu Suporte');
+  await expect(banner).toContainText('até 5 ofertas em 3 rodadas');
   await expect(banner).toContainText(
     'a disputa automática só vale enquanto há trabalho nunca entregue',
   );
@@ -129,7 +138,7 @@ test('termos 1.4: faixa informativa para quem aceitou a 1.2, com a 1.3 e a 1.4, 
   ).toEqual([]);
   await banner.getByRole('button', { name: 'Li e aceito' }).click();
   await expect(
-    page.locator('.toast', { hasText: 'a versão 1.4 dos Termos fica registrada' }),
+    page.locator('.toast', { hasText: 'a versão 1.6 dos Termos fica registrada' }),
   ).toBeVisible();
   await expect(page.getByTestId('terms-banner')).toHaveCount(0);
   await page.reload();
@@ -141,8 +150,12 @@ test('termos 1.4: faixa informativa para quem aceitou a 1.2, com a 1.3 e a 1.4, 
     accepted: boolean;
   }[];
   expect(list.find((c) => c.type === 'terms_of_use')).toMatchObject({
-    version: '1.4',
+    version: '1.6',
     accepted: true,
+  });
+  expect(list.find((c) => c.type === 'privacy_policy')).toMatchObject({
+    version: '1.6',
+    accepted: false,
   });
 });
 
@@ -168,6 +181,9 @@ test('política vigente: "Não aceito" também registra e encerra a faixa', asyn
   await expect(banner).toContainText(`versão ${VIGENTE}`);
   await banner.getByRole('button', { name: 'Não aceito' }).click();
   await expect(page.locator('.toast', { hasText: 'escolher o que sai no silêncio' })).toBeVisible();
+  await expect(
+    page.locator('.toast', { hasText: 'As desistências continuam na contagem' }),
+  ).toBeVisible();
   await expect(page.getByTestId('legal-banner')).toHaveCount(0);
 
   await page.getByRole('link', { name: 'Perfil', exact: true }).click();

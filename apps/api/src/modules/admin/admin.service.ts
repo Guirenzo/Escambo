@@ -1,5 +1,6 @@
 import type { AdminMetrics, Dispute } from '@escambo/types';
 import { blocklist } from '../../config/blocklist';
+import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
 import { authRepository } from '../auth/auth.repository';
 import { sessionRepository } from '../auth/session.repository';
@@ -150,13 +151,16 @@ export const adminService = {
     }
     const ok = await adminRepository.setUserStatus(ulid, statusMap[action]);
     if (!ok) throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
-    // Efeito imediato: derruba sessões (refresh) e bloqueia o access token vigente.
+    // Suspensão mantém sessões para consulta. Banimento revoga e desconecta;
+    // cada request/evento também confere o estado atual no banco.
     if (action === 'reactivate') {
       blocklist.delete(user.id);
     } else {
-      blocklist.add(user.id);
-      await sessionRepository.revokeAllForUser(user.id);
+      blocklist.add(user.id, statusMap[action]);
+      if (action === 'ban') await sessionRepository.revokeAllForUser(user.id);
     }
+    await realtime.emitToUser(user.id, 'account:status', { status: statusMap[action] });
+    if (action === 'ban') realtime.disconnectUser(user.id);
     await adminRepository.recordAction(adminId, `user_${action}`, 'user', user.id, `ulid=${ulid}`);
   },
 

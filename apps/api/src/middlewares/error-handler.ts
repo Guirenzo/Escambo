@@ -42,10 +42,28 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   }
 
   if (err instanceof HttpError) {
-    res.status(err.statusCode).json({
+    const body: { error: string; message: string; opensAt?: string | null; contractId?: number } = {
       error: err.code ?? 'error',
       message: err.message,
-    });
+    };
+    // RN-062: só este erro expõe a hora pública. Nunca espalhar um objeto arbitrário do erro.
+    if (err.statusCode === 409 && err.code === 'dispute_too_early' && err.publicData) {
+      const opensAt = err.publicData.opensAt;
+      if (
+        opensAt === null ||
+        (typeof opensAt === 'string' &&
+          Number.isFinite(Date.parse(opensAt)) &&
+          new Date(opensAt).toISOString() === opensAt)
+      )
+        body.opensAt = opensAt;
+    }
+    // RN-020: o cliente já participa da contratação indicada. Só este conflito publica o ID.
+    if (err.statusCode === 409 && err.code === 'active_contract_exists' && err.publicData) {
+      const contractId = err.publicData.contractId;
+      if (typeof contractId === 'number' && Number.isSafeInteger(contractId) && contractId > 0)
+        body.contractId = contractId;
+    }
+    res.status(err.statusCode).json(body);
     return;
   }
 

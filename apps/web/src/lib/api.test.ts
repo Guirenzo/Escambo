@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, setToken } from './api';
+import { api, ApiRequestError, setToken } from './api';
 
 interface FetchCall {
   headers: Record<string, string>;
@@ -56,5 +56,68 @@ describe('api client', () => {
         .mockResolvedValue({ ok: false, status: 400, json: async () => ({ message: 'Deu ruim' }) }),
     );
     await expect(api.wallet()).rejects.toThrow('Deu ruim');
+  });
+
+  it('preserva o conflito e a contratação existente sem copiar outros dados da resposta', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: 'active_contract_exists',
+          message: 'Acompanhe a contratação existente antes de enviar outra.',
+          contractId: 73,
+          details: { internal: 'não expor' },
+        }),
+      }),
+    );
+
+    const failure = await api.wallet().catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ApiRequestError);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).toMatchObject({
+      message: 'Acompanhe a contratação existente antes de enviar outra.',
+      status: 409,
+      code: 'active_contract_exists',
+      contractId: 73,
+    });
+    expect(failure).not.toHaveProperty('details');
+  });
+
+  it.each([undefined, null, '73', 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'não aceita identificador inválido de contratação: %s',
+    async (contractId) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 409,
+          json: async () => ({ error: 'active_contract_exists', contractId }),
+        }),
+      );
+
+      await expect(api.wallet()).rejects.toMatchObject({
+        message: 'active_contract_exists',
+        status: 409,
+        contractId: undefined,
+      });
+    },
+  );
+
+  it('mantém a mensagem genérica quando a falha não traz JSON', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: async () => {
+          throw new Error('Resposta sem JSON');
+        },
+      }),
+    );
+
+    await expect(api.wallet()).rejects.toThrow('Erro 502');
   });
 });

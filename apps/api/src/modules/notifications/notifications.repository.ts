@@ -67,6 +67,7 @@ export const notificationsRepository = {
     const [rows] = await pool.query<DigestUserRow[]>(
       `SELECT id, email, last_digest_at FROM users
         WHERE email_frequency = 'daily' AND deleted_at IS NULL
+          AND status <> 'banned'
           AND COALESCE(timezone, :defaultZone) = :zone
           AND COALESCE(digest_hour, :defaultHour) <= :hourNow
           AND (last_digest_at IS NULL OR last_digest_at < :dayStart)
@@ -120,6 +121,7 @@ export const notificationsRepository = {
       `SELECT u.id, u.timezone, u.push_quiet_start, u.push_quiet_end, u.push_quiet_summary_id
          FROM users u
         WHERE u.deleted_at IS NULL
+          AND u.status <> 'banned'
           AND COALESCE(u.timezone, :defaultZone) = :zone
           AND (u.push_quiet_start IS NULL OR u.push_quiet_end IS NULL
                OR CASE WHEN u.push_quiet_start < u.push_quiet_end

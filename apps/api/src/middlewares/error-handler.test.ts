@@ -16,6 +16,14 @@ function app() {
   a.get('/http', () => {
     throw new HttpError(404, 'Contratação não encontrada', 'not_found');
   });
+  a.post('/public-dispute', (req) => {
+    throw new HttpError(
+      req.body.status ?? 409,
+      'A disputa ainda não abriu',
+      req.body.code ?? 'dispute_too_early',
+      req.body.data,
+    );
+  });
   a.get('/zod', () => {
     z.object({ n: z.number() }).parse({ n: 'x' });
   });
@@ -62,6 +70,97 @@ describe('errorHandler', () => {
     const res = await request(app()).get('/http').expect(404);
     expect(res.body).toEqual({ error: 'not_found', message: 'Contratação não encontrada' });
     expect(captureError).not.toHaveBeenCalled();
+  });
+
+  it.each(['2026-10-10T15:00:00.000Z', null])(
+    'a allowlist expõe opensAt %s no 409 dispute_too_early e descarta todo outro campo',
+    async (opensAt) => {
+      const res = await request(app())
+        .post('/public-dispute')
+        .send({
+          data: { opensAt, contractId: 31, token: 'segredo', stack: 'interno', reason: 'privado' },
+        })
+        .expect(409);
+      expect(res.body).toEqual({
+        error: 'dispute_too_early',
+        message: 'A disputa ainda não abriu',
+        opensAt,
+      });
+      expect(captureError).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { opensAt: 'data inválida' },
+    { opensAt: '2026-02-30T15:00:00.000Z' },
+    { opensAt: '2026-10-10T12:00:00-03:00' },
+    { opensAt: 123 },
+    { opensAt: { password: 'segredo' } },
+    { unrelated: 'interno' },
+  ])('valor público fora do contrato não é serializado: %j', async (data) => {
+    const res = await request(app()).post('/public-dispute').send({ data }).expect(409);
+    expect(res.body).toEqual({ error: 'dispute_too_early', message: 'A disputa ainda não abriu' });
+  });
+
+  it.each([
+    { code: 'conflict', status: 409 },
+    { code: 'dispute_too_early', status: 400 },
+  ])('outro erro/status não publica dados mesmo com opensAt válido: %j', async (fields) => {
+    const res = await request(app())
+      .post('/public-dispute')
+      .send({ ...fields, data: { opensAt: '2026-10-10T15:00:00.000Z', secret: 'não publicar' } });
+    expect(res.status).toBe(fields.status);
+    expect(res.body).toEqual({ error: fields.code, message: 'A disputa ainda não abriu' });
+  });
+
+  it.each([1, 31, Number.MAX_SAFE_INTEGER])(
+    'RN-020 publica somente o ID seguro %s da contratação no conflito 409',
+    async (contractId) => {
+      const res = await request(app())
+        .post('/public-dispute')
+        .send({
+          code: 'active_contract_exists',
+          data: {
+            contractId,
+            opensAt: '2026-10-10T15:00:00.000Z',
+            title: 'Assunto privado',
+            token: 'segredo',
+          },
+        })
+        .expect(409);
+      expect(res.body).toEqual({
+        error: 'active_contract_exists',
+        message: 'A disputa ainda não abriu',
+        contractId,
+      });
+      expect(captureError).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '31', null, {}, [31]])(
+    'RN-020 não serializa ID inválido: %j',
+    async (contractId) => {
+      const res = await request(app())
+        .post('/public-dispute')
+        .send({ code: 'active_contract_exists', data: { contractId } })
+        .expect(409);
+      expect(res.body).toEqual({
+        error: 'active_contract_exists',
+        message: 'A disputa ainda não abriu',
+      });
+    },
+  );
+
+  it.each([
+    { code: 'conflict', status: 409 },
+    { code: 'dispute_too_early', status: 409 },
+    { code: 'active_contract_exists', status: 400 },
+  ])('outro erro/status não publica contractId válido: %j', async (fields) => {
+    const res = await request(app())
+      .post('/public-dispute')
+      .send({ ...fields, data: { contractId: 31, private: 'não publicar' } });
+    expect(res.status).toBe(fields.status);
+    expect(res.body).toEqual({ error: fields.code, message: 'A disputa ainda não abriu' });
   });
 
   it('erro de validação responde 422 com os campos, e não vai ao Sentry', async () => {

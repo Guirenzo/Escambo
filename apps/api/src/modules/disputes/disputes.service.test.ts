@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./disputes.repository', () => ({
   disputesRepository: {
     create: vi.fn(),
+    createManual: vi.fn(),
     findById: vi.fn(),
     listForUser: vi.fn(),
     listOpen: vi.fn(),
@@ -61,6 +62,44 @@ const input = {
 beforeEach(() => vi.clearAllMocks());
 
 describe('disputesService.open', () => {
+  it.each([
+    ['America/Rio_Branco', 'sáb, 10/10 às 10:00'],
+    ['America/Noronha', 'sáb, 10/10 às 13:00'],
+  ] as const)(
+    'janela fechada usa o fuso %s relido e devolve a abertura pública',
+    async (zone, hour) => {
+      contracts.findById.mockResolvedValue(contractRow());
+      disputes.createManual.mockResolvedValue({
+        refused: 'too_early',
+        opensAt: new Date('2026-10-10T15:00:00Z'),
+        requesterZone: zone,
+      });
+      await expect(disputesService.open(1, input)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'dispute_too_early',
+        message: `A disputa abre a partir de ${hour}. Até lá, tente se acertar pelo chat.`,
+        publicData: { opensAt: '2026-10-10T15:00:00.000Z' },
+      });
+      expect(disputes.create).not.toHaveBeenCalled();
+      expect(disputes.findById).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+    },
+  );
+
+  it('sem abertura disponível devolve opensAt null e não inventa uma data', async () => {
+    contracts.findById.mockResolvedValue(contractRow());
+    disputes.createManual.mockResolvedValue({
+      refused: 'too_early',
+      opensAt: null,
+      requesterZone: 'America/Sao_Paulo',
+    });
+    await expect(disputesService.open(1, input)).rejects.toMatchObject({
+      code: 'dispute_too_early',
+      publicData: { opensAt: null },
+    });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
   it('404 quando o contrato não existe', async () => {
     contracts.findById.mockResolvedValue(undefined);
     await expect(disputesService.open(1, input)).rejects.toMatchObject({ statusCode: 404 });
@@ -73,13 +112,13 @@ describe('disputesService.open', () => {
 
   it('409 quando o contrato não permite disputa', async () => {
     contracts.findById.mockResolvedValue(contractRow());
-    disputes.create.mockResolvedValue(null);
+    disputes.createManual.mockResolvedValue({ refused: 'not_disputable' });
     await expect(disputesService.open(1, input)).rejects.toMatchObject({ statusCode: 409 });
   });
 
   it('abre a disputa', async () => {
     contracts.findById.mockResolvedValue(contractRow({ client_id: 1 }));
-    disputes.create.mockResolvedValue(7);
+    disputes.createManual.mockResolvedValue({ id: 7 });
     disputes.findById.mockResolvedValue(disputeRow({ id: 7 }));
     const d = await disputesService.open(1, input);
     expect(d.id).toBe(7);
@@ -99,9 +138,9 @@ describe('disputesService.open', () => {
       code: 'forbidden',
     });
     // Quem não participa nem chega a tentar abrir.
-    expect(disputes.create).not.toHaveBeenCalled();
+    expect(disputes.createManual).not.toHaveBeenCalled();
 
-    disputes.create.mockResolvedValue(null);
+    disputes.createManual.mockResolvedValue({ refused: 'not_disputable' });
     await expect(disputesService.open(1, input)).rejects.toMatchObject({
       statusCode: 409,
       code: 'not_disputable',
@@ -112,15 +151,15 @@ describe('disputesService.open', () => {
 
   it('grava a disputa com um ulid novo, em nome de quem abriu, sem a guarda da disputa automática', async () => {
     contracts.findById.mockResolvedValue(contractRow({ client_id: 1, freelancer_id: 2 }));
-    disputes.create.mockResolvedValue(7);
+    disputes.createManual.mockResolvedValue({ id: 7 });
     disputes.findById.mockResolvedValue(disputeRow({ id: 7 }));
 
     await disputesService.open(2, { ...input, contractId: 5 });
 
     expect(contracts.findById).toHaveBeenCalledWith(5);
-    expect(disputes.create).toHaveBeenCalledTimes(1);
+    expect(disputes.createManual).toHaveBeenCalledTimes(1);
     // Um argumento só: a guarda (ADR 57) é da disputa automática do job, não da aberta por uma parte.
-    expect(disputes.create).toHaveBeenCalledWith({
+    expect(disputes.createManual).toHaveBeenCalledWith({
       ulid: expect.stringMatching(/^[0-9A-HJKMNP-TV-Z]{26}$/),
       contractId: 5,
       openedBy: 2,
@@ -132,7 +171,7 @@ describe('disputesService.open', () => {
 
   it('avisa a outra parte da contratação: o freelancer quando o cliente abre, o cliente quando o freelancer abre', async () => {
     contracts.findById.mockResolvedValue(contractRow({ client_id: 1, freelancer_id: 2 }));
-    disputes.create.mockResolvedValue(7);
+    disputes.createManual.mockResolvedValue({ id: 7 });
     disputes.findById.mockResolvedValue(disputeRow({ id: 7 }));
     const notice = {
       type: 'dispute_opened',
@@ -152,7 +191,7 @@ describe('disputesService.open', () => {
 
   it('a abertura não espera o aviso sair: com o envio pendente, a disputa já gravada é devolvida', async () => {
     contracts.findById.mockResolvedValue(contractRow({ client_id: 1, freelancer_id: 2 }));
-    disputes.create.mockResolvedValue(7);
+    disputes.createManual.mockResolvedValue({ id: 7 });
     disputes.findById.mockResolvedValue(disputeRow({ id: 7 }));
     // Aviso que nunca termina (e-mail/push lento): quem abriu não fica preso nele.
     notify.mockReturnValueOnce(new Promise<void>(() => undefined));
@@ -160,27 +199,27 @@ describe('disputesService.open', () => {
     expect(await disputesService.open(1, input)).toMatchObject({ id: 7, status: 'open' });
     expect(notify).toHaveBeenCalledTimes(1);
     // O aviso só sai depois de a disputa estar gravada.
-    expect(disputes.create.mock.invocationCallOrder[0]!).toBeLessThan(
+    expect(disputes.createManual.mock.invocationCallOrder[0]!).toBeLessThan(
       notify.mock.invocationCallOrder[0]!,
     );
   });
 
   it('a participação é conferida antes de gravar: a contratação é lida uma vez, pelo id pedido', async () => {
     contracts.findById.mockResolvedValue(contractRow({ client_id: 1, freelancer_id: 2 }));
-    disputes.create.mockResolvedValue(7);
+    disputes.createManual.mockResolvedValue({ id: 7 });
     disputes.findById.mockResolvedValue(disputeRow({ id: 7 }));
 
     await disputesService.open(1, { ...input, contractId: 5 });
 
     expect(contracts.findById.mock.calls).toEqual([[5]]);
     expect(contracts.findById.mock.invocationCallOrder[0]!).toBeLessThan(
-      disputes.create.mock.invocationCallOrder[0]!,
+      disputes.createManual.mock.invocationCallOrder[0]!,
     );
   });
 
   it('devolve a disputa no formato da API (camelCase, data em ISO)', async () => {
     contracts.findById.mockResolvedValue(contractRow({ client_id: 1, freelancer_id: 2 }));
-    disputes.create.mockResolvedValue(7);
+    disputes.createManual.mockResolvedValue({ id: 7 });
     disputes.findById.mockResolvedValue(disputeRow({ id: 7 }));
 
     expect(await disputesService.open(1, input)).toEqual({

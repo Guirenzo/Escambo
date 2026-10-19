@@ -68,6 +68,18 @@ describe('settingsRepository', () => {
       fakeDb.reply([{ value: ' 48 ' }]);
       expect(await settingsRepository.getNumber('deadline_grace_hours', 24)).toBe(48);
     });
+
+    it.each(['counter_offer_response_hours', 'extension_response_hours'])(
+      '%s lê prazo íntegro e cai em 48 h se a linha for inválida',
+      async (key) => {
+        fakeDb.reply(
+          ...['23', '169', '48.5', 'abc', 'Infinity', '', '24', '168'].map((value) => [{ value }]),
+        );
+        for (let i = 0; i < 6; i++) expect(await settingsRepository.getNumber(key, 48)).toBe(48);
+        expect(await settingsRepository.getNumber(key, 48)).toBe(24);
+        expect(await settingsRepository.getNumber(key, 48)).toBe(168);
+      },
+    );
   });
 
   describe('set', () => {

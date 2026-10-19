@@ -1,12 +1,13 @@
+import { BusinessButton } from '../../components/BusinessActions';
 import { CalendarClock, CheckCircle2, Flag, PackageCheck, RotateCcw } from 'lucide-react';
 import type { ContractWithHistory, Milestone } from '@escambo/types';
-import { Button } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { deadlineInfo, deadlineText, deadlineZoneNote, momentText } from '../../lib/deadline';
 import { brl, dtm, MILESTONE_STATUS_LABEL } from '../../lib/format';
 import { DEFAULT_TIMEZONE } from '../../lib/timezones';
-import { useMilestoneAction } from '../../lib/hooks';
+import { useGrantMilestoneRevision, useMilestoneAction } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { GRANT_REVISION_CONFIRMATION, revisionCount, revisionsExhausted } from './contractRules';
 
 const pillOf = (status: Milestone['status']): string =>
   status === 'released'
@@ -34,6 +35,8 @@ export function MilestonesSection({
   const { user } = useAuth();
   const toast = useToast();
   const act = useMilestoneAction(contract.id);
+  const grant = useGrantMilestoneRevision(contract.id);
+  const busy = act.isPending || grant.isPending;
   const list = contract.milestones;
   if (list.length === 0) return null;
 
@@ -51,6 +54,7 @@ export function MilestonesSection({
     m: Milestone,
     action: 'deliver' | 'approve' | 'request-revision',
   ): Promise<void> {
+    if (busy || (action === 'request-revision' && revisionsExhausted(m.revisions))) return;
     let text: string | undefined;
     if (action === 'deliver') {
       text = (window.prompt(`Mensagem da entrega do marco «${m.title}»:`) ?? '').trim();
@@ -73,6 +77,18 @@ export function MilestonesSection({
       );
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Erro na ação');
+    }
+  }
+
+  async function grantRevision(m: Milestone): Promise<void> {
+    if (busy || !window.confirm(GRANT_REVISION_CONFIRMATION)) return;
+    try {
+      await grant.mutateAsync({ milestoneId: m.id });
+      toast.success(
+        'Mais uma revisão sem custo liberada neste marco. O prazo de aprovação automática continua o mesmo.',
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Não foi possível liberar a revisão');
     }
   }
 
@@ -105,6 +121,17 @@ export function MilestonesSection({
               <div className="milestone-body">
                 <strong>{m.title}</strong>
                 {m.description && <div className="muted tiny">{m.description}</div>}
+                {m.revisions && (
+                  <div className="muted tiny" data-testid={`milestone-revisions-${m.id}`}>
+                    Revisões: {revisionCount(m.revisions)}
+                  </div>
+                )}
+                {open && m.status === 'delivered' && revisionsExhausted(m.revisions) && (
+                  <p className="muted tiny">
+                    As {m.revisions!.limit} revisões sem custo deste marco foram usadas. Combine
+                    pelo chat{isClient ? '; o freelancer pode liberar mais uma' : ''}.
+                  </p>
+                )}
                 {m.dueAt && (
                   <div className="muted tiny" data-testid={`milestone-due-${m.id}`}>
                     <CalendarClock size={12} />{' '}
@@ -172,31 +199,42 @@ export function MilestonesSection({
               {open && (
                 <div className="acts">
                   {isFreelancer && m.status === 'funded' && (
-                    <Button
+                    <BusinessButton
                       variant="mini"
-                      disabled={act.isPending}
+                      disabled={busy}
                       onClick={() => void run(m, 'deliver')}
                     >
                       Entregar marco
-                    </Button>
+                    </BusinessButton>
                   )}
                   {isClient && m.status === 'delivered' && (
                     <>
-                      <Button
+                      <BusinessButton
                         variant="mini"
-                        disabled={act.isPending}
+                        disabled={busy}
                         onClick={() => void run(m, 'approve')}
                       >
                         Aprovar marco
-                      </Button>
-                      <Button
-                        variant="mini"
-                        disabled={act.isPending}
-                        onClick={() => void run(m, 'request-revision')}
-                      >
-                        Pedir revisão
-                      </Button>
+                      </BusinessButton>
+                      {!revisionsExhausted(m.revisions) && (
+                        <BusinessButton
+                          variant="mini"
+                          disabled={busy}
+                          onClick={() => void run(m, 'request-revision')}
+                        >
+                          Pedir revisão
+                        </BusinessButton>
+                      )}
                     </>
+                  )}
+                  {isFreelancer && m.status === 'delivered' && revisionsExhausted(m.revisions) && (
+                    <BusinessButton
+                      variant="mini"
+                      disabled={busy}
+                      onClick={() => void grantRevision(m)}
+                    >
+                      Liberar mais uma revisão
+                    </BusinessButton>
                   )}
                 </div>
               )}

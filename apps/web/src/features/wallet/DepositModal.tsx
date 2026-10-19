@@ -1,3 +1,4 @@
+import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
 import { CheckCircle2, Copy, QrCode, RefreshCw, Zap } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import QRCode from 'qrcode';
@@ -7,6 +8,7 @@ import { Button, Field, Input, Modal } from '../../components/ui';
 import { brl, DEPOSIT_STATUS_LABEL } from '../../lib/format';
 import { qk, useCreateDeposit, useDeposit, useSimulateDeposit } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { useReadOnlyAccount } from '../../lib/account-access';
 
 const PRESETS = [50, 100, 200, 500];
 const MIN = 10;
@@ -40,9 +42,15 @@ export function DepositModal({
   const [deposit, setDeposit] = useState<Deposit | null>(initial ?? null);
   const live = useDeposit(deposit?.id ?? null, deposit?.status === 'pending');
   const current = live.data ?? deposit;
+  const readOnly = useReadOnlyAccount();
   const paidRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [now, setNow] = useState(() => Date.now());
+
+  // Cobranças existentes continuam consultáveis; um formulário de nova cobrança fecha na suspensão.
+  useEffect(() => {
+    if (readOnly && !current) onClose();
+  }, [readOnly, current, onClose]);
 
   // Relógio da validade (a cada 15 s basta).
   useEffect(() => {
@@ -112,11 +120,12 @@ export function DepositModal({
     ? Math.max(0, Math.ceil((new Date(current.expiresAt).getTime() - now) / 60_000))
     : null;
   const value = Number(amount) || 0;
+  if (readOnly && !current) return null;
 
   return (
     <Modal title="Depositar na carteira" onClose={onClose}>
       {!current && (
-        <form onSubmit={generate} className="stack">
+        <BusinessForm onSubmit={generate} className="stack">
           <p className="muted">
             Escolha o valor. Você recebe um PIX (QR Code e copia e cola); o saldo entra assim que o
             pagamento é confirmado.
@@ -148,7 +157,7 @@ export function DepositModal({
             <QrCode size={16} />{' '}
             {create.isPending ? 'Gerando…' : `Gerar cobrança PIX de ${brl(value)}`}
           </Button>
-        </form>
+        </BusinessForm>
       )}
 
       {current && current.status === 'pending' && (
@@ -195,9 +204,9 @@ export function DepositModal({
                   O gateway é simulado: nenhum banco é acionado. Confirme o pagamento aqui.
                 </div>
               </div>
-              <Button type="button" onClick={doSimulate} disabled={simulate.isPending}>
+              <BusinessButton type="button" onClick={doSimulate} disabled={simulate.isPending}>
                 <Zap size={16} /> {simulate.isPending ? 'Confirmando…' : 'Simular pagamento'}
-              </Button>
+              </BusinessButton>
             </div>
           )}
         </div>
@@ -222,9 +231,9 @@ export function DepositModal({
             Cobrança {DEPOSIT_STATUS_LABEL[current.status]?.toLowerCase() ?? current.status}. Gere
             uma nova para continuar.
           </p>
-          <Button type="button" variant="secondary" onClick={() => setDeposit(null)}>
+          <BusinessButton type="button" variant="secondary" onClick={() => setDeposit(null)}>
             <RefreshCw size={14} /> Gerar nova cobrança
-          </Button>
+          </BusinessButton>
         </div>
       )}
     </Modal>

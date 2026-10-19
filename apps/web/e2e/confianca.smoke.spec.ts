@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { contract, financialSnapshot } from './adr61-rights.helpers';
+import { historicalDisputeDelivery } from './historical-dispute.helpers';
 import {
   createAdmin,
   createService,
@@ -23,6 +25,32 @@ test('disputa: freelancer abre na Sala, admin resolve no painel, contrato conclu
   const service = await createService(request, freelancer, 250);
   const client = await createUser(request, 'client');
   const contractId = await deliveredContract(request, client, freelancer, service);
+  const fresh = await contract(request, freelancer, contractId);
+  expect(Date.parse(fresh.disputeOpensAt!)).toBeGreaterThan(Date.now());
+  const before = {
+    client: await financialSnapshot(request, client),
+    freelancer: await financialSnapshot(request, freelancer),
+  };
+
+  // RN-062: fixture histórica no banco E2E, com as 48h reais já transcorridas.
+  // O escrow permanece o que o aceite pela API registrou; o relógio do app não muda.
+  const historical = await historicalDisputeDelivery(contractId, client, freelancer);
+  const eligible = await contract(request, freelancer, contractId);
+  expect(eligible).toMatchObject({
+    status: 'delivered',
+    createdAt: historical.createdAt,
+    disputeOpensAt: historical.opensAt,
+    approvalDueAt: historical.approvalDueAt,
+    deadline: { firstDeliveredAt: historical.firstDeliveredAt },
+  });
+  expect(Date.parse(historical.opensAt)).toBeLessThan(Date.now());
+  expect(Date.parse(historical.approvalDueAt)).toBeGreaterThan(Date.now());
+  expect(Date.parse(historical.opensAt) - Date.parse(historical.firstDeliveredAt)).toBe(
+    48 * 3_600_000,
+  );
+  expect(Date.parse(historical.approvalDueAt) - Date.parse(historical.opensAt)).toBe(
+    24 * 3_600_000,
+  );
 
   // Freelancer abre a disputa pela Sala.
   await openAs(page, freelancer, `/contratos/${contractId}`);
@@ -37,6 +65,14 @@ test('disputa: freelancer abre na Sala, admin resolve no painel, contrato conclu
   await expect(page.locator('.pill', { hasText: 'Disputa' }).first()).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Disputa' })).toBeVisible();
   await expect(page.getByText('Problema com pagamento')).toBeVisible();
+  const disputed = await contract(request, freelancer, contractId);
+  expect(disputed).toMatchObject({
+    status: 'disputed',
+    disputeOpensAt: null,
+    deadline: { firstDeliveredAt: historical.firstDeliveredAt },
+  });
+  expect(await financialSnapshot(request, client)).toEqual(before.client);
+  expect(await financialSnapshot(request, freelancer)).toEqual(before.freelancer);
 
   // Admin vê na fila e libera ao freelancer.
   const admin = await createAdmin(request);
@@ -56,6 +92,13 @@ test('disputa: freelancer abre na Sala, admin resolve no painel, contrato conclu
   await openAs(page, freelancer, `/contratos/${contractId}`);
   await settled(page);
   await expect(page.locator('.pill', { hasText: 'Concluído' }).first()).toBeVisible();
+  const concluded = await contract(request, freelancer, contractId);
+  expect(concluded.status).toBe('completed');
+  expect((await financialSnapshot(request, client)).wallet).toEqual(before.client.wallet);
+  expect((await financialSnapshot(request, freelancer)).wallet).toMatchObject({
+    balance: before.freelancer.wallet.balance + fresh.freelancerNet,
+    balancePending: before.freelancer.wallet.balancePending - fresh.freelancerNet,
+  });
 });
 
 test('quem não é admin não entra no painel', async ({ page, request }) => {

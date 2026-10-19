@@ -25,6 +25,18 @@ vi.mock('../settings/settings.service', () => ({
 vi.mock('../settings/settings.repository', () => ({ settingsRepository: { get: settingGet } }));
 
 describe('saúde da moderação (ADR 47)', () => {
+  it('denúncia comum não sai da meta por imitar um prefixo: a revisão exige sistema ou administrador legado', async () => {
+    fakeDb.reset();
+    await openQueue(new Date('2026-10-09T15:00:00Z'), 24);
+    const sql = fakeDb.calls[0]!.sql;
+    expect(sql).toContain(
+      "reporter_id IS NULL OR EXISTS (SELECT 1 FROM users review_reporter WHERE review_reporter.id = content_reports.reporter_id AND review_reporter.role = 'admin')",
+    );
+    expect(sql).toContain("COALESCE(description, '') LIKE 'Desistências:%'");
+    expect(sql).toContain("COALESCE(description, '') LIKE 'Reincidência:%'");
+    expect(sql).toContain('SUM(NOT is_review AND created_at < :threshold)');
+    expect(sql).toContain('SUM(reporter_id IS NULL AND NOT is_review)');
+  });
   it('mediana e percentil com interpolação; vazio é null', () => {
     expect(median([])).toBeNull();
     expect(median([7])).toBe(7);
@@ -194,12 +206,12 @@ describe('a fila agora (ADR 55)', () => {
     const { sql, params } = fakeDb.calls[0]!;
     // Só o que está aberto entra na fila.
     expect(sql).toContain("FROM content_reports WHERE status IN ('pending', 'reviewing')) r");
-    // Revisão de conta por reincidência (ADR 41) é a denúncia da conta com o prefixo.
+    // Revisões de conta das duas causas permanecem separadas das sinalizações de conteúdo.
     expect(sql).toContain(
-      "(target_type = 'user' AND COALESCE(description, '') LIKE 'Reincidência:%') AS is_review",
+      "(target_type = 'user' AND (reporter_id IS NULL OR EXISTS (SELECT 1 FROM users review_reporter WHERE review_reporter.id = content_reports.reporter_id AND review_reporter.role = 'admin')) AND (COALESCE(description, '') LIKE 'Reincidência:%' OR COALESCE(description, '') LIKE 'Desistências:%')) AS is_review",
     );
     expect(sql).toContain('SELECT COUNT(*) AS pending, MIN(created_at) AS oldest');
-    expect(sql).toContain('COALESCE(SUM(reporter_id IS NULL), 0) AS automatic');
+    expect(sql).toContain('COALESCE(SUM(reporter_id IS NULL AND NOT is_review), 0) AS automatic');
     expect(sql).toContain('COALESCE(SUM(is_review), 0) AS reviews');
     // A revisão de conta fica aberta de propósito: não entra na mais antiga nem no estouro.
     expect(sql).toContain('MIN(CASE WHEN NOT is_review THEN created_at END) AS oldest_content');
@@ -280,8 +292,10 @@ describe('moderationHealthService (ADR 47, 50 e 55)', () => {
       expect(beforeWhere(decisions)).toBe(
         `SELECT ${DAY_OF('reviewed_at')}, status, COUNT(*) AS n FROM content_reports`,
       );
+      const contentOnly =
+        "status IN ('actioned', 'dismissed') AND NOT (target_type = 'user' AND (reporter_id IS NULL OR EXISTS (SELECT 1 FROM users review_reporter WHERE review_reporter.id = content_reports.reporter_id AND review_reporter.role = 'admin')) AND (COALESCE(description, '') LIKE 'Reincidência:%' OR COALESCE(description, '') LIKE 'Desistências:%'))";
       expect(whereOf(decisions)).toBe(
-        "status IN ('actioned', 'dismissed') AND reviewed_at >= :since AND reviewed_at < :until GROUP BY d, status",
+        `${contentOnly} AND reviewed_at >= :since AND reviewed_at < :until GROUP BY d, status`,
       );
 
       // Tempo até decidir: da criação à decisão, só a amostra das 5000 mais recentes.
@@ -290,15 +304,15 @@ describe('moderationHealthService (ADR 47, 50 e 55)', () => {
         `SELECT ${DAY_OF('reviewed_at')}, TIMESTAMPDIFF(SECOND, created_at, reviewed_at) AS secs FROM content_reports`,
       );
       expect(whereOf(seconds)).toBe(
-        "status IN ('actioned', 'dismissed') AND reviewed_at >= :since AND reviewed_at < :until ORDER BY reviewed_at DESC LIMIT 5000",
+        `${contentOnly} AND reviewed_at >= :since AND reviewed_at < :until ORDER BY reviewed_at DESC LIMIT 5000`,
       );
 
       // Recebidas: toda denúncia criada no dia, e dentre elas as automáticas (sem denunciante).
       const received = queryWith('AS flagged FROM content_reports').sql;
-      expect(beforeWhere(received)).toBe(
-        `SELECT ${DAY_OF('created_at')}, COUNT(*) AS n, COALESCE(SUM(reporter_id IS NULL), 0) AS flagged FROM content_reports`,
+      expect(received).toContain(
+        `SELECT ${DAY_OF('created_at')}, COUNT(*) AS n, COALESCE(SUM(reporter_id IS NULL AND NOT (target_type = 'user' AND (reporter_id IS NULL OR EXISTS (SELECT 1 FROM users review_reporter WHERE review_reporter.id = content_reports.reporter_id AND review_reporter.role = 'admin')) AND (COALESCE(description, '') LIKE 'Reincidência:%' OR COALESCE(description, '') LIKE 'Desistências:%'))), 0) AS flagged FROM content_reports`,
       );
-      expect(whereOf(received)).toBe('created_at >= :since AND created_at < :until GROUP BY d');
+      expect(received).toMatch(/WHERE created_at >= :since AND created_at < :until GROUP BY d$/);
     });
 
     it('zero dias é só hoje, ainda parcial', async () => {
@@ -457,7 +471,7 @@ describe('moderationHealthService (ADR 47, 50 e 55)', () => {
 
       const appealQueue = queryWith('MIN(appealed_at) AS oldest');
       expect(appealQueue.sql).toBe(
-        "SELECT COUNT(*) AS pending, MIN(appealed_at) AS oldest FROM content_removals WHERE status = 'appealed'",
+        "SELECT COUNT(*) AS pending, MIN(appealed_at) AS oldest FROM (SELECT appealed_at FROM content_removals WHERE status = 'appealed' UNION ALL SELECT d.appealed_at FROM freelancer_dropouts d JOIN users u ON u.id = d.freelancer_id WHERE d.appealed_at IS NOT NULL AND d.decided_at IS NULL AND d.decision IS NULL AND d.client_agreed_at IS NULL AND u.deleted_at IS NULL) appeals",
       );
       expect(appealQueue.params).toBeUndefined();
 
@@ -471,7 +485,7 @@ describe('moderationHealthService (ADR 47, 50 e 55)', () => {
         "SELECT r.status, m.off_platform, COUNT(*) AS n FROM content_reports r LEFT JOIN messages m ON r.target_type = 'message' AND m.id = r.target_id",
       );
       expect(whereOf(automatic.sql)).toBe(
-        'r.reporter_id IS NULL AND r.created_at >= :since AND r.created_at < :until GROUP BY r.status, m.off_platform',
+        "r.reporter_id IS NULL AND NOT (r.target_type = 'user' AND (r.reporter_id IS NULL OR EXISTS (SELECT 1 FROM users review_reporter WHERE review_reporter.id = r.reporter_id AND review_reporter.role = 'admin')) AND (COALESCE(r.description, '') LIKE 'Reincidência:%' OR COALESCE(r.description, '') LIKE 'Desistências:%')) AND r.created_at >= :since AND r.created_at < :until GROUP BY r.status, m.off_platform",
       );
       expect(automatic.params).toEqual(window);
 

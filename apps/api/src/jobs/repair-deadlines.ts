@@ -1,18 +1,27 @@
+import type { BrazilTimezone } from '@escambo/types';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
-import { pool } from '../config/db';
+import { inTransaction, pool } from '../config/db';
 import { logger } from '../config/logger';
 import {
   DEFAULT_DEADLINE_GRACE_HOURS,
+  DEFAULT_EXTENSION_RESPONSE_HOURS,
   DEFAULT_PROPOSAL_EXPIRY_HOURS,
   DEFAULT_TACIT_APPROVAL_DAYS,
   extensionRespondBy,
   graceEndFrom,
 } from '../modules/contracts/deadline-grace';
 import { CLOSE_PENDING_EXTENSION, rn029Eligible } from '../modules/contracts/deadline-sql';
+import { DISPUTE_TACIT_MARGIN_MS } from '../modules/contracts/dispute-window';
 import { settingsRepository } from '../modules/settings/settings.repository';
 import { clock } from '../utils/clock';
 import { floorSecond, humanize, lastHumanAtOrBefore } from '../utils/human-hours';
 import { timezoneOf } from '../utils/timezone';
+import {
+  repairDeliveryRules,
+  repairOfferRules,
+  type RepairDeliveryRulesResult,
+  type RepairOfferRulesResult,
+} from './repair-contract-rules';
 
 /**
  * Reparo dos prazos (ADR 57): preenche, em Node e com as MESMAS funções de hora que a API usa ao
@@ -24,7 +33,7 @@ import { timezoneOf } from '../utils/timezone';
  *  1. carência sem aviso (extensão aceita pela API antiga)            → grace_ends_at = NULL
  *  2. contador de pedidos zerado com pedido visível                   → 1 (conservador)
  *  3. pedido pendente fora da vez de quem entrega                      → 'closed'
- *  4. pedido pendente sem hora de resposta                            → 48 h a partir de agora
+ *  4. pedido pendente sem hora de resposta                            → horas vigentes (padrão 48)
  *  5. aviso dado sem o fim da carência, com o prazo cobrando          → aviso + carência vigente
  *  6. proposta sem validade                                           → criação + horas vigentes
  *  7. entrega única sem a hora da aprovação tácita                    → última entrega + dias
@@ -32,6 +41,8 @@ import { timezoneOf } from '../utils/timezone';
  *  9. contratação em revisão sem a hora do pedido, ou com a de outro ciclo (ADR 58) → histórico
  * 10. marco em revisão sem a hora do pedido, ou com a de outro ciclo (ADR 58)       → histórico
  *     (só com o título único na contratação), ou agora
+ * ADR 61: antes de 7/8, recupera a primeira entrega e congela a abertura da disputa com a
+ * tácita antiga conhecida; ao final, recupera a oferta 1 e fecha ofertas da API antiga.
  * Os instantes calculados passam pela hora humana no fuso ATUAL de quem é afetado. Toda escrita é
  * pela chave primária, repetindo o predicado da leitura: a mesma ordem de trava da API (linha
  * primeiro, índice depois), e um deadlock ou espera de trava só adia aquela linha para a próxima
@@ -42,7 +53,22 @@ const H = 3_600_000;
 const DAY = 24 * H;
 const BATCH = 200;
 
-export interface RepairDeadlinesResult {
+// O lote de snapshots pode acabar antes do lote de tácitas. Uma tácita calculada hoje não
+// pode parecer histórica na próxima rodada. O fallback antigo só vale sem evidência alguma.
+const noDeliveryEvidence = (alias: string): string =>
+  `${alias}.first_delivery_at IS NULL
+   AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.contract_id = ${alias}.id)
+   AND NOT EXISTS (SELECT 1 FROM contract_milestones m2
+                    WHERE m2.contract_id = ${alias}.id AND m2.delivered_at IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM contract_status_history h2 WHERE h2.contract_id = ${alias}.id
+                    AND (h2.new_status = 'delivered' OR h2.note LIKE 'Marco «%» entregue:%'))`;
+const singleSnapshotReady = (alias: string): string =>
+  `(${alias}.delivery_dispute_opens_at IS NOT NULL OR (${noDeliveryEvidence(alias)}))`;
+const milestoneSnapshotReady = (milestone: string, contract: string): string =>
+  `(${milestone}.dispute_opens_at IS NOT NULL OR
+     (${milestone}.delivered_at IS NULL AND ${noDeliveryEvidence(contract)}))`;
+
+export interface RepairDeadlinesResult extends RepairDeliveryRulesResult, RepairOfferRulesResult {
   graceWithoutNotice: number;
   requestCounters: number;
   closedExtensions: number;
@@ -92,11 +118,24 @@ function latest(found: unknown, floor: unknown, fallback: Date): Date {
   return min && min.getTime() > at.getTime() ? min : at;
 }
 
+/** A tácita inferida não encerra o contrato antes da margem da abertura histórica recuperada. */
+function repairedApprovalDue(
+  deliveredAt: Date,
+  days: number,
+  zone: BrazilTimezone,
+  opensAt: Date | null | undefined,
+): Date {
+  const computed = deliveredAt.getTime() + days * DAY;
+  const earliest = opensAt ? new Date(opensAt).getTime() + DISPUTE_TACIT_MARGIN_MS : computed;
+  return floorSecond(humanize(new Date(Math.max(computed, earliest)), zone));
+}
+
 export async function runRepairDeadlines(now: Date = clock.now()): Promise<RepairDeadlinesResult> {
-  const [graceHours, expiryHours, tacitDays] = await Promise.all([
+  const [graceHours, expiryHours, tacitDays, extensionHours] = await Promise.all([
     settingsRepository.getNumber('deadline_grace_hours', DEFAULT_DEADLINE_GRACE_HOURS),
     settingsRepository.getNumber('proposal_expiry_hours', DEFAULT_PROPOSAL_EXPIRY_HOURS),
     settingsRepository.getNumber('tacit_approval_days', DEFAULT_TACIT_APPROVAL_DAYS),
+    settingsRepository.getNumber('extension_response_hours', DEFAULT_EXTENSION_RESPONSE_HOURS),
   ]);
 
   const GRACE_WITHOUT_NOTICE = 'grace_ends_at IS NOT NULL AND overdue_notified_at IS NULL';
@@ -151,6 +190,7 @@ export async function runRepairDeadlines(now: Date = clock.now()): Promise<Repai
               requestedAt: now,
               proposed: new Date(row.extension_deadline_at),
               zone: timezoneOf(row.tz),
+              hours: extensionHours,
             }) ?? floorSecond(now),
         },
       ),
@@ -191,44 +231,104 @@ export async function runRepairDeadlines(now: Date = clock.now()): Promise<Repai
     },
   );
 
+  // Não antecipar um direito legado a partir da configuração atual de aprovação tácita.
+  const deliveryRules = await repairDeliveryRules();
+
   const approvalDue = await each<RowDataPacket>(
-    `SELECT c.id, cu.timezone AS tz,
+    `SELECT c.id, c.delivery_dispute_opens_at, cu.timezone AS tz,
             (SELECT MAX(h.created_at) FROM contract_status_history h
               WHERE h.contract_id = c.id AND h.new_status = 'delivered') AS delivered_at
        FROM contracts c JOIN users cu ON cu.id = c.client_id
       WHERE c.status = 'delivered' AND c.approval_due_at IS NULL
+        AND ${singleSnapshotReady('c')}
       LIMIT ${BATCH}`,
     {},
     (row) => {
       const from = row.delivered_at ? new Date(row.delivered_at) : now;
       return update(
-        `UPDATE contracts SET approval_due_at = :v WHERE id = :id AND approval_due_at IS NULL`,
+        `UPDATE contracts SET approval_due_at = :v WHERE id = :id AND status = 'delivered' AND approval_due_at IS NULL
+           AND ${singleSnapshotReady('contracts')}`,
         {
           id: row.id,
-          v: floorSecond(humanize(new Date(from.getTime() + tacitDays * DAY), timezoneOf(row.tz))),
+          v: repairedApprovalDue(
+            from,
+            tacitDays,
+            timezoneOf(row.tz),
+            row.delivery_dispute_opens_at,
+          ),
         },
       );
     },
   );
 
   const milestoneApprovalDue = await each<RowDataPacket>(
-    `SELECT m.id, m.delivered_at, cu.timezone AS tz
+    `SELECT m.id, m.contract_id, m.delivered_at, cu.timezone AS tz
        FROM contract_milestones m
        JOIN contracts c ON c.id = m.contract_id
        JOIN users cu ON cu.id = c.client_id
       WHERE m.status = 'delivered' AND m.approval_due_at IS NULL
+        AND ${milestoneSnapshotReady('m', 'c')}
       LIMIT ${BATCH}`,
     {},
-    (row) => {
-      const from = row.delivered_at ? new Date(row.delivered_at) : now;
-      return update(
-        `UPDATE contract_milestones SET approval_due_at = :v
-          WHERE id = :id AND approval_due_at IS NULL`,
-        {
-          id: row.id,
-          v: floorSecond(humanize(new Date(from.getTime() + tacitDays * DAY), timezoneOf(row.tz))),
-        },
-      );
+    async (row) => {
+      try {
+        return await inTransaction(async (conn) => {
+          // Evita UPDATE JOIN (ordem de travas) e SELECT da própria tabela no UPDATE (1093).
+          const [contracts] = await conn.query<RowDataPacket[]>(
+            `SELECT id FROM contracts WHERE id = :id FOR UPDATE`,
+            { id: row.contract_id },
+          );
+          if (!contracts.length) return false;
+          const [milestones] = await conn.query<RowDataPacket[]>(
+            `SELECT id, status, delivered_at, approval_due_at, dispute_opens_at
+               FROM contract_milestones WHERE id = :id AND contract_id = :contractId FOR UPDATE`,
+            { id: row.id, contractId: row.contract_id },
+          );
+          const milestone = milestones[0];
+          if (!milestone || milestone.status !== 'delivered' || milestone.approval_due_at)
+            return false;
+          if (!milestone.dispute_opens_at) {
+            if (milestone.delivered_at) return false;
+            const [orphans] = await conn.query<RowDataPacket[]>(
+              `SELECT c.id FROM contracts c WHERE c.id = :id AND ${noDeliveryEvidence('c')}`,
+              { id: row.contract_id },
+            );
+            if (!orphans.length) return false;
+          }
+          const from = milestone.delivered_at ? new Date(milestone.delivered_at) : now;
+          const [updated] = await conn.query<ResultSetHeader>(
+            `UPDATE contract_milestones SET approval_due_at = :v
+              WHERE id = :id AND contract_id = :contractId AND status = 'delivered'
+                AND approval_due_at IS NULL
+                AND (dispute_opens_at IS NOT NULL OR delivered_at IS NULL)`,
+            {
+              id: row.id,
+              contractId: row.contract_id,
+              v: repairedApprovalDue(
+                from,
+                tacitDays,
+                timezoneOf(row.tz),
+                milestone.dispute_opens_at,
+              ),
+            },
+          );
+          return updated.affectedRows > 0;
+        });
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        if (
+          code === 'ER_LOCK_DEADLOCK' ||
+          code === 'ER_LOCK_WAIT_TIMEOUT' ||
+          code === 'ER_DUP_ENTRY'
+        ) {
+          logger.warn(
+            { code, id: row.id },
+            'reparo dos prazos: marco adiado para a próxima rodada',
+          );
+          return false;
+        }
+        throw err;
+      }
     },
   );
 
@@ -287,7 +387,10 @@ export async function runRepairDeadlines(now: Date = clock.now()): Promise<Repai
       ),
   );
 
+  const offerRules = await repairOfferRules(now);
   return {
+    ...deliveryRules,
+    ...offerRules,
     graceWithoutNotice,
     requestCounters,
     closedExtensions,

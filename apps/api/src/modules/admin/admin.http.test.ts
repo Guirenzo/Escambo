@@ -123,6 +123,9 @@ describe('admin: quem pode chamar', () => {
     ['get', '/appeals'],
     ['get', '/appeals/31/image'],
     ['post', '/appeals/31/uphold'],
+    ['get', '/dropouts'],
+    ['get', `/users/${ULID}/dropouts`],
+    ['post', '/dropouts/12/excuse'],
     ['get', '/disputes'],
     ['post', '/disputes/4/resolve'],
     ['post', `/users/${ULID}/suspend`],
@@ -410,6 +413,17 @@ describe('admin: parâmetros da plataforma (ADR 32)', () => {
     const badKey = await asAdmin('put', '/settings/jwt_secret').send({ value: 1 }).expect(422);
     expect(badKey.body.error).toBe('validation_error');
     expect(badKey.body.details).toHaveProperty('key');
+    for (const key of [
+      'included_revisions',
+      'max_offers',
+      'dispute_wait_hours',
+      'dropout_window_days',
+      'dropout_alert_at',
+      'dropout_agree_days',
+    ]) {
+      const fixed = await asAdmin('put', `/settings/${key}`).send({ value: 1 }).expect(422);
+      expect(fixed.body.error).toBe('validation_error');
+    }
 
     for (const value of ['12', null, [1]]) {
       const res = await asAdmin('put', '/settings/platform_fee_percentage')

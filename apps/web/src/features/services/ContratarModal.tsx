@@ -1,15 +1,23 @@
+import { BusinessForm, BusinessModal } from '../../components/BusinessActions';
 import { Coins, CreditCard, Flag, Plus, QrCode, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { Service } from '@escambo/types';
-import { Button, Field, Input, Modal } from '../../components/ui';
+import { Button, Field, Input } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
+import { ApiRequestError } from '../../lib/api';
 import { addDaysToDay, endOfDayIn, sameClock, spreadDays, todayIn } from '../../lib/deadline';
 import { brl } from '../../lib/format';
 import { DEFAULT_TIMEZONE, timezoneLabel } from '../../lib/timezones';
-import { useCreateContract, usePublicSettings, useWallet } from '../../lib/hooks';
+import {
+  useCreateContract,
+  usePublicFreelancer,
+  usePublicSettings,
+  useWallet,
+} from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { DepositModal } from '../wallet/DepositModal';
+import { DropoutsSummary } from '../profile/DropoutsSummary';
 
 interface MilestoneDraft {
   title: string;
@@ -32,6 +40,7 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
   const toast = useToast();
   const wallet = useWallet();
   const settings = usePublicSettings();
+  const freelancer = usePublicFreelancer(service.ownerUlid);
   const feePct = settings.data?.platformFeePercentage ?? 15;
   const create = useCreateContract();
 
@@ -49,6 +58,7 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
   const [deadline, setDeadline] = useState(addDaysToDay(today, suggestedDays));
   const minDeadline = addDaysToDay(today, 1);
   const [depositing, setDepositing] = useState(false);
+  const [existingContractId, setExistingContractId] = useState<number | null>(null);
   const [useMilestones, setUseMilestones] = useState(false);
   const [milestones, setMilestones] = useState<MilestoneDraft[]>([
     { title: 'Etapa 1', amount: '', dueAt: '' },
@@ -111,6 +121,7 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
+    setExistingContractId(null);
     try {
       const c = await create.mutateAsync({
         freelancerId: service.ownerId,
@@ -140,6 +151,14 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
       onClose();
       navigate(`/contratos/${c.id}`);
     } catch (er) {
+      if (
+        er instanceof ApiRequestError &&
+        er.status === 409 &&
+        er.code === 'active_contract_exists' &&
+        er.contractId !== undefined
+      ) {
+        setExistingContractId(er.contractId);
+      }
       toast.error(er instanceof Error ? er.message : 'Erro ao contratar');
     }
   }
@@ -155,8 +174,9 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
   }
 
   return (
-    <Modal title={`Contratar: ${service.title}`} onClose={onClose}>
-      <form onSubmit={submit} className="stack">
+    <BusinessModal title={`Contratar: ${service.title}`} onClose={onClose}>
+      <BusinessForm onSubmit={submit} className="stack">
+        <DropoutsSummary summary={freelancer.data?.dropouts} hiring />
         <Field label="Título">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} required minLength={3} />
         </Field>
@@ -196,6 +216,13 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
             : 'Vale até 23:59 do dia. Em geral na véspera, o Escambo lembra o freelancer do prazo. Sem entrega até lá, a partir das 9h do dia seguinte o Escambo avisa vocês dois e você pode cancelar com reembolso integral.'}{' '}
           O freelancer pode pedir extensão, que só vale com o seu aceite.
         </span>
+        <p className="muted tiny" data-testid="contract-rules-hint">
+          Inclui até 2 revisões sem custo{withMilestones ? ' em cada marco' : ''}. O freelancer pode
+          aceitar, recusar ou responder com uma contraproposta: a negociação vai até 3 rodadas
+          {mode === 'cash'
+            ? ', e a reserva acompanha a sua última proposta.'
+            : '; os créditos ficam retidos só no aceite.'}
+        </p>
 
         <div className="radio-row" role="radiogroup" aria-label="Forma de pagamento">
           <label className={`radio-card ${mode === 'cash' ? 'on' : ''}`}>
@@ -344,13 +371,25 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
           </div>
         )}
 
+        {existingContractId !== null && (
+          <div className="demo-box" role="alert">
+            <div>
+              Já existe uma proposta ou contratação em aberto com este freelancer. Acompanhe a
+              contratação existente antes de enviar outra.
+            </div>
+            <Link to={`/contratos/${existingContractId}`} onClick={onClose}>
+              Abrir contratação existente
+            </Link>
+          </div>
+        )}
+
         <Button
           type="submit"
           disabled={create.isPending || priceNum < 10 || needsDeposit || !msValid}
         >
           {create.isPending ? 'Enviando…' : 'Enviar proposta'}
         </Button>
-      </form>
-    </Modal>
+      </BusinessForm>
+    </BusinessModal>
   );
 }

@@ -1,5 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { pool } from '../../config/db';
+import { walletRepository } from '../wallet/wallet.repository';
+import { lockWalletUsers } from '../wallet/wallet.locks';
 
 export interface BoostPlanRow extends RowDataPacket {
   id: number;
@@ -58,14 +60,12 @@ export const boostsRepository = {
     cost: number;
     durationDays: number;
   }): Promise<BoostPurchase> {
+    // A criação termina antes de ocupar uma conexão do pool ou travar a carteira.
+    await walletRepository.ensure(params.userId);
     const conn = await pool.getConnection();
     try {
-      // Fora da transação: o INSERT IGNORE que acha a linha deixa nela uma trava compartilhada, e
-      // duas compras segurando essa trava e pedindo o FOR UPDATE se travariam (deadlock).
-      await conn.query<ResultSetHeader>(`INSERT IGNORE INTO wallets (user_id) VALUES (:userId)`, {
-        userId: params.userId,
-      });
       await conn.beginTransaction();
+      await lockWalletUsers(conn, [params.userId]);
       // RN-017: um impulsionamento ativo por serviço. Só o dono compra para o serviço dele, então a
       // trava na carteira de quem compra enfileira as compras do mesmo serviço: a segunda só
       // confere depois que a primeira terminou e vê o boost criado (a consulta abaixo é a primeira

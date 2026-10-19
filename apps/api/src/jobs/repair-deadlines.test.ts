@@ -4,11 +4,20 @@ import { rn029Eligible } from '../modules/contracts/deadline-sql';
 import { fakeDb, type DbCall } from '../test-support/fake-db';
 import { setClockForTests } from '../utils/clock';
 import { runRepairDeadlines } from './repair-deadlines';
+import { repairDeliveryRules, repairOfferRules } from './repair-contract-rules';
 
 const { getNumber } = vi.hoisted(() => ({ getNumber: vi.fn() }));
 vi.mock('../config/db', async () => (await import('../test-support/fake-db')).dbModule);
 vi.mock('../modules/settings/settings.repository', () => ({
   settingsRepository: { getNumber },
+}));
+vi.mock('./repair-contract-rules', () => ({
+  repairDeliveryRules: vi.fn(async () => ({
+    firstDelivery: 0,
+    deliveryDisputeSnapshot: 0,
+    milestoneDisputeSnapshot: 0,
+  })),
+  repairOfferRules: vi.fn(async () => ({ offerOne: 0, closedOffers: 0 })),
 }));
 
 /** 12:00 em Brasília (UTC-3), 10:00 em Rio Branco (UTC-5): dia nos dois. */
@@ -25,6 +34,11 @@ const ZERO = {
   milestoneApprovalDue: 0,
   revisionRequested: 0,
   milestoneRevisionRequested: 0,
+  firstDelivery: 0,
+  deliveryDisputeSnapshot: 0,
+  milestoneDisputeSnapshot: 0,
+  offerOne: 0,
+  closedOffers: 0,
 };
 
 /** Os passos do reparo, na ordem em que leem o banco (1 a 10, como no comentário do código). */
@@ -46,6 +60,19 @@ const NOT_TOUCHED = { affectedRows: 0 };
 
 /** O passo `step` lê `rows`; `updates` são as respostas dos UPDATEs dele. Os outros leem vazio. */
 function arrange(step: number, rows: unknown[], ...updates: unknown[]): void {
+  if (step === STEP.milestoneApprovalDue) {
+    const candidates = rows.map((row) => ({
+      contract_id: 101,
+      ...(row as Record<string, unknown>),
+    }));
+    const transactional = candidates.flatMap((row, i) => [
+      [{ id: row.contract_id }],
+      [{ status: 'delivered', approval_due_at: null, dispute_opens_at: NOW, ...row }],
+      updates[i],
+    ]);
+    fakeDb.reply(...Array.from({ length: step - 1 }, () => []), candidates, ...transactional);
+    return;
+  }
   fakeDb.reply(...Array.from({ length: step - 1 }, () => []), rows, ...updates);
 }
 
@@ -53,7 +80,10 @@ function arrange(step: number, rows: unknown[], ...updates: unknown[]): void {
 function callsOf(step: number, updates: number): { select: DbCall; updates: DbCall[] } {
   return {
     select: fakeDb.calls[step - 1]!,
-    updates: fakeDb.calls.slice(step, step + updates),
+    updates: fakeDb.calls
+      .slice(step)
+      .filter((call) => call.sql.startsWith('UPDATE '))
+      .slice(0, updates),
   };
 }
 
@@ -101,7 +131,32 @@ describe('reparo dos prazos (ADR 57)', () => {
       ['deadline_grace_hours', 24],
       ['proposal_expiry_hours', 72],
       ['tacit_approval_days', 5],
+      ['extension_response_hours', 48],
     ]);
+  });
+
+  it('congela abertura antes de inferir tácitas, recupera ofertas ao final e devolve as métricas', async () => {
+    vi.mocked(repairDeliveryRules).mockResolvedValueOnce({
+      firstDelivery: 2,
+      deliveryDisputeSnapshot: 1,
+      milestoneDisputeSnapshot: 3,
+    });
+    vi.mocked(repairOfferRules).mockResolvedValueOnce({ offerOne: 4, closedOffers: 5 });
+    expect(await runRepairDeadlines(NOW)).toEqual({
+      ...ZERO,
+      firstDelivery: 2,
+      deliveryDisputeSnapshot: 1,
+      milestoneDisputeSnapshot: 3,
+      offerOne: 4,
+      closedOffers: 5,
+    });
+    const deliveryOrder = vi.mocked(repairDeliveryRules).mock.invocationCallOrder[0]!;
+    expect(deliveryOrder).toBeGreaterThan(fakeDb.pool.query.mock.invocationCallOrder[5]!);
+    expect(deliveryOrder).toBeLessThan(fakeDb.pool.query.mock.invocationCallOrder[6]!);
+    expect(vi.mocked(repairOfferRules).mock.invocationCallOrder[0]!).toBeGreaterThan(
+      fakeDb.pool.query.mock.invocationCallOrder[9]!,
+    );
+    expect(repairOfferRules).toHaveBeenCalledWith(NOW);
   });
 
   describe('1. carência sem aviso', () => {
@@ -190,6 +245,20 @@ describe('reparo dos prazos (ADR 57)', () => {
   });
 
   describe('4. pedido pendente sem hora de resposta (RN-028)', () => {
+    it('usa extension_response_hours vigente sem trocar instantes já gravados', async () => {
+      settings({ extension_response_hours: 96 });
+      arrange(
+        STEP.respondBy,
+        [{ id: 41, extension_deadline_at: '2026-10-10T15:00:00.000Z', tz: 'America/Sao_Paulo' }],
+        OK,
+      );
+      await runRepairDeadlines(NOW);
+      expect(callsOf(STEP.respondBy, 1).updates[0]!.params).toEqual({
+        id: 41,
+        v: new Date('2026-10-05T15:00:00.000Z'),
+      });
+      expect(callsOf(STEP.respondBy, 1).updates[0]!.sql).toContain('extension_respond_by IS NULL');
+    });
     it('lê o pedido com o fuso do CLIENTE e grava só onde a hora ainda está vazia, contando o pedido', async () => {
       arrange(
         STEP.respondBy,
@@ -422,17 +491,25 @@ describe('reparo dos prazos (ADR 57)', () => {
       expect(result).toEqual({ ...ZERO, approvalDue: 1 });
       const { select, updates } = callsOf(STEP.approvalDue, 1);
       // A hora da entrega vem do histórico (subconsulta), junto do id e do fuso do cliente.
-      expect(columnsOf(select)).toBe('SELECT c.id, cu.timezone AS tz, (SELECT MAX(h.created_at)');
+      expect(columnsOf(select)).toBe(
+        'SELECT c.id, c.delivery_dispute_opens_at, cu.timezone AS tz, (SELECT MAX(h.created_at)',
+      );
       expect(select.sql).toContain(
         "(SELECT MAX(h.created_at) FROM contract_status_history h WHERE h.contract_id = c.id AND h.new_status = 'delivered') AS delivered_at",
       );
       expect(select.sql).toContain('FROM contracts c JOIN users cu ON cu.id = c.client_id');
+      expect(select.sql).toContain("WHERE c.status = 'delivered' AND c.approval_due_at IS NULL");
       expect(select.sql).toContain(
-        "WHERE c.status = 'delivered' AND c.approval_due_at IS NULL LIMIT 200",
+        'c.delivery_dispute_opens_at IS NOT NULL OR (c.first_delivery_at IS NULL',
       );
-      expect(updates[0]!.sql).toBe(
-        'UPDATE contracts SET approval_due_at = :v WHERE id = :id AND approval_due_at IS NULL',
+      expect(select.sql).toContain("h2.note LIKE 'Marco «%» entregue:%'");
+      expect(updates[0]!.sql).toContain(
+        "UPDATE contracts SET approval_due_at = :v WHERE id = :id AND status = 'delivered' AND approval_due_at IS NULL",
       );
+      expect(updates[0]!.sql).toContain(
+        'contracts.delivery_dispute_opens_at IS NOT NULL OR (contracts.first_delivery_at IS NULL',
+      );
+      expect(updates[0]!.sql).toContain('d.contract_id = contracts.id');
       expect(updates[0]!.params).toEqual({ id: 71, v: new Date('2026-10-07T15:00:00.000Z') });
     });
 
@@ -473,25 +550,102 @@ describe('reparo dos prazos (ADR 57)', () => {
 
       expect(result).toEqual({ ...ZERO, milestoneApprovalDue: 2 });
       const { select, updates } = callsOf(STEP.milestoneApprovalDue, 2);
-      expect(columnsOf(select)).toBe('SELECT m.id, m.delivered_at, cu.timezone AS tz');
+      expect(columnsOf(select)).toBe(
+        'SELECT m.id, m.contract_id, m.delivered_at, cu.timezone AS tz',
+      );
       expect(select.sql).toContain(
         'FROM contract_milestones m JOIN contracts c ON c.id = m.contract_id JOIN users cu ON cu.id = c.client_id',
       );
+      expect(select.sql).toContain("WHERE m.status = 'delivered' AND m.approval_due_at IS NULL");
       expect(select.sql).toContain(
-        "WHERE m.status = 'delivered' AND m.approval_due_at IS NULL LIMIT 200",
+        'm.dispute_opens_at IS NOT NULL OR (m.delivered_at IS NULL AND c.first_delivery_at IS NULL',
       );
       for (const update of updates) {
-        expect(update.sql).toBe(
-          'UPDATE contract_milestones SET approval_due_at = :v WHERE id = :id AND approval_due_at IS NULL',
+        expect(update.sql).toContain(
+          "UPDATE contract_milestones SET approval_due_at = :v WHERE id = :id AND contract_id = :contractId AND status = 'delivered' AND approval_due_at IS NULL",
         );
+        expect(update.sql).toContain('dispute_opens_at IS NOT NULL OR delivered_at IS NULL');
       }
       expect(updates.map((u) => u.params)).toEqual([
-        { id: 81, v: new Date('2026-10-06T15:00:00.000Z') },
+        { id: 81, contractId: 101, v: new Date('2026-10-06T15:00:00.000Z') },
         // Sem a hora da entrega conta de agora: 07:30 em Rio Branco, que vai para as 9h de lá.
-        { id: 82, v: new Date('2026-10-06T14:00:00.000Z') },
+        { id: 82, contractId: 101, v: new Date('2026-10-06T14:00:00.000Z') },
       ]);
     });
+
+    it.each([
+      { status: 'funded', approval_due_at: null, dispute_opens_at: NOW },
+      { status: 'delivered', approval_due_at: NOW, dispute_opens_at: NOW },
+      { status: 'delivered', approval_due_at: null, dispute_opens_at: null },
+    ])('relê o marco sob trava e adia quando a elegibilidade mudou: %j', async (fresh) => {
+      fakeDb.reply(
+        ...Array.from({ length: STEP.milestoneApprovalDue - 1 }, () => []),
+        [{ id: 81, contract_id: 101, delivered_at: NOW, tz: 'America/Sao_Paulo' }],
+        [{ id: 101 }],
+        [{ id: 81, delivered_at: NOW, ...fresh }],
+      );
+      expect(await runRepairDeadlines(NOW)).toEqual(ZERO);
+      expect(fakeDb.calls.filter((call) => call.sql.startsWith('UPDATE '))).toHaveLength(0);
+      expect(fakeDb.conn.commit).toHaveBeenCalledOnce();
+      expect(fakeDb.conn.release).toHaveBeenCalledOnce();
+    });
+
+    it('calcula a tácita pela entrega relida sob trava, mesmo se a data mudou depois da seleção', async () => {
+      const latest = new Date('2026-10-02T15:00:00Z');
+      fakeDb.reply(
+        ...Array.from({ length: STEP.milestoneApprovalDue - 1 }, () => []),
+        [{ id: 81, contract_id: 101, delivered_at: NOW, tz: 'America/Sao_Paulo' }],
+        [{ id: 101 }],
+        [
+          {
+            id: 81,
+            status: 'delivered',
+            delivered_at: latest,
+            approval_due_at: null,
+            dispute_opens_at: NOW,
+          },
+        ],
+        OK,
+      );
+      expect((await runRepairDeadlines(NOW)).milestoneApprovalDue).toBe(1);
+      const calls = fakeDb.calls.slice(STEP.milestoneApprovalDue, STEP.milestoneApprovalDue + 3);
+      expect(calls[0]!.sql).toContain('FROM contracts WHERE id = :id FOR UPDATE');
+      expect(calls[1]!.sql).toContain('FROM contract_milestones');
+      expect(calls[1]!.sql).toContain('FOR UPDATE');
+      expect(calls[2]!.params).toEqual({
+        id: 81,
+        contractId: 101,
+        v: new Date('2026-10-07T15:00:00Z'),
+      });
+    });
   });
+
+  it.each([STEP.approvalDue, STEP.milestoneApprovalDue])(
+    'passo %i não infere tácita antes de abertura recuperada +24h e conserva a hora humana',
+    async (step) => {
+      settings({ tacit_approval_days: 1 });
+      const opens = new Date('2026-10-03T23:50:00Z');
+      arrange(
+        step,
+        [
+          {
+            id: 81,
+            delivered_at: NOW,
+            tz: 'America/Sao_Paulo',
+            delivery_dispute_opens_at: opens,
+            dispute_opens_at: opens,
+          },
+        ],
+        OK,
+      );
+      const result = await runRepairDeadlines(NOW);
+      expect(result[step === STEP.approvalDue ? 'approvalDue' : 'milestoneApprovalDue']).toBe(1);
+      // 20:50 em Brasília: a margem termina de noite e a sanção vai para as 9h seguintes.
+      expect(callsOf(step, 1).updates[0]!.params).toMatchObject({
+        v: new Date('2026-10-05T12:00:00Z'),
+      });
+    },
+  );
 
   describe('9. contratação em revisão sem a hora do pedido, ou com a de outro ciclo (ADR 58)', () => {
     /** A última entrega da contratação, como a leitura e a gravação a calculam. */
@@ -699,7 +853,9 @@ describe('reparo dos prazos (ADR 57)', () => {
       await runRepairDeadlines(NOW);
 
       const { sql } = callsOf(STEP.milestoneRevisionRequested, 0).select;
-      expect(sql).toContain(`(h.note = ${NOTE} OR LEFT(h.note, CHAR_LENGTH(${NOTE_REASON})) = ${NOTE_REASON})`);
+      expect(sql).toContain(
+        `(h.note = ${NOTE} OR LEFT(h.note, CHAR_LENGTH(${NOTE_REASON})) = ${NOTE_REASON})`,
+      );
       expect(sql).not.toContain(`LEFT(h.note, CHAR_LENGTH(${NOTE})) = ${NOTE}`);
       expect(sql).not.toMatch(/\bLIKE\b/i);
       expect(sql).toContain('SELECT MAX(h.created_at) FROM contract_status_history h');
@@ -885,7 +1041,17 @@ describe('reparo dos prazos (ADR 57)', () => {
       fakeDb.reply(
         dbError('ER_LOCK_WAIT_TIMEOUT'),
         // Passo 8, depois da linha adiada no 7.
-        [{ id: 81, delivered_at: null, tz: 'America/Sao_Paulo' }],
+        [{ id: 81, contract_id: 101, delivered_at: null, tz: 'America/Sao_Paulo' }],
+        [{ id: 101 }],
+        [
+          {
+            id: 81,
+            status: 'delivered',
+            delivered_at: null,
+            approval_due_at: null,
+            dispute_opens_at: NOW,
+          },
+        ],
         OK,
       );
 

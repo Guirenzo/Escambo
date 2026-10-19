@@ -1,5 +1,7 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { pool } from '../../config/db';
+import { walletRepository } from '../wallet/wallet.repository';
+import { lockWalletUsers } from '../wallet/wallet.locks';
 
 export interface CreditTxRow extends RowDataPacket {
   id: number;
@@ -18,12 +20,11 @@ export const creditsRepository = {
    */
   async grantWelcomeIfNew(userId: number, bonus: number): Promise<void> {
     if (bonus <= 0) return;
+    await walletRepository.ensure(userId);
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
-      await conn.query<ResultSetHeader>(`INSERT IGNORE INTO wallets (user_id) VALUES (:userId)`, {
-        userId,
-      });
+      await lockWalletUsers(conn, [userId]);
       // Lock da carteira do usuário (serializa o cheque + concessão).
       await conn.query<RowDataPacket[]>(
         `SELECT credits_balance FROM wallets WHERE user_id = :userId FOR UPDATE`,

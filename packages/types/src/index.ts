@@ -13,6 +13,8 @@ export interface PublicUser {
   ulid: string;
   email: string;
   role: UserRole;
+  /** Estado atual da conta; suspensão conserva consulta e restringe ações de negócio. */
+  status: UserStatus;
   /** E-mail confirmado pelo link enviado no cadastro (ou ao redefinir a senha). */
   emailVerified: boolean;
   /** Como o usuário quer os e-mails de notificação (ADR 27). */
@@ -616,6 +618,8 @@ export type PlatformSettingKey =
   | 'platform_fee_percentage'
   | 'tacit_approval_days'
   | 'proposal_expiry_hours'
+  | 'counter_offer_response_hours'
+  | 'extension_response_hours'
   | 'deadline_grace_hours'
   | 'attachment_retention_days'
   | 'appeal_window_days'
@@ -650,18 +654,33 @@ export interface UpdatePlatformSettingRequest {
   value: number | boolean;
 }
 
+/** Política das contratações, derivada das constantes da API e exibida somente para consulta. */
+export interface FixedContractRules {
+  includedRevisions: number;
+  maxOffers: number;
+  disputeWaitHours: number;
+  disputeTacitMarginHours: number;
+  dropoutWindowDays: number;
+  dropoutAlertAt: number;
+  dropoutAgreementDays: number;
+}
+
 /** Parâmetros que o app mostra sem login: taxa no modal de contratação, prazos nas telas. */
 export interface PublicSettings {
   platformFeePercentage: number;
   tacitApprovalDays: number;
   proposalExpiryHours: number;
+  /** Horas para responder às ofertas 2 a 5, gravadas na oferta (RN-030, ADR 61). */
+  counterOfferResponseHours: number;
   minServicePrice: number;
   minWithdrawalAmount: number;
   barterEnabled: boolean;
   /** Carência da RN-029: do aviso de atraso até a disputa automática (ADR 57). */
   deadlineGraceHours: number;
-  /** Horas que o cliente tem para responder a um pedido de extensão (RN-028, ADR 57). */
+  /** Horas para responder a um pedido novo de extensão, gravadas no pedido (RN-028, ADR 61). */
   extensionResponseHours: number;
+  /** Regras dos Termos, calculadas das constantes da API; não são parâmetros editáveis. */
+  fixedContractRules: FixedContractRules;
   /** Ligado: a API responde 503 para quem não é admin; o app mostra a tela de manutenção. */
   maintenanceMode: boolean;
 }
@@ -851,6 +870,8 @@ export interface PublicFreelancerProfile extends FreelancerProfile {
   level: number;
   levelName: string;
   portfolio: PortfolioItem[];
+  /** RN-026: resumo público sem títulos, datas ou contestações. */
+  dropouts?: DropoutSummary;
 }
 
 export interface UpsertFreelancerProfileRequest {
@@ -1015,6 +1036,12 @@ export interface Contract {
   approvalDueAt: string | null;
   /** Proposta: até quando o freelancer responde (RN-021). */
   proposalExpiresAt: string | null;
+  /** Negociação em aberto (RN-030); ausente nas versões anteriores da API. */
+  negotiation?: Negotiation | null;
+  /** Entrega única: uso e limite; null por marcos, ausente na API anterior (RN-023). */
+  revisions?: RevisionState | null;
+  /** Abertura da disputa manual; null fora dos estados disputáveis (RN-062). */
+  disputeOpensAt?: string | null;
   /**
    * Fuso em que o prazo é um dia: vale até 23:59 nele (ADR 58). É o fuso em que o prazo gravado marca
    * 23:59:59, preferindo o de quem entrega; só diz o dia, e as horas de agir vêm no fuso de quem lê.
@@ -1068,6 +1095,127 @@ export interface ContractDeadline {
   firstDeliveredAt: string | null;
 }
 
+/** Participante responsável por cada oferta na negociação da ADR 61. */
+export type NegotiationTurn = 'client' | 'freelancer';
+
+export type OfferOutcome =
+  'open' | 'countered' | 'accepted' | 'declined' | 'withdrawn' | 'expired' | 'closed';
+
+/** Marco como será exposto numa oferta; o título sempre vem preenchido pelo mapper. */
+export interface OfferMilestone {
+  id: number;
+  title: string;
+  amount: number;
+  freelancerNet: number;
+  dueAt: string | null;
+}
+
+/** Uma oferta da negociação (RN-030); a primeira registra a proposta do cliente. */
+export interface ContractOffer {
+  seq: number;
+  madeBy: NegotiationTurn;
+  price: number;
+  platformFee: number;
+  freelancerNet: number;
+  deadlineAt: string | null;
+  deadlineZone: BrazilTimezone;
+  milestones: OfferMilestone[] | null;
+  /** Null só na proposta inicial. */
+  message: string | null;
+  respondBy: string | null;
+  outcome: OfferOutcome;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+/** Negociação em pending, fora da troca; a oferta completa será lida somente no detalhe. */
+export interface Negotiation {
+  /** Fuso atual do freelancer para o editor de novas contrapropostas. */
+  deadlineZone?: BrazilTimezone;
+  seq: number;
+  /** Percentual da proposta validado pelo backend; usado na prévia do líquido. */
+  feePercentage?: number;
+  round: 1 | 2 | 3;
+  turn: NegotiationTurn;
+  respondBy: string | null;
+  canCounter: boolean;
+  countersLeft: number;
+  current: ContractOffer | null;
+}
+
+/** A contraproposta só altera os termos dos mesmos marcos, preservando ids e títulos. */
+export interface CounterOfferRequest {
+  seq: number;
+  price: number;
+  deadlineAt: string | null;
+  milestones?: Pick<OfferMilestone, 'id' | 'amount' | 'dueAt'>[];
+  message: string;
+}
+
+/** Entrega única e cada marco usam a mesma forma; null conserva o limite aberto do legado. */
+export interface RevisionState {
+  used: number;
+  limit: number | null;
+}
+/** Nome anterior preservado para consumidores da proposta inicial da ADR 61. */
+export type ContractRevisions = RevisionState;
+
+/** Fatos da desistência destinados às partes da contratação, sem texto da contestação. */
+export interface ContractDropout {
+  at: string;
+  agreedAt: string | null;
+  agreeUntil: string;
+  counts: boolean;
+}
+
+/** Resumo público da RN-026: não identifica contratações, participantes ou datas. */
+export interface DropoutSummary {
+  count: number;
+  windowDays: 60;
+  alert: boolean;
+}
+
+/** Retrato informativo do cancelamento; outra contratação pode mudar a contagem antes do COMMIT. */
+export interface DropoutPreview {
+  countAfter: number;
+  windowDays: 60;
+  alertAt: 3;
+  alertUntil: string | null;
+}
+
+export type DropoutDecision = 'excused' | 'upheld';
+export type DropoutStatus = 'counting' | 'agreed' | 'excused' | 'expired';
+
+/** Visão do titular sobre uma desistência; contestar não suspende a contagem. */
+export interface MyDropout {
+  id: number;
+  contractId: number;
+  contractTitle: string;
+  droppedAt: string;
+  countsUntil: string | null;
+  status: DropoutStatus;
+  appealText: string | null;
+  appealedAt: string | null;
+  canAppeal: boolean;
+  decision: DropoutDecision | null;
+  decisionNote: string | null;
+}
+
+export interface MyDropouts {
+  items: MyDropout[];
+  count: number;
+  alert: boolean;
+  alertUntil: string | null;
+  /** Contexto privado do titular; não faz parte do resumo público. */
+  acceptedInWindow: number;
+}
+
+export interface AdminDropout extends MyDropout {
+  freelancer: { id: number; ulid: string; name: string | null };
+  clientAgreed: boolean;
+  ownerCount: number;
+}
+
 export type MilestoneStatus =
   'pending' | 'funded' | 'delivered' | 'approved' | 'released' | 'cancelled';
 
@@ -1091,6 +1239,8 @@ export interface Milestone {
   dueZone: BrazilTimezone;
   /** Marco em revisão ('funded' já entregue antes): quando o cliente pediu (ADR 58). */
   revisionRequestedAt: string | null;
+  /** Ausente na API anterior; limit null conserva as revisões ilimitadas do legado. */
+  revisions?: RevisionState;
 }
 
 export interface MilestoneInput {
@@ -1109,6 +1259,10 @@ export interface ContractStatusHistoryEntry {
 
 export interface ContractWithHistory extends Contract {
   history: ContractStatusHistoryEntry[];
+  /** Ofertas em ordem de sequência; ausente nas versões anteriores da API. */
+  offers?: ContractOffer[];
+  /** Só as partes veem a confirmação; contestação e decisão permanecem privadas. */
+  dropout?: ContractDropout | null;
   /** Marcos (vazio quando o contrato é de entrega única). */
   milestones: Milestone[];
   /** Avaliação do cliente (com a resposta do freelancer, se houver). */
@@ -1162,11 +1316,15 @@ export interface CancelTerms {
   availableAt: string | null;
   /** 'late': quando sai o aviso de atraso, a partir do qual cancelar devolve tudo. */
   noticeAt: string | null;
+  /** RN-026: contagem informativa na desistência depois do aceite. */
+  dropout?: DropoutPreview | null;
 }
 
 export interface CancelRequest {
   /** O reembolso que a pessoa viu na tela; se mudou, a API responde 409 cancel_quote_changed. */
   expectedRefund?: number;
+  /** Contagem exibida; apenas informativa, não congela desistências de outros contratos. */
+  expectedDropoutCount?: number;
 }
 
 export interface CancelResult {
@@ -1216,7 +1374,7 @@ export interface ChatMessage {
 export type OffPlatformSignal = 'pix' | 'phone' | 'email' | 'whatsapp' | 'off_platform';
 
 export interface ChatHistory {
-  conversationId: number;
+  conversationId: number | null;
   contractId: number;
   otherPartyId: number;
   messages: ChatMessage[];
@@ -1243,6 +1401,7 @@ export interface Wallet {
 export type WalletReason =
   | 'deposit' // depósito confirmado pelo gateway
   | 'hold' // valor reservado ao enviar a proposta (cliente)
+  | 'hold_release' // redução da reserva numa oferta do cliente
   | 'payment' // proposta aceita: o valor reservado paga a contratação (cliente)
   | 'escrow_in' // líquido entra em escrow (freelancer)
   | 'escrow_release' // escrow liberado, total ou parcial (freelancer)
@@ -1454,4 +1613,75 @@ export interface ApiError {
   error: string;
   message?: string;
   details?: Record<string, string[] | undefined>;
+  /** RN-020: contratação do próprio cliente que impede uma nova proposta ao mesmo freelancer. */
+  contractId?: number;
+}
+
+/** Atendimento privado; não altera disputas financeiras nem os prazos das contratações. */
+export type SupportCategory = 'payment' | 'dispute' | 'account' | 'fraud' | 'other';
+export type SupportStatus = 'open' | 'in_progress' | 'waiting_user' | 'resolved' | 'closed';
+export type SupportPriority = 'low' | 'medium' | 'high' | 'critical';
+
+export interface SupportTicket {
+  id: number;
+  ulid: string;
+  userId: number;
+  /** Histórico da conta anonimizada: equipe pode consultar, mas não acrescentar texto. */
+  ownerDeleted: boolean;
+  contractId: number | null;
+  category: SupportCategory;
+  subject: string;
+  status: SupportStatus;
+  priority: SupportPriority;
+  assignedTo: number | null;
+  firstResponseAt: string | null;
+  slaDueAt: string;
+  slaAlertedAt: string | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupportMessage {
+  id: number;
+  ticketId: number;
+  senderId: number;
+  from: 'user' | 'support';
+  message: string;
+  internal: boolean;
+  createdAt: string;
+}
+
+export interface SupportTicketDetail extends SupportTicket {
+  /** Últimas 50 mensagens em ordem cronológica; notas internas só no endpoint administrativo. */
+  messages: SupportMessage[];
+  nextBeforeId: number | null;
+}
+
+export interface CreateSupportTicketRequest {
+  category: SupportCategory;
+  subject: string;
+  description: string;
+  contractId?: number | null;
+}
+
+export interface ReplySupportTicketRequest {
+  message: string;
+}
+
+export interface AdminReplySupportTicketRequest extends ReplySupportTicketRequest {
+  internal?: boolean;
+  resolve?: boolean;
+}
+
+export interface UpdateSupportTicketRequest {
+  priority?: SupportPriority;
+  status?: 'in_progress' | 'waiting_user';
+}
+
+export interface SupportTicketQuery {
+  page?: number;
+  limit?: number;
+  status?: SupportStatus;
 }

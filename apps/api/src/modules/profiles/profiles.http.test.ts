@@ -37,6 +37,8 @@ describe('perfis: borda HTTP', () => {
   describe('rotas protegidas', () => {
     const routes: Array<['get' | 'put' | 'post' | 'delete', string]> = [
       ['get', '/api/profiles/me'],
+      ['get', '/api/profiles/me/dropouts'],
+      ['post', '/api/profiles/me/dropouts/12/appeal'],
       ['put', '/api/profiles/freelancer'],
       ['put', '/api/profiles/client'],
       ['get', '/api/profiles/portfolio'],

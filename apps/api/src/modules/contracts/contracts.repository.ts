@@ -1,12 +1,21 @@
-import type { BrazilTimezone } from '@escambo/types';
+import type { BrazilTimezone, OfferOutcome } from '@escambo/types';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import type { PoolConnection } from 'mysql2/promise';
 import { pool } from '../../config/db';
 import { clock } from '../../utils/clock';
+import { HttpError } from '../../utils/http-error';
+import { floorSecond } from '../../utils/human-hours';
 import { applyWalletEffect, type WalletEffect } from '../wallet/wallet.ledger';
-import { MAX_EXTENSION_REQUESTS } from './deadline-grace';
+import { lockWalletRows, lockWalletUsers } from '../wallet/wallet.locks';
+import { dropoutsRepository } from '../dropouts/dropouts.repository';
+import { withdrawalPreview } from '../dropouts/dropouts';
+import { INCLUDED_REVISIONS, MAX_EXTENSION_REQUESTS } from './deadline-grace';
+import { recoverDeliveryRules } from './delivery-snapshots';
+import { deliveryDisputeOpensAt, firstDeliveryAt } from './dispute-window';
 import { CLOSE_PENDING_EXTENSION, rn029Eligible, zoneOf } from './deadline-sql';
 import { milestonesRepository, type MilestoneSpec } from './milestones.repository';
+import { offerLiveAt, offersRepository, updateOfferMilestones } from './offers.repository';
+import { feePctOf, type OfferTerms } from './offers';
 
 export interface ContractRow extends RowDataPacket {
   id: number;
@@ -19,6 +28,15 @@ export interface ContractRow extends RowDataPacket {
   price: string;
   platform_fee: string;
   freelancer_net: string;
+  /** ADR 61: taxa histórica; null nos contratos anteriores ao registro explícito. */
+  fee_percentage?: string | null;
+  offer_seq?: number;
+  /** null conserva revisões ilimitadas do legado. */
+  revision_limit?: number | null;
+  revisions_used?: number;
+  /** Primeira entrega persistida, preservada nas reentregas (ADR 61). */
+  first_delivery_at?: Date | null;
+  delivery_dispute_opens_at?: Date | null;
   status: string;
   payment_mode: string;
   barter_agreement_id: number | null;
@@ -54,6 +72,8 @@ export interface ContractRow extends RowDataPacket {
   in_revision?: number;
   deliveries_count?: number;
   first_delivered_at?: Date | null;
+  next_milestone_approval_at?: Date | null;
+  next_milestone_dispute_opens_at?: Date | null;
   freelancer_timezone?: string | null;
   client_timezone?: string | null;
 }
@@ -80,9 +100,19 @@ const CONTRACT_COLS = `c.*,
   (SELECT COUNT(*) FROM contract_milestones mr WHERE mr.contract_id = c.id
       AND mr.status = 'funded' AND mr.delivered_at IS NOT NULL) AS in_revision,
   (SELECT COUNT(*) FROM deliveries dc WHERE dc.contract_id = c.id) AS deliveries_count,
-  COALESCE((SELECT MIN(dd.created_at) FROM deliveries dd WHERE dd.contract_id = c.id),
-           (SELECT MIN(md.delivered_at) FROM contract_milestones md WHERE md.contract_id = c.id))
+  CAST(COALESCE(c.first_delivery_at,
+           NULLIF(LEAST(
+             COALESCE((SELECT MIN(dd.created_at) FROM deliveries dd WHERE dd.contract_id = c.id), CAST('9999-12-31 23:59:59' AS DATETIME)),
+             COALESCE((SELECT MIN(md.delivered_at) FROM contract_milestones md WHERE md.contract_id = c.id), CAST('9999-12-31 23:59:59' AS DATETIME)),
+             COALESCE((SELECT MIN(hd.created_at) FROM contract_status_history hd WHERE hd.contract_id = c.id
+               AND (hd.new_status = 'delivered' OR hd.note LIKE 'Marco «%» entregue:%')), CAST('9999-12-31 23:59:59' AS DATETIME))
+           ), CAST('9999-12-31 23:59:59' AS DATETIME))) AS DATETIME)
     AS first_delivered_at,
+  (SELECT MIN(mt.approval_due_at) FROM contract_milestones mt WHERE mt.contract_id = c.id
+      AND mt.status = 'delivered') AS next_milestone_approval_at,
+  (SELECT MIN(ms.dispute_opens_at) FROM contract_milestones ms WHERE ms.contract_id = c.id
+      AND (ms.status = 'delivered' OR (ms.status = 'funded' AND ms.delivered_at IS NOT NULL)))
+    AS next_milestone_dispute_opens_at,
   (SELECT uf.timezone FROM users uf WHERE uf.id = c.freelancer_id) AS freelancer_timezone,
   (SELECT uc.timezone FROM users uc WHERE uc.id = c.client_id) AS client_timezone`;
 
@@ -106,6 +136,7 @@ export const contractsRepository = {
     price: number;
     platformFee: number;
     freelancerNet: number;
+    feePercentage?: number;
     paymentMode: 'cash' | 'credits';
     deadlineAt: string | null;
     /** RN-021: até quando o freelancer responde (gravado, ADR 57); null na troca. */
@@ -122,15 +153,43 @@ export const contractsRepository = {
   }): Promise<number | null> {
     // DATETIME recebe Date (o driver serializa em UTC); string ISO com "T"/"Z" o MySQL recusa.
     const { hold, milestones, deadlineAt, ...rest } = data;
-    const row = { ...rest, deadlineAt: deadlineAt ? new Date(deadlineAt) : null };
+    const row = {
+      ...rest,
+      feePercentage:
+        data.feePercentage ??
+        feePctOf({ fee_percentage: null, price: data.price, platform_fee: data.platformFee }),
+      revisionLimit: INCLUDED_REVISIONS,
+      deadlineAt: deadlineAt ? new Date(deadlineAt) : null,
+    };
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
+      // RN-020: a conta do cliente serializa novas propostas diretas. Mantenha a ordem
+      // numérica das contas/FKs; a consulta abaixo é a primeira leitura consistente,
+      // depois de qualquer espera. Não trave contratos existentes: suas transições
+      // adquirem contrato antes de users, e inverter essa ordem formaria um ciclo.
+      await lockWalletUsers(conn, [data.clientId, data.freelancerId], [data.clientId]);
+      const [existing] = await conn.query<RowDataPacket[]>(
+        `SELECT id FROM contracts
+          WHERE client_id = :clientId AND freelancer_id = :freelancerId
+            AND barter_agreement_id IS NULL AND payment_mode IN ('cash', 'credits')
+            AND status IN ('pending', 'accepted', 'in_progress', 'delivered', 'revision_requested', 'disputed')
+          ORDER BY id LIMIT 1`,
+        { clientId: data.clientId, freelancerId: data.freelancerId },
+      );
+      if (existing[0]) {
+        throw new HttpError(
+          409,
+          'Você já tem uma proposta ou contratação em aberto com este freelancer. Acompanhe a contratação existente antes de enviar outra.',
+          'active_contract_exists',
+          { contractId: Number(existing[0].id) },
+        );
+      }
       const [res] = await conn.query<ResultSetHeader>(
         `INSERT INTO contracts
-           (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, payment_mode, deadline_at, proposal_expires_at, created_at)
+           (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, fee_percentage, revision_limit, payment_mode, deadline_at, proposal_expires_at, created_at)
          VALUES
-           (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, :platformFee, :freelancerNet, :paymentMode, :deadlineAt, :proposalExpiresAt, :createdAt)`,
+           (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, :platformFee, :freelancerNet, :feePercentage, :revisionLimit, :paymentMode, :deadlineAt, :proposalExpiresAt, :createdAt)`,
         row,
       );
       const id = res.insertId;
@@ -141,6 +200,7 @@ export const contractsRepository = {
         { id, changedBy: data.clientId },
       );
       if (hold) {
+        await lockWalletRows(conn, [hold.userId]);
         const ok = await applyWalletEffect(conn, {
           userId: hold.userId,
           balanceDelta: -hold.amount,
@@ -156,6 +216,27 @@ export const contractsRepository = {
       if (milestones && milestones.length > 0) {
         await milestonesRepository.insertMany(conn, id, milestones);
       }
+      const offerMilestones = milestones?.length
+        ? (await milestonesRepository.listForContract(id, conn)).map((m) => ({
+            id: m.id,
+            title: m.title,
+            amount: Number(m.amount),
+            freelancerNet: Number(m.freelancer_net),
+            dueAt: m.due_at ? new Date(m.due_at).toISOString() : null,
+          }))
+        : null;
+      await offersRepository.insert(conn, {
+        contractId: id,
+        seq: 1,
+        price: data.price,
+        fee: data.platformFee,
+        net: data.freelancerNet,
+        deadlineAt: row.deadlineAt,
+        respondBy: data.proposalExpiresAt,
+        now: data.createdAt,
+        milestones: offerMilestones,
+        message: null,
+      });
       await conn.commit();
       return id;
     } catch (err) {
@@ -203,17 +284,18 @@ export const contractsRepository = {
     return rows;
   },
 
-  /** RN-021: propostas vencidas, com o freelancer num fuso em que é dia. Troca não expira. */
+  /** RN-021/RN-030: negociação vencida, com quem tem a vez num fuso em que é dia. */
   async findProposalsDue(now: Date, zones: BrazilTimezone[]): Promise<ContractRow[]> {
     if (zones.length === 0) return [];
     const [rows] = await pool.query<ContractRow[]>(
       `SELECT ${CONTRACT_COLS}
          FROM contracts c
          JOIN users fu ON fu.id = c.freelancer_id
+         JOIN users cu ON cu.id = c.client_id
         WHERE c.status = 'pending'
           AND c.barter_agreement_id IS NULL
           AND c.proposal_expires_at IS NOT NULL AND c.proposal_expires_at <= :now
-          AND ${zoneOf('fu.timezone')} IN (:zones)
+          AND ${zoneOf('IF(MOD(c.offer_seq, 2) = 0, cu.timezone, fu.timezone)')} IN (:zones)
         ORDER BY c.proposal_expires_at ASC, c.id ASC
         LIMIT 200`,
       { now, zones },
@@ -438,6 +520,10 @@ export const contractsRepository = {
     to: string;
     note: string | null;
     timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at' | 'revision_requested_at';
+    /** Incremento e limite conferidos sob a mesma trava da entrega (RN-023). */
+    countRevision?: boolean;
+    /** RN-026: desistência e reputação junto do reembolso; a conta trava antes das carteiras. */
+    dropout?: { freelancerId: number; expectedCountAfter: number };
     /** O instante gravado (padrão: o relógio do fluxo). */
     now?: Date;
     /**
@@ -454,6 +540,15 @@ export const contractsRepository = {
     walletEffects?: WalletEffect[];
     /** Marcos do contrato mudam de status junto (ex.: pending → funded no aceite). */
     milestonesTo?: { from: string[]; to: string };
+    /** RN-030: o contrato é travado antes de copiar/resolver a oferta, na mesma transação. */
+    offerResolution?: {
+      seq: number;
+      heldPrice: number;
+      outcome: OfferOutcome;
+      feePercentage?: number;
+      activeFreelancerId?: number;
+      terms?: OfferTerms & { deadlineAt: Date | null };
+    };
     /** Movimentos de CRÉDITOS (escrow time-bank) na mesma transação; `reason` gera ledger. */
     creditsEffects?: {
       userId: number;
@@ -466,22 +561,180 @@ export const contractsRepository = {
     try {
       await conn.beginTransaction();
 
+      let transitionNow = params.now ?? clock.now();
+      let offerValidAt: ((at: Date) => boolean) | undefined;
+      const walletUserIds = [
+        ...(params.walletEffects ?? []).map((effect) => effect.userId),
+        ...(params.creditsEffects ?? []).map((effect) => effect.userId),
+      ];
+      const relatedUserIds = [
+        ...walletUserIds,
+        params.changedBy,
+        ...(params.offerResolution?.activeFreelancerId
+          ? [params.offerResolution.activeFreelancerId]
+          : []),
+      ];
+      let usersLocked = false;
+      if (params.dropout) {
+        const [contracts] = await conn.query<ContractRow[]>(
+          'SELECT * FROM contracts WHERE id = :id FOR UPDATE',
+          { id: params.id },
+        );
+        const current = contracts[0];
+        if (
+          !current ||
+          current.status !== params.from ||
+          params.to !== 'cancelled' ||
+          !['accepted', 'in_progress'].includes(current.status) ||
+          current.freelancer_id !== params.dropout.freelancerId ||
+          params.changedBy !== current.freelancer_id
+        ) {
+          await conn.rollback();
+          return false;
+        }
+        // A conta que serializa a contagem participa da mesma ordem das demais
+        // contas: travá-la sozinha antes do cliente criaria um ciclo recíproco.
+        await lockWalletUsers(conn, relatedUserIds, [current.freelancer_id]);
+        usersLocked = true;
+        transitionNow = clock.now();
+        const rows = await dropoutsRepository.listCounting(
+          current.freelancer_id,
+          transitionNow,
+          conn,
+        );
+        if (
+          withdrawalPreview(rows, transitionNow).countAfter !== params.dropout.expectedCountAfter
+        ) {
+          await conn.rollback();
+          return false;
+        }
+      }
+      if (params.offerResolution) {
+        const [rows] = await conn.query<ContractRow[]>(
+          'SELECT * FROM contracts WHERE id = :id FOR UPDATE',
+          { id: params.id },
+        );
+        const row = rows[0];
+        if (
+          !row ||
+          row.status !== params.from ||
+          Number(row.offer_seq ?? 1) !== params.offerResolution.seq ||
+          Number(row.price) !== params.offerResolution.heldPrice
+        ) {
+          await conn.rollback();
+          return false;
+        }
+        if (!usersLocked && walletUserIds.length > 0) {
+          await lockWalletUsers(conn, relatedUserIds);
+          usersLocked = true;
+        }
+        await offersRepository.ensureInitial(conn, row);
+        const current = (await offersRepository.list(params.id, conn)).find(
+          (o) => o.seq === params.offerResolution!.seq,
+        );
+        if (!current || current.outcome !== 'open') {
+          await conn.rollback();
+          return false;
+        }
+        if (params.offerResolution.activeFreelancerId) {
+          const [active] = await conn.query<RowDataPacket[]>(
+            `SELECT id FROM users WHERE id = :freelancerId
+            AND deleted_at IS NULL AND status IN ('active', 'pending_verification')
+            AND role <> 'admin' FOR SHARE`,
+            { freelancerId: params.offerResolution.activeFreelancerId },
+          );
+          if (active.length !== 1) {
+            await conn.rollback();
+            return false;
+          }
+        }
+        if (params.offerResolution.outcome === 'accepted') {
+          const deadline = params.offerResolution.terms
+            ? params.offerResolution.terms.deadlineAt
+            : row.deadline_at;
+          offerValidAt = (at) =>
+            offerLiveAt(row, current, at) &&
+            (!deadline || new Date(deadline).getTime() > at.getTime());
+          transitionNow = clock.now();
+          if (!offerValidAt(transitionNow)) {
+            await conn.rollback();
+            return false;
+          }
+        }
+      }
+      if (params.countRevision) {
+        const [rows] = await conn.query<ContractRow[]>(
+          `SELECT * FROM contracts WHERE id = :id FOR UPDATE`,
+          { id: params.id },
+        );
+        const row = rows[0];
+        if (
+          !row ||
+          row.status !== params.from ||
+          (row.revision_limit != null && Number(row.revisions_used ?? 0) >= row.revision_limit) ||
+          Number(row.revisions_used ?? 0) >= 4_294_967_295
+        ) {
+          await conn.rollback();
+          return false;
+        }
+        await recoverDeliveryRules(conn, row.id, row);
+      }
       const sets = ['c.status = :to'];
+      if (params.countRevision) sets.push('c.revisions_used = c.revisions_used + 1');
       if (params.timestampColumn) sets.push(`c.${params.timestampColumn} = :now`);
       if (params.closePendingExtension) sets.push(CLOSE_PENDING_EXTENSION('c'));
+      if (params.offerResolution?.feePercentage !== undefined)
+        sets.push('c.fee_percentage = :offerPct');
+      if (params.offerResolution?.terms)
+        sets.push(
+          'c.price = :offerPrice',
+          'c.platform_fee = :offerFee',
+          'c.freelancer_net = :offerNet',
+          'c.deadline_at = :offerDeadline',
+        );
       const [res] = await conn.query<ResultSetHeader>(
         `UPDATE contracts c SET ${sets.join(', ')}
-          WHERE c.id = :id AND c.status = :from ${params.guard?.sql ?? ''}`,
+          WHERE c.id = :id AND c.status = :from ${params.countRevision ? 'AND (c.revision_limit IS NULL OR c.revisions_used < c.revision_limit) AND c.revisions_used < 4294967295' : ''} ${params.guard?.sql ?? ''}`,
         {
           ...params.guard?.params,
           to: params.to,
           id: params.id,
           from: params.from,
-          now: params.now ?? clock.now(),
+          now: transitionNow,
+          offerPct: params.offerResolution?.feePercentage,
+          offerPrice: params.offerResolution?.terms?.price,
+          offerFee: params.offerResolution?.terms?.fee,
+          offerNet: params.offerResolution?.terms?.net,
+          offerDeadline: params.offerResolution?.terms?.deadlineAt,
         },
       );
 
       if (res.affectedRows === 0) {
+        await conn.rollback();
+        return false;
+      }
+
+      if (!usersLocked && walletUserIds.length > 0) {
+        await lockWalletUsers(conn, relatedUserIds);
+      }
+
+      if (
+        params.offerResolution &&
+        !(await offersRepository.resolve(
+          conn,
+          params.id,
+          params.offerResolution.seq,
+          params.offerResolution.outcome,
+          transitionNow,
+        ))
+      ) {
+        await conn.rollback();
+        return false;
+      }
+      if (
+        params.offerResolution?.terms &&
+        !(await updateOfferMilestones(conn, params.id, params.offerResolution.terms))
+      ) {
         await conn.rollback();
         return false;
       }
@@ -506,6 +759,9 @@ export const contractsRepository = {
         );
       }
 
+      // Adquire todas as carteiras antes do primeiro efeito; os efeitos e os
+      // extratos conservam a ordem de negócio recebida (cliente/freelancer).
+      await lockWalletRows(conn, walletUserIds);
       // Guarda contra saldo negativo: se alguma carteira não existe ou ficaria negativa, aborta tudo.
       for (const eff of params.walletEffects ?? []) {
         const ok = await applyWalletEffect(conn, { ...eff, contractId: params.id });
@@ -550,6 +806,33 @@ export const contractsRepository = {
         }
       }
 
+      if (offerValidAt && !offerValidAt(clock.now())) {
+        await conn.rollback();
+        return false;
+      }
+      if (params.dropout) {
+        // Uma espera pela carteira pode atravessar o fim de uma janela de 60 dias.
+        const checkedAt = clock.now();
+        const droppedAt = floorSecond(checkedAt);
+        const rows = await dropoutsRepository.listCounting(
+          params.dropout.freelancerId,
+          checkedAt,
+          conn,
+        );
+        if (withdrawalPreview(rows, checkedAt).countAfter !== params.dropout.expectedCountAfter) {
+          await conn.rollback();
+          return false;
+        }
+        await conn.query(
+          `INSERT INTO freelancer_dropouts (contract_id, freelancer_id, dropped_at)
+           VALUES (:id, :freelancerId, :droppedAt)`,
+          { id: params.id, freelancerId: params.dropout.freelancerId, droppedAt },
+        );
+        await conn.query('UPDATE contracts SET cancelled_at = :droppedAt WHERE id = :id', {
+          id: params.id,
+          droppedAt,
+        });
+      }
       await conn.commit();
       return true;
     } catch (err) {
@@ -577,11 +860,36 @@ export const contractsRepository = {
     try {
       await conn.beginTransaction();
 
+      const [rows] = await conn.query<ContractRow[]>(
+        `SELECT * FROM contracts WHERE id = :id FOR UPDATE`,
+        { id: params.id },
+      );
+      const current = rows[0];
+      if (!current || current.status !== params.from) {
+        await conn.rollback();
+        return false;
+      }
+      const recovered = await recoverDeliveryRules(conn, current.id, current);
+      const first = firstDeliveryAt(recovered.firstDeliveryAt, [], params.now);
+      const opens = deliveryDisputeOpensAt(
+        first,
+        params.approvalDueAt,
+        recovered.deliveryDisputeOpensAt,
+      );
       const [res] = await conn.query<ResultSetHeader>(
         `UPDATE contracts c
-            SET c.status = 'delivered', c.approval_due_at = :approvalDueAt, ${CLOSE_PENDING_EXTENSION('c')}
+            SET c.status = 'delivered', c.approval_due_at = :approvalDueAt,
+                c.first_delivery_at = COALESCE(c.first_delivery_at, :first),
+                c.delivery_dispute_opens_at = :opens, ${CLOSE_PENDING_EXTENSION('c')}
           WHERE c.id = :id AND c.status = :from`,
-        { id: params.id, from: params.from, now: params.now, approvalDueAt: params.approvalDueAt },
+        {
+          id: params.id,
+          from: params.from,
+          now: params.now,
+          approvalDueAt: params.approvalDueAt,
+          first,
+          opens,
+        },
       );
       if (res.affectedRows === 0) {
         await conn.rollback();
@@ -599,9 +907,9 @@ export const contractsRepository = {
         },
       );
       await conn.query<ResultSetHeader>(
-        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
-         VALUES (:id, :changedBy, :from, 'delivered', NULL)`,
-        { id: params.id, changedBy: params.changedBy, from: params.from },
+        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, created_at)
+         VALUES (:id, :changedBy, :from, 'delivered', NULL, :now)`,
+        { id: params.id, changedBy: params.changedBy, from: params.from, now: params.now },
       );
 
       await conn.commit();
@@ -609,6 +917,67 @@ export const contractsRepository = {
     } catch (err) {
       await conn.rollback();
       throw err;
+    } finally {
+      conn.release();
+    }
+  },
+
+  /** Uma liberação só após esgotar o limite; não suspende nem adia a aprovação tácita. */
+  async grantRevision(p: {
+    id: number;
+    changedBy: number;
+    now: Date;
+    expectedRevisionsUsed: number;
+    expectedRevisionLimit: number;
+  }): Promise<boolean> {
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [rows] = await conn.query<ContractRow[]>(
+        `SELECT * FROM contracts WHERE id = :id FOR UPDATE`,
+        { id: p.id },
+      );
+      const row = rows[0];
+      if (
+        !row ||
+        row.status !== 'delivered' ||
+        row.revision_limit == null ||
+        Number(row.revisions_used ?? 0) !== p.expectedRevisionsUsed ||
+        row.revision_limit !== p.expectedRevisionLimit ||
+        Number(row.revisions_used ?? 0) < row.revision_limit ||
+        row.revision_limit >= 4_294_967_295
+      ) {
+        await conn.rollback();
+        return false;
+      }
+      const [updated] = await conn.query<ResultSetHeader>(
+        `UPDATE contracts SET revision_limit = revision_limit + 1 WHERE id = :id
+           AND status = 'delivered' AND revision_limit IS NOT NULL
+           AND revisions_used >= revision_limit AND revision_limit < 4294967295
+           AND revisions_used = :expectedRevisionsUsed AND revision_limit = :expectedRevisionLimit`,
+        {
+          id: p.id,
+          expectedRevisionsUsed: p.expectedRevisionsUsed,
+          expectedRevisionLimit: p.expectedRevisionLimit,
+        },
+      );
+      if (!updated.affectedRows) {
+        await conn.rollback();
+        return false;
+      }
+      await conn.query<ResultSetHeader>(
+        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, created_at)
+         VALUES (:id, :changedBy, 'delivered', 'delivered', :note, :now)`,
+        {
+          ...p,
+          note: `O freelancer liberou mais uma revisão sem custo (RN-023): agora são ${row.revision_limit + 1}`,
+        },
+      );
+      await conn.commit();
+      return true;
+    } catch (error) {
+      await conn.rollback();
+      throw error;
     } finally {
       conn.release();
     }

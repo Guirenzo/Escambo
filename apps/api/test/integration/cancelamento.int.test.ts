@@ -11,6 +11,7 @@ import {
 } from '../../src/modules/contracts/contracts.repository';
 import { openDeliveredMilestone } from '../../src/modules/contracts/deadline-sql';
 import { milestonesRepository } from '../../src/modules/contracts/milestones.repository';
+import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 import type { WalletEffect } from '../../src/modules/wallet/wallet.ledger';
 import { setClockForTests } from '../../src/utils/clock';
 import { formatDue } from '../../src/utils/timezone';
@@ -380,7 +381,9 @@ describe('Desistência do freelancer (F4)', () => {
     });
     expect(await avisoDe(client.token, 'contract_cancelled', id)).toMatchObject({
       title: 'O freelancer desistiu: Logo da padaria',
-      body: 'R$ 200,00 voltou para a sua carteira.',
+      body: expect.stringContaining(
+        'R$ 200,00 voltou para a sua carteira. Se combinaram a desistência, confirme na Sala até ',
+      ),
     });
   });
 
@@ -404,7 +407,9 @@ describe('Desistência do freelancer (F4)', () => {
     expect(await reais(freelancer.token)).toEqual({ balance: 0, balancePending: 0 });
     expect(await avisoDe(client.token, 'contract_cancelled', id)).toMatchObject({
       title: 'O freelancer desistiu: Cartão de visita',
-      body: 'R$ 200,00 voltou para a sua carteira.',
+      body: expect.stringContaining(
+        'R$ 200,00 voltou para a sua carteira. Se combinaram a desistência, confirme na Sala até ',
+      ),
     });
   });
 });
@@ -863,7 +868,9 @@ describe('Créditos', () => {
     expect(await creditos(freelancer.token)).toEqual({ credits: 100, creditsPending: 0 });
     expect(await avisoDe(client.token, 'contract_cancelled', id)).toMatchObject({
       title: 'O freelancer desistiu: Revisão de currículo',
-      body: 'Os 30 créditos voltaram para a sua carteira.',
+      body: expect.stringContaining(
+        'Os 30 créditos voltaram para a sua carteira. Se combinaram a desistência, confirme na Sala até ',
+      ),
     });
   });
 });
@@ -1011,7 +1018,10 @@ describe('Corrida: a gravação repete a leitura (guarda no repositório)', () =
     });
     // Outra contratação do mesmo freelancer em garantia (líquido 340): o retido dele cobre o
     // movimento calculado com a leitura antiga, então só a guarda segura a gravação.
-    const outra = await propor(client, freelancer, { title: 'Manutenção da loja', price: 400 });
+    // Dados anteriores à RN-020: duas reservas da mesma dupla devem continuar isoladas.
+    const outra = await withLegacyParallelContracts(client.id, freelancer.id, () =>
+      propor(client, freelancer, { title: 'Manutenção da loja', price: 400 }),
+    );
     await aceitar(id, freelancer);
     await aceitar(outra, freelancer);
     const [m1, m2] = (await detalhe(id, client.token)).milestones;

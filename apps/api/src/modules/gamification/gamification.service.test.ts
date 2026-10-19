@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./gamification.repository', () => ({
   gamificationRepository: {
     getOrCreateXp: vi.fn(),
+    findXp: vi.fn(),
     applyXp: vi.fn(),
     listBadges: vi.fn(),
     listActiveBadges: vi.fn(),
@@ -159,6 +160,46 @@ describe('evaluateBadges (engine por critério)', () => {
 });
 
 describe('getProfile', () => {
+  it('modo leitura preserva XP, badges e posição existentes sem inicializar XP', async () => {
+    repo.findXp.mockResolvedValue(xp({ total_xp: 350, level: 2, level_name: 'Aprendiz' }));
+    repo.listBadges.mockResolvedValue([
+      { slug: 'first-deal', name: 'First Deal', awarded_at: new Date('2026-01-01T00:00:00Z') },
+    ] as unknown as UserBadgeRow[]);
+    repo.activityTimes.mockResolvedValue([]);
+    repo.rankOf.mockResolvedValue(5);
+    zone.mockResolvedValue('America/Sao_Paulo');
+
+    const profile = await gamificationService.getProfile(7, { readOnly: true });
+
+    expect(profile).toMatchObject({ totalXp: 350, level: 2, levelName: 'Aprendiz', rank: 5 });
+    expect(profile.badges).toHaveLength(1);
+    expect(repo.findXp).toHaveBeenCalledWith(7);
+    expect(repo.getOrCreateXp).not.toHaveBeenCalled();
+    expect(repo.applyXp).not.toHaveBeenCalled();
+    expect(repo.awardBadge).not.toHaveBeenCalled();
+  });
+
+  it('modo leitura sem XP usa projeção inicial sem criar linha nem premiar', async () => {
+    repo.findXp.mockResolvedValue(undefined);
+    repo.listBadges.mockResolvedValue([]);
+    repo.activityTimes.mockResolvedValue([]);
+    repo.rankOf.mockResolvedValue(5);
+    zone.mockResolvedValue('America/Sao_Paulo');
+
+    expect(await gamificationService.getProfile(7, { readOnly: true })).toEqual({
+      totalXp: 0,
+      level: 1,
+      levelName: 'Iniciante',
+      progress: levelProgress(0),
+      streakDays: 0,
+      rank: 5,
+      badges: [],
+    });
+    expect(repo.getOrCreateXp).not.toHaveBeenCalled();
+    expect(repo.applyXp).not.toHaveBeenCalled();
+    expect(repo.awardBadge).not.toHaveBeenCalled();
+  });
+
   it('monta o perfil premium (progresso + streak + rank + badges)', async () => {
     repo.getOrCreateXp.mockResolvedValue(xp({ total_xp: 350, level: 2, level_name: 'Aprendiz' }));
     repo.listBadges.mockResolvedValue([

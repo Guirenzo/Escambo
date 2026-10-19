@@ -52,7 +52,7 @@ describe('notify (best-effort)', () => {
 
   it('a categoria do silêncio vai só para o push: não entra no banco nem no socket (ADR 56)', async () => {
     const push = vi.spyOn(pushService, 'notify').mockResolvedValue();
-    const socket = vi.spyOn(realtime, 'emitToUser').mockImplementation(() => undefined);
+    const socket = vi.spyOn(realtime, 'emitToUser').mockResolvedValue(undefined);
     repo.create.mockResolvedValue(9);
     await notificationsService.notify(
       7,

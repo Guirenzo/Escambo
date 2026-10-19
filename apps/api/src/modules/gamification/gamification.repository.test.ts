@@ -12,6 +12,21 @@ vi.mock('../../config/db', async () => (await import('../../test-support/fake-db
 describe('gamificationRepository', () => {
   beforeEach(() => fakeDb.reset());
 
+  it('findXp consulta XP existente ou ausente sem criar ou atualizar totais', async () => {
+    const row = { user_id: 7, total_xp: 350, level: 2, level_name: 'Aprendiz' };
+    fakeDb.reply([row], []);
+
+    expect(await gamificationRepository.findXp(7)).toBe(row);
+    expect(await gamificationRepository.findXp(8)).toBeUndefined();
+    expect(fakeDb.calls).toHaveLength(2);
+    expect(fakeDb.calls[0]!.sql).toBe(
+      'SELECT user_id, total_xp, level, level_name FROM user_xp WHERE user_id = :userId LIMIT 1',
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ userId: 7 });
+    expect(fakeDb.calls[1]!.params).toEqual({ userId: 8 });
+    expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+  });
+
   it('getOrCreateXp cria a linha zerada de quem ainda não tem e devolve a linha do usuário', async () => {
     const row = { user_id: 7, total_xp: 0, level: 1, level_name: 'Iniciante' };
     fakeDb.reply({ affectedRows: 1 }, [row]);
@@ -450,7 +465,7 @@ describe('gamificationRepository', () => {
       expect(sql).toBe(
         'SELECT COUNT(*) + 1 AS rnk FROM user_xp ux JOIN users u ON u.id = ux.user_id ' +
           "WHERE u.deleted_at IS NULL AND u.status NOT IN ('suspended', 'banned') " +
-          'AND ux.total_xp > (SELECT total_xp FROM user_xp WHERE user_id = :userId)',
+          'AND ux.total_xp > COALESCE((SELECT total_xp FROM user_xp WHERE user_id = :userId), 0)',
       );
       expect(params).toEqual({ userId: 7 });
     });

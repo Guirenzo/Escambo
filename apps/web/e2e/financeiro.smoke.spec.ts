@@ -79,7 +79,9 @@ test('sem saldo, o modal de contratação oferece o depósito; com saldo, a prop
   await expect(hire.getByTestId('needs-deposit')).toHaveCount(0);
   await hire.getByRole('button', { name: 'Enviar proposta' }).click();
   await expect(page).toHaveURL(/\/contratos\/\d+$/);
-  await expect(page.getByTestId('payment-state')).toHaveText('Reservado na carteira do cliente');
+  await expect(page.getByTestId('payment-state')).toHaveText(
+    'Reservado na carteira do cliente (oferta 1)',
+  );
 
   await page.goto('/carteira');
   await settled(page);

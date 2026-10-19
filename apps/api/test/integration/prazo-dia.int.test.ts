@@ -196,7 +196,7 @@ describe('O prazo é um dia (ADR 58)', () => {
     const proposal = await onlyNotice(freManaus.id, 'contract_proposal', created.id);
     expect(proposal.title).toBe('Nova proposta de contratação');
     expect(proposal.body).toBe(
-      `${TITLE}. Prazo de entrega: ${dayText(day)}. Responda até ${formatDue(new Date(created.proposalExpiresAt!), MANAUS)}.`,
+      `${TITLE}. Prazo de entrega: ${dayText(day)}. Responda até ${formatDue(new Date(created.proposalExpiresAt!), MANAUS)}: aceite, recuse ou faça uma contraproposta.`,
     );
 
     // Quem entrega está em Brasília e o dia é o de Manaus (chamada direta à API): o fuso do prazo
@@ -205,7 +205,7 @@ describe('O prazo é um dia (ADR 58)', () => {
     expect(other.deadlineZone).toBe(MANAUS);
     const otherProposal = await onlyNotice(freBrasilia.id, 'contract_proposal', other.id);
     expect(otherProposal.body).toBe(
-      `${TITLE}. Prazo de entrega: ${dayText(day)} (horário de Manaus). Responda até ${formatDue(new Date(other.proposalExpiresAt!), BRASILIA)}.`,
+      `${TITLE}. Prazo de entrega: ${dayText(day)} (horário de Manaus). Responda até ${formatDue(new Date(other.proposalExpiresAt!), BRASILIA)}: aceite, recuse ou faça uma contraproposta.`,
     );
   });
 
