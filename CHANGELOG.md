@@ -5,9 +5,9 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
-## [1.42.0] — 2026-10-16
+## [1.42.0] — 2026-10-19
 
-**Candidata local, ainda não publicada.** Implementação do ADR 61; esta entrada não confirma tag, imagens no GHCR ou implantação. A demonstração pública continua na versão anterior até autorização de publicação/deploy.
+Implementação do ADR 61: as regras de negócio pendentes (RN-023, RN-026, RN-030 e RN-062), a conta suspensa só de leitura (RN-007), o suporte privado e a proposta única por par (RN-020). A demonstração pública muda quando o deploy for feito.
 
 ### Adicionado
 
