@@ -131,13 +131,50 @@ export interface VerifyEmailRequest {
   token: string;
 }
 
+/** Troca de e-mail aguardando o link enviado ao endereço novo (RF-017). */
+export interface PendingEmailChange {
+  email: string;
+  expiresAt: string;
+}
+/** Contato da conta (RF-017): só o titular vê; o perfil público não traz e-mail nem telefone. */
+export interface AccountContact {
+  email: string;
+  emailVerified: boolean;
+  /** E.164 (+55 com DDD); null = não informado. */
+  phone: string | null;
+  pendingEmail: PendingEmailChange | null;
+}
+/** Pedido de troca de e-mail: a senha atual confirma o titular. */
+export interface ChangeEmailRequest {
+  currentPassword: string;
+  newEmail: string;
+}
+export interface ConfirmEmailChangeRequest {
+  token: string;
+}
+/** Troca confirmada; `session` só vem quando quem abriu o link estava logado na mesma conta. */
+export interface ConfirmEmailChangeResponse {
+  email: string;
+  session: RefreshResponse | null;
+}
+/** Telefone do Brasil com DDD, em qualquer formato comum; null ou vazio apaga. */
+export interface UpdatePhoneRequest {
+  phone: string | null;
+}
+
 /** E-mail registrado na caixa de saída (painel admin; no provedor simulado é a própria entrega). */
 export interface AdminEmail {
   id: number;
   userId: number | null;
   to: string;
   subject: string;
-  template: 'verify_email' | 'password_reset' | 'notification' | 'digest' | 'moderation_report';
+  template:
+    | 'verify_email'
+    | 'password_reset'
+    | 'email_change'
+    | 'notification'
+    | 'digest'
+    | 'moderation_report';
   text: string;
   status: 'queued' | 'sent' | 'failed';
   provider: string;
@@ -533,7 +570,8 @@ export interface ResolveDisputeRequest {
 
 // --- Admin ---
 
-export type FinanceGranularity = 'day' | 'month';
+/** Dia, semana (de segunda a domingo) ou mês, sempre em horário de Brasília. */
+export type FinanceGranularity = 'day' | 'week' | 'month';
 
 /** Somas de um período (ou de um balde do período). Valores em R$. */
 export interface FinanceTotals {
@@ -552,8 +590,44 @@ export interface FinanceTotals {
 }
 
 export interface FinanceBucket extends FinanceTotals {
-  /** "AAAA-MM" (mês) ou "AAAA-MM-DD" (dia), em horário de Brasília. */
+  /** "AAAA-MM" (mês) ou "AAAA-MM-DD" (dia; na semana, a segunda-feira), em horário de Brasília. */
   bucket: string;
+}
+
+/** Uso da plataforma num período (RF-081). Contagens de pessoas e de contratações. */
+export interface UsageTotals {
+  /** Contas criadas no período (sem as de administrador). */
+  newUsers: number;
+  /** Contratações criadas (propostas enviadas), em qualquer modalidade. */
+  newContracts: number;
+  /** Contratações concluídas, em qualquer modalidade. */
+  completedContracts: number;
+  /** Contratações canceladas. */
+  cancelledContracts: number;
+  /**
+   * Pessoas distintas que entraram na conta ou renovaram a sessão, mandaram mensagem no chat ou
+   * mudaram o status de uma contratação (sem administradores e sem as mudanças automáticas). Nos
+   * totais, conta cada pessoa uma vez no período inteiro: não é a soma dos baldes.
+   */
+  activeUsers: number;
+}
+
+export interface UsageBucket extends UsageTotals {
+  /** O mesmo formato do relatório financeiro ("AAAA-MM-DD" no dia e na semana, "AAAA-MM" no mês). */
+  bucket: string;
+  /** Snapshot gravado pelo job diário (período fechado) ou calculado agora. */
+  source: 'snapshot' | 'live';
+}
+
+/** Relatório de uso do admin (GET /admin/usage): todos os baldes do período, mesmo os zerados. */
+export interface AdminUsageReport {
+  from: string;
+  to: string;
+  granularity: FinanceGranularity;
+  totals: UsageTotals;
+  series: UsageBucket[];
+  /** O que conta como "usuário ativo", em texto para a tela. */
+  activeDefinition: string;
 }
 
 /** Relatório financeiro do admin (GET /admin/finance). */
@@ -588,6 +662,14 @@ export interface AdminMetrics {
   usersBalance: number;
   /** Pedidos de exclusão de conta (LGPD) aguardando o admin. */
   pendingDeletions: number;
+  /**
+   * Chamados de suporte de contas ativas (os de conta anonimizada ficam congelados e não entram):
+   * em aberto (aberto, em atendimento ou aguardando o titular), aguardando resposta da equipe
+   * (aberto ou em atendimento) e, dos em aberto, os sem primeira resposta pública com o SLA vencido.
+   */
+  supportOpen: number;
+  supportAwaitingReply: number;
+  supportSlaOverdue: number;
 }
 
 /** Uso do volume da API e saúde dos anexos do chat (painel admin, ADR 31). */
@@ -1279,6 +1361,11 @@ export interface Milestone {
   revisionRequestedAt: string | null;
   /** Ausente na API anterior; limit null conserva as revisões ilimitadas do legado. */
   revisions?: RevisionState;
+  /**
+   * Arquivos anexados às entregas deste marco (RF-035), na ordem em que foram enviados; cada
+   * reentrega soma os seus. Ausente nas versões anteriores da API.
+   */
+  attachments?: DeliveryAttachment[];
 }
 
 export interface MilestoneInput {
@@ -1302,7 +1389,22 @@ export interface ContractDelivery {
   message: string;
   /** Links informados na entrega; vazio quando a entrega foi só a mensagem. */
   files: string[];
+  /** Arquivos enviados com a entrega (RF-035). Ausente nas versões anteriores da API. */
+  attachments?: DeliveryAttachment[];
   deliveredAt: string;
+}
+
+/**
+ * Arquivo de uma entrega (RF-035). É um anexo do chat do par (ADR 29): mesmo download, só para as
+ * partes (`url`), mesma retenção (ADR 31) e mesma moderação (ADR 44).
+ */
+export interface DeliveryAttachment extends ChatAttachment {
+  /** A mensagem do chat que guarda o arquivo (é o alvo de uma denúncia). */
+  messageId: number;
+  /** Removido pela moderação (ADR 44): o arquivo deixa de ser servido. */
+  removedAt: string | null;
+  /** Quando foi enviado, junto com a entrega. */
+  sentAt: string;
 }
 
 /** Lista paginada das contratações de quem pede (RF-040): `total` já conta o filtro de status. */
@@ -1528,6 +1630,60 @@ export interface WalletTransactionsPage extends Paginated<WalletTransaction> {
   hasMore: boolean;
 }
 
+/** Agrupamento dos ganhos (RF-082): por dia, por semana (de segunda a domingo) ou por mês. */
+export type EarningsGranularity = 'day' | 'week' | 'month';
+
+/**
+ * Filtro dos ganhos (RF-082): dias "AAAA-MM-DD" no fuso da conta, os dois inclusivos. Sem eles, os
+ * últimos 30 dias (dia), 12 semanas (semana) ou 12 meses (mês) até hoje.
+ */
+export interface WalletEarningsQuery {
+  from?: string;
+  to?: string;
+  granularity?: EarningsGranularity;
+}
+
+/** Ganhos em R$ de um período do gráfico. */
+export interface EarningsBucket {
+  /** Início do período no fuso da conta: "AAAA-MM-DD" (dia; na semana, a segunda) ou "AAAA-MM". */
+  bucket: string;
+  /** O que ficou disponível: liberações do escrow mais tornas recebidas (já sem a taxa). */
+  amount: number;
+  /** Contratações com liberação no período (uma por marcos conta uma vez por período). */
+  contracts: number;
+  /** Trocas concluídas com torna recebida no período. */
+  barters: number;
+}
+
+/**
+ * Ganhos do freelancer por período (RF-082), lidos do ledger de R$: só liberação do escrow e torna
+ * recebida. Créditos (time-bank) vêm à parte, nunca somados aos reais.
+ */
+export interface WalletEarnings {
+  from: string;
+  to: string;
+  granularity: EarningsGranularity;
+  /** Fuso em que os dias foram contados (o da conta). */
+  timezone: BrazilTimezone;
+  /** Já recebeu alguma vez, em reais ou em créditos, fora do período inclusive. */
+  hasEarnings: boolean;
+  totals: {
+    amount: number;
+    /** Contratações distintas com liberação no período. */
+    contracts: number;
+    barters: number;
+    /** amount ÷ (contracts + barters); null sem nada pago no período. */
+    averageTicket: number | null;
+  };
+  /** Todos os períodos entre from e to, os vazios com zero. */
+  series: EarningsBucket[];
+  /**
+   * Créditos no período: entram no aceite (escrow) e as devoluções de cancelamento ou disputa
+   * descontam no dia em que acontecem; `contracts` conta as contratações aceitas no período.
+   */
+  credits: { total: number; contracts: number };
+}
+
 export type DepositStatus = 'pending' | 'processing' | 'paid' | 'failed' | 'refunded' | 'cancelled';
 
 /** Depósito na carteira (cobrança PIX gerada pelo gateway de pagamento). */
@@ -1641,6 +1797,45 @@ export interface LeaderboardEntry {
   totalXp: number;
   level: number;
   levelName: string;
+  /** Nota média (0 sem avaliação): o 1º critério do ranking por categoria e local (RN-056). */
+  avgRating: number;
+  /** Contratações concluídas: o 2º critério da RN-056 (o 3º é o XP). */
+  completedContracts: number;
+  /** Só no ranking local: distância em km até o ponto pesquisado. */
+  distanceKm?: number;
+}
+
+/**
+ * Filtros do ranking (RF-067). Sem nenhum, é o ranking geral por XP; com categoria e/ou o ponto do
+ * "perto de mim" (lat e lng juntos, raio `ranking_radius_km` da plataforma), segue a RN-056.
+ */
+export interface LeaderboardQuery {
+  categoryId?: number;
+  lat?: number;
+  lng?: number;
+}
+
+export type MissionType = 'daily' | 'weekly' | 'achievement';
+export type MissionAction =
+  'complete_contracts' | 'fast_response_hours' | 'daily_login' | 'complete_barter';
+
+/**
+ * Missão do catálogo com o progresso de quem pede no período vigente (RF-066, RN-054). O período
+ * é o dia ou a semana (segunda a domingo) no fuso da conta; virou, o progresso recomeça do zero.
+ */
+export interface Mission {
+  id: number;
+  title: string;
+  description: string | null;
+  type: MissionType;
+  action: MissionAction;
+  xpReward: number;
+  progress: number;
+  target: number;
+  completed: boolean;
+  completedAt: string | null;
+  /** Fim do período: 23:59:59 do dia ou do domingo, no fuso da conta; null na conquista sem prazo. */
+  expiresAt: string | null;
 }
 
 // --- Troca de Serviços (Escambo) ---
@@ -1664,6 +1859,13 @@ export interface BarterAgreement {
   requestedDescription: string | null;
   estimatedValueOffered: number;
   estimatedValueRequested: number;
+  /**
+   * De onde veio o valor de cada lado (RF-084): preço fechado do catálogo, ou informado pelo
+   * proponente (serviço a combinar, por hora ou descrito). Ausente nas versões anteriores da API;
+   * as trocas propostas antes da 1.45.0 vêm como 'informed'.
+   */
+  offeredValueSource?: BarterValueSource;
+  requestedValueSource?: BarterValueSource;
   cashDifference: number; // torna
   cashPayerId: number | null;
   platformFee: number; // 15% sobre a torna (troca equilibrada não tem taxa)
@@ -1681,9 +1883,18 @@ export interface CreateBarterRequest {
   offeredDescription?: string | null;
   requestedServiceId?: number | null;
   requestedDescription?: string | null;
-  estimatedValueOffered: number;
-  estimatedValueRequested: number;
+  /**
+   * Valor de cada lado (RF-084). Com serviço de preço fechado no catálogo, o sistema usa o preço
+   * do catálogo: o campo pode faltar, e um valor diferente é recusado (422 estimate_mismatch).
+   * Serviço a combinar, por hora ou sem preço, e o lado descrito, exigem o valor (422
+   * estimate_required).
+   */
+  estimatedValueOffered?: number;
+  estimatedValueRequested?: number;
 }
+
+/** Origem do valor de um lado da troca (RF-084). */
+export type BarterValueSource = 'catalog' | 'informed';
 
 // --- Saques ---
 

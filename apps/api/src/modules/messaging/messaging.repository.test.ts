@@ -643,3 +643,62 @@ describe('messagingRepository', () => {
     });
   });
 });
+
+describe('arquivos de uma entrega (RF-035)', () => {
+  const conn = fakeDb.conn as unknown as PoolConnection;
+  beforeEach(() => fakeDb.reset());
+
+  it('insertAttachments grava cada arquivo como mensagem sem legenda, na transação de quem chama', async () => {
+    fakeDb.reply({ insertId: 70 }, { insertId: 71 }, {});
+    const ids = await messagingRepository.insertAttachments(conn, {
+      conversationId: 5,
+      senderId: 20,
+      files: [
+        { kind: 'image', key: 'k1', name: 'a.png', mime: 'image/png', size: 10 },
+        { kind: 'file', key: 'k2', name: 'b.pdf', mime: 'application/pdf', size: 20 },
+      ],
+    });
+    expect(ids).toEqual([70, 71]);
+    expect(fakeDb.calls[0]!.sql).toBe(
+      'INSERT INTO messages (conversation_id, sender_id, type, content, file_url, file_name, file_mime, file_size_bytes) VALUES (:conversationId, :senderId, :type, NULL, :fileKey, :fileName, :fileMime, :fileSize)',
+    );
+    expect(fakeDb.calls[1]!.params).toEqual({
+      conversationId: 5,
+      senderId: 20,
+      type: 'file',
+      fileKey: 'k2',
+      fileName: 'b.pdf',
+      fileMime: 'application/pdf',
+      fileSize: 20,
+    });
+    expect(fakeDb.calls[2]!.sql).toBe(
+      'UPDATE conversations SET last_message_at = NOW() WHERE id = :conversationId',
+    );
+    expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+    expect(fakeDb.conn.beginTransaction).not.toHaveBeenCalled();
+
+    fakeDb.reset();
+    expect(
+      await messagingRepository.insertAttachments(conn, {
+        conversationId: 5,
+        senderId: 20,
+        files: [],
+      }),
+    ).toEqual([]);
+    expect(fakeDb.calls).toEqual([]);
+  });
+
+  it('findByFileKeys lê as mensagens da conversa pelas chaves, na ordem; sem chave, nem consulta', async () => {
+    const rows = [{ id: 70 }];
+    fakeDb.reply(rows);
+    expect(await messagingRepository.findByFileKeys(5, ['k1', 'k2'])).toBe(rows);
+    expect(fakeDb.calls[0]!.sql).toMatch(
+      /FROM messages WHERE conversation_id = :conversationId AND file_url IN \(:keys\) ORDER BY id$/,
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ conversationId: 5, keys: ['k1', 'k2'] });
+
+    fakeDb.reset();
+    expect(await messagingRepository.findByFileKeys(5, [])).toEqual([]);
+    expect(fakeDb.calls).toEqual([]);
+  });
+});

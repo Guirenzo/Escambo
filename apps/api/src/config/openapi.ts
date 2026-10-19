@@ -582,6 +582,20 @@ const withdrawalSchemas = {
       depositsTotal: { type: 'number' },
       usersBalance: { type: 'number' },
       pendingDeletions: nonnegativeInteger,
+      supportOpen: {
+        ...nonnegativeInteger,
+        description:
+          'Chamados de suporte em aberto (aberto, em atendimento ou aguardando o titular), sem os de conta anonimizada (RF-076).',
+      },
+      supportAwaitingReply: {
+        ...nonnegativeInteger,
+        description: 'Dos em aberto, os que esperam a equipe (aberto ou em atendimento).',
+      },
+      supportSlaOverdue: {
+        ...nonnegativeInteger,
+        description:
+          'Dos em aberto, os sem primeira resposta pública com o prazo do SLA (sla_due_at) vencido.',
+      },
     },
     [
       'users',
@@ -597,7 +611,60 @@ const withdrawalSchemas = {
       'depositsTotal',
       'usersBalance',
       'pendingDeletions',
+      'supportOpen',
+      'supportAwaitingReply',
+      'supportSlaOverdue',
     ],
+  ),
+  UsageTotals: obj(
+    {
+      newUsers: { ...nonnegativeInteger, description: 'Contas criadas (sem administradores).' },
+      newContracts: { ...nonnegativeInteger, description: 'Contratações criadas.' },
+      completedContracts: { ...nonnegativeInteger, description: 'Contratações concluídas.' },
+      cancelledContracts: { ...nonnegativeInteger, description: 'Contratações canceladas.' },
+      activeUsers: {
+        ...nonnegativeInteger,
+        description:
+          'Pessoas distintas ativas (ver activeDefinition). Nos totais, cada pessoa conta uma vez no período inteiro: não é a soma dos baldes.',
+      },
+    },
+    ['newUsers', 'newContracts', 'completedContracts', 'cancelledContracts', 'activeUsers'],
+  ),
+  UsageBucket: {
+    allOf: [
+      ref('UsageTotals'),
+      obj(
+        {
+          bucket: {
+            type: 'string',
+            description:
+              'AAAA-MM-DD (dia; na semana, a segunda-feira) ou AAAA-MM (mês), em horário de Brasília.',
+          },
+          source: {
+            type: 'string',
+            enum: ['snapshot', 'live'],
+            description:
+              'snapshot: balde inteiro e fechado, lido de report_snapshots (gravado pelo job report-snapshots); live: calculado agora.',
+          },
+        },
+        ['bucket', 'source'],
+      ),
+    ],
+  },
+  AdminUsageReport: obj(
+    {
+      from: { type: 'string', format: 'date' },
+      to: { type: 'string', format: 'date' },
+      granularity: { type: 'string', enum: ['day', 'week', 'month'] },
+      totals: ref('UsageTotals'),
+      series: {
+        type: 'array',
+        items: ref('UsageBucket'),
+        description: 'Todos os baldes do período, em ordem, inclusive os zerados.',
+      },
+      activeDefinition: { type: 'string' },
+    },
+    ['from', 'to', 'granularity', 'totals', 'series', 'activeDefinition'],
   ),
   CreditTransaction: obj(
     {
@@ -855,6 +922,64 @@ export const openapiDocument: Record<string, any> = {
         ...obj({ note: { type: 'string', minLength: 10, maxLength: 500 } }, ['note']),
         additionalProperties: false,
       },
+      Mission: obj(
+        {
+          id: { type: 'integer', minimum: 1 },
+          title: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          type: { type: 'string', enum: ['daily', 'weekly', 'achievement'] },
+          action: {
+            type: 'string',
+            enum: ['complete_contracts', 'fast_response_hours', 'daily_login', 'complete_barter'],
+          },
+          xpReward: nonnegativeInteger,
+          progress: nonnegativeInteger,
+          target: { type: 'integer', minimum: 1 },
+          completed: { type: 'boolean' },
+          completedAt: nullableTimestamp,
+          expiresAt: {
+            ...nullableTimestamp,
+            description:
+              'Fim do período: 23:59:59 do dia ou do domingo no fuso da conta; null na conquista sem prazo.',
+          },
+        },
+        [
+          'id',
+          'title',
+          'description',
+          'type',
+          'action',
+          'xpReward',
+          'progress',
+          'target',
+          'completed',
+          'completedAt',
+          'expiresAt',
+        ],
+      ),
+      LeaderboardEntry: obj(
+        {
+          rank: { type: 'integer', minimum: 1 },
+          userUlid: { type: 'string' },
+          name: { type: 'string', nullable: true },
+          totalXp: nonnegativeInteger,
+          level: { type: 'integer', minimum: 1 },
+          levelName: { type: 'string' },
+          avgRating: { type: 'number', minimum: 0, maximum: 5 },
+          completedContracts: nonnegativeInteger,
+          distanceKm: { type: 'number', minimum: 0, description: 'Só no ranking local.' },
+        },
+        [
+          'rank',
+          'userUlid',
+          'name',
+          'totalXp',
+          'level',
+          'levelName',
+          'avgRating',
+          'completedContracts',
+        ],
+      ),
       Badge: obj({ slug: { type: 'string' }, name: { type: 'string' }, awardedAt: timestamp }, [
         'slug',
         'name',
@@ -988,6 +1113,12 @@ export const openapiDocument: Record<string, any> = {
           description:
             'Uso/limite deste marco; limit null no legado. Ausente nas versões anteriores.',
         },
+        attachments: {
+          type: 'array',
+          items: ref('DeliveryAttachment'),
+          description:
+            'Arquivos das entregas deste marco (RF-035), na ordem de envio. Ausente nas versões anteriores.',
+        },
       }),
       ContractsPage: obj(
         {
@@ -1007,9 +1138,95 @@ export const openapiDocument: Record<string, any> = {
           id: { type: 'integer', minimum: 1 },
           message: { type: 'string' },
           files: { type: 'array', items: { type: 'string' } },
+          attachments: {
+            type: 'array',
+            items: ref('DeliveryAttachment'),
+            description:
+              'Arquivos enviados com a entrega (RF-035). Ausente nas versões anteriores da API.',
+          },
           deliveredAt: timestamp,
         },
         ['id', 'message', 'files', 'deliveredAt'],
+      ),
+      DeliveryAttachment: obj(
+        {
+          messageId: {
+            type: 'integer',
+            minimum: 1,
+            description: 'Mensagem do chat que guarda o arquivo (alvo de denúncia "message").',
+          },
+          name: { type: 'string', description: 'Vazio quando removido pela moderação.' },
+          mime: { type: 'string' },
+          size: nonnegativeInteger,
+          url: {
+            type: 'string',
+            description:
+              'GET /messaging/attachments/{messageId}: só as partes baixam; 410 se expurgado ou removido.',
+          },
+          purgedAt: nullableTimestamp,
+          purgedReason: {
+            type: 'string',
+            enum: ['retention', 'lgpd', 'missing'],
+            nullable: true,
+          },
+          removedAt: nullableTimestamp,
+          sentAt: timestamp,
+        },
+        [
+          'messageId',
+          'name',
+          'mime',
+          'size',
+          'url',
+          'purgedAt',
+          'purgedReason',
+          'removedAt',
+          'sentAt',
+        ],
+      ),
+      Deliver: obj(
+        {
+          message: { type: 'string', minLength: 1 },
+          files: {
+            type: 'array',
+            maxItems: 20,
+            items: { type: 'string', format: 'uri' },
+            description: 'Links da entrega.',
+          },
+        },
+        ['message'],
+      ),
+      DeliverForm: obj(
+        {
+          message: { type: 'string', minLength: 1 },
+          files: {
+            type: 'array',
+            maxItems: 20,
+            items: { type: 'string', format: 'uri' },
+            description: 'Links, com o campo repetido.',
+          },
+          attachments: {
+            type: 'array',
+            maxItems: 10,
+            items: { type: 'string', format: 'binary' },
+            description:
+              'Até 10 arquivos (JPG, PNG, GIF, WebP, PDF ou ZIP, reconhecidos pelo conteúdo), cada um até UPLOAD_MAX_MB e 24 MB somados. Viram anexos do chat do par ligados à entrega.',
+          },
+        },
+        ['message'],
+      ),
+      DeliverMilestone: obj({ message: { type: 'string', minLength: 1 } }, ['message']),
+      DeliverMilestoneForm: obj(
+        {
+          message: { type: 'string', minLength: 1 },
+          attachments: {
+            type: 'array',
+            maxItems: 10,
+            items: { type: 'string', format: 'binary' },
+            description: 'Os mesmos limites da entrega única. O marco não guarda links.',
+          },
+        },
+        ['message'],
       ),
       ExtensionDecision: obj({
         seq: {
@@ -1027,10 +1244,18 @@ export const openapiDocument: Record<string, any> = {
           offeredDescription: { type: 'string', nullable: true },
           requestedServiceId: { type: 'integer', nullable: true },
           requestedDescription: { type: 'string', nullable: true },
-          estimatedValueOffered: { type: 'number' },
-          estimatedValueRequested: { type: 'number' },
+          estimatedValueOffered: {
+            type: 'number',
+            description:
+              'RF-084: com serviço oferecido de preço fechado, vale o catálogo (pode faltar; diferente é 422 estimate_mismatch). A combinar, por hora ou oferta descrita: obrigatório (422 estimate_required).',
+          },
+          estimatedValueRequested: {
+            type: 'number',
+            description:
+              'RF-084: com serviço pedido de preço fechado, vale o catálogo (pode faltar; diferente é 422 estimate_mismatch). A combinar, por hora ou pedido descrito: obrigatório (422 estimate_required).',
+          },
         },
-        ['receiverId', 'estimatedValueOffered', 'estimatedValueRequested'],
+        ['receiverId'],
       ),
       CreateDeposit: obj(
         { amount: { type: 'number', minimum: 10 }, method: { type: 'string', enum: ['pix'] } },
@@ -1071,6 +1296,51 @@ export const openapiDocument: Record<string, any> = {
         'accessToken',
         'refreshToken',
       ]),
+      // Contato da conta (RF-017): só o titular vê; o perfil público não traz e-mail nem telefone.
+      PendingEmailChange: obj(
+        { email: { type: 'string', format: 'email' }, expiresAt: timestamp },
+        ['email', 'expiresAt'],
+      ),
+      AccountContact: obj(
+        {
+          email: { type: 'string', format: 'email' },
+          emailVerified: { type: 'boolean' },
+          phone: {
+            type: 'string',
+            nullable: true,
+            pattern: '^\\+55\\d{10,11}$',
+            description: 'E.164 (+55, DDD e número); null quando não informado',
+          },
+          pendingEmail: nullableRef('PendingEmailChange'),
+        },
+        ['email', 'emailVerified', 'phone', 'pendingEmail'],
+      ),
+      ChangeEmail: obj(
+        {
+          currentPassword: { type: 'string', minLength: 1 },
+          newEmail: { type: 'string', format: 'email', maxLength: 255 },
+        },
+        ['currentPassword', 'newEmail'],
+      ),
+      ConfirmEmailChange: obj({ token: { type: 'string', minLength: 16, maxLength: 255 } }, [
+        'token',
+      ]),
+      ConfirmEmailChangeResponse: obj(
+        { email: { type: 'string', format: 'email' }, session: nullableRef('RefreshResponse') },
+        ['email', 'session'],
+      ),
+      UpdatePhone: obj(
+        {
+          phone: {
+            type: 'string',
+            nullable: true,
+            maxLength: 30,
+            description:
+              'Número do Brasil com DDD em qualquer formato comum ("(47) 99999-1234", "+55 47 3333-1234"); null ou vazio apaga',
+          },
+        },
+        ['phone'],
+      ),
       Service: obj(
         {
           id: { type: 'integer', minimum: 1 },
@@ -1179,6 +1449,72 @@ export const openapiDocument: Record<string, any> = {
           hasMore: { type: 'boolean', description: 'Há lançamentos depois desta página.' },
         },
         ['items', 'page', 'limit', 'hasMore'],
+      ),
+      EarningsBucket: obj(
+        {
+          bucket: {
+            type: 'string',
+            description:
+              'Início do período no fuso da conta: AAAA-MM-DD (dia; na semana, a segunda-feira) ou AAAA-MM (mês).',
+          },
+          amount: {
+            type: 'number',
+            description: 'R$ liberados do escrow mais tornas recebidas (já sem a taxa).',
+          },
+          contracts: { type: 'integer', minimum: 0 },
+          barters: { type: 'integer', minimum: 0 },
+        },
+        ['bucket', 'amount', 'contracts', 'barters'],
+      ),
+      WalletEarnings: obj(
+        {
+          from: { type: 'string', format: 'date' },
+          to: { type: 'string', format: 'date' },
+          granularity: { type: 'string', enum: ['day', 'week', 'month'] },
+          timezone: { type: 'string', enum: [...brazilTimezones] },
+          hasEarnings: {
+            type: 'boolean',
+            description: 'Já recebeu alguma vez (R$ ou créditos), em qualquer data.',
+          },
+          totals: obj(
+            {
+              amount: { type: 'number' },
+              contracts: {
+                type: 'integer',
+                minimum: 0,
+                description: 'Contratações distintas com liberação no período.',
+              },
+              barters: {
+                type: 'integer',
+                minimum: 0,
+                description: 'Trocas com torna recebida no período.',
+              },
+              averageTicket: {
+                type: 'number',
+                nullable: true,
+                description: 'amount ÷ (contracts + barters); null sem nada pago no período.',
+              },
+            },
+            ['amount', 'contracts', 'barters', 'averageTicket'],
+          ),
+          series: {
+            type: 'array',
+            items: ref('EarningsBucket'),
+            description: 'Todos os períodos de from a to, os vazios com zero.',
+          },
+          credits: obj(
+            {
+              total: {
+                type: 'integer',
+                description:
+                  'Créditos (time-bank) à parte: entram no aceite e as devoluções descontam no dia em que acontecem.',
+              },
+              contracts: { type: 'integer', minimum: 0 },
+            },
+            ['total', 'contracts'],
+          ),
+        },
+        ['from', 'to', 'granularity', 'timezone', 'hasEarnings', 'totals', 'series', 'credits'],
       ),
       ResolveDispute: obj(
         {
@@ -1600,11 +1936,30 @@ export const openapiDocument: Record<string, any> = {
       ),
     },
     '/contracts/{id}/deliver': {
-      post: op(
-        'Contratações',
-        'Registra entrega; o aviso ao cliente (contract_delivered) termina com " Mensagem: " e o começo da mensagem, numa linha só, até 120 caracteres com reticências',
-        { auth: true },
-      ),
+      post: {
+        ...op(
+          'Contratações',
+          'Registra entrega; o aviso ao cliente (contract_delivered) termina com " Mensagem: " e o começo da mensagem, numa linha só, até 120 caracteres com reticências. Com arquivos (RF-035), multipart: os arquivos viram anexos do chat do par ligados à entrega, na mesma transação',
+          {
+            auth: true,
+            responses: {
+              ...res200,
+              '409': errorResponse('conflict, invalid_transition, use_milestones'),
+              '413': errorResponse('file_too_large: um arquivo; files_too_large: a soma'),
+              '422': errorResponse(
+                'validation_error, empty_file, unsupported_file_type, too_many_files, invalid_upload',
+              ),
+            },
+          },
+        ),
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: ref('Deliver') },
+            'multipart/form-data': { schema: ref('DeliverForm') },
+          },
+        },
+      },
     },
     '/contracts/{id}/approve': {
       post: op('Contratações', 'Cliente aprova (libera escrow)', { auth: true }),
@@ -1711,12 +2066,32 @@ export const openapiDocument: Record<string, any> = {
     '/admin/finance': {
       get: op(
         'Admin',
-        'Relatório financeiro por período (receita do ledger, depósitos, saques, reembolsos, GMV)',
+        'Relatório financeiro por período (receita do ledger, depósitos, saques, reembolsos, GMV), por dia, semana (segunda a domingo) ou mês de Brasília; ?from, ?to (AAAA-MM-DD, até 400 dias) e ?granularity=day|week|month (padrão month). 400 invalid_range, range_too_long',
         { auth: true },
       ),
     },
     '/admin/finance/export.csv': {
       get: op('Admin', 'Ledger de R$ do período em CSV', { auth: true }),
+    },
+    '/admin/usage': {
+      get: {
+        ...op(
+          'Admin',
+          'Uso por período (RF-081): cadastros, contratações criadas, concluídas e canceladas e usuários ativos, com todos os baldes do período. Balde inteiro e fechado vem do snapshot gravado pelo job report-snapshots (source=snapshot); o resto é calculado agora (source=live). 400 invalid_range, range_too_long',
+          { auth: true, responses: jsonResponse('200', 'AdminUsageReport') },
+        ),
+        parameters: [
+          { name: 'from', in: 'query', schema: { type: 'string', format: 'date' } },
+          { name: 'to', in: 'query', schema: { type: 'string', format: 'date' } },
+          {
+            name: 'granularity',
+            in: 'query',
+            schema: { type: 'string', enum: ['day', 'week', 'month'], default: 'month' },
+            description:
+              'Sem from/to: últimos 30 dias (day), 12 semanas contando a atual (week) ou 6 meses contando o atual (month), até hoje em Brasília.',
+          },
+        ],
+      },
     },
     '/contracts/{id}/extension': {
       post: op(
@@ -1733,7 +2108,30 @@ export const openapiDocument: Record<string, any> = {
       ),
     },
     '/contracts/{id}/milestones/{milestoneId}/deliver': {
-      post: op('Contratações', 'Marco: freelancer entrega (RN-069)', { auth: true }),
+      post: {
+        ...op(
+          'Contratações',
+          'Marco: freelancer entrega (RN-069), com arquivos em multipart (RF-035) como a entrega única',
+          {
+            auth: true,
+            responses: {
+              ...jsonResponse('200', 'ContractWithHistory'),
+              '409': errorResponse('invalid_transition: o marco não está aguardando entrega'),
+              '413': errorResponse('file_too_large: um arquivo; files_too_large: a soma'),
+              '422': errorResponse(
+                'validation_error (files: o marco não guarda links), empty_file, unsupported_file_type, too_many_files, invalid_upload',
+              ),
+            },
+          },
+        ),
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: ref('DeliverMilestone') },
+            'multipart/form-data': { schema: ref('DeliverMilestoneForm') },
+          },
+        },
+      },
     },
     '/contracts/{id}/milestones/{milestoneId}/approve': {
       post: op('Contratações', 'Marco: cliente aprova e libera só aquele valor; o último conclui', {
@@ -1835,6 +2233,92 @@ export const openapiDocument: Record<string, any> = {
         },
       ),
     },
+    '/auth/contact': {
+      get: op(
+        'Auth',
+        'Contato da conta (RF-017): e-mail, troca pendente e telefone; só o titular',
+        {
+          auth: true,
+          responses: {
+            ...jsonResponse('200', 'AccountContact'),
+            '401': errorResponse('missing_token ou invalid_token'),
+          },
+        },
+      ),
+    },
+    '/auth/phone': {
+      put: op(
+        'Auth',
+        'Grava ou apaga o telefone da conta (RF-017), guardado em E.164; não aparece no perfil público. Bloqueado na suspensão',
+        {
+          auth: true,
+          body: ref('UpdatePhone'),
+          responses: {
+            ...jsonResponse('200', 'AccountContact'),
+            '401': errorResponse('missing_token ou invalid_token'),
+            '403': errorResponse('account_suspended, account_blocked ou account_deleted'),
+            '422': errorResponse(
+              'validation_error: details.phone (número que não é do Brasil, sem DDD válido ou com dígitos a mais ou a menos)',
+            ),
+          },
+        },
+      ),
+    },
+    '/auth/change-email': {
+      post: op(
+        'Auth',
+        'Pede a troca de e-mail (RF-017) com a senha atual. O link vai ao endereço novo e o atual recebe o aviso. A resposta é a mesma se o endereço já for de outra conta ou reservado à administração (o link não sai). Substitui o pedido anterior; bloqueado na suspensão',
+        {
+          auth: true,
+          body: ref('ChangeEmail'),
+          responses: {
+            '202': {
+              description: 'Pedido registrado; falta confirmar pelo link',
+              content: { 'application/json': { schema: ref('PendingEmailChange') } },
+            },
+            '400': errorResponse('wrong_password ou same_email'),
+            '401': errorResponse('missing_token ou invalid_token'),
+            '403': errorResponse(
+              'admin_email_locked (conta de administração), account_suspended, account_blocked ou account_deleted',
+            ),
+            '404': errorResponse('user_not_found'),
+            '422': errorResponse('validation_error: details.currentPassword ou details.newEmail'),
+            '429': errorResponse(
+              'too_many_requests (o limite do login, por IP) ou too_many_email_changes (5 pedidos por conta em 24 horas)',
+            ),
+          },
+        },
+      ),
+      delete: op(
+        'Auth',
+        'Desiste da troca de e-mail pendente (o link deixa de valer). Aceita conta suspensa',
+        {
+          auth: true,
+          responses: { ...res204, '401': errorResponse('missing_token ou invalid_token') },
+        },
+      ),
+    },
+    '/auth/confirm-email-change': {
+      post: op(
+        'Auth',
+        'Confirma a troca de e-mail pelo token do link (uso único, com validade). O e-mail novo entra confirmado, todas as sessões caem e o endereço antigo é avisado. Pública; com o Bearer da mesma conta, devolve a sessão nova desta aba',
+        {
+          body: ref('ConfirmEmailChange'),
+          responses: {
+            ...jsonResponse('200', 'ConfirmEmailChangeResponse'),
+            '400': errorResponse('invalid_token (link inválido, vencido, já usado ou cancelado)'),
+            '403': errorResponse(
+              'admin_email_locked, account_suspended, account_banned ou account_deleted',
+            ),
+            '409': errorResponse(
+              'email_unavailable (o endereço passou a ser de outra conta ou é reservado à administração)',
+            ),
+            '422': errorResponse('validation_error: details.token'),
+            '429': errorResponse('too_many_requests (o mesmo limite do login)'),
+          },
+        },
+      ),
+    },
     '/admin/emails': {
       get: op('Admin', 'Caixa de saída de e-mails (limit, userId)', { auth: true }),
     },
@@ -1865,6 +2349,36 @@ export const openapiDocument: Record<string, any> = {
         parameters: [...pageParameters, ...ledgerPeriodParameters],
       },
     },
+    '/wallet/earnings': {
+      get: {
+        ...op(
+          'Carteira',
+          'Ganhos por período (RF-082), lidos do ledger de R$: só escrow liberado ao freelancer (escrow_release) e torna recebida (barter_in), por dia, semana (segunda a domingo) ou mês no fuso da conta, com total, contratações pagas e ticket médio; créditos à parte. Sem from/to: últimos 30 dias, 12 semanas ou 12 meses até hoje',
+          {
+            auth: true,
+            responses: {
+              ...jsonResponse('200', 'WalletEarnings'),
+              '400': errorResponse(
+                'invalid_range: "Período inválido: a data inicial precisa ser até a final"; range_too_long: mais de 400 dias, semanas ou meses no agrupamento',
+              ),
+              '401': errorResponse('missing_token ou invalid_token'),
+              '403': errorResponse('account_blocked'),
+              '422': errorResponse(
+                'validation_error: details.from ou details.to = ["Informe um dia válido no formato AAAA-MM-DD"]; granularity fora de day, week ou month',
+              ),
+            },
+          },
+        ),
+        parameters: [
+          ...ledgerPeriodParameters,
+          {
+            name: 'granularity',
+            in: 'query',
+            schema: { type: 'string', enum: ['day', 'week', 'month'], default: 'month' },
+          },
+        ],
+      },
+    },
     '/wallet/deposits': {
       get: op('Carteira', 'Meus depósitos', { auth: true }),
       post: op('Carteira', 'Gera cobrança PIX de depósito na carteira', {
@@ -1880,9 +2394,13 @@ export const openapiDocument: Record<string, any> = {
       }),
     },
     '/payments/webhook': {
-      post: op('Carteira', 'Webhook do gateway (header x-webhook-secret)', {
-        body: { $ref: '#/components/schemas/PaymentWebhook' },
-      }),
+      post: op(
+        'Carteira',
+        'Webhook do gateway (header x-webhook-secret). Liquida uma vez (idempotente), mas todo corpo recebido com o segredo certo fica no histórico da cobrança (RF-050), sem dados pessoais: aplicado, repetido, de cobrança desconhecida ou fora do formato',
+        {
+          body: { $ref: '#/components/schemas/PaymentWebhook' },
+        },
+      ),
     },
     '/credits/transactions': {
       get: {
@@ -1964,15 +2482,87 @@ export const openapiDocument: Record<string, any> = {
       get: op('Gamificação', 'XP, nível, progresso, streak, ranking, badges', { auth: true }),
     },
     '/gamification/me/history': { get: op('Gamificação', 'Feed de XP', { auth: true }) },
-    '/gamification/leaderboard': { get: op('Gamificação', 'Ranking por XP', { auth: true }) },
+    '/gamification/me/missions': {
+      get: op(
+        'Gamificação',
+        'Missões do período vigente com o progresso (RF-066, RN-054): o dia e a semana (segunda a domingo 23:59:59) são os do fuso da conta; virou, o progresso recomeça. O progresso é recontado na fonte (contratações concluídas, ofertas do cliente respondidas a tempo, trocas concluídas) e a meta credita o xp_reward do catálogo uma vez só, com aviso mission_completed. Abrir conta como o acesso do dia (daily_login). Conta sem perfil de freelancer, suspensa ou banida recebe a lista vazia.',
+        {
+          auth: true,
+          responses: {
+            '200': {
+              description: 'OK',
+              content: {
+                'application/json': { schema: { type: 'array', items: ref('Mission') } },
+              },
+            },
+          },
+        },
+      ),
+    },
+    '/gamification/leaderboard': {
+      get: {
+        ...op(
+          'Gamificação',
+          'Ranking (RF-067). Sem filtro: geral por XP. Com categoryId e/ou lat+lng: top 10 da RN-056, por nota média, depois contratações concluídas, depois XP; a categoria inclui as subcategorias, e o local usa o raio ranking_radius_km da plataforma. Sem contas excluídas, suspensas ou banidas.',
+          {
+            auth: true,
+            responses: {
+              '200': {
+                description: 'OK',
+                content: {
+                  'application/json': {
+                    schema: { type: 'array', maxItems: 10, items: ref('LeaderboardEntry') },
+                  },
+                },
+              },
+              '422': errorResponse(
+                'validation_error (lat sem lng, fora da faixa ou categoria inválida)',
+              ),
+            },
+          },
+        ),
+        parameters: [
+          {
+            name: 'categoryId',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Quem tem serviço ativo na categoria ou numa subcategoria dela.',
+          },
+          {
+            name: 'lat',
+            in: 'query',
+            required: false,
+            schema: { type: 'number', minimum: -90, maximum: 90 },
+            description: 'Ponto do "perto de mim", junto com lng.',
+          },
+          {
+            name: 'lng',
+            in: 'query',
+            required: false,
+            schema: { type: 'number', minimum: -180, maximum: 180 },
+          },
+        ],
+      },
+    },
 
     '/barters': {
       get: op('Troca (Escambo)', 'Minhas trocas', { auth: true }),
-      post: op('Troca (Escambo)', 'Propõe troca (torna + taxa)', {
-        auth: true,
-        body: { $ref: '#/components/schemas/CreateBarter' },
-        responses: res201,
-      }),
+      post: op(
+        'Troca (Escambo)',
+        'Propõe troca (torna + taxa). O sistema estima cada lado pelo preço fechado do catálogo (RF-084); o valor informado só vale para serviço a combinar, por hora ou descrito',
+        {
+          auth: true,
+          body: { $ref: '#/components/schemas/CreateBarter' },
+          responses: {
+            ...res201,
+            '402': errorResponse('insufficient_balance: sem saldo para reservar a torna'),
+            '422': errorResponse(
+              'validation_error, estimate_mismatch (valor diferente do catálogo), estimate_required (lado sem preço fechado sem valor), invalid_offered_service, invalid_requested_service',
+            ),
+          },
+        },
+      ),
     },
     '/barters/{id}': { get: op('Troca (Escambo)', 'Detalhe da troca', { auth: true }) },
     '/barters/{id}/accept': {
@@ -2071,7 +2661,11 @@ export const openapiDocument: Record<string, any> = {
       ),
     },
     '/messaging/attachments/{id}': {
-      get: op('Chat', 'Baixa o anexo de uma mensagem (só as partes do contrato)', { auth: true }),
+      get: op(
+        'Chat',
+        'Baixa o anexo de uma mensagem, inclusive os arquivos das entregas (RF-035): só as partes do contrato',
+        { auth: true },
+      ),
     },
 
     '/favorites': {
@@ -2267,7 +2861,7 @@ export const openapiDocument: Record<string, any> = {
     '/admin/metrics': {
       get: op(
         'Admin',
-        'Métricas da plataforma, com os saques pendentes e quantos deles já passaram do prazo (overdueWithdrawals, RN-035)',
+        'Métricas da plataforma, com os saques pendentes e quantos deles já passaram do prazo (overdueWithdrawals, RN-035) e os chamados de suporte em aberto, aguardando a equipe e com SLA vencido (RF-076). O painel consulta de novo a cada 30 s com a aba visível',
         { auth: true, responses: jsonResponse('200', 'AdminMetrics') },
       ),
     },

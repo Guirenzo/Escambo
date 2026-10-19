@@ -43,6 +43,7 @@ vi.mock('../../lib/api', () => ({
     adminDeletionAction: (id: number, action: string, body: unknown) =>
       adminDeletionAction(id, action, body),
     adminFinance: () => pending(),
+    adminUsage: () => pending(),
     adminStorage: () => pending(),
     adminSettings: () => pending(),
     publicSettings: () => pending(),
@@ -101,6 +102,9 @@ const metricsOf = (o: Partial<AdminMetrics> = {}): AdminMetrics => ({
   depositsTotal: 18000,
   usersBalance: 9100.1,
   pendingDeletions: 0,
+  supportOpen: 5,
+  supportAwaitingReply: 3,
+  supportSlaOverdue: 0,
   ...o,
 });
 
@@ -237,6 +241,58 @@ describe('AdminView: números e estados das filas', () => {
     expect(kpi('Saques pendentes')).toHaveTextContent('Saques pendentes3R$ 450,00 a pagar');
     // Sem saque atrasado, a dica não fala em atraso.
     expect(kpi('Saques pendentes')).not.toHaveTextContent('atrasado');
+  });
+
+  it('chamados de suporte (RF-076): em aberto, aguardando a equipe e SLA vencido, com atalho para a fila', async () => {
+    renderView();
+
+    await screen.findByText('37 freelancers');
+    const support = screen.getByTestId('kpi-support');
+    const stat = (label: string) => within(support).getByText(label).closest('div') as HTMLElement;
+    expect(within(stat('em aberto')).getByRole('definition')).toHaveTextContent('5');
+    expect(within(stat('aguardando resposta da equipe')).getByRole('definition')).toHaveTextContent(
+      '3',
+    );
+    const late = stat('sem primeira resposta e com o SLA vencido');
+    expect(within(late).getByRole('definition')).toHaveTextContent('0');
+    // Sem SLA vencido, nada em destaque.
+    expect(late).not.toHaveClass('kpi-late');
+    expect(within(support).getByRole('link', { name: 'Ir para o atendimento' })).toHaveAttribute(
+      'href',
+      '#suporte',
+    );
+  });
+
+  it('SLA vencido ganha destaque; enquanto carrega, os três ficam com travessão', async () => {
+    adminMetrics.mockResolvedValue(metricsOf({ supportSlaOverdue: 2 }));
+    const first = renderView();
+    await screen.findByText('37 freelancers');
+    const late = within(screen.getByTestId('kpi-support'))
+      .getByText('sem primeira resposta e com o SLA vencido')
+      .closest('div');
+    expect(late).toHaveClass('kpi-late');
+    expect(late).toHaveTextContent('2');
+    first.unmount();
+
+    adminMetrics.mockReturnValue(pending());
+    renderView();
+    expect(
+      within(screen.getByTestId('kpi-support'))
+        .getAllByRole('definition')
+        .map((d) => d.textContent),
+    ).toEqual(['—', '—', '—']);
+  });
+
+  it('diz que os números se renovam sozinhos e a hora da última atualização', async () => {
+    renderView();
+    const note = screen.getByTestId('metrics-updated');
+    expect(note).toHaveTextContent(
+      /^Os números se renovam sozinhos a cada 30 segundos enquanto esta aba está aberta\.$/,
+    );
+    await screen.findByText('37 freelancers');
+    expect(note).toHaveTextContent(
+      /^Atualizado às \d{2}:\d{2}\. Os números se renovam sozinhos a cada 30 segundos/,
+    );
   });
 
   it('saques que passaram do prazo (RN-035) aparecem na dica do indicador', async () => {

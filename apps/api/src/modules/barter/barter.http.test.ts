@@ -207,11 +207,10 @@ describe('trocas: borda HTTP', () => {
         ['estimatedValueOffered', { estimatedValueOffered: 0 }],
         ['estimatedValueOffered', { estimatedValueOffered: -0.01 }],
         ['estimatedValueOffered', { estimatedValueOffered: '1000' }],
-        ['estimatedValueOffered', { estimatedValueOffered: undefined }],
         ['estimatedValueOffered', { estimatedValueOffered: null }],
         ['estimatedValueRequested', { estimatedValueRequested: 0 }],
         ['estimatedValueRequested', { estimatedValueRequested: -10 }],
-        ['estimatedValueRequested', { estimatedValueRequested: undefined }],
+        ['estimatedValueRequested', { estimatedValueRequested: null }],
         ['estimatedValueRequested', { estimatedValueRequested: '800' }],
         ['offeredDescription', { offeredDescription: 'ab' }],
         ['offeredDescription', { offeredDescription: 'x'.repeat(1001) }],
@@ -232,16 +231,23 @@ describe('trocas: borda HTTP', () => {
       expect(service.propose).not.toHaveBeenCalled();
     });
 
-    it('corpo vazio é erro de validação apontando o destinatário e os dois valores', async () => {
+    it('corpo vazio é erro de validação apontando o destinatário; os valores podem faltar (RF-084)', async () => {
       const res = await request(app).post('/api/barters').set(bearer(7)).send({}).expect(422);
       expect(res.body.error).toBe('validation_error');
-      expect(Object.keys(res.body.details).sort()).toEqual([
-        'estimatedValueOffered',
-        'estimatedValueRequested',
-        'receiverId',
-      ]);
+      expect(Object.keys(res.body.details)).toEqual(['receiverId']);
       expect(service.propose).not.toHaveBeenCalled();
       expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('sem os valores, a proposta chega ao service, que os estima pelo catálogo (RF-084)', async () => {
+      service.propose.mockResolvedValue({ id: 13, proposerId: 7, receiverId: 2 });
+      const withoutValues = {
+        receiverId: proposal.receiverId,
+        offeredDescription: proposal.offeredDescription,
+        requestedDescription: proposal.requestedDescription,
+      };
+      await request(app).post('/api/barters').set(bearer(7)).send(withoutValues).expect(201);
+      expect(service.propose).toHaveBeenCalledWith(7, withoutValues);
     });
 
     it('o aviso da proposta vai para o destinatário que o service devolveu, não para o do corpo', async () => {

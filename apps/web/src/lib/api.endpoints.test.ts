@@ -88,6 +88,12 @@ describe('consultas (GET): cada método lê do caminho certo', () => {
       () => api.walletTransactions({ page: 1, from: '', to: '2026-10-15' }),
       '/api/wallet/transactions?page=1&to=2026-10-15',
     ],
+    ['walletEarnings sem filtro (RF-082)', () => api.walletEarnings(), '/api/wallet/earnings'],
+    [
+      'walletEarnings com período e agrupamento (o vazio não vai)',
+      () => api.walletEarnings({ from: '', to: '2026-10-15', granularity: 'week' }),
+      '/api/wallet/earnings?to=2026-10-15&granularity=week',
+    ],
     ['deposits', () => api.deposits(), '/api/wallet/deposits'],
     ['deposit', () => api.deposit(3), '/api/wallet/deposits/3'],
     ['withdrawals', () => api.withdrawals(), '/api/withdrawals'],
@@ -839,6 +845,16 @@ describe('busca de serviços e relatório financeiro: só os filtros preenchidos
     );
     expect(sent(fetchMock, 1).url).toBe('/api/admin/finance?granularity=month');
   });
+
+  it('adminUsage manda o mesmo recorte do financeiro, inclusive por semana', async () => {
+    const fetchMock = stubFetch();
+    await api.adminUsage({ from: '2026-09-01', to: '2026-09-30', granularity: 'week' });
+    await api.adminUsage({ granularity: 'month' });
+    expect(sent(fetchMock, 0).url).toBe(
+      '/api/admin/usage?from=2026-09-01&to=2026-09-30&granularity=week',
+    );
+    expect(sent(fetchMock, 1).url).toBe('/api/admin/usage?granularity=month');
+  });
 });
 
 describe('envio de arquivo (multipart)', () => {
@@ -881,6 +897,36 @@ describe('envio de arquivo (multipart)', () => {
     expect(first.get('content')).toBe('Segue o briefing');
     expect(withCaption.headers['Content-Type']).toBeUndefined();
     expect((sent(fetchMock, 1).body as FormData).has('content')).toBe(false);
+  });
+
+  it('entrega com arquivos (RF-035) vai em multipart: mensagem, links repetidos e os arquivos em attachments', async () => {
+    const fetchMock = stubFetch();
+    const pdf = new File(['pdf'], 'final.pdf', { type: 'application/pdf' });
+    const png = new File(['png'], 'capa.png', { type: 'image/png' });
+
+    await api.deliverContract(7, 'Segue a entrega', [pdf, png], ['https://drive.test/a']);
+    await api.deliverContract(7, 'Só links', [], ['https://drive.test/b']);
+    await api.milestoneAction(7, 2, 'deliver', 'Primeira parte', [pdf]);
+
+    const withFiles = sent(fetchMock, 0);
+    expect([withFiles.url, withFiles.method]).toEqual(['/api/contracts/7/deliver', 'POST']);
+    const form = withFiles.body as FormData;
+    expect(form.get('message')).toBe('Segue a entrega');
+    expect(form.getAll('files')).toEqual(['https://drive.test/a']);
+    expect((form.getAll('attachments') as File[]).map((f) => f.name)).toEqual([
+      'final.pdf',
+      'capa.png',
+    ]);
+    expect(withFiles.headers['Content-Type']).toBeUndefined();
+    // Sem arquivo, continua JSON, com os links em files.
+    expect(sent(fetchMock, 1).body).toEqual({
+      message: 'Só links',
+      files: ['https://drive.test/b'],
+    });
+    const milestone = sent(fetchMock, 2);
+    expect(milestone.url).toBe('/api/contracts/7/milestones/2/deliver');
+    expect((milestone.body as FormData).get('message')).toBe('Primeira parte');
+    expect(((milestone.body as FormData).get('attachments') as File).name).toBe('final.pdf');
   });
 });
 

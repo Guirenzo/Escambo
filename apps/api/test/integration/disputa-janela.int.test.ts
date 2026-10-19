@@ -14,6 +14,7 @@ import { settingsRepository } from '../../src/modules/settings/settings.reposito
 import { settingsService } from '../../src/modules/settings/settings.service';
 import { walletRepository } from '../../src/modules/wallet/wallet.repository';
 import { setClockForTests } from '../../src/utils/clock';
+import { deleteUsersWithoutLedger } from './helpers/ledger-cleanup';
 
 const app = createApp();
 const NOW = new Date('2026-10-08T15:00:00Z');
@@ -183,14 +184,9 @@ afterEach(async () => {
     await pool.query('DELETE FROM contracts WHERE id IN (:ids)', { ids: ownedContracts });
   }
   if (ownedUsers.length) {
-    await pool.query('DELETE FROM wallet_transactions WHERE user_id IN (:ids)', {
-      ids: ownedUsers,
-    });
-    await pool.query('DELETE FROM credit_transactions WHERE user_id IN (:ids)', {
-      ids: ownedUsers,
-    });
     await pool.query('DELETE FROM notifications WHERE user_id IN (:ids)', { ids: ownedUsers });
-    await pool.query('DELETE FROM users WHERE id IN (:ids)', { ids: ownedUsers });
+    // Extrato imutável (RNF-036): quem tem lançamento fica, com os lançamentos.
+    await deleteUsersWithoutLedger(ownedUsers);
   }
   ownedContracts.length = ownedUsers.length = 0;
 });

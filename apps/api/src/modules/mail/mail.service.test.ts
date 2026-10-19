@@ -45,6 +45,22 @@ describe('templates', () => {
     expect(n.html).toContain('Abrir no Escambo');
   });
 
+  it('troca de e-mail (RF-017): o link vai ao endereço novo, com a validade e o que fazer se não pediu', () => {
+    const link = 'http://app/confirmar-novo-email?token=T<1>';
+    const mail = renderEmail('email_change', { link, validity: '24 horas' });
+    expect(mail.subject).toBe('Confirme seu novo e-mail no Escambo');
+    expect(mail.text).toContain(link);
+    expect(mail.text).toContain('O link vale por 24 horas e só pode ser usado uma vez.');
+    expect(mail.text).toContain('Se você não pediu, ignore esta mensagem: nada muda.');
+    expect(mail.html).toContain('Confirmar novo e-mail');
+    expect(mail.html).toContain('token=T&lt;1&gt;');
+    expect(mail.html).not.toContain('T<1>');
+    // Sem validade nem link: o padrão de 24 horas e o botão para o app.
+    const bare = renderEmail('email_change', {});
+    expect(bare.text).toContain('O link vale por 24 horas');
+    expect(bare.html).toContain(`href="${env.APP_URL}"`);
+  });
+
   it('relatório da moderação leva os parágrafos prontos e o botão do painel (ADR 55)', () => {
     const m = renderEmail('moderation_report', {
       title: 'Moderação: ontem (23/09) a fila passou da meta de 24 h',

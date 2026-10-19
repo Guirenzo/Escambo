@@ -47,3 +47,6 @@ apps/web/playwright/.cache
 
 # Páginas da Wiki geradas por scripts/wiki-build.mjs
 .wiki-*/
+
+# Cache incremental do tsc -b
+*.tsbuildinfo

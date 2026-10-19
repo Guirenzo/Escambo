@@ -7,13 +7,14 @@ import {
   listDeposits,
   simulateDeposit,
 } from '../payments/payments.controller';
-import { getWallet, listWalletTransactions } from './wallet.controller';
+import { getEarnings, getWallet, listWalletTransactions } from './wallet.controller';
 
 export const walletRoutes = Router();
 
 walletRoutes.use(authenticate);
 walletRoutes.get('/', asyncHandler(getWallet));
 walletRoutes.get('/transactions', asyncHandler(listWalletTransactions));
+walletRoutes.get('/earnings', asyncHandler(getEarnings));
 // Depósitos (cobrança PIX via gateway): criar, listar, consultar e — na demo — simular o pagamento.
 walletRoutes.post('/deposits', asyncHandler(createDeposit));
 walletRoutes.get('/deposits', asyncHandler(listDeposits));

@@ -140,6 +140,29 @@ export const authRepository = {
     return rows.map((r) => ({ id: r.id, email: r.email }));
   },
 
+  /** O contato da conta (RF-017), que só o titular vê: e-mail, se está confirmado e o telefone. */
+  async findContact(
+    id: number,
+  ): Promise<{ email: string; email_verified_at: Date | null; phone: string | null } | undefined> {
+    const [rows] = await pool.query<
+      (RowDataPacket & { email: string; email_verified_at: Date | null; phone: string | null })[]
+    >('SELECT email, email_verified_at, phone FROM users WHERE id = :id LIMIT 1', { id });
+    return rows[0];
+  },
+
+  /**
+   * Grava o telefone (E.164) ou o apaga (null). A confirmação do número antigo não passa para um
+   * número novo: phone_verified_at é calculado antes de phone mudar (o MySQL aplica o SET em ordem).
+   */
+  async updatePhone(id: number, phone: string | null): Promise<void> {
+    await pool.query<ResultSetHeader>(
+      `UPDATE users
+          SET phone_verified_at = IF(phone <=> :phone, phone_verified_at, NULL), phone = :phone
+        WHERE id = :id`,
+      { id, phone },
+    );
+  },
+
   async updateRole(id: number, role: string): Promise<void> {
     await pool.query<ResultSetHeader>(`UPDATE users SET role = :role WHERE id = :id`, { id, role });
   },

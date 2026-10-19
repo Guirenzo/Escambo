@@ -1,3 +1,4 @@
+import type { FinanceGranularity } from '@escambo/types';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 
@@ -42,13 +43,31 @@ export interface LedgerExportRow extends RowDataPacket {
 
 /** Linhas que trocam dinheiro com fora da plataforma. */
 const EXTERNAL = `('deposit', 'withdrawal', 'withdrawal_refund')`;
-/** Baldes em horário de Brasília (o ledger guarda UTC). */
-const BRT = `CONVERT_TZ(created_at, '+00:00', '-03:00')`;
+
+/**
+ * O balde de uma coluna UTC em horário de Brasília, no formato de `:format`: o próprio dia ou mês,
+ * ou, na semana, a segunda-feira dela (semana de segunda a domingo). `column` é sempre um nome fixo
+ * do código, nunca entrada do usuário.
+ */
+export function bucketOf(column: string, granularity: FinanceGranularity): string {
+  const local = `CONVERT_TZ(${column}, '+00:00', '-03:00')`;
+  return granularity === 'week'
+    ? `DATE_FORMAT(DATE_SUB(DATE(${local}), INTERVAL WEEKDAY(${local}) DAY), :format)`
+    : `DATE_FORMAT(${local}, :format)`;
+}
+
+/** O formato do balde: dia e semana em AAAA-MM-DD, mês em AAAA-MM. */
+export const bucketFormat = (granularity: FinanceGranularity): string =>
+  granularity === 'month' ? '%Y-%m' : '%Y-%m-%d';
 
 export const financeRepository = {
-  async ledgerByBucket(from: Date, to: Date, format: string): Promise<LedgerBucketRow[]> {
+  async ledgerByBucket(
+    from: Date,
+    to: Date,
+    granularity: FinanceGranularity,
+  ): Promise<LedgerBucketRow[]> {
     const [rows] = await pool.query<LedgerBucketRow[]>(
-      `SELECT DATE_FORMAT(${BRT}, :format) AS bucket,
+      `SELECT ${bucketOf('created_at', granularity)} AS bucket,
               -COALESCE(SUM(CASE WHEN reason NOT IN ${EXTERNAL} THEN amount + pending_delta END), 0) AS revenue,
               COALESCE(SUM(CASE WHEN reason = 'deposit' THEN amount END), 0) AS deposits,
               COALESCE(SUM(CASE WHEN reason = 'withdrawal' THEN -amount
@@ -58,15 +77,19 @@ export const financeRepository = {
         WHERE created_at >= :from AND created_at < :to
         GROUP BY bucket
         ORDER BY bucket ASC`,
-      { format, from, to },
+      { format: bucketFormat(granularity), from, to },
     );
     return rows;
   },
 
   /** Contratações em dinheiro concluídas por balde (contagem e valor bruto). */
-  async contractsByBucket(from: Date, to: Date, format: string): Promise<ContractsBucketRow[]> {
+  async contractsByBucket(
+    from: Date,
+    to: Date,
+    granularity: FinanceGranularity,
+  ): Promise<ContractsBucketRow[]> {
     const [rows] = await pool.query<ContractsBucketRow[]>(
-      `SELECT DATE_FORMAT(CONVERT_TZ(completed_at, '+00:00', '-03:00'), :format) AS bucket,
+      `SELECT ${bucketOf('completed_at', granularity)} AS bucket,
               COUNT(*) AS completed,
               COALESCE(SUM(price), 0) AS gmv
          FROM contracts
@@ -74,7 +97,7 @@ export const financeRepository = {
           AND completed_at >= :from AND completed_at < :to
         GROUP BY bucket
         ORDER BY bucket ASC`,
-      { format, from, to },
+      { format: bucketFormat(granularity), from, to },
     );
     return rows;
   },

@@ -42,6 +42,7 @@ vi.mock('./features/auth/AccountViews', () => ({
   ForgotPasswordView: () => <h1>Esqueci a senha</h1>,
   ResetPasswordView: () => <h1>Redefinir senha</h1>,
   VerifyEmailView: () => <h1>Verificar e-mail</h1>,
+  ConfirmEmailChangeView: () => <h1>Confirmar novo e-mail</h1>,
 }));
 vi.mock('./features/views/InicioView', () => ({ InicioView: () => <h1>Início</h1> }));
 vi.mock('./features/views/ServicosView', () => ({ ServicosView: () => <h1>Serviços</h1> }));
@@ -108,6 +109,8 @@ describe('App: rotas públicas', () => {
     ['/esqueci-senha', 'Esqueci a senha'],
     ['/redefinir-senha', 'Redefinir senha'],
     ['/verificar-email', 'Verificar e-mail'],
+    // O link da troca de e-mail (RF-017) pode abrir em outro aparelho, sem sessão.
+    ['/confirmar-novo-email?token=abc', 'Confirmar novo e-mail'],
     ['/termos', 'Termos de Uso'],
     ['/privacidade', 'Política de Privacidade'],
   ])('%s abre sem sessão e fora do menu do app', (path, title) => {

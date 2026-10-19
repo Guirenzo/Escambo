@@ -181,6 +181,9 @@ export const adminService = {
       depositsTotal: Number(m.deposits_total),
       usersBalance: Number(m.users_balance),
       pendingDeletions: Number(m.pending_deletions),
+      supportOpen: Number(m.support_open),
+      supportAwaitingReply: Number(m.support_awaiting_reply),
+      supportSlaOverdue: Number(m.support_sla_overdue),
     };
   },
 };

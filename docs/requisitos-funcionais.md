@@ -45,7 +45,7 @@
 | RF-014 | O cliente deve poder visualizar o perfil completo do freelancer antes de contratar                 | Alta       | Implementado |
 | RF-015 | O sistema deve exibir no perfil do freelancer: nota média, total de serviços e badges conquistadas | Alta       | Implementado |
 | RF-016 | O sistema deve exibir o tempo médio de resposta do freelancer em seu perfil                        | Média      | Implementado |
-| RF-017 | O usuário deve poder editar seus dados pessoais a qualquer momento                                 | Alta       | Parcial |
+| RF-017 | O usuário deve poder editar seus dados pessoais a qualquer momento                                 | Alta       | Implementado |
 | RF-018 | O sistema deve suportar perfil do tipo empresa com CNPJ, logo e dados corporativos                 | Baixa      | Não implementado |
 | RF-019 | O sistema deve permitir upload de foto de perfil com redimensionamento automático                  | Alta       | Implementado |
 | RF-020 | O sistema deve validar CPF do freelancer para habilitar funcionalidades financeiras                | Média      | Não implementado |
@@ -75,7 +75,7 @@
 | RF-032 | O freelancer deve poder aceitar, recusar ou contrapropor uma proposta recebida, e o cliente responder à contraproposta na sua vez (até 5 ofertas em 3 rodadas)                                        | Alta       | Implementado |
 | RF-033 | O sistema deve rastrear e atualizar o status da contratação em cada etapa do fluxo                                                                                                                    | Alta       | Implementado |
 | RF-034 | O sistema deve registrar histórico completo de mudanças de status com data e responsável                                                                                                              | Alta       | Implementado |
-| RF-035 | O freelancer deve poder registrar a entrega do serviço com mensagem e arquivos anexos                                                                                                                 | Alta       | Parcial |
+| RF-035 | O freelancer deve poder registrar a entrega do serviço com mensagem e arquivos anexos                                                                                                                 | Alta       | Implementado |
 | RF-036 | O cliente deve poder aprovar a entrega ou pedir até 2 revisões sem custo por entrega/marco; o freelancer pode liberar revisão extra, e contratos já registrados com limite NULL permanecem sem limite | Alta       | Implementado |
 | RF-037 | O sistema deve liberar o pagamento ao freelancer somente após a conclusão confirmada pelo cliente                                                                                                     | Alta       | Implementado |
 | RF-038 | O sistema deve permitir cancelamento de contratação com política de reembolso definida                                                                                                                | Média      | Implementado |
@@ -102,7 +102,7 @@
 | RF-047 | O sistema deve exibir histórico detalhado de transações com filtro por período                   | Alta       | Implementado |
 | RF-048 | O sistema deve emitir notificação ao receber e ao processar um pagamento                         | Alta       | Implementado |
 | RF-049 | O sistema deve suportar reembolso parcial ou total em casos de cancelamento                      | Média      | Implementado |
-| RF-050 | O sistema deve registrar a resposta completa do gateway para auditoria                           | Alta       | Parcial |
+| RF-050 | O sistema deve registrar a resposta completa do gateway para auditoria                           | Alta       | Implementado |
 ---
 
 ## Módulo 06 — Avaliações
@@ -133,11 +133,11 @@
 
 | ID     | Descrição                                                                                                              | Prioridade | Status   |
 | ------ | ---------------------------------------------------------------------------------------------------------------------- | ---------- | -------- |
-| RF-063 | O sistema deve atribuir XP ao freelancer por ações relevantes (serviço concluído, avaliação recebida, missão cumprida) | Alta       | Parcial |
+| RF-063 | O sistema deve atribuir XP ao freelancer por ações relevantes (serviço concluído, avaliação recebida, missão cumprida) | Alta       | Implementado |
 | RF-064 | O sistema deve calcular o nível do usuário com base no XP total acumulado                                              | Alta       | Implementado |
 | RF-065 | O sistema deve emitir badges automaticamente ao atingir marcos definidos                                               | Alta       | Implementado |
-| RF-066 | O sistema deve disponibilizar missões periódicas com recompensas em XP                                                 | Média      | Não implementado |
-| RF-067 | O sistema deve exibir ranking local de freelancers por categoria e nota                                                | Média      | Parcial |
+| RF-066 | O sistema deve disponibilizar missões periódicas com recompensas em XP                                                 | Média      | Implementado |
+| RF-067 | O sistema deve exibir ranking local de freelancers por categoria e nota                                                | Média      | Implementado |
 | RF-068 | O sistema deve exibir no perfil o nível atual, XP acumulado e badges conquistadas                                      | Alta       | Implementado |
 ---
 
@@ -152,13 +152,13 @@
 | RF-073 | Suporte         | O sistema deve permitir troca de mensagens internas entre usuário e equipe de suporte dentro do ticket                | Alta       | Implementado |
 | RF-074 | Impulsionamento | O freelancer deve poder contratar um plano de impulsionamento com duração e alcance definidos                         | Média      | Implementado |
 | RF-075 | Impulsionamento | O sistema deve exibir serviços impulsionados ativos com destaque visual nos resultados                                | Média      | Implementado |
-| RF-076 | Administração   | O painel administrativo deve exibir métricas gerais de usuários, contratos, receita e tickets em tempo real           | Alta       | Parcial |
+| RF-076 | Administração   | O painel administrativo deve exibir métricas gerais de usuários, contratos, receita e tickets em tempo real           | Alta       | Implementado |
 | RF-077 | Administração   | O administrador deve poder suspender, banir ou reativar qualquer conta da plataforma                                  | Alta       | Implementado |
 | RF-078 | Administração   | O administrador deve poder configurar parâmetros da plataforma (taxa, prazo de saque, manutenção) sem deploy          | Média      | Implementado |
 | RF-079 | LGPD            | O sistema deve registrar o consentimento explícito do usuário nos termos de uso e política de privacidade no cadastro | Alta       | Implementado |
 | RF-080 | LGPD            | O usuário deve poder solicitar a exclusão definitiva de seus dados pessoais da plataforma                             | Alta       | Implementado |
-| RF-081 | Relatórios      | O sistema deve gerar snapshots periódicos (diário, semanal, mensal) de métricas de uso e receita                      | Média      | Parcial |
-| RF-082 | Relatórios      | O painel do freelancer deve exibir gráfico de ganhos por período                                                      | Média      | Não implementado |
+| RF-081 | Relatórios      | O sistema deve gerar snapshots periódicos (diário, semanal, mensal) de métricas de uso e receita                      | Média      | Implementado |
+| RF-082 | Relatórios      | O painel do freelancer deve exibir gráfico de ganhos por período                                                      | Média      | Implementado |
 > ℹ️ RF-069: "crítico" aqui é o que vale uma batida no aparelho (os tipos que também vão por e-mail, ADR 52); mensagens do chat ficam fora para não virar barulho. "O que não pode esperar" durante o horário de silêncio é outra coisa, escolhida pela pessoa (RN-077, ADR 56).
 
 ---
@@ -171,7 +171,7 @@ de valor entre os dois lados (a _torna_) é paga em dinheiro via escrow.
 | ID     | Descrição                                                                                                                     | Prioridade | Status   |
 | ------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------- | -------- |
 | RF-083 | O sistema deve permitir que um usuário proponha uma troca de serviços (serviço por serviço), com ou sem diferença em dinheiro | Alta       | Implementado |
-| RF-084 | O sistema deve estimar o valor de cada lado da troca e calcular a diferença (torna) a ser paga em dinheiro                    | Alta       | Parcial |
+| RF-084 | O sistema deve estimar o valor de cada lado da troca e calcular a diferença (torna) a ser paga em dinheiro                    | Alta       | Implementado |
 | RF-085 | Ao aceitar uma troca, o sistema deve gerar dois contratos recíprocos vinculados e reter a torna em escrow                     | Alta       | Implementado |
 ---
 
@@ -209,7 +209,7 @@ Requisitos distribuídos por módulos existentes (Serviços, Contratações, Sup
 | Recursos avançados (RF-086–092)  | 7            | 4      | 3      | 0     |
 | **Total**                        | **92**       | **67** | **23** | **2** |
 
-> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.44.0: **73 implementados, 10 parciais, 7 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
+> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.45.0: **83 implementados, 2 parciais, 5 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
 
 > ℹ️ O total ficou em **92 requisitos funcionais**, superando os 72 planejados inicialmente — resultado do detalhamento granular e da inclusão da **troca de serviços (escambo)** e de recursos avançados de confiança e segurança (v1.1.0), com dois requisitos de desistência e revisão humana acrescentados pelo ADR 61 (v1.2.0).
 

@@ -6,6 +6,7 @@ import {
   contractIdSchema,
   counterOfferSchema,
   createContractSchema,
+  deliverFormSchema,
   deliverMilestoneSchema,
   deliverSchema,
   grantRevisionBodySchema,
@@ -21,6 +22,10 @@ import {
 import { contractsService } from './contracts.service';
 
 const uid = (req: Request): number => req.user!.uid;
+
+/** Arquivos da entrega em multipart (campo attachments, RF-035); no corpo JSON, nenhum. */
+const uploads = (req: Request): Express.Multer.File[] =>
+  Array.isArray(req.files) ? req.files : [];
 const audit = (req: Request) => ({
   ip: req.ip ?? null,
   userAgent: req.headers['user-agent'] ?? null,
@@ -97,9 +102,12 @@ export async function acceptCounterOffer(req: Request, res: Response): Promise<v
 
 export async function deliverContract(req: Request, res: Response): Promise<void> {
   const { id } = contractIdSchema.parse(req.params);
-  const input = deliverSchema.parse(req.body);
+  // Com arquivos, a entrega vem em multipart: os links chegam como texto (RF-035).
+  const input = (req.is('multipart/form-data') ? deliverFormSchema : deliverSchema).parse(
+    req.body ?? {},
+  );
   // O aviso ao cliente sai do service, com a hora da aprovação automática (ADR 57).
-  res.json(await contractsService.deliver(id, uid(req), input));
+  res.json(await contractsService.deliver(id, uid(req), input, uploads(req)));
 }
 
 export async function approveContract(req: Request, res: Response): Promise<void> {
@@ -164,9 +172,11 @@ export async function resolveExtension(req: Request, res: Response): Promise<voi
 
 export async function deliverMilestone(req: Request, res: Response): Promise<void> {
   const { id, milestoneId } = milestoneParamsSchema.parse(req.params);
-  const input = deliverMilestoneSchema.parse(req.body);
+  const input = deliverMilestoneSchema.parse(req.body ?? {});
   // O aviso ao cliente sai do service, com a hora da aprovação automática do marco (ADR 57).
-  res.json(await contractsService.deliverMilestone(id, milestoneId, uid(req), input.message));
+  res.json(
+    await contractsService.deliverMilestone(id, milestoneId, uid(req), input.message, uploads(req)),
+  );
 }
 
 export async function approveMilestone(req: Request, res: Response): Promise<void> {

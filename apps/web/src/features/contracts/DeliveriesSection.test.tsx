@@ -1,8 +1,19 @@
-import { render, screen, within } from '@testing-library/react';
-import type { ContractDelivery, ContractWithHistory } from '@escambo/types';
-import { describe, expect, it } from 'vitest';
-import { dtm } from '../../lib/format';
-import { DeliveriesSection, safeHref } from './DeliveriesSection';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { ContractDelivery, ContractWithHistory, DeliveryAttachment } from '@escambo/types';
+import { describe, expect, it, vi } from 'vitest';
+import { dtm, formatBytes } from '../../lib/format';
+import { ToastProvider } from '../../lib/toast';
+import { DeliveriesSection, DeliveryFiles, safeHref } from './DeliveriesSection';
+
+const attachmentBlob = vi.fn();
+vi.mock('../../lib/api', () => ({
+  api: { attachmentBlob: (url: string, name: string) => attachmentBlob(url, name) },
+}));
+const saveBlob = vi.fn();
+vi.mock('../../lib/download', () => ({
+  saveBlob: (blob: Blob, name: string) => saveBlob(blob, name),
+}));
 
 /**
  * Entregas na Sala (RF-035): a mensagem e os links de cada entrega única, com as reentregas, para
@@ -16,6 +27,19 @@ const delivery = (o: Partial<ContractDelivery> & { id: number }): ContractDelive
   message: 'Segue a entrega.',
   files: [],
   deliveredAt: '2026-10-02T15:00:00.000Z',
+  ...o,
+});
+
+/** Arquivo de uma entrega como a API devolve: um anexo do chat do par. */
+const file = (o: Partial<DeliveryAttachment> & { messageId: number }): DeliveryAttachment => ({
+  name: 'final.pdf',
+  mime: 'application/pdf',
+  size: 204_800,
+  url: `/api/messaging/attachments/${o.messageId}`,
+  purgedAt: null,
+  purgedReason: null,
+  removedAt: null,
+  sentAt: '2026-10-04T18:30:00.000Z',
   ...o,
 });
 
@@ -53,7 +77,7 @@ describe('DeliveriesSection', () => {
     expect(within(section).getByText('2 entregas')).toBeInTheDocument();
     expect(
       within(section).getByText(
-        'O que o freelancer mandou em cada entrega. Arquivos também podem ter vindo pelo chat.',
+        'O que o freelancer mandou em cada entrega. Os arquivos também ficam no chat, e outros podem ter vindo por lá.',
       ),
     ).toBeInTheDocument();
 
@@ -111,6 +135,74 @@ describe('DeliveriesSection', () => {
     expect(screen.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
       'http://drive.escambo.test/pasta',
     ]);
+  });
+
+  it('os arquivos de cada entrega (RF-035): nome, tamanho e o download com o token', async () => {
+    const user = userEvent.setup();
+    const blob = new Blob(['pdf']);
+    attachmentBlob.mockResolvedValue({ blob, fileName: 'final.pdf' });
+    render(
+      <ToastProvider>
+        <DeliveriesSection
+          contract={contract([
+            delivery({
+              id: 3,
+              attachments: [file({ messageId: 40, name: 'rascunho.png', mime: 'image/png' })],
+            }),
+            delivery({
+              id: 5,
+              attachments: [file({ messageId: 41 }), file({ messageId: 42, name: 'fontes.zip' })],
+            }),
+          ])}
+          myId={CLIENT}
+        />
+      </ToastProvider>,
+    );
+
+    const [latest, first] = screen.getAllByTestId(/^delivery-[0-9]$/);
+    expect(within(latest!).getByText('Arquivos da entrega:')).toBeInTheDocument();
+    expect(
+      within(latest!)
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label')),
+    ).toEqual(['Baixar final.pdf', 'Baixar fontes.zip']);
+    expect(latest).toHaveTextContent(formatBytes(204_800));
+    expect(within(first!).getByText('Arquivo da entrega:')).toBeInTheDocument();
+    expect(within(first!).getByRole('button', { name: 'Baixar rascunho.png' })).toBeVisible();
+
+    await user.click(within(latest!).getByRole('button', { name: 'Baixar final.pdf' }));
+    await waitFor(() => expect(saveBlob).toHaveBeenCalledWith(blob, 'final.pdf'));
+    expect(attachmentBlob).toHaveBeenCalledWith('/api/messaging/attachments/41', 'final.pdf');
+  });
+
+  it('arquivo expurgado aparece riscado com o motivo; removido pela moderação, só o aviso', () => {
+    render(
+      <ToastProvider>
+        <DeliveryFiles
+          attachments={[
+            file({
+              messageId: 50,
+              name: 'antigo.pdf',
+              purgedAt: '2026-10-01T00:00:00.000Z',
+              purgedReason: 'retention',
+            }),
+            file({ messageId: 51, name: '', size: 0, removedAt: '2026-10-02T00:00:00.000Z' }),
+          ]}
+        />
+      </ToastProvider>,
+    );
+    expect(screen.getByTestId('attachment-purged')).toHaveTextContent(
+      'antigo.pdfremovido pela política de retenção',
+    );
+    expect(screen.getByTestId('delivery-file-removed')).toHaveTextContent(
+      'Arquivo removido pela moderação',
+    );
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('sem arquivo, a lista de arquivos não aparece', () => {
+    const { container } = render(<DeliveryFiles attachments={[]} />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('safeHref: só http e https', () => {

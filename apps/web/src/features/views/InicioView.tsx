@@ -15,6 +15,7 @@ import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
 import { brl, displayName } from '../../lib/format';
 import { useGamification, useProfilesMe, useWallet } from '../../lib/hooks';
+import { MissionsCard } from '../dashboard/MissionsCard';
 import { MyContracts } from '../dashboard/MyContracts';
 
 function Kpi({
@@ -157,6 +158,8 @@ export function InicioView() {
           )}
         </section>
       </div>
+
+      <MissionsCard />
     </div>
   );
 }

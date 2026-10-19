@@ -6,7 +6,12 @@ import { gamificationRoutes } from './gamification.routes';
 import { getMyGamification } from './gamification.controller';
 
 const { service } = vi.hoisted(() => ({
-  service: { getProfile: vi.fn(), getHistory: vi.fn(), getLeaderboard: vi.fn() },
+  service: {
+    getProfile: vi.fn(),
+    getHistory: vi.fn(),
+    getLeaderboard: vi.fn(),
+    listMissions: vi.fn(),
+  },
 }));
 vi.mock('./gamification.service', () => ({ gamificationService: service }));
 
@@ -17,7 +22,7 @@ describe('gamificação: borda HTTP', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('todas as rotas exigem login', async () => {
-    for (const path of ['/me', '/me/history', '/leaderboard']) {
+    for (const path of ['/me', '/me/history', '/me/missions', '/leaderboard']) {
       const res = await request(app).get(`/api/gamification${path}`);
       expect(res.status).toBe(401);
       expect(res.body.error).toBe('missing_token');
@@ -134,7 +139,74 @@ describe('gamificação: borda HTTP', () => {
 
       expect(res.body).toEqual(board);
       expect(service.getLeaderboard).toHaveBeenCalledTimes(1);
-      expect(service.getLeaderboard).toHaveBeenCalledWith();
+      // Sem filtro: o ranking geral. O tamanho não vem do cliente (?limit= é ignorado).
+      expect(service.getLeaderboard).toHaveBeenCalledWith({});
+    });
+
+    it('categoria e "perto de mim" chegam ao service como números (RN-056)', async () => {
+      service.getLeaderboard.mockResolvedValue([]);
+      await request(app)
+        .get('/api/gamification/leaderboard?categoryId=10&lat=-26.3044&lng=-48.8487&radiusKm=900')
+        .set(bearer(7))
+        .expect(200);
+      // O raio não vem do cliente: é o parâmetro da plataforma.
+      expect(service.getLeaderboard).toHaveBeenCalledWith({
+        categoryId: 10,
+        lat: -26.3044,
+        lng: -48.8487,
+      });
+    });
+
+    it('campos vazios na query valem como ausentes', async () => {
+      service.getLeaderboard.mockResolvedValue([]);
+      await request(app)
+        .get('/api/gamification/leaderboard?categoryId=&lat=&lng=')
+        .set(bearer(7))
+        .expect(200);
+      expect(service.getLeaderboard).toHaveBeenCalledWith({});
+    });
+
+    it.each([
+      ['lat sem lng', '?lat=-26.3'],
+      ['lng sem lat', '?lng=-48.8'],
+      ['lat fora da faixa', '?lat=91&lng=0'],
+      ['categoria que não é inteiro positivo', '?categoryId=abc'],
+    ])('recusa %s com 422 (validation_error)', async (_rule, qs) => {
+      const res = await request(app).get(`/api/gamification/leaderboard${qs}`).set(bearer(7));
+      expect(res.status).toBe(422);
+      expect(res.body.error).toBe('validation_error');
+      expect(service.getLeaderboard).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /api/gamification/me/missions', () => {
+    it('devolve as missões de quem está logado (o uid do token, nunca da query)', async () => {
+      const missions = [
+        {
+          id: 3,
+          title: 'Presença diária',
+          description: 'Acesse a plataforma hoje',
+          type: 'daily',
+          action: 'daily_login',
+          xpReward: 10,
+          progress: 1,
+          target: 1,
+          completed: true,
+          completedAt: '2026-10-19T15:00:00.000Z',
+          expiresAt: '2026-10-20T02:59:59.000Z',
+        },
+      ];
+      service.listMissions.mockResolvedValue(missions);
+
+      const res = await request(app)
+        .get('/api/gamification/me/missions?userId=99')
+        .set(bearer(7))
+        .expect(200);
+
+      expect(res.body).toEqual(missions);
+      expect(service.listMissions).toHaveBeenCalledWith(7);
+      // "/me/missions" não pode ser atendida pela rota "/me".
+      expect(service.getProfile).not.toHaveBeenCalled();
     });
   });
 
@@ -147,6 +219,7 @@ describe('gamificação: borda HTTP', () => {
   // Cada rota precisa entregar a falha ao tratamento global: sem isso a requisição fica sem resposta.
   it.each([
     ['/me/history', 'getHistory'],
+    ['/me/missions', 'listMissions'],
     ['/leaderboard', 'getLeaderboard'],
   ] as const)('falha do service em %s também vira 500 padronizado (RNF-039)', async (path, fn) => {
     service[fn].mockRejectedValue(new Error('ER_NO_SUCH_TABLE: xp_transactions'));
@@ -155,7 +228,7 @@ describe('gamificação: borda HTTP', () => {
   });
 
   it('a gamificação é só leitura pela API: não há rota para creditar XP ou conceder badge', async () => {
-    for (const path of ['/me', '/me/history', '/leaderboard']) {
+    for (const path of ['/me', '/me/history', '/me/missions', '/leaderboard']) {
       const res = await request(app)
         .post(`/api/gamification${path}`)
         .set(bearer(7))
@@ -166,5 +239,6 @@ describe('gamificação: borda HTTP', () => {
     expect(service.getProfile).not.toHaveBeenCalled();
     expect(service.getHistory).not.toHaveBeenCalled();
     expect(service.getLeaderboard).not.toHaveBeenCalled();
+    expect(service.listMissions).not.toHaveBeenCalled();
   });
 });

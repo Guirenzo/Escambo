@@ -1,6 +1,16 @@
 import type { Request, Response } from 'express';
+import { earningsQuerySchema } from './wallet.earnings';
+import { earningsService } from './wallet.earnings.service';
 import { ledgerQuerySchema as listSchema } from './wallet.period';
 import { walletService } from './wallet.service';
+
+/**
+ * GET /api/wallet/earnings — ganhos do usuário logado por período (RF-082): liberações do escrow e
+ * tornas recebidas, por dia, semana ou mês no fuso da conta; créditos à parte.
+ */
+export async function getEarnings(req: Request, res: Response): Promise<void> {
+  res.json(await earningsService.report(req.user!.uid, earningsQuerySchema.parse(req.query)));
+}
 
 /**
  * GET /api/wallet/transactions — extrato de R$ do usuário logado. `from`/`to` (RF-047) filtram por

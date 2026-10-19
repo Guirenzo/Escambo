@@ -1,7 +1,7 @@
 import type { AdminFinanceReport, FinanceBucket, FinanceGranularity } from '@escambo/types';
 import { csvDocument, ptDecimal } from '../../utils/csv';
-import { HttpError } from '../../utils/http-error';
 import { financeRepository, type LedgerExportRow } from './finance.repository';
+import { resolvePeriod } from './report-period';
 
 export interface FinanceQuery {
   from?: string;
@@ -9,58 +9,9 @@ export interface FinanceQuery {
   granularity: FinanceGranularity;
 }
 
-const DAY_MS = 86_400_000;
-/** Deslocamento fixo de Brasília (o país não tem horário de verão desde 2019). */
-const BRT_OFFSET_HOURS = 3;
-const MAX_DAYS = 400;
-
-const isoDate = (d: Date): string => d.toISOString().slice(0, 10);
-
-/** Hoje em Brasília, como AAAA-MM-DD. */
-export function todayBrt(now: Date = new Date()): string {
-  return isoDate(new Date(now.getTime() - BRT_OFFSET_HOURS * 3_600_000));
-}
-
-/** Limites do período: dias de Brasília → instantes UTC (`to` é exclusivo, começo do dia seguinte). */
-export function bounds(from: string, to: string): { fromUtc: Date; toUtc: Date } {
-  const fromUtc = new Date(`${from}T0${BRT_OFFSET_HOURS}:00:00Z`);
-  const toUtc = new Date(new Date(`${to}T0${BRT_OFFSET_HOURS}:00:00Z`).getTime() + DAY_MS);
-  return { fromUtc, toUtc };
-}
-
-/** Período padrão: últimos 30 dias (por dia) ou últimos 6 meses (por mês), até hoje. */
-export function defaultRange(
-  granularity: FinanceGranularity,
-  now: Date = new Date(),
-): {
-  from: string;
-  to: string;
-} {
-  const to = todayBrt(now);
-  if (granularity === 'day')
-    return { from: isoDate(new Date(new Date(to).getTime() - 29 * DAY_MS)), to };
-  const [y, m] = to.split('-').map(Number);
-  const start = new Date(Date.UTC(y!, m! - 1 - 5, 1));
-  return { from: isoDate(start), to };
-}
-
-function resolve(q: FinanceQuery): { from: string; to: string; fromUtc: Date; toUtc: Date } {
-  const def = defaultRange(q.granularity);
-  const from = q.from ?? def.from;
-  const to = q.to ?? def.to;
-  const { fromUtc, toUtc } = bounds(from, to);
-  if (Number.isNaN(fromUtc.getTime()) || Number.isNaN(toUtc.getTime()) || fromUtc >= toUtc) {
-    throw new HttpError(
-      400,
-      'Período inválido: a data inicial precisa ser até a final',
-      'invalid_range',
-    );
-  }
-  if ((toUtc.getTime() - fromUtc.getTime()) / DAY_MS > MAX_DAYS) {
-    throw new HttpError(400, `Período máximo de ${MAX_DAYS} dias`, 'range_too_long');
-  }
-  return { from, to, fromUtc, toUtc };
-}
+// Os períodos moram em report-period.ts (o relatório de uso usa os mesmos); estes nomes ficam
+// exportados daqui também, onde sempre estiveram.
+export { bounds, defaultRange, todayBrt } from './report-period';
 
 const money = (v: number): number => Math.round(v * 100) / 100;
 const empty = (bucket: string): FinanceBucket => ({
@@ -78,11 +29,10 @@ const ptNumber = (v: string | number): string => ptDecimal(v, 2);
 
 export const financeService = {
   async report(q: FinanceQuery): Promise<AdminFinanceReport> {
-    const { from, to, fromUtc, toUtc } = resolve(q);
-    const format = q.granularity === 'day' ? '%Y-%m-%d' : '%Y-%m';
+    const { from, to, fromUtc, toUtc } = resolvePeriod(q);
     const [ledger, contracts, now] = await Promise.all([
-      financeRepository.ledgerByBucket(fromUtc, toUtc, format),
-      financeRepository.contractsByBucket(fromUtc, toUtc, format),
+      financeRepository.ledgerByBucket(fromUtc, toUtc, q.granularity),
+      financeRepository.contractsByBucket(fromUtc, toUtc, q.granularity),
       financeRepository.snapshot(),
     ]);
 
@@ -118,7 +68,7 @@ export const financeService = {
 
   /** Ledger do período em CSV (ponto e vírgula, vírgula decimal, BOM: abre direto no Excel pt-BR). */
   async exportCsv(q: FinanceQuery): Promise<{ fileName: string; csv: string }> {
-    const { from, to, fromUtc, toUtc } = resolve(q);
+    const { from, to, fromUtc, toUtc } = resolvePeriod(q);
     const rows = await financeRepository.ledgerRows(fromUtc, toUtc);
     return { fileName: `escambo-ledger-${from}_${to}.csv`, csv: toCsv(rows) };
   },

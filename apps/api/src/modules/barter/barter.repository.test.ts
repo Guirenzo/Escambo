@@ -123,11 +123,24 @@ describe('barterRepository', () => {
       requestedDescription: 'Landing page',
       estimatedValueOffered: 600,
       estimatedValueRequested: 800,
+      offeredValueSource: 'catalog' as const,
+      requestedValueSource: 'informed' as const,
       cashDifference: 200,
       cashPayerId: 1,
       platformFee: 30,
       tornaStatus: 'none' as const,
     };
+
+    it('grava de onde veio o valor de cada lado (RF-084)', async () => {
+      fakeDb.reply({ insertId: 77 });
+      await barterRepository.create(data, null);
+      expect(fakeDb.calls[0]!.sql).toContain(
+        'estimated_value_offered, estimated_value_requested, offered_value_source, requested_value_source,',
+      );
+      expect(fakeDb.calls[0]!.sql).toContain(
+        ':estimatedValueOffered, :estimatedValueRequested, :offeredValueSource, :requestedValueSource,',
+      );
+    });
 
     it('sem torna: grava só a proposta, sem criar nem tocar carteira', async () => {
       fakeDb.reply({ insertId: 77 });
@@ -270,17 +283,31 @@ describe('barterRepository', () => {
       expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
     });
 
-    it('findCatalogService devolve o dono em número e se o serviço está no ar, ou null se não existe ou foi removido', async () => {
+    it('findCatalogService devolve o dono em número, se o serviço está no ar e o preço, ou null se não existe ou foi removido', async () => {
       // BIGINT pode vir em texto do driver: o dono sai em número para comparar com o id do usuário.
-      // is_active é TINYINT: 1 no ar, 0 pausado (às vezes em texto).
-      fakeDb.reply([{ user_id: '7', is_active: 1 }], [{ user_id: 8, is_active: '0' }], []);
+      // is_active é TINYINT: 1 no ar, 0 pausado (às vezes em texto). DECIMAL vem em texto.
+      fakeDb.reply(
+        [{ user_id: '7', is_active: 1, price_type: 'fixed', price: '300.50' }],
+        [{ user_id: 8, is_active: '0', price_type: 'negotiable', price: null }],
+        [],
+      );
 
-      expect(await barterRepository.findCatalogService(31)).toEqual({ userId: 7, isActive: true });
-      expect(await barterRepository.findCatalogService(32)).toEqual({ userId: 8, isActive: false });
+      expect(await barterRepository.findCatalogService(31)).toEqual({
+        userId: 7,
+        isActive: true,
+        priceType: 'fixed',
+        price: 300.5,
+      });
+      expect(await barterRepository.findCatalogService(32)).toEqual({
+        userId: 8,
+        isActive: false,
+        priceType: 'negotiable',
+        price: null,
+      });
       expect(await barterRepository.findCatalogService(33)).toBeNull();
 
       const sql =
-        'SELECT user_id, is_active FROM services WHERE id = :id AND deleted_at IS NULL LIMIT 1';
+        'SELECT user_id, is_active, price_type, price FROM services WHERE id = :id AND deleted_at IS NULL LIMIT 1';
       expect(fakeDb.calls).toEqual([
         { sql, params: { id: 31 } },
         { sql, params: { id: 32 } },

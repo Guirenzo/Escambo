@@ -278,6 +278,32 @@ describe('runner de migrations', () => {
       expect(sqls()).not.toContain(RECORD_SQL);
       expect(sqls()).not.toContain(M2_SQL);
     });
+
+    it('trigger recusado por falta de SUPER com o binlog ligado (1419) diz a migration e o que mudar no MySQL', async () => {
+      mountDisk({ schema: BASELINE_SQL, migrations: TWO_MIGRATIONS });
+      const denied = Object.assign(
+        new Error('You do not have the SUPER privilege and binary logging is enabled'),
+        { errno: 1419, code: 'ER_BINLOG_CREATE_ROUTINE_NEED_SUPER' },
+      );
+      const { conn, sqls } = fakeConn({
+        applied: ['0000_baseline'],
+        failOn: { sql: M1_SQL, error: denied },
+      });
+
+      const err = (await migrate(conn).then(
+        () => null,
+        (e: unknown) => e,
+      )) as Error;
+
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBe(denied);
+      expect(err.message).toMatch(/^0001_apelido: o MySQL recusou criar trigger/);
+      expect(err.message).toContain('--log-bin-trust-function-creators=1');
+      expect(err.message).toContain('SET PERSIST log_bin_trust_function_creators = 1');
+      expect(err.cause).toBe(denied);
+      expect(sqls()).not.toContain(RECORD_SQL);
+      expect(sqls()).not.toContain(M2_SQL);
+    });
   });
 
   describe('seedReferenceIfEmpty', () => {

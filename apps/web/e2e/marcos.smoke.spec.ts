@@ -60,14 +60,27 @@ test('contratar em marcos: entrega e aprovação parciais liberam o escrow aos p
   await expect(page.getByTestId('payment-state')).toHaveText('Em escrow · liberado marco a marco');
   // sem entrega única: só ações por marco
   await expect(page.getByRole('button', { name: 'Registrar entrega' })).toHaveCount(0);
-  page.once('dialog', (d) => void d.accept('Layout aprovado no Figma'));
   await page
     .getByTestId('milestones')
     .locator('.milestone')
     .first()
     .getByRole('button', { name: 'Entregar marco' })
     .click();
+  // RF-035: a entrega do marco abre o formulário com mensagem e arquivos.
+  const deliverForm = page.getByRole('dialog', { name: /^Entregar marco: / });
+  await deliverForm.getByLabel('Mensagem da entrega').fill('Layout aprovado no Figma');
+  await deliverForm.getByTestId('deliver-file-input').setInputFiles({
+    name: 'layout.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n%%EOF\n'),
+  });
+  await deliverForm.getByRole('button', { name: 'Enviar entrega' }).click();
   await expect(page.locator('.toast', { hasText: 'Marco entregue' })).toBeVisible();
+  await expect(
+    page.getByTestId('milestones').locator('.milestone').first().getByRole('button', {
+      name: 'Baixar layout.pdf',
+    }),
+  ).toBeVisible();
   await expect(page.getByTestId('milestones').locator('.milestone').first()).toContainText(
     'Entregue',
   );

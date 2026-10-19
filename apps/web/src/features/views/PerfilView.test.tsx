@@ -39,6 +39,11 @@ const api = vi.hoisted(() => ({
   deletionRequests: vi.fn(),
   // Troca de senha (RF-017), no cartão "Senha".
   changePassword: vi.fn(),
+  // E-mail e telefone da conta (RF-017), nos cartões "E-mail" e "Telefone".
+  accountContact: vi.fn(),
+  changeEmail: vi.fn(),
+  cancelEmailChange: vi.fn(),
+  updatePhone: vi.fn(),
 }));
 vi.mock('../../lib/api', () => ({ api }));
 
@@ -178,6 +183,12 @@ beforeEach(() => {
   api.exportRequests.mockResolvedValue([]);
   api.consents.mockResolvedValue([]);
   api.deletionRequests.mockResolvedValue([]);
+  api.accountContact.mockResolvedValue({
+    email: 'marina@escambo.test',
+    emailVerified: true,
+    phone: '+5547999991234',
+    pendingEmail: null,
+  });
 });
 
 afterEach(() => {
@@ -718,5 +729,21 @@ describe('PerfilView: troca de senha (RF-017)', () => {
     // Nenhum dos formulários de perfil foi enviado junto.
     expect(api.putFreelancerProfile).not.toHaveBeenCalled();
     expect(api.putClientProfile).not.toHaveBeenCalled();
+  });
+});
+
+describe('PerfilView: e-mail e telefone da conta (RF-017)', () => {
+  it('o Perfil tem os cartões "E-mail" e "Telefone", com o contato que só o titular vê', async () => {
+    renderView();
+
+    const email = (await screen.findByRole('heading', { name: 'E-mail' })).closest('section')!;
+    expect(await within(email).findByTestId('email-atual')).toHaveTextContent(
+      'E-mail de acesso: marina@escambo.test (confirmado)',
+    );
+    expect(within(email).getByRole('form', { name: 'Trocar e-mail' })).toBeInTheDocument();
+    const phone = screen.getByRole('heading', { name: 'Telefone' }).closest('section')!;
+    expect(await within(phone).findByLabelText('Telefone com DDD')).toHaveValue('(47) 99999-1234');
+    // Os dois cartões dividem uma consulta só.
+    expect(api.accountContact).toHaveBeenCalledTimes(1);
   });
 });

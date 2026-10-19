@@ -297,6 +297,11 @@ export const lgpdRepository = {
         `DELETE FROM password_reset_tokens WHERE user_id = :userId`,
         { userId },
       );
+      // Os pedidos de troca de e-mail guardam endereços que o titular digitou (RF-017).
+      await conn.query<ResultSetHeader>(
+        `DELETE FROM email_change_requests WHERE user_id = :userId`,
+        { userId },
+      );
       await conn.query<ResultSetHeader>(
         `UPDATE user_sessions SET revoked_at = NOW() WHERE user_id = :userId AND revoked_at IS NULL`,
         { userId },

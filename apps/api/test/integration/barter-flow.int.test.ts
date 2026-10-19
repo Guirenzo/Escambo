@@ -248,7 +248,8 @@ describe('Troca de serviços com torna de verdade (RN-066/RN-067)', () => {
     const b = await registerAndLogin('freelancer');
     await fundWallet(app, a.token, 100);
     const cats = await request(app).get('/api/categories');
-    const serviceOf = async (owner: Actor): Promise<number> => {
+    // RF-084: com preço fechado, o valor de cada lado é o do catálogo (300 oferecido, 400 pedido).
+    const serviceOf = async (owner: Actor, price: number): Promise<number> => {
       const res = await request(app)
         .post('/api/services')
         .set(auth(owner.token))
@@ -257,7 +258,7 @@ describe('Troca de serviços com torna de verdade (RN-066/RN-067)', () => {
           title: `Serviço da troca ${seq++}`,
           description: 'Serviço de teste para a proposta de troca',
           priceType: 'fixed',
-          price: 300,
+          price,
         });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
       return res.body.id as number;
@@ -268,8 +269,8 @@ describe('Troca de serviços com torna de verdade (RN-066/RN-067)', () => {
         .set(auth(owner.token))
         .send({ isActive })
         .expect(200);
-    const ofA = await serviceOf(a);
-    const ofB = await serviceOf(b);
+    const ofA = await serviceOf(a, 300);
+    const ofB = await serviceOf(b, 400);
     const body = {
       receiverId: b.id,
       offeredServiceId: ofA,

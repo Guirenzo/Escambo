@@ -24,9 +24,10 @@ import { openDestination } from '../withdrawal/withdrawal.fields';
  * chamados próprios e mensagens públicas de suporte; notas internas nunca entram na cópia.
  * Formato 1.10: cada mensagem do chat traz read_at, quando o destinatário leu (RF-059).
  * Também na 1.10: cada serviço traz is_onsite (atende presencial, RF-023) e as tags (RF-024).
+ * Formato 1.11 (1.45.0): os pedidos de troca de e-mail (RF-017), sem o token do link.
  */
 
-export const EXPORT_FORMAT_VERSION = '1.10';
+export const EXPORT_FORMAT_VERSION = '1.11';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -228,6 +229,13 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
        FROM email_outbox WHERE user_id = :userId ORDER BY id`,
     p,
   );
+  // Pedidos de troca de e-mail (RF-017): o endereço pedido e como o pedido terminou; o hash do
+  // token do link não entra. O telefone já sai nos dados do titular (users.phone, em E.164).
+  const emailChanges = await q(
+    `SELECT id, new_email, expires_at, used_at, outcome, created_at
+       FROM email_change_requests WHERE user_id = :userId ORDER BY id`,
+    p,
+  );
   const lgpdRequests = await q(
     `SELECT 'exclusao' AS tipo, id, status, reason AS motivo, created_at
        FROM data_deletion_requests WHERE user_id = :userId
@@ -270,6 +278,7 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     sessoes: sessions,
     registrosDeSeguranca: securityLog,
     emailsEnviados: emails,
+    pedidosDeTrocaDeEmail: emailChanges,
     solicitacoesLgpd: lgpdRequests,
   };
 }

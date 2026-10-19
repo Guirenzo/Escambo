@@ -1,6 +1,7 @@
-import { ExternalLink, PackageCheck } from 'lucide-react';
-import type { ContractWithHistory } from '@escambo/types';
+import { ExternalLink, FileX, PackageCheck } from 'lucide-react';
+import type { ContractWithHistory, DeliveryAttachment } from '@escambo/types';
 import { dtm } from '../../lib/format';
+import { FileAttachment } from './ChatAttachment';
 
 /** Só endereço http(s) vira link; o resto (javascript:, data:…) aparece como texto. */
 export function safeHref(url: string): string | null {
@@ -13,9 +14,38 @@ export function safeHref(url: string): string | null {
 }
 
 /**
- * Entregas da contratação (RF-035): a mensagem e os links de cada entrega única, da mais recente à
- * primeira, para as duas partes, com o histórico das reentregas depois de cada revisão. Por marcos,
- * cada marco mostra a própria entrega (MilestonesSection).
+ * Arquivos de uma entrega (RF-035): nome, tamanho e o download com o token, que só as partes
+ * conseguem. Expurgado pela retenção, aparece riscado com o motivo; removido pela moderação, só o
+ * aviso, como no chat.
+ */
+export function DeliveryFiles({ attachments }: { attachments: readonly DeliveryAttachment[] }) {
+  if (attachments.length === 0) return null;
+  return (
+    // Sem <li> aqui: a linha do tempo estiliza todo li descendente.
+    <div className="stack" style={{ marginTop: 6, gap: 4 }} data-testid="delivery-files">
+      <span className="muted tiny">
+        {attachments.length === 1 ? 'Arquivo da entrega:' : 'Arquivos da entrega:'}
+      </span>
+      {attachments.map((a) =>
+        a.removedAt ? (
+          <span key={a.messageId} className="attachment-purged" data-testid="delivery-file-removed">
+            <FileX size={16} aria-hidden="true" />
+            <span className="muted tiny">Arquivo removido pela moderação</span>
+          </span>
+        ) : (
+          <div key={a.messageId}>
+            <FileAttachment attachment={a} />
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
+/**
+ * Entregas da contratação (RF-035): a mensagem, os links e os arquivos de cada entrega única, da
+ * mais recente à primeira, para as duas partes, com o histórico das reentregas depois de cada
+ * revisão. Por marcos, cada marco mostra a própria entrega (MilestonesSection).
  */
 export function DeliveriesSection({
   contract,
@@ -42,7 +72,7 @@ export function DeliveriesSection({
       <p className="muted tiny">
         {isFreelancer
           ? 'O que você mandou em cada entrega; o cliente vê o mesmo.'
-          : 'O que o freelancer mandou em cada entrega. Arquivos também podem ter vindo pelo chat.'}
+          : 'O que o freelancer mandou em cada entrega. Os arquivos também ficam no chat, e outros podem ter vindo por lá.'}
       </p>
       <ol className="timeline" aria-label="Entregas, da mais recente à primeira">
         {latestFirst.map((d, i) => {
@@ -85,6 +115,7 @@ export function DeliveriesSection({
                     })}
                   </div>
                 )}
+                <DeliveryFiles attachments={d.attachments ?? []} />
               </div>
             </li>
           );

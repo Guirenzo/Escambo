@@ -99,13 +99,13 @@ async function esperarTravasParadas(n: number): Promise<void> {
   }
 }
 
-async function createService(token: string, title: string): Promise<number> {
+async function createService(token: string, title: string, price = 100): Promise<number> {
   const res = await request(app).post('/api/services').set(auth(token)).send({
     categoryId: 10,
     title,
     description: 'Serviço de teste para impulsionamento',
     priceType: 'fixed',
-    price: 100,
+    price,
   });
   expect(res.status).toBe(201);
   return res.body.id;
@@ -301,8 +301,9 @@ describe('Impulsionamento (Boosts) pago em créditos', () => {
     const receptor = await freelancerComId(); // paga a torna no aceite e impulsiona o serviço pedido
     await credits(receptor.token); // 100 créditos
     await fundWallet(app, receptor.token, 100); // R$ 100 para a torna
-    const oferecido = await createService(proponente.token, 'BoostTroca Oferecido');
-    const pedido = await createService(receptor.token, 'BoostTroca Pedido');
+    // RF-084: a troca usa o preço do catálogo (300 oferecido, 200 pedido: o receptor paga 100).
+    const oferecido = await createService(proponente.token, 'BoostTroca Oferecido', 300);
+    const pedido = await createService(receptor.token, 'BoostTroca Pedido', 200);
     const p7 = await planId(receptor.token, 7);
     const proposta = await request(app).post('/api/barters').set(auth(proponente.token)).send({
       receiverId: receptor.id,

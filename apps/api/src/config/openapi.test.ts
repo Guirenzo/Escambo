@@ -828,6 +828,52 @@ describe('documento OpenAPI: lacunas de 19/10', () => {
     expect(op.responses['400']?.description).toContain('same_password');
   });
 
+  it('contato da conta (RF-017): troca de e-mail confirmada pelo link e telefone', () => {
+    for (const [path, method] of [
+      ['/auth/contact', 'get'],
+      ['/auth/phone', 'put'],
+      ['/auth/change-email', 'post'],
+      ['/auth/change-email', 'delete'],
+    ] as const) {
+      expect(operation(path, method).security, `${method} ${path}`).toEqual([{ bearerAuth: [] }]);
+    }
+    // A confirmação é pública: o link pode abrir em outro aparelho.
+    const confirm = operation('/auth/confirm-email-change', 'post');
+    expect(confirm.security).toBeUndefined();
+    expect(json('/auth/confirm-email-change', 'post', '200')).toEqual({
+      $ref: '#/components/schemas/ConfirmEmailChangeResponse',
+    });
+    expect(Object.keys(confirm.responses)).toEqual(['200', '400', '403', '409', '422', '429']);
+
+    const request = operation('/auth/change-email', 'post');
+    expect(request.requestBody?.content['application/json'].schema).toEqual({
+      $ref: '#/components/schemas/ChangeEmail',
+    });
+    expect(request.responses['202']?.content?.['application/json'].schema).toEqual({
+      $ref: '#/components/schemas/PendingEmailChange',
+    });
+    expect(request.responses['403']?.description).toContain('admin_email_locked');
+    expect(request.responses['429']?.description).toContain('too_many_email_changes');
+    expect(operation('/auth/change-email', 'delete').responses['204']).toBeDefined();
+    expect(json('/auth/contact', 'get', '200')).toEqual({
+      $ref: '#/components/schemas/AccountContact',
+    });
+    expect(json('/auth/phone', 'put', '200')).toEqual({
+      $ref: '#/components/schemas/AccountContact',
+    });
+    expect(schemas.AccountContact.required).toEqual([
+      'email',
+      'emailVerified',
+      'phone',
+      'pendingEmail',
+    ]);
+    expect(schemas.AccountContact.properties.phone.pattern).toBe('^\\+55\\d{10,11}$');
+    expect(schemas.UpdatePhone.properties.phone.nullable).toBe(true);
+    expect(schemas.ChangeEmail.required).toEqual(['currentPassword', 'newEmail']);
+    // O perfil público não ganhou contato nenhum.
+    expect(JSON.stringify(schemas.PublicFreelancerProfile ?? {})).not.toMatch(/phone|email/i);
+  });
+
   it('GET /contracts: filtro de status, paginação e o total', () => {
     const [page, limit, status] = parameters('/contracts', 'get');
     expect(page).toMatchObject({ name: 'page', in: 'query', schema: { maximum: 10_000 } });

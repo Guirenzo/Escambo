@@ -18,6 +18,7 @@ import type {
   CreateSavedSearchRequest,
   CreateServiceRequest,
   FavoriteTargetType,
+  FinanceGranularity,
   OpenDisputeRequest,
   PortfolioItem,
   ResolveDisputeRequest,
@@ -27,6 +28,8 @@ import type {
   UpsertFreelancerProfileRequest,
   UpsertPortfolioItemRequest,
   CreateWithdrawalRequest,
+  WalletEarningsQuery,
+  LeaderboardQuery,
 } from '@escambo/types';
 import { api, type ServiceQuery } from './api';
 import { orderByIds } from './reorder';
@@ -41,6 +44,7 @@ export const qk = {
   wallet: ['wallet'] as const,
   gamification: ['gamification'] as const,
   leaderboard: ['leaderboard'] as const,
+  missions: ['missions'] as const,
   categories: ['categories'] as const,
   services: (p?: ServiceQuery) => ['services', p ?? {}] as const,
   creditTransactions: ['creditTransactions'] as const,
@@ -143,8 +147,36 @@ export function useSupportActions(admin = false) {
 export const useWallet = () => useQuery({ queryKey: qk.wallet, queryFn: () => api.wallet() });
 export const useGamification = () =>
   useQuery({ queryKey: qk.gamification, queryFn: () => api.gamification() });
-export const useLeaderboard = () =>
-  useQuery({ queryKey: qk.leaderboard, queryFn: () => api.leaderboard() });
+/** Ranking (RF-067): sem filtro, o geral por XP; com categoria e/ou o "perto de mim", a RN-056. */
+export const useLeaderboard = (filter?: LeaderboardQuery) =>
+  useQuery({
+    queryKey: filter ? [...qk.leaderboard, filter] : qk.leaderboard,
+    queryFn: () => (filter ? api.leaderboard(filter) : api.leaderboard()),
+  });
+/** Missões do período vigente (RF-066); abrir o cartão conta como o acesso do dia. */
+/** Missão cumprida há menos disto foi cumprida pela própria leitura (a presença do dia). */
+const JUST_COMPLETED_MS = 60_000;
+
+export const useMissions = () => {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: qk.missions,
+    queryFn: async () => {
+      const missions = await api.missions();
+      // A presença do dia se cumpre nesta leitura e não gera aviso (ADR 63): sem isto, o XP e o
+      // ranking da tela ficariam com o valor de antes até alguém relê-los.
+      const now = Date.now();
+      const fresh = missions.some(
+        (m) => m.completedAt !== null && now - Date.parse(m.completedAt) < JUST_COMPLETED_MS,
+      );
+      if (fresh) {
+        void qc.invalidateQueries({ queryKey: qk.gamification });
+        void qc.invalidateQueries({ queryKey: qk.leaderboard });
+      }
+      return missions;
+    },
+  });
+};
 export const useCategories = () =>
   useQuery({ queryKey: qk.categories, queryFn: () => api.categories(), staleTime: 5 * 60_000 });
 export const useServices = (p?: ServiceQuery) =>
@@ -221,6 +253,15 @@ function usePeriodLedger<Page extends { page: number; hasMore: boolean }>(
 /** Extrato de R$ por período (RF-047). */
 export const useWalletTransactions = (period: WalletPeriod = {}) =>
   usePeriodLedger(qk.walletTransactions, period, (query) => api.walletTransactions(query));
+/**
+ * Ganhos por período (RF-082). A chave começa pela do extrato de R$: o que invalida o extrato (uma
+ * contratação concluída, uma troca liquidada) invalida os ganhos também.
+ */
+export const useWalletEarnings = (query: WalletEarningsQuery) =>
+  useQuery({
+    queryKey: [...qk.walletTransactions, 'earnings', query] as const,
+    queryFn: () => api.walletEarnings(query),
+  });
 export const useDeposits = () => useQuery({ queryKey: qk.deposits, queryFn: () => api.deposits() });
 /** Situação de uma cobrança; enquanto pendente, consulta a cada 3 s (o webhook pode chegar a qualquer momento). */
 export const useDeposit = (id: number | null, poll: boolean) =>
@@ -454,11 +495,22 @@ export function useResolveExtension() {
 export function useDeliverContract() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, message }: { id: number; message: string }) =>
-      api.deliverContract(id, message),
-    onSuccess: (_d, { id }) => {
+    mutationFn: ({
+      id,
+      message,
+      attachments,
+      links,
+    }: {
+      id: number;
+      message: string;
+      /** Arquivos da entrega (RF-035): também aparecem no chat do par. */
+      attachments?: File[];
+      links?: string[];
+    }) => api.deliverContract(id, message, attachments, links),
+    onSuccess: (_d, { id, attachments }) => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.contract(id) });
+      if (attachments?.length) void qc.invalidateQueries({ queryKey: qk.chat(id) });
     },
   });
 }
@@ -471,13 +523,17 @@ export function useMilestoneAction(contractId: number) {
       milestoneId,
       action,
       text,
+      attachments,
     }: {
       milestoneId: number;
       action: 'deliver' | 'approve' | 'request-revision';
       text?: string;
-    }) => api.milestoneAction(contractId, milestoneId, action, text),
-    onSuccess: (contract) => {
+      /** Arquivos da entrega do marco (RF-035). */
+      attachments?: File[];
+    }) => api.milestoneAction(contractId, milestoneId, action, text, attachments),
+    onSuccess: (contract, { attachments }) => {
       qc.setQueryData(qk.contract(contractId), contract);
+      if (attachments?.length) void qc.invalidateQueries({ queryKey: qk.chat(contractId) });
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.wallet });
       void qc.invalidateQueries({ queryKey: qk.walletTransactions });
@@ -845,11 +901,30 @@ export function usePortfolioMutation() {
   };
 }
 
-export const useAdminFinance = (q: { from?: string; to?: string; granularity: 'day' | 'month' }) =>
-  useQuery({ queryKey: ['adminFinance', q] as const, queryFn: () => api.adminFinance(q) });
+export const useAdminFinance = (q: {
+  from?: string;
+  to?: string;
+  granularity: FinanceGranularity;
+}) => useQuery({ queryKey: ['adminFinance', q] as const, queryFn: () => api.adminFinance(q) });
 
+/** Uso no período (RF-081), com o mesmo recorte do financeiro. */
+export const useAdminUsage = (q: { from?: string; to?: string; granularity: FinanceGranularity }) =>
+  useQuery({ queryKey: ['adminUsage', q] as const, queryFn: () => api.adminUsage(q) });
+
+/**
+ * Indicadores do painel (RF-076): consulta de novo a cada 30 s só com a aba visível (o TanStack
+ * para em segundo plano e atualiza ao recuperar o foco). Polling e não socket: os números vêm de
+ * muitas tabelas (usuários, contratos, ledger, saques, suporte) e um evento por mudança espalharia
+ * avisos por todos os módulos; 30 s de atraso basta para um painel de acompanhamento.
+ */
+export const ADMIN_METRICS_REFRESH_MS = 30_000;
 export const useAdminMetrics = () =>
-  useQuery({ queryKey: qk.adminMetrics, queryFn: () => api.adminMetrics() });
+  useQuery({
+    queryKey: qk.adminMetrics,
+    queryFn: () => api.adminMetrics(),
+    refetchInterval: ADMIN_METRICS_REFRESH_MS,
+    refetchIntervalInBackground: false,
+  });
 export const useAdminStorage = () =>
   useQuery({ queryKey: qk.adminStorage, queryFn: () => api.adminStorage() });
 

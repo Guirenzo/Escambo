@@ -888,16 +888,30 @@ describe('getById', () => {
           id: 3,
           message: 'Primeira versão do vídeo',
           files: ['https://cdn.escambo.test/v1.mp4'],
+          attachments: [],
           deliveredAt: '2026-10-02T12:00:00.000Z',
         },
         {
           id: 5,
           message: 'Corrigi a trilha',
           files: ['https://cdn.escambo.test/v2.mp4'],
+          attachments: [],
           deliveredAt: '2026-10-04T15:30:00.000Z',
         },
-        { id: 6, message: 'Só a legenda', files: [], deliveredAt: '2026-10-05T10:00:00.000Z' },
-        { id: 7, message: 'Texto torto', files: [], deliveredAt: '2026-10-06T10:00:00.000Z' },
+        {
+          id: 6,
+          message: 'Só a legenda',
+          files: [],
+          attachments: [],
+          deliveredAt: '2026-10-05T10:00:00.000Z',
+        },
+        {
+          id: 7,
+          message: 'Texto torto',
+          files: [],
+          attachments: [],
+          deliveredAt: '2026-10-06T10:00:00.000Z',
+        },
       ]);
     }
     expect(repo.listDeliveries).toHaveBeenCalledTimes(2);

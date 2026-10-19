@@ -1,11 +1,22 @@
 import { ulid } from 'ulid';
-import type { BarterAgreement, BarterStatus, Paginated, TornaStatus } from '@escambo/types';
+import type {
+  BarterAgreement,
+  BarterStatus,
+  BarterValueSource,
+  Paginated,
+  TornaStatus,
+} from '@escambo/types';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { contractsRepository } from '../contracts/contracts.repository';
 import { gamificationService } from '../gamification/gamification.service';
 import { notificationsService } from '../notifications/notifications.service';
-import { barterRepository, type BarterRow, type TornaHold } from './barter.repository';
+import {
+  barterRepository,
+  type BarterRow,
+  type CatalogService,
+  type TornaHold,
+} from './barter.repository';
 import type { CreateBarterInput, ListBartersInput } from './barter.schema';
 import { settingsService } from '../settings/settings.service';
 
@@ -13,6 +24,66 @@ import { settingsService } from '../settings/settings.service';
 const money = (v: number): number => Math.sign(v) * (Math.round(Math.abs(v) * 100 + 1e-6) / 100);
 const brl = (v: number): string =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/**
+ * O valor de um lado pelo catálogo (RF-084): só o serviço de preço fechado tem um. A combinar, sem
+ * preço ou por hora (o preço é da hora, não do trabalho), o catálogo não diz quanto vale a troca.
+ */
+export function catalogValue(service: CatalogService | null): number | null {
+  if (service?.priceType !== 'fixed' || service.price == null || !(service.price > 0)) return null;
+  return money(service.price);
+}
+
+const SIDE = {
+  offered: {
+    mismatch: 'O serviço que você oferece custa',
+    mismatchHint: 'Para outro valor, mude o preço do serviço ou descreva a oferta.',
+    serviceRequired:
+      'O serviço que você oferece não tem preço fechado no catálogo (a combinar ou por hora): informe quanto ele vale nesta troca.',
+    describedRequired: 'Informe quanto vale o que você oferece.',
+  },
+  requested: {
+    mismatch: 'O serviço pedido custa',
+    mismatchHint: 'Atualize a tela e confira a torna antes de enviar.',
+    serviceRequired:
+      'O serviço pedido não tem preço fechado no catálogo (a combinar ou por hora): informe quanto ele vale nesta troca.',
+    describedRequired: 'Informe quanto vale o que você pede.',
+  },
+} as const;
+
+/**
+ * O valor de um lado da troca (RF-084, RN-066: o sistema estima cada lado). Com preço fechado no
+ * catálogo, vale o catálogo: sem valor na proposta, ele é usado; com um valor diferente, a proposta
+ * é recusada (422 estimate_mismatch), porque a torna sai da carteira e a pessoa precisa ver na tela
+ * o valor que vai ser reservado. Sem preço fechado (a combinar, por hora, sem preço) ou com a
+ * oferta descrita, vale o valor informado pelo proponente, que então é obrigatório.
+ */
+export function estimateSide(
+  side: keyof typeof SIDE,
+  service: CatalogService | null,
+  informed: number | undefined,
+): { value: number; source: BarterValueSource } {
+  const text = SIDE[side];
+  const catalog = catalogValue(service);
+  if (catalog != null) {
+    if (informed !== undefined && Math.round(informed * 100) !== Math.round(catalog * 100)) {
+      throw new HttpError(
+        422,
+        `${text.mismatch} ${brl(catalog)} no catálogo, e a troca usa esse valor (RN-066). ${text.mismatchHint}`,
+        'estimate_mismatch',
+      );
+    }
+    return { value: catalog, source: 'catalog' };
+  }
+  if (informed === undefined) {
+    throw new HttpError(
+      422,
+      service ? text.serviceRequired : text.describedRequired,
+      'estimate_required',
+    );
+  }
+  return { value: informed, source: 'informed' };
+}
 
 /** Quem recebe a torna: a parte que não é o pagador. */
 const tornaReceiverOf = (row: BarterRow): number | null =>
@@ -38,6 +109,9 @@ function toBarter(row: BarterRow): BarterAgreement {
     requestedDescription: row.requested_description,
     estimatedValueOffered: Number(row.estimated_value_offered),
     estimatedValueRequested: Number(row.estimated_value_requested),
+    // Antes da 1.45.0 os dois valores eram digitados pelo proponente.
+    offeredValueSource: row.offered_value_source ?? 'informed',
+    requestedValueSource: row.requested_value_source ?? 'informed',
     cashDifference: torna,
     cashPayerId: row.cash_payer_id,
     platformFee: fee,
@@ -84,8 +158,10 @@ export const barterService = {
     }
     // Serviço do catálogo: o oferecido é do proponente, o pedido é do receptor, nenhum removido e
     // nenhum pausado (RN-013, a mesma recusa da contratação: a troca gera contratações deles).
+    let offeredService: CatalogService | null = null;
+    let requestedService: CatalogService | null = null;
     if (input.offeredServiceId) {
-      const offeredService = await barterRepository.findCatalogService(input.offeredServiceId);
+      offeredService = await barterRepository.findCatalogService(input.offeredServiceId);
       if (offeredService?.userId !== proposerId) {
         throw new HttpError(
           422,
@@ -102,7 +178,7 @@ export const barterService = {
       }
     }
     if (input.requestedServiceId) {
-      const requestedService = await barterRepository.findCatalogService(input.requestedServiceId);
+      requestedService = await barterRepository.findCatalogService(input.requestedServiceId);
       if (requestedService?.userId !== input.receiverId) {
         throw new HttpError(
           422,
@@ -118,8 +194,15 @@ export const barterService = {
         );
       }
     }
-    const offered = input.estimatedValueOffered;
-    const requested = input.estimatedValueRequested;
+    // RF-084: o sistema estima cada lado pelo catálogo; o valor digitado só vale sem preço fechado.
+    const offeredSide = estimateSide('offered', offeredService, input.estimatedValueOffered);
+    const requestedSide = estimateSide(
+      'requested',
+      requestedService,
+      input.estimatedValueRequested,
+    );
+    const offered = offeredSide.value;
+    const requested = requestedSide.value;
 
     // torna: a parte que recebe MAIS valor paga a diferença (RN-066)
     const cashDifference = money(Math.abs(offered - requested));
@@ -145,6 +228,8 @@ export const barterService = {
         requestedDescription: input.requestedDescription ?? null,
         estimatedValueOffered: offered,
         estimatedValueRequested: requested,
+        offeredValueSource: offeredSide.source,
+        requestedValueSource: requestedSide.source,
         cashDifference,
         cashPayerId,
         platformFee,

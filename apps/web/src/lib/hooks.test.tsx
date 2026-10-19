@@ -43,6 +43,9 @@ function setup(queries: DefaultOptions['queries'] = {}) {
 
 const keys = (...list: unknown[][]): string[] => list.map((k) => JSON.stringify(k)).sort();
 
+/** Arquivo de uma entrega (RF-035) nos exemplos de gravação. */
+const DELIVERY_FILE = new File(['pdf'], 'final.pdf', { type: 'application/pdf' });
+
 /** Promessa que o teste resolve quando quiser (para olhar o meio do caminho). */
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -834,16 +837,26 @@ describe('gravações: o que vai para a API e o que é recarregado depois', () =
       () => hooks.useDeliverContract(),
       { id: 7, message: 'Segue o arquivo' },
       'deliverContract',
-      [7, 'Segue o arquivo'],
+      // Sem arquivos nem links, a entrega continua só com a mensagem (RF-035).
+      [7, 'Segue o arquivo', undefined, undefined],
       { id: 7 },
       [['contracts'], ['contract', 7]],
+    ],
+    [
+      'useDeliverContract com arquivos recarrega também o chat, onde eles aparecem (RF-035)',
+      () => hooks.useDeliverContract(),
+      { id: 7, message: 'Segue', attachments: [DELIVERY_FILE], links: ['https://drive.test/a'] },
+      'deliverContract',
+      [7, 'Segue', [DELIVERY_FILE], ['https://drive.test/a']],
+      { id: 7 },
+      [['contracts'], ['contract', 7], ['chat', 7]],
     ],
     [
       'useMilestoneAction',
       () => hooks.useMilestoneAction(7),
       { milestoneId: 2, action: 'deliver', text: 'Primeira parte' },
       'milestoneAction',
-      [7, 2, 'deliver', 'Primeira parte'],
+      [7, 2, 'deliver', 'Primeira parte', undefined],
       { id: 7, milestones: [] },
       [['contracts'], ['wallet'], ['walletTransactions'], ['gamification']],
     ],
@@ -1254,7 +1267,7 @@ describe('gravações: o que vai para a API e o que é recarregado depois', () =
       await result.current.mutateAsync({ milestoneId: 2, action: 'approve' });
     });
 
-    expect(mocked('milestoneAction')).toHaveBeenCalledWith(7, 2, 'approve', undefined);
+    expect(mocked('milestoneAction')).toHaveBeenCalledWith(7, 2, 'approve', undefined, undefined);
     // O cache reaproveita o que não mudou (compartilhamento estrutural): compara pelo conteúdo.
     expect(client.getQueryData(['contract', 7])).toEqual(updated);
   });

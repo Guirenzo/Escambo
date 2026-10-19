@@ -67,8 +67,26 @@ export interface ServiceListFilters {
 }
 
 /**
+ * Os serviços com impulsionamento ativo e ainda não vencido: um conjunto pequeno (os destaques
+ * pagos em curso), lido uma vez por consulta e juntado aos serviços, em vez de um EXISTS por
+ * serviço listado. DISTINCT: dois impulsionamentos ativos do mesmo serviço não duplicam a linha.
+ * O NOW() é o da instrução inteira, o mesmo do EXISTS.
+ */
+const ACTIVE_BOOSTS = `SELECT DISTINCT service_id FROM boosts
+        WHERE status = 'active' AND expires_at > NOW()`;
+
+/** O destaque na página de ids, a partir do LEFT JOIN com ACTIVE_BOOSTS (alias `ab`). */
+const BOOSTED_KEY = '(ab.service_id IS NOT NULL) AS boosted';
+
+/**
  * ORDER BY de cada ordenação. Destaque (boost) só manda na relevância: quem pede "menor
- * preço" quer o menor preço. `prefix` é o alias da tabela derivada na busca por proximidade.
+ * preço" quer o menor preço. `prefix` é o alias da tabela derivada (a página de ids e, na
+ * busca por proximidade, a tabela da distância), com as colunas de sortKeys.
+ *
+ * Toda ordenação termina no id, para a ordem ser total: a página de ids e a consulta que busca
+ * as linhas completas ordenam pelas mesmas chaves e chegam à mesma ordem, e a página seguinte
+ * continua de onde a anterior parou. Na proximidade, o empate de distância (os serviços do mesmo
+ * prestador) sai na ordem de publicação, a que a consulta sem desempate dava com poucos serviços.
  */
 export function orderClause(sort: ServiceSort, geo: boolean, prefix = ''): string {
   const p = prefix ? `${prefix}.` : '';
@@ -85,13 +103,41 @@ export function orderClause(sort: ServiceSort, geo: boolean, prefix = ''): strin
       return `${s}created_at DESC, ${s}id DESC`;
     case 'distance':
       return geo
-        ? `${p}distance_km ASC, ${p}boosted DESC`
+        ? `${p}distance_km ASC, ${p}boosted DESC, ${s}id ASC`
         : `${p}boosted DESC, ${s}created_at DESC, ${s}id DESC`;
     case 'relevance':
     default:
       return geo
-        ? `${p}boosted DESC, ${p}distance_km ASC`
+        ? `${p}boosted DESC, ${p}distance_km ASC, ${s}id ASC`
         : `${p}boosted DESC, ${s}created_at DESC, ${s}id DESC`;
+  }
+}
+
+/**
+ * As colunas da página de ids que o ORDER BY da ordenação usa, com os nomes que orderClause dá
+ * a elas com prefixo (a consulta externa ordena a página de novo por elas). Só as necessárias, e
+ * as de services estão todas no idx_svc_listing e no idx_svc_owner_listing (0040): sem texto, a
+ * página não lê a linha do serviço, que carrega a descrição. A distância, na busca por
+ * proximidade, entra à parte.
+ */
+export function sortKeys(sort: ServiceSort, geo: boolean): string[] {
+  switch (sort) {
+    case 'price_asc':
+    case 'price_desc':
+      return ['s.id', 's.price', 's.created_at'];
+    case 'rating':
+      return [
+        's.id',
+        'pf.avg_rating AS owner_avg_rating',
+        'pf.total_reviews AS owner_total_reviews',
+        's.created_at',
+      ];
+    case 'newest':
+      return ['s.id', 's.created_at'];
+    case 'distance':
+    case 'relevance':
+    default:
+      return geo ? ['s.id', BOOSTED_KEY] : ['s.id', BOOSTED_KEY, 's.created_at'];
   }
 }
 
@@ -269,9 +315,22 @@ export const servicesRepository = {
     );
   },
 
+  /**
+   * A busca (RNF-004) em duas etapas numa instrução só (deferred join): a página de ids filtra,
+   * ordena e corta com as colunas mínimas, e só as linhas dela voltam inteiras, com quem presta e
+   * o destaque. Antes, `s.*` com a descrição de todo serviço ativo ia para a ordenação, com um
+   * EXISTS do destaque por linha, para só depois o LIMIT descartar quase tudo.
+   *
+   * A página junta o perfil e a conta só quando um filtro ou a ordenação os usa. A conta não
+   * filtra nada por si: services.user_id é NOT NULL com chave estrangeira para users, então o
+   * JOIN sempre acha a linha. O perfil entra por LEFT JOIN no user_id, que é UNIQUE: não tira
+   * nem repete serviço.
+   */
   async list(filters: ServiceListFilters): Promise<ServiceRow[]> {
     const where: string[] = ['s.deleted_at IS NULL', 's.is_active = 1'];
     const params: SqlParams = {};
+    let needsProfile = false;
+    let needsUser = false;
 
     if (filters.categoryId !== undefined) {
       where.push('s.category_id = :categoryId');
@@ -315,11 +374,13 @@ export const servicesRepository = {
     if (filters.minRating !== undefined && filters.minRating > 0) {
       where.push('COALESCE(pf.avg_rating, 0) >= :minRating');
       params.minRating = filters.minRating;
+      needsProfile = true;
     }
     if (filters.day !== undefined) {
       // JSON_CONTAINS(available_days, '6'): o dia como JSON. NULL (não informou) não entra.
       where.push('pf.available_days IS NOT NULL AND JSON_CONTAINS(pf.available_days, :dayJson)');
       params.dayJson = String(filters.day);
+      needsProfile = true;
       if (filters.period) {
         where.push(periodCondition('dayPath', 'dayPeriodJson'));
         params.dayPath = `$."${filters.day}"`;
@@ -350,11 +411,31 @@ export const servicesRepository = {
         });
         params.defaultZone = DEFAULT_TIMEZONE;
         where.push(`(${clauses.join(' OR ')})`);
+        needsProfile = true;
+        needsUser = true;
       }
     }
     const sort = filters.sort ?? 'relevance';
 
     const geo = filters.lat !== undefined && filters.lng !== undefined;
+    const keys = sortKeys(sort, geo);
+    if (sort === 'rating') needsProfile = true;
+    // A página de ids junta só o que o WHERE e o ORDER BY dela usam.
+    const pageJoins = [
+      textJoin,
+      needsUser ? 'JOIN users u ON u.id = s.user_id' : '',
+      // Na proximidade, o perfil sempre entra, por JOIN: sem perfil não há coordenadas.
+      geo ? 'JOIN profiles_freelancer pf ON pf.user_id = s.user_id' : '',
+      !geo && needsProfile ? 'LEFT JOIN profiles_freelancer pf ON pf.user_id = s.user_id' : '',
+      keys.includes(BOOSTED_KEY)
+        ? `LEFT JOIN (${ACTIVE_BOOSTS}) AS ab ON ab.service_id = s.id`
+        : '',
+    ].filter(Boolean);
+    // limit/offset são inteiros validados (Zod) — seguros para interpolar.
+    const pageLimit = `LIMIT ${filters.limit} OFFSET ${filters.offset}`;
+    // A linha devolvida leva o destaque pelo EXISTS do detalhe, calculado só para as linhas da
+    // página. Na relevância a página já o tinha pelo conjunto ACTIVE_BOOSTS, para ordenar: na mesma
+    // instrução (mesma leitura e mesmo NOW()), os dois dão o mesmo.
 
     // Descoberta local: distância (Haversine, km) ao ponto pesquisado, do dono do serviço.
     if (geo) {
@@ -367,32 +448,42 @@ export const servicesRepository = {
       // Tabela derivada: calcula a distância no interno e filtra pelo alias no externo
       // (evita HAVING sem GROUP BY, que é problemático no MySQL 8).
       const [rows] = await pool.query<ServiceRow[]>(
-        `SELECT * FROM (
-           SELECT s.*, ${distanceExpr} AS distance_km, ${BOOSTED_EXPR} AS boosted, ${OWNER_COLS}
-             FROM services s
-             ${textJoin}
-             JOIN users u ON u.id = s.user_id
-             JOIN profiles_freelancer pf ON pf.user_id = s.user_id
-            WHERE ${where.join(' AND ')}
-              AND pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL
-         ) AS sub
-          WHERE sub.distance_km <= :radius
-          ORDER BY ${orderClause(sort, true, 'sub')}
-          LIMIT ${filters.limit} OFFSET ${filters.offset}`,
+        `SELECT s.*, page.distance_km, ${BOOSTED_EXPR} AS boosted, ${OWNER_COLS}
+           FROM (
+             SELECT sub.* FROM (
+               SELECT ${keys.join(', ')}, ${distanceExpr} AS distance_km
+                 FROM services s
+                 ${pageJoins.join('\n')}
+                WHERE ${where.join(' AND ')}
+                  AND pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL
+             ) AS sub
+              WHERE sub.distance_km <= :radius
+              ORDER BY ${orderClause(sort, true, 'sub')}
+              ${pageLimit}
+           ) AS page
+           JOIN services s ON s.id = page.id
+           JOIN users u ON u.id = s.user_id
+           JOIN profiles_freelancer pf ON pf.user_id = s.user_id
+          ORDER BY ${orderClause(sort, true, 'page')}`,
         params,
       );
       return rows;
     }
 
-    // limit/offset são inteiros validados (Zod) — seguros para interpolar.
     const [rows] = await pool.query<ServiceRow[]>(
-      `SELECT s.*, ${BOOSTED_EXPR} AS boosted, ${OWNER_COLS} FROM services s
-        ${textJoin}
-        JOIN users u ON u.id = s.user_id
-        LEFT JOIN profiles_freelancer pf ON pf.user_id = s.user_id
-        WHERE ${where.join(' AND ')}
-        ORDER BY ${orderClause(sort, false)}
-        LIMIT ${filters.limit} OFFSET ${filters.offset}`,
+      `SELECT s.*, ${BOOSTED_EXPR} AS boosted, ${OWNER_COLS}
+         FROM (
+           SELECT ${keys.join(', ')}
+             FROM services s
+             ${pageJoins.join('\n')}
+            WHERE ${where.join(' AND ')}
+            ORDER BY ${orderClause(sort, false)}
+            ${pageLimit}
+         ) AS page
+         JOIN services s ON s.id = page.id
+         JOIN users u ON u.id = s.user_id
+         LEFT JOIN profiles_freelancer pf ON pf.user_id = s.user_id
+        ORDER BY ${orderClause(sort, false, 'page')}`,
       params,
     );
     return rows;

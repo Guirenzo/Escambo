@@ -584,5 +584,66 @@ describe('gamificationRepository', () => {
     expect(await gamificationRepository.leaderboard(3)).toEqual([]);
     expect(fakeDb.calls[1]!.sql).toMatch(/ORDER BY ux\.total_xp DESC, ux\.user_id ASC LIMIT 3$/);
     expect(fakeDb.calls).toHaveLength(2);
+    // A nota e as concluídas vão junto, para a tela mostrar os critérios da RN-056.
+    expect(sql).toContain('pf.avg_rating, pf.total_contracts FROM user_xp ux');
+  });
+
+  describe('rankedLeaderboard (RN-056)', () => {
+    it('por categoria: freelancers com serviço ativo na categoria ou numa subcategoria, por nota, concluídas e XP', async () => {
+      const rows = [{ ulid: '01HXC', name: 'Caio', total_xp: 0 }];
+      fakeDb.reply(rows);
+
+      expect(await gamificationRepository.rankedLeaderboard({ categoryId: 1, limit: 10 })).toBe(
+        rows,
+      );
+
+      const { sql, params } = fakeDb.calls[0]!;
+      // A base é o perfil de freelancer; quem ainda não tem XP entra com zero.
+      expect(sql).toContain('FROM profiles_freelancer pf JOIN users u ON u.id = pf.user_id');
+      expect(sql).toContain('LEFT JOIN user_xp ux ON ux.user_id = pf.user_id');
+      expect(sql).toContain('COALESCE(ux.total_xp, 0) AS total_xp');
+      // A regra do ranking vale aqui também.
+      expect(sql).toContain("u.deleted_at IS NULL AND u.status NOT IN ('suspended', 'banned')");
+      expect(sql).toContain('s.deleted_at IS NULL AND s.is_active = 1');
+      expect(sql).toContain('WHERE sc.id = :categoryId OR sc.parent_id = :categoryId');
+      // Sem ponto, sem distância nem raio.
+      expect(sql).toContain('NULL AS distance_km');
+      expect(sql).not.toContain(':radius');
+      expect(sql).toMatch(
+        /ORDER BY r\.avg_rating DESC, r\.total_contracts DESC, r\.total_xp DESC, r\.user_id ASC LIMIT 10$/,
+      );
+      expect(params).toEqual({ categoryId: 1 });
+    });
+
+    it('perto de mim: só quem marcou a localização, até o raio, com a distância calculada', async () => {
+      fakeDb.reply([]);
+
+      await gamificationRepository.rankedLeaderboard({
+        near: { lat: -26.3, lng: -48.8, radiusKm: 50 },
+        limit: 5,
+      });
+
+      const { sql, params } = fakeDb.calls[0]!;
+      expect(sql).toContain('pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL');
+      expect(sql).toContain('6371 * ACOS(LEAST(1.0,');
+      expect(sql).toContain('WHERE r.distance_km <= :radius');
+      // Sem categoria, nenhum filtro de serviço.
+      expect(sql).not.toContain('service_categories');
+      expect(sql).toMatch(/LIMIT 5$/);
+      expect(params).toEqual({ lat: -26.3, lng: -48.8, radius: 50 });
+    });
+
+    it('categoria e local juntos', async () => {
+      fakeDb.reply([]);
+      await gamificationRepository.rankedLeaderboard({
+        categoryId: 10,
+        near: { lat: 1, lng: 2, radiusKm: 30 },
+        limit: 10,
+      });
+      const { sql, params } = fakeDb.calls[0]!;
+      expect(sql).toContain(':categoryId');
+      expect(sql).toContain('WHERE r.distance_km <= :radius');
+      expect(params).toEqual({ categoryId: 10, lat: 1, lng: 2, radius: 30 });
+    });
   });
 });

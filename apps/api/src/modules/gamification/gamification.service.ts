@@ -2,18 +2,23 @@ import type {
   BrazilTimezone,
   GamificationProfile,
   LeaderboardEntry,
+  LeaderboardQuery,
   LevelProgress,
+  Mission,
   XpEvent,
 } from '@escambo/types';
 import { logger } from '../../config/logger';
 import { addDaysToDay, dayIn, DEFAULT_TIMEZONE } from '../../utils/timezone';
 import { userZone } from '../auth/user-zone';
+import { settingsRepository } from '../settings/settings.repository';
 import {
   gamificationRepository,
   type BadgeCatalogRow,
   type FreelancerStatsRow,
+  type LeaderboardRow,
 } from './gamification.repository';
 import { LEVELS, levelFor } from './gamification.levels';
+import { missionsService } from './gamification.missions';
 
 /** Janela da sequência de dias: a atividade dos últimos 60 dias (a sequência não passa disso). */
 const STREAK_WINDOW_DAYS = 60;
@@ -76,6 +81,37 @@ const COUNTED_KEYS = Object.keys(COUNTED_CRITERIA) as CountedCriterion[];
 
 /** Tamanho do lote da reavaliação de todos os freelancers. */
 const REEVALUATE_BATCH = 200;
+
+/** O ranking mostra o top 10 (RN-056). */
+const LEADERBOARD_SIZE = 10;
+/** Raio do ranking local (RN-056) quando ranking_radius_km falta ou não é um raio aceitável. */
+const DEFAULT_RANKING_RADIUS_KM = 50;
+/** O mesmo teto de raio da busca de serviços. */
+const MAX_RANKING_RADIUS_KM = 500;
+
+/** O raio do ranking local: o parâmetro da plataforma, ou 50 km se ele não for um raio válido. */
+export function rankingRadius(value: number): number {
+  return Number.isFinite(value) && value > 0 && value <= MAX_RANKING_RADIUS_KM
+    ? value
+    : DEFAULT_RANKING_RADIUS_KM;
+}
+
+function toLeaderboardEntry(r: LeaderboardRow, i: number): LeaderboardEntry {
+  // No ranking por categoria ou local entra quem ainda não tem linha de XP: nível inicial.
+  const initial = levelFor(0);
+  const entry: LeaderboardEntry = {
+    rank: i + 1,
+    userUlid: r.ulid,
+    name: r.name,
+    totalXp: Number(r.total_xp),
+    level: r.level ?? initial.level,
+    levelName: r.level_name ?? initial.name,
+    avgRating: Number(r.avg_rating ?? 0),
+    completedContracts: Number(r.total_contracts ?? 0),
+  };
+  if (r.distance_km != null) entry.distanceKm = Math.round(Number(r.distance_km) * 10) / 10;
+  return entry;
+}
 
 interface BadgeStats {
   contractsCompleted: number;
@@ -236,23 +272,50 @@ export const gamificationService = {
     }));
   },
 
-  async getLeaderboard(limit = 10): Promise<LeaderboardEntry[]> {
-    const rows = await gamificationRepository.leaderboard(limit);
-    return rows.map((r, i) => ({
-      rank: i + 1,
-      userUlid: r.ulid,
-      name: r.name,
-      totalXp: r.total_xp,
-      level: r.level,
-      levelName: r.level_name,
-    }));
+  /**
+   * Ranking (RF-067). Sem filtro, o geral por XP, o mesmo da posição no perfil. Com categoria e/ou
+   * o ponto do "perto de mim", a RN-056: o top 10 por nota média, depois contratações concluídas,
+   * depois XP, dentro do raio ranking_radius_km da plataforma (50 km no seed).
+   */
+  async getLeaderboard(
+    query: LeaderboardQuery = {},
+    limit = LEADERBOARD_SIZE,
+  ): Promise<LeaderboardEntry[]> {
+    const local = query.lat !== undefined && query.lng !== undefined;
+    if (query.categoryId === undefined && !local) {
+      return (await gamificationRepository.leaderboard(limit)).map(toLeaderboardEntry);
+    }
+    const near = local
+      ? {
+          lat: query.lat!,
+          lng: query.lng!,
+          radiusKm: rankingRadius(
+            await settingsRepository.getNumber('ranking_radius_km', DEFAULT_RANKING_RADIUS_KM),
+          ),
+        }
+      : undefined;
+    const rows = await gamificationRepository.rankedLeaderboard({
+      ...(query.categoryId !== undefined ? { categoryId: query.categoryId } : {}),
+      ...(near ? { near } : {}),
+      limit,
+    });
+    return rows.map(toLeaderboardEntry);
   },
 
-  /** Evento: contrato concluído → +100 XP + badge (RN-051). A contagem e os XP entram juntos. */
+  /** As missões do período vigente (RF-066); abrir conta como o acesso do dia. */
+  listMissions(userId: number): Promise<Mission[]> {
+    return missionsService.list(userId);
+  },
+
+  /**
+   * Evento: contrato concluído → +100 XP + badge (RN-051). A contagem e os XP entram juntos. Por
+   * último, a missão de contratações concluídas do período (RF-066).
+   */
   async onContractCompleted(freelancerId: number, contractId: number): Promise<void> {
     await awardXp(freelancerId, 100, 'contract_completed', contractId, { countContract: true });
     await awardBadgeBySlug(freelancerId, 'first-deal');
     await evaluateBadges(freelancerId);
+    await missionsService.evaluate(freelancerId, { actions: ['complete_contracts'] });
   },
 
   /** Evento: avaliação recebida → +50 (5★) / +20 (4★) (RN-051). */
@@ -264,10 +327,20 @@ export const gamificationService = {
 
   /**
    * Evento: troca concluída → reavalia as badges de cada parte (RF-065, `barters_completed`). A
-   * troca não dá XP próprio (não está na tabela da RN-051); só a badge, se sair, dá a recompensa.
+   * troca não dá XP próprio (não está na tabela da RN-051); só a badge, se sair, dá a recompensa,
+   * e a missão de troca do catálogo (RF-066), se ainda não foi cumprida.
    */
   async onBarterCompleted(userId: number): Promise<void> {
     await evaluateBadges(userId);
+    await missionsService.evaluate(userId, { actions: ['complete_barter'] });
+  },
+
+  /**
+   * Evento: o freelancer respondeu a uma oferta do cliente (aceitou, recusou ou contrapropôs). Conta
+   * para a missão de resposta rápida (RF-066); a resposta em si não dá XP (RN-051).
+   */
+  async onOfferAnswered(freelancerId: number): Promise<void> {
+    await missionsService.evaluate(freelancerId, { actions: ['fast_response_hours'] });
   },
 
   /**

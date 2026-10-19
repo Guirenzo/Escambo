@@ -5,6 +5,36 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.45.0] — 2026-10-19
+
+Terceira leva da auditoria de requisitos (ADR 63): sobram só os requisitos que dependem de decisão do dono ou da VPS. RF: 83 implementados, 2 parciais, 5 não implementados e 2 fora do escopo; RNF: 30, 9, 1 e 2.
+
+### Adicionado
+
+- **Missões (RF-066, RF-063, RN-054):** diárias e semanais, no fuso da conta, com XP ao cumprir e um cartão no Início. O progresso de um período não passa para o seguinte.
+- **Ranking por categoria e perto de mim (RF-067, RN-056):** top 10 por nota, depois concluídas, depois XP, num raio de 50 km configurável. Sem filtro, continua o ranking geral por XP.
+- **Meus ganhos (RF-082):** na Carteira, o freelancer vê quanto recebeu por dia, semana ou mês, com o número de contratações pagas e o ticket médio. Créditos aparecem à parte.
+- **Arquivos na entrega (RF-035):** a entrega, a reentrega e a entrega de marco aceitam até 10 arquivos, com download só pelas partes, retenção e moderação dos anexos do chat.
+- **Troca de e-mail com confirmação e telefone (RF-017):** o e-mail novo só vale depois do clique no link enviado a ele, o antigo é avisado e as outras sessões caem. O telefone fica só para o titular.
+- **Relatórios do admin (RF-081):** agrupar por semana, uso por período (novos usuários, contratações e usuários ativos) e um resumo de cada dia, semana e mês fechados gravado pelo job `report-snapshots`.
+- **Histórico do gateway (RF-050):** cada resposta e cada webhook ficam em `payment_events`, sem dado pessoal.
+
+### Alterado
+
+- **Painel do admin (RF-076):** mostra os chamados de suporte (em aberto, aguardando a equipe, SLA vencido) e se atualiza sozinho a cada 30 s.
+- **Troca estimada pelo sistema (RF-084, RN-066):** o lado com preço fechado vale o preço do catálogo, e um valor diferente é recusado. A tela mostra a torna antes de enviar.
+- **Listagem de serviços (RNF-004):** com 100 mil serviços, a busca sem texto caiu de 761 ms para 66 ms. Toda ordenação passa a desempatar pelo id, e a busca por proximidade não repete nem pula serviço entre páginas.
+- A cópia de dados (LGPD) passa ao formato 1.11, com os pedidos de troca de e-mail.
+
+### Segurança e dados
+
+- **Extrato imutável no banco (RNF-036):** triggers recusam alterar ou apagar lançamentos de R$, de créditos e do gateway.
+- **Retenção (RNF-037):** o `audit_logs` só pode perder linha com mais de 90 dias, o expurgo opcional respeita esse piso, e o log dos containers de produção gira por tamanho.
+
+### Para atualizar
+
+Sete migrations (0040 a 0046). A 0046 cria triggers: o banco precisa subir com `log_bin_trust_function_creators=1`, que o compose já passa, e por isso o deploy recria o container do MySQL. A alternativa é um `SET PERSIST` antes. Passo a passo no DEPLOY.md ("Atualizar para a 1.45.0").
+
 ## [1.44.0] — 2026-10-19
 
 Segunda leva da auditoria de requisitos: catálogo e busca, leitura no chat, prazo de saque, badges que faltavam, observabilidade (fora do ar, acesso negado, erros do navegador) e a primeira medição de desempenho.

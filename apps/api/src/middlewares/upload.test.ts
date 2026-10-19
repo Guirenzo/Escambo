@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '../config/logger';
 import { HttpError } from '../utils/http-error';
 import { errorHandler } from './error-handler';
-import { MAX_UPLOAD_BYTES, singleFile } from './upload';
+import { fileArray, MAX_UPLOAD_BYTES, singleFile } from './upload';
 
 // O error-handler é o de verdade: o Sentry entra falso para conferir o que vai (e o que não vai) a ele.
 const { captureError } = vi.hoisted(() => ({ captureError: vi.fn() }));
@@ -310,5 +310,118 @@ describe('singleFile (upload)', () => {
     expect(seen[0]).toBeInstanceOf(HttpError);
     expect(seen[0]).not.toBeInstanceOf(multer.MulterError);
     expect(seen[0]).toMatchObject({ statusCode: 400, code: 'invalid_upload' });
+  });
+});
+
+/** Rota de teste do fileArray: o que ficou em req.files e req.body. */
+function appWithFiles(upload: RequestHandler): Express {
+  const app = express();
+  app.use(express.json());
+  app.post('/upload', upload, (req, res) => {
+    const files = (req.files as Express.Multer.File[] | undefined) ?? null;
+    res.json({
+      files: files?.map((f) => ({
+        fieldname: f.fieldname,
+        originalname: f.originalname,
+        size: f.size,
+        inMemory: Buffer.isBuffer(f.buffer) && f.path === undefined,
+      })),
+      body: req.body,
+    });
+  });
+  app.use(errorHandler);
+  return app;
+}
+
+const KB = 1024;
+
+/** Vários arquivos de um campo (a entrega com arquivos, RF-035), com teto por arquivo e da soma. */
+describe('fileArray (upload de vários arquivos)', () => {
+  const upload = (maxTotalBytes = 100 * KB) =>
+    fileArray('attachments', { maxCount: 2, maxTotalBytes, fields: 3, fieldBytes: 100 });
+
+  it('lê os arquivos do campo em memória e os campos de texto, com o repetido virando lista', async () => {
+    const res = await request(appWithFiles(upload()))
+      .post('/upload')
+      .field('message', 'Entrega')
+      .field('files', 'https://a.test/1')
+      .field('files', 'https://a.test/2')
+      .attach('attachments', Buffer.from('%PDF-um'), 'um.pdf')
+      .attach('attachments', Buffer.from('%PDF-dois'), 'dois.pdf')
+      .expect(200);
+    expect(res.body.files).toEqual([
+      { fieldname: 'attachments', originalname: 'um.pdf', size: 7, inMemory: true },
+      { fieldname: 'attachments', originalname: 'dois.pdf', size: 9, inMemory: true },
+    ]);
+    expect(res.body.body).toEqual({
+      message: 'Entrega',
+      files: ['https://a.test/1', 'https://a.test/2'],
+    });
+  });
+
+  it('mais arquivos que o máximo é 422 invalid_upload, dizendo o máximo', async () => {
+    const res = await request(appWithFiles(upload()))
+      .post('/upload')
+      .attach('attachments', Buffer.from('a'), 'a.pdf')
+      .attach('attachments', Buffer.from('b'), 'b.pdf')
+      .attach('attachments', Buffer.from('c'), 'c.pdf')
+      .expect(422);
+    expect(res.body).toMatchObject({
+      error: 'invalid_upload',
+      message: 'Envie no máximo 2 arquivos de uma vez',
+    });
+  });
+
+  it('arquivo acima do teto de cada um é 413 file_too_large; arquivo em outro campo é 422', async () => {
+    const big = await request(appWithFiles(upload(10 * MB)))
+      .post('/upload')
+      .attach('attachments', Buffer.alloc(MB + 1), 'grande.pdf')
+      .expect(413);
+    expect(big.body).toMatchObject({
+      error: 'file_too_large',
+      message: 'Arquivo maior que o limite de 1 MB',
+    });
+
+    const wrong = await request(appWithFiles(upload()))
+      .post('/upload')
+      .attach('file', Buffer.from('a'), 'a.pdf')
+      .expect(422);
+    expect(wrong.body.message).toBe('Envio inválido: os arquivos vão no campo "attachments"');
+  });
+
+  it('a soma acima do teto é 413 files_too_large, lida até o fim ou recusada pelo Content-Length', async () => {
+    // Dentro da folga do Content-Length: o multer lê, e a soma é conferida no fim.
+    const sum = await request(appWithFiles(upload()))
+      .post('/upload')
+      .attach('attachments', Buffer.alloc(60 * KB), 'a.pdf')
+      .attach('attachments', Buffer.alloc(60 * KB), 'b.pdf')
+      .expect(413);
+    expect(sum.body).toMatchObject({
+      error: 'files_too_large',
+      message: 'Os arquivos somam mais de 0,1 MB',
+    });
+
+    // Muito acima: recusado pelo Content-Length, com o corpo descartado e a resposta inteira.
+    const declared = await request(appWithFiles(upload()))
+      .post('/upload')
+      .attach('attachments', Buffer.alloc(400 * KB), 'a.pdf')
+      .attach('attachments', Buffer.alloc(400 * KB), 'b.pdf')
+      .expect(413);
+    expect(declared.body.error).toBe('files_too_large');
+  });
+
+  it('JSON passa direto, sem req.files; multipart malformado é 400 invalid_upload', async () => {
+    const json = await request(appWithFiles(upload()))
+      .post('/upload')
+      .send({ message: 'Só texto' })
+      .expect(200);
+    expect(json.body).toEqual({ body: { message: 'Só texto' } });
+
+    const broken = await request(appWithFiles(upload()))
+      .post('/upload')
+      .set('Content-Type', 'multipart/form-data; boundary=corte')
+      .send('--corte\r\nContent-Disposition: form-data; name="attachments"; filename="a"\r\n\r\nab')
+      .expect(400);
+    expect(broken.body.error).toBe('invalid_upload');
   });
 });

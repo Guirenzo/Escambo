@@ -15,12 +15,33 @@ async function runList(
   return { sql, params: params as Record<string, unknown> };
 }
 
-/** O trecho entre o WHERE da busca comum e o ORDER BY: os predicados, na ordem em que entram. */
+/** O trecho entre o WHERE da página de ids e o ORDER BY dela: os predicados, na ordem em que entram. */
 function whereOf(sql: string): string {
-  const match =
-    / LEFT JOIN profiles_freelancer pf ON pf\.user_id = s\.user_id WHERE (.*) ORDER BY /.exec(sql);
+  const match = / WHERE (s\.deleted_at IS NULL AND s\.is_active = 1.*?) ORDER BY /.exec(sql);
   expect(match).not.toBeNull();
   return match![1]!;
+}
+
+/** O que a página de ids junta aos serviços, entre o FROM e o WHERE dela ('' se nada). */
+function pageJoinsOf(sql: string): string {
+  const match = / FROM services s (.*?) ?WHERE s\.deleted_at IS NULL /.exec(sql);
+  expect(match).not.toBeNull();
+  return match![1]!.trim();
+}
+
+/** As colunas que a página de ids leva (o SELECT da página, antes do FROM services). */
+function pageKeysOf(sql: string): string {
+  const match = /FROM \( (?:SELECT sub\.\* FROM \( )?SELECT (.*?) FROM services s /.exec(sql);
+  expect(match).not.toBeNull();
+  return match![1]!;
+}
+
+/** O ORDER BY da página de ids, com o corte (LIMIT e OFFSET) que só ela tem. */
+function pageOrderOf(sql: string): string {
+  const end = sql.indexOf(' ) AS page ');
+  const start = sql.lastIndexOf(' ORDER BY ', end);
+  expect(start).toBeGreaterThan(-1);
+  return sql.slice(start + ' ORDER BY '.length, end);
 }
 
 /** Do último `marker` até o fim da instrução (o ORDER BY com a paginação, por exemplo). */
@@ -31,6 +52,23 @@ function fromLast(sql: string, marker: string): string {
 }
 
 const BASE = 's.deleted_at IS NULL AND s.is_active = 1';
+
+/** O destaque da linha devolvida: impulsionamento ativo e ainda não vencido, do próprio serviço. */
+const BOOSTED_EXISTS =
+  "EXISTS(SELECT 1 FROM boosts bo WHERE bo.service_id = s.id AND bo.status = 'active' AND bo.expires_at > NOW()) AS boosted";
+
+/** O conjunto dos serviços com destaque ativo, juntado na página de ids quando a ordem usa o destaque. */
+const BOOST_JOIN =
+  "LEFT JOIN (SELECT DISTINCT service_id FROM boosts WHERE status = 'active' AND expires_at > NOW()) AS ab ON ab.service_id = s.id";
+
+/** Quem presta o serviço, nas colunas da linha devolvida. */
+const OWNER =
+  'u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, pf.available_days AS owner_available_days, pf.available_periods AS owner_available_periods, pf.is_available AS owner_is_available, u.timezone AS owner_timezone';
+
+const PROFILE_JOIN = 'LEFT JOIN profiles_freelancer pf ON pf.user_id = s.user_id';
+
+/** Depois da página de ids: as linhas inteiras dela, com a conta e o perfil de quem presta. */
+const OUTER_JOINS = `) AS page JOIN services s ON s.id = page.id JOIN users u ON u.id = s.user_id ${PROFILE_JOIN}`;
 
 /** Uma palavra como "contém" no título ou na descrição, com a barra como escape do LIKE. */
 const containsSql = (alias: string, i: number): string =>
@@ -273,20 +311,24 @@ describe('servicesRepository', () => {
 
       expect(await servicesRepository.list({ limit: 20, offset: 0 })).toBe(rows);
 
+      // Deferred join numa instrução só: a página de ids (só id, destaque e data, sem a conta nem
+      // o perfil) filtra, ordena e corta; só as linhas dela voltam inteiras, na mesma ordem.
       const { sql, params } = fakeDb.calls[0]!;
-      expect(whereOf(sql)).toBe(BASE);
-      expect(sql).toContain(' FROM services s JOIN users u ON u.id = s.user_id LEFT JOIN ');
-      expect(fromLast(sql, ' ORDER BY ')).toBe(
-        'ORDER BY boosted DESC, s.created_at DESC, s.id DESC LIMIT 20 OFFSET 0',
+      expect(sql).toBe(
+        `SELECT s.*, ${BOOSTED_EXISTS}, ${OWNER} FROM ( ` +
+          `SELECT s.id, (ab.service_id IS NOT NULL) AS boosted, s.created_at FROM services s ${BOOST_JOIN}` +
+          ` WHERE ${BASE} ORDER BY boosted DESC, s.created_at DESC, s.id DESC LIMIT 20 OFFSET 0 ` +
+          `${OUTER_JOINS} ORDER BY page.boosted DESC, page.created_at DESC, page.id DESC`,
       );
       expect(params).toEqual({});
     });
 
     it('o destaque (boosted) só conta impulsionamento ativo e ainda não vencido, do próprio serviço', async () => {
       const { sql } = await runList();
-      expect(sql).toContain(
-        "EXISTS(SELECT 1 FROM boosts bo WHERE bo.service_id = s.id AND bo.status = 'active' AND bo.expires_at > NOW()) AS boosted",
-      );
+      // Para ordenar, o conjunto dos destacados juntado uma vez (DISTINCT: dois impulsionamentos
+      // ativos não repetem o serviço); na linha devolvida, o EXISTS do detalhe, só para a página.
+      expect(pageJoinsOf(sql)).toBe(BOOST_JOIN);
+      expect(sql.startsWith(`SELECT s.*, ${BOOSTED_EXISTS}, `)).toBe(true);
     });
 
     it('cada linha vem com o prestador: nome, foto, reputação, disponibilidade e fuso', async () => {
@@ -307,11 +349,32 @@ describe('servicesRepository', () => {
       }
     });
 
-    it('a paginação entra como LIMIT e OFFSET no fim da consulta', async () => {
+    it('a paginação entra como LIMIT e OFFSET na página de ids; a consulta de fora só reordena a página', async () => {
       const { sql, params } = await runList({ limit: 50, offset: 100 });
-      expect(fromLast(sql, ' LIMIT ')).toBe('LIMIT 50 OFFSET 100');
+      expect(pageOrderOf(sql)).toBe(
+        'boosted DESC, s.created_at DESC, s.id DESC LIMIT 50 OFFSET 100',
+      );
+      expect(sql.match(/ LIMIT /g)).toHaveLength(1);
+      expect(fromLast(sql, ') AS page ')).not.toContain('LIMIT');
       expect(params).toEqual({});
     });
+
+    it.each<[string, Partial<ServiceListFilters>, string]>([
+      ['sem filtro do prestador, só o destaque', {}, BOOST_JOIN],
+      ['nota mínima: o perfil', { minRating: 4 }, `${PROFILE_JOIN} ${BOOST_JOIN}`],
+      ['dia em que atende: o perfil', { day: 2 }, `${PROFILE_JOIN} ${BOOST_JOIN}`],
+      ['ordem por nota: o perfil, sem o destaque', { sort: 'rating' }, PROFILE_JOIN],
+      ['ordem por preço: nada', { sort: 'price_asc', categoryId: 3, isRemote: true }, ''],
+      ['mais recentes: nada', { sort: 'newest' }, ''],
+    ])(
+      'a página de ids só junta o que o filtro e a ordem usam (%s)',
+      async (_rule, filters, joins) => {
+        const { sql } = await runList(filters);
+        expect(pageJoinsOf(sql)).toBe(joins);
+        // A linha devolvida sempre vem com a conta e o perfil de quem presta.
+        expect(sql).toContain(OUTER_JOINS);
+      },
+    );
 
     const createdFrom = new Date('2026-09-01T03:00:00Z');
     const createdBefore = new Date('2026-09-02T03:00:00Z');
@@ -386,7 +449,7 @@ describe('servicesRepository', () => {
 
     it('texto com palavra que o índice guarda: o FULLTEXT (prefixo, todas obrigatórias) e as tags conduzem a busca', async () => {
       const { sql, params } = await runList({ q: 'Design de Logo' });
-      expect(sql).toContain(` FROM services s ${ftJoin()} JOIN users u ON u.id = s.user_id `);
+      expect(pageJoinsOf(sql)).toBe(`${ftJoin()} ${BOOST_JOIN}`);
       // O texto não vira predicado no WHERE: quem filtra é a tabela derivada.
       expect(whereOf(sql)).toBe(BASE);
       // "de" é palavra vazia: fica fora do MATCH; a tag é o texto inteiro normalizado.
@@ -395,7 +458,7 @@ describe('servicesRepository', () => {
 
     it('palavra que o índice não guarda, junto de uma que guarda, filtra só o que o MATCH achou', async () => {
       const { sql, params } = await runList({ q: 'designer ux' });
-      expect(sql).toContain(` FROM services s ${ftJoin(1)} JOIN users u `);
+      expect(pageJoinsOf(sql)).toBe(`${ftJoin(1)} ${BOOST_JOIN}`);
       expect(params).toEqual({
         qFulltext: '+designer*',
         qContains0: '%ux%',
@@ -500,7 +563,7 @@ describe('servicesRepository', () => {
           'COALESCE(pf.avg_rating, 0) >= :minRating',
         ].join(' AND '),
       );
-      expect(sql).toContain(` FROM services s ${ftJoin()} JOIN users u `);
+      expect(pageJoinsOf(sql)).toBe(`${ftJoin()} ${PROFILE_JOIN} ${BOOST_JOIN}`);
       expect(params).toEqual({
         categoryId: 3,
         ownerId: 9,
@@ -513,23 +576,55 @@ describe('servicesRepository', () => {
       });
     });
 
-    it.each<[NonNullable<ServiceListFilters['sort']>, string]>([
-      ['relevance', 'boosted DESC, s.created_at DESC, s.id DESC'],
-      ['price_asc', 's.price IS NULL, s.price ASC, s.created_at DESC, s.id DESC'],
-      ['price_desc', 's.price IS NULL, s.price DESC, s.created_at DESC, s.id DESC'],
+    it.each<[NonNullable<ServiceListFilters['sort']>, string, string, string]>([
+      [
+        'relevance',
+        's.id, (ab.service_id IS NOT NULL) AS boosted, s.created_at',
+        'boosted DESC, s.created_at DESC, s.id DESC',
+        'page.boosted DESC, page.created_at DESC, page.id DESC',
+      ],
+      [
+        'price_asc',
+        's.id, s.price, s.created_at',
+        's.price IS NULL, s.price ASC, s.created_at DESC, s.id DESC',
+        'page.price IS NULL, page.price ASC, page.created_at DESC, page.id DESC',
+      ],
+      [
+        'price_desc',
+        's.id, s.price, s.created_at',
+        's.price IS NULL, s.price DESC, s.created_at DESC, s.id DESC',
+        'page.price IS NULL, page.price DESC, page.created_at DESC, page.id DESC',
+      ],
       [
         'rating',
+        's.id, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, s.created_at',
         'COALESCE(pf.avg_rating, 0) DESC, COALESCE(pf.total_reviews, 0) DESC, s.created_at DESC, s.id DESC',
+        'COALESCE(page.owner_avg_rating, 0) DESC, COALESCE(page.owner_total_reviews, 0) DESC, page.created_at DESC, page.id DESC',
       ],
-      ['newest', 's.created_at DESC, s.id DESC'],
+      [
+        'newest',
+        's.id, s.created_at',
+        's.created_at DESC, s.id DESC',
+        'page.created_at DESC, page.id DESC',
+      ],
       // Sem lat/lng não há distância: cai na relevância.
-      ['distance', 'boosted DESC, s.created_at DESC, s.id DESC'],
-    ])('ordenação %s', async (sort, orderBy) => {
-      const { sql, params } = await runList({ sort, limit: 10, offset: 30 });
-      expect(whereOf(sql)).toBe(BASE);
-      expect(fromLast(sql, ' ORDER BY ')).toBe(`ORDER BY ${orderBy} LIMIT 10 OFFSET 30`);
-      expect(params).toEqual({});
-    });
+      [
+        'distance',
+        's.id, (ab.service_id IS NOT NULL) AS boosted, s.created_at',
+        'boosted DESC, s.created_at DESC, s.id DESC',
+        'page.boosted DESC, page.created_at DESC, page.id DESC',
+      ],
+    ])(
+      'ordenação %s: a página leva só as chaves da ordem, e a consulta de fora ordena de novo por elas',
+      async (sort, keys, pageOrder, outerOrder) => {
+        const { sql, params } = await runList({ sort, limit: 10, offset: 30 });
+        expect(whereOf(sql)).toBe(BASE);
+        expect(pageKeysOf(sql)).toBe(keys);
+        expect(pageOrderOf(sql)).toBe(`${pageOrder} LIMIT 10 OFFSET 30`);
+        expect(fromLast(sql, ' ORDER BY ')).toBe(`ORDER BY ${outerOrder}`);
+        expect(params).toEqual({});
+      },
+    );
   });
 
   describe('list: atende agora (ADR 48)', () => {
@@ -558,6 +653,10 @@ describe('servicesRepository', () => {
 
       expect(whereOf(sql)).toBe(
         `${BASE} AND pf.is_available = 1 AND pf.available_days IS NOT NULL AND (${zoneClause(0)} OR ${zoneClause(1)})`,
+      );
+      // O fuso é da conta e o horário, do perfil: a página de ids junta os dois.
+      expect(pageJoinsOf(sql)).toBe(
+        `JOIN users u ON u.id = s.user_id ${PROFILE_JOIN} ${BOOST_JOIN}`,
       );
       expect(params).toEqual({
         nowZones0: ['America/Noronha'],
@@ -630,12 +729,16 @@ describe('servicesRepository', () => {
     it('madrugada no país inteiro: ninguém atende agora, e a busca não devolve nada', async () => {
       const { sql, params } = await runList({ now: slots({}) });
       expect(whereOf(sql)).toBe(`${BASE} AND 1 = 0`);
+      expect(pageJoinsOf(sql)).toBe(BOOST_JOIN);
       expect(params).toEqual({});
     });
   });
 
   describe('list: descoberta local (com lat e lng)', () => {
     const geo = { lat: -26.3, lng: -48.85 };
+    /** Haversine em km (raio da Terra 6371), com o LEAST que protege o ACOS de passar de 1. */
+    const DISTANCE =
+      '(6371 * ACOS(LEAST(1.0, COS(RADIANS(:lat)) * COS(RADIANS(pf.latitude)) * COS(RADIANS(pf.longitude) - RADIANS(:lng)) + SIN(RADIANS(:lat)) * SIN(RADIANS(pf.latitude)))))';
 
     it('calcula a distância do prestador ao ponto, corta pelo raio e ordena por destaque e proximidade', async () => {
       const rows = [{ id: 1, distance_km: '1.2' }];
@@ -647,19 +750,20 @@ describe('servicesRepository', () => {
 
       expect(fakeDb.calls).toHaveLength(1);
       const { sql, params } = fakeDb.calls[0]!;
-      // Haversine em km (raio da Terra 6371), com o LEAST que protege o ACOS de passar de 1.
-      expect(sql).toContain(
-        'SELECT * FROM ( SELECT s.*, (6371 * ACOS(LEAST(1.0, COS(RADIANS(:lat)) * COS(RADIANS(pf.latitude)) * COS(RADIANS(pf.longitude) - RADIANS(:lng)) + SIN(RADIANS(:lat)) * SIN(RADIANS(pf.latitude))))) AS distance_km, EXISTS(',
+      // A distância e o corte pelo raio ficam na página de ids; as linhas inteiras voltam com a
+      // distância dela. Prestador sem perfil ou sem coordenadas não tem distância: fica de fora
+      // (JOIN no perfil, e não LEFT JOIN).
+      expect(sql).toBe(
+        `SELECT s.*, page.distance_km, ${BOOSTED_EXISTS}, ${OWNER} FROM ( SELECT sub.* FROM ( ` +
+          `SELECT s.id, (ab.service_id IS NOT NULL) AS boosted, ${DISTANCE} AS distance_km` +
+          ` FROM services s JOIN profiles_freelancer pf ON pf.user_id = s.user_id ${BOOST_JOIN}` +
+          ` WHERE ${BASE} AND pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL ) AS sub` +
+          ' WHERE sub.distance_km <= :radius ORDER BY sub.boosted DESC, sub.distance_km ASC, sub.id ASC LIMIT 10 OFFSET 30' +
+          ' ) AS page JOIN services s ON s.id = page.id JOIN users u ON u.id = s.user_id' +
+          ' JOIN profiles_freelancer pf ON pf.user_id = s.user_id' +
+          ' ORDER BY page.boosted DESC, page.distance_km ASC, page.id ASC',
       );
-      // Prestador sem perfil ou sem coordenadas não tem distância: fica de fora (JOIN, e não LEFT JOIN).
-      expect(sql).toContain(
-        ' FROM services s JOIN users u ON u.id = s.user_id JOIN profiles_freelancer pf ON pf.user_id = s.user_id WHERE ',
-      );
-      expect(sql).not.toContain('LEFT JOIN');
-      expect(fromLast(sql, ` WHERE ${BASE}`)).toBe(
-        `WHERE ${BASE} AND pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL ) AS sub` +
-          ' WHERE sub.distance_km <= :radius ORDER BY sub.boosted DESC, sub.distance_km ASC LIMIT 10 OFFSET 30',
-      );
+      expect(sql).not.toContain('LEFT JOIN profiles_freelancer');
       expect(params).toEqual({ lat: -26.3, lng: -48.85, radius: 10 });
     });
 
@@ -687,7 +791,7 @@ describe('servicesRepository', () => {
       const { sql, params } = fakeDb.calls[0]!;
       // A busca de texto entra na tabela derivada da distância, antes do corte pelo raio.
       expect(sql).toContain(
-        ` FROM services s ${ftJoin()} JOIN users u ON u.id = s.user_id JOIN profiles_freelancer pf ON pf.user_id = s.user_id` +
+        ` FROM services s ${ftJoin()} JOIN profiles_freelancer pf ON pf.user_id = s.user_id ${BOOST_JOIN}` +
           ` WHERE ${BASE} AND s.category_id = :categoryId` +
           ' AND pf.available_days IS NOT NULL AND JSON_CONTAINS(pf.available_days, :dayJson)' +
           ' AND pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL ) AS sub WHERE sub.distance_km <= :radius ',
@@ -703,23 +807,48 @@ describe('servicesRepository', () => {
       });
     });
 
-    it.each<[NonNullable<ServiceListFilters['sort']>, string]>([
-      ['relevance', 'sub.boosted DESC, sub.distance_km ASC'],
+    it.each<[NonNullable<ServiceListFilters['sort']>, string, string]>([
+      // O empate de distância (serviços do mesmo prestador) sai na ordem de publicação.
+      [
+        'relevance',
+        's.id, (ab.service_id IS NOT NULL) AS boosted',
+        'sub.boosted DESC, sub.distance_km ASC, sub.id ASC',
+      ],
       // Quem pede "mais perto" quer o mais perto: o destaque só desempata.
-      ['distance', 'sub.distance_km ASC, sub.boosted DESC'],
-      ['price_asc', 'sub.price IS NULL, sub.price ASC, sub.created_at DESC, sub.id DESC'],
-      ['price_desc', 'sub.price IS NULL, sub.price DESC, sub.created_at DESC, sub.id DESC'],
+      [
+        'distance',
+        's.id, (ab.service_id IS NOT NULL) AS boosted',
+        'sub.distance_km ASC, sub.boosted DESC, sub.id ASC',
+      ],
+      [
+        'price_asc',
+        's.id, s.price, s.created_at',
+        'sub.price IS NULL, sub.price ASC, sub.created_at DESC, sub.id DESC',
+      ],
+      [
+        'price_desc',
+        's.id, s.price, s.created_at',
+        'sub.price IS NULL, sub.price DESC, sub.created_at DESC, sub.id DESC',
+      ],
       [
         'rating',
+        's.id, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, s.created_at',
         'COALESCE(sub.owner_avg_rating, 0) DESC, COALESCE(sub.owner_total_reviews, 0) DESC, sub.created_at DESC, sub.id DESC',
       ],
-      ['newest', 'sub.created_at DESC, sub.id DESC'],
-    ])('ordenação %s usa as colunas da tabela derivada', async (sort, orderBy) => {
-      await servicesRepository.list({ ...geo, sort, limit: 20, offset: 40 });
-      expect(fromLast(fakeDb.calls[0]!.sql, ' WHERE sub.distance_km ')).toBe(
-        `WHERE sub.distance_km <= :radius ORDER BY ${orderBy} LIMIT 20 OFFSET 40`,
-      );
-    });
+      ['newest', 's.id, s.created_at', 'sub.created_at DESC, sub.id DESC'],
+    ])(
+      'ordenação %s usa as colunas da tabela derivada, e de novo as da página',
+      async (sort, keys, orderBy) => {
+        await servicesRepository.list({ ...geo, sort, limit: 20, offset: 40 });
+        const { sql } = fakeDb.calls[0]!;
+        expect(pageKeysOf(sql)).toBe(`${keys}, ${DISTANCE} AS distance_km`);
+        expect(fromLast(sql, ' WHERE sub.distance_km ')).toBe(
+          `WHERE sub.distance_km <= :radius ORDER BY ${orderBy} LIMIT 20 OFFSET 40 ` +
+            ') AS page JOIN services s ON s.id = page.id JOIN users u ON u.id = s.user_id' +
+            ` JOIN profiles_freelancer pf ON pf.user_id = s.user_id ORDER BY ${orderBy.replaceAll('sub.', 'page.')}`,
+        );
+      },
+    );
   });
 
   it('a falha do banco na busca sobe para quem chamou, com ou sem geolocalização', async () => {

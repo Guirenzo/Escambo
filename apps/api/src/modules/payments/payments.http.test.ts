@@ -8,7 +8,10 @@ import { webhook } from './payments.controller';
 import { paymentsRoutes } from './payments.routes';
 
 const { service, log } = vi.hoisted(() => ({
-  service: { settleFromGateway: vi.fn() },
+  service: {
+    settleFromGateway: vi.fn(),
+    recordInvalidWebhook: vi.fn().mockResolvedValue(undefined),
+  },
   log: vi.fn(),
 }));
 vi.mock('./payments.service', () => ({ paymentsService: service }));
@@ -48,7 +51,11 @@ describe('POST /api/payments/webhook', () => {
 
     expect(res.body).toEqual({ ok: true, applied: true, status: 'paid' });
     expect(service.settleFromGateway).toHaveBeenCalledTimes(1);
-    expect(service.settleFromGateway).toHaveBeenCalledWith('sim_ABC', 'paid');
+    // O corpo inteiro vai junto, para o histórico do gateway (RF-050).
+    expect(service.settleFromGateway).toHaveBeenCalledWith('sim_ABC', 'paid', {
+      event: 'charge.paid',
+      body: paidEvent,
+    });
     // Auditoria da movimentação financeira: sem usuário (quem chamou foi o gateway).
     expect(log).toHaveBeenCalledWith({
       userId: null,
@@ -89,7 +96,10 @@ describe('POST /api/payments/webhook', () => {
       .expect(200);
 
     expect(res.body).toEqual({ ok: true, applied: true, status: 'failed' });
-    expect(service.settleFromGateway).toHaveBeenCalledWith('sim_ABC', 'failed');
+    expect(service.settleFromGateway).toHaveBeenCalledWith('sim_ABC', 'failed', {
+      event: null,
+      body: { gatewayPaymentId: 'sim_ABC', status: 'failed' },
+    });
   });
 
   it('a resposta traz a situação da cobrança, não a do evento: aviso de falha para cobrança já paga continua paga', async () => {
@@ -106,7 +116,10 @@ describe('POST /api/payments/webhook', () => {
       .expect(200);
 
     expect(res.body).toEqual({ ok: true, applied: false, status: 'paid' });
-    expect(service.settleFromGateway).toHaveBeenCalledWith('sim_PAGA', 'failed');
+    expect(service.settleFromGateway).toHaveBeenCalledWith('sim_PAGA', 'failed', {
+      event: null,
+      body: { gatewayPaymentId: 'sim_PAGA', status: 'failed' },
+    });
     // Na auditoria fica o que o gateway mandou e se foi aplicado, ligado à cobrança encontrada.
     expect(log).toHaveBeenCalledTimes(1);
     expect(log).toHaveBeenCalledWith(
@@ -130,6 +143,24 @@ describe('POST /api/payments/webhook', () => {
     expect(res.body.details).toHaveProperty('status');
     expect(service.settleFromGateway).not.toHaveBeenCalled();
     expect(log).not.toHaveBeenCalled();
+    // Veio com o segredo certo: o corpo recusado fica no histórico do gateway (RF-050).
+    expect(service.recordInvalidWebhook).toHaveBeenCalledExactlyOnceWith({});
+  });
+
+  it('corpo fora do formato vai para o histórico como veio; se a gravação falhar, a resposta continua 422', async () => {
+    const body = { gatewayPaymentId: 'sim_ABC', status: 'estornado' };
+    service.recordInvalidWebhook.mockRejectedValueOnce(new Error('payment_events fora do ar'));
+
+    const res = await request(app)
+      .post('/api/payments/webhook')
+      .set('x-webhook-secret', SECRET)
+      .send(body)
+      .expect(422);
+
+    expect(res.body.error).toBe('validation_error');
+    expect(res.body.details).toHaveProperty('status');
+    expect(service.recordInvalidWebhook).toHaveBeenCalledExactlyOnceWith(body);
+    expect(service.settleFromGateway).not.toHaveBeenCalled();
   });
 
   it('sem o cabeçalho do segredo é 401 e nada é liquidado nem auditado', async () => {
@@ -141,6 +172,8 @@ describe('POST /api/payments/webhook', () => {
     });
     expect(service.settleFromGateway).not.toHaveBeenCalled();
     expect(businessAudits(log)).toEqual([]);
+    // Sem o segredo não é o gateway: nada entra no histórico da cobrança.
+    expect(service.recordInvalidWebhook).not.toHaveBeenCalled();
   });
 
   it('segredo errado é recusado: do mesmo tamanho, mais curto, mais longo ou vazio', async () => {
@@ -253,7 +286,10 @@ describe('POST /api/payments/webhook', () => {
     await webhook(req([SECRET, 'outro']), res as unknown as Response);
 
     expect(res.json).toHaveBeenCalledWith({ ok: true, applied: true, status: 'paid' });
-    expect(service.settleFromGateway).toHaveBeenCalledWith('sim_ABC', 'paid');
+    expect(service.settleFromGateway).toHaveBeenCalledWith('sim_ABC', 'paid', {
+      event: 'charge.paid',
+      body: paidEvent,
+    });
     expect(log).toHaveBeenCalledWith(expect.objectContaining({ ip: null, userAgent: null }));
 
     await expect(webhook(req(['outro', SECRET]), res as unknown as Response)).rejects.toMatchObject(
@@ -279,7 +315,11 @@ describe('POST /api/payments/webhook', () => {
       .expect(200);
 
     expect(service.settleFromGateway).toHaveBeenCalledTimes(1);
-    expect(service.settleFromGateway).toHaveBeenCalledWith('sim_ABC', 'failed');
+    // O corpo inteiro (com o que o schema não usa) vai para o histórico do gateway (RF-050).
+    expect(service.settleFromGateway).toHaveBeenCalledWith('sim_ABC', 'failed', {
+      event: 'charge.paid',
+      body: { event: 'charge.paid', gatewayPaymentId: 'sim_ABC', status: 'failed', amount: 9999 },
+    });
     expect(log).toHaveBeenCalledWith(
       expect.objectContaining({ newValue: { status: 'failed', applied: true } }),
     );

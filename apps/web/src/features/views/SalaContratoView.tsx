@@ -52,6 +52,7 @@ import {
 } from '../contracts/ChatAttachment';
 import { CancelModal } from '../contracts/CancelModal';
 import { DeliveriesSection } from '../contracts/DeliveriesSection';
+import { DeliverModal } from '../contracts/DeliverModal';
 import { DropoutAgreement } from '../contracts/DropoutAgreement';
 import { ContractActions } from '../contracts/ContractActions';
 import { DisputeWindowNotice, RevisionSummary } from '../contracts/ContractRuleNotices';
@@ -340,6 +341,7 @@ export function SalaContratoView({
   const [cancelOpen, setCancelOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [acceptCounterOpen, setAcceptCounterOpen] = useState(false);
+  const [deliverOpen, setDeliverOpen] = useState(false);
   const [pending, setPending] = useState<File | null>(null); // anexo escolhido, ainda não enviado
   const [dragging, setDragging] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -525,6 +527,7 @@ export function SalaContratoView({
                 onCancel={() => setCancelOpen(true)}
                 onCounter={() => setCounterOpen(true)}
                 onAcceptCounter={() => setAcceptCounterOpen(true)}
+                onDeliver={() => setDeliverOpen(true)}
               />
             </div>
           </div>
@@ -729,6 +732,7 @@ export function SalaContratoView({
       {c && acceptCounterOpen && (
         <AcceptCounterModal contract={c} onClose={() => setAcceptCounterOpen(false)} />
       )}
+      {c && deliverOpen && <DeliverModal contract={c} onClose={() => setDeliverOpen(false)} />}
     </div>
   );
 }

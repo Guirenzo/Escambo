@@ -16,14 +16,21 @@ import { logger } from '../../config/logger';
 import {
   attachmentPath,
   attachmentSize,
+  attachmentUrl,
   contentDisposition,
   detectType,
   removeAttachment,
   safeFileName,
   saveAttachment,
   type AttachmentKind,
+  type DetectedType,
 } from './attachments.storage';
-import { messagingRepository, type MessageRow, type PurgeReason } from './messaging.repository';
+import {
+  messagingRepository,
+  type MessageRow,
+  type NewAttachment,
+  type PurgeReason,
+} from './messaging.repository';
 import { describeSignals, offPlatformSignals, parseSignals } from './off-platform';
 
 const HISTORY_LIMIT = 200;
@@ -43,8 +50,65 @@ export interface AttachmentFile {
   disposition: string;
 }
 
-export const attachmentUrl = (messageId: number): string =>
-  `/api/messaging/attachments/${messageId}`;
+export { attachmentUrl };
+
+/** Arquivo conferido e já gravado no disco, à espera da mensagem que o registra. */
+export interface StoredAttachment extends NewAttachment {
+  kind: AttachmentKind;
+}
+
+/**
+ * As regras do anexo do chat (ADR 29) para um arquivo: não vazio e de um tipo aceito, reconhecido
+ * pelos primeiros bytes. `label` nomeia o arquivo na recusa quando vão vários de uma vez.
+ */
+function checkUpload(file: UploadedFile, label?: string): DetectedType {
+  const which = label ? ` (${label})` : '';
+  if (file.buffer.length === 0)
+    throw new HttpError(422, `O arquivo está vazio${which}`, 'empty_file');
+  const type = detectType(file.buffer);
+  if (!type) {
+    throw new HttpError(
+      422,
+      `Tipo de arquivo não aceito${which}: envie JPG, PNG, GIF, WebP, PDF ou ZIP`,
+      'unsupported_file_type',
+    );
+  }
+  return type;
+}
+
+/**
+ * Confere e grava vários arquivos de uma vez (a entrega com arquivos, RF-035), com as regras do
+ * anexo do chat: todos são conferidos antes de gravar o primeiro, e se a gravação de um falhar, os
+ * já gravados saem do disco. Quem chama grava as mensagens e, se isso falhar, chama
+ * discardAttachments: nunca fica arquivo sem linha, nem linha sem arquivo.
+ */
+export async function storeAttachments(files: UploadedFile[]): Promise<StoredAttachment[]> {
+  const checked = files.map((file) => ({
+    file,
+    type: checkUpload(file, files.length > 1 ? file.originalname || 'sem nome' : undefined),
+  }));
+  const stored: StoredAttachment[] = [];
+  try {
+    for (const { file, type } of checked) {
+      stored.push({
+        kind: type.kind,
+        key: await saveAttachment(file.buffer, type),
+        name: safeFileName(file.originalname, type),
+        mime: type.mime,
+        size: file.buffer.length,
+      });
+    }
+  } catch (err) {
+    await discardAttachments(stored);
+    throw err;
+  }
+  return stored;
+}
+
+/** Tira do disco arquivos gravados por storeAttachments cuja mensagem não chegou a existir. */
+export async function discardAttachments(files: StoredAttachment[]): Promise<void> {
+  await Promise.all(files.map((f) => removeAttachment(f.key)));
+}
 
 function toAttachment(row: MessageRow): ChatAttachment | null {
   if (!row.file_url) return null;
@@ -240,6 +304,23 @@ export const messagingService = {
     }
   },
 
+  /**
+   * Mensagens de anexo gravadas por outra transação (os arquivos de uma entrega, RF-035): vão para
+   * a sala de cada contratação do par como mensagem nova, para o chat aberto mostrar na hora. Sem o
+   * aviso "Nova mensagem": quem entrega já avisa o cliente pela entrega.
+   */
+  async announceStored(
+    originContractId: number,
+    conversationId: number,
+    keys: string[],
+  ): Promise<void> {
+    if (keys.length === 0) return;
+    const rows = await messagingRepository.findByFileKeys(conversationId, keys);
+    for (const row of rows) {
+      await broadcastToPair(conversationId, originContractId, 'message:new', toMessage(row));
+    }
+  },
+
   /** Histórico do chat do contrato (somente para as partes). */
   async history(
     contractId: number,
@@ -326,15 +407,7 @@ export const messagingService = {
     file: UploadedFile,
     caption: string | null,
   ): Promise<ChatMessage> {
-    if (file.buffer.length === 0) throw new HttpError(422, 'O arquivo está vazio', 'empty_file');
-    const type = detectType(file.buffer);
-    if (!type) {
-      throw new HttpError(
-        422,
-        'Tipo de arquivo não aceito: envie JPG, PNG, GIF, WebP, PDF ou ZIP',
-        'unsupported_file_type',
-      );
-    }
+    const type = checkUpload(file);
     const ctx = await contextFor(contractId, uid);
     const text = caption?.trim() || null;
     const signals = offPlatformSignals(text);

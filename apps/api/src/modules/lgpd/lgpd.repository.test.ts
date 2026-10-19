@@ -356,6 +356,7 @@ describe('lgpdRepository', () => {
           'DELETE FROM email_outbox',
           'DELETE FROM email_verification_tokens',
           'DELETE FROM password_reset_tokens',
+          'DELETE FROM email_change_requests',
           'UPDATE user_sessions SET',
           'INSERT INTO admin_actions',
         ]);
@@ -436,6 +437,8 @@ describe('lgpdRepository', () => {
           'email_outbox',
           'email_verification_tokens',
           'password_reset_tokens',
+          // Os endereços que o titular pediu na troca de e-mail (RF-017).
+          'email_change_requests',
         ]) {
           expect(stmt(`DELETE FROM ${table}`).sql).toBe(
             `DELETE FROM ${table} WHERE user_id = :userId`,
@@ -462,7 +465,7 @@ describe('lgpdRepository', () => {
         // Tudo dentro da mesma transação: ela abre antes da primeira instrução, só confirma depois
         // da última (o registro da ação do admin) e a conexão só volta ao pool depois do commit.
         const statements = fakeDb.conn.query.mock.invocationCallOrder;
-        expect(statements).toHaveLength(21);
+        expect(statements).toHaveLength(22);
         const begun = fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!;
         const committed = fakeDb.conn.commit.mock.invocationCallOrder[0]!;
         expect(begun).toBeLessThan(statements[0]!);
@@ -539,13 +542,13 @@ describe('lgpdRepository', () => {
 
       it('falha na última etapa (o registro da ação do admin) também desfaz a anonimização inteira', async () => {
         const boom = new Error('ER_NO_REFERENCED_ROW');
-        // As 20 primeiras instruções passam; o INSERT em admin_actions falha.
-        fakeDb.reply([], [], { affectedRows: 1 }, ...Array.from({ length: 17 }, () => ({})), boom);
+        // As 21 primeiras instruções passam; o INSERT em admin_actions falha.
+        fakeDb.reply([], [], { affectedRows: 1 }, ...Array.from({ length: 18 }, () => ({})), boom);
 
         await expect(lgpdRepository.completeDeletion(5, 7, 99)).rejects.toBe(boom);
 
-        expect(fakeDb.calls).toHaveLength(21);
-        expect(fakeDb.calls[20]!.sql.startsWith('INSERT INTO admin_actions')).toBe(true);
+        expect(fakeDb.calls).toHaveLength(22);
+        expect(fakeDb.calls[21]!.sql.startsWith('INSERT INTO admin_actions')).toBe(true);
         expect(fakeDb.conn.commit).not.toHaveBeenCalled();
         expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
         expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
@@ -558,7 +561,7 @@ describe('lgpdRepository', () => {
 
         await expect(lgpdRepository.completeDeletion(5, 7, 99)).rejects.toBe(boom);
 
-        expect(fakeDb.calls).toHaveLength(21);
+        expect(fakeDb.calls).toHaveLength(22);
         expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
         expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
       });

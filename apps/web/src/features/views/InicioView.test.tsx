@@ -24,6 +24,8 @@ vi.mock('../../lib/api', () => ({
     contracts: (query: unknown) => contracts(query),
     profilesMe: () => profilesMe(),
     contractAction: (id: number, action: string) => contractAction(id, action),
+    // O cartão de missões tem teste próprio (MissionsCard.test.tsx); aqui, sem missões.
+    missions: () => Promise.resolve([]),
   },
 }));
 

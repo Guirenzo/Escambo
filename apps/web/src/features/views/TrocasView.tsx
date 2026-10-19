@@ -2,7 +2,7 @@ import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
 import { ArrowLeftRight, Plus, QrCode } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { BarterAgreement, Service } from '@escambo/types';
+import type { BarterAgreement, BarterValueSource, Service } from '@escambo/types';
 import {
   Button,
   EmptyState,
@@ -36,6 +36,31 @@ function pillClass(status: string): string {
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
 
+/**
+ * Quanto o catálogo diz que um lado da troca vale (RF-084): só o preço fechado. A combinar, por
+ * hora ou sem preço, quem propõe informa. É a mesma regra da API, que recusa valor diferente.
+ */
+export function catalogPrice(s: Service | undefined): number | null {
+  return s && s.priceType === 'fixed' && s.price != null && s.price > 0 ? round2(s.price) : null;
+}
+
+const SOURCE_LABEL: Record<BarterValueSource, string> = {
+  catalog: 'preço do catálogo',
+  informed: 'valor informado',
+};
+
+/** De onde vem o valor que a tela mostra antes de enviar. */
+const sourceOf = (catalog: number | null): string =>
+  catalog !== null ? SOURCE_LABEL.catalog : 'informado por você';
+
+/** Preço como o catálogo mostra: fechado, por hora ou a combinar. */
+const priceLabel = (s: Service): string =>
+  s.price == null || s.priceType === 'negotiable'
+    ? 'a combinar'
+    : s.priceType === 'hourly'
+      ? `${brl(s.price)}/h`
+      : brl(s.price);
+
 export function TrocasView() {
   usePageTitle('Trocas');
   const { user } = useAuth();
@@ -55,6 +80,7 @@ export function TrocasView() {
   const [offerServiceId, setOfferServiceId] = useState(0);
   const [offerDesc, setOfferDesc] = useState('');
   const [offerValue, setOfferValue] = useState('');
+  const [requestedValue, setRequestedValue] = useState('');
   const [depositFor, setDepositFor] = useState<number | null>(null);
 
   // Vindo de um card ("Propor troca"): abre o formulário com o serviço desejado já escolhido.
@@ -73,9 +99,20 @@ export function TrocasView() {
   const others = useMemo(() => all.filter((s) => s.ownerId !== myId), [all, myId]);
   const target: Service | undefined = serviceById.get(targetId);
 
+  const offerService: Service | undefined =
+    offerMode === 'service' ? serviceById.get(offerServiceId) : undefined;
+
+  // RF-084: o sistema estima cada lado pelo catálogo; digita-se só o que não tem preço fechado.
   const balance = wallet.data?.balance ?? 0;
-  const offered = Number(offerValue) || 0;
-  const requested = target?.price ?? 0;
+  const requestedCatalog = catalogPrice(target);
+  const offeredCatalog = catalogPrice(offerService);
+  const askRequested = target !== undefined && requestedCatalog === null;
+  const askOffered =
+    offerMode === 'describe' || (offerService !== undefined && offeredCatalog === null);
+  const offered = offeredCatalog ?? (askOffered ? Number(offerValue) || 0 : 0);
+  const requested = requestedCatalog ?? (Number(requestedValue) || 0);
+  const offerReady =
+    offerMode === 'describe' ? offerDesc.trim().length >= 3 : offerService !== undefined;
   const diff = round2(Math.abs(offered - requested));
   const feeRate = (publicSettings.data?.platformFeePercentage ?? 15) / 100; // RN-066: só sobre a torna
   const barterEnabled = publicSettings.data?.barterEnabled ?? true;
@@ -83,7 +120,7 @@ export function TrocasView() {
   const iPayOnPropose = offered > 0 && requested > offered; // recebo o serviço mais valioso
   const missing = iPayOnPropose ? round2(Math.max(0, diff - balance)) : 0;
   const tornaHint =
-    offered === 0 || requested === 0
+    offered <= 0 || requested <= 0
       ? null
       : offered > requested
         ? `Receptor te paga ${brl(diff)} de torna · você recebe ${brl(round2(diff - fee))} líquido`
@@ -98,6 +135,8 @@ export function TrocasView() {
     e.preventDefault();
     if (!target) return;
     try {
+      // Os valores vão como a tela mostrou: se o catálogo mudou nesse meio-tempo, a API recusa
+      // (estimate_mismatch) em vez de reservar uma torna que a pessoa não viu.
       await propose.mutateAsync({
         receiverId: target.ownerId,
         requestedServiceId: target.id,
@@ -115,8 +154,11 @@ export function TrocasView() {
       setTargetId(0);
       setOfferDesc('');
       setOfferValue('');
+      setRequestedValue('');
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Erro ao propor troca');
+      // Preço do catálogo mudou: a lista é buscada de novo e a tela mostra o valor atual.
+      if ((er as { code?: string } | null)?.code === 'estimate_mismatch') void services.refetch();
     }
   }
 
@@ -169,7 +211,7 @@ export function TrocasView() {
               </option>
               {others.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.title} — {s.price != null ? brl(s.price) : 'a combinar'}
+                  {s.title} — {priceLabel(s)}
                 </option>
               ))}
             </Select>
@@ -204,7 +246,7 @@ export function TrocasView() {
                 </option>
                 {mine.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.title}
+                    {s.title} — {priceLabel(s)}
                   </option>
                 ))}
               </Select>
@@ -221,19 +263,44 @@ export function TrocasView() {
             </Field>
           )}
 
-          <Field label="Valor estimado da minha oferta (R$)">
-            <Input
-              type="number"
-              min={1}
-              step="0.01"
-              value={offerValue}
-              onChange={(e) => setOfferValue(e.target.value)}
-              required
-            />
-          </Field>
+          {askOffered && (
+            <Field label="Valor estimado da minha oferta (R$)">
+              <Input
+                type="number"
+                min={1}
+                step="0.01"
+                value={offerValue}
+                onChange={(e) => setOfferValue(e.target.value)}
+                required
+              />
+            </Field>
+          )}
 
-          {target && offered > 0 && (
-            <div className="summary">
+          {askRequested && (
+            <Field label="Valor do serviço que eu quero, nesta troca (R$)">
+              <Input
+                type="number"
+                min={1}
+                step="0.01"
+                value={requestedValue}
+                onChange={(e) => setRequestedValue(e.target.value)}
+                required
+              />
+            </Field>
+          )}
+          {(askOffered || askRequested) && (
+            <p className="muted tiny" data-testid="barter-informed-hint">
+              Sem preço fechado no catálogo (a combinar, por hora ou oferta descrita), o valor é o
+              que você informa, e quem recebe a proposta vê que ele foi informado. Com preço
+              fechado, o sistema usa o do catálogo.
+            </p>
+          )}
+
+          {target && offerReady && offered > 0 && requested > 0 && (
+            <div className="summary" data-testid="barter-estimate">
+              <span className="muted tiny">
+                {`Valores estimados: você oferece ${brl(offered)} (${sourceOf(offeredCatalog)}) e quer ${brl(requested)} (${sourceOf(requestedCatalog)})`}
+              </span>
               <strong>{tornaHint}</strong>
               <span className="muted tiny">
                 {diff > 0 ? `taxa ${brl(fee)} sobre a torna` : 'sem taxa'} · você recebe{' '}
@@ -260,7 +327,17 @@ export function TrocasView() {
             </div>
           )}
 
-          <Button type="submit" disabled={propose.isPending || !target || missing > 0}>
+          <Button
+            type="submit"
+            disabled={
+              propose.isPending ||
+              !target ||
+              !offerReady ||
+              offered <= 0 ||
+              requested <= 0 ||
+              missing > 0
+            }
+          >
             {propose.isPending ? 'Enviando…' : 'Enviar proposta'}
           </Button>
         </BusinessForm>
@@ -311,6 +388,11 @@ export function TrocasView() {
                         {svcLabel(b.offeredServiceId, b.offeredServiceTitle, b.offeredDescription)}
                       </strong>
                       <span className="price">{brl(b.estimatedValueOffered)}</span>
+                      {b.offeredValueSource && (
+                        <span className="muted tiny" data-testid="offered-source">
+                          {SOURCE_LABEL[b.offeredValueSource]}
+                        </span>
+                      )}
                     </div>
                     <span className="arrow">
                       <ArrowLeftRight size={18} />
@@ -325,6 +407,11 @@ export function TrocasView() {
                         )}
                       </strong>
                       <span className="price">{brl(b.estimatedValueRequested)}</span>
+                      {b.requestedValueSource && (
+                        <span className="muted tiny" data-testid="requested-source">
+                          {SOURCE_LABEL[b.requestedValueSource]}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="svc-foot">

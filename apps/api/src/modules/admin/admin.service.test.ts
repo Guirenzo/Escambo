@@ -785,6 +785,9 @@ describe('adminService.getMetrics', () => {
       deposits_total: '2000.00',
       users_balance: '700.25',
       pending_deletions: '3',
+      support_open: '4',
+      support_awaiting_reply: '2',
+      support_sla_overdue: '1',
     } as unknown as MetricsRow);
 
     expect(await adminService.getMetrics()).toEqual({
@@ -801,6 +804,9 @@ describe('adminService.getMetrics', () => {
       depositsTotal: 2000,
       usersBalance: 700.25,
       pendingDeletions: 3,
+      supportOpen: 4,
+      supportAwaitingReply: 2,
+      supportSlaOverdue: 1,
     });
     expect(admin.metrics).toHaveBeenCalledTimes(1);
     expect(admin.metrics).toHaveBeenCalledWith(now);

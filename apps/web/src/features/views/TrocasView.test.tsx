@@ -80,8 +80,17 @@ const serviceOf = (o: Partial<Service> & { id: number; ownerId: number }): Servi
 const SERVICES: Service[] = [
   serviceOf({ id: 10, ownerId: 2, title: 'Logo profissional', price: 300 }),
   serviceOf({ id: 11, ownerId: 3, title: 'Consultoria de marca', price: null }),
+  serviceOf({ id: 12, ownerId: 3, title: 'Aulas de violão', priceType: 'hourly', price: 80 }),
   serviceOf({ id: 20, ownerId: ME, title: 'Edição de vídeo', price: 200 }),
   serviceOf({ id: 21, ownerId: ME, title: 'Aula de inglês', price: 80 }),
+  serviceOf({ id: 22, ownerId: ME, title: 'Site institucional', price: 300 }),
+  serviceOf({
+    id: 23,
+    ownerId: ME,
+    title: 'Consultoria SEO',
+    priceType: 'negotiable',
+    price: null,
+  }),
 ];
 
 const barterOf = (o: Partial<BarterAgreement> & { id: number }): BarterAgreement => ({
@@ -148,9 +157,9 @@ async function openForm(user: ReturnType<typeof userEvent.setup>) {
   const open = screen.getByRole('button', { name: 'Propor troca' });
   await waitFor(() => expect(open).toBeEnabled());
   await user.click(open);
+  // Os valores só são pedidos quando o catálogo não tem preço fechado (RF-084).
   return {
     target: screen.getByLabelText('Eu quero (serviço de outro freelancer)'),
-    value: screen.getByLabelText('Valor estimado da minha oferta (R$)'),
     submit: screen.getByRole('button', { name: 'Enviar proposta' }),
   };
 }
@@ -192,6 +201,22 @@ describe('TrocasView: lista de trocas', () => {
     expect(
       await screen.findByText(/a plataforma retém 10% só sobre a torna\.$/),
     ).toBeInTheDocument();
+  });
+
+  it('cada lado diz de onde veio o valor: preço do catálogo ou informado por quem propôs (RF-084)', async () => {
+    barters.mockResolvedValue(
+      page([
+        barterOf({ id: 8, offeredValueSource: 'informed', requestedValueSource: 'catalog' }),
+        barterOf({ id: 9 }),
+      ]),
+    );
+    renderView();
+
+    const card = await screen.findByTestId('barter-8');
+    expect(within(card).getByTestId('offered-source')).toHaveTextContent('valor informado');
+    expect(within(card).getByTestId('requested-source')).toHaveTextContent('preço do catálogo');
+    // API anterior, sem a origem: o cartão não inventa uma.
+    expect(within(screen.getByTestId('barter-9')).queryByTestId('offered-source')).toBeNull();
   });
 
   it('troca que eu propus: o que ofereço, o que recebo, a torna que pago e só "Cancelar"', async () => {
@@ -498,7 +523,7 @@ describe('TrocasView: responder a uma troca', () => {
 });
 
 describe('TrocasView: propor uma troca', () => {
-  it('"Propor troca" abre o formulário e vira "Fechar"; os serviços se dividem em meus e dos outros', async () => {
+  it('"Propor troca" abre o formulário e vira "Fechar"; os serviços se dividem em meus e dos outros, com o preço do catálogo', async () => {
     const user = userEvent.setup();
     renderView();
     const { target, submit } = await openForm(user);
@@ -508,12 +533,20 @@ describe('TrocasView: propor uma troca', () => {
       'Selecione um serviço…',
       'Logo profissional — R$ 300,00',
       'Consultoria de marca — a combinar',
+      'Aulas de violão — R$ 80,00/h',
     ]);
     expect(
       within(screen.getByLabelText('Serviço que ofereço')).getAllByRole('option').map(plain),
-    ).toEqual(['Selecione…', 'Edição de vídeo', 'Aula de inglês']);
-    // Sem escolher o serviço desejado não dá para enviar.
+    ).toEqual([
+      'Selecione…',
+      'Edição de vídeo — R$ 200,00',
+      'Aula de inglês — R$ 80,00',
+      'Site institucional — R$ 300,00',
+      'Consultoria SEO — a combinar',
+    ]);
+    // Sem escolher o serviço desejado não dá para enviar, e nenhum valor é pedido ainda.
     expect(submit).toBeDisabled();
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Fechar' }));
     expect(screen.queryByRole('heading', { name: 'Nova proposta de troca' })).toBeNull();
@@ -531,17 +564,20 @@ describe('TrocasView: propor uma troca', () => {
     ).toEqual(['Você ainda não tem serviços']);
   });
 
-  it('oferta de mesmo valor: diz que é equilibrada, envia o serviço oferecido e fecha o formulário', async () => {
+  it('dois serviços de preço fechado: o sistema estima os dois lados pelo catálogo, sem digitar nada (RF-084)', async () => {
     const user = userEvent.setup();
     renderView();
-    const { target, value, submit } = await openForm(user);
+    const { target, submit } = await openForm(user);
 
     await user.selectOptions(target, '10');
-    await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '20');
-    // Sem valor, ainda não há o que resumir.
-    expect(screen.queryByText(/em serviço por/)).not.toBeInTheDocument();
-    await user.type(value, '300');
+    await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '22');
+    expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('barter-informed-hint')).not.toBeInTheDocument();
 
+    const estimate = screen.getByTestId('barter-estimate');
+    expect(plain(estimate)).toContain(
+      'Valores estimados: você oferece R$ 300,00 (preço do catálogo) e quer R$ 300,00 (preço do catálogo)',
+    );
     expect(screen.getByText('Troca equilibrada — sem torna nem taxa')).toBeVisible();
     expect(
       screen.getByText('sem taxa · você recebe R$ 300,00 em serviço por R$ 300,00'),
@@ -549,12 +585,13 @@ describe('TrocasView: propor uma troca', () => {
     await user.click(submit);
 
     await waitFor(() => expect(proposeBarter).toHaveBeenCalledTimes(1));
+    // Os valores vão como a tela mostrou: a API confere com o catálogo (estimate_mismatch).
     expect(proposeBarter).toHaveBeenCalledWith({
       receiverId: 2,
       requestedServiceId: 10,
       estimatedValueRequested: 300,
       estimatedValueOffered: 300,
-      offeredServiceId: 20,
+      offeredServiceId: 22,
       offeredDescription: null,
     });
     expect(await screen.findByText('Proposta de troca enviada!')).toBeInTheDocument();
@@ -562,23 +599,27 @@ describe('TrocasView: propor uma troca', () => {
     expect(screen.getByRole('button', { name: 'Propor troca' })).toBeEnabled();
     await waitFor(() => expect(barters).toHaveBeenCalledTimes(2));
 
-    // Reabrir começa do zero: nem o serviço desejado nem o valor da proposta enviada ficam.
+    // Reabrir começa do zero: nem o serviço desejado nem a prévia da proposta enviada ficam.
     await user.click(screen.getByRole('button', { name: 'Propor troca' }));
     expect(screen.getByLabelText('Eu quero (serviço de outro freelancer)')).toHaveValue('0');
-    expect(screen.getByLabelText('Valor estimado da minha oferta (R$)')).toHaveValue(null);
-    expect(screen.queryByText('Troca equilibrada — sem torna nem taxa')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('barter-estimate')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Enviar proposta' })).toBeDisabled();
   });
 
-  it('oferta mais valiosa: o receptor paga a torna e eu recebo o líquido da taxa', async () => {
+  it('meu serviço é a combinar: informo o valor dele e, mais valioso, o receptor paga a torna', async () => {
     const user = userEvent.setup();
     renderView();
-    const { target, value, submit } = await openForm(user);
+    const { target, submit } = await openForm(user);
 
     await user.selectOptions(target, '10');
-    await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '20');
-    await user.type(value, '400');
+    await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '23');
+    expect(screen.getByTestId('barter-informed-hint')).toBeVisible();
+    expect(submit).toBeDisabled();
+    await user.type(screen.getByLabelText('Valor estimado da minha oferta (R$)'), '400');
 
+    expect(plain(screen.getByTestId('barter-estimate'))).toContain(
+      'você oferece R$ 400,00 (informado por você) e quer R$ 300,00 (preço do catálogo)',
+    );
     expect(
       screen.getByText('Receptor te paga R$ 100,00 de torna · você recebe R$ 85,00 líquido'),
     ).toBeVisible();
@@ -595,7 +636,7 @@ describe('TrocasView: propor uma troca', () => {
         requestedServiceId: 10,
         estimatedValueRequested: 300,
         estimatedValueOffered: 400,
-        offeredServiceId: 20,
+        offeredServiceId: 23,
         offeredDescription: null,
       }),
     );
@@ -608,10 +649,12 @@ describe('TrocasView: propor uma troca', () => {
     publicSettings.mockResolvedValue({ platformFeePercentage: 10, barterEnabled: true });
     renderView();
     await screen.findByText(/a plataforma retém 10% só sobre a torna\.$/);
-    const { target, value } = await openForm(user);
+    const { target } = await openForm(user);
 
     await user.selectOptions(target, '10');
-    await user.type(value, '400');
+    await user.click(screen.getByRole('button', { name: 'Descrever oferta' }));
+    await user.type(screen.getByLabelText('O que ofereço'), 'Fotos do cardápio');
+    await user.type(screen.getByLabelText('Valor estimado da minha oferta (R$)'), '400');
 
     expect(
       screen.getByText('Receptor te paga R$ 100,00 de torna · você recebe R$ 90,00 líquido'),
@@ -619,17 +662,16 @@ describe('TrocasView: propor uma troca', () => {
     expect(screen.getByText(/^taxa R\$ 10,00 sobre a torna/)).toBeVisible();
   });
 
-  it('oferta menos valiosa, com saldo: eu pago a torna, e o aviso diz quanto ficou reservado', async () => {
+  it('oferta menos valiosa pelo catálogo, com saldo: eu pago a torna, e o aviso diz quanto ficou reservado', async () => {
     const user = userEvent.setup();
     renderView();
-    const { target, value, submit } = await openForm(user);
+    const { target, submit } = await openForm(user);
 
     await user.selectOptions(target, '10');
     await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '21');
-    await user.type(value, '199.5');
 
     expect(
-      screen.getByText('Você paga R$ 100,50 de torna · reservado da sua carteira agora'),
+      screen.getByText('Você paga R$ 220,00 de torna · reservado da sua carteira agora'),
     ).toBeVisible();
     expect(screen.queryByText(/^Falta /)).not.toBeInTheDocument();
     await user.click(submit);
@@ -639,26 +681,65 @@ describe('TrocasView: propor uma troca', () => {
         receiverId: 2,
         requestedServiceId: 10,
         estimatedValueRequested: 300,
-        estimatedValueOffered: 199.5,
+        estimatedValueOffered: 80,
         offeredServiceId: 21,
         offeredDescription: null,
       }),
     );
     expect(
-      await screen.findByText('Proposta de troca enviada — R$ 100,50 de torna reservados'),
+      await screen.findByText('Proposta de troca enviada — R$ 220,00 de torna reservados'),
     ).toBeInTheDocument();
   });
 
-  it('"Descrever oferta" troca o serviço por um texto livre, e é ele que vai na proposta', async () => {
+  it.each([
+    ['a combinar', '11', 3],
+    ['por hora (o catálogo dá o preço da hora, não do trabalho)', '12', 3],
+  ])(
+    'serviço pedido %s: informo quanto ele vale nesta troca, e a torna sai disso',
+    async (_name, id, owner) => {
+      const user = userEvent.setup();
+      renderView();
+      const { target, submit } = await openForm(user);
+
+      await user.selectOptions(target, id);
+      await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '20');
+      expect(screen.getByTestId('barter-informed-hint')).toBeVisible();
+      expect(submit).toBeDisabled();
+      await user.type(
+        screen.getByLabelText('Valor do serviço que eu quero, nesta troca (R$)'),
+        '250',
+      );
+
+      expect(plain(screen.getByTestId('barter-estimate'))).toContain(
+        'você oferece R$ 200,00 (preço do catálogo) e quer R$ 250,00 (informado por você)',
+      );
+      expect(
+        screen.getByText('Você paga R$ 50,00 de torna · reservado da sua carteira agora'),
+      ).toBeVisible();
+      await user.click(submit);
+      await waitFor(() =>
+        expect(proposeBarter).toHaveBeenCalledWith({
+          receiverId: owner,
+          requestedServiceId: Number(id),
+          estimatedValueRequested: 250,
+          estimatedValueOffered: 200,
+          offeredServiceId: 20,
+          offeredDescription: null,
+        }),
+      );
+    },
+  );
+
+  it('"Descrever oferta" troca o serviço por um texto livre e um valor informado, e é isso que vai na proposta', async () => {
     const user = userEvent.setup();
     renderView();
-    const { target, value, submit } = await openForm(user);
+    const { target, submit } = await openForm(user);
 
     await user.selectOptions(target, '10');
     await user.click(screen.getByRole('button', { name: 'Descrever oferta' }));
     expect(screen.queryByLabelText('Serviço que ofereço')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('O que ofereço'), 'Edição de 3 vídeos curtos');
-    await user.type(value, '300');
+    await user.type(screen.getByLabelText('Valor estimado da minha oferta (R$)'), '300');
     await user.click(submit);
 
     await waitFor(() =>
@@ -675,6 +756,7 @@ describe('TrocasView: propor uma troca', () => {
     // Reaberto, o texto da oferta enviada não fica; voltar para "serviço meu" devolve a lista.
     await user.click(await screen.findByRole('button', { name: 'Propor troca' }));
     expect(screen.getByLabelText('O que ofereço')).toHaveValue('');
+    expect(screen.getByLabelText('Valor estimado da minha oferta (R$)')).toHaveValue(null);
     await user.click(screen.getByRole('button', { name: 'Ofereço um serviço meu' }));
     expect(screen.getByLabelText('Serviço que ofereço')).toBeInTheDocument();
     expect(screen.queryByLabelText('O que ofereço')).not.toBeInTheDocument();
@@ -685,11 +767,10 @@ describe('TrocasView: propor uma troca', () => {
     let release!: (b: BarterAgreement) => void;
     proposeBarter.mockReturnValue(new Promise<BarterAgreement>((resolve) => (release = resolve)));
     renderView();
-    const { target, value, submit } = await openForm(user);
+    const { target, submit } = await openForm(user);
 
     await user.selectOptions(target, '10');
-    await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '20');
-    await user.type(value, '300');
+    await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '22');
     await user.click(submit);
 
     expect(await screen.findByRole('button', { name: 'Enviando…' })).toBeDisabled();
@@ -702,11 +783,10 @@ describe('TrocasView: propor uma troca', () => {
     proposeBarter.mockRejectedValueOnce(new Error('Você já propôs uma troca por este serviço.'));
     proposeBarter.mockRejectedValueOnce({ status: 500 });
     renderView();
-    const { target, value, submit } = await openForm(user);
+    const { target, submit } = await openForm(user);
 
     await user.selectOptions(target, '10');
-    await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '20');
-    await user.type(value, '300');
+    await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '22');
     await user.click(submit);
 
     expect(
@@ -714,13 +794,37 @@ describe('TrocasView: propor uma troca', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Nova proposta de troca' })).toBeVisible();
     expect(target).toHaveValue('10');
-    expect(value).toHaveValue(300);
+    expect(screen.getByLabelText('Serviço que ofereço')).toHaveValue('22');
+    expect(screen.getByTestId('barter-estimate')).toBeVisible();
 
     // Falha sem mensagem: o aviso genérico.
     await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
     expect(await screen.findByText('Erro ao propor troca')).toBeInTheDocument();
     expect(screen.queryByText('Proposta de troca enviada!')).not.toBeInTheDocument();
+  });
+
+  it('preço do catálogo mudou desde que a tela abriu (estimate_mismatch): mostra o motivo e busca os serviços de novo', async () => {
+    const user = userEvent.setup();
+    proposeBarter.mockRejectedValueOnce(
+      Object.assign(
+        new Error(
+          'O serviço pedido custa R$ 350,00 no catálogo, e a troca usa esse valor (RN-066). Atualize a tela e confira a torna antes de enviar.',
+        ),
+        { code: 'estimate_mismatch' },
+      ),
+    );
+    renderView();
+    const { target, submit } = await openForm(user);
+    expect(listServices).toHaveBeenCalledTimes(1);
+
+    await user.selectOptions(target, '10');
+    await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '22');
+    await user.click(submit);
+
+    expect(await screen.findByText(/^O serviço pedido custa R\$ 350,00 no catálogo/)).toBeVisible();
+    await waitFor(() => expect(listServices).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('heading', { name: 'Nova proposta de troca' })).toBeVisible();
   });
 
   it('vindo de "Propor troca" num serviço (?propor=), o formulário abre com ele escolhido e a URL é limpa', async () => {
@@ -753,11 +857,10 @@ describe('TrocasView: saldo para a torna', () => {
     const user = userEvent.setup();
     wallet.mockResolvedValue(walletOf(29.5));
     renderView();
-    const { target, value, submit } = await openForm(user);
+    const { target, submit } = await openForm(user);
 
     await user.selectOptions(target, '10');
     await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '20');
-    await user.type(value, '200');
 
     expect(
       await screen.findByText('Falta R$ 70,50 na sua carteira para reservar a torna'),
@@ -783,11 +886,10 @@ describe('TrocasView: saldo para a torna', () => {
     deposit.mockResolvedValue(pending);
     simulateDeposit.mockResolvedValue({ ...pending, status: 'paid', paidAt: pending.createdAt });
     renderView();
-    const { target, value, submit } = await openForm(user);
+    const { target, submit } = await openForm(user);
 
     await user.selectOptions(target, '10');
     await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '20');
-    await user.type(value, '200');
     await user.click(await screen.findByRole('button', { name: /^Depositar R\$\s70,50$/ }));
 
     const dialog = screen.getByRole('dialog', { name: 'Depositar na carteira' });

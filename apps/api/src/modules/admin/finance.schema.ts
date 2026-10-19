@@ -5,6 +5,6 @@ const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data no formato AAAA-MM-
 export const financeQuerySchema = z.object({
   from: isoDay.optional(),
   to: isoDay.optional(),
-  granularity: z.enum(['day', 'month']).default('month'),
+  granularity: z.enum(['day', 'week', 'month']).default('month'),
 });
 export type FinanceQueryInput = z.infer<typeof financeQuerySchema>;

@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Coins,
   Gavel,
+  LifeBuoy,
   Lock,
   Mail,
   ShieldAlert,
@@ -29,6 +30,7 @@ import {
   DISPUTE_REASON_LABEL,
   DISPUTE_STATUS_LABEL,
   dtm,
+  hm,
   WITHDRAWAL_STATUS_LABEL,
   WITHDRAWAL_STATUS_TONE,
 } from '../../lib/format';
@@ -469,7 +471,45 @@ export function AdminView() {
             {m && m.overdueWithdrawals > 0 ? ` · ${m.overdueWithdrawals} atrasado(s)` : ''}
           </span>
         </div>
+        {/* Suporte (RF-076): ocupa a linha inteira, com os três números lado a lado. */}
+        <div className="kpi kpi-wide amber" data-testid="kpi-support">
+          <div className="kpi-top">
+            <span className="kpi-ico">
+              <LifeBuoy size={18} />
+            </span>
+            <span className="kpi-label">Chamados de suporte</span>
+            <a className="tiny kpi-link" href="#suporte">
+              Ir para o atendimento
+            </a>
+          </div>
+          <dl className="kpi-split">
+            <div>
+              <dt className="muted tiny">em aberto</dt>
+              <dd>
+                <strong className="kpi-value">{m ? m.supportOpen : '—'}</strong>
+              </dd>
+            </div>
+            <div>
+              <dt className="muted tiny">aguardando resposta da equipe</dt>
+              <dd>
+                <strong className="kpi-value">{m ? m.supportAwaitingReply : '—'}</strong>
+              </dd>
+            </div>
+            <div className={m && m.supportSlaOverdue > 0 ? 'kpi-late' : undefined}>
+              <dt className="muted tiny">sem primeira resposta e com o SLA vencido</dt>
+              <dd>
+                <strong className="kpi-value">{m ? m.supportSlaOverdue : '—'}</strong>
+              </dd>
+            </div>
+          </dl>
+        </div>
       </div>
+      <p className="muted tiny kpis-note" data-testid="metrics-updated">
+        {metrics.dataUpdatedAt > 0
+          ? `Atualizado às ${hm(new Date(metrics.dataUpdatedAt).toISOString())}. `
+          : ''}
+        Os números se renovam sozinhos a cada 30 segundos enquanto esta aba está aberta.
+      </p>
 
       <FinanceSection />
       <StorageSection />

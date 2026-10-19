@@ -41,7 +41,7 @@ Confiabilidade    → integridade de dados, tratamento de erros
 | RNF-001 | A API deve responder requisições em tempo adequado sob carga normal | P95 ≤ 300ms para endpoints de leitura | Alta | Implementado |
 | RNF-002 | A API deve responder requisições de escrita (contratação, pagamento) em tempo adequado | P95 ≤ 500ms para endpoints de escrita | Alta | Implementado |
 | RNF-003 | O app mobile deve atingir boa pontuação de performance no Lighthouse | Score ≥ 85 no Lighthouse Mobile | Alta | Fora do escopo |
-| RNF-004 | A busca de serviços deve retornar resultados rapidamente mesmo com grande volume de dados | Resultados em ≤ 400ms com 100k registros | Alta | Parcial |
+| RNF-004 | A busca de serviços deve retornar resultados rapidamente mesmo com grande volume de dados | Resultados em ≤ 400ms com 100k registros | Alta | Implementado |
 | RNF-005 | O sistema de chat deve entregar mensagens em tempo real | Latência de entrega ≤ 500ms via WebSocket | Alta | Implementado |
 | RNF-006 | Imagens e assets estáticos devem ser servidos com cache e compressão | Cache-Control configurado + imagens em WebP | Média | Implementado |
 
@@ -80,7 +80,7 @@ Confiabilidade    → integridade de dados, tratamento de erros
 | ID | Descrição | Métrica | Prioridade | Situação |
 |---|---|---|---|---|
 | RNF-021 | A arquitetura do backend deve ser modular e permitir extração futura de microsserviços | Módulos isolados com responsabilidade única | Alta | Parcial |
-| RNF-022 | O banco de dados deve suportar crescimento sem degradação significativa de performance | Índices em todas as FKs e colunas de busca; explain plan validado | Alta | Parcial |
+| RNF-022 | O banco de dados deve suportar crescimento sem degradação significativa de performance | Índices em todas as FKs e colunas de busca; explain plan validado | Alta | Implementado |
 | RNF-023 | O sistema deve suportar múltiplas conexões simultâneas de WebSocket sem degradação | Pool de conexões configurado; teste com ≥ 500 conexões simultâneas | Média | Implementado |
 | RNF-024 | A infraestrutura deve permitir escalonamento horizontal da API | Deploy stateless; sessões em Redis ou JWT (sem server-side session) | Média | Parcial |
 
@@ -115,8 +115,8 @@ Confiabilidade    → integridade de dados, tratamento de erros
 | ID | Descrição | Métrica | Prioridade | Situação |
 |---|---|---|---|---|
 | RNF-035 | O sistema deve estar em conformidade com a Lei Geral de Proteção de Dados | Consentimento explícito, direito ao esquecimento e política de privacidade publicada | Alta | Implementado |
-| RNF-036 | Todas as ações financeiras devem ser auditáveis | Log imutável de cada transação com valor, partes, timestamp e status | Alta | Parcial |
-| RNF-037 | O sistema deve manter logs de auditoria de ações críticas por período mínimo | Logs retidos por no mínimo 90 dias | Média | Parcial |
+| RNF-036 | Todas as ações financeiras devem ser auditáveis | Log imutável de cada transação com valor, partes, timestamp e status | Alta | Implementado |
+| RNF-037 | O sistema deve manter logs de auditoria de ações críticas por período mínimo | Logs retidos por no mínimo 90 dias | Média | Implementado |
 | RNF-038 | O sistema deve garantir integridade transacional em operações financeiras | Uso de transações MySQL (BEGIN/COMMIT/ROLLBACK) em pagamentos e saques | Alta | Implementado |
 
 ---

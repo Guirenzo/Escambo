@@ -7,6 +7,7 @@ import { CLOSE_PENDING_EXTENSION, rn029Eligible, zoneOf } from './deadline-sql';
 import { INCLUDED_REVISIONS } from './deadline-grace';
 import { recoverDeliveryRules } from './delivery-snapshots';
 import { deliveryDisputeOpensAt, firstDeliveryAt } from './dispute-window';
+import { deliveryFilesRepository, type DeliveryFilesInput } from './delivery-files';
 
 /**
  * Escrow por marcos (RN-069): o valor inteiro fica retido no aceite; cada marco aprovado
@@ -203,6 +204,8 @@ export const milestonesRepository = {
     message: string;
     now: Date;
     approvalDueAt: Date;
+    /** Arquivos já no disco (RF-035): viram mensagens do chat ligadas a este marco. */
+    attachments?: DeliveryFilesInput;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -242,6 +245,13 @@ export const milestonesRepository = {
         `UPDATE contracts SET first_delivery_at = COALESCE(first_delivery_at, :first) WHERE id = :contractId`,
         { contractId: p.contractId, first },
       );
+      if (p.attachments) {
+        await deliveryFilesRepository.attach(
+          conn,
+          { contractId: p.contractId, milestoneId: p.milestoneId },
+          p.attachments,
+        );
+      }
       const [m] = await conn.query<RowDataPacket[]>(
         `SELECT title FROM contract_milestones WHERE id = :id`,
         { id: p.milestoneId },

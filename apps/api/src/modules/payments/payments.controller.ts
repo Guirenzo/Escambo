@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { env } from '../../config/env';
+import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { auditService } from '../audit/audit.service';
 import {
@@ -77,8 +78,20 @@ export async function webhook(req: Request, res: Response): Promise<void> {
   if (!secretMatches(Array.isArray(header) ? header[0] : header)) {
     throw new HttpError(401, 'Assinatura do webhook inválida', 'invalid_webhook_secret');
   }
-  const input = webhookSchema.parse(req.body);
-  const result = await paymentsService.settleFromGateway(input.gatewayPaymentId, input.status);
+  const parsed = webhookSchema.safeParse(req.body);
+  if (!parsed.success) {
+    // Veio do gateway (o segredo confere), então o corpo fica no histórico (RF-050); se a gravação
+    // falhar, a resposta continua a recusa do formato (422), não um 500.
+    await paymentsService
+      .recordInvalidWebhook(req.body)
+      .catch((err: unknown) => logger.warn({ err }, 'histórico do webhook inválido falhou'));
+    throw parsed.error;
+  }
+  const input = parsed.data;
+  const result = await paymentsService.settleFromGateway(input.gatewayPaymentId, input.status, {
+    event: input.event ?? null,
+    body: req.body,
+  });
   void auditService.log({
     userId: null,
     action: 'payment_webhook',

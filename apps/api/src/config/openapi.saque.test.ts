@@ -59,6 +59,9 @@ const metrics: AdminMetrics = {
   depositsTotal: 0,
   usersBalance: 0,
   pendingDeletions: 0,
+  supportOpen: 0,
+  supportAwaitingReply: 0,
+  supportSlaOverdue: 0,
 };
 
 describe('documento OpenAPI: prazo de saque (RN-035)', () => {

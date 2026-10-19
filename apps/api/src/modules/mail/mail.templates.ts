@@ -3,7 +3,12 @@ import { env } from '../../config/env';
 /** Templates de e-mail em PT-BR: texto puro + HTML simples com a marca (sem imagens externas). */
 
 export type MailTemplate =
-  'verify_email' | 'password_reset' | 'notification' | 'digest' | 'moderation_report';
+  | 'verify_email'
+  | 'password_reset'
+  | 'email_change'
+  | 'notification'
+  | 'digest'
+  | 'moderation_report';
 
 export interface RenderedMail {
   subject: string;
@@ -83,6 +88,20 @@ export function renderEmail(template: MailTemplate, vars: TemplateVars): Rendere
         subject: 'Redefinição de senha no Escambo',
         text: textOf(title, paragraphs, link),
         html: layout(title, paragraphs, { label: 'Criar nova senha', link }),
+      };
+    }
+    case 'email_change': {
+      // Vai ao endereço NOVO da troca (RF-017): é ele que precisa provar que é de quem pediu.
+      const title = 'Confirme seu novo e-mail';
+      const paragraphs = [
+        'Recebemos um pedido para usar este endereço como o e-mail de acesso de uma conta no Escambo. A troca só vale depois que você confirmar pelo botão abaixo.',
+        `O link vale por ${vars.validity ?? '24 horas'} e só pode ser usado uma vez. Se você não pediu, ignore esta mensagem: nada muda.`,
+      ];
+      const link = vars.link ?? env.APP_URL;
+      return {
+        subject: 'Confirme seu novo e-mail no Escambo',
+        text: textOf(title, paragraphs, link),
+        html: layout(title, paragraphs, { label: 'Confirmar novo e-mail', link }),
       };
     }
     case 'digest': {

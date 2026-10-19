@@ -244,6 +244,19 @@ describe('ContractActions: o que cada botão manda para a API', () => {
     expect(await screen.findByText('Contratação atualizada')).toBeInTheDocument();
   });
 
+  it('na Sala (onDeliver), entregar abre o formulário com arquivos em vez de perguntar a mensagem (RF-035)', async () => {
+    const user = userEvent.setup();
+    as(FREELANCER);
+    const onDeliver = vi.fn();
+    render(
+      wrap(<ContractActions contract={contract('revision_requested')} onDeliver={onDeliver} />),
+    );
+    await user.click(screen.getByRole('button', { name: 'Entregar revisão' }));
+    expect(onDeliver).toHaveBeenCalledTimes(1);
+    expect(prompt).not.toHaveBeenCalled();
+    expect(deliverContract).not.toHaveBeenCalled();
+  });
+
   it('Entregar revisão usa a mesma entrega, com a mensagem nova', async () => {
     const user = userEvent.setup();
     as(FREELANCER);

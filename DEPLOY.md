@@ -262,6 +262,28 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
+### Atualizar para a 1.45.0 (ADR 63)
+
+Sete migrations (0040 a 0046), todas aditivas e seguras de rodar de novo, e nenhum script manual.
+
+**1. Backup antes** (`scripts/backup-db.sh`, seção 4).
+
+**2. O banco precisa aceitar trigger.** A 0046 cria os triggers que tornam o extrato imutável (RNF-036). Com o binlog ligado (padrão do MySQL 8), só quem tem SUPER cria trigger, e o job `migrate` roda com o usuário da aplicação. Por isso o `db` do `docker-compose.prod.yml` passa a subir com `--log-bin-trust-function-creators=1`. O deploy (workflow ou `up -d`) recria o container do banco por causa disso: alguns segundos fora do ar, com os dados intactos no volume. Para não recriar o banco agora, rode antes, como root:
+
+```bash
+docker compose -f docker-compose.prod.yml exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SET PERSIST log_bin_trust_function_creators = 1"'
+```
+
+Se a 0046 falhar com o erro 1419, foi esse passo que faltou: o runner diz isso na mensagem, e o workflow volta à versão anterior.
+
+**3. Log com rotação.** O compose de produção passa a girar o log de cada container (RNF-037: API e web até 40 × 100 MB, o resto até 5 × 20 MB, comprimidos). O `up -d` recria os containers que ganharam a configuração (Caddy, web e monitoramento inclusive).
+
+**4. Jobs novos.**
+- `report-snapshots`: grava o resumo do dia, da semana e do mês fechados para o relatório de uso do admin. Liga sozinho com os jobs (`JOBS_ENABLED`).
+- `purge-audit-logs`: desligado por padrão. Para apagar o `audit_logs` antigo, configure `AUDIT_LOG_PURGE_DAYS` no `.env` com pelo menos 90 (prefira 180, o prazo do Marco Civil para registro de acesso). A API não sobe com um valor entre 1 e 89, e o banco recusa apagar linha com menos de 90 dias.
+
+**5. Conferir.** `curl -s https://SEU_DOMINIO/api/health` mostra o commit da 1.45.0. No banco, `SHOW TRIGGERS LIKE 'wallet_transactions'` lista dois triggers. As missões começam a contar no primeiro acesso de cada freelancer depois do deploy; quem já tinha concluído uma troca ganha a missão "Primeira troca" na primeira vez que abrir o Início.
+
 ### Atualizar para a 1.44.0 (ADR 62)
 
 Cinco migrations (0035 a 0039, todas aditivas e seguras de rodar de novo) e dois scripts, uma vez só.
