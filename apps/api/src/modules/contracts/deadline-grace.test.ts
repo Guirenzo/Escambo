@@ -10,6 +10,9 @@ import {
   noticeGraceEnd,
   owesDelivery,
   projectedNoticeAt,
+  revisionsLeft,
+  INCLUDED_REVISIONS,
+  DEFAULT_EXTENSION_RESPONSE_HOURS,
   type DeadlineRow,
 } from './deadline-grace';
 
@@ -30,6 +33,109 @@ const row = (over: Partial<DeadlineRow> = {}): DeadlineRow => ({
   deliveries_count: 0,
   first_delivered_at: null,
   ...over,
+});
+
+describe('RN-023: revisões por entrega e preservação do legado', () => {
+  it('inclui duas revisões novas, sem permitir contador negativo depois de esgotadas', () => {
+    expect(INCLUDED_REVISIONS).toBe(2);
+    expect(revisionsLeft(INCLUDED_REVISIONS, 0)).toBe(2);
+    expect(revisionsLeft(INCLUDED_REVISIONS, 1)).toBe(1);
+    expect(revisionsLeft(INCLUDED_REVISIONS, 2)).toBe(0);
+    expect(revisionsLeft(INCLUDED_REVISIONS, 3)).toBe(0);
+  });
+
+  it('limite nulo continua ilimitado, inclusive depois de 255 revisões', () => {
+    for (const used of [0, 2, 255, 256, 65_536]) {
+      expect(revisionsLeft(null, used)).toBeNull();
+    }
+  });
+
+  it('liberação de uma revisão esgotada funciona além do teto antigo do TINYINT', () => {
+    expect(revisionsLeft(255, 255)).toBe(0);
+    expect(revisionsLeft(256, 255)).toBe(1);
+    expect(revisionsLeft(65_537, 65_536)).toBe(1);
+  });
+
+  it('não confunde zero com o legado ilimitado', () => {
+    expect(revisionsLeft(0, 0)).toBe(0);
+    expect(revisionsLeft(null, 0)).toBeNull();
+  });
+
+  it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    'recusa limite ou contador inválido: %s',
+    (value) => {
+      expect(() => revisionsLeft(value, 0)).toThrow(RangeError);
+      expect(() => revisionsLeft(2, value)).toThrow(RangeError);
+      expect(() => revisionsLeft(null, value)).toThrow(RangeError);
+    },
+  );
+});
+
+describe('RN-028: horas de resposta recebidas pela conta pura', () => {
+  const requestedAt = brt('2026-10-06 16:40:00');
+  const proposed = brt('2026-10-20 23:59:59');
+
+  it.each([
+    [24, '2026-10-07 16:40:00'],
+    [48, '2026-10-08 16:40:00'],
+    [168, '2026-10-13 16:40:00'],
+  ])('usa %s horas recebidas, preservando o instante gravável', (hours, expected) => {
+    expect(extensionRespondBy({ requestedAt, proposed, zone: SP, hours })).toEqual(brt(expected));
+  });
+
+  it('consumidores atuais sem parâmetro conservam o padrão de 48 horas', () => {
+    expect(DEFAULT_EXTENSION_RESPONSE_HOURS).toBe(48);
+    expect(extensionRespondBy({ requestedAt, proposed, zone: SP })).toEqual(
+      extensionRespondBy({ requestedAt, proposed, zone: SP, hours: 48 }),
+    );
+  });
+
+  it('mesmo com 168 horas respeita o teto de 12 horas antes da data pedida', () => {
+    expect(
+      extensionRespondBy({
+        requestedAt,
+        proposed: brt('2026-10-08 23:59:59'),
+        zone: SP,
+        hours: 168,
+      }),
+    ).toEqual(brt('2026-10-08 11:59:59'));
+  });
+
+  it('leva a resposta para o dia no fuso do cliente', () => {
+    const night = brt('2026-10-06 20:45:00');
+    expect(
+      extensionRespondBy({ requestedAt: night, proposed, zone: 'America/Manaus', hours: 24 }),
+    ).toEqual(brt('2026-10-07 20:45:00'));
+    expect(
+      extensionRespondBy({ requestedAt: night, proposed, zone: 'America/Noronha', hours: 24 }),
+    ).toEqual(brt('2026-10-08 08:00:00'));
+  });
+
+  it('seis horas exatas permitem responder, um segundo a menos recusa a extensão', () => {
+    const at = brt('2026-10-06 10:00:00');
+    expect(
+      extensionRespondBy({
+        requestedAt: at,
+        proposed: brt('2026-10-07 04:00:00'),
+        zone: SP,
+        hours: 24,
+      }),
+    ).toEqual(brt('2026-10-06 16:00:00'));
+    expect(
+      extensionRespondBy({
+        requestedAt: at,
+        proposed: brt('2026-10-07 03:59:59'),
+        zone: SP,
+        hours: 24,
+      }),
+    ).toBeNull();
+  });
+
+  it.each([0, 23, 169, 24.5, NaN, Infinity])('recusa horas fora da faixa: %s', (hours) => {
+    expect(() => extensionRespondBy({ requestedAt, proposed, zone: SP, hours })).toThrow(
+      RangeError,
+    );
+  });
 });
 
 describe('R-VEZ: a RN-029 só cobra o que nunca foi entregue (ADR 57)', () => {

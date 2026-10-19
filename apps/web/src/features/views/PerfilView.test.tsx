@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type {
@@ -30,6 +31,7 @@ const api = vi.hoisted(() => ({
   uploadMedia: vi.fn(),
   // Cartões irmãos do Perfil (moderação, portfólio, e-mails, avisos, privacidade): só carregam.
   myModeration: vi.fn(),
+  myDropouts: vi.fn(),
   myPortfolio: vi.fn(),
   pushStatus: vi.fn(),
   exportRequests: vi.fn(),
@@ -112,7 +114,9 @@ function renderView() {
   return render(
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <PerfilView />
+        <MemoryRouter>
+          <PerfilView />
+        </MemoryRouter>
       </ToastProvider>
     </QueryClientProvider>,
   );
@@ -154,6 +158,13 @@ beforeEach(() => {
   api.reviews.mockResolvedValue(reviews([]));
   api.respondReview.mockResolvedValue({ ok: true });
   api.myModeration.mockResolvedValue({ removals: [], strikes: {} });
+  api.myDropouts.mockResolvedValue({
+    items: [],
+    count: 0,
+    alert: false,
+    alertUntil: null,
+    acceptedInWindow: 0,
+  });
   api.myPortfolio.mockResolvedValue([]);
   api.pushStatus.mockResolvedValue({
     publicKey: '',

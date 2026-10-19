@@ -1,6 +1,8 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { applyWalletEffect, recordWalletTx } from '../wallet/wallet.ledger';
+import { walletRepository } from '../wallet/wallet.repository';
+import { lockWallets } from '../wallet/wallet.locks';
 
 export interface WithdrawalRow extends RowDataPacket {
   id: number;
@@ -47,13 +49,12 @@ export const withdrawalRepository = {
     bankAgency: string | null;
     bankAccount: string | null;
   }): Promise<number | null> {
+    await walletRepository.ensure(params.userId);
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
 
-      await conn.query<ResultSetHeader>(`INSERT IGNORE INTO wallets (user_id) VALUES (:userId)`, {
-        userId: params.userId,
-      });
+      await lockWallets(conn, [params.userId]);
       const [wallets] = await conn.query<RowDataPacket[]>(
         `SELECT id FROM wallets WHERE user_id = :userId LIMIT 1`,
         { userId: params.userId },
@@ -177,6 +178,7 @@ export const withdrawalRepository = {
         await conn.rollback();
         return false;
       }
+      await lockWallets(conn, [row.user_id]);
       await conn.query<ResultSetHeader>(
         `UPDATE withdrawals SET status = :to, processed_at = NOW() WHERE id = :id`,
         { to, id },

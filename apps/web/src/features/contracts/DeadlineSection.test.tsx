@@ -91,6 +91,32 @@ beforeEach(() => {
   resolveExtension.mockResolvedValue({});
 });
 
+describe('revisão pedida durante a espera de disputa', () => {
+  it.each([CLIENT, FREELANCER])(
+    'respeita a hora futura para o papel %i, inclusive sem prazo de entrega',
+    (myId) => {
+      const c = contract(
+        {},
+        {
+          status: 'revision_requested',
+          revisionRequestedAt: '2026-10-01T12:00:00Z',
+          disputeOpensAt: '2026-10-02T15:00:00Z',
+        },
+      );
+      const { unmount } = render(wrap(<DeadlineSection contract={c} myId={myId} />));
+      expect(screen.getByTestId('revision-since')).toHaveTextContent(
+        'a partir de sex, 02/10, às 12:00',
+      );
+      expect(screen.getByTestId('revision-since')).not.toHaveTextContent('a qualquer momento');
+      unmount();
+      render(wrap(<RevisionSince contract={{ ...c, deadlineAt: null }} myId={myId} />));
+      expect(screen.getByTestId('revision-since')).toHaveTextContent(
+        'a partir de sex, 02/10, às 12:00',
+      );
+    },
+  );
+});
+
 /** A seção de prazo pelo estado que a API calculou (ADR 57), para as duas partes. */
 describe('DeadlineSection', () => {
   it('prazo vencido antes do aviso: cada um lê o que vai acontecer e quando', () => {
@@ -236,6 +262,30 @@ describe('DeadlineSection', () => {
     );
     expect(screen.queryByTestId('revision-since')).toBeNull();
     expect(screen.queryByText(/venceu|vencido/)).toBeNull();
+  });
+
+  it.each<[string | null, string]>([
+    ['America/Sao_Paulo', '19:52'],
+    ['America/Manaus', '18:52'],
+    [null, '19:52'],
+  ])('a primeira entrega UTC usa o fuso da conta %s, sem compensar o payload', (zone, hour) => {
+    vi.setSystemTime(new Date('2026-10-08T22:52:00.000Z'));
+    auth.user = { id: FREELANCER, timezone: zone };
+    render(
+      wrap(
+        <DeadlineSection
+          contract={contract(
+            { state: 'met', firstDeliveredAt: '2026-10-05T22:52:00.000Z' },
+            { status: 'delivered', deadlineAt: endOfBrasiliaDay(10, 18) },
+          )}
+          myId={FREELANCER}
+        />,
+      ),
+    );
+    expect(screen.getByTestId('deadline-met').textContent).toBe(
+      `Houve entrega em seg, 05/10, às ${hour}: o prazo não abre mais disputa sozinho.`,
+    );
+    expect(screen.getByTestId('deadline-met')).not.toHaveTextContent('às 22:52');
   });
 
   it('pedido recusado e pedido expirado aparecem com o que vale agora', () => {

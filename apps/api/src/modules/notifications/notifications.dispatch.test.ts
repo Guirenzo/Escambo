@@ -29,6 +29,7 @@ const appUrl = env.APP_URL;
 
 const conta = {
   id: 7,
+  status: 'active',
   email: 'f@escambo.test',
   deleted_at: null,
   email_frequency: 'instant',
@@ -143,6 +144,135 @@ describe('persist', () => {
 
 /** O envio de uma notificação já gravada: socket, e-mail e push, e nunca lança. */
 describe('dispatch', () => {
+  it.each([
+    { status: 'banned', deleted_at: null },
+    { status: 'active', deleted_at: new Date('2026-09-01T00:00:00Z') },
+  ])('não envia e-mail opcional a conta restrita %j', async (restriction) => {
+    users.findById.mockResolvedValue({ ...conta, ...restriction });
+    notificationsService.dispatch(lembrete);
+    await flush();
+
+    expect(users.findById).toHaveBeenCalledWith(7);
+    expect(mail.send).not.toHaveBeenCalled();
+    // A filtragem dos demais canais pertence a cada transporte; o registro já existe.
+    expect(socket.emitToUser).toHaveBeenCalledTimes(1);
+    expect(push.notify).toHaveBeenCalledTimes(1);
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('suspenso mantém e-mail opcional por evento para visualizar o que mudou', async () => {
+    users.findById.mockResolvedValue({ ...conta, status: 'suspended' });
+    notificationsService.dispatch(lembrete);
+    await flush();
+
+    expect(mail.send).toHaveBeenCalledTimes(1);
+    expect(mail.send.mock.calls[0]![0]).toMatchObject({
+      userId: 7,
+      to: conta.email,
+      template: 'notification',
+      vars: { title: lembrete.params.title, body: lembrete.params.body },
+    });
+  });
+
+  it('aviso da desistência requer guarda transacional contra anonimização ao persistir e-mail', async () => {
+    notificationsService.dispatch({
+      ...lembrete,
+      params: {
+        type: 'dropout_decided',
+        title: 'Contestação analisada',
+        body: 'Nota privada da equipe',
+        data: { dropoutId: 12 },
+      },
+    });
+    await flush();
+    expect(mail.send).toHaveBeenCalledWith({
+      userId: 7,
+      to: 'f@escambo.test',
+      template: 'notification',
+      vars: {
+        title: 'Contestação analisada',
+        body: 'Nota privada da equipe',
+        link: 'https://app.escambo.test/perfil',
+      },
+      requireActiveUser: true,
+    });
+  });
+
+  it.each(['support_reply', 'support_resolved'])(
+    '%s não recria a caixa de saída quando o titular é anonimizado entre leitura e persistência',
+    async (type) => {
+      let release!: () => void;
+      const persistence = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let anonymized = false;
+      const outbox: unknown[] = [];
+      mail.send.mockImplementationOnce(async (params) => {
+        await persistence;
+        if (params.requireActiveUser && anonymized) return null;
+        outbox.push(params);
+        return 5;
+      });
+      notificationsService.dispatch({
+        userId: 7,
+        id: 51,
+        params: {
+          type,
+          title: 'Seu chamado recebeu atendimento',
+          body: 'Consulte o atendimento para ver os detalhes.',
+          data: { supportTicketId: 12 },
+        },
+      });
+      await flush();
+      expect(users.findById).toHaveBeenCalledWith(7);
+      expect(mail.send).toHaveBeenCalledTimes(1);
+      // A leitura anterior devolveu a conta ativa; a guarda precisa acompanhar a gravação.
+      anonymized = true;
+      release();
+      await flush();
+      expect(outbox).toEqual([]);
+      expect(mail.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requireActiveUser: true,
+          vars: {
+            title: 'Seu chamado recebeu atendimento',
+            body: 'Consulte o atendimento para ver os detalhes.',
+            link: 'https://app.escambo.test/suporte?ticket=12',
+          },
+        }),
+      );
+    },
+  );
+
+  it.each(['support_reply', 'support_resolved'])(
+    '%s continua disponível por evento ao titular suspenso, com mensagem genérica',
+    async (type) => {
+      users.findById.mockResolvedValue({ ...conta, status: 'suspended' });
+      notificationsService.dispatch({
+        userId: 7,
+        id: 52,
+        params: {
+          type,
+          title: 'Seu chamado recebeu atendimento',
+          body: 'Consulte o atendimento para ver os detalhes.',
+          data: { supportTicketId: 13 },
+        },
+      });
+      await flush();
+      expect(mail.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 7,
+          requireActiveUser: true,
+          template: 'notification',
+          vars: {
+            title: 'Seu chamado recebeu atendimento',
+            body: 'Consulte o atendimento para ver os detalhes.',
+            link: 'https://app.escambo.test/suporte?ticket=13',
+          },
+        }),
+      );
+    },
+  );
   it('emite no socket, manda o e-mail e o push com o id gravado e a etiqueta própria', async () => {
     expect(notificationsService.dispatch(lembrete, { ownTag: true })).toBeUndefined();
 

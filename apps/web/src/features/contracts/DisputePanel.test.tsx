@@ -20,6 +20,9 @@ vi.mock('../../lib/api', () => ({
     disputes: () => disputes(),
   },
 }));
+vi.mock('../../lib/auth', () => ({
+  useAuth: () => ({ user: { id: 1, timezone: 'America/Manaus' } }),
+}));
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -56,6 +59,28 @@ beforeEach(() => {
 });
 
 describe('DisputeModal', () => {
+  it('uma janela futura impede envio e mostra quando agir no fuso de quem lê', async () => {
+    render(
+      wrap(
+        <DisputeModal
+          contract={{ ...contract, status: 'accepted', disputeOpensAt: '2099-10-10T15:00:00Z' }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    expect(
+      screen.getByText('O histórico do chat é a principal prova para a mediação.'),
+    ).toBeVisible();
+    expect(screen.getByText(/Tentem resolver pelo chat primeiro/)).toHaveTextContent('às 11:00');
+    await userEvent
+      .setup()
+      .type(
+        screen.getByRole('textbox', { name: 'Descrição da disputa' }),
+        'Não recebi o que foi combinado.',
+      );
+    expect(screen.getByRole('button', { name: 'Abrir disputa' })).toBeDisabled();
+    expect(openDispute).not.toHaveBeenCalled();
+  });
   it('explica a consequência, lista os motivos e só libera o envio com 10 caracteres de descrição', async () => {
     const user = userEvent.setup();
     render(wrap(<DisputeModal contract={contract} onClose={vi.fn()} />));

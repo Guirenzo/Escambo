@@ -1,3 +1,4 @@
+import { BusinessForm, BusinessIconButton } from '../../components/BusinessActions';
 import { ChevronDown, ChevronUp, GripVertical, Images, Link2, Plus, Trash2 } from 'lucide-react';
 import { useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { Button, Field, Input, QueryState } from '../../components/ui';
@@ -8,6 +9,7 @@ import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
 import { dropLabel, moveItem, moveTo } from '../../lib/reorder';
 import { useDragSort } from '../../lib/useDragSort';
 import { useKeyboardSort } from '../../lib/useKeyboardSort';
+import { useReadOnlyAccount } from '../../lib/account-access';
 
 const MAX_ITEMS = 12;
 
@@ -19,6 +21,7 @@ const MAX_ITEMS = 12;
  * sendo a alternativa de um toque que a norma exige e o caminho garantido no leitor de tela.
  */
 export function PortfolioCard() {
+  const readOnly = useReadOnlyAccount();
   const toast = useToast();
   const portfolio = usePortfolio();
   const { add, remove, reorder } = usePortfolioMutation();
@@ -34,6 +37,7 @@ export function PortfolioCard() {
   const items = portfolio.data ?? [];
   const orderKey = items.map((i) => i.id).join(',');
   const saveOrder = (ids: number[]): void => {
+    if (readOnly) return;
     reorder.mutate(ids, {
       onError: (er) =>
         toast.error(er instanceof Error ? er.message : 'Não foi possível mudar a ordem'),
@@ -43,6 +47,7 @@ export function PortfolioCard() {
     listRef,
     orderKey,
     onDrop: (from, to) => {
+      if (readOnly) return;
       const item = items[from];
       if (!item) return;
       setAnnounce(dropLabel(item.title, to, items.length));
@@ -60,8 +65,8 @@ export function PortfolioCard() {
     items,
     listRef,
     // A lista some da tela quando a consulta vira erro: aí a pega é abandonada na hora.
-    listOnScreen: !portfolio.error && items.length > 1,
-    blocked: dragging !== null,
+    listOnScreen: !readOnly && !portfolio.error && items.length > 1,
+    blocked: readOnly || dragging !== null,
     rescueRef: titleRef,
     onCommit: saveOrder,
     onAnnounce: setAnnounce,
@@ -170,7 +175,7 @@ export function PortfolioCard() {
                   }
                 >
                   {order.length > 1 && (
-                    <button
+                    <BusinessIconButton
                       type="button"
                       className="icon-btn portfolio-grip"
                       aria-label={`Reordenar ${i.title}`}
@@ -179,6 +184,7 @@ export function PortfolioCard() {
                       aria-describedby={grabbedId === i.id ? undefined : 'portfolio-ordem-dica'}
                       {...gripProps(i)}
                       onPointerDown={(e) => {
+                        if (readOnly) return;
                         // Com a prévia na tela, um arraste mediria a lista errada: o ponteiro
                         // cancela a pega e não arrasta; o gesto seguinte arrasta.
                         if (busy) {
@@ -189,7 +195,7 @@ export function PortfolioCard() {
                       }}
                     >
                       <GripVertical size={16} />
-                    </button>
+                    </BusinessIconButton>
                   )}
                   <span className="portfolio-pos" aria-hidden="true">
                     {index + 1}
@@ -219,7 +225,7 @@ export function PortfolioCard() {
                     <div className="portfolio-move">
                       {/* As setas leem a ordem gravada, não a prévia; durante uma pega elas saem
                           de cena, porque mudariam a ordem por baixo do que está na tela. */}
-                      <button
+                      <BusinessIconButton
                         type="button"
                         className="icon-btn"
                         data-move={`${i.id}:up`}
@@ -229,8 +235,8 @@ export function PortfolioCard() {
                         onClick={() => move(i.id, -1)}
                       >
                         <ChevronUp size={16} />
-                      </button>
-                      <button
+                      </BusinessIconButton>
+                      <BusinessIconButton
                         type="button"
                         className="icon-btn"
                         data-move={`${i.id}:down`}
@@ -240,10 +246,10 @@ export function PortfolioCard() {
                         onClick={() => move(i.id, 1)}
                       >
                         <ChevronDown size={16} />
-                      </button>
+                      </BusinessIconButton>
                     </div>
                   )}
-                  <button
+                  <BusinessIconButton
                     type="button"
                     className="icon-btn"
                     aria-label={`Remover ${i.title}`}
@@ -251,7 +257,7 @@ export function PortfolioCard() {
                     onClick={() => void removeItem(i.id)}
                   >
                     <Trash2 size={16} />
-                  </button>
+                  </BusinessIconButton>
                 </li>
               ))}
             </ul>
@@ -260,7 +266,7 @@ export function PortfolioCard() {
       </QueryState>
 
       {count < MAX_ITEMS && (
-        <form className="stack" onSubmit={submit} style={{ marginTop: 12 }}>
+        <BusinessForm className="stack" onSubmit={submit} style={{ marginTop: 12 }}>
           <Field label="Título do trabalho">
             <Input
               value={title}
@@ -320,7 +326,7 @@ export function PortfolioCard() {
           <Button type="submit" variant="secondary" disabled={add.isPending}>
             <Plus size={14} /> {add.isPending ? 'Adicionando…' : 'Adicionar ao portfólio'}
           </Button>
-        </form>
+        </BusinessForm>
       )}
     </section>
   );

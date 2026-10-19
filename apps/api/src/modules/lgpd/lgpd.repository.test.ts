@@ -327,20 +327,31 @@ describe('lgpdRepository', () => {
       };
 
       it('marca a solicitação, apaga o que identifica o titular, derruba as sessões e registra a ação do admin', async () => {
-        fakeDb.reply({ affectedRows: 1 });
+        fakeDb.reply([], [], { affectedRows: 1 });
 
         expect(await lgpdRepository.completeDeletion(5, 7, 99)).toBe(true);
+        expect(fakeDb.calls.slice(0, 2).map((c) => c.params)).toEqual([
+          { lockId: 7 },
+          { lockId: 99 },
+        ]);
+        expect(fakeDb.calls.slice(0, 2).every((c) => c.sql.endsWith('FOR UPDATE'))).toBe(true);
 
         expect(heads()).toEqual([
+          'SELECT id FROM',
+          'SELECT id FROM',
           'UPDATE data_deletion_requests SET',
           'DELETE FROM push_subscriptions',
           'UPDATE users SET',
+          'UPDATE support_tickets SET',
+          'UPDATE support_ticket_messages m',
           'UPDATE profiles_freelancer SET',
           'UPDATE profiles_client SET',
           'UPDATE services SET',
           'DELETE FROM favorites',
           'DELETE FROM saved_searches',
           'UPDATE content_removals SET',
+          'UPDATE freelancer_dropouts SET',
+          'UPDATE admin_actions a',
           'DELETE FROM notifications',
           'DELETE FROM email_outbox',
           'DELETE FROM email_verification_tokens',
@@ -350,7 +361,7 @@ describe('lgpdRepository', () => {
         ]);
 
         // A solicitação: só a daquele titular, e só se ainda estava em aberto.
-        const request = fakeDb.calls[0]!;
+        const request = fakeDb.calls[2]!;
         expect(request.sql).toContain(
           "SET status = 'completed', processed_by = :adminId, processed_at = NOW()",
         );
@@ -394,6 +405,23 @@ describe('lgpdRepository', () => {
         expect(stmt('UPDATE content_removals').sql).toBe(
           'UPDATE content_removals SET appeal_text = NULL, cleared_refs = NULL WHERE owner_id = :userId',
         );
+        expect(stmt('UPDATE freelancer_dropouts').sql).toBe(
+          'UPDATE freelancer_dropouts SET appeal_text = NULL, decision_note = NULL WHERE freelancer_id = :userId',
+        );
+        const privateAudit = stmt('UPDATE admin_actions');
+        expect(stmt('UPDATE support_tickets').sql).toBe(
+          "UPDATE support_tickets SET subject = 'Conteúdo removido após anonimização do titular.' WHERE user_id = :userId",
+        );
+        expect(stmt('UPDATE support_ticket_messages').sql).toContain(
+          'WHERE t.user_id = :userId OR m.sender_id = :userId',
+        );
+        expect(stmt('UPDATE support_ticket_messages').sql).not.toContain('is_internal = 0');
+        expect(privateAudit.sql).toContain(
+          "JOIN freelancer_dropouts d ON a.target_type = 'dropout' AND a.target_id = d.id",
+        );
+        expect(privateAudit.sql).toContain(
+          "WHERE d.freelancer_id = :userId AND a.action IN ('dropout_excused', 'dropout_upheld')",
+        );
         // Só as sessões ainda vivas são revogadas (a data de quem já saiu não é reescrita).
         expect(stmt('UPDATE user_sessions').sql).toBe(
           'UPDATE user_sessions SET revoked_at = NOW() WHERE user_id = :userId AND revoked_at IS NULL',
@@ -414,8 +442,8 @@ describe('lgpdRepository', () => {
           );
         }
 
-        // Toda instrução depois da primeira é presa ao titular, e a nenhum outro.
-        for (const call of fakeDb.calls.slice(1, -1)) {
+        // Toda instrução depois das travas e solicitação é presa ao titular, e a nenhum outro.
+        for (const call of fakeDb.calls.slice(3, -1)) {
           expect(call.params, call.sql).toEqual({ userId: 7 });
         }
 
@@ -434,16 +462,16 @@ describe('lgpdRepository', () => {
         // Tudo dentro da mesma transação: ela abre antes da primeira instrução, só confirma depois
         // da última (o registro da ação do admin) e a conexão só volta ao pool depois do commit.
         const statements = fakeDb.conn.query.mock.invocationCallOrder;
-        expect(statements).toHaveLength(15);
+        expect(statements).toHaveLength(21);
         const begun = fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!;
         const committed = fakeDb.conn.commit.mock.invocationCallOrder[0]!;
         expect(begun).toBeLessThan(statements[0]!);
-        expect(committed).toBeGreaterThan(statements[14]!);
+        expect(committed).toBeGreaterThan(statements.at(-1)!);
         expect(fakeDb.conn.release.mock.invocationCallOrder[0]!).toBeGreaterThan(committed);
       });
 
       it('contratações, mensagens, avaliações e extratos ficam (obrigação fiscal e registro das duas partes)', async () => {
-        fakeDb.reply({ affectedRows: 1 });
+        fakeDb.reply([], [], { affectedRows: 1 });
         await lgpdRepository.completeDeletion(5, 7, 99);
         for (const table of [
           'contracts',
@@ -466,12 +494,16 @@ describe('lgpdRepository', () => {
       });
 
       it('solicitação já processada (ou de outro titular): devolve false, não anonimiza nada e desfaz a transação', async () => {
-        fakeDb.reply({ affectedRows: 0 });
+        fakeDb.reply([], [], { affectedRows: 0 });
 
         expect(await lgpdRepository.completeDeletion(5, 7, 99)).toBe(false);
 
-        expect(heads()).toEqual(['UPDATE data_deletion_requests SET']);
-        expect(fakeDb.calls[0]!.params).toEqual({ id: 5, userId: 7, adminId: 99 });
+        expect(heads()).toEqual([
+          'SELECT id FROM',
+          'SELECT id FROM',
+          'UPDATE data_deletion_requests SET',
+        ]);
+        expect(fakeDb.calls[2]!.params).toEqual({ id: 5, userId: 7, adminId: 99 });
         expect(fakeDb.conn.beginTransaction).toHaveBeenCalledTimes(1);
         expect(fakeDb.conn.commit).not.toHaveBeenCalled();
         expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
@@ -485,11 +517,13 @@ describe('lgpdRepository', () => {
       it('se uma etapa falha no meio, desfaz tudo (nada de conta meio anonimizada), devolve a conexão e repassa o erro', async () => {
         const boom = new Error('deadlock');
         // Solicitação marcada, push apagado, e o UPDATE de users falha.
-        fakeDb.reply({ affectedRows: 1 }, { affectedRows: 0 }, boom);
+        fakeDb.reply([], [], { affectedRows: 1 }, { affectedRows: 0 }, boom);
 
         await expect(lgpdRepository.completeDeletion(5, 7, 99)).rejects.toBe(boom);
 
         expect(heads()).toEqual([
+          'SELECT id FROM',
+          'SELECT id FROM',
           'UPDATE data_deletion_requests SET',
           'DELETE FROM push_subscriptions',
           'UPDATE users SET',
@@ -505,13 +539,13 @@ describe('lgpdRepository', () => {
 
       it('falha na última etapa (o registro da ação do admin) também desfaz a anonimização inteira', async () => {
         const boom = new Error('ER_NO_REFERENCED_ROW');
-        // As 14 primeiras instruções passam; o INSERT em admin_actions falha.
-        fakeDb.reply({ affectedRows: 1 }, ...Array.from({ length: 13 }, () => ({})), boom);
+        // As 20 primeiras instruções passam; o INSERT em admin_actions falha.
+        fakeDb.reply([], [], { affectedRows: 1 }, ...Array.from({ length: 17 }, () => ({})), boom);
 
         await expect(lgpdRepository.completeDeletion(5, 7, 99)).rejects.toBe(boom);
 
-        expect(fakeDb.calls).toHaveLength(15);
-        expect(fakeDb.calls[14]!.sql.startsWith('INSERT INTO admin_actions')).toBe(true);
+        expect(fakeDb.calls).toHaveLength(21);
+        expect(fakeDb.calls[20]!.sql.startsWith('INSERT INTO admin_actions')).toBe(true);
         expect(fakeDb.conn.commit).not.toHaveBeenCalled();
         expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
         expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
@@ -519,12 +553,12 @@ describe('lgpdRepository', () => {
 
       it('se o commit falha, a conclusão não é dada como feita: desfaz, devolve a conexão e repassa o erro', async () => {
         const boom = new Error('conexão perdida no commit');
-        fakeDb.reply({ affectedRows: 1 });
+        fakeDb.reply([], [], { affectedRows: 1 });
         fakeDb.conn.commit.mockRejectedValueOnce(boom);
 
         await expect(lgpdRepository.completeDeletion(5, 7, 99)).rejects.toBe(boom);
 
-        expect(fakeDb.calls).toHaveLength(15);
+        expect(fakeDb.calls).toHaveLength(21);
         expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
         expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
       });

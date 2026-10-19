@@ -45,7 +45,7 @@ export function LegalUpdateBanner({
       toast.success(
         accepted
           ? `Pronto: a versão ${version}${terms ? ' dos Termos' : ''} fica registrada nos seus consentimentos, no Perfil.`
-          : 'Registrado. No Perfil você pode desligar os avisos no navegador, escolher o que sai no silêncio e trocar o fuso, ou pedir a exclusão da conta.',
+          : 'Registrado. As desistências continuam na contagem, e você pode contestá-las no Perfil. Também pode desligar os avisos no navegador, escolher o que sai no silêncio e trocar o fuso, ou pedir a exclusão da conta.',
       );
     } catch {
       toast.error('Não foi possível registrar agora; a faixa volta na próxima vez.');

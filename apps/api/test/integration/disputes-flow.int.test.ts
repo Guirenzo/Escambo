@@ -1,7 +1,8 @@
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { setClockForTests } from '../../src/utils/clock';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
 
@@ -13,6 +14,7 @@ import { fundWallet } from './wallet.helpers';
 
 const app = createApp();
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
+const NOW = new Date('2026-10-08T15:00:00Z');
 
 interface Actor {
   id: number;
@@ -39,6 +41,14 @@ async function registerAndLogin(
 beforeAll(async () => {
   const res = await request(app).get('/api/health');
   expect(res.status).toBe(200);
+});
+
+beforeEach(() => {
+  setClockForTests(NOW, { frozen: true });
+});
+
+afterEach(() => {
+  setClockForTests(null);
 });
 
 afterAll(async () => {
@@ -90,6 +100,8 @@ describe('Disputas e mediação (admin)', () => {
       .set(auth(stranger.token))
       .send({ contractId, reason: 'quality', description: 'Não sou parte disso.' });
     expect(foreign.status).toBe(403);
+    // RN062: a abertura manual aguarda a janela da primeira entrega.
+    setClockForTests(new Date(NOW.getTime() + 48 * 3_600_000), { frozen: true });
     const opened = await request(app).post('/api/disputes').set(auth(client.token)).send({
       contractId,
       reason: 'quality',

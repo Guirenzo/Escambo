@@ -1,3 +1,4 @@
+import { BusinessButton, BusinessIconButton } from '../../components/BusinessActions';
 import {
   ArrowLeft,
   Briefcase,
@@ -22,6 +23,7 @@ import { Stars } from '../../components/Stars';
 import { Button, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
+import { DropoutsSummary } from '../profile/DropoutsSummary';
 import { dtm, formatAvailability, formatHours } from '../../lib/format';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
 import { zoneNote } from '../../lib/timezones';
@@ -115,6 +117,7 @@ export function FreelancerView() {
                       </span>
                     )}
                     <span className="muted tiny">{p.totalContracts} contratos concluídos</span>
+                    <DropoutsSummary summary={p.dropouts} />
                     {p.availableDays && p.availableDays.length > 0 && (
                       <span className="muted tiny" data-testid="available-days">
                         <CalendarDays size={12} /> atende{' '}
@@ -138,7 +141,7 @@ export function FreelancerView() {
                 <div className="stack">
                   <ScoreBadge score={p.escamboScore} />
                   {userId !== myId && (
-                    <Button
+                    <BusinessButton
                       variant={isFav ? 'secondary' : 'ghost'}
                       className="toggle"
                       aria-pressed={isFav}
@@ -153,10 +156,10 @@ export function FreelancerView() {
                       }
                     >
                       <Heart size={14} /> {isFav ? 'Favorito' : 'Favoritar'}
-                    </Button>
+                    </BusinessButton>
                   )}
                   {userId !== myId && (
-                    <Button
+                    <BusinessButton
                       variant="ghost"
                       onClick={() =>
                         userId &&
@@ -182,7 +185,7 @@ export function FreelancerView() {
                       }
                     >
                       <Flag size={14} /> Denunciar
-                    </Button>
+                    </BusinessButton>
                   )}
                   {user?.role === 'admin' && userId !== myId && (
                     <ModerationButtons ulid={p.userUlid} />
@@ -224,7 +227,7 @@ export function FreelancerView() {
                         </div>
                       )}
                       {i.imageUrl && userId !== myId && (
-                        <button
+                        <BusinessIconButton
                           type="button"
                           className="icon-btn portfolio-report"
                           aria-label={`Denunciar imagem de ${i.title}`}
@@ -241,7 +244,7 @@ export function FreelancerView() {
                           }
                         >
                           <Flag size={14} />
-                        </button>
+                        </BusinessIconButton>
                       )}
                       <figcaption>
                         <strong>{i.title}</strong>

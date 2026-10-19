@@ -47,6 +47,30 @@ const contract = (t: CancelTerms | null): ContractWithHistory =>
 const plain = (s: string) => s.replace(/\u00a0/g, ' ');
 
 describe('cancelCopy', () => {
+  it.each([1, 2, 3])(
+    'desistir mostra a contagem %i e as duas saídas antes de confirmar',
+    (countAfter) => {
+      const copy = cancelCopy(
+        terms({
+          by: 'freelancer',
+          stage: 'withdrawal',
+          dropout: {
+            countAfter,
+            alertAt: 3,
+            windowDays: 60,
+            alertUntil: countAfter >= 3 ? '2026-12-08T15:00:00Z' : null,
+          },
+        }),
+        'America/Sao_Paulo',
+      );
+      expect(copy.body).toContain('perfil público por 60 dias, só como número');
+      expect(copy.body).toContain('sem dizer qual contratação nem com quem');
+      expect(copy.body).toContain('a equipe do Escambo revisa a conta');
+      expect(copy.body).toContain('confirmar isso em até 7 dias');
+      expect(copy.body).toContain('contestá-la pelo Perfil');
+      if (countAfter >= 3) expect(copy.body).toContain('se não houver outra');
+    },
+  );
   it('cada etapa diz o que acontece com o dinheiro', () => {
     const z = 'America/Sao_Paulo';
     expect(plain(cancelCopy(terms({ stage: 'proposal', refundClient: 200 }), z).body)).toBe(
@@ -122,6 +146,35 @@ describe('CancelModal', () => {
     });
   });
 
+  it('manda a contagem de desistências que o freelancer viu junto com o reembolso', async () => {
+    render(
+      wrap(
+        <CancelModal
+          contract={contract(
+            terms({
+              by: 'freelancer',
+              stage: 'withdrawal',
+              refundClient: 200,
+              releaseFreelancer: 0,
+              dropout: {
+                countAfter: 3,
+                alertAt: 3,
+                windowDays: 60,
+                alertUntil: '2026-12-08T15:00:00Z',
+              },
+            }),
+          )}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Desistir' }));
+    expect(cancelContract).toHaveBeenCalledWith(7, {
+      expectedRefund: 200,
+      expectedDropoutCount: 3,
+    });
+  });
+
   it('mostra os dois valores e manda o reembolso visto', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
@@ -137,6 +190,25 @@ describe('CancelModal', () => {
       'Contratação cancelada. R$ 100,00 voltou para a sua carteira.',
     );
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('encerramento da negociação leva a seq vista junto do reembolso reservado', async () => {
+    const c = {
+      ...contract(terms({ stage: 'proposal', refundClient: 200, releaseFreelancer: 0 })),
+      status: 'pending' as const,
+      negotiation: {
+        seq: 4,
+        turn: 'client' as const,
+        round: 2 as const,
+        canCounter: true,
+        countersLeft: 1,
+        respondBy: null,
+        current: null,
+      },
+    };
+    render(wrap(<CancelModal contract={c} onClose={vi.fn()} />));
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Cancelar proposta' }));
+    expect(cancelContract).toHaveBeenCalledWith(7, { expectedRefund: 200, seq: 4 });
   });
 
   it('Voltar fecha sem cancelar; sem permissão só há Voltar', async () => {

@@ -171,7 +171,7 @@ describe('notificationsRepository', () => {
       expect(fakeDb.calls[0]!.params).toEqual({ userId: 7, since, first: null });
     });
 
-    it('usersForDigest: só quem pediu resumo diário, não encerrou a conta, está no fuso, já chegou na hora e ainda não recebeu hoje', async () => {
+    it('usersForDigest: só quem pediu resumo diário, não foi banido/excluído, está no fuso, já chegou na hora e ainda não recebeu hoje', async () => {
       const dayStart = new Date('2026-09-15T03:00:00Z');
       const rows = [{ id: 7, email: 'ana@escambo.test', last_digest_at: null }];
       fakeDb.reply(rows);
@@ -183,6 +183,9 @@ describe('notificationsRepository', () => {
       const { sql, params } = fakeDb.calls[0]!;
       expect(sql).toContain('SELECT id, email, last_digest_at FROM users');
       expect(sql).toContain("WHERE email_frequency = 'daily' AND deleted_at IS NULL");
+      expect(sql).toContain("AND status <> 'banned'");
+      // Suspensão mantém acesso de consulta: não deve retirar a conta dos resumos.
+      expect(sql).not.toContain("'suspended'");
       // Quem não escolheu fuso conta como Brasília; quem não escolheu hora, como a da plataforma.
       expect(sql).toContain('AND COALESCE(timezone, :defaultZone) = :zone');
       expect(sql).toContain('AND COALESCE(digest_hour, :defaultHour) <= :hourNow');
@@ -253,7 +256,7 @@ describe('notificationsRepository', () => {
       expect(params).toEqual({ userId: 7, sinceId: 41 });
     });
 
-    it('usersForQuietSummary: contas do fuso, fora da janela agora (ou sem janela), com retido por resumir', async () => {
+    it('usersForQuietSummary: contas não banidas/excluídas do fuso, fora da janela agora, com retido por resumir', async () => {
       const rows = [{ id: 7, timezone: null, push_quiet_start: 22, push_quiet_end: 7 }];
       fakeDb.reply(rows);
 
@@ -264,6 +267,8 @@ describe('notificationsRepository', () => {
         'SELECT u.id, u.timezone, u.push_quiet_start, u.push_quiet_end, u.push_quiet_summary_id FROM users u',
       );
       expect(sql).toContain('WHERE u.deleted_at IS NULL');
+      expect(sql).toContain("AND u.status <> 'banned'");
+      expect(sql).not.toContain("'suspended'");
       expect(sql).toContain('AND COALESCE(u.timezone, :defaultZone) = :zone');
       // Sem janela (meia janela inclusive) a conta está sempre "fora do silêncio".
       expect(sql).toContain('(u.push_quiet_start IS NULL OR u.push_quiet_end IS NULL OR CASE');

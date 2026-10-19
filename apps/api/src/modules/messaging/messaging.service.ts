@@ -88,20 +88,29 @@ interface ConversationContext {
   otherPartyId: number;
 }
 
-/** Carrega o contrato, garante que o usuário é parte e resolve a conversa. */
-async function contextFor(contractId: number, uid: number): Promise<ConversationContext> {
+/** Carrega o contrato e exige participação, antes de consultar ou criar a conversa. */
+async function authorizedContext(
+  contractId: number,
+  uid: number,
+): Promise<Omit<ConversationContext, 'conversationId'>> {
   const contract = await contractsRepository.findById(contractId);
   if (!contract) throw new HttpError(404, 'Contratação não encontrada', 'contract_not_found');
   if (contract.client_id !== uid && contract.freelancer_id !== uid) {
     throw new HttpError(403, 'Você não participa desta contratação', 'forbidden');
   }
   const otherPartyId = contract.client_id === uid ? contract.freelancer_id : contract.client_id;
+  return { contract, otherPartyId };
+}
+
+/** Resolve a conversa para operações que podem inicializá-la. */
+async function contextFor(contractId: number, uid: number): Promise<ConversationContext> {
+  const ctx = await authorizedContext(contractId, uid);
   const conversationId = await messagingRepository.getOrCreate(
-    contract.client_id,
-    contract.freelancer_id,
+    ctx.contract.client_id,
+    ctx.contract.freelancer_id,
     contractId,
   );
-  return { contract, conversationId, otherPartyId };
+  return { ...ctx, conversationId };
 }
 
 /** Horas entre a última mensagem do cliente e a resposta do freelancer (se for uma resposta). */
@@ -212,11 +221,26 @@ export const messagingService = {
   },
 
   /** Histórico do chat do contrato (somente para as partes). */
-  async history(contractId: number, uid: number): Promise<ChatHistory> {
-    const ctx = await contextFor(contractId, uid);
-    const rows = await messagingRepository.listMessages(ctx.conversationId, HISTORY_LIMIT);
+  async history(
+    contractId: number,
+    uid: number,
+    options: { readOnly?: boolean } = {},
+  ): Promise<ChatHistory> {
+    const ctx = await authorizedContext(contractId, uid);
+    const conversationId = options.readOnly
+      ? ((await messagingRepository.findByPair(ctx.contract.client_id, ctx.contract.freelancer_id))
+          ?.id ?? null)
+      : await messagingRepository.getOrCreate(
+          ctx.contract.client_id,
+          ctx.contract.freelancer_id,
+          contractId,
+        );
+    const rows =
+      conversationId === null
+        ? []
+        : await messagingRepository.listMessages(conversationId, HISTORY_LIMIT);
     return {
-      conversationId: ctx.conversationId,
+      conversationId,
       contractId,
       otherPartyId: ctx.otherPartyId,
       messages: rows.map(toMessage),

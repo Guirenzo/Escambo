@@ -18,6 +18,13 @@ vi.mock('../auth/session.repository', () => ({
 vi.mock('./admin.repository', () => ({
   adminRepository: { setUserStatus: vi.fn(), recordAction: vi.fn(), metrics: vi.fn() },
 }));
+vi.mock('../../config/realtime', () => ({
+  realtime: {
+    emitToUser: vi.fn().mockResolvedValue(undefined),
+    emitToContract: vi.fn().mockResolvedValue(undefined),
+    disconnectUser: vi.fn(),
+  },
+}));
 // Só o aviso às partes é trocado; o resto do módulo é lido na carga de outros services.
 vi.mock('../notifications/notifications.service', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../notifications/notifications.service')>()),
@@ -29,6 +36,7 @@ import { disputesRepository, type DisputeRow } from '../disputes/disputes.reposi
 import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
 import { adminRepository, type MetricsRow } from './admin.repository';
 import { blocklist } from '../../config/blocklist';
+import { realtime } from '../../config/realtime';
 import { authRepository } from '../auth/auth.repository';
 import { sessionRepository } from '../auth/session.repository';
 import { milestonesRepository } from '../contracts/milestones.repository';
@@ -608,7 +616,7 @@ describe('adminService.moderateUser (RN-007): efeito imediato', () => {
     admin.recordAction.mockResolvedValue(undefined);
   });
 
-  it('suspender e banir: mudam o status, bloqueiam o token vigente, derrubam as sessões e registram a ação', async () => {
+  it('suspender mantém sessões de consulta; banir revoga e desconecta; ambos avisam e registram a ação', async () => {
     const expected = [
       ['suspend', 'suspended'],
       ['ban', 'banned'],
@@ -622,8 +630,21 @@ describe('adminService.moderateUser (RN-007): efeito imediato', () => {
       expect(admin.setUserStatus).toHaveBeenCalledWith(ULID, status);
       expect(users.findByUlid).toHaveBeenCalledWith(ULID);
       expect(blocklist.has(USER_ID)).toBe(true);
-      expect(sessions.revokeAllForUser).toHaveBeenCalledTimes(1);
-      expect(sessions.revokeAllForUser).toHaveBeenCalledWith(USER_ID);
+      expect(blocklist.status(USER_ID)).toBe(status);
+      expect(realtime.emitToUser).toHaveBeenCalledTimes(1);
+      expect(realtime.emitToUser).toHaveBeenCalledWith(USER_ID, 'account:status', { status });
+      if (action === 'ban') {
+        expect(sessions.revokeAllForUser).toHaveBeenCalledTimes(1);
+        expect(sessions.revokeAllForUser).toHaveBeenCalledWith(USER_ID);
+        expect(realtime.disconnectUser).toHaveBeenCalledTimes(1);
+        expect(realtime.disconnectUser).toHaveBeenCalledWith(USER_ID);
+        expect(vi.mocked(realtime.disconnectUser).mock.invocationCallOrder[0]!).toBeGreaterThan(
+          vi.mocked(realtime.emitToUser).mock.invocationCallOrder[0]!,
+        );
+      } else {
+        expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+        expect(realtime.disconnectUser).not.toHaveBeenCalled();
+      }
       expect(admin.recordAction).toHaveBeenCalledTimes(1);
       // O alvo é o usuário moderado (tipo e id), não só o ulid na descrição.
       expect(admin.recordAction).toHaveBeenCalledWith(
@@ -644,6 +665,10 @@ describe('adminService.moderateUser (RN-007): efeito imediato', () => {
     expect(admin.setUserStatus).toHaveBeenCalledWith(ULID, 'active');
     expect(blocklist.has(USER_ID)).toBe(false);
     expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
+    expect(realtime.emitToUser).toHaveBeenCalledWith(USER_ID, 'account:status', {
+      status: 'active',
+    });
+    expect(realtime.disconnectUser).not.toHaveBeenCalled();
     expect(admin.recordAction).toHaveBeenCalledWith(
       10,
       'user_reactivate',
@@ -661,6 +686,7 @@ describe('adminService.moderateUser (RN-007): efeito imediato', () => {
 
     // O bloqueio em memória vem antes de derrubar as sessões no banco.
     expect(blocklist.has(USER_ID)).toBe(true);
+    expect(blocklist.status(USER_ID)).toBe('banned');
     expect(sessions.revokeAllForUser).toHaveBeenCalledWith(USER_ID);
   });
 
@@ -675,6 +701,8 @@ describe('adminService.moderateUser (RN-007): efeito imediato', () => {
     expect(blocklist.has(USER_ID)).toBe(false);
     expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
     expect(admin.recordAction).not.toHaveBeenCalled();
+    expect(realtime.emitToUser).not.toHaveBeenCalled();
+    expect(realtime.disconnectUser).not.toHaveBeenCalled();
   });
 
   it('se o usuário some entre a leitura e a mudança (UPDATE sem linha), é 404 e ninguém é bloqueado', async () => {
@@ -689,6 +717,8 @@ describe('adminService.moderateUser (RN-007): efeito imediato', () => {
     expect(blocklist.size()).toBe(before);
     expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
     expect(admin.recordAction).not.toHaveBeenCalled();
+    expect(realtime.emitToUser).not.toHaveBeenCalled();
+    expect(realtime.disconnectUser).not.toHaveBeenCalled();
   });
 
   it('admin não é suspenso nem banido pelo painel, nem o próprio: 409 cannot_moderate_admin e nada muda', async () => {
@@ -711,6 +741,8 @@ describe('adminService.moderateUser (RN-007): efeito imediato', () => {
     expect(blocklist.has(USER_ID)).toBe(false);
     expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
     expect(admin.recordAction).not.toHaveBeenCalled();
+    expect(realtime.emitToUser).not.toHaveBeenCalled();
+    expect(realtime.disconnectUser).not.toHaveBeenCalled();
   });
 
   it('reativar um admin continua valendo (é a saída de quem foi bloqueado antes da trava)', async () => {

@@ -1,6 +1,8 @@
+import { BusinessForm } from '../../components/BusinessActions';
 import { Briefcase, MapPin, ShieldCheck, Star, User } from 'lucide-react';
 import type { AvailabilityPeriod, AvailablePeriods } from '@escambo/types';
 import { useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { Avatar } from '../../components/Avatar';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { Stars } from '../../components/Stars';
@@ -19,6 +21,7 @@ import { timezoneLabel } from '../../lib/timezones';
 import { useToast } from '../../lib/toast';
 import { EmailPreferencesCard } from '../profile/EmailPreferencesCard';
 import { ModeracaoCard } from '../profile/ModeracaoCard';
+import { DesistenciasCard } from '../profile/DesistenciasCard';
 import { PortfolioCard } from '../profile/PortfolioCard';
 import { PushCard } from '../profile/PushCard';
 import { PrivacidadeCard } from '../profile/PrivacidadeCard';
@@ -71,7 +74,7 @@ function AvaliacoesRecebidas({ userId }: { userId: number }) {
                     <p>{r.response}</p>
                   </div>
                 ) : (
-                  <form
+                  <BusinessForm
                     className="review-reply"
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -92,7 +95,7 @@ function AvaliacoesRecebidas({ userId }: { userId: number }) {
                     >
                       Responder
                     </Button>
-                  </form>
+                  </BusinessForm>
                 )}
               </li>
             ))}
@@ -212,7 +215,11 @@ export function PerfilView() {
 
   return (
     <div className="page">
-      <PageHeader title="Perfil" subtitle="Como você aparece para clientes e freelancers." />
+      <PageHeader
+        title="Perfil"
+        subtitle="Como você aparece para clientes e freelancers."
+        action={<Link to="/suporte">Falar com o suporte</Link>}
+      />
       <QueryState
         isLoading={profiles.isLoading}
         error={profiles.error}
@@ -247,8 +254,9 @@ export function PerfilView() {
             )}
 
             {p.freelancer && user && <AvaliacoesRecebidas userId={user.id} />}
+            {p.freelancer && <DesistenciasCard />}
 
-            <form className="card" onSubmit={saveFreelancer}>
+            <BusinessForm className="card" onSubmit={saveFreelancer}>
               <h3>
                 <Briefcase size={16} /> Freelancer
               </h3>
@@ -389,9 +397,9 @@ export function PerfilView() {
               <Button type="submit" disabled={putFreelancer.isPending}>
                 Salvar freelancer
               </Button>
-            </form>
+            </BusinessForm>
 
-            <form className="card" onSubmit={saveClient}>
+            <BusinessForm className="card" onSubmit={saveClient}>
               <h3>
                 <User size={16} /> Cliente {p.client && <span className="chip rank">ativo</span>}
               </h3>
@@ -431,7 +439,7 @@ export function PerfilView() {
               <Button type="submit" disabled={putClient.isPending}>
                 Salvar cliente
               </Button>
-            </form>
+            </BusinessForm>
 
             <ModeracaoCard />
             {p.freelancer && <PortfolioCard />}

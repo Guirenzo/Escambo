@@ -10,8 +10,12 @@ vi.mock('./profiles.repository', () => ({
     listPortfolio: vi.fn().mockResolvedValue([]),
   },
 }));
+vi.mock('../dropouts/dropouts.service', () => ({
+  dropoutsService: { publicSummary: vi.fn() },
+}));
 
 import { computeEscamboScore } from '../score/score.service';
+import { dropoutsService } from '../dropouts/dropouts.service';
 import { parseDays, profilesService } from './profiles.service';
 import {
   profilesRepository,
@@ -38,7 +42,14 @@ const freelancerRow = (o: Partial<Record<keyof FreelancerRow, unknown>> = {}): F
     ...o,
   }) as unknown as FreelancerRow;
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(dropoutsService.publicSummary).mockResolvedValue({
+    count: 0,
+    windowDays: 60,
+    alert: false,
+  });
+});
 
 describe('profilesService.upsertFreelancer', () => {
   it('salva e retorna o perfil mapeado (flags/decimais)', async () => {
@@ -362,6 +373,32 @@ describe('profilesService.getMine', () => {
 
 describe('profilesService.getPublicFreelancer: o que o perfil público mostra', () => {
   const ULID = '01HZXULIDEXAMPLE0000000000';
+
+  it('desistências públicas têm só o número, a janela e o alerta, sem datas, contratos ou contestação', async () => {
+    repo.findPublicFreelancerByUlid.mockResolvedValue({
+      ...freelancerRow(),
+      user_id: 44,
+      ulid: ULID,
+      level: 3,
+      level_name: 'Profissional',
+    } as unknown as PublicFreelancerRow);
+    vi.mocked(dropoutsService.publicSummary).mockResolvedValue({
+      count: 3,
+      windowDays: 60,
+      alert: true,
+      droppedAt: '2026-10-09T15:00:00Z',
+      contractId: 15,
+      appealText: 'Meu motivo privado',
+      items: [{ id: 3 }],
+      acceptedInWindow: 18,
+    } as never);
+    const profile = await profilesService.getPublicFreelancer(ULID);
+    expect(dropoutsService.publicSummary).toHaveBeenCalledWith(44);
+    expect(profile.dropouts).toEqual({ count: 3, windowDays: 60, alert: true });
+    expect(Object.keys(profile.dropouts!).sort()).toEqual(['alert', 'count', 'windowDays']);
+    expect(JSON.stringify(profile)).not.toContain('Meu motivo privado');
+    expect(JSON.stringify(profile)).not.toContain('2026-10-09');
+  });
 
   it('procura pelo ulid, identifica o dono e traz o portfólio dele, no formato da API', async () => {
     repo.findPublicFreelancerByUlid.mockResolvedValue({

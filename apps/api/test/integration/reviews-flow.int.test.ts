@@ -110,6 +110,12 @@ describe('Avaliações (reviews) — fecham o ciclo da contratação', () => {
       .send({ contractId: pending.body.id, rating: 5 });
     expect(early.status).toBe(409);
 
+    // A validação de avaliação terminou; libera o par para o próximo contrato (RN-020).
+    await request(app)
+      .post(`/api/contracts/${pending.body.id}/cancel`)
+      .set(auth(client.token))
+      .expect(200);
+
     const contractId = await completedContract(client, freelancer, svc.body.id);
 
     // Antes de avaliar: sem review no detalhe e hasReview=false na lista.

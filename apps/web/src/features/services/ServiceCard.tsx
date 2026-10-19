@@ -1,9 +1,9 @@
+import { BusinessButton, BusinessIconButton } from '../../components/BusinessActions';
 import { ArrowLeftRight, Heart, Rocket } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Service } from '@escambo/types';
 import { Avatar } from '../../components/Avatar';
 import { Stars } from '../../components/Stars';
-import { Button } from '../../components/ui';
 import { brl, formatAvailability } from '../../lib/format';
 import { useAuth } from '../../lib/auth';
 import { usePublicSettings } from '../../lib/hooks';
@@ -45,7 +45,7 @@ export function ServiceCard({
           )}
           {s.isRemote && <span className="tag">remoto</span>}
           {onToggleFavorite && !mine && (
-            <button
+            <BusinessIconButton
               type="button"
               className={`fav-btn ${favorited ? 'on' : ''}`}
               aria-pressed={!!favorited}
@@ -54,7 +54,7 @@ export function ServiceCard({
               onClick={() => onToggleFavorite(s)}
             >
               <Heart size={15} />
-            </button>
+            </BusinessIconButton>
           )}
         </span>
       </div>
@@ -95,18 +95,18 @@ export function ServiceCard({
       </div>
       <div className="svc-actions">
         {mine ? (
-          <Button variant="mini" onClick={() => onBoost(s)} disabled={s.boosted}>
+          <BusinessButton variant="mini" onClick={() => onBoost(s)} disabled={s.boosted}>
             <Rocket size={14} /> {s.boosted ? 'Impulsionado' : 'Impulsionar'}
-          </Button>
+          </BusinessButton>
         ) : (
           <>
-            <Button variant="mini" onClick={() => onContratar(s)}>
+            <BusinessButton variant="mini" onClick={() => onContratar(s)}>
               Contratar
-            </Button>
+            </BusinessButton>
             {onProposeBarter && barterEnabled && (
-              <Button variant="mini" onClick={() => onProposeBarter(s)}>
+              <BusinessButton variant="mini" onClick={() => onProposeBarter(s)}>
                 <ArrowLeftRight size={14} /> Propor troca
-              </Button>
+              </BusinessButton>
             )}
           </>
         )}

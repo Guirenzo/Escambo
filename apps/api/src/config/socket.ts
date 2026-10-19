@@ -1,10 +1,14 @@
 import type { Server as HttpServer } from 'node:http';
 import jwt from 'jsonwebtoken';
 import { Server } from 'socket.io';
-import type { AuthPayload } from '../middlewares/authenticate';
+import {
+  assertBusinessWrite,
+  currentAccount,
+  validateAccessIdentity,
+} from '../modules/auth/account-access';
 import { sendMessageSchema } from '../modules/messaging/messaging.schema';
 import { messagingService } from '../modules/messaging/messaging.service';
-import { blocklist } from './blocklist';
+import { HttpError } from '../utils/http-error';
 import { env } from './env';
 import { logger } from './logger';
 import { realtime } from './realtime';
@@ -55,13 +59,14 @@ export function createSocketServer(httpServer: HttpServer): Server {
   });
 
   // Middleware de autenticação do handshake.
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = (socket.handshake.auth?.token ?? '') as string;
     if (!token) return next(new Error('unauthorized'));
     try {
-      const payload = jwt.verify(token, env.JWT_SECRET) as AuthPayload;
-      if (blocklist.has(payload.uid)) return next(new Error('unauthorized'));
-      (socket.data as SocketData).uid = payload.uid;
+      const account = await currentAccount(
+        validateAccessIdentity(jwt.verify(token, env.JWT_SECRET)),
+      );
+      (socket.data as SocketData).uid = account.uid;
       next();
     } catch {
       next(new Error('unauthorized'));
@@ -79,8 +84,24 @@ export function createSocketServer(httpServer: HttpServer): Server {
       guarded('contract:join', async (contractId: unknown, ack?: unknown) => {
         const reply = replyTo(ack);
         const id = Number(contractId);
+        let account: Awaited<ReturnType<typeof currentAccount>>;
         try {
-          await messagingService.history(id, uid); // valida participação (403 se não)
+          account = await currentAccount(
+            validateAccessIdentity(
+              jwt.verify(String(socket.handshake.auth?.token ?? ''), env.JWT_SECRET),
+            ),
+          );
+        } catch (err) {
+          reply({ ok: false, error: err instanceof HttpError ? err.code : 'unauthorized' });
+          socket.disconnect(true);
+          return;
+        }
+        try {
+          if (account.status === 'suspended') {
+            await messagingService.history(id, uid, { readOnly: true });
+          } else {
+            await messagingService.history(id, uid);
+          }
           await socket.join(`contract:${id}`);
         } catch {
           reply({ ok: false, error: 'forbidden' });
@@ -97,6 +118,19 @@ export function createSocketServer(httpServer: HttpServer): Server {
         'message:send',
         async (payload: { contractId?: unknown; content?: unknown } | undefined, ack?: unknown) => {
           const reply = replyTo(ack);
+          try {
+            const account = await currentAccount(
+              validateAccessIdentity(
+                jwt.verify(String(socket.handshake.auth?.token ?? ''), env.JWT_SECRET),
+              ),
+            );
+            assertBusinessWrite(account);
+          } catch (err) {
+            const code = err instanceof HttpError ? err.code : 'unauthorized';
+            reply({ ok: false, error: code });
+            if (code !== 'account_suspended') socket.disconnect(true);
+            return;
+          }
           // A mesma regra da rota REST: vazia, só de espaços ou acima do limite não entra.
           const input = sendMessageSchema.safeParse({ content: payload?.content });
           if (!input.success) {

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { AdminReportActionResult, AdminReportGroup } from '@escambo/types';
+import type { AdminDropout, AdminReportActionResult, AdminReportGroup } from '@escambo/types';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,9 +11,11 @@ import { ReportsSection } from './ReportsSection';
 
 const adminReports = vi.fn();
 const adminReportAction = vi.fn();
+const adminUserDropouts = vi.fn();
 vi.mock('../../lib/api', () => ({
   api: {
     adminReports: (status: string) => adminReports(status),
+    adminUserDropouts: (ulid: string) => adminUserDropouts(ulid),
     adminReportAction: (id: number, action: string, body: unknown) =>
       adminReportAction(id, action, body),
   },
@@ -124,10 +126,96 @@ beforeEach(() => {
   adminReportAction.mockReset();
   adminReports.mockResolvedValue([group()]);
   adminReportAction.mockResolvedValue(result());
+  adminUserDropouts.mockReset();
+  adminUserDropouts.mockResolvedValue([]);
 });
 
 /** Fila de moderação (ADR 39): denúncias agrupadas por alvo, com uma decisão para o grupo todo. */
 describe('ReportsSection: a fila', () => {
+  it('revisão por desistências ocupa uma linha inteira depois do grupo, sem duplicar ações de denúncia', async () => {
+    adminReports.mockResolvedValue([
+      group({
+        targetType: 'user',
+        imageUrl: null,
+        label: 'Conta em revisão',
+        descriptions: ['Desistências: 3 depois do aceite.'],
+      }),
+      group({
+        id: 12,
+        targetType: 'user',
+        label: 'Conta sinalizada por outro motivo',
+        descriptions: ['Reincidência: 3 remoções.'],
+        owner: { id: 8, ulid: 'OUTRA-CONTA', name: 'Outro titular' },
+      }),
+    ]);
+    const dropout: AdminDropout = {
+      id: 7,
+      contractId: 30,
+      contractTitle: 'Detalhe privado da contratação',
+      droppedAt: LAST,
+      countsUntil: '2099-12-01T15:00:00Z',
+      status: 'counting',
+      appealText: null,
+      appealedAt: null,
+      canAppeal: false,
+      decision: null,
+      decisionNote: null,
+      freelancer: { id: 5, ulid: OWNER_ULID, name: 'Ana Souza' },
+      clientAgreed: false,
+      ownerCount: 3,
+    };
+    adminUserDropouts.mockResolvedValue([dropout]);
+    render(wrap(<ReportsSection />));
+    const detail = within(await screen.findByTestId('report-dropouts-11'));
+    expect(await detail.findByText(/Detalhe privado da contratação/)).toBeInTheDocument();
+    await waitFor(() => expect(adminUserDropouts).toHaveBeenCalledWith(OWNER_ULID));
+    expect(adminUserDropouts).toHaveBeenCalledTimes(1);
+    const summary = screen.getByTestId('report-group-11');
+    expect(summary.nextElementSibling).toBe(screen.getByTestId('report-dropouts-11'));
+    expect(within(summary).getAllByRole('cell')).toHaveLength(4);
+    expect(detail.getByRole('cell')).toHaveAttribute('colspan', '4');
+    expect(within(summary).queryByTestId('user-dropouts-review')).not.toBeInTheDocument();
+    expect(detail.getByTestId('user-dropouts-review')).toBeInTheDocument();
+    expect(detail.getByText(/Desistências que contam agora: 3/)).toBeInTheDocument();
+    expect(row('Conta em revisão').getByRole('link', { name: 'ver perfil' })).toHaveAttribute(
+      'href',
+      `/freelancers/${OWNER_ULID}`,
+    );
+    expect(
+      row('Conta em revisão').getByText(`3 denúncias · última em ${dtm(LAST)}`),
+    ).toBeInTheDocument();
+    expect(detail.queryByRole('button', { name: 'Resolvida' })).not.toBeInTheDocument();
+    expect(detail.queryByRole('button', { name: 'Dispensar' })).not.toBeInTheDocument();
+    expect(detail.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Resolvida' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Dispensar' })).toHaveLength(2);
+    expect(screen.getAllByRole('row')).toHaveLength(4);
+  });
+  it('na fila resolvida, o histórico privado ocupa as três colunas existentes', async () => {
+    adminReports.mockResolvedValue([
+      group({
+        targetType: 'user',
+        imageUrl: null,
+        label: 'Conta em revisão',
+        status: 'actioned',
+        descriptions: ['Desistências: 3 depois do aceite.'],
+      }),
+    ]);
+    const user = userEvent.setup();
+    render(wrap(<ReportsSection />));
+    await screen.findByText('Desistências desta conta');
+    await user.click(screen.getByRole('tab', { name: 'Resolvidas' }));
+    await waitFor(() => expect(adminReports).toHaveBeenLastCalledWith('resolved'));
+    await screen.findByRole('columnheader', { name: 'Decisão' });
+    expect(headers()).toEqual(['Alvo', 'Motivos', 'Decisão']);
+    expect(within(screen.getByTestId('report-dropouts-11')).getByRole('cell')).toHaveAttribute(
+      'colspan',
+      '3',
+    );
+    expect(row('Conta em revisão').getAllByRole('cell')).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: 'Resolvida' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Dispensar' })).not.toBeInTheDocument();
+  });
   it('abre nas pendentes e mostra o esqueleto enquanto carrega; a tabela entra no lugar dele', async () => {
     let release!: (list: AdminReportGroup[]) => void;
     adminReports.mockReturnValue(new Promise<AdminReportGroup[]>((r) => (release = r)));

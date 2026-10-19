@@ -11,6 +11,42 @@ vi.mock('../../config/db', async () => (await import('../../test-support/fake-db
 describe('mailRepository', () => {
   beforeEach(() => fakeDb.reset());
 
+  const privateMail = {
+    userId: 7,
+    to: 'ana@escambo.test',
+    subject: 'Contestação analisada',
+    template: 'notification',
+    text: 'Nota privada da equipe',
+    html: '<p>Nota privada da equipe</p>',
+    provider: 'simulated',
+  };
+
+  it('RN-026 confere deleted_at sob users FOR UPDATE e grava outbox no mesmo conn', async () => {
+    fakeDb.reply([{ id: 7, deleted_at: null }], { insertId: 31, affectedRows: 1 });
+    expect(await mailRepository.createIfActive(privateMail)).toBe(31);
+    expect(fakeDb.sqls()[0]).toBe('SELECT id, deleted_at FROM users WHERE id = :userId FOR UPDATE');
+    expect(fakeDb.sqls()[1]).toContain('INSERT INTO email_outbox');
+    expect(fakeDb.conn.commit).toHaveBeenCalledOnce();
+    expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+  });
+
+  it.each([{ owners: [] }, { owners: [{ id: 7, deleted_at: new Date('2026-10-09T15:00:00Z') }] }])(
+    'conta inexistente ou apagada não recria destinatário ou texto no outbox',
+    async ({ owners }) => {
+      fakeDb.reply(owners);
+      expect(await mailRepository.createIfActive(privateMail)).toBeNull();
+      expect(fakeDb.calls).toHaveLength(1);
+      expect(fakeDb.conn.commit).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('falha da escrita reverte transação e não marca decisão de e-mail falsa', async () => {
+    fakeDb.reply([{ id: 7, deleted_at: null }], new Error('outbox failed'));
+    await expect(mailRepository.createIfActive(privateMail)).rejects.toThrow('outbox failed');
+    expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+    expect(fakeDb.conn.rollback).toHaveBeenCalledOnce();
+  });
+
   it('create grava o e-mail renderizado (texto e HTML) com o provedor e devolve o id da caixa de saída', async () => {
     const data = {
       userId: 7,

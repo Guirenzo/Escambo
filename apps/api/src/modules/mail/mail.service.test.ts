@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./mail.repository', () => ({
   mailRepository: {
     create: vi.fn().mockResolvedValue(11),
+    createIfActive: vi.fn().mockResolvedValue(12),
     markSent: vi.fn(),
     markFailed: vi.fn(),
     listRecent: vi.fn(),
@@ -154,7 +155,7 @@ describe('templates', () => {
     expect(EMAILED_NOTIFICATION_TYPES.has('appeal_decided')).toBe(true);
   });
 
-  it('os lembretes, a revisão parada e a aprovação automática (ADR 58) vão por e-mail, e o conjunto tem 38 tipos', () => {
+  it('os tipos da ADR 61 e respostas de suporte vão por e-mail, com 44 tipos', () => {
     for (const type of [
       'contract_proposal_reminder',
       'contract_deadline_reminder',
@@ -162,13 +163,35 @@ describe('templates', () => {
       'contract_extension_reminder',
       'contract_revision_stalled',
       'contract_auto_approved',
+      'contract_revision_granted',
+      'contract_counter_offer',
+      'contract_counter_offer_reminder',
+      'dropout_decided',
+      'support_reply',
+      'support_resolved',
     ]) {
       expect(EMAILED_NOTIFICATION_TYPES.has(type)).toBe(true);
     }
     // Tipo novo entra de propósito: o push (QUIET_PASS_BY_TYPE) e o resumo dependem deste conjunto.
-    expect(EMAILED_NOTIFICATION_TYPES.size).toBe(38);
+    expect(EMAILED_NOTIFICATION_TYPES.size).toBe(44);
     // O lembrete leva à contratação, como os outros avisos dela.
     expect(notificationLink({ contractId: 3 })).toBe(`${env.APP_URL}/contratos/3`);
+    expect(notificationLink({ dropoutId: 8, contractId: 3 })).toBe(`${env.APP_URL}/perfil`);
+  });
+
+  it('link de suporte prioriza o chamado e valida identificador e destino administrativo', () => {
+    expect(notificationLink({ supportTicketId: 9, contractId: 2 })).toBe(
+      `${env.APP_URL}/suporte?ticket=9`,
+    );
+    expect(notificationLink({ supportTicketId: 9, supportAdmin: true })).toBe(
+      `${env.APP_URL}/admin?ticket=9#suporte`,
+    );
+    expect(notificationLink({ supportTicketId: 9, supportAdmin: 'true' })).toBe(
+      `${env.APP_URL}/suporte?ticket=9`,
+    );
+    for (const supportTicketId of ['9', 0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(notificationLink({ supportTicketId })).toBe(`${env.APP_URL}/notificacoes`);
+    }
   });
 });
 
@@ -342,6 +365,58 @@ describe('mailService: registro, falhas e caixa de saída do admin', () => {
     template: 'notification' as const,
     vars: { title: 'Nova proposta', body: 'Landing page', link: 'http://app/contratos/9' },
   };
+
+  it('RN-026 persiste a nota somente com guarda da conta e envia fora dessa operação', async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    provider.mockReturnValue(fake(send));
+    let committed!: (id: number) => void;
+    repo.createIfActive.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          committed = resolve;
+        }),
+    );
+    const pending = mailService.deliver({ ...params, requireActiveUser: true });
+    // Enquanto a transação de persistência não confirmou, nenhuma chamada de rede começa.
+    expect(send).not.toHaveBeenCalled();
+    committed(12);
+    expect(await pending).toEqual({
+      id: 12,
+      delivered: true,
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(repo.createIfActive).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 7, text: expect.stringContaining('Landing page') }),
+    );
+    expect(send.mock.invocationCallOrder[0]).toBeGreaterThan(
+      repo.createIfActive.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('conta já apagada suprime persistência e envio, sem transformar em falha de provedor', async () => {
+    const send = vi.fn();
+    provider.mockReturnValue(fake(send));
+    repo.createIfActive.mockResolvedValueOnce(null);
+    expect(await mailService.deliver({ ...params, requireActiveUser: true })).toEqual({
+      id: null,
+      delivered: false,
+    });
+    expect(send).not.toHaveBeenCalled();
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(repo.markSent).not.toHaveBeenCalled();
+    expect(repo.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('guarda ativa exige titular; destinatário sem conta não cria nota sem proteção', async () => {
+    const send = vi.fn();
+    provider.mockReturnValue(fake(send));
+    expect(await mailService.deliver({ ...params, userId: null, requireActiveUser: true })).toEqual(
+      { id: null, delivered: false },
+    );
+    expect(repo.createIfActive).not.toHaveBeenCalled();
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
 
   it('enabled diz se há provedor ativo (MAIL_PROVIDER diferente de off)', () => {
     provider.mockReturnValue(fake(vi.fn()));

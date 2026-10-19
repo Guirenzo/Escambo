@@ -16,6 +16,7 @@ vi.mock('../modules/contracts/reminders.repository', () => ({
 vi.mock('../modules/contracts/deadline-reminders.service', () => ({
   deadlineRemindersService: {
     proposal: vi.fn(),
+    counterOffer: vi.fn(),
     delivery: vi.fn(),
     approval: vi.fn(),
     milestoneApprovals: vi.fn(),
@@ -89,6 +90,7 @@ const kindsAsked = (): ReminderKind[] => repo.candidates.mock.calls.map(([kind])
 
 const NOTHING_SENT = {
   proposal: [],
+  counter_offer: [],
   delivery: [],
   approval: [],
   milestone_approval: [],
@@ -108,6 +110,7 @@ describe('job dos lembretes de prazo (ADR 58)', () => {
     serve({});
     settings.getNumber.mockResolvedValue(12);
     svc.proposal.mockResolvedValue(true);
+    svc.counterOffer.mockResolvedValue(true);
     svc.delivery.mockResolvedValue(true);
     svc.approval.mockResolvedValue(true);
     svc.extension.mockResolvedValue(true);
@@ -140,6 +143,7 @@ describe('job dos lembretes de prazo (ADR 58)', () => {
     });
     expect(kindsAsked()).toEqual([
       'proposal',
+      'counter_offer',
       'delivery',
       'approval',
       'milestone_approval',
@@ -276,6 +280,7 @@ describe('job dos lembretes de prazo (ADR 58)', () => {
 
     expect(kindsAsked().filter((k) => k === 'proposal')).toHaveLength(25);
     expect(kindsAsked().slice(25)).toEqual([
+      'counter_offer',
       'delivery',
       'approval',
       'milestone_approval',
@@ -287,6 +292,32 @@ describe('job dos lembretes de prazo (ADR 58)', () => {
     expect(warn.mock.calls).toEqual([
       [{ kind: 'proposal' }, 'lembretes: teto de páginas na rodada; o resto fica para a próxima'],
     ]);
+  });
+
+  it('contraproposta usa o slot do CLIENTE mesmo quando o freelancer já está de dia', async () => {
+    const due = new Date('2026-10-02T12:00:00Z');
+    const later = cand({
+      contract_id: 1,
+      entity_id: 1,
+      seq: 2,
+      due_at: due,
+      client_timezone: 'America/Rio_Branco',
+      freelancer_timezone: 'America/Sao_Paulo',
+    });
+    const ready = cand({
+      contract_id: 2,
+      entity_id: 2,
+      seq: 4,
+      due_at: due,
+      client_timezone: 'America/Sao_Paulo',
+      freelancer_timezone: 'America/Rio_Branco',
+    });
+    serve({ counter_offer: [[later, ready]] });
+    const result = await runDeadlineReminders(EARLY);
+    expect(svc.counterOffer.mock.calls).toEqual([[ready, EARLY]]);
+    expect(svc.proposal).not.toHaveBeenCalled();
+    expect(result.sent.counter_offer).toEqual([2]);
+    expect(result.waiting).toBe(1);
   });
 
   it('os marcos prontos da mesma contratação vão juntos num envio só; o que espera o slot fica de fora', async () => {

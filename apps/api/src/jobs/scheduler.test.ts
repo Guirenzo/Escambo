@@ -38,6 +38,8 @@ describe('agendador de jobs', () => {
       'expire-proposals',
       'overdue-contracts',
       'deadline-reminders',
+      'reconcile-dropout-reviews',
+      'support-maintenance',
       'daily-digest',
       'moderation-sla-report',
       'quiet-push-summary',

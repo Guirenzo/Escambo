@@ -1,5 +1,6 @@
+import { BusinessModal } from '../../components/BusinessActions';
 import type { ContractWithHistory } from '@escambo/types';
-import { Button, Modal } from '../../components/ui';
+import { Button } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { brl } from '../../lib/format';
 import { useCancelContract } from '../../lib/hooks';
@@ -32,7 +33,14 @@ export function CancelModal({
   async function confirm(): Promise<void> {
     if (!terms) return;
     try {
-      const r = await cancel.mutateAsync({ id: contract.id, expectedRefund: terms.refundClient });
+      const r = await cancel.mutateAsync({
+        id: contract.id,
+        expectedRefund: terms.refundClient,
+        ...(terms.dropout ? { expectedDropoutCount: terms.dropout.countAfter } : {}),
+        ...(contract.status === 'pending' && contract.negotiation
+          ? { seq: contract.negotiation.seq }
+          : {}),
+      });
       toast.success(
         r.by === 'freelancer'
           ? r.unit === 'none'
@@ -51,9 +59,15 @@ export function CancelModal({
   }
 
   return (
-    <Modal title={copy.title} onClose={onClose}>
+    <BusinessModal title={copy.title} onClose={onClose}>
       <div className="stack" data-testid="cancel-modal">
         <p data-testid="cancel-body">{copy.body}</p>
+        {terms.dropout &&
+          (!contract.disputeOpensAt || Date.parse(contract.disputeOpensAt) <= Date.now()) && (
+            <p className="muted tiny">
+              Se o problema é com o cliente, você pode abrir uma disputa em vez de desistir.
+            </p>
+          )}
         {showSplit && (
           <dl className="cancel-quote" data-testid="cancel-quote">
             <dt>{client ? 'Você recebe de volta' : 'Volta para o cliente'}</dt>
@@ -78,6 +92,6 @@ export function CancelModal({
           )}
         </div>
       </div>
-    </Modal>
+    </BusinessModal>
   );
 }

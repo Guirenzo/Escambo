@@ -28,7 +28,16 @@ export function disconnectSocket(): void {
 try {
   window.addEventListener(SESSION_TOKEN_EVENT, (e) => {
     const token = (e as CustomEvent<string | null>).detail;
-    if (socket) socket.auth = { token };
+    if (socket) {
+      const previousToken = (socket.auth as { token?: string | null }).token;
+      socket.auth = { token };
+      // auth só afeta o próximo handshake. Renova também a conexão ainda aberta para o
+      // servidor não continuar validando o JWT anterior depois de um refresh HTTP.
+      if (token && token !== previousToken) {
+        socket.disconnect();
+        socket.connect();
+      } else if (token && !socket.connected) socket.connect();
+    }
   });
 } catch {
   /* sem window (testes) */

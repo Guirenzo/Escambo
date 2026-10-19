@@ -6,6 +6,7 @@ import type { ComponentProps } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ServiceCard } from './ServiceCard';
+import { AccountAccessProvider } from '../../lib/account-access';
 
 const publicSettings = vi.fn();
 vi.mock('../../lib/api', () => ({ api: { publicSettings: () => publicSettings() } }));
@@ -38,13 +39,15 @@ const service = (o: Partial<Service> = {}): Service => ({
 
 type Props = ComponentProps<typeof ServiceCard>;
 
-function renderCard(props: Partial<Props> = {}) {
+function renderCard(props: Partial<Props> = {}, status: 'active' | 'suspended' = 'active') {
   const handlers = { onContratar: vi.fn(), onBoost: vi.fn() };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <ServiceCard service={service()} mine={false} {...handlers} {...props} />
+        <AccountAccessProvider status={status}>
+          <ServiceCard service={service()} mine={false} {...handlers} {...props} />
+        </AccountAccessProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -59,6 +62,31 @@ beforeEach(() => {
 
 /** Card de serviço da busca e do perfil público. */
 describe('ServiceCard', () => {
+  it('suspenso consulta serviço e perfil, mas não contrata, troca nem favorita', async () => {
+    const favorite = vi.fn();
+    const barter = vi.fn();
+    const handlers = renderCard(
+      { onToggleFavorite: favorite, onProposeBarter: barter },
+      'suspended',
+    );
+    expect(screen.getByText('Logo profissional')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Bruna Lima' })).toHaveAttribute(
+      'href',
+      '/freelancers/01HZXULIDBRUNA',
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Propor troca' })).toBeDisabled(),
+    );
+    const user = userEvent.setup();
+    for (const label of ['Contratar', 'Propor troca', 'Favoritar']) {
+      const button = screen.getByRole('button', { name: label });
+      expect(button).toBeDisabled();
+      await user.click(button);
+    }
+    expect(handlers.onContratar).not.toHaveBeenCalled();
+    expect(favorite).not.toHaveBeenCalled();
+    expect(barter).not.toHaveBeenCalled();
+  });
   it('mostra título, descrição, preço, prazo e quem presta, com link para o perfil', () => {
     renderCard();
 

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Contract, ContractStatus } from '@escambo/types';
 import type { ReactNode } from 'react';
@@ -16,11 +16,14 @@ import { ContractActions } from './ContractActions';
 const contractAction = vi.fn();
 const deliverContract = vi.fn();
 const requestRevision = vi.fn();
+const grantContractRevision = vi.fn();
 vi.mock('../../lib/api', () => ({
   api: {
-    contractAction: (id: number, action: string) => contractAction(id, action),
+    contractAction: (id: number, action: string, seq?: number) =>
+      seq === undefined ? contractAction(id, action) : contractAction(id, action, seq),
     deliverContract: (id: number, message: string) => deliverContract(id, message),
     requestRevision: (id: number, note: string) => requestRevision(id, note),
+    grantContractRevision: (id: number) => grantContractRevision(id),
   },
 }));
 
@@ -79,6 +82,8 @@ beforeEach(() => {
   deliverContract.mockResolvedValue({});
   requestRevision.mockReset();
   requestRevision.mockResolvedValue({});
+  grantContractRevision.mockReset();
+  grantContractRevision.mockResolvedValue({});
   as(CLIENT);
   prompt = vi.spyOn(window, 'prompt').mockReturnValue(null);
 });
@@ -429,5 +434,187 @@ describe('ContractActions: o que acontece só na Sala', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(contractAction).not.toHaveBeenCalled();
     expect(screen.getByText('rota: /inicio')).toBeInTheDocument();
+  });
+});
+
+describe('ContractActions: negociação', () => {
+  const negotiation = (seq: number): NonNullable<Contract['negotiation']> => ({
+    seq,
+    round: Math.ceil(seq / 2) as 1 | 2 | 3,
+    turn: seq % 2 ? 'freelancer' : 'client',
+    canCounter: seq < 5,
+    countersLeft: Math.ceil((5 - seq) / 2),
+    respondBy: null,
+    current: null,
+  });
+
+  it('o relógio retira aceite e contraproposta quando o prazo acaba com a tela aberta', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-08T15:00:00Z'));
+    try {
+      as(FREELANCER);
+      render(
+        wrap(
+          <ContractActions
+            contract={contract('pending', {
+              negotiation: {
+                ...negotiation(3),
+                respondBy: '2026-10-08T15:01:00Z',
+              },
+            })}
+          />,
+        ),
+      );
+      expect(screen.getByRole('button', { name: 'Aceitar' })).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Contrapropor' })).toBeVisible();
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.queryByRole('button', { name: 'Aceitar' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Contrapropor' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Recusar' })).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('aceite do freelancer envia seq, protegendo a oferta vista', async () => {
+    as(FREELANCER);
+    render(
+      wrap(<ContractActions contract={contract('pending', { negotiation: negotiation(3) })} />),
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Aceitar' }));
+    expect(contractAction).toHaveBeenCalledWith(7, 'accept', 3);
+  });
+  it.each(['Contrapor', 'Aceitar'])(
+    'ações de negociação na lista levam para a Sala (%s)',
+    async (action) => {
+      const label = action === 'Contrapor' ? 'Contrapropor' : 'Aceitar contraproposta';
+      render(
+        wrap(<ContractActions contract={contract('pending', { negotiation: negotiation(2) })} />),
+      );
+      await userEvent.setup().click(screen.getByRole('button', { name: label }));
+      expect(screen.getByText('rota: /contratos/7')).toBeInTheDocument();
+      expect(contractAction).not.toHaveBeenCalled();
+    },
+  );
+  it('na Sala, as duas ações abrem o modal em vez de contratar direto', async () => {
+    const onCounter = vi.fn();
+    const onAcceptCounter = vi.fn();
+    render(
+      wrap(
+        <ContractActions
+          contract={contract('pending', { negotiation: negotiation(2) })}
+          onCounter={onCounter}
+          onAcceptCounter={onAcceptCounter}
+        />,
+      ),
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Contrapropor' }));
+    await user.click(screen.getByRole('button', { name: 'Aceitar contraproposta' }));
+    expect(onCounter).toHaveBeenCalledOnce();
+    expect(onAcceptCounter).toHaveBeenCalledOnce();
+    expect(contractAction).not.toHaveBeenCalled();
+  });
+  it('sair durante a vez do cliente exige confirmação e envia a seq', async () => {
+    as(FREELANCER);
+    const confirmation = vi
+      .spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    try {
+      render(
+        wrap(<ContractActions contract={contract('pending', { negotiation: negotiation(4) })} />),
+      );
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: 'Sair da negociação' }));
+      expect(contractAction).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: 'Sair da negociação' }));
+      expect(confirmation).toHaveBeenCalledWith(
+        'Sair da negociação? A proposta se encerra e a reserva volta ao cliente.',
+      );
+      expect(contractAction).toHaveBeenCalledWith(7, 'reject', 4);
+    } finally {
+      confirmation.mockRestore();
+    }
+  });
+});
+
+describe('ContractActions: liberação de revisão e disputa manual', () => {
+  it('libera mais uma só com confirmação e envia apenas o contrato, sem alterar aprovação', async () => {
+    as(FREELANCER);
+    const confirmation = vi
+      .spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    try {
+      render(
+        wrap(
+          <ContractActions
+            contract={contract('delivered', {
+              revisions: { used: 2, limit: 2 },
+              approvalDueAt: '2099-10-08T15:00:00Z',
+            })}
+          />,
+        ),
+      );
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: 'Liberar mais uma revisão' }));
+      expect(grantContractRevision).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: 'Liberar mais uma revisão' }));
+      expect(confirmation).toHaveBeenCalledWith(
+        'Liberar mais uma revisão sem custo? O prazo de aprovação automática continua o mesmo; ela só para quando o cliente pedir a revisão.',
+      );
+      expect(grantContractRevision).toHaveBeenCalledWith(7);
+      expect(
+        await screen.findByText(
+          'Mais uma revisão sem custo liberada. O prazo de aprovação automática continua o mesmo.',
+        ),
+      ).toBeVisible();
+      expect(contractAction).not.toHaveBeenCalled();
+    } finally {
+      confirmation.mockRestore();
+    }
+  });
+  it('conflito ao liberar revisão mostra a mensagem da API e não mostra sucesso', async () => {
+    as(FREELANCER);
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    try {
+      grantContractRevision.mockRejectedValue(new Error('Ainda há revisão disponível.'));
+      render(
+        wrap(
+          <ContractActions
+            contract={contract('delivered', { revisions: { used: 2, limit: 2 } })}
+          />,
+        ),
+      );
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'Liberar mais uma revisão' }));
+      expect(await screen.findByText('Ainda há revisão disponível.')).toBeVisible();
+      expect(screen.queryByText(/Mais uma revisão sem custo liberada/)).toBeNull();
+    } finally {
+      confirmation.mockRestore();
+    }
+  });
+  it('a disputa aparece quando a espera termina, sem depender do chat ou de recarga', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-08T15:00:00Z'));
+    try {
+      render(
+        wrap(
+          <ContractActions
+            contract={contract('accepted', { disputeOpensAt: '2026-10-08T15:01:00Z' })}
+          />,
+        ),
+      );
+      expect(screen.queryByRole('button', { name: 'Abrir disputa' })).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.getByRole('button', { name: 'Abrir disputa' })).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

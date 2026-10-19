@@ -1,8 +1,8 @@
 # Fluxo de Navegação — Escambo
 
-> **Versão:** 1.0.0  
-> **Disciplina:** PAC Extensionista VII — Católica SC  
-> **Autor:** Guilherme Renzo 
+> **Versão:** 1.1.0\
+> **Disciplina:** PAC Extensionista VII — Católica SC\
+> **Autor:** Guilherme Renzo
 > **Data:** 2026
 
 ---
@@ -22,11 +22,11 @@
 
 O Escambo possui dois fluxos principais após o onboarding: o **fluxo do cliente** (busca, contratação e avaliação) e o **fluxo do freelancer** (oferta, execução e recebimento). Ambos convergem nos módulos de **chat**, **notificações** e **suporte**.
 
-| Perfil | Ponto de entrada | Destino final |
-|---|---|---|
-| Cliente | Home → Busca → Perfil do freelancer | Avaliação do serviço concluído |
-| Freelancer | Dashboard → Serviços → Propostas | Saque na carteira digital |
-| Ambos | Login / Cadastro | Chat, Notificações, Suporte |
+| Perfil     | Ponto de entrada                    | Destino final                  |
+| ---------- | ----------------------------------- | ------------------------------ |
+| Cliente    | Home → Busca → Perfil do freelancer | Avaliação do serviço concluído |
+| Freelancer | Dashboard → Serviços → Propostas    | Saque na carteira digital      |
+| Ambos      | Login / Cadastro                    | Chat, Notificações, Suporte    |
 
 ---
 
@@ -52,14 +52,14 @@ O Escambo possui dois fluxos principais após o onboarding: o **fluxo do cliente
 
 ### Telas do Onboarding
 
-| # | Tela | Descrição | Ações disponíveis |
-|---|---|---|---|
-| 1 | Splash / Abertura | Logo e slogan da plataforma | Entrar, Criar conta |
-| 2 | Login | Formulário de autenticação | E-mail/senha, Google OAuth |
-| 3 | Cadastro | Formulário de criação de conta | Tipo de perfil, e-mail, senha |
-| 4 | Verificação de e-mail | Confirmação por link enviado | Reenviar e-mail |
-| 5 | Escolha de perfil | Seleção do tipo de usuário | Cliente, Freelancer, Empresa |
-| 6 | Completar perfil | Dados básicos do perfil | Foto, nome, cidade, bio |
+| #   | Tela                  | Descrição                      | Ações disponíveis             |
+| --- | --------------------- | ------------------------------ | ----------------------------- |
+| 1   | Splash / Abertura     | Logo e slogan da plataforma    | Entrar, Criar conta           |
+| 2   | Login                 | Formulário de autenticação     | E-mail/senha, Google OAuth    |
+| 3   | Cadastro              | Formulário de criação de conta | Tipo de perfil, e-mail, senha |
+| 4   | Verificação de e-mail | Confirmação por link enviado   | Reenviar e-mail               |
+| 5   | Escolha de perfil     | Seleção do tipo de usuário     | Cliente, Freelancer, Empresa  |
+| 6   | Completar perfil      | Dados básicos do perfil        | Foto, nome, cidade, bio       |
 
 ---
 
@@ -109,16 +109,16 @@ O Escambo possui dois fluxos principais após o onboarding: o **fluxo do cliente
 
 ### Telas do Fluxo do Cliente
 
-| # | Tela | Descrição | Ações disponíveis |
-|---|---|---|---|
-| 1 | Home | Feed com serviços em destaque e categorias | Buscar, ver destaques |
-| 2 | Busca | Resultados com filtros avançados | Filtrar, ordenar, selecionar |
-| 3 | Perfil do freelancer | Perfil completo com portfólio | Ver avaliações, contratar |
-| 4 | Envio de proposta | Formulário de proposta | Descrever serviço, confirmar |
-| 5 | Checkout / Pagamento | Seleção do método e confirmação | PIX, cartão, boleto |
-| 6 | Acompanhamento | Status e timeline do contrato | Chat, aprovar entrega, solicitar revisão |
-| 7 | Avaliação | Formulário pós-conclusão | Estrelas, comentário, publicar |
-| 8 | Histórico | Todos os contratos passados e ativos | Visualizar, repetir contratação |
+| #   | Tela                 | Descrição                                  | Ações disponíveis                        |
+| --- | -------------------- | ------------------------------------------ | ---------------------------------------- |
+| 1   | Home                 | Feed com serviços em destaque e categorias | Buscar, ver destaques                    |
+| 2   | Busca                | Resultados com filtros avançados           | Filtrar, ordenar, selecionar             |
+| 3   | Perfil do freelancer | Perfil completo com portfólio              | Ver avaliações, contratar                |
+| 4   | Envio de proposta    | Formulário de proposta                     | Descrever serviço, confirmar             |
+| 5   | Checkout / Pagamento | Seleção do método e confirmação            | PIX, cartão, boleto                      |
+| 6   | Acompanhamento       | Status e timeline do contrato              | Chat, aprovar entrega, solicitar revisão |
+| 7   | Avaliação            | Formulário pós-conclusão                   | Estrelas, comentário, publicar           |
+| 8   | Histórico            | Todos os contratos passados e ativos       | Visualizar, repetir contratação          |
 
 ---
 
@@ -140,8 +140,10 @@ O Escambo possui dois fluxos principais após o onboarding: o **fluxo do cliente
         ▼
 [Propostas recebidas]
   ├── Aceitar proposta
-  ├── Recusar com justificativa
-  └── Fazer contra-proposta
+  ├── Recusar / encerrar negociação
+  └── Contrapropor → modal de valor, prazo, marcos e mensagem (RN-030)
+      └── Sala → vez, rodada, oferta atual, reserva e hora para responder
+          └── Aceitar / contrapropor / encerrar na ação disponível
         │
         ▼
 [Chat]
@@ -151,7 +153,9 @@ O Escambo possui dois fluxos principais após o onboarding: o **fluxo do cliente
         ▼
 [Registrar entrega]
   ├── Mensagem de entrega
-  └── Upload de arquivos
+  ├── Upload de arquivos (entrega única; por marco, anexos vão pelo chat)
+  └── Sala → revisões usadas/incluídas e hora de abertura da disputa
+      └── Limite esgotado → freelancer libera mais uma; cliente é avisado
         │
         ▼
 [Carteira digital]
@@ -159,6 +163,12 @@ O Escambo possui dois fluxos principais após o onboarding: o **fluxo do cliente
   ├── Saldo pendente (escrow)
   ├── Histórico de transações
   └── Solicitar saque (PIX / TED)
+        │
+        ▼
+[Perfil → Desistências]
+  ├── Total que conta e até quando
+  ├── Histórico próprio → Contestar (uma vez enquanto conta)
+  └── Nota privada da decisão e aviso; público vê só número/alerta
         │
         ▼
 [Conquistas]
@@ -170,17 +180,17 @@ O Escambo possui dois fluxos principais após o onboarding: o **fluxo do cliente
 
 ### Telas do Fluxo do Freelancer
 
-| # | Tela | Descrição | Ações disponíveis |
-|---|---|---|---|
-| 1 | Dashboard | Painel central com métricas e resumo | Ver contratos, ganhos, nível |
-| 2 | Meus serviços | Lista de serviços criados | Criar, editar, pausar, ativar |
-| 3 | Novo serviço | Formulário de criação | Título, categoria, preço, prazo, tags |
-| 4 | Propostas | Inbox de propostas recebidas | Aceitar, recusar, contra-propor |
-| 5 | Chat | Conversas ativas | Texto, imagem, arquivo |
-| 6 | Contrato ativo | Execução e entrega | Registrar entrega, ver status |
-| 7 | Carteira | Saldo e transações | Ver histórico, sacar |
-| 8 | Conquistas | Gamificação completa | Ver XP, badges, missões, ranking |
-| 9 | Meu perfil | Edição do perfil público | Foto, bio, portfólio, disponibilidade |
+| #   | Tela           | Descrição                            | Ações disponíveis                     |
+| --- | -------------- | ------------------------------------ | ------------------------------------- |
+| 1   | Dashboard      | Painel central com métricas e resumo | Ver contratos, ganhos, nível          |
+| 2   | Meus serviços  | Lista de serviços criados            | Criar, editar, pausar, ativar         |
+| 3   | Novo serviço   | Formulário de criação                | Título, categoria, preço, prazo, tags |
+| 4   | Propostas      | Inbox de propostas recebidas         | Aceitar, recusar, contra-propor       |
+| 5   | Chat           | Conversas ativas                     | Texto, imagem, arquivo                |
+| 6   | Contrato ativo | Execução e entrega                   | Registrar entrega, ver status         |
+| 7   | Carteira       | Saldo e transações                   | Ver histórico, sacar                  |
+| 8   | Conquistas     | Gamificação completa                 | Ver XP, badges, missões, ranking      |
+| 9   | Meu perfil     | Edição do perfil público             | Foto, bio, portfólio, disponibilidade |
 
 ---
 
@@ -197,13 +207,13 @@ Acessíveis por ambos os perfis a qualquer momento via menu inferior:
 └──────────┴──────────┴──────────┴─────────────┘
 ```
 
-| Módulo | Acesso | Funcionalidade |
-|---|---|---|
-| **Notificações** | Sino no header | Push in-app de todos os eventos |
-| **Chat** | Tab central | Todas as conversas ativas |
-| **Suporte** | Menu lateral | Abrir ticket, histórico de chamados |
-| **Configurações** | Menu lateral | Dados da conta, privacidade, LGPD |
-| **Meu perfil** | Tab / header | Edição do perfil público |
+| Módulo            | Acesso         | Funcionalidade                      |
+| ----------------- | -------------- | ----------------------------------- |
+| **Notificações**  | Sino no header | Push in-app de todos os eventos     |
+| **Chat**          | Tab central    | Todas as conversas ativas           |
+| **Suporte**       | Menu lateral   | Abrir ticket, histórico de chamados |
+| **Configurações** | Menu lateral   | Dados da conta, privacidade, LGPD   |
+| **Meu perfil**    | Tab / header   | Edição do perfil público            |
 
 ---
 
@@ -267,6 +277,6 @@ Acessíveis por ambos os perfis a qualquer momento via menu inferior:
 
 <div align="center">
 
-*fluxo-navegacao.md — Escambo v1.0.0 — NP2 — PAC Extensionista VII — Católica SC — 2026*
+_fluxo-navegacao.md — Escambo v1.1.0 — NP2 — PAC Extensionista VII — Católica SC — 2026_
 
 </div>

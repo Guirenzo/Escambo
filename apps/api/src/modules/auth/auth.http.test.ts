@@ -33,7 +33,7 @@ const AGENT = 'vitest-agent/1.0';
 const LOOPBACK = expect.stringMatching(/127\.0\.0\.1$/);
 const CTX = { ip: LOOPBACK, userAgent: AGENT };
 
-const USER = { id: 7, ulid: 'ulid-7', email: 'ana@escambo.test', role: 'client' };
+const USER = { id: 7, ulid: 'ulid-7', email: 'ana@escambo.test', role: 'client', status: 'active' };
 const TOKENS = { accessToken: 'jwt.de.acesso', refreshToken: 'refresh-opaco' };
 const LINK_TOKEN = 'a'.repeat(32);
 
@@ -256,7 +256,7 @@ describe('autenticação: borda HTTP', () => {
       expect(service.login.mock.calls[0]![0]).toStrictEqual(credentials);
     });
 
-    it('credenciais inválidas e conta suspensa saem com o status e o código do service (RN-007)', async () => {
+    it('credenciais inválidas e conta banida saem com o status e o código do service (RN-007)', async () => {
       service.login.mockRejectedValueOnce(
         new HttpError(401, 'Credenciais inválidas', 'invalid_credentials'),
       );
@@ -267,10 +267,10 @@ describe('autenticação: borda HTTP', () => {
       });
 
       service.login.mockRejectedValueOnce(
-        new HttpError(403, 'Conta suspensa. Fale com o suporte.', 'account_suspended'),
+        new HttpError(403, 'Conta banida. Fale com o suporte.', 'account_banned'),
       );
-      const suspended = await request(app).post('/api/auth/login').send(credentials).expect(403);
-      expect(suspended.body.error).toBe('account_suspended');
+      const banned = await request(app).post('/api/auth/login').send(credentials).expect(403);
+      expect(banned.body.error).toBe('account_banned');
     });
   });
 
@@ -587,7 +587,7 @@ describe('autenticação: borda HTTP', () => {
     });
   });
 
-  describe('conta suspensa ou banida pela moderação (RN-007)', () => {
+  describe('conta banida pela moderação (RN-007)', () => {
     afterEach(() => blocklist.delete(7));
 
     it('as rotas com login negam na hora com 403 account_blocked, mesmo com token válido, e nada chega ao service', async () => {
@@ -601,7 +601,7 @@ describe('autenticação: borda HTTP', () => {
         const res = await call.set(bearer(7)).expect(403);
         expect(res.body).toEqual({
           error: 'account_blocked',
-          message: 'Conta suspensa ou banida. Fale com o suporte.',
+          message: 'Conta banida. Fale com o suporte.',
         });
       }
       expect(service.logoutAll).not.toHaveBeenCalled();
@@ -615,6 +615,31 @@ describe('autenticação: borda HTTP', () => {
       await request(app).get('/api/auth/me').set(bearer(8)).expect(200);
       expect(service.getByUlid).toHaveBeenCalledTimes(1);
       expect(service.getByUlid).toHaveBeenCalledWith('ulid-8');
+    });
+  });
+
+  describe('conta suspensa pela moderação (RN-007)', () => {
+    afterEach(() => blocklist.delete(7));
+
+    it('consulta o próprio usuário e encerra sessões, mas não reenvia confirmação de e-mail', async () => {
+      blocklist.add(7, 'suspended');
+      service.getByUlid.mockResolvedValue({ ...USER, status: 'suspended' });
+      service.logoutAll.mockResolvedValue(2);
+
+      const me = await request(app).get('/api/auth/me').set(bearer(7)).expect(200);
+      expect(me.body.status).toBe('suspended');
+      expect(service.getByUlid).toHaveBeenCalledWith('ulid-7');
+      const logout = await request(app).post('/api/auth/logout-all').set(bearer(7)).expect(200);
+      expect(logout.body).toEqual({ revoked: 2 });
+      expect(service.logoutAll).toHaveBeenCalledWith('ulid-7');
+
+      const forbidden = await request(app)
+        .post('/api/auth/resend-verification')
+        .set(bearer(7))
+        .expect(403);
+      expect(forbidden.body.error).toBe('account_suspended');
+      expect(service.resendVerification).not.toHaveBeenCalled();
+      expect(limiter).not.toHaveBeenCalled();
     });
   });
 

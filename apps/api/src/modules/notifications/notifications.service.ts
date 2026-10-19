@@ -21,6 +21,9 @@ import { notificationsRepository, type NotificationRow } from './notifications.r
 /** O título cabe em notifications.title (VARCHAR(150)). */
 export const NOTIFICATION_TITLE_MAX = 150;
 
+/** A cópia de e-mail não pode voltar depois de a anonimização apagar a caixa de saída. */
+const GUARDED_EMAIL_TYPES = new Set(['dropout_decided', 'support_reply', 'support_resolved']);
+
 /**
  * Corta o título na coluna, com reticência: um título que carrega o nome da contratação ("Prazo
  * estourado: …", ADR 56; "Marco atrasado: …") não pode derrubar a notificação inteira.
@@ -42,7 +45,8 @@ async function emailNotification(
 ): Promise<void> {
   if (!EMAILED_NOTIFICATION_TYPES.has(params.type) || !mailService.enabled()) return;
   const user = await authRepository.findById(userId);
-  if (!user || user.deleted_at) return;
+  // Avisos opcionais não entregam conteúdo à conta banida; suspenso mantém a consulta (RN-007).
+  if (!user || user.deleted_at || user.status === 'banned') return;
   // Resumo diário (job) ou só e-mails essenciais: nada de e-mail por evento (ADR 27).
   if (user.email_frequency && user.email_frequency !== 'instant') return;
   await mailService.send({
@@ -50,6 +54,7 @@ async function emailNotification(
     to: user.email,
     template: 'notification',
     vars: { title: params.title, body: params.body ?? null, link: notificationLink(params.data) },
+    ...(GUARDED_EMAIL_TYPES.has(params.type) ? { requireActiveUser: true } : {}),
   });
 }
 
@@ -225,6 +230,7 @@ export const notificationsService = {
         to: user.email,
         template: 'digest',
         vars: { items },
+        ...(rows.some((r) => GUARDED_EMAIL_TYPES.has(r.type)) ? { requireActiveUser: true } : {}),
       });
     }
     await notificationsRepository.markDigest(user.id, now);

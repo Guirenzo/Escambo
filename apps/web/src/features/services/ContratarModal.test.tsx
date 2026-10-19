@@ -5,18 +5,22 @@ import type { Deposit, Service } from '@escambo/types';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../lib/toast';
+import { ApiRequestError } from '../../lib/api';
 import { ContratarModal } from './ContratarModal';
 
 const wallet = vi.fn();
 const publicSettings = vi.fn();
+const publicFreelancer = vi.fn();
 const createContract = vi.fn();
 const createDeposit = vi.fn();
 const depositStatus = vi.fn();
 const simulateDeposit = vi.fn();
-vi.mock('../../lib/api', () => ({
+vi.mock('../../lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/api')>()),
   api: {
     wallet: () => wallet(),
     publicSettings: () => publicSettings(),
+    publicFreelancer: (ulid: string) => publicFreelancer(ulid),
     createContract: (body: unknown) => createContract(body),
     createDeposit: (body: unknown) => createDeposit(body),
     deposit: (id: number) => depositStatus(id),
@@ -133,6 +137,8 @@ beforeEach(() => {
   }));
   publicSettings.mockReset();
   publicSettings.mockResolvedValue({ platformFeePercentage: 15 });
+  publicFreelancer.mockReset();
+  publicFreelancer.mockResolvedValue({ dropouts: { count: 0, windowDays: 60, alert: false } });
   createContract.mockReset();
   createContract.mockResolvedValue({ id: 31 });
   createDeposit.mockReset();
@@ -144,6 +150,30 @@ beforeEach(() => {
 
 /** O formulário como abre: o que vem do serviço e o que vai para a API sem mexer em nada. */
 describe('ContratarModal: proposta em dinheiro', () => {
+  it('consulta o perfil público e mostra o alerta antes de enviar a proposta', async () => {
+    publicFreelancer.mockResolvedValue({ dropouts: { count: 3, windowDays: 60, alert: true } });
+    renderModal(service({ ownerUlid: 'freela-9' }));
+    expect(await screen.findByTestId('dropouts-alert')).toHaveTextContent(
+      'desistiu de 3 contratações',
+    );
+    expect(publicFreelancer).toHaveBeenCalledWith('freela-9');
+  });
+  it('informa revisões gratuitas por entrega/marco e só promete reserva em dinheiro', async () => {
+    funds = { balance: 500, credits: 300 };
+    renderModal();
+    await walletLoaded();
+    const ruleHint = () => screen.getByTestId('contract-rules-hint');
+    expect(ruleHint()).toHaveTextContent('Inclui até 2 revisões sem custo.');
+    expect(ruleHint()).toHaveTextContent(
+      'a negociação vai até 3 rodadas, e a reserva acompanha a sua última proposta.',
+    );
+    const user = userEvent.setup();
+    await user.click(milestonesToggle());
+    expect(ruleHint()).toHaveTextContent('Inclui até 2 revisões sem custo em cada marco.');
+    await user.click(creditsRadio());
+    expect(ruleHint()).toHaveTextContent('os créditos ficam retidos só no aceite.');
+    expect(ruleHint()).not.toHaveTextContent('reserva acompanha');
+  });
   it('abre preenchido pelo serviço: título, descrição, valor e prazo sugerido', async () => {
     renderModal();
 
@@ -364,6 +394,70 @@ describe('ContratarModal: proposta em dinheiro', () => {
 
     expect(await screen.findByText('Erro ao contratar')).toBeInTheDocument();
   });
+
+  it.each(['cash', 'credits'] as const)(
+    'proposta duplicada em %s mantém os dados e oferece abrir a contratação existente',
+    async (paymentMode) => {
+      funds = { balance: 500, credits: 300 };
+      const user = userEvent.setup({ delay: null });
+      const message =
+        'Você já tem uma proposta ou contratação em aberto com este freelancer. Acompanhe a contratação existente antes de enviar outra.';
+      createContract.mockRejectedValue(
+        new ApiRequestError(message, 409, 'active_contract_exists', 73),
+      );
+      const { onClose } = renderModal();
+      await walletLoaded();
+      await retype(user, screen.getByLabelText('Título'), 'Identidade visual revisada');
+      if (paymentMode === 'credits') await user.click(creditsRadio());
+
+      await user.click(submitButton());
+
+      const existing = await screen.findByRole('link', { name: 'Abrir contratação existente' });
+      expect(existing).toHaveAttribute('href', '/contratos/73');
+      expect(screen.getByText(message)).toBeVisible();
+      expect(screen.getByLabelText('Título')).toHaveValue('Identidade visual revisada');
+      expect(screen.getByText('Rota: /servicos')).toBeInTheDocument();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(createContract).toHaveBeenCalledTimes(1);
+      expect(createContract).toHaveBeenCalledWith(expect.objectContaining({ paymentMode }));
+      expect(submitButton()).toBeEnabled();
+
+      await user.click(existing);
+
+      expect(screen.getByText('Rota: /contratos/73')).toBeInTheDocument();
+      expect(onClose).toHaveBeenCalledTimes(1);
+      expect(createContract).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    [409, 'active_contract_exists', '73'],
+    [409, 'active_contract_exists', 0],
+    [409, 'another_conflict', 73],
+    [500, 'active_contract_exists', 73],
+  ])(
+    'não oferece destino para outro erro ou identificador inválido (%s/%s/%s)',
+    async (status, code, contractId) => {
+      const user = userEvent.setup({ delay: null });
+      createContract.mockRejectedValue(
+        new ApiRequestError(
+          'Não foi possível enviar a proposta.',
+          Number(status),
+          String(code),
+          contractId,
+        ),
+      );
+      const { onClose } = renderModal();
+      await walletLoaded();
+
+      await user.click(submitButton());
+
+      expect(await screen.findByText('Não foi possível enviar a proposta.')).toBeVisible();
+      expect(screen.queryByRole('link', { name: 'Abrir contratação existente' })).toBeNull();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByText('Rota: /servicos')).toBeInTheDocument();
+    },
+  );
 
   it('o ✕ fecha sem enviar proposta', async () => {
     const user = userEvent.setup({ delay: null });

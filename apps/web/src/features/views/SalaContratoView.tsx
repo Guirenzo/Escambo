@@ -1,3 +1,5 @@
+import { BusinessForm } from '../../components/BusinessActions';
+import { useReadOnlyAccount } from '../../lib/account-access';
 import {
   ArrowLeft,
   Hourglass,
@@ -22,7 +24,7 @@ import { StarInput, Stars } from '../../components/Stars';
 import { Button, Input, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
-import { brl, dtm, hm, STATUS_LABEL } from '../../lib/format';
+import { brl, dtm, hm, statusLabel, STATUS_LABEL } from '../../lib/format';
 import {
   useChatHistory,
   useContractDetail,
@@ -41,7 +43,14 @@ import {
   PendingAttachment,
 } from '../contracts/ChatAttachment';
 import { CancelModal } from '../contracts/CancelModal';
+import { DropoutAgreement } from '../contracts/DropoutAgreement';
 import { ContractActions } from '../contracts/ContractActions';
+import { DisputeWindowNotice, RevisionSummary } from '../contracts/ContractRuleNotices';
+import { disputeWaiting, revisionCount, revisionsExhausted } from '../contracts/contractRules';
+import { useContractNow } from '../contracts/useContractNow';
+import { CounterOfferModal } from '../contracts/CounterOfferModal';
+import { AcceptCounterModal } from '../contracts/AcceptCounterModal';
+import { NegotiationDueNotice, NegotiationSection } from '../contracts/NegotiationSection';
 import { DeadlineSection, RevisionSince } from '../contracts/DeadlineSection';
 import { DisputeModal, DisputeSection } from '../contracts/DisputePanel';
 import { MilestonesSection } from '../contracts/MilestonesSection';
@@ -67,21 +76,33 @@ function DueNotice({
   myId: number;
   zone: string | null | undefined;
 }) {
+  const now = useContractNow(c);
   const isClient = c.clientId === myId;
   const isFreelancer = c.freelancerId === myId;
+  if (c.status === 'pending' && c.negotiation && c.paymentMode !== 'barter')
+    return <NegotiationDueNotice contract={c} myId={myId} zone={zone} />;
   if (c.status === 'delivered' && c.approvalDueAt && (isClient || isFreelancer)) {
     const when = momentText(c.approvalDueAt, zone);
     const barter = c.paymentMode === 'barter';
+    const choices = [
+      'aprove',
+      ...(!revisionsExhausted(c.revisions) ? ['peça revisão'] : []),
+      ...(!disputeWaiting(c, now) ? ['abra disputa'] : []),
+    ];
+    const options =
+      choices.length === 1
+        ? choices[0]!
+        : `${choices.slice(0, -1).join(', ')} ou ${choices.at(-1)!}`;
     return (
       <p className="notice" data-testid="approval-due">
         <Hourglass size={14} />{' '}
         {isClient
-          ? `Entrega registrada. Aprove, peça revisão ou abra disputa até ${when}; depois disso a entrega é aprovada automaticamente${
+          ? `Entrega registrada. ${options.charAt(0).toUpperCase()}${options.slice(1)} até ${when}; depois disso a entrega é aprovada automaticamente${
               barter ? ' e conta para fechar a troca.' : ' e o pagamento é liberado ao freelancer.'
             }`
           : `Entrega registrada. Sem resposta do cliente até ${when}, ela é aprovada automaticamente${
               barter ? '.' : ` e ${valueOf(c, c.freelancerNet)} é liberado para você.`
-            }`}
+            }${c.revisions && !c.hasMilestones ? ` Revisões pedidas: ${revisionCount(c.revisions)}.` : ''}`}
       </p>
     );
   }
@@ -117,7 +138,9 @@ const MODE_LABEL: Record<string, string> = {
 };
 
 /** Onde o dinheiro (ou os créditos) está neste momento do contrato. */
-function paymentState(c: { paymentMode: string; status: string; hasMilestones: boolean }): string {
+function paymentState(
+  c: Pick<ContractWithHistory, 'paymentMode' | 'status' | 'hasMilestones' | 'negotiation'>,
+): string {
   if (c.paymentMode === 'barter') return 'Troca de serviços · sem escrow';
   const unit = c.paymentMode === 'credits' ? 'Créditos' : 'Valor';
   if (c.hasMilestones && (c.status === 'accepted' || c.status === 'in_progress')) {
@@ -129,7 +152,7 @@ function paymentState(c: { paymentMode: string; status: string; hasMilestones: b
     case 'pending':
       return c.paymentMode === 'credits'
         ? 'Créditos retidos no aceite'
-        : 'Reservado na carteira do cliente';
+        : `Reservado na carteira do cliente${c.negotiation ? ` (oferta ${c.negotiation.seq % 2 === 1 ? c.negotiation.seq : c.negotiation.seq - 1})` : ''}`;
     case 'accepted':
     case 'in_progress':
     case 'delivered':
@@ -217,7 +240,7 @@ function ReviewSection({ contract, myId }: { contract: ContractWithHistory; myId
               <p>{review.response}</p>
             </div>
           ) : isFreelancer ? (
-            <form className="stack" onSubmit={submitReply}>
+            <BusinessForm className="stack" onSubmit={submitReply}>
               <textarea
                 className="textarea"
                 value={reply}
@@ -235,11 +258,11 @@ function ReviewSection({ contract, myId }: { contract: ContractWithHistory; myId
               >
                 {respond.isPending ? 'Publicando…' : 'Responder'}
               </Button>
-            </form>
+            </BusinessForm>
           ) : null}
         </div>
       ) : isClient ? (
-        <form className="stack" onSubmit={submitReview}>
+        <BusinessForm className="stack" onSubmit={submitReview}>
           <p className="muted tiny">
             Como foi trabalhar com este freelancer? Sua nota alimenta o Escambo Score dele. Você tem
             7 dias após a conclusão para avaliar.
@@ -257,7 +280,7 @@ function ReviewSection({ contract, myId }: { contract: ContractWithHistory; myId
           <Button type="submit" disabled={create.isPending || rating === 0}>
             {create.isPending ? 'Enviando…' : 'Enviar avaliação'}
           </Button>
-        </form>
+        </BusinessForm>
       ) : (
         <p className="muted">Aguardando a avaliação do cliente.</p>
       )}
@@ -272,6 +295,7 @@ export function SalaContratoView({
   contractId: number;
   onBack: () => void;
 }) {
+  const readOnly = useReadOnlyAccount();
   const { user } = useAuth();
   const myId = user?.id ?? -1;
   const toast = useToast();
@@ -286,10 +310,22 @@ export function SalaContratoView({
   const [draft, setDraft] = useState('');
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [counterOpen, setCounterOpen] = useState(false);
+  const [acceptCounterOpen, setAcceptCounterOpen] = useState(false);
   const [pending, setPending] = useState<File | null>(null); // anexo escolhido, ainda não enviado
   const [dragging, setDragging] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!readOnly) return;
+    setPending(null);
+    setDragging(false);
+    setDisputeOpen(false);
+    setCancelOpen(false);
+    setCounterOpen(false);
+    setAcceptCounterOpen(false);
+  }, [readOnly]);
 
   // Conecta o socket, entra na sala e ouve mensagens novas em tempo real.
   useEffect(() => {
@@ -335,7 +371,7 @@ export function SalaContratoView({
 
   /** Escolhe um arquivo (clipe, colar ou arrastar); a API confere o tipo pelo conteúdo. */
   function pick(file: File | undefined | null): void {
-    if (!file) return;
+    if (!file || readOnly) return;
     if (file.size > MAX_ATTACHMENT_BYTES) {
       toast.error(`Arquivo maior que ${MAX_ATTACHMENT_MB} MB`);
       return;
@@ -354,6 +390,7 @@ export function SalaContratoView({
   function onDrop(e: DragEvent<HTMLElement>): void {
     e.preventDefault();
     setDragging(false);
+    if (readOnly) return;
     pick(e.dataTransfer.files[0]);
   }
 
@@ -364,6 +401,7 @@ export function SalaContratoView({
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
+    if (readOnly) return;
     const content = draft.trim();
     if (!content && !pending) return;
     try {
@@ -395,19 +433,26 @@ export function SalaContratoView({
           )}
         </div>
         {c && (
-          <div className="sala-head-right">
-            <span className={`pill status-${c.status}`}>{STATUS_LABEL[c.status] ?? c.status}</span>
-            <ContractActions
-              contract={c}
-              exclude={['review']}
-              onDispute={() => setDisputeOpen(true)}
-              onCancel={() => setCancelOpen(true)}
-            />
+          <div className="stack">
+            <DisputeWindowNotice contract={c} myId={myId} />
+            <div className="sala-head-right">
+              <span className={`pill status-${c.status}`}>{statusLabel(c)}</span>
+              <ContractActions
+                contract={c}
+                exclude={['review']}
+                onDispute={() => setDisputeOpen(true)}
+                onCancel={() => setCancelOpen(true)}
+                onCounter={() => setCounterOpen(true)}
+                onAcceptCounter={() => setAcceptCounterOpen(true)}
+              />
+            </div>
           </div>
         )}
       </div>
 
       {c && <DueNotice contract={c} myId={myId} zone={user?.timezone} />}
+      {c && <RevisionSummary contract={c} myId={myId} />}
+      {c?.dropout && <DropoutAgreement contract={c} myId={myId} />}
 
       <div className="sala">
         <div className="stack">
@@ -424,7 +469,11 @@ export function SalaContratoView({
               {(d) => (
                 <>
                   <div className="kv">
-                    <span className="muted">Valor</span>
+                    <span className="muted">
+                      {d.status === 'pending' && (d.negotiation?.seq ?? 0) > 1
+                        ? 'Valor (oferta do cliente)'
+                        : 'Valor'}
+                    </span>
                     <strong>
                       {d.paymentMode === 'credits'
                         ? `${Math.round(d.price)} créditos`
@@ -447,7 +496,7 @@ export function SalaContratoView({
                         : 'sem prazo definido'}
                     </span>
                   </div>
-                  <ol className="timeline">
+                  <ol className="timeline" aria-label="Histórico da contratação">
                     {d.history.map((h, i) => (
                       <li key={i}>
                         <span className="dot" />
@@ -470,6 +519,7 @@ export function SalaContratoView({
             </QueryState>
           </section>
 
+          {c && <NegotiationSection contract={c} myId={myId} />}
           {c && <DeadlineSection contract={c} myId={myId} />}
           {c && <RevisionSince contract={c} myId={myId} />}
           {c && <MilestonesSection contract={c} myId={myId} />}
@@ -481,7 +531,7 @@ export function SalaContratoView({
           className={`card chat${dragging ? ' dragging' : ''}`}
           onDragOver={(e) => {
             e.preventDefault();
-            setDragging(true);
+            if (!readOnly) setDragging(true);
           }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
@@ -542,7 +592,7 @@ export function SalaContratoView({
               </span>
             </p>
           )}
-          <form className="chat-input" onSubmit={submit}>
+          <BusinessForm className="chat-input" onSubmit={submit}>
             <input
               ref={fileRef}
               type="file"
@@ -578,14 +628,22 @@ export function SalaContratoView({
             >
               <Send size={16} />
             </Button>
-          </form>
+          </BusinessForm>
           <p className="muted tiny chat-hint">
-            Imagem, PDF ou ZIP até {MAX_ATTACHMENT_MB} MB: clipe, colar ou arrastar aqui.
+            {readOnly ? (
+              'Chat disponível somente para leitura durante a suspensão.'
+            ) : (
+              <>Imagem, PDF ou ZIP até {MAX_ATTACHMENT_MB} MB: clipe, colar ou arrastar aqui.</>
+            )}
           </p>
         </section>
       </div>
       {c && disputeOpen && <DisputeModal contract={c} onClose={() => setDisputeOpen(false)} />}
       {c && cancelOpen && <CancelModal contract={c} onClose={() => setCancelOpen(false)} />}
+      {c && counterOpen && <CounterOfferModal contract={c} onClose={() => setCounterOpen(false)} />}
+      {c && acceptCounterOpen && (
+        <AcceptCounterModal contract={c} onClose={() => setAcceptCounterOpen(false)} />
+      )}
     </div>
   );
 }

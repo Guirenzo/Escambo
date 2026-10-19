@@ -1,3 +1,4 @@
+import { useReadOnlyAccount } from '../../lib/account-access';
 import { Clock, Mail } from 'lucide-react';
 import { useState } from 'react';
 import type { BrazilTimezone, EmailFrequency, UpdateEmailPreferenceRequest } from '@escambo/types';
@@ -34,6 +35,7 @@ const OPTIONS: { value: EmailFrequency; label: string; hint: (hour: string) => s
  * atendimento (ADR 48). O app não muda além disso.
  */
 export function EmailPreferencesCard() {
+  const readOnly = useReadOnlyAccount();
   const { user, refreshUser } = useAuth();
   const isFreelancer = user?.role === 'freelancer';
   const toast = useToast();
@@ -43,7 +45,7 @@ export function EmailPreferencesCard() {
   const zone = user?.timezone ?? DEFAULT_TIMEZONE;
 
   async function save(change: UpdateEmailPreferenceRequest, done: string): Promise<void> {
-    if (saving) return;
+    if (readOnly || saving) return;
     setSaving(true);
     try {
       await api.updateEmailPreference(change);
@@ -103,7 +105,7 @@ export function EmailPreferencesCard() {
               name="emailFrequency"
               value={o.value}
               checked={current === o.value}
-              disabled={saving}
+              disabled={readOnly || saving}
               onChange={() => choose(o.value)}
             />
             <span>
@@ -121,7 +123,7 @@ export function EmailPreferencesCard() {
           <span>Horário do resumo do dia</span>
           <select
             value={hour}
-            disabled={saving}
+            disabled={readOnly || saving}
             aria-describedby="digest-hour-hint"
             onChange={(e) => chooseHour(Number(e.target.value))}
           >
@@ -136,7 +138,7 @@ export function EmailPreferencesCard() {
           <span>Fuso horário</span>
           <select
             value={zone}
-            disabled={saving}
+            disabled={readOnly || saving}
             aria-describedby="digest-hour-hint"
             onChange={(e) => chooseZone(e.target.value as BrazilTimezone)}
           >

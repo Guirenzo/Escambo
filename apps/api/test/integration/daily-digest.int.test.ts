@@ -80,10 +80,14 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
   it('instant manda por evento; daily junta num resumo (um por dia); off não manda nada', async () => {
     const admin = await registerAndLogin('client', 'admin.escambo.test');
     const client = await registerAndLogin('client');
+    const secondClient = await registerAndLogin('client');
+    const thirdClient = await registerAndLogin('client');
     const daily = await registerAndLogin('freelancer');
     const off = await registerAndLogin('freelancer');
     const instant = await registerAndLogin('freelancer');
     await fundWallet(app, client.token, 300);
+    await fundWallet(app, secondClient.token, 50);
+    await fundWallet(app, thirdClient.token, 50);
 
     // Preferência: padrão instant; validação; persistência.
     const def = await request(app).get('/api/notifications/preferences').set(auth(daily.token));
@@ -112,9 +116,10 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
     const me = await request(app).get('/api/auth/me').set(auth(daily.token));
     expect(me.body.emailFrequency).toBe('daily');
 
-    // Três propostas (contract_proposal é um tipo que vai por e-mail).
+    // Propostas de clientes distintos podem avisar o mesmo freelancer (RN-020).
+    // contract_proposal é um tipo que vai por e-mail.
     await propose(client, daily, 'Proposta A');
-    await propose(client, daily, 'Proposta B');
+    await propose(secondClient, daily, 'Proposta B');
     await propose(client, off, 'Proposta C');
     await propose(client, instant, 'Proposta D');
     await new Promise((r) => setTimeout(r, 300)); // o e-mail por evento é assíncrono
@@ -140,7 +145,7 @@ describe('Preferência de e-mail e resumo diário (ADR 27)', () => {
     expect(templates(await outbox(admin, off.id))).not.toContain('digest');
 
     // Um por dia: rodar de novo não repete; nova notificação fica para o próximo resumo.
-    await propose(client, daily, 'Proposta E');
+    await propose(thirdClient, daily, 'Proposta E');
     const again = await runDailyDigest(noonBrt());
     expect(again.sent).not.toContain(daily.id);
     expect((await outbox(admin, daily.id)).filter((m) => m.template === 'digest')).toHaveLength(1);

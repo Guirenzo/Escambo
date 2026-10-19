@@ -1,6 +1,9 @@
 import type { PlatformSetting, PublicSettings } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
-import { EXTENSION_RESPONSE_HOURS } from '../contracts/deadline-grace';
+import { INCLUDED_REVISIONS } from '../contracts/deadline-grace';
+import { DISPUTE_TACIT_MARGIN_MS, DISPUTE_WAIT_MS } from '../contracts/dispute-window';
+import { MAX_OFFERS } from '../contracts/offers';
+import { DROPOUT_AGREE_DAYS, DROPOUT_ALERT_AT, DROPOUT_WINDOW_DAYS } from '../dropouts/dropouts';
 import { parseNumberSetting } from './settings.parse';
 import { settingsRepository } from './settings.repository';
 import { SETTING_DEFS, SETTING_KEYS, type SettingKey } from './settings.schema';
@@ -26,7 +29,7 @@ function parseValue(key: SettingKey, raw: string | null | undefined): number | b
   if (def.type === 'boolean') return raw == null ? def.defaultValue : raw === 'true' || raw === '1';
   // A mesma regra do settingsRepository.getNumber (valor em branco é o padrão, e não zero): os
   // jobs leem a chave por lá, e a tela não pode mostrar outro prazo.
-  return parseNumberSetting(raw, def.defaultValue as number);
+  return parseNumberSetting(raw, def.defaultValue as number, key);
 }
 
 function toItem(
@@ -127,23 +130,45 @@ export const settingsService = {
 
   /** O que o app precisa saber sem ser admin (taxa, prazos, mínimos, manutenção, trocas). */
   async publicSettings(): Promise<PublicSettings> {
-    const [fee, tacit, expiry, grace, minService, minWithdrawal, barter, maintenance] =
-      await Promise.all([
-        this.number('platform_fee_percentage'),
-        this.number('tacit_approval_days'),
-        this.number('proposal_expiry_hours'),
-        this.number('deadline_grace_hours'),
-        this.number('min_service_price'),
-        this.number('min_withdrawal_amount'),
-        this.flag('barter_enabled'),
-        this.flag('maintenance_mode'),
-      ]);
+    const [
+      fee,
+      tacit,
+      expiry,
+      counterResponse,
+      extensionResponse,
+      grace,
+      minService,
+      minWithdrawal,
+      barter,
+      maintenance,
+    ] = await Promise.all([
+      this.number('platform_fee_percentage'),
+      this.number('tacit_approval_days'),
+      this.number('proposal_expiry_hours'),
+      this.number('counter_offer_response_hours'),
+      this.number('extension_response_hours'),
+      this.number('deadline_grace_hours'),
+      this.number('min_service_price'),
+      this.number('min_withdrawal_amount'),
+      this.flag('barter_enabled'),
+      this.flag('maintenance_mode'),
+    ]);
     return {
       platformFeePercentage: fee,
       tacitApprovalDays: tacit,
       proposalExpiryHours: expiry,
+      counterOfferResponseHours: counterResponse,
       deadlineGraceHours: grace,
-      extensionResponseHours: EXTENSION_RESPONSE_HOURS,
+      extensionResponseHours: extensionResponse,
+      fixedContractRules: {
+        includedRevisions: INCLUDED_REVISIONS,
+        maxOffers: MAX_OFFERS,
+        disputeWaitHours: DISPUTE_WAIT_MS / 3_600_000,
+        disputeTacitMarginHours: DISPUTE_TACIT_MARGIN_MS / 3_600_000,
+        dropoutWindowDays: DROPOUT_WINDOW_DAYS,
+        dropoutAlertAt: DROPOUT_ALERT_AT,
+        dropoutAgreementDays: DROPOUT_AGREE_DAYS,
+      },
       minServicePrice: minService,
       minWithdrawalAmount: minWithdrawal,
       barterEnabled: barter,

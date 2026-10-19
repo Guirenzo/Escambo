@@ -1,7 +1,8 @@
+import { BusinessModal } from '../../components/BusinessActions';
 import { Rocket } from 'lucide-react';
 import { useState } from 'react';
 import type { Service } from '@escambo/types';
-import { Button, Modal, QueryState } from '../../components/ui';
+import { Button, QueryState } from '../../components/ui';
 import { useBoostPlans, useCreateBoost, useWallet } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 
@@ -26,7 +27,7 @@ export function BoostModal({ service, onClose }: { service: Service; onClose: ()
   }
 
   return (
-    <Modal title={`Impulsionar: ${service.title}`} onClose={onClose}>
+    <BusinessModal title={`Impulsionar: ${service.title}`} onClose={onClose}>
       <p className="muted">
         Seu serviço vai pro topo da busca pelo período do plano. Você paga com créditos Escambo —
         tem <b>{credits}</b> disponíveis.
@@ -70,6 +71,6 @@ export function BoostModal({ service, onClose }: { service: Service; onClose: ()
       <Button onClick={() => void confirm()} disabled={!planId || boost.isPending}>
         <Rocket size={16} /> {boost.isPending ? 'Impulsionando…' : 'Confirmar impulsionamento'}
       </Button>
-    </Modal>
+    </BusinessModal>
   );
 }

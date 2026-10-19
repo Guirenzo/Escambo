@@ -20,12 +20,40 @@ export function proposalReminder(f: {
   cash: boolean;
   /** O prazo de entrega como dia, se houver. */
   deadline: string | null;
+  /** Oferta ímpar: 1/3 ainda permitem contrapropor; 5 encerra as rodadas. */
+  seq?: number;
 }): DeadlineNotice {
+  const seq = f.seq ?? 1;
+  const negotiation = seq > 1;
+  const actions =
+    seq === 5
+      ? 'É a última rodada: aceite ou recuse até lá.'
+      : 'Aceite, recuse ou faça uma contraproposta até lá.';
   return {
     params: {
       type: 'contract_proposal_reminder',
-      title: `Responda à proposta até ${f.respondBy}: ${f.title}`,
-      body: `Aceite ou recuse até lá. Sem resposta, a proposta se encerra${f.cash ? ' e o valor reservado volta ao cliente' : ''}.${f.deadline ? ` Se aceitar, o prazo de entrega é ${f.deadline}.` : ''}`,
+      title: `Responda à ${negotiation ? 'contraproposta' : 'proposta'} até ${f.respondBy}: ${f.title}`,
+      body: `${actions} Sem resposta, a ${negotiation ? 'negociação' : 'proposta'} se encerra${f.cash ? ' e o valor reservado volta ao cliente' : ''}.${f.deadline ? ` Se aceitar, o prazo de entrega é ${f.deadline}.` : ''}`,
+      data: { contractId: f.contractId },
+    },
+  };
+}
+
+/** Ao cliente na oferta 2/4: usa os termos da oferta do freelancer, lidos sob a trava. */
+export function counterOfferReminder(f: {
+  contractId: number;
+  title: string;
+  seq: number;
+  respondBy: string;
+  cash: boolean;
+  price: number;
+  deadline: string | null;
+}): DeadlineNotice {
+  return {
+    params: {
+      type: 'contract_counter_offer_reminder',
+      title: `Responda à contraproposta até ${f.respondBy}: ${f.title}`,
+      body: `Aceite, faça outra contraproposta${f.seq === 4 ? ' (a última)' : ''} ou encerre pela Sala. Sem resposta, a negociação se encerra${f.cash ? ' e o valor reservado volta para a sua carteira' : ''}. Proposta do freelancer: ${f.cash ? brl(f.price) : `${f.price} créditos`}${f.deadline ? `, entrega ${f.deadline}` : ''}.`,
       data: { contractId: f.contractId },
     },
   };

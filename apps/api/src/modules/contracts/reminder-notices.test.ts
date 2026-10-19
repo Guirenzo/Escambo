@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DeadlineNotice } from './deadline-notices';
 import {
   approvalReminder,
+  counterOfferReminder,
   deliveryReminder,
   extensionReminder,
   milestoneApprovalReminder,
@@ -17,6 +18,22 @@ import {
  */
 
 describe('proposalReminder: o freelancer responde à proposta antes de ela se encerrar (RN-021)', () => {
+  it.each([3, 5])('oferta%s distingue negociação e última rodada', (seq) => {
+    const notice = proposalReminder({
+      contractId: 3,
+      title: 'Vídeo institucional',
+      seq,
+      respondBy: 'qui, 08/10 às 12:00',
+      cash: true,
+      deadline: null,
+    });
+    expect(notice.params.title).toBe(
+      'Responda à contraproposta até qui, 08/10 às 12:00: Vídeo institucional',
+    );
+    expect(notice.params.body).toBe(
+      `${seq === 5 ? 'É a última rodada: aceite ou recuse até lá.' : 'Aceite, recuse ou faça uma contraproposta até lá.'} Sem resposta, a negociação se encerra e o valor reservado volta ao cliente.`,
+    );
+  });
   it('em dinheiro e com prazo: diz que a reserva volta ao cliente e qual é o prazo se aceitar', () => {
     expect(
       proposalReminder({
@@ -30,7 +47,7 @@ describe('proposalReminder: o freelancer responde à proposta antes de ela se en
       params: {
         type: 'contract_proposal_reminder',
         title: 'Responda à proposta até qui, 08/10 às 12:00: Vídeo institucional',
-        body: 'Aceite ou recuse até lá. Sem resposta, a proposta se encerra e o valor reservado volta ao cliente. Se aceitar, o prazo de entrega é ter, 20/10/2026, até 23:59.',
+        body: 'Aceite, recuse ou faça uma contraproposta até lá. Sem resposta, a proposta se encerra e o valor reservado volta ao cliente. Se aceitar, o prazo de entrega é ter, 20/10/2026, até 23:59.',
         data: { contractId: 3 },
       },
     });
@@ -45,7 +62,47 @@ describe('proposalReminder: o freelancer responde à proposta antes de ela se en
         cash: false,
         deadline: null,
       }).params.body,
-    ).toBe('Aceite ou recuse até lá. Sem resposta, a proposta se encerra.');
+    ).toBe(
+      'Aceite, recuse ou faça uma contraproposta até lá. Sem resposta, a proposta se encerra.',
+    );
+  });
+});
+
+describe('counterOfferReminder: o cliente responde às ofertas pares (RN-030)', () => {
+  it.each([2, 4])('oferta%s informa ação da rodada, consequência e termos do freelancer', (seq) => {
+    const notice = counterOfferReminder({
+      contractId: 3,
+      title: 'Vídeo institucional',
+      seq,
+      respondBy: 'qui, 08/10 às 12:00',
+      cash: true,
+      price: 650,
+      deadline: 'ter, 20/10/2026, até 23:59',
+    });
+    expect(notice).toEqual({
+      params: {
+        type: 'contract_counter_offer_reminder',
+        title: 'Responda à contraproposta até qui, 08/10 às 12:00: Vídeo institucional',
+        body: `Aceite, faça outra contraproposta${seq === 4 ? ' (a última)' : ''} ou encerre pela Sala. Sem resposta, a negociação se encerra e o valor reservado volta para a sua carteira. Proposta do freelancer: R$ 650,00, entrega ter, 20/10/2026, até 23:59.`,
+        data: { contractId: 3 },
+      },
+    });
+  });
+
+  it('créditos sem prazo omite a reserva e mantém a quantia em créditos', () => {
+    expect(
+      counterOfferReminder({
+        contractId: 3,
+        title: 'Vídeo institucional',
+        seq: 2,
+        respondBy: 'qui, 08/10 às 12:00',
+        cash: false,
+        price: 12,
+        deadline: null,
+      }).params.body,
+    ).toBe(
+      'Aceite, faça outra contraproposta ou encerre pela Sala. Sem resposta, a negociação se encerra. Proposta do freelancer: 12 créditos.',
+    );
   });
 });
 
@@ -428,6 +485,35 @@ describe('propriedade dos lembretes: a ação e a hora sobrevivem ao corte do t�
 
   /** Cada variante de lembrete, com a ação e o vencimento que o título precisa trazer. */
   const cases: { name: string; notice: DeadlineNotice; action: string; at: string }[] = [
+    ...[2, 4].flatMap((seq) =>
+      [true, false].map((cash) => ({
+        name: `contraproposta ao cliente (oferta${seq}, dinheiro:${cash})`,
+        notice: counterOfferReminder({
+          contractId: 1,
+          title: long,
+          seq,
+          cash,
+          respondBy: when,
+          price: cash ? 650 : 12,
+          deadline: null,
+        }),
+        action: 'Responda à contraproposta',
+        at: when,
+      })),
+    ),
+    ...[3, 5].map((seq) => ({
+      name: `contraproposta ao freelancer (oferta${seq})`,
+      notice: proposalReminder({
+        contractId: 1,
+        title: long,
+        seq,
+        respondBy: when,
+        cash: true,
+        deadline: null,
+      }),
+      action: 'Responda à contraproposta',
+      at: when,
+    })),
     ...[true, false].map((cash) => ({
       name: `proposta (dinheiro: ${cash})`,
       notice: proposalReminder({

@@ -65,6 +65,7 @@ export async function runDeadlineReminders(
     zones,
     sent: {
       proposal: [],
+      counter_offer: [],
       delivery: [],
       approval: [],
       milestone_approval: [],
@@ -121,11 +122,13 @@ export async function runDeadlineReminders(
           one(
             kind === 'proposal'
               ? deadlineRemindersService.proposal(c, now)
-              : kind === 'delivery'
-                ? deadlineRemindersService.delivery(c, graceHours!, now)
-                : kind === 'approval'
-                  ? deadlineRemindersService.approval(c, now)
-                  : deadlineRemindersService.extension(c, now),
+              : kind === 'counter_offer'
+                ? deadlineRemindersService.counterOffer(c, now)
+                : kind === 'delivery'
+                  ? deadlineRemindersService.delivery(c, graceHours!, now)
+                  : kind === 'approval'
+                    ? deadlineRemindersService.approval(c, now)
+                    : deadlineRemindersService.extension(c, now),
           ),
         );
       }

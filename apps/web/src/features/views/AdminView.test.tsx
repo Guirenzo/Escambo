@@ -45,9 +45,12 @@ vi.mock('../../lib/api', () => ({
     adminFinance: () => pending(),
     adminStorage: () => pending(),
     adminSettings: () => pending(),
+    publicSettings: () => pending(),
     adminModerationHealth: () => pending(),
     adminReports: () => pending(),
     adminAppeals: () => pending(),
+    adminDropouts: () => pending(),
+    adminSupportTickets: () => pending(),
   },
 }));
 

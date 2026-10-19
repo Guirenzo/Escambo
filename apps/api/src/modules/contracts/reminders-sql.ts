@@ -8,6 +8,7 @@ import { rn029Eligible, zoneOf } from './deadline-sql';
 
 export type ReminderKind =
   | 'proposal'
+  | 'counter_offer'
   | 'delivery'
   | 'approval'
   | 'milestone_approval'
@@ -33,6 +34,8 @@ export interface ReminderSpec {
 }
 
 const RUNNING = "c.status IN ('accepted', 'in_progress')";
+export const OFFER_START =
+  'COALESCE((SELECT o.created_at FROM contract_offers o WHERE o.contract_id = c.id AND o.seq = c.offer_seq), c.created_at)';
 
 export const REMINDERS: Record<ReminderKind, ReminderSpec> = {
   // Troca não expira (RN-021): sem lembrete.
@@ -40,9 +43,18 @@ export const REMINDERS: Record<ReminderKind, ReminderSpec> = {
     row: 'contract',
     recipient: 'freelancer',
     due: 'c.proposal_expires_at',
-    seq: '0',
-    start: 'c.created_at',
-    state: "c.status = 'pending' AND c.barter_agreement_id IS NULL",
+    seq: 'c.offer_seq - 1',
+    start: OFFER_START,
+    state: "c.status = 'pending' AND c.barter_agreement_id IS NULL AND MOD(c.offer_seq, 2) = 1",
+    timing: 'before',
+  },
+  counter_offer: {
+    row: 'contract',
+    recipient: 'client',
+    due: 'c.proposal_expires_at',
+    seq: 'c.offer_seq',
+    start: OFFER_START,
+    state: "c.status = 'pending' AND c.barter_agreement_id IS NULL AND MOD(c.offer_seq, 2) = 0",
     timing: 'before',
   },
   // A recusa ou a expiração de um pedido entra no início: o aviso dela já disse "vale o prazo
@@ -108,6 +120,7 @@ export const REMINDERS: Record<ReminderKind, ReminderSpec> = {
 /** Os tipos de lembrete antes do vencimento, na ordem em que o job os percorre. */
 export const BEFORE_KINDS: ReminderKind[] = [
   'proposal',
+  'counter_offer',
   'delivery',
   'approval',
   'milestone_approval',

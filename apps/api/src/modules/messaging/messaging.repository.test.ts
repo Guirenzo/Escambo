@@ -38,6 +38,23 @@ const selected = (sql: string, until: string): string[] =>
 describe('messagingRepository', () => {
   beforeEach(() => fakeDb.reset());
 
+  it('findByPair consulta o par ordenado, inclusive conversa sem contrato ou de contratação anterior, sem gravar', async () => {
+    const row = { id: 5, contract_id: null, participant_a: 10, participant_b: 20 };
+    fakeDb.reply([row], [row], []);
+
+    expect(await messagingRepository.findByPair(20, 10)).toBe(row);
+    expect(await messagingRepository.findByPair(10, 20)).toBe(row);
+    expect(await messagingRepository.findByPair(11, 21)).toBeUndefined();
+    expect(fakeDb.calls).toHaveLength(3);
+    expect(fakeDb.calls[0]!.sql).toBe(
+      'SELECT id, contract_id, participant_a, participant_b FROM conversations WHERE participant_a = :a AND participant_b = :b LIMIT 1',
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ a: 10, b: 20 });
+    expect(fakeDb.calls[1]!.params).toEqual({ a: 10, b: 20 });
+    expect(fakeDb.calls[2]!.params).toEqual({ a: 11, b: 21 });
+    expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+  });
+
   describe('getOrCreate', () => {
     it('a conversa é única por par: os participantes vão ordenados (menor primeiro), venha na ordem que vier', async () => {
       fakeDb.reply({ insertId: 5, affectedRows: 1 }, { insertId: 5, affectedRows: 0 });

@@ -8,6 +8,35 @@ vi.mock('../../config/db', async () => (await import('../../test-support/fake-db
 describe('walletRepository', () => {
   beforeEach(() => fakeDb.reset());
 
+  it('consulta carteira existente sem inicializar linha, saldo ou bônus', async () => {
+    const wallet = { id: 8, user_id: 7, balance: '12.50' };
+    fakeDb.reply([wallet]);
+
+    expect(await walletRepository.findByUserId(7)).toBe(wallet);
+    expect(fakeDb.calls).toHaveLength(1);
+    expect(fakeDb.calls[0]!.sql).toContain(
+      'SELECT id, user_id, balance, balance_pending, currency, credits_balance, credits_pending FROM wallets WHERE user_id = :userId LIMIT 1',
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ userId: 7 });
+    expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+  });
+
+  it('consulta de carteira ausente devolve undefined sem criar a linha', async () => {
+    expect(await walletRepository.findByUserId(7)).toBeUndefined();
+    expect(fakeDb.calls).toHaveLength(1);
+    expect(fakeDb.calls[0]!.sql).toMatch(/^SELECT /);
+  });
+
+  it('ensure cria em autocommit, sem ler saldo nem ocupar conexão de transação', async () => {
+    fakeDb.reply({ affectedRows: 1 });
+    expect(await walletRepository.ensure(7)).toBeUndefined();
+    expect(fakeDb.sqls()).toEqual(['INSERT IGNORE INTO wallets (user_id) VALUES (:userId)']);
+    expect(fakeDb.calls[0]!.params).toEqual({ userId: 7 });
+    expect(fakeDb.pool.query.mock.contexts[0]).toBe(fakeDb.pool);
+    expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+    expect(fakeDb.conn.beginTransaction).not.toHaveBeenCalled();
+  });
+
   it('o extrato de R$ é só do usuário pedido, do lançamento mais novo para o mais antigo, paginado', async () => {
     const rows = [{ id: 8 }, { id: 3 }];
     fakeDb.reply(rows);

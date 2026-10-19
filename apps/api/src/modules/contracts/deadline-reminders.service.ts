@@ -1,4 +1,5 @@
 import type { PoolConnection } from 'mysql2/promise';
+import type { RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { logger } from '../../config/logger';
 import {
@@ -19,6 +20,7 @@ import type { DeadlineNotice } from './deadline-notices';
 import { milestonesRepository } from './milestones.repository';
 import {
   approvalReminder,
+  counterOfferReminder,
   deliveryReminder,
   extensionReminder,
   milestoneApprovalReminder,
@@ -136,22 +138,87 @@ const hasMilestones = (row: ContractRow): boolean => Boolean(Number(row.has_mile
 export const deadlineRemindersService = {
   /** Ao freelancer: a proposta se encerra se ele não responder. */
   async proposal(c: ReminderCandidate, now: Date): Promise<boolean> {
-    const sent = await remind(c.contract_id, [claimOf('proposal', c)], now, async (_conn, row) => {
-      const fz = freelancerZoneOf(row);
-      const deadline = row.deadline_at ? new Date(row.deadline_at) : null;
-      return [
-        {
-          userId: row.freelancer_id,
-          notice: proposalReminder({
-            contractId: row.id,
-            title: row.title,
-            respondBy: formatDue(new Date(row.proposal_expires_at!), fz),
-            cash: row.payment_mode === 'cash',
-            deadline: deadline ? formatDeadline(deadline, dayZoneOf(row, deadline), fz) : null,
-          }),
-        },
-      ];
-    });
+    const sent = await remind(
+      c.contract_id,
+      [claimOf('proposal', c)],
+      now,
+      async (_conn, row, won) => {
+        const seq = Number(row.offer_seq ?? 1);
+        if (
+          row.status !== 'pending' ||
+          seq % 2 !== 1 ||
+          won[0]!.seq !== seq - 1 ||
+          !row.proposal_expires_at
+        )
+          return null;
+        const fz = freelancerZoneOf(row);
+        const deadline = row.deadline_at ? new Date(row.deadline_at) : null;
+        return [
+          {
+            userId: row.freelancer_id,
+            notice: proposalReminder({
+              contractId: row.id,
+              seq,
+              title: row.title,
+              respondBy: formatDue(new Date(row.proposal_expires_at!), fz),
+              cash: row.payment_mode === 'cash',
+              deadline: deadline ? formatDeadline(deadline, dayZoneOf(row, deadline), fz) : null,
+            }),
+          },
+        ];
+      },
+    );
+    return sent.length > 0;
+  },
+
+  /** Ao cliente: a oferta par é a do freelancer; os termos não estão espelhados no contrato. */
+  async counterOffer(c: ReminderCandidate, now: Date): Promise<boolean> {
+    const sent = await remind(
+      c.contract_id,
+      [claimOf('counter_offer', c)],
+      now,
+      async (conn, row, won) => {
+        const seq = Number(row.offer_seq);
+        if (
+          row.status !== 'pending' ||
+          seq % 2 !== 0 ||
+          won[0]!.seq !== seq ||
+          !row.proposal_expires_at
+        )
+          return null;
+        const [offers] = await conn.query<RowDataPacket[]>(
+          `SELECT seq, made_by, price, deadline_at, respond_by, outcome FROM contract_offers
+          WHERE contract_id = :contractId AND seq = :seq`,
+          { contractId: row.id, seq },
+        );
+        const offer = offers[0];
+        if (
+          !offer ||
+          Number(offer.seq) !== seq ||
+          offer.made_by !== 'freelancer' ||
+          offer.outcome !== 'open' ||
+          !offer.respond_by ||
+          new Date(offer.respond_by).getTime() !== new Date(row.proposal_expires_at).getTime()
+        )
+          return null;
+        const cz = clientZoneOf(row);
+        const deadline = offer.deadline_at ? new Date(offer.deadline_at) : null;
+        return [
+          {
+            userId: row.client_id,
+            notice: counterOfferReminder({
+              contractId: row.id,
+              title: row.title,
+              seq,
+              cash: row.payment_mode === 'cash',
+              price: Number(offer.price),
+              respondBy: formatDue(new Date(offer.respond_by), cz),
+              deadline: deadline ? formatDeadline(deadline, dayZoneOf(row, deadline), cz) : null,
+            }),
+          },
+        ];
+      },
+    );
     return sent.length > 0;
   },
 

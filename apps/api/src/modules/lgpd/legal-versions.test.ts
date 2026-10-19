@@ -38,10 +38,26 @@ const ascending = (a: string, b: string): number => {
 };
 
 describe('versões publicadas dos documentos legais (ADR 54)', () => {
-  it('Termos de Uso 1.4 (ADR 58: prazo no horário de quem entrega e lembretes) e Política de Privacidade 1.4 são as vigentes', () => {
-    expect(CURRENT_LEGAL_VERSION).toEqual({ terms_of_use: '1.4', privacy_policy: '1.4' });
-    expect(PUBLISHED_LEGAL_VERSIONS.terms_of_use).toEqual(['1.0', '1.1', '1.2', '1.3', '1.4']);
-    expect(PUBLISHED_LEGAL_VERSIONS.privacy_policy).toEqual(['1.0', '1.1', '1.2', '1.3', '1.4']);
+  it('Termos e Política 1.6 (suporte) são vigentes, preservando as versões anteriores', () => {
+    expect(CURRENT_LEGAL_VERSION).toEqual({ terms_of_use: '1.6', privacy_policy: '1.6' });
+    expect(PUBLISHED_LEGAL_VERSIONS.terms_of_use).toEqual([
+      '1.0',
+      '1.1',
+      '1.2',
+      '1.3',
+      '1.4',
+      '1.5',
+      '1.6',
+    ]);
+    expect(PUBLISHED_LEGAL_VERSIONS.privacy_policy).toEqual([
+      '1.0',
+      '1.1',
+      '1.2',
+      '1.3',
+      '1.4',
+      '1.5',
+      '1.6',
+    ]);
   });
 
   it.each(DOCS)(

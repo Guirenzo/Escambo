@@ -20,6 +20,11 @@ export function useRealtimeNotifications(): void {
     const socket = getSocket();
     const onNotification = (n: Notification): void => {
       void qc.invalidateQueries({ queryKey: qk.notifications });
+      if (n.type.startsWith('dropout_')) {
+        void qc.invalidateQueries({ queryKey: qk.myDropouts });
+        void qc.invalidateQueries({ queryKey: ['publicFreelancer'] });
+        void qc.invalidateQueries({ queryKey: ['contract'] });
+      }
       // ADR 57: os avisos de extensão e de disputa também mudam a Sala.
       if (
         n.type.startsWith('contract_') ||

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../../middlewares/authenticate';
 import { asyncHandler } from '../../utils/async-handler';
+import { appealDropout, myDropouts } from '../dropouts/dropouts.controller';
 import {
   addPortfolioItem,
   getMyPortfolio,
@@ -20,6 +21,8 @@ profilesRoutes.get('/freelancer/:ulid', asyncHandler(getPublicFreelancer));
 
 // Protegidas (meu perfil)
 profilesRoutes.get('/me', authenticate, asyncHandler(getMyProfiles));
+profilesRoutes.get('/me/dropouts', authenticate, asyncHandler(myDropouts));
+profilesRoutes.post('/me/dropouts/:id/appeal', authenticate, asyncHandler(appealDropout));
 profilesRoutes.put('/freelancer', authenticate, asyncHandler(putFreelancerProfile));
 profilesRoutes.put('/client', authenticate, asyncHandler(putClientProfile));
 

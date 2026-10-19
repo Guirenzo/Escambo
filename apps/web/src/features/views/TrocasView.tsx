@@ -1,3 +1,4 @@
+import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
 import { ArrowLeftRight, Plus, QrCode } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -141,13 +142,13 @@ export function TrocasView() {
         }
         action={
           barterEnabled ? (
-            <Button
+            <BusinessButton
               variant={open ? 'secondary' : 'primary'}
               onClick={() => setOpen((o) => !o)}
               disabled={others.length === 0}
             >
               <Plus size={16} /> {open ? 'Fechar' : 'Propor troca'}
-            </Button>
+            </BusinessButton>
           ) : null
         }
       />
@@ -159,7 +160,7 @@ export function TrocasView() {
       )}
 
       {open && barterEnabled && (
-        <form className="card" onSubmit={submit}>
+        <BusinessForm className="card" onSubmit={submit}>
           <h3>Nova proposta de troca</h3>
           <Field label="Eu quero (serviço de outro freelancer)">
             <Select value={targetId} onChange={(e) => setTargetId(Number(e.target.value))} required>
@@ -249,16 +250,20 @@ export function TrocasView() {
                   Saldo {brl(balance)} · deposite via PIX sem sair daqui.
                 </div>
               </div>
-              <Button type="button" variant="secondary" onClick={() => setDepositFor(missing)}>
+              <BusinessButton
+                type="button"
+                variant="secondary"
+                onClick={() => setDepositFor(missing)}
+              >
                 <QrCode size={14} /> Depositar {brl(missing)}
-              </Button>
+              </BusinessButton>
             </div>
           )}
 
           <Button type="submit" disabled={propose.isPending || !target || missing > 0}>
             {propose.isPending ? 'Enviando…' : 'Enviar proposta'}
           </Button>
-        </form>
+        </BusinessForm>
       )}
 
       <QueryState
@@ -335,40 +340,40 @@ export function TrocasView() {
                   {b.status === 'proposed' && (
                     <div className="svc-actions">
                       {iAmReceiver && mustFund && (
-                        <Button
+                        <BusinessButton
                           variant="mini"
                           onClick={() => setDepositFor(round2(b.cashDifference - balance))}
                         >
                           <QrCode size={14} /> Depositar {brl(round2(b.cashDifference - balance))}{' '}
                           para aceitar
-                        </Button>
+                        </BusinessButton>
                       )}
                       {iAmReceiver && !mustFund && (
-                        <Button
+                        <BusinessButton
                           variant="mini"
                           disabled={act.isPending}
                           onClick={() => void run(b.id, 'accept')}
                         >
                           Aceitar
-                        </Button>
+                        </BusinessButton>
                       )}
                       {iAmReceiver && (
-                        <Button
+                        <BusinessButton
                           variant="mini"
                           disabled={act.isPending}
                           onClick={() => void run(b.id, 'reject')}
                         >
                           Recusar
-                        </Button>
+                        </BusinessButton>
                       )}
                       {iAmProposer && (
-                        <Button
+                        <BusinessButton
                           variant="mini"
                           disabled={act.isPending}
                           onClick={() => void run(b.id, 'cancel')}
                         >
                           Cancelar
-                        </Button>
+                        </BusinessButton>
                       )}
                     </div>
                   )}

@@ -1,5 +1,23 @@
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type {
+  Contract,
+  ContractOffer,
+  ContractWithHistory,
+  CounterOfferRequest,
+  Negotiation,
+  NegotiationTurn,
+  Milestone,
+  OfferMilestone,
+  RevisionState,
+} from '@escambo/types';
+import type {
+  CounterOfferRequest as ReexportedCounterOfferRequest,
+  NegotiationTurn as ReexportedNegotiationTurn,
+  OfferMilestoneTerms,
+  OfferWalletEffect,
+} from '../modules/contracts/offers';
+import type { WalletEffect } from '../modules/wallet/wallet.ledger';
 import {
   openapiDocument,
   SWAGGER_UI_FILES,
@@ -13,7 +31,13 @@ const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
 interface Operation {
   tags: string[];
   summary: string;
-  responses: Record<string, { description: string }>;
+  responses: Record<
+    string,
+    {
+      description: string;
+      content?: { 'application/json': { schema: Record<string, unknown> } };
+    }
+  >;
   security?: unknown;
   requestBody?: {
     required: boolean;
@@ -48,6 +72,43 @@ function refs(node: unknown, found: string[] = []): string[] {
 
 const operation = (path: string, method: (typeof METHODS)[number]): Operation =>
   openapiDocument.paths[path][method] as Operation;
+
+describe('contrato público do suporte', () => {
+  it('documenta todos os caminhos autenticados, mantendo notas apenas no fluxo administrativo', () => {
+    for (const [path, method] of [
+      ['/support/tickets', 'get'],
+      ['/support/tickets', 'post'],
+      ['/support/tickets/{id}', 'get'],
+      ['/support/tickets/{id}/messages', 'post'],
+      ['/support/tickets/{id}/close', 'post'],
+      ['/admin/support/tickets', 'get'],
+      ['/admin/support/tickets/{id}', 'get'],
+      ['/admin/support/tickets/{id}', 'patch'],
+      ['/admin/support/tickets/{id}/messages', 'post'],
+    ] as const) {
+      expect(operation(path, method).security, `${method} ${path}`).toEqual([{ bearerAuth: [] }]);
+    }
+    const schemas = openapiDocument.components.schemas;
+    expect(schemas.ReplySupportTicket.additionalProperties).toBe(false);
+    expect(schemas.ReplySupportTicket.properties.internal).toBeUndefined();
+    expect(schemas.AdminReplySupportTicket.properties.internal.default).toBe(false);
+    expect(schemas.SupportTicket.properties.ownerDeleted.type).toBe('boolean');
+    expect(schemas.SupportTicketDetail.allOf[1].properties.messages.maxItems).toBe(50);
+  });
+  it('descreve os limites e erros sem ampliar suspensão para ações financeiras', () => {
+    expect(operation('/support/tickets', 'post').responses['409']?.description).toContain(
+      'ticket_limit',
+    );
+    expect(operation('/admin/support/tickets/{id}', 'patch').summary).toContain('72/24/8/2');
+    expect(openapiDocument.info.description).toContain(
+      'suporte próprio (abrir, responder e encerrar)',
+    );
+    expect(openapiDocument.info.description).toContain(
+      'disputa financeira mantém suas próprias regras',
+    );
+    expect(openapiDocument.info.description).not.toContain('suporte geral ainda está pendente');
+  });
+});
 
 /** Documento OpenAPI (RNF-010): o que /api/openapi.json entrega e o Swagger UI desenha. */
 describe('documento OpenAPI', () => {
@@ -96,8 +157,29 @@ describe('documento OpenAPI', () => {
     // Protegida, com corpo e resposta própria.
     expect(operation('/contracts', 'post')).toEqual({
       tags: ['Contratações'],
-      summary: 'Cria proposta (taxa 15%)',
-      responses: { '201': { description: 'Criado' } },
+      summary: 'Cria proposta e reserva o valor',
+      responses: {
+        '201': {
+          description: 'Criado',
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/Contract' } },
+          },
+        },
+        '409': {
+          description:
+            'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive.',
+          content: {
+            'application/json': {
+              schema: {
+                anyOf: [
+                  { $ref: '#/components/schemas/ActiveContractError' },
+                  { $ref: '#/components/schemas/Error' },
+                ],
+              },
+            },
+          },
+        },
+      },
       security: [{ bearerAuth: [] }],
       requestBody: {
         required: true,
@@ -226,6 +308,293 @@ describe('documento OpenAPI', () => {
         expect(segment, path).toMatch(/^\{\w+\}$/);
       }
     }
+  });
+
+  it('liga desistências ativas às rotas e projeções públicas ou privadas da RN-026', () => {
+    const { schemas } = openapiDocument.components;
+    const names = [
+      'ContractDropout',
+      'DropoutSummary',
+      'DropoutPreview',
+      'DropoutDecision',
+      'DropoutStatus',
+      'MyDropout',
+      'MyDropouts',
+      'AdminDropout',
+    ];
+    for (const name of names) {
+      expect(schemas[name], name).toHaveProperty('x-implementation-status', 'active');
+    }
+    const newRoute = /\/dropouts?(?:\/|$)/;
+    expect(Object.keys(openapiDocument.paths).filter((path) => newRoute.test(path))).toEqual([
+      '/profiles/me/dropouts',
+      '/profiles/me/dropouts/{id}/appeal',
+      '/contracts/{id}/dropout/agreed',
+      '/admin/dropouts',
+      '/admin/users/{ulid}/dropouts',
+      '/admin/dropouts/{id}/{decision}',
+    ]);
+    const connected = refs(openapiDocument.paths);
+    expect(connected).toContain('#/components/schemas/MyDropouts');
+    expect(connected).toContain('#/components/schemas/ContractDropout');
+    expect(connected).toContain('#/components/schemas/MyDropout');
+    expect(schemas.PublicFreelancerProfile.properties.dropouts).toEqual({
+      $ref: '#/components/schemas/DropoutSummary',
+    });
+    expect(schemas.CancelTerms.properties.dropout.oneOf).toContainEqual({
+      $ref: '#/components/schemas/DropoutPreview',
+    });
+    expect(schemas.CancelContract.additionalProperties).toBe(false);
+    expect(schemas.CancelContract.properties.expectedDropoutCount).toMatchObject({
+      type: 'integer',
+      minimum: 1,
+    });
+    expect(schemas.DropoutDecisionRequest.properties.note).toEqual({
+      type: 'string',
+      minLength: 10,
+      maxLength: 500,
+    });
+    expect(schemas.DropoutAppeal.properties.text).toEqual({
+      type: 'string',
+      minLength: 20,
+      maxLength: 1000,
+    });
+  });
+
+  it('liga a negociação ativa às rotas canônicas, decisões com seq e payloads reais', () => {
+    const { schemas } = openapiDocument.components;
+    for (const name of [
+      'NegotiationTurn',
+      'OfferOutcome',
+      'OfferMilestone',
+      'ContractOffer',
+      'Negotiation',
+      'CounterOfferMilestone',
+      'CounterOfferRequest',
+    ]) {
+      expect(schemas[name], name).toHaveProperty('x-implementation-status', 'active');
+      expect(schemas[name].description ?? '', name).not.toContain('ainda não exposto');
+    }
+    const counter = operation('/contracts/{id}/offers', 'post');
+    expect(counter.security).toEqual([{ bearerAuth: [] }]);
+    expect(counter.requestBody).toEqual({
+      required: true,
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/CounterOfferRequest' } },
+      },
+    });
+    expect(counter.responses['201']?.content).toEqual({
+      'application/json': { schema: { $ref: '#/components/schemas/ContractWithHistory' } },
+    });
+    expect(Object.keys(counter.responses)).toEqual(
+      expect.arrayContaining(['400', '402', '403', '409', '422']),
+    );
+    expect(operation('/contracts/{id}/offers/{seq}/accept', 'post')).not.toHaveProperty(
+      'requestBody',
+    );
+    const acceptPath = openapiDocument.paths['/contracts/{id}/offers/{seq}/accept'].post;
+    expect(acceptPath.parameters).toEqual([
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer', minimum: 1 } },
+      {
+        name: 'seq',
+        in: 'path',
+        required: true,
+        schema: { type: 'integer', minimum: 1, maximum: 5 },
+      },
+    ]);
+    for (const action of ['accept', 'reject']) {
+      expect(operation(`/contracts/{id}/${action}`, 'post').requestBody).toEqual({
+        required: false,
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/OfferDecision' } } },
+      });
+    }
+    expect(schemas.OfferDecision.properties.seq).toEqual({
+      type: 'integer',
+      minimum: 1,
+      maximum: 5,
+    });
+    expect(schemas.CancelContract.properties.seq).toMatchObject({
+      type: 'integer',
+      minimum: 1,
+      maximum: 5,
+    });
+    expect(schemas.CounterOfferRequest.additionalProperties).toBe(false);
+    expect(schemas.CounterOfferMilestone.additionalProperties).toBe(false);
+    expect(schemas.CounterOfferRequest.properties.message).toEqual({
+      type: 'string',
+      minLength: 5,
+      maxLength: 500,
+    });
+    expect(schemas.CounterOfferRequest.required).toEqual(['seq', 'price', 'deadlineAt', 'message']);
+    expect(schemas.Contract.properties.negotiation.oneOf).toContainEqual({
+      $ref: '#/components/schemas/Negotiation',
+    });
+    expect(schemas.ContractWithHistory.allOf[1].properties.offers.items).toEqual({
+      $ref: '#/components/schemas/ContractOffer',
+    });
+    expect(schemas.ContractsPage.properties.items).toEqual({
+      type: 'array',
+      items: { $ref: '#/components/schemas/Contract' },
+    });
+    expect(schemas.Contract.properties).not.toHaveProperty('dropout');
+    expect(schemas.ContractWithHistory.allOf[1].properties.dropout.oneOf).toContainEqual({
+      $ref: '#/components/schemas/ContractDropout',
+    });
+    expect(schemas.Negotiation.properties.feePercentage).toEqual({
+      type: 'number',
+      minimum: 0,
+      maximum: 50,
+      multipleOf: 0.01,
+    });
+    expect(schemas.Negotiation.required).not.toContain('feePercentage');
+    expect(schemas.Negotiation.properties.deadlineZone).toMatchObject({
+      type: 'string',
+      enum: [
+        'America/Noronha',
+        'America/Sao_Paulo',
+        'America/Cuiaba',
+        'America/Manaus',
+        'America/Rio_Branco',
+      ],
+    });
+    expect(schemas.Negotiation.required).not.toContain('deadlineZone');
+    expectTypeOf<Negotiation['deadlineZone']>().toEqualTypeOf<
+      Contract['deadlineZone'] | undefined
+    >();
+    expect(openapiDocument.paths).not.toHaveProperty('/contracts/{id}/counter-offer');
+    expect(openapiDocument.paths).not.toHaveProperty('/contracts/{id}/decline');
+    expectTypeOf<Pick<Contract, 'negotiation'>>().toEqualTypeOf<{
+      negotiation?: Negotiation | null;
+    }>();
+    expectTypeOf<Pick<ContractWithHistory, 'offers'>>().toEqualTypeOf<{
+      offers?: ContractOffer[];
+    }>();
+  });
+
+  it('expõe revisões por unidade e a abertura manual, preservando payloads anteriores', () => {
+    const { schemas } = openapiDocument.components;
+    expect(schemas.RevisionState).toMatchObject({
+      'x-implementation-status': 'active',
+      required: ['used', 'limit'],
+      properties: {
+        used: { type: 'integer', minimum: 0 },
+        limit: { type: 'integer', minimum: 0, nullable: true },
+      },
+    });
+    expect(schemas.Contract.properties.revisions.oneOf).toContainEqual({
+      $ref: '#/components/schemas/RevisionState',
+    });
+    expect(schemas.Contract.properties.revisions.oneOf).toContainEqual({
+      type: 'object',
+      nullable: true,
+      enum: [null],
+    });
+    expect(schemas.Milestone.properties.revisions.$ref).toBe('#/components/schemas/RevisionState');
+    expect(schemas.ContractWithHistory.allOf[1].properties.milestones.items).toEqual({
+      $ref: '#/components/schemas/Milestone',
+    });
+    expect(schemas.Contract.properties.disputeOpensAt).toMatchObject({
+      type: 'string',
+      format: 'date-time',
+      nullable: true,
+    });
+    expectTypeOf<Contract['revisions']>().toEqualTypeOf<RevisionState | null | undefined>();
+    expectTypeOf<Milestone['revisions']>().toEqualTypeOf<RevisionState | undefined>();
+    expectTypeOf<Contract['disputeOpensAt']>().toEqualTypeOf<string | null | undefined>();
+    expect(schemas.Contract.required ?? []).not.toContain('revisions');
+    expect(schemas.Milestone.required ?? []).not.toContain('revisions');
+  });
+
+  it('documenta as duas liberações sem corpo financeiro e o erro público da janela', () => {
+    for (const [path, response] of [
+      ['/contracts/{id}/revisions/grant', 'Contract'],
+      ['/contracts/{id}/milestones/{milestoneId}/revisions/grant', 'ContractWithHistory'],
+    ]) {
+      const grant = operation(path!, 'post');
+      expect(grant.security).toEqual([{ bearerAuth: [] }]);
+      expect(grant.requestBody?.required).toBe(false);
+      expect(grant.requestBody?.content['application/json'].schema).toEqual({
+        $ref: '#/components/schemas/RevisionGrant',
+      });
+      expect(grant.responses['200']?.content?.['application/json'].schema).toEqual({
+        $ref: `#/components/schemas/${response}`,
+      });
+      expect(grant.responses['409']?.description).toContain('revision_grant_not_needed');
+      expect(grant.responses['409']?.description).toContain('aprovação automática');
+    }
+    expect(openapiDocument.components.schemas.RevisionGrant.additionalProperties).toBe(false);
+    expect(openapiDocument.components.schemas.RevisionGrant.properties).toEqual({});
+    const manual = operation('/disputes', 'post').responses['409'];
+    expect(manual?.description).toContain('dispute_too_early');
+    expect(manual?.content?.['application/json'].schema).toEqual({
+      anyOf: [
+        { $ref: '#/components/schemas/DisputeTooEarlyError' },
+        { $ref: '#/components/schemas/Error' },
+      ],
+    });
+    expect(openapiDocument.components.schemas.DisputeTooEarlyError).toMatchObject({
+      required: ['error', 'message', 'opensAt'],
+      properties: { error: { enum: ['dispute_too_early'] }, opensAt: { nullable: true } },
+    });
+  });
+
+  it('exige título no marco público, preserva ids na contraproposta e permite o cálculo interno sem título', () => {
+    const { schemas } = openapiDocument.components;
+    expect(schemas.OfferMilestone.required).toContain('title');
+    expect(schemas.OfferMilestone.properties.title).toEqual({ type: 'string' });
+    expect(schemas.CounterOfferMilestone.required).toEqual(['id', 'amount', 'dueAt']);
+    expect(schemas.CounterOfferMilestone.properties).not.toHaveProperty('title');
+    expect(schemas.CounterOfferRequest.required).not.toContain('milestones');
+    expect(schemas.CounterOfferRequest.properties.milestones).toMatchObject({
+      minItems: 2,
+      maxItems: 10,
+    });
+    expectTypeOf<Pick<OfferMilestone, 'title'>>().toEqualTypeOf<{ title: string }>();
+    expectTypeOf<Pick<OfferMilestoneTerms, 'title'>>().toEqualTypeOf<{ title?: string }>();
+    expectTypeOf<ReexportedCounterOfferRequest>().toEqualTypeOf<CounterOfferRequest>();
+    expectTypeOf<ReexportedNegotiationTurn>().toEqualTypeOf<NegotiationTurn>();
+    expectTypeOf<OfferWalletEffect>().toExtend<WalletEffect>();
+  });
+
+  it('conserva null para o legado ilimitado e para ofertas sem prazo ou sem marcos', () => {
+    const { schemas } = openapiDocument.components;
+    expect(schemas.RevisionState.required).toEqual(['used', 'limit']);
+    expect(schemas.RevisionState.properties.limit).toMatchObject({
+      type: 'integer',
+      minimum: 0,
+      nullable: true,
+    });
+    expect(schemas.ContractOffer.properties.deadlineAt).toMatchObject({
+      format: 'date-time',
+      nullable: true,
+    });
+    expect(schemas.ContractOffer.properties.milestones).toMatchObject({
+      type: 'array',
+      nullable: true,
+    });
+    expect(schemas.Negotiation.properties.current.oneOf).toEqual([
+      { $ref: '#/components/schemas/ContractOffer' },
+      { type: 'object', nullable: true, enum: [null] },
+    ]);
+  });
+
+  it('o resumo público de desistências não expõe fatos privados ou datas, e a prévia é informativa', () => {
+    const { schemas } = openapiDocument.components;
+    expect(Object.keys(schemas.DropoutSummary.properties).sort()).toEqual([
+      'alert',
+      'count',
+      'windowDays',
+    ]);
+    expect(schemas.DropoutSummary.properties.windowDays.enum).toEqual([60]);
+    expect(schemas.DropoutPreview.properties.alertAt.enum).toEqual([3]);
+    expect(schemas.DropoutPreview.description).toContain('contagem pode mudar');
+    expect(schemas.ContractDropout.properties).not.toHaveProperty('appealText');
+    expect(schemas.ContractDropout.properties).not.toHaveProperty('decisionNote');
+    expect(schemas.MyDropout.required).toEqual(
+      expect.arrayContaining(['appealText', 'decisionNote', 'countsUntil']),
+    );
+    expect(schemas.MyDropouts.properties).toHaveProperty('acceptedInWindow');
+    expect(schemas.AdminDropout.allOf[0]).toEqual({ $ref: '#/components/schemas/MyDropout' });
   });
 });
 

@@ -1,7 +1,8 @@
 import { Gavel } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Contract, DisputeReason } from '@escambo/types';
-import { Button, Field, Modal, QueryState, Select } from '../../components/ui';
+import { Button, Field, QueryState, Select } from '../../components/ui';
+import { BusinessForm, BusinessModal } from '../../components/BusinessActions';
 import {
   DISPUTE_REASON_LABEL,
   DISPUTE_STATUS_LABEL,
@@ -10,6 +11,10 @@ import {
 } from '../../lib/format';
 import { useMyDisputes, useOpenDispute } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { useAuth } from '../../lib/auth';
+import { momentText } from '../../lib/deadline';
+import { disputeWaiting } from './contractRules';
+import { useContractNow } from './useContractNow';
 
 const REASONS = Object.keys(DISPUTE_REASON_LABEL) as DisputeReason[];
 
@@ -17,11 +22,15 @@ const REASONS = Object.keys(DISPUTE_REASON_LABEL) as DisputeReason[];
 export function DisputeModal({ contract, onClose }: { contract: Contract; onClose: () => void }) {
   const toast = useToast();
   const open = useOpenDispute();
+  const { user } = useAuth();
+  const now = useContractNow(contract);
+  const waiting = disputeWaiting(contract, now);
   const [reason, setReason] = useState<DisputeReason>('quality');
   const [description, setDescription] = useState('');
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
+    if (waiting || open.isPending || description.trim().length < 10) return;
     try {
       await open.mutateAsync({ contractId: contract.id, reason, description: description.trim() });
       toast.success('Disputa aberta. A mediação do Escambo vai analisar.');
@@ -32,13 +41,20 @@ export function DisputeModal({ contract, onClose }: { contract: Contract; onClos
   }
 
   return (
-    <Modal title={`Abrir disputa: ${contract.title}`} onClose={onClose}>
-      <form onSubmit={submit} className="stack">
+    <BusinessModal title={`Abrir disputa: ${contract.title}`} onClose={onClose}>
+      <BusinessForm onSubmit={submit} className="stack">
         <p className="muted tiny">
           A contratação fica congelada e um mediador da plataforma decide o destino do valor em
           escrow (liberar ao freelancer, devolver ao cliente ou dividir). Use só quando a conversa
           na sala não resolveu.
         </p>
+        <p className="muted tiny">O histórico do chat é a principal prova para a mediação.</p>
+        {waiting && (
+          <p className="notice" role="status">
+            Tentem resolver pelo chat primeiro: a disputa abre a partir de{' '}
+            {momentText(contract.disputeOpensAt!, user?.timezone)}.
+          </p>
+        )}
         <Field label="Motivo">
           <Select value={reason} onChange={(e) => setReason(e.target.value as DisputeReason)}>
             {REASONS.map((r) => (
@@ -62,12 +78,12 @@ export function DisputeModal({ contract, onClose }: { contract: Contract; onClos
         <Button
           type="submit"
           variant="danger"
-          disabled={open.isPending || description.trim().length < 10}
+          disabled={waiting || open.isPending || description.trim().length < 10}
         >
           <Gavel size={16} /> {open.isPending ? 'Abrindo…' : 'Abrir disputa'}
         </Button>
-      </form>
-    </Modal>
+      </BusinessForm>
+    </BusinessModal>
   );
 }
 

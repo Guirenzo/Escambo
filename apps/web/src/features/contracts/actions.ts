@@ -1,4 +1,5 @@
 import type { Contract } from '@escambo/types';
+import { disputeWaiting, revisionsExhausted } from './contractRules';
 
 /**
  * Ações que o usuário logado pode executar numa contratação, dado o status e o seu papel
@@ -8,7 +9,17 @@ import type { Contract } from '@escambo/types';
  */
 
 export type ContractActionKey =
-  'accept' | 'reject' | 'deliver' | 'approve' | 'revision' | 'cancel' | 'review' | 'dispute';
+  | 'accept'
+  | 'accept_counter'
+  | 'counter'
+  | 'reject'
+  | 'deliver'
+  | 'approve'
+  | 'revision'
+  | 'grant_revision'
+  | 'cancel'
+  | 'review'
+  | 'dispute';
 
 export interface ContractAction {
   key: ContractActionKey;
@@ -38,17 +49,27 @@ export function partyOf(c: Pick<Contract, 'clientId' | 'freelancerId'>, userId: 
 export function contractActions(
   c: Pick<
     Contract,
-    'clientId' | 'freelancerId' | 'status' | 'hasReview' | 'hasMilestones' | 'deadlineAt'
-  >,
+    | 'clientId'
+    | 'freelancerId'
+    | 'status'
+    | 'hasReview'
+    | 'hasMilestones'
+    | 'deadlineAt'
+    | 'negotiation'
+    | 'revisions'
+    | 'disputeOpensAt'
+  > &
+    Partial<Pick<Contract, 'paymentMode'>>,
   userId: number,
   now: number = Date.now(),
 ): ContractAction[] {
   const party = partyOf(c, userId);
   if (party === 'none') return [];
+  const dispute = disputeWaiting(c, now) ? [] : [DISPUTE];
 
   // Por marcos (RN-069): entrega e aprovação acontecem marco a marco, na Sala.
   if (c.hasMilestones && (c.status === 'accepted' || c.status === 'in_progress')) {
-    return party === 'freelancer' ? [WITHDRAW, DISPUTE] : [CANCEL, DISPUTE];
+    return party === 'freelancer' ? [WITHDRAW, ...dispute] : [CANCEL, ...dispute];
   }
 
   const deliver = (label: string): ContractAction => ({
@@ -60,6 +81,41 @@ export function contractActions(
 
   switch (c.status) {
     case 'pending': {
+      const n = c.paymentMode === 'barter' ? null : c.negotiation;
+      if (n) {
+        const ending: ContractAction =
+          party === 'client'
+            ? {
+                key: 'cancel',
+                label: n.seq === 1 ? 'Cancelar proposta' : 'Encerrar negociação',
+                tone: 'danger',
+              }
+            : {
+                key: 'reject',
+                label: n.turn === 'freelancer' ? 'Recusar' : 'Sair da negociação',
+                tone: 'danger',
+              };
+        if (party !== n.turn) return [ending];
+        const responseExpired = n.respondBy !== null && Date.parse(n.respondBy) <= now;
+        if (responseExpired) return [ending];
+        const deadline = n.current ? n.current.deadlineAt : c.deadlineAt;
+        const deadlineExpired = deadline !== null && Date.parse(deadline) <= now;
+        return [
+          ...(!deadlineExpired
+            ? [
+                {
+                  key: party === 'client' ? 'accept_counter' : 'accept',
+                  label: party === 'client' ? 'Aceitar contraproposta' : 'Aceitar',
+                  tone: 'primary',
+                } as ContractAction,
+              ]
+            : []),
+          ...(n.canCounter && n.seq < 5
+            ? [{ key: 'counter', label: 'Contrapropor', tone: 'secondary' } as ContractAction]
+            : []),
+          ending,
+        ];
+      }
       // Com o prazo de entrega já vencido, a proposta não se aceita (ADR 57): só recusar.
       const expired = c.deadlineAt !== null && new Date(c.deadlineAt).getTime() <= now;
       const reject: ContractAction = { key: 'reject', label: 'Recusar', tone: 'danger' };
@@ -73,26 +129,41 @@ export function contractActions(
     case 'accepted':
     case 'in_progress':
       return party === 'freelancer'
-        ? [deliver('Registrar entrega'), WITHDRAW, DISPUTE]
-        : [CANCEL, DISPUTE];
+        ? [deliver('Registrar entrega'), WITHDRAW, ...dispute]
+        : [CANCEL, ...dispute];
 
     // Depois da entrega não se cancela (ADR 57): o cliente aprova, pede revisão ou disputa.
     case 'revision_requested':
-      return party === 'freelancer' ? [deliver('Entregar revisão'), DISPUTE] : [DISPUTE];
+      return party === 'freelancer' ? [deliver('Entregar revisão'), ...dispute] : dispute;
 
     case 'delivered':
       return party === 'client'
         ? [
             { key: 'approve', label: 'Aprovar entrega', tone: 'primary' },
-            {
-              key: 'revision',
-              label: 'Pedir revisão',
-              tone: 'secondary',
-              prompt: 'O que precisa ser ajustado?',
-            },
-            DISPUTE,
+            ...(!revisionsExhausted(c.revisions)
+              ? [
+                  {
+                    key: 'revision',
+                    label: 'Pedir revisão',
+                    tone: 'secondary',
+                    prompt: 'O que precisa ser ajustado?',
+                  } as ContractAction,
+                ]
+              : []),
+            ...dispute,
           ]
-        : [DISPUTE];
+        : [
+            ...(!c.hasMilestones && revisionsExhausted(c.revisions)
+              ? [
+                  {
+                    key: 'grant_revision',
+                    label: 'Liberar mais uma revisão',
+                    tone: 'secondary',
+                  } as ContractAction,
+                ]
+              : []),
+            ...dispute,
+          ];
 
     case 'completed':
       return party === 'client' && !c.hasReview

@@ -14,8 +14,10 @@ import { runPurgePushSubscriptions } from './purge-push-subscriptions';
 import { runPurgeQuarantine } from './purge-quarantine';
 import { runQuietPushSummary } from './quiet-push-summary';
 import { runRepairDeadlines } from './repair-deadlines';
+import { runReconcileDropoutReviews } from './reconcile-dropout-reviews';
 import { runSavedSearchAlerts } from './saved-search-alerts';
 import { runTacitApproval } from './tacit-approval';
+import { runSupportMaintenance } from './support-maintenance';
 
 /**
  * Agendador de jobs em background, no próprio processo da API.
@@ -43,6 +45,8 @@ export const JOBS: Job[] = [
   { name: 'expire-proposals', run: () => runExpireProposals() },
   { name: 'overdue-contracts', run: () => runOverdueContracts() },
   { name: 'deadline-reminders', run: () => runDeadlineReminders() },
+  { name: 'reconcile-dropout-reviews', run: () => runReconcileDropoutReviews() },
+  { name: 'support-maintenance', run: () => runSupportMaintenance() },
   { name: 'daily-digest', run: () => runDailyDigest() },
   { name: 'moderation-sla-report', run: () => runModerationSlaReport() },
   { name: 'quiet-push-summary', run: () => runQuietPushSummary() },

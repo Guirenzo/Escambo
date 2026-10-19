@@ -80,6 +80,21 @@ describe('disputas: borda HTTP', () => {
   });
 
   describe('POST /api/disputes', () => {
+    it('janela manual fechada responde 409 com opensAt e não audita uma disputa que não abriu', async () => {
+      service.open.mockRejectedValueOnce(
+        new HttpError(409, 'A disputa abre a partir de sáb, 10/10 às 10:00.', 'dispute_too_early', {
+          opensAt: '2026-10-10T15:00:00.000Z',
+        }),
+      );
+      const res = await request(app).post('/api/disputes').set(bearer(7)).send(body).expect(409);
+      expect(res.body).toEqual({
+        error: 'dispute_too_early',
+        message: 'A disputa abre a partir de sáb, 10/10 às 10:00.',
+        opensAt: '2026-10-10T15:00:00.000Z',
+      });
+      expect(auditLog).not.toHaveBeenCalled();
+    });
+
     it('abre a disputa em nome de quem está logado e devolve 201 com ela', async () => {
       service.open.mockResolvedValue(dispute);
 

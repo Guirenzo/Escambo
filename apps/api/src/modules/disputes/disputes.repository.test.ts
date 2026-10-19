@@ -1,11 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeDb } from '../../test-support/fake-db';
+import { lockWalletRows, lockWalletUsers, lockWallets } from '../wallet/wallet.locks';
 import { setClockForTests } from '../../utils/clock';
 import { disputesRepository } from './disputes.repository';
+import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
+import { recoverDeliveryRules } from '../contracts/delivery-snapshots';
 
 const { ledger } = vi.hoisted(() => ({ ledger: { applyWalletEffect: vi.fn() } }));
 vi.mock('../../config/db', async () => (await import('../../test-support/fake-db')).dbModule);
+vi.mock('../wallet/wallet.locks', () => ({
+  lockWalletRows: vi.fn(),
+  lockWalletUsers: vi.fn(),
+  lockWallets: vi.fn(),
+}));
 vi.mock('../wallet/wallet.ledger', () => ledger);
+vi.mock('../contracts/contracts.repository', () => ({
+  contractsRepository: { findById: vi.fn() },
+}));
+vi.mock('../contracts/delivery-snapshots', () => ({ recoverDeliveryRules: vi.fn() }));
 
 /** Marca do ledger de R$ na sequência de instruções, para conferir a ordem junto com o SQL. */
 const WALLET_EFFECT = 'ledger:applyWalletEffect';
@@ -50,12 +62,132 @@ function expectRolledBack(): void {
 describe('disputesRepository', () => {
   beforeEach(() => {
     fakeDb.reset();
+    for (const lock of [lockWalletRows, lockWalletUsers, lockWallets])
+      vi.mocked(lock).mockReset().mockResolvedValue(undefined);
+    vi.mocked(contractsRepository.findById).mockReset();
+    vi.mocked(recoverDeliveryRules).mockReset();
     ledger.applyWalletEffect.mockReset().mockImplementation(async (_conn, effect) => {
       fakeDb.calls.push({ sql: WALLET_EFFECT, params: effect });
       return true;
     });
   });
   afterEach(() => setClockForTests(null));
+
+  describe('createManual (RN-062): janela relida sob a trava', () => {
+    const data = {
+      ulid: '01JDISPUTE0000000000000000',
+      contractId: 8,
+      openedBy: 7,
+      reason: 'quality',
+      description: 'A entrega veio incompleta',
+    };
+    const NOW = new Date('2026-10-08T15:00:00Z');
+    const facts = (extra: Record<string, unknown> = {}): ContractRow =>
+      ({
+        id: 8,
+        client_id: 7,
+        freelancer_id: 9,
+        status: 'accepted',
+        created_at: new Date('2026-10-01T15:00:00Z'),
+        accepted_at: new Date('2026-10-06T15:00:00Z'),
+        first_delivery_at: null,
+        first_delivered_at: null,
+        approval_due_at: null,
+        next_milestone_approval_at: null,
+        delivery_dispute_opens_at: null,
+        next_milestone_dispute_opens_at: null,
+        client_timezone: 'America/Rio_Branco',
+        freelancer_timezone: 'America/Noronha',
+        ...extra,
+      }) as unknown as ContractRow;
+    const read = vi.mocked(contractsRepository.findById);
+    const recover = vi.mocked(recoverDeliveryRules);
+
+    it.each(['pending', 'completed', 'cancelled', 'disputed', undefined])(
+      'status %s recusa antes de recuperar ou reler fatos',
+      async (status) => {
+        fakeDb.reply(status ? [{ status }] : []);
+        expect(await disputesRepository.createManual(data)).toEqual({ refused: 'not_disputable' });
+        expect(read).not.toHaveBeenCalled();
+        expect(recover).not.toHaveBeenCalled();
+        expect(steps()).toEqual(['SELECT status FROM']);
+        expectRolledBack();
+      },
+    );
+
+    it('trava contrato, recupera legado, relê na mesma conexão e abre no limite exato de 48h', async () => {
+      setClockForTests(NOW, { frozen: true });
+      read.mockResolvedValue(facts());
+      fakeDb.reply([{ status: 'accepted' }], { affectedRows: 1 }, { insertId: 55 }, {});
+      expect(await disputesRepository.createManual(data)).toEqual({ id: 55 });
+      expect(recover).toHaveBeenCalledWith(fakeDb.conn, 8);
+      expect(read).toHaveBeenCalledWith(8, fakeDb.conn);
+      expect(orderOf(fakeDb.conn.query)).toBeLessThan(orderOf(recover));
+      expect(orderOf(recover)).toBeLessThan(orderOf(read));
+      expect(fakeDb.calls[1]!.params).toEqual({ contractId: 8, oldStatus: 'accepted', now: NOW });
+      expect(fakeDb.calls[1]!.sql).toMatch(/AND c\.status = :oldStatus$/);
+      expectCommitted();
+    });
+
+    it('um segundo antes recusa com abertura e fuso da pessoa, sem atualizar status ou criar disputa', async () => {
+      setClockForTests(new Date(NOW.getTime() - 1000), { frozen: true });
+      read.mockResolvedValue(facts());
+      fakeDb.reply([{ status: 'accepted' }]);
+      expect(await disputesRepository.createManual(data)).toEqual({
+        refused: 'too_early',
+        opensAt: NOW,
+        requesterZone: 'America/Rio_Branco',
+      });
+      expect(steps()).toEqual(['SELECT status FROM']);
+      expectRolledBack();
+    });
+
+    it('entrega simultânea relida inaugura outra espera e usa o fuso do freelancer que pede', async () => {
+      setClockForTests(NOW, { frozen: true });
+      read.mockResolvedValue(
+        facts({ status: 'delivered', first_delivery_at: NOW, delivery_dispute_opens_at: null }),
+      );
+      fakeDb.reply([{ status: 'delivered' }]);
+      expect(await disputesRepository.createManual({ ...data, openedBy: 9 })).toEqual({
+        refused: 'too_early',
+        opensAt: new Date('2026-10-10T15:00:00Z'),
+        requesterZone: 'America/Noronha',
+      });
+      expectRolledBack();
+    });
+
+    it.each([
+      { status: 'revision_requested', delivery_dispute_opens_at: NOW },
+      { status: 'in_progress', next_milestone_dispute_opens_at: NOW },
+    ])('snapshot histórico abre na revisão e no marco: %j', async (snapshot) => {
+      setClockForTests(NOW, { frozen: true });
+      read.mockResolvedValue(facts({ first_delivery_at: NOW, ...snapshot }));
+      fakeDb.reply([{ status: snapshot.status }], { affectedRows: 1 }, { insertId: 56 }, {});
+      expect(await disputesRepository.createManual(data)).toEqual({ id: 56 });
+      expectCommitted();
+    });
+
+    it('consulta o relógio após esperar a trava e terminar a recuperação/releitura', async () => {
+      setClockForTests(new Date(NOW.getTime() - 1000), { frozen: true });
+      read.mockImplementationOnce(async () => {
+        setClockForTests(NOW, { frozen: true });
+        return facts();
+      });
+      fakeDb.reply([{ status: 'accepted' }], { affectedRows: 1 }, { insertId: 57 }, {});
+      expect(await disputesRepository.createManual(data)).toEqual({ id: 57 });
+      expect(fakeDb.calls[1]!.params).toMatchObject({ now: NOW });
+      expectCommitted();
+    });
+
+    it('falha do reparo desfaz a transação e não grava disputa', async () => {
+      const boom = new Error('ER_LOCK_WAIT_TIMEOUT');
+      recover.mockRejectedValueOnce(boom);
+      fakeDb.reply([{ status: 'accepted' }]);
+      await expect(disputesRepository.createManual(data)).rejects.toBe(boom);
+      expect(read).not.toHaveBeenCalled();
+      expectRolledBack();
+    });
+  });
 
   describe('create (RN-038, ADR 57)', () => {
     const data = {
@@ -279,6 +411,9 @@ describe('disputesRepository', () => {
   });
 
   describe('resolve (RN-063, RNF-038)', () => {
+    // Leituras sob trava precedem as instruções de resolução já conferidas abaixo.
+    const resolveSteps = (): string[] => steps().slice(2);
+    beforeEach(() => fakeDb.reply([{ id: 8 }], [{ status: 'open' }]));
     const base = {
       disputeId: 31,
       adminId: 1,
@@ -299,8 +434,19 @@ describe('disputesRepository', () => {
       fakeDb.reply({ affectedRows: 1 }, { affectedRows: 1 }, { affectedRows: 1 }, {});
 
       expect(await disputesRepository.resolve(base)).toBe(true);
+      expect(fakeDb.calls[0]!.sql).toBe(
+        'SELECT id FROM contracts WHERE id = :contractId FOR UPDATE',
+      );
+      expect(fakeDb.calls[1]!.sql).toBe(
+        'SELECT status FROM disputes WHERE id = :disputeId FOR UPDATE',
+      );
+      expect(lockWallets).toHaveBeenCalledExactlyOnceWith(fakeDb.conn, [44, 7], [1]);
+      const lockedAt = vi.mocked(lockWallets).mock.invocationCallOrder[0]!;
+      expect(fakeDb.conn.query.mock.invocationCallOrder[1]!).toBeLessThan(lockedAt);
+      expect(lockedAt).toBeLessThan(fakeDb.conn.query.mock.invocationCallOrder[2]!);
+      expect(lockedAt).toBeLessThan(ledger.applyWalletEffect.mock.invocationCallOrder[0]!);
 
-      expect(steps()).toEqual([
+      expect(resolveSteps()).toEqual([
         'UPDATE disputes SET',
         'UPDATE contracts SET',
         WALLET_EFFECT,
@@ -310,11 +456,11 @@ describe('disputesRepository', () => {
       ]);
 
       // Só resolve disputa que ainda não foi resolvida (duas decisões não se aplicam em dobro).
-      expect(fakeDb.calls[0]!.sql).toContain(
+      expect(fakeDb.calls[2]!.sql).toContain(
         "UPDATE disputes SET status = 'resolved', resolution = :resolution, refund_percentage = :refundPercentage, resolved_by = :adminId, resolution_note = :note, resolved_at = NOW()",
       );
-      expect(fakeDb.calls[0]!.sql).toMatch(/WHERE id = :disputeId AND status <> 'resolved'$/);
-      expect(fakeDb.calls[0]!.params).toEqual({
+      expect(fakeDb.calls[2]!.sql).toMatch(/WHERE id = :disputeId AND status <> 'resolved'$/);
+      expect(fakeDb.calls[2]!.params).toEqual({
         resolution: 'partial_split',
         refundPercentage: 50,
         adminId: 1,
@@ -322,20 +468,20 @@ describe('disputesRepository', () => {
         disputeId: 31,
       });
 
-      expect(fakeDb.calls[1]!.sql).toBe(
+      expect(fakeDb.calls[3]!.sql).toBe(
         'UPDATE contracts SET status = :status, completed_at = NOW() WHERE id = :contractId',
       );
-      expect(fakeDb.calls[1]!.params).toEqual({ status: 'completed', contractId: 8 });
+      expect(fakeDb.calls[3]!.params).toEqual({ status: 'completed', contractId: 8 });
 
       // O retido do freelancer sai inteiro; o disponível recebe só a parte liberada.
-      expect(fakeDb.calls[2]!.params).toEqual({
+      expect(fakeDb.calls[4]!.params).toEqual({
         userId: 44,
         pendingDelta: -850,
         balanceDelta: 425,
         reason: 'escrow_release',
         contractId: 8,
       });
-      expect(fakeDb.calls[3]!.params).toEqual({
+      expect(fakeDb.calls[5]!.params).toEqual({
         userId: 7,
         pendingDelta: 0,
         balanceDelta: 500,
@@ -349,26 +495,26 @@ describe('disputesRepository', () => {
       ]);
 
       // Linha do tempo: sai de 'disputed' para o status final, em nome do admin.
-      expect(fakeDb.calls[4]!.sql).toContain(
+      expect(fakeDb.calls[6]!.sql).toContain(
         'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)',
       );
-      expect(fakeDb.calls[4]!.sql).toMatch(
+      expect(fakeDb.calls[6]!.sql).toMatch(
         /VALUES \(:contractId, :adminId, 'disputed', :status, :note\)$/,
       );
-      expect(fakeDb.calls[4]!.params).toEqual({
+      expect(fakeDb.calls[6]!.params).toEqual({
         contractId: 8,
         adminId: 1,
         status: 'completed',
         note: 'Disputa resolvida: partial_split',
       });
       // Trilha das ações de admin: o alvo registrado é a DISPUTA, não a contratação.
-      expect(fakeDb.calls[5]!.sql).toContain(
+      expect(fakeDb.calls[7]!.sql).toContain(
         'INSERT INTO admin_actions (admin_id, action, target_type, target_id, description)',
       );
-      expect(fakeDb.calls[5]!.sql).toMatch(
+      expect(fakeDb.calls[7]!.sql).toMatch(
         /VALUES \(:adminId, 'dispute_resolved', 'dispute', :disputeId, :description\)$/,
       );
-      expect(fakeDb.calls[5]!.params).toEqual({
+      expect(fakeDb.calls[7]!.params).toEqual({
         adminId: 1,
         disputeId: 31,
         description: 'resolution=partial_split',
@@ -388,31 +534,31 @@ describe('disputesRepository', () => {
         refundPercentage: 100,
       });
 
-      expect(fakeDb.calls[1]!.sql).toBe(
+      expect(fakeDb.calls[3]!.sql).toBe(
         'UPDATE contracts SET status = :status, cancelled_at = NOW() WHERE id = :contractId',
       );
-      expect(fakeDb.calls[1]!.params).toEqual({ status: 'cancelled', contractId: 8 });
-      expect(fakeDb.calls[2]!.params).toEqual({
+      expect(fakeDb.calls[3]!.params).toEqual({ status: 'cancelled', contractId: 8 });
+      expect(fakeDb.calls[4]!.params).toEqual({
         userId: 44,
         pendingDelta: -850,
         balanceDelta: 0,
         reason: 'escrow_refund',
         contractId: 8,
       });
-      expect(fakeDb.calls[3]!.params).toEqual({
+      expect(fakeDb.calls[5]!.params).toEqual({
         userId: 7,
         pendingDelta: 0,
         balanceDelta: 1000,
         reason: 'refund',
         contractId: 8,
       });
-      expect(fakeDb.calls[4]!.params).toEqual({
+      expect(fakeDb.calls[6]!.params).toEqual({
         contractId: 8,
         adminId: 1,
         status: 'cancelled',
         note: 'Disputa resolvida: refund_client',
       });
-      expect(fakeDb.calls[5]!.params).toEqual({
+      expect(fakeDb.calls[7]!.params).toEqual({
         adminId: 1,
         disputeId: 31,
         description: 'resolution=refund_client',
@@ -425,7 +571,7 @@ describe('disputesRepository', () => {
 
       await disputesRepository.resolve({ ...base, note: null, refundPercentage: null });
 
-      expect(fakeDb.calls[0]!.params).toEqual({
+      expect(fakeDb.calls[2]!.params).toEqual({
         resolution: 'partial_split',
         refundPercentage: null,
         adminId: 1,
@@ -433,7 +579,7 @@ describe('disputesRepository', () => {
         disputeId: 31,
       });
       // A linha do tempo não leva a observação do admin: leva sempre o tipo da decisão.
-      expect(fakeDb.calls[4]!.params).toMatchObject({ note: 'Disputa resolvida: partial_split' });
+      expect(fakeDb.calls[6]!.params).toMatchObject({ note: 'Disputa resolvida: partial_split' });
     });
 
     it('troca (barter) não tem escrow: mesmo com valor informado, nenhuma carteira é movida', async () => {
@@ -448,7 +594,7 @@ describe('disputesRepository', () => {
       ).toBe(true);
 
       // Só 'cash' usa o ledger de R$ e só 'credits' mexe nas carteiras de créditos.
-      expect(steps()).toEqual([
+      expect(resolveSteps()).toEqual([
         'UPDATE disputes SET',
         'UPDATE contracts SET',
         'INSERT INTO contract_status_history',
@@ -472,7 +618,7 @@ describe('disputesRepository', () => {
       ).toBe(true);
 
       expect(ledger.applyWalletEffect).toHaveBeenCalledTimes(1);
-      expect(fakeDb.calls[2]!.params).toEqual({
+      expect(fakeDb.calls[4]!.params).toEqual({
         userId: 44,
         pendingDelta: -850,
         balanceDelta: 850,
@@ -483,11 +629,41 @@ describe('disputesRepository', () => {
     });
 
     it('disputa que já foi resolvida: devolve false e não mexe em contratação nem carteira', async () => {
-      fakeDb.reply({ affectedRows: 0 });
+      fakeDb.reset();
+      fakeDb.reply([{ id: 8 }], [{ status: 'resolved' }]);
 
       expect(await disputesRepository.resolve(base)).toBe(false);
 
-      expect(steps()).toEqual(['UPDATE disputes SET']);
+      expect(steps()).toEqual(['SELECT id FROM', 'SELECT status FROM']);
+      expect(lockWallets).not.toHaveBeenCalled();
+      expect(ledger.applyWalletEffect).not.toHaveBeenCalled();
+      expectRolledBack();
+    });
+
+    it.each(['under_review', 'awaiting_parties', 'closed'])(
+      'mantém a guarda anterior: disputa em %s ainda pode ser resolvida',
+      async (status) => {
+        fakeDb.reset();
+        fakeDb.reply([{ id: 8 }], [{ status }], { affectedRows: 1 }, {}, {}, {});
+        expect(await disputesRepository.resolve(base)).toBe(true);
+        expectCommitted();
+      },
+    );
+
+    it('disputa ausente recusa sem travar contas ou mover saldo', async () => {
+      fakeDb.reset();
+      fakeDb.reply([{ id: 8 }], []);
+      expect(await disputesRepository.resolve(base)).toBe(false);
+      expect(lockWallets).not.toHaveBeenCalled();
+      expect(ledger.applyWalletEffect).not.toHaveBeenCalled();
+      expectRolledBack();
+    });
+
+    it('falha ao travar contas e carteiras reverte antes de registrar a decisão', async () => {
+      const boom = new Error('ER_LOCK_WAIT_TIMEOUT');
+      vi.mocked(lockWallets).mockRejectedValueOnce(boom);
+      await expect(disputesRepository.resolve(base)).rejects.toBe(boom);
+      expect(fakeDb.sqls().some((s) => s.startsWith('UPDATE'))).toBe(false);
       expect(ledger.applyWalletEffect).not.toHaveBeenCalled();
       expectRolledBack();
     });
@@ -528,7 +704,7 @@ describe('disputesRepository', () => {
           }),
         ).toBe(true);
 
-        expect(steps()).toEqual([
+        expect(resolveSteps()).toEqual([
           'UPDATE disputes SET',
           'UPDATE contracts SET',
           'INSERT INTO contract_status_history',
@@ -566,7 +742,7 @@ describe('disputesRepository', () => {
 
         expect(await disputesRepository.resolve(credits)).toBe(true);
 
-        expect(steps()).toEqual([
+        expect(resolveSteps()).toEqual([
           'UPDATE disputes SET',
           'UPDATE contracts SET',
           'UPDATE wallets SET',
@@ -582,17 +758,17 @@ describe('disputesRepository', () => {
         expect(ledger.applyWalletEffect).not.toHaveBeenCalled();
 
         // Freelancer: o retido sai inteiro e só a parte liberada vira saldo; nenhum dos dois fica negativo.
-        expect(fakeDb.calls[2]!.sql).toBe(walletUpdate);
-        expect(fakeDb.calls[2]!.params).toEqual({ pending: -10, balance: 4, userId: 44 });
-        expect(fakeDb.calls[3]!.sql).toBe(
+        expect(fakeDb.calls[4]!.sql).toBe(walletUpdate);
+        expect(fakeDb.calls[4]!.params).toEqual({ pending: -10, balance: 4, userId: 44 });
+        expect(fakeDb.calls[5]!.sql).toBe(
           'SELECT credits_balance + credits_pending AS total FROM wallets WHERE user_id = :userId',
         );
-        expect(fakeDb.calls[3]!.params).toEqual({ userId: 44 });
-        expect(fakeDb.calls[4]!.sql).toContain(
+        expect(fakeDb.calls[5]!.params).toEqual({ userId: 44 });
+        expect(fakeDb.calls[6]!.sql).toContain(
           'INSERT INTO credit_transactions (user_id, amount, balance_after, reason, contract_id) VALUES (:userId, :amount, :after, :reason, :contractId)',
         );
         // O extrato guarda a variação líquida (retido + saldo) e o total lido depois dela, em número.
-        expect(fakeDb.calls[4]!.params).toEqual({
+        expect(fakeDb.calls[6]!.params).toEqual({
           userId: 44,
           amount: -6,
           after: 14,
@@ -601,10 +777,10 @@ describe('disputesRepository', () => {
         });
 
         // Cliente: recebe a devolução no saldo.
-        expect(fakeDb.calls[5]!.sql).toBe(walletUpdate);
-        expect(fakeDb.calls[5]!.params).toEqual({ pending: 0, balance: 6, userId: 7 });
-        expect(fakeDb.calls[6]!.params).toEqual({ userId: 7 });
-        expect(fakeDb.calls[7]!.params).toEqual({
+        expect(fakeDb.calls[7]!.sql).toBe(walletUpdate);
+        expect(fakeDb.calls[7]!.params).toEqual({ pending: 0, balance: 6, userId: 7 });
+        expect(fakeDb.calls[8]!.params).toEqual({ userId: 7 });
+        expect(fakeDb.calls[9]!.params).toEqual({
           userId: 7,
           amount: 6,
           after: 26,
@@ -624,15 +800,15 @@ describe('disputesRepository', () => {
           refundToClient: 10,
         });
 
-        expect(fakeDb.calls[2]!.params).toEqual({ pending: -10, balance: 0, userId: 44 });
-        expect(fakeDb.calls[4]!.params).toEqual({
+        expect(fakeDb.calls[4]!.params).toEqual({ pending: -10, balance: 0, userId: 44 });
+        expect(fakeDb.calls[6]!.params).toEqual({
           userId: 44,
           amount: -10,
           after: 3,
           reason: 'escrow_refund',
           contractId: 8,
         });
-        expect(fakeDb.calls[7]!.params).toMatchObject({ userId: 7, amount: 10, reason: 'refund' });
+        expect(fakeDb.calls[9]!.params).toMatchObject({ userId: 7, amount: 10, reason: 'refund' });
       });
 
       it('liberação total: o cliente não tem movimento nem linha de extrato', async () => {
@@ -646,7 +822,7 @@ describe('disputesRepository', () => {
           }),
         ).toBe(true);
 
-        expect(steps()).toEqual([
+        expect(resolveSteps()).toEqual([
           'UPDATE disputes SET',
           'UPDATE contracts SET',
           'UPDATE wallets SET',
@@ -655,7 +831,7 @@ describe('disputesRepository', () => {
           'INSERT INTO contract_status_history',
           'INSERT INTO admin_actions',
         ]);
-        expect(fakeDb.calls[4]!.params).toEqual({
+        expect(fakeDb.calls[6]!.params).toEqual({
           userId: 44,
           amount: 0,
           after: 22,
@@ -669,7 +845,7 @@ describe('disputesRepository', () => {
 
         expect(await disputesRepository.resolve(credits)).toBe(false);
 
-        expect(steps()).toEqual([
+        expect(resolveSteps()).toEqual([
           'UPDATE disputes SET',
           'UPDATE contracts SET',
           'UPDATE wallets SET',
@@ -690,7 +866,7 @@ describe('disputesRepository', () => {
         expect(await disputesRepository.resolve(credits)).toBe(false);
 
         // Para na carteira do cliente: sem extrato dele, sem linha do tempo, sem ação de admin.
-        expect(steps()).toEqual([
+        expect(resolveSteps()).toEqual([
           'UPDATE disputes SET',
           'UPDATE contracts SET',
           'UPDATE wallets SET',
@@ -698,7 +874,7 @@ describe('disputesRepository', () => {
           'INSERT INTO credit_transactions',
           'UPDATE wallets SET',
         ]);
-        expect(fakeDb.calls[5]!.params).toEqual({ pending: 0, balance: 6, userId: 7 });
+        expect(fakeDb.calls[7]!.params).toEqual({ pending: 0, balance: 6, userId: 7 });
         expectRolledBack();
       });
 
@@ -708,7 +884,7 @@ describe('disputesRepository', () => {
 
         await expect(disputesRepository.resolve(credits)).rejects.toBe(boom);
 
-        expect(steps().at(-1)).toBe('INSERT INTO credit_transactions');
+        expect(resolveSteps().at(-1)).toBe('INSERT INTO credit_transactions');
         expectRolledBack();
       });
     });

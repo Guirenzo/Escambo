@@ -1,7 +1,9 @@
+import type { Request, Response } from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { bearer, routerApp } from '../../test-support/http';
 import { gamificationRoutes } from './gamification.routes';
+import { getMyGamification } from './gamification.controller';
 
 const { service } = vi.hoisted(() => ({
   service: { getProfile: vi.fn(), getHistory: vi.fn(), getLeaderboard: vi.fn() },
@@ -32,6 +34,18 @@ describe('gamificação: borda HTTP', () => {
   });
 
   describe('GET /api/gamification/me', () => {
+    it('conta suspensa consulta XP em modo somente leitura vindo da autenticação', async () => {
+      const profile = { totalXp: 350, level: 2 };
+      service.getProfile.mockResolvedValue(profile);
+      const req = { user: { uid: 7, status: 'suspended' } } as unknown as Request;
+      const res = { json: vi.fn() } as unknown as Response;
+
+      await getMyGamification(req, res);
+
+      expect(service.getProfile).toHaveBeenCalledWith(7, { readOnly: true });
+      expect(res.json).toHaveBeenCalledWith(profile);
+    });
+
     it('devolve o perfil de gamificação de quem está logado', async () => {
       const profile = {
         totalXp: 350,

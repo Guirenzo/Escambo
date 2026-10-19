@@ -15,7 +15,7 @@ const router = Router();
 router.get('/painel', authenticate, requireAdmin, handler);
 const app = routerApp('/api/admin', router);
 
-/** Só o papel `admin` do token passa; qualquer outro é 403 antes de a rota rodar. */
+/** Só o papel atual `admin` passa; claims fora dos papéis válidos são recusadas antes da rota. */
 describe('requireAdmin', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -30,9 +30,11 @@ describe('requireAdmin', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it('o papel é comparado exatamente: "Admin" ou "superadmin" não passam', async () => {
-    await request(app).get('/api/admin/painel').set(bearer(7, 'Admin')).expect(403);
-    await request(app).get('/api/admin/painel').set(bearer(7, 'superadmin')).expect(403);
+  it('claims com papel "Admin" ou "superadmin" são inválidas: 401 antes da checagem de admin', async () => {
+    for (const role of ['Admin', 'superadmin']) {
+      const res = await request(app).get('/api/admin/painel').set(bearer(7, role)).expect(401);
+      expect(res.body.error).toBe('invalid_token');
+    }
     expect(handler).not.toHaveBeenCalled();
   });
 

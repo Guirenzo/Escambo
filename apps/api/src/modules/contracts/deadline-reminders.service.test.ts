@@ -14,6 +14,7 @@ const { conn, getConnection, order } = vi.hoisted(() => {
     commit: vi.fn(),
     rollback: vi.fn(),
     release: vi.fn(),
+    query: vi.fn(),
   };
   return { conn, getConnection: vi.fn(), order };
 });
@@ -92,6 +93,7 @@ function contract(over: Columns<ContractRow> = {}): ContractRow {
     approval_due_at: null,
     revision_requested_at: null,
     proposal_expires_at: null,
+    offer_seq: 1,
     total_milestones: 0,
     undelivered_milestones: 0,
     delivered_awaiting: 0,
@@ -253,7 +255,7 @@ describe('envio dos lembretes (ADR 58)', () => {
       const params = {
         type: 'contract_proposal_reminder',
         title: 'Responda à proposta até sex, 02/10 às 12:00: Logo nova',
-        body: 'Aceite ou recuse até lá. Sem resposta, a proposta se encerra e o valor reservado volta ao cliente. Se aceitar, o prazo de entrega é sex, 09/10/2026, até 23:59.',
+        body: 'Aceite, recuse ou faça uma contraproposta até lá. Sem resposta, a proposta se encerra e o valor reservado volta ao cliente. Se aceitar, o prazo de entrega é sex, 09/10/2026, até 23:59.',
         data: { contractId: 7 },
       };
       expect(notifications.persist.mock.calls).toEqual([[2, params, conn]]);
@@ -440,19 +442,178 @@ describe('envio dos lembretes (ADR 58)', () => {
     });
   });
 
+  describe('contraproposta, ao cliente (RN-030)', () => {
+    const due = new Date('2026-10-02T15:00:00Z');
+    const offer = (over: Record<string, unknown> = {}) => ({
+      seq: 2,
+      made_by: 'freelancer',
+      price: '650.00',
+      deadline_at: END_09_SP,
+      respond_by: due,
+      outcome: 'open',
+      ...over,
+    });
+    const setup = (seq = 2): ReminderCandidate => {
+      facts(
+        contract({
+          status: 'pending',
+          offer_seq: seq,
+          proposal_expires_at: due,
+          client_timezone: 'America/Rio_Branco',
+          freelancer_timezone: 'America/Sao_Paulo',
+        }),
+      );
+      conn.query.mockImplementation(async () => {
+        order.push('oferta');
+        return [[offer({ seq })], []];
+      });
+      return candidate({ seq, due_at: due, start_at: NOW });
+    };
+
+    it.each([2, 4])(
+      'oferta%s: lê termos na conexão travada, usa o fuso do cliente e só despacha após COMMIT',
+      async (seq) => {
+        const c = setup(seq);
+        expect(await deadlineRemindersService.counterOffer(c, NOW)).toBe(true);
+        expect(order).toEqual([
+          'begin',
+          'trava',
+          'claim counter_offer 7',
+          'fatos',
+          'oferta',
+          'grava 1',
+          'commit',
+          'envia 1',
+          'release',
+        ]);
+        expect(conn.query).toHaveBeenCalledOnce();
+        expect(conn.query.mock.calls[0]![1]).toEqual({ contractId: 7, seq });
+        expect(reminders.claim).toHaveBeenCalledWith(
+          conn,
+          'counter_offer',
+          expect.objectContaining({ seq, due, start: NOW }),
+        );
+        const params = notifications.persist.mock.calls[0]![1];
+        expect(params).toEqual({
+          type: 'contract_counter_offer_reminder',
+          title: 'Responda à contraproposta até sex, 02/10 às 10:00: Logo nova',
+          body: `Aceite, faça outra contraproposta${seq === 4 ? ' (a última)' : ''} ou encerre pela Sala. Sem resposta, a negociação se encerra e o valor reservado volta para a sua carteira. Proposta do freelancer: R$ 650,00, entrega sex, 09/10/2026, até 23:59 (horário de Brasília).`,
+          data: { contractId: 7 },
+        });
+        expect(params.body).not.toContain('R$ 500,00');
+        expect(notifications.persist).toHaveBeenCalledWith(1, params, conn);
+      },
+    );
+
+    it('créditos sem prazo usa créditos da oferta, não o líquido antigo da contratação', async () => {
+      const c = setup();
+      facts(
+        contract({
+          status: 'pending',
+          offer_seq: 2,
+          payment_mode: 'credits',
+          proposal_expires_at: due,
+        }),
+      );
+      conn.query.mockResolvedValue([[offer({ price: '12.00', deadline_at: null })], []]);
+      expect(await deadlineRemindersService.counterOffer(c, NOW)).toBe(true);
+      const params = notifications.persist.mock.calls[0]![1];
+      expect(params.body).toBe(
+        'Aceite, faça outra contraproposta ou encerre pela Sala. Sem resposta, a negociação se encerra. Proposta do freelancer: 12 créditos.',
+      );
+    });
+
+    it.each([
+      ['do cliente', { made_by: 'client' }],
+      ['de outra rodada', { seq: 4 }],
+      ['encerrada', { outcome: 'closed' }],
+      ['sem resposta gravada', { respond_by: null }],
+      ['com outra validade', { respond_by: NOW }],
+    ])('oferta %s desfaz a armação do lembrete', async (_case, extra) => {
+      const c = setup();
+      conn.query.mockResolvedValue([[offer(extra)], []]);
+      expect(await deadlineRemindersService.counterOffer(c, NOW)).toBe(false);
+      expectRolledBack();
+    });
+
+    it('oferta ausente também desfaz', async () => {
+      const c = setup();
+      conn.query.mockResolvedValue([[], []]);
+      expect(await deadlineRemindersService.counterOffer(c, NOW)).toBe(false);
+      expectRolledBack();
+    });
+
+    it.each([
+      { offer_seq: 3 },
+      { offer_seq: 4 },
+      { status: 'accepted' },
+      { proposal_expires_at: null },
+    ])('estado mudou após candidata: %j não lê nem envia oferta', async (extra) => {
+      const c = setup();
+      facts(contract({ status: 'pending', offer_seq: 2, proposal_expires_at: due, ...extra }));
+      expect(await deadlineRemindersService.counterOffer(c, NOW)).toBe(false);
+      expect(conn.query).not.toHaveBeenCalled();
+      expectRolledBack();
+    });
+
+    it.each(['ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT'])(
+      '%s lendo oferta adia e desfaz tudo',
+      async (code) => {
+        const c = setup();
+        conn.query.mockRejectedValue(dbError(code));
+        expect(await deadlineRemindersService.counterOffer(c, NOW)).toBe(false);
+        expectRolledBack();
+      },
+    );
+  });
+
   describe('proposta, ao freelancer', () => {
+    it.each([3, 5])(
+      'oferta%s usa seq da contratação, texto da rodada e trava distinta mesmo com a mesma validade',
+      async (seq) => {
+        facts(
+          contract({
+            status: 'pending',
+            offer_seq: seq,
+            proposal_expires_at: new Date('2026-10-02T15:00:00Z'),
+            deadline_at: null,
+          }),
+        );
+        const c = candidate({ seq: seq - 1 });
+        expect(await deadlineRemindersService.proposal(c, NOW)).toBe(true);
+        expect(reminders.claim).toHaveBeenCalledWith(
+          conn,
+          'proposal',
+          expect.objectContaining({ seq: seq - 1 }),
+        );
+        const params = notifications.persist.mock.calls[0]![1];
+        expect(params.title).toBe('Responda à contraproposta até sex, 02/10 às 12:00: Logo nova');
+        expect(params.body).toBe(
+          `${seq === 5 ? 'É a última rodada: aceite ou recuse até lá.' : 'Aceite, recuse ou faça uma contraproposta até lá.'} Sem resposta, a negociação se encerra e o valor reservado volta ao cliente.`,
+        );
+      },
+    );
+
+    it.each([2, 3, 4, 5])(
+      'candidata da oferta1 não emite texto de uma oferta nova (%s)',
+      async (seq) => {
+        facts(contract({ status: 'pending', offer_seq: seq, proposal_expires_at: NOW }));
+        expect(await deadlineRemindersService.proposal(candidate({ seq: 0 }), NOW)).toBe(false);
+        expectRolledBack();
+      },
+    );
     it.each([
       [
         'em créditos, com o prazo de Brasília lido em Manaus',
         { payment_mode: 'credits', deadline_at: END_09_SP },
         'Responda à proposta até sex, 02/10 às 11:00: Logo nova',
-        'Aceite ou recuse até lá. Sem resposta, a proposta se encerra. Se aceitar, o prazo de entrega é sex, 09/10/2026, até 23:59 (horário de Brasília).',
+        'Aceite, recuse ou faça uma contraproposta até lá. Sem resposta, a proposta se encerra. Se aceitar, o prazo de entrega é sex, 09/10/2026, até 23:59 (horário de Brasília).',
       ],
       [
         'sem prazo de entrega',
         { payment_mode: 'cash', deadline_at: null },
         'Responda à proposta até sex, 02/10 às 11:00: Logo nova',
-        'Aceite ou recuse até lá. Sem resposta, a proposta se encerra e o valor reservado volta ao cliente.',
+        'Aceite, recuse ou faça uma contraproposta até lá. Sem resposta, a proposta se encerra e o valor reservado volta ao cliente.',
       ],
     ] as const)('%s', async (_case, over, title, body) => {
       facts(

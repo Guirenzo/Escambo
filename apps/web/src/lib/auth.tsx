@@ -1,9 +1,26 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { LoginRequest, PublicUser, RegisterRequest } from '@escambo/types';
-import { api, getRefreshToken, getToken, SESSION_EXPIRED_EVENT, setSession } from './api';
-import { disconnectSocket } from './socket';
+import {
+  ACCOUNT_STATUS_EVENT,
+  api,
+  getRefreshToken,
+  getToken,
+  isAccountStatus,
+  SESSION_EXPIRED_EVENT,
+  setSession,
+} from './api';
+import { disconnectSocket, getSocket } from './socket';
 import { currentSubscription, lastDeviceEndpoint, rememberDeviceEndpoint } from './push';
 import { browserBrazilZone } from './timezones';
+import { AccountAccessProvider } from './account-access';
 
 interface AuthState {
   user: PublicUser | null;
@@ -22,6 +39,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<PublicUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const generation = useRef(0);
+  const statusGeneration = useRef(0);
+  const refreshingUser = useRef<Promise<void> | null>(null);
+
+  const refreshUser = useCallback(async (): Promise<void> => {
+    if (!getToken() && !getRefreshToken()) return;
+    if (refreshingUser.current) return refreshingUser.current;
+    const session = generation.current;
+    const status = statusGeneration.current;
+    const request = (async () => {
+      try {
+        const next = await api.me();
+        if (session !== generation.current || (!getToken() && !getRefreshToken())) return;
+        setUser((current) =>
+          status === statusGeneration.current || !current
+            ? next
+            : { ...next, status: current.status },
+        );
+      } catch {
+        /* O client HTTP avisa quando a sessão realmente deixa de ser válida. */
+      }
+    })();
+    refreshingUser.current = request;
+    await request;
+    if (refreshingUser.current === request) refreshingUser.current = null;
+  }, []);
 
   // Sessão salva: valida (o client renova o access token sozinho se tiver vencido).
   useEffect(() => {
@@ -29,16 +72,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
+    let mounted = true;
+    const session = generation.current;
     api
       .me()
-      .then(setUser)
-      .catch(() => setSession(null))
-      .finally(() => setLoading(false));
+      .then((next) => {
+        if (mounted && session === generation.current && (getToken() || getRefreshToken()))
+          setUser(next);
+      })
+      .catch(() => {
+        if (mounted && session === generation.current) setSession(null);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // O client HTTP avisa quando a renovação falha (refresh token vencido/revogado).
   useEffect(() => {
     const onExpired = (): void => {
+      generation.current += 1;
+      refreshingUser.current = null;
       setUser(null);
       disconnectSocket();
     };
@@ -46,10 +103,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
 
+  // Cabeçalho HTTP e Socket.IO mantêm a tela coerente com a moderação sem derrubar suspensos.
+  useEffect(() => {
+    const onStatus = (event: Event): void => {
+      const status = (event as CustomEvent<unknown>).detail;
+      if (!isAccountStatus(status) || (!getToken() && !getRefreshToken())) return;
+      statusGeneration.current += 1;
+      if (status === 'banned') {
+        generation.current += 1;
+        setSession(null);
+        disconnectSocket();
+        setUser(null);
+      } else setUser((current) => (current ? { ...current, status } : current));
+    };
+    window.addEventListener(ACCOUNT_STATUS_EVENT, onStatus);
+    return () => window.removeEventListener(ACCOUNT_STATUS_EVENT, onStatus);
+  }, []);
+
+  const userId = user?.id;
+  useEffect(() => {
+    if (userId === undefined) return;
+    const socket = getSocket();
+    const onStatus = (payload: { status?: unknown }): void => {
+      if (isAccountStatus(payload?.status)) {
+        window.dispatchEvent(new CustomEvent(ACCOUNT_STATUS_EVENT, { detail: payload.status }));
+      }
+    };
+    const refreshVisible = (): void => {
+      if (document.visibilityState !== 'hidden') void refreshUser();
+    };
+    socket.on('account:status', onStatus);
+    window.addEventListener('focus', refreshVisible);
+    document.addEventListener('visibilitychange', refreshVisible);
+    const timer = window.setInterval(refreshVisible, 30_000);
+    return () => {
+      socket.off('account:status', onStatus);
+      window.removeEventListener('focus', refreshVisible);
+      document.removeEventListener('visibilitychange', refreshVisible);
+      window.clearInterval(timer);
+    };
+  }, [userId, refreshUser]);
+
   async function login(input: LoginRequest): Promise<void> {
+    const session = ++generation.current;
+    refreshingUser.current = null;
     setError(null);
     try {
       const res = await api.login(input);
+      if (session !== generation.current) return;
       setSession({ accessToken: res.accessToken, refreshToken: res.refreshToken });
       setUser(res.user);
     } catch (e) {
@@ -73,17 +174,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function refreshUser(): Promise<void> {
-    if (!getToken() && !getRefreshToken()) return;
-    try {
-      setUser(await api.me());
-    } catch {
-      /* sessão inválida: o client HTTP já avisa via SESSION_EXPIRED_EVENT */
-    }
-  }
-
   /** Sai: revoga o refresh token no servidor (melhor esforço) e limpa a sessão local. */
   function logout(): void {
+    generation.current += 1;
+    refreshingUser.current = null;
     const refreshToken = getRefreshToken();
     // Sair desliga os avisos deste aparelho (ADR 52): o pedido sai antes de a sessão ser apagada,
     // e a assinatura do navegador cai junto para o aparelho não receber aviso de conta nenhuma.
@@ -101,7 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{ user, loading, error, login, register, logout, refreshUser }}>
-      {children}
+      <AccountAccessProvider status={user?.status}>{children}</AccountAccessProvider>
     </AuthContext.Provider>
   );
 }

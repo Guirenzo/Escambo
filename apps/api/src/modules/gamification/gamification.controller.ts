@@ -3,7 +3,12 @@ import { gamificationService } from './gamification.service';
 
 /** GET /api/gamification/me — XP, nível, progresso, streak, ranking e badges. */
 export async function getMyGamification(req: Request, res: Response): Promise<void> {
-  res.json(await gamificationService.getProfile(req.user!.uid));
+  const user = req.user!;
+  res.json(
+    await (user.status === 'suspended'
+      ? gamificationService.getProfile(user.uid, { readOnly: true })
+      : gamificationService.getProfile(user.uid)),
+  );
 }
 
 /** GET /api/gamification/me/history — feed dos últimos ganhos de XP. */

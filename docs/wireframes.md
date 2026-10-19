@@ -1,9 +1,9 @@
 # Wireframes — Escambo
 
-> **Versão:** 1.0.0  
-> **Disciplina:** PAC Extensionista VII — Católica SC  
-> **Autor:** Guilherme Renzo 
-> **Data:** 2026  
+> **Versão:** 1.1.0\
+> **Disciplina:** PAC Extensionista VII — Católica SC\
+> **Autor:** Guilherme Renzo
+> **Data:** 2026\
 > **Ferramenta sugerida para protótipo navegável:** Figma
 
 ---
@@ -23,16 +23,16 @@
 
 ## 1. Visão Geral das Telas
 
-| ID | Tela | Perfil | Módulo |
-|---|---|---|---|
-| WF-01 | Home / Busca | Cliente | Busca e Serviços |
-| WF-02 | Perfil do Freelancer | Cliente (visualiza) | Perfis |
-| WF-03 | Dashboard | Freelancer | Relatórios + Contratações |
-| WF-04 | Chat | Ambos | Chat |
-| WF-05 | Pagamento | Cliente | Pagamentos |
-| WF-06 | Conquistas | Freelancer | Gamificação |
+| ID    | Tela                 | Perfil              | Módulo                    |
+| ----- | -------------------- | ------------------- | ------------------------- |
+| WF-01 | Home / Busca         | Cliente             | Busca e Serviços          |
+| WF-02 | Perfil do Freelancer | Cliente (visualiza) | Perfis                    |
+| WF-03 | Dashboard            | Freelancer          | Relatórios + Contratações |
+| WF-04 | Chat                 | Ambos               | Chat                      |
+| WF-05 | Pagamento            | Cliente             | Pagamentos                |
+| WF-06 | Conquistas           | Freelancer          | Gamificação               |
 
-> Os wireframes foram desenvolvidos para resolução mobile (375×812px — iPhone 14 base).  
+> Os wireframes foram desenvolvidos para resolução mobile (375×812px — iPhone 14 base).\
 > O protótipo navegável deve ser construído no Figma seguindo este documento.
 
 ---
@@ -70,13 +70,13 @@
 
 **Elementos principais:**
 
-| Elemento | Tipo | Comportamento |
-|---|---|---|
-| Campo de busca | Input text | Abre tela de busca com filtros |
-| Pills de categoria | Scroll horizontal | Filtra os cards abaixo |
-| Card de serviço | Touchable card | Abre WF-02 (perfil do freelancer) |
-| Badge "Destaque" | Pill âmbar | Identifica serviços impulsionados |
-| Tab bar | Navegação inferior | Persiste em todas as telas |
+| Elemento           | Tipo               | Comportamento                     |
+| ------------------ | ------------------ | --------------------------------- |
+| Campo de busca     | Input text         | Abre tela de busca com filtros    |
+| Pills de categoria | Scroll horizontal  | Filtra os cards abaixo            |
+| Card de serviço    | Touchable card     | Abre WF-02 (perfil do freelancer) |
+| Badge "Destaque"   | Pill âmbar         | Identifica serviços impulsionados |
+| Tab bar            | Navegação inferior | Persiste em todas as telas        |
 
 ---
 
@@ -115,14 +115,14 @@
 
 **Elementos principais:**
 
-| Elemento | Tipo | Comportamento |
-|---|---|---|
-| Avatar | Imagem circular | Visualização apenas |
-| Stats bar | Grid 4 colunas | Exibição de métricas |
-| Badges | Pills coloridos | Exibição de conquistas |
-| Grid portfólio | 2 colunas | Abre item em modal |
+| Elemento        | Tipo              | Comportamento          |
+| --------------- | ----------------- | ---------------------- |
+| Avatar          | Imagem circular   | Visualização apenas    |
+| Stats bar       | Grid 4 colunas    | Exibição de métricas   |
+| Badges          | Pills coloridos   | Exibição de conquistas |
+| Grid portfólio  | 2 colunas         | Abre item em modal     |
 | Botão contratar | CTA primário fixo | Abre fluxo de proposta |
-| Botão chat | Ícone secundário | Abre WF-04 |
+| Botão chat      | Ícone secundário  | Abre WF-04             |
 
 ---
 
@@ -160,12 +160,12 @@
 
 **Elementos principais:**
 
-| Elemento | Tipo | Comportamento |
-|---|---|---|
-| Métricas 2x2 | Cards de stat | Exibição, toque abre detalhe |
-| Barra de XP | Progress bar | Exibição do progresso de nível |
-| Cards de contrato | Lista | Toque abre detalhe do contrato |
-| Status pills | Pill colorido | Verde = ativo / Âmbar = pendente / Roxo = entregue |
+| Elemento          | Tipo          | Comportamento                                      |
+| ----------------- | ------------- | -------------------------------------------------- |
+| Métricas 2x2      | Cards de stat | Exibição, toque abre detalhe                       |
+| Barra de XP       | Progress bar  | Exibição do progresso de nível                     |
+| Cards de contrato | Lista         | Toque abre detalhe do contrato                     |
+| Status pills      | Pill colorido | Verde = ativo / Âmbar = pendente / Roxo = entregue |
 
 ---
 
@@ -200,13 +200,13 @@
 
 **Elementos principais:**
 
-| Elemento | Tipo | Comportamento |
-|---|---|---|
-| Bolhas de mensagem | Componente | Esquerda = recebida / Direita = enviada |
-| Status de leitura | Ícone | ✓ enviado / ✓✓ lido |
-| Botão anexo | Ícone | Abre seletor de arquivo/imagem |
-| Campo de texto | Input multiline | Expandível com o conteúdo |
-| Botão enviar | Botão circular | Envia via WebSocket |
+| Elemento           | Tipo            | Comportamento                           |
+| ------------------ | --------------- | --------------------------------------- |
+| Bolhas de mensagem | Componente      | Esquerda = recebida / Direita = enviada |
+| Status de leitura  | Ícone           | ✓ enviado / ✓✓ lido                     |
+| Botão anexo        | Ícone           | Abre seletor de arquivo/imagem          |
+| Campo de texto     | Input multiline | Expandível com o conteúdo               |
+| Botão enviar       | Botão circular  | Envia via WebSocket                     |
 
 ---
 
@@ -245,12 +245,12 @@
 
 **Elementos principais:**
 
-| Elemento | Tipo | Comportamento |
-|---|---|---|
-| Resumo financeiro | Card | Exibe valor + taxa separadamente |
-| Total destacado | Card verde | Valor final que o cliente paga |
-| Opções de pagamento | Radio list | Seleção exclusiva de método |
-| CTA de pagamento | Botão primário | Redireciona para MercadoPago |
+| Elemento            | Tipo           | Comportamento                    |
+| ------------------- | -------------- | -------------------------------- |
+| Resumo financeiro   | Card           | Exibe valor + taxa separadamente |
+| Total destacado     | Card verde     | Valor final que o cliente paga   |
+| Opções de pagamento | Radio list     | Seleção exclusiva de método      |
+| CTA de pagamento    | Botão primário | Redireciona para MercadoPago     |
 
 ---
 
@@ -296,13 +296,13 @@
 
 **Elementos principais:**
 
-| Elemento | Tipo | Comportamento |
-|---|---|---|
-| Badge de nível | Pill verde | Exibição do nível atual |
-| Barra de XP | Progress bar animada | Atualiza em tempo real |
-| Grid de badges | 3 colunas | Bloqueadas têm opacidade reduzida |
-| Cards de missão | Lista | Barra de progresso por missão |
-| Ranking | Lista posicional | Top 10 do raio de 50km |
+| Elemento        | Tipo                 | Comportamento                     |
+| --------------- | -------------------- | --------------------------------- |
+| Badge de nível  | Pill verde           | Exibição do nível atual           |
+| Barra de XP     | Progress bar animada | Atualiza em tempo real            |
+| Grid de badges  | 3 colunas            | Bloqueadas têm opacidade reduzida |
+| Cards de missão | Lista                | Barra de progresso por missão     |
+| Ranking         | Lista posicional     | Top 10 do raio de 50km            |
 
 ---
 
@@ -310,23 +310,33 @@
 
 Componentes que se repetem entre telas e devem ser criados uma vez no Figma:
 
-| Componente | Usado em | Variantes |
-|---|---|---|
-| Status bar | Todas | Padrão |
-| Tab bar | Todas | Cliente / Freelancer |
-| Card de serviço | WF-01 | Com badge / Sem badge |
-| Card de contrato | WF-03 | 5 status diferentes |
-| Status pill | WF-03, WF-05 | Em andamento / Aguardando / Entregue / Cancelado |
-| Progress bar | WF-03, WF-06 | XP / Missão |
-| Bolha de mensagem | WF-04 | Enviada / Recebida |
-| Métrica card | WF-03 | Valor monetário / Número / Estrela |
-| Badge pill | WF-02, WF-06 | Desbloqueada / Bloqueada |
-| Botão CTA | WF-02, WF-05 | Primário verde / Secundário |
+| Componente        | Usado em     | Variantes                                        |
+| ----------------- | ------------ | ------------------------------------------------ |
+| Status bar        | Todas        | Padrão                                           |
+| Tab bar           | Todas        | Cliente / Freelancer                             |
+| Card de serviço   | WF-01        | Com badge / Sem badge                            |
+| Card de contrato  | WF-03        | 5 status diferentes                              |
+| Status pill       | WF-03, WF-05 | Em andamento / Aguardando / Entregue / Cancelado |
+| Progress bar      | WF-03, WF-06 | XP / Missão                                      |
+| Bolha de mensagem | WF-04        | Enviada / Recebida                               |
+| Métrica card      | WF-03        | Valor monetário / Número / Estrela               |
+| Badge pill        | WF-02, WF-06 | Desbloqueada / Bloqueada                         |
+| Botão CTA         | WF-02, WF-05 | Primário verde / Secundário                      |
 
 ---
 
+## 9. Evolução implementada na candidata 1.42.0 (ADR 61)
+
+Os wireframes anteriores são o desenho inicial. A Sala agora tem negociação com vez e até três rodadas, modal de contraproposta, prévia da reserva, histórico privado e validade da oferta. Entrega única e marcos mostram revisões usadas/incluídas, liberação de mais uma pelo freelancer e a hora para abrir disputa. Perfil público mostra somente o número de desistências em 60 dias e alerta; o Perfil próprio contém a contestação privada, e o admin decide com nota. O cliente confirma acordo na Sala em até sete dias, sem mover dinheiro.
+
+As imagens abaixo são QA local com contas fictícias, sem representar a versão em produção.
+
+![Sala em negociação por marcos, com oferta e reserva](./screenshots/23-negociacao.jpg)
+
+![Perfil público fictício com contagem e alerta de desistências](./screenshots/24-desistencias.jpg)
+
 <div align="center">
 
-*wireframes.md — Escambo v1.0.0 — NP2 — PAC Extensionista VII — Católica SC — 2026*
+_wireframes.md — Escambo v1.1.0 — NP2 — PAC Extensionista VII — Católica SC — 2026_
 
 </div>

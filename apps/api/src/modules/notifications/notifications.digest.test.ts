@@ -39,6 +39,87 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 beforeEach(() => vi.clearAllMocks());
 
 describe('preferência de e-mail (ADR 27)', () => {
+  it.each(['support_reply', 'support_resolved'])(
+    'resumo com %s não recria e-mail após anonimização posterior à seleção dos avisos',
+    async (type) => {
+      const now = new Date('2026-10-15T15:00:00Z');
+      repo.listSince.mockResolvedValue([
+        {
+          id: 14,
+          type,
+          title: 'Seu chamado recebeu atendimento',
+          body: 'Consulte o atendimento para ver os detalhes.',
+          data: { supportTicketId: 12 },
+          created_at: now,
+          is_read: 0,
+        } as NotificationRow,
+      ]);
+      let release!: () => void;
+      const persistence = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let anonymized = false;
+      const outbox: unknown[] = [];
+      send.mockImplementationOnce(async (params) => {
+        await persistence;
+        if (params.requireActiveUser && anonymized) return null;
+        outbox.push(params);
+        return 5;
+      });
+      const digest = notificationsService.sendDigest(
+        { id: 7, email: 'f@escambo.test', last_digest_at: null },
+        now,
+      );
+      await flush();
+      expect(send).toHaveBeenCalledTimes(1);
+      anonymized = true;
+      release();
+      await expect(digest).resolves.toBe(1);
+      expect(outbox).toEqual([]);
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 7,
+          template: 'digest',
+          requireActiveUser: true,
+        }),
+      );
+      expect(repo.markDigest).toHaveBeenCalledWith(7, now);
+    },
+  );
+
+  it('resumo com nota privada RN-026 usa a mesma guarda contra reintrodução após anonimização', async () => {
+    const now = new Date('2026-10-09T15:00:00Z');
+    repo.listSince.mockResolvedValue([
+      {
+        id: 12,
+        type: 'dropout_decided',
+        title: 'Contestação analisada',
+        body: 'Nota privada da equipe',
+        data: null,
+        created_at: now,
+        is_read: 0,
+      } as NotificationRow,
+    ]);
+    await notificationsService.sendDigest(
+      { id: 7, email: 'f@escambo.test', last_digest_at: null },
+      now,
+    );
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        template: 'digest',
+        requireActiveUser: true,
+        vars: {
+          items: [
+            {
+              title: 'Contestação analisada',
+              body: 'Nota privada da equipe',
+              link: 'http://app.escambo.test/notificacoes',
+            },
+          ],
+        },
+      }),
+    );
+  });
   it('e-mail por evento só para quem está em "instant"', async () => {
     users.findById.mockResolvedValue(user('instant'));
     await notificationsService.notify(7, { type: 'contract_proposal', title: 'Nova proposta' });

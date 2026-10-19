@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 import { fundWallet } from './wallet.helpers';
 
 /**
@@ -86,7 +87,10 @@ describe('Relatório financeiro do admin', () => {
       return res.body.id as number;
     };
     const a = await propose('Contrato A', 200);
-    const b = await propose('Contrato B', 100);
+    // O relatório também precisa contabilizar duplicidades históricas anteriores à RN-020.
+    const b = await withLegacyParallelContracts(client.id, freelancer.id, () =>
+      propose('Contrato B', 100),
+    );
     for (const [id, action, who] of [
       [a, 'accept', freelancer],
       [a, 'deliver', freelancer],

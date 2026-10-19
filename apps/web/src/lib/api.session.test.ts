@@ -9,6 +9,47 @@ const reply = (status: number, body: unknown = {}) => ({
 });
 
 describe('sessão: renovação silenciosa do access token', () => {
+  it('uma renovação em voo não devolve os tokens depois de sair', async () => {
+    let finish!: (value: unknown) => void;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(reply(401))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const pending = api.me();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    setSession(null);
+    finish(reply(200, { accessToken: 'novo', refreshToken: 'refresh-2' }));
+    await expect(pending).rejects.toThrow();
+    expect(getToken()).toBeNull();
+    expect(getRefreshToken()).toBeNull();
+  });
+
+  it('resposta da renovação antiga não encerra a sessão de outra conta que entrou depois', async () => {
+    let finish!: (value: unknown) => void;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(reply(401))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const pending = api.me();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    setSession({ accessToken: 'conta-b', refreshToken: 'refresh-b' });
+    finish(reply(200, { accessToken: 'antigo-renovado', refreshToken: 'refresh-antigo-renovado' }));
+    await expect(pending).rejects.toThrow();
+    expect(getToken()).toBe('conta-b');
+    expect(getRefreshToken()).toBe('refresh-b');
+  });
   beforeEach(() => setSession({ accessToken: 'velho', refreshToken: 'refresh-1' }));
   afterEach(() => {
     vi.restoreAllMocks();

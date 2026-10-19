@@ -22,9 +22,9 @@ describe('versões dos documentos legais (ADR 54)', () => {
         expect(compareVersions(mine[i - 1]!.version, mine[i]!.version)).toBeGreaterThan(0);
       }
     }
-    expect(LEGAL_VERSIONS.privacidade).toBe('1.4');
-    expect(LEGAL_VERSIONS.termos).toBe('1.4');
-    expect(LEGAL_UPDATED.termos).toBe('2026-10-03');
+    expect(LEGAL_VERSIONS.privacidade).toBe('1.6');
+    expect(LEGAL_VERSIONS.termos).toBe('1.6');
+    expect(LEGAL_UPDATED).toEqual({ termos: '2026-10-15', privacidade: '2026-10-15' });
   });
 
   it('compareVersions é numérica por segmento', () => {
@@ -36,31 +36,56 @@ describe('versões dos documentos legais (ADR 54)', () => {
   it('legalAckPending: sem registro ou em versão antiga está pendente; aceito ou recusado na vigente não', () => {
     expect(legalAckPending([], 'privacidade')).toBe(true);
     expect(legalAckPending([consent('privacy_policy', '1.3')], 'privacidade')).toBe(true);
-    expect(legalAckPending([consent('privacy_policy', '1.4')], 'privacidade')).toBe(false);
-    expect(legalAckPending([consent('privacy_policy', '1.4', false)], 'privacidade')).toBe(false);
+    expect(legalAckPending([consent('privacy_policy', '1.4')], 'privacidade')).toBe(true);
+    expect(legalAckPending([consent('privacy_policy', '1.4', false)], 'privacidade')).toBe(true);
+    expect(legalAckPending([consent('privacy_policy', '1.5')], 'privacidade')).toBe(true);
+    expect(legalAckPending([consent('privacy_policy', '1.6')], 'privacidade')).toBe(false);
+    expect(legalAckPending([consent('privacy_policy', '1.6', false)], 'privacidade')).toBe(false);
     // Vale o registro mais recente (a lista vem da mais nova para a mais antiga).
     expect(
       legalAckPending(
-        [consent('privacy_policy', '1.4'), consent('privacy_policy', '1.3')],
+        [consent('privacy_policy', '1.6'), consent('privacy_policy', '1.5')],
         'privacidade',
       ),
     ).toBe(false);
-    // Termos 1.4 (ADR 58): quem respondeu a 1.3 (ou antes) tem a faixa; quem está na 1.4, não.
+    // A resposta à 1.5 continua no histórico, mas a 1.6 precisa de nova ciência.
     expect(legalAckPending([consent('terms_of_use', '1.2')], 'termos')).toBe(true);
     expect(legalAckPending([consent('terms_of_use', '1.3')], 'termos')).toBe(true);
-    expect(legalAckPending([consent('terms_of_use', '1.4')], 'termos')).toBe(false);
+    expect(legalAckPending([consent('terms_of_use', '1.4')], 'termos')).toBe(true);
+    expect(legalAckPending([consent('terms_of_use', '1.5')], 'termos')).toBe(true);
+    expect(legalAckPending([consent('terms_of_use', '1.6')], 'termos')).toBe(false);
   });
 
   it('changesSince: só o que veio depois da versão respondida; sem resposta, só a vigente', () => {
     expect(answeredVersion([consent('privacy_policy', '1.1')], 'privacidade')).toBe('1.1');
-    expect(changesSince('privacidade', '1.1').map((c) => c.version)).toEqual(['1.4', '1.3', '1.2']);
-    expect(changesSince('privacidade', '1.2').map((c) => c.version)).toEqual(['1.4', '1.3']);
-    expect(changesSince('privacidade', '1.3').map((c) => c.version)).toEqual(['1.4']);
-    expect(changesSince('privacidade', null).map((c) => c.version)).toEqual(['1.4']);
-    expect(changesSince('termos', '1.2').map((c) => c.version)).toEqual(['1.4', '1.3']);
-    expect(changesSince('termos', '1.3').map((c) => c.version)).toEqual(['1.4']);
-    expect(changesSince('termos', null).map((c) => c.version)).toEqual(['1.4']);
-    expect(changesSince('termos', '1.4')).toEqual([]);
+    expect(changesSince('privacidade', '1.1').map((c) => c.version)).toEqual([
+      '1.6',
+      '1.5',
+      '1.4',
+      '1.3',
+      '1.2',
+    ]);
+    expect(changesSince('privacidade', '1.2').map((c) => c.version)).toEqual([
+      '1.6',
+      '1.5',
+      '1.4',
+      '1.3',
+    ]);
+    expect(changesSince('privacidade', '1.3').map((c) => c.version)).toEqual(['1.6', '1.5', '1.4']);
+    expect(changesSince('privacidade', '1.4').map((c) => c.version)).toEqual(['1.6', '1.5']);
+    expect(changesSince('privacidade', '1.5').map((c) => c.version)).toEqual(['1.6']);
+    expect(changesSince('privacidade', null).map((c) => c.version)).toEqual(['1.6']);
+    expect(changesSince('termos', '1.2').map((c) => c.version)).toEqual([
+      '1.6',
+      '1.5',
+      '1.4',
+      '1.3',
+    ]);
+    expect(changesSince('termos', '1.3').map((c) => c.version)).toEqual(['1.6', '1.5', '1.4']);
+    expect(changesSince('termos', '1.4').map((c) => c.version)).toEqual(['1.6', '1.5']);
+    expect(changesSince('termos', '1.5').map((c) => c.version)).toEqual(['1.6']);
+    expect(changesSince('termos', null).map((c) => c.version)).toEqual(['1.6']);
+    expect(changesSince('termos', '1.6')).toEqual([]);
   });
 
   it('a política 1.4 diz o que sai no silêncio, sem prometer silêncio absoluto (ADR 56)', () => {
@@ -101,14 +126,14 @@ describe('versões dos documentos legais (ADR 54)', () => {
       'O prazo de entrega é uma data e vale até 23:59 dela no horário de quem entrega; quando a outra parte está em outro fuso, o app diz de qual horário se trata.',
     );
     expect(texto).toContain(
-      'Nas contratações criadas antes desta versão, vale o dia e a hora que o app mostra.',
+      'Nas contratações criadas antes da implantação da versão 1.4 destes Termos, vale o dia e a hora que o app mostra.',
     );
     expect(texto).toContain(
-      'O lembrete é um aviso a mais: sai no máximo uma vez, pode não sair quando a contagem começa perto do vencimento, e não suspende, não adia nem condiciona nenhuma hora.',
+      'O lembrete é um aviso a mais: sai no máximo uma vez por contagem, pode não sair quando a contagem começa perto do vencimento, e não suspende, não adia nem condiciona nenhuma hora.',
     );
     expect(texto).toContain('as duas partes são avisadas quando isso acontece');
     expect(texto).toContain('se ficar 7 dias sem nova entrega, as duas partes são avisadas');
-    expect(texto).toContain('a entrega aprovada não volta para revisão');
+    expect(texto).toMatch(/a entrega aprovada não volta para revisão/i);
     expect(texto).not.toContain('O prazo de entrega vale até 23:59 do dia escolhido.');
     const mudanca = LEGAL_CHANGES.find((c) => c.doc === 'termos' && c.version === '1.4');
     expect(mudanca?.date).toBe('2026-10-03');
@@ -124,5 +149,59 @@ describe('versões dos documentos legais (ADR 54)', () => {
     expect(LEGAL.privacidade.sections.map((s) => s.title)).toContain(
       '6. Alterações desta política',
     );
+  });
+
+  it('os Termos 1.5 informam os limites da contratação e preservam os direitos da janela manual', () => {
+    const texto = LEGAL.termos.sections.flatMap((s) => s.paragraphs).join('\n');
+    expect(texto).toContain('até 5 ofertas em 3 rodadas');
+    expect(texto).toContain('a reserva acompanha a última oferta do cliente');
+    expect(texto).toContain('2 em cada marco');
+    expect(texto).toContain('as revisões continuam sem limite');
+    expect(texto).toContain('não tira do cliente o direito de contestar');
+    expect(texto).toContain('48 horas depois da primeira entrega registrada');
+    expect(texto).toContain('pelo menos 24 horas antes da aprovação automática');
+    expect(texto).toContain('sem esperar essa janela manual');
+    expect(texto).toContain('até 7 dias');
+    expect(texto).toContain('sem suspensão automática');
+  });
+
+  it('a Política 1.5 separa contagem pública de detalhes privados e de consentimento', () => {
+    const texto = LEGAL.privacidade.sections.flatMap((s) => s.paragraphs).join('\n');
+    expect(texto).toContain('sem dizer qual contratação, com quem nem quando');
+    expect(texto).toContain('não são mostrados ao cliente nem no perfil público');
+    expect(texto).toContain('sempre de uma pessoa da equipe');
+    expect(texto).toContain('formato 1.9');
+    expect(texto).toContain('o texto das suas contestações de desistência');
+    expect(texto).toContain('até o instante em que completa 60 dias, inclusive');
+    expect(texto).toContain('Não aceitar a versão 1.5 não esconde as desistências do perfil');
+    expect(texto).toContain('A resposta à política não altera a contagem nem limita essas opções');
+  });
+
+  it('os Termos candidatos distinguem consulta na suspensão e perda de acesso no banimento', () => {
+    const texto = LEGAL.termos.sections.flatMap((s) => s.paragraphs).join('\n');
+    expect(texto).toContain('Durante a suspensão, o acesso permanece para consulta');
+    expect(texto).toContain('ações de contratação, alteração e movimentação ficam bloqueadas');
+    expect(texto).toContain(
+      'contestações próprias e direitos sobre seus dados continuam disponíveis',
+    );
+    expect(texto).toContain('No banimento, a conta perde o acesso à plataforma');
+    expect(texto).not.toContain('suspensas ou banidas, com perda imediata de acesso');
+    expect(LEGAL_VERSIONS.termos).toBe('1.6');
+  });
+
+  it('preserva a comunicação da 1.5 no histórico e inclui suporte e exportação na 1.6', () => {
+    const anterior = LEGAL_CHANGES.find((c) => c.doc === 'privacidade' && c.version === '1.5');
+    expect(anterior?.date).toBe('2026-10-09');
+    expect(anterior?.summary).toContain('formato 1.8');
+    const terms = LEGAL.termos.sections.flatMap((s) => s.paragraphs).join('\n');
+    const privacy = LEGAL.privacidade.sections.flatMap((s) => s.paragraphs).join('\n');
+    expect(terms).toContain('até três chamados não encerrados por conta, incluindo os resolvidos');
+    expect(terms).toContain('cinco dias corridos para responder');
+    expect(terms).toContain('Suporte, contestações próprias');
+    expect(terms).toContain('Disputas financeiras continuam na Sala da contratação');
+    expect(privacy).toContain('elas não são visíveis ao titular nem integram a cópia de dados');
+    expect(privacy).toContain('formato 1.9');
+    expect(privacy).toContain('incluindo notas internas');
+    expect(privacy).toContain('protocolos, estados e datas');
   });
 });

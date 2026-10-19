@@ -86,6 +86,90 @@ export const createContractSchema = z
   });
 export type CreateContractInput = z.infer<typeof createContractSchema>;
 
+const offerSeqSchema = z.number().int().min(1).max(5);
+const counterMilestoneSchema = z
+  .object({
+    id: z.number().int().positive(),
+    amount: z
+      .number()
+      .positive()
+      .multipleOf(0.01, CENTS_MESSAGE)
+      .max(MAX_CONTRACT_AMOUNT, MAX_AMOUNT_MESSAGE),
+    dueAt: z.string().datetime().nullable(),
+  })
+  .strict();
+
+/** RN-030: os termos completos da oferta; forma e unidade vêm do contrato, nunca do corpo. */
+export const counterOfferSchema = z
+  .object({
+    seq: offerSeqSchema,
+    price: z
+      .number()
+      .multipleOf(0.01, CENTS_MESSAGE)
+      .min(10, 'Contratação mínima é R$ 10,00 (RN-027)')
+      .max(MAX_CONTRACT_AMOUNT, MAX_AMOUNT_MESSAGE),
+    deadlineAt: z.string().datetime().nullable(),
+    milestones: z.array(counterMilestoneSchema).min(2).max(10).optional(),
+    message: z
+      .string()
+      .trim()
+      .min(5, 'Explique a contraproposta em ao menos 5 caracteres')
+      .max(500),
+  })
+  .strict()
+  .superRefine((d, ctx) => {
+    const now = Date.now();
+    const deadline = d.deadlineAt ? new Date(d.deadlineAt).getTime() : null;
+    if (deadline !== null && deadline <= now) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['deadlineAt'],
+        message: 'O prazo de entrega precisa estar no futuro',
+      });
+    }
+    if (!d.milestones) return;
+    if (new Set(d.milestones.map((m) => m.id)).size !== d.milestones.length) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['milestones'],
+        message: 'Cada marco precisa aparecer uma única vez',
+      });
+    }
+    const sum = d.milestones.reduce((cents, m) => cents + Math.round(m.amount * 100), 0);
+    if (sum !== Math.round(d.price * 100)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['milestones'],
+        message: 'A soma dos marcos precisa ser igual ao valor da contratação (RN-069)',
+      });
+    }
+    let previous = 0;
+    d.milestones.forEach((m, i) => {
+      if (!m.dueAt) return;
+      const due = new Date(m.dueAt).getTime();
+      const issue = (message: string) =>
+        ctx.addIssue({ code: 'custom', path: ['milestones', i, 'dueAt'], message });
+      if (due <= now) issue(`O prazo do marco ${i + 1} precisa estar no futuro`);
+      if (due < previous)
+        issue(`O prazo do marco ${i + 1} precisa ser igual ou depois do marco anterior`);
+      if (deadline !== null && due > deadline) {
+        issue(`O prazo do marco ${i + 1} não pode passar do prazo da contratação`);
+      }
+      previous = due;
+    });
+  });
+export type CounterOfferInput = z.infer<typeof counterOfferSchema>;
+
+/** O service exige a sequência nas negociações; corpo vazio continua válido só na oferta 1. */
+export const offerDecisionBodySchema = z
+  .object({ seq: offerSeqSchema.optional() })
+  .strict()
+  .default({});
+export const offerAcceptParamsSchema = z.object({
+  id: z.coerce.number().int().positive(),
+  seq: z.coerce.number().int().min(1).max(5),
+});
+
 export const milestoneParamsSchema = z.object({
   id: z.coerce.number().int().positive(),
   milestoneId: z.coerce.number().int().positive(),
@@ -113,6 +197,9 @@ export const deliverMilestoneSchema = z
 export const noteSchema = z.object({ note: z.string().max(1000).optional() });
 export type NoteInput = z.infer<typeof noteSchema>;
 
+/** A liberação concede exatamente uma revisão; o limite nunca vem do corpo da requisição. */
+export const grantRevisionBodySchema = z.object({}).strict().default({});
+
 export const contractIdSchema = z.object({ id: z.coerce.number().int().positive() });
 
 /** Pedido de extensão de prazo (RN-028): novo prazo e o motivo, que o cliente lê. */
@@ -137,7 +224,12 @@ export const extensionDecisionBodySchema = z
 
 /** Corpo do cancelamento (ADR 57): o reembolso que a pessoa viu na tela. */
 export const cancelBodySchema = z
-  .object({ expectedRefund: z.number().min(0).optional() })
+  .object({
+    expectedRefund: z.number().min(0).optional(),
+    seq: offerSeqSchema.optional(),
+    expectedDropoutCount: z.number().int().min(1).optional(),
+  })
+  .strict()
   .default({});
 export type CancelBody = z.infer<typeof cancelBodySchema>;
 

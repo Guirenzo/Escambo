@@ -33,12 +33,12 @@ jobs:
       - name: Typecheck (tsc)
         run: npm run typecheck
 
-      # Unitários com cobertura (ADR 59): a do web tem meta própria (25%, vite.config.ts); a da API
-      # só é conferida unida à da integração, no job `coverage`.
+      # Unitários com cobertura: API e Web exigem 90% de linhas/instruções/funções e 85% de branches.
+      # A união API + integração também é conferida no job `coverage`, com a meta adicional de 75%.
       - name: Testes unitários + cobertura (API)
         run: npm run -w @escambo/api test:cov
 
-      - name: Testes unitários + cobertura (Web, meta 25%)
+      - name: Testes unitários + cobertura (Web)
         run: npm run -w @escambo/web test:cov
 
       - name: Relatórios de cobertura (unitários)

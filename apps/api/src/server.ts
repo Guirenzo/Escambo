@@ -29,7 +29,7 @@ async function waitForDb(retries = 10, delayMs = 1500): Promise<void> {
 async function main(): Promise<void> {
   await initSentry(); // SENTRY_DSN vazio: não carrega nem inicia nada
   await waitForDb();
-  await blocklist.hydrate(); // suspensos/banidos passam a ser negados de imediato
+  await blocklist.hydrate(); // metadados locais; status e papel são conferidos no banco por interação
   const app = createApp();
   const server = createServer(app);
   const io = createSocketServer(server); // chat em tempo real no mesmo servidor HTTP

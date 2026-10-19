@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./wallet.repository', () => ({
-  walletRepository: { getOrCreate: vi.fn(), listTransactions: vi.fn() },
+  walletRepository: {
+    ensure: vi.fn(),
+    findByUserId: vi.fn(),
+    getOrCreate: vi.fn(),
+    listTransactions: vi.fn(),
+  },
 }));
 vi.mock('../credits/credits.service', () => ({
   creditsService: { ensureWelcome: vi.fn() },
@@ -17,6 +22,54 @@ const credits = vi.mocked(creditsService);
 beforeEach(() => vi.clearAllMocks());
 
 describe('walletService.getBalance', () => {
+  it('modo leitura preserva os saldos existentes sem criar carteira nem conceder boas-vindas', async () => {
+    repo.findByUserId.mockResolvedValue({
+      user_id: 7,
+      balance: '125.50',
+      balance_pending: '35.25',
+      currency: 'BRL',
+      credits_balance: '80',
+      credits_pending: '20',
+    } as unknown as WalletRow);
+
+    expect(await walletService.getBalance(7, { readOnly: true })).toEqual({
+      balance: 125.5,
+      balancePending: 35.25,
+      currency: 'BRL',
+      credits: 80,
+      creditsPending: 20,
+    });
+    expect(repo.findByUserId).toHaveBeenCalledWith(7);
+    expect(repo.ensure).not.toHaveBeenCalled();
+    expect(repo.getOrCreate).not.toHaveBeenCalled();
+    expect(credits.ensureWelcome).not.toHaveBeenCalled();
+  });
+
+  it('modo leitura sem carteira devolve projeção zerada sem persistir nem conceder bônus', async () => {
+    repo.findByUserId.mockResolvedValue(undefined);
+
+    expect(await walletService.getBalance(7, { readOnly: true })).toEqual({
+      balance: 0,
+      balancePending: 0,
+      currency: 'BRL',
+      credits: 0,
+      creditsPending: 0,
+    });
+    expect(repo.ensure).not.toHaveBeenCalled();
+    expect(repo.getOrCreate).not.toHaveBeenCalled();
+    expect(credits.ensureWelcome).not.toHaveBeenCalled();
+  });
+
+  it('falha de consulta em modo leitura sobe sem tentar inicialização', async () => {
+    const boom = new Error('leitura indisponível');
+    repo.findByUserId.mockRejectedValue(boom);
+
+    await expect(walletService.getBalance(7, { readOnly: true })).rejects.toBe(boom);
+    expect(repo.ensure).not.toHaveBeenCalled();
+    expect(repo.getOrCreate).not.toHaveBeenCalled();
+    expect(credits.ensureWelcome).not.toHaveBeenCalled();
+  });
+
   it('mapeia DECIMAL (string) para number, inclui créditos e concede o bônus', async () => {
     credits.ensureWelcome.mockResolvedValue(undefined);
     repo.getOrCreate.mockResolvedValue({
@@ -79,12 +132,13 @@ describe('walletService.getBalance', () => {
 
 describe('walletService.ensure', () => {
   it('garante a carteira do usuário pedido sem conceder bônus nem devolver saldo', async () => {
-    repo.getOrCreate.mockResolvedValue({ id: 2, user_id: 7 } as unknown as WalletRow);
+    repo.ensure.mockResolvedValue(undefined);
 
     expect(await walletService.ensure(7)).toBeUndefined();
 
-    expect(repo.getOrCreate).toHaveBeenCalledTimes(1);
-    expect(repo.getOrCreate).toHaveBeenCalledWith(7);
+    expect(repo.ensure).toHaveBeenCalledWith(7);
+    expect(repo.ensure).toHaveBeenCalledTimes(1);
+    expect(repo.getOrCreate).not.toHaveBeenCalled();
     expect(credits.ensureWelcome).not.toHaveBeenCalled();
   });
 });

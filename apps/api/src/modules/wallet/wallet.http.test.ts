@@ -1,9 +1,11 @@
+import type { Request, Response } from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { blocklist } from '../../config/blocklist';
 import { bearer, routerApp } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
 import { walletRoutes } from './wallet.routes';
+import { getWallet } from './wallet.controller';
 
 const { wallet, payments, log } = vi.hoisted(() => ({
   wallet: { getBalance: vi.fn(), listTransactions: vi.fn() },
@@ -72,7 +74,7 @@ describe('carteira e depósitos: borda HTTP', () => {
     expect(wallet.getBalance).not.toHaveBeenCalled();
   });
 
-  it('conta suspensa ou banida não consulta nem movimenta a carteira, mesmo com token válido (RN-007)', async () => {
+  it('conta banida não consulta nem movimenta a carteira, mesmo com token válido (RN-007)', async () => {
     blocklist.add(7);
     try {
       const calls = [
@@ -104,6 +106,24 @@ describe('carteira e depósitos: borda HTTP', () => {
   });
 
   describe('GET /api/wallet', () => {
+    it('conta suspensa consulta saldo com modo somente leitura vindo da autenticação', async () => {
+      const balance = {
+        balance: 125.5,
+        balancePending: 30,
+        currency: 'BRL',
+        credits: 80,
+        creditsPending: 20,
+      };
+      wallet.getBalance.mockResolvedValue(balance);
+      const req = { user: { uid: 7, status: 'suspended' } } as unknown as Request;
+      const res = { json: vi.fn() } as unknown as Response;
+
+      await getWallet(req, res);
+
+      expect(wallet.getBalance).toHaveBeenCalledWith(7, { readOnly: true });
+      expect(res.json).toHaveBeenCalledWith(balance);
+    });
+
     it('devolve o saldo de quem está logado, ignorando qualquer usuário pedido na URL', async () => {
       const balance = {
         balance: 850,

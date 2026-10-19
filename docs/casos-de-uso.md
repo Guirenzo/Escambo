@@ -1,8 +1,8 @@
 # Casos de Uso — Escambo
 
-> **Versão:** 1.0.0  
-> **Disciplina:** PAC Extensionista VII — Católica SC  
-> **Autor:** Guilherme Renzo 
+> **Versão:** 1.1.0\
+> **Disciplina:** PAC Extensionista VII — Católica SC\
+> **Autor:** Guilherme Renzo
 > **Data:** 2026
 
 ---
@@ -28,13 +28,13 @@
 
 ## 1. Atores do Sistema
 
-| Ator | Descrição |
-|---|---|
-| **Cliente** | Usuário que busca e contrata serviços na plataforma |
-| **Freelancer** | Usuário que oferece e executa serviços |
-| **Administrador** | Equipe interna que gerencia a plataforma |
-| **MercadoPago** | Sistema externo de processamento de pagamentos |
-| **Sistema de Notificações** | Serviço interno que dispara push, e-mail e SMS |
+| Ator                        | Descrição                                           |
+| --------------------------- | --------------------------------------------------- |
+| **Cliente**                 | Usuário que busca e contrata serviços na plataforma |
+| **Freelancer**              | Usuário que oferece e executa serviços              |
+| **Administrador**           | Equipe interna que gerencia a plataforma            |
+| **MercadoPago**             | Sistema externo de processamento de pagamentos      |
+| **Sistema de Notificações** | Serviço interno que dispara push, e-mail e SMS      |
 
 ---
 
@@ -76,21 +76,22 @@
 
 ## 3. UC-01 — Cadastrar e Autenticar
 
-| Campo | Detalhe |
-|---|---|
-| **ID** | UC-01 |
-| **Nome** | Cadastrar e Autenticar |
-| **Atores** | Cliente, Freelancer |
+| Campo            | Detalhe                                      |
+| ---------------- | -------------------------------------------- |
+| **ID**           | UC-01                                        |
+| **Nome**         | Cadastrar e Autenticar                       |
+| **Atores**       | Cliente, Freelancer                          |
 | **Pré-condição** | Usuário possui e-mail válido ou conta Google |
-| **Pós-condição** | Usuário autenticado com sessão ativa |
-| **Prioridade** | Alta |
+| **Pós-condição** | Usuário autenticado com sessão ativa         |
+| **Prioridade**   | Alta                                         |
 
 ### Fluxo Principal
+
 ```
 1. Usuário acessa a plataforma
 2. Seleciona "Criar conta"
 3. Escolhe o tipo de perfil (Cliente / Freelancer / Empresa)
-4. Preenche e-mail e senha  
+4. Preenche e-mail e senha
    └── [Alternativa] Clica em "Entrar com Google"
 5. Sistema envia e-mail de confirmação
 6. Usuário confirma o e-mail
@@ -99,6 +100,7 @@
 ```
 
 ### Fluxos Alternativos
+
 ```
 [FA-01] Login com Google
   1. Usuário clica em "Entrar com Google"
@@ -116,6 +118,7 @@
 ```
 
 ### Fluxos de Exceção
+
 ```
 [FE-01] E-mail já cadastrado
   → Sistema exibe mensagem: "Este e-mail já possui uma conta. Deseja entrar?"
@@ -132,16 +135,17 @@
 
 ## 4. UC-02 — Gerenciar Perfil
 
-| Campo | Detalhe |
-|---|---|
-| **ID** | UC-02 |
-| **Nome** | Gerenciar Perfil |
-| **Atores** | Cliente, Freelancer |
-| **Pré-condição** | Usuário autenticado |
+| Campo            | Detalhe                                   |
+| ---------------- | ----------------------------------------- |
+| **ID**           | UC-02                                     |
+| **Nome**         | Gerenciar Perfil                          |
+| **Atores**       | Cliente, Freelancer                       |
+| **Pré-condição** | Usuário autenticado                       |
 | **Pós-condição** | Perfil atualizado e visível na plataforma |
-| **Prioridade** | Alta |
+| **Prioridade**   | Alta                                      |
 
 ### Fluxo Principal — Freelancer
+
 ```
 1. Freelancer acessa "Meu Perfil"
 2. Preenche: nome, foto, bio, headline, cidade
@@ -152,6 +156,7 @@
 ```
 
 ### Fluxo Principal — Cliente
+
 ```
 1. Cliente acessa "Meu Perfil"
 2. Preenche: nome, foto, cidade
@@ -159,6 +164,7 @@
 ```
 
 ### Fluxos de Exceção
+
 ```
 [FE-01] Foto com formato ou tamanho inválido
   → Sistema exibe orientação: "Use imagens JPG ou PNG com até 5MB"
@@ -171,16 +177,17 @@
 
 ## 5. UC-03 — Publicar e Gerenciar Serviço
 
-| Campo | Detalhe |
-|---|---|
-| **ID** | UC-03 |
-| **Nome** | Publicar e Gerenciar Serviço |
-| **Atores** | Freelancer |
+| Campo            | Detalhe                                    |
+| ---------------- | ------------------------------------------ |
+| **ID**           | UC-03                                      |
+| **Nome**         | Publicar e Gerenciar Serviço               |
+| **Atores**       | Freelancer                                 |
 | **Pré-condição** | Freelancer autenticado com perfil completo |
-| **Pós-condição** | Serviço publicado e visível na busca |
-| **Prioridade** | Alta |
+| **Pós-condição** | Serviço publicado e visível na busca       |
+| **Prioridade**   | Alta                                       |
 
 ### Fluxo Principal
+
 ```
 1. Freelancer acessa "Meus Serviços" → "Novo Serviço"
 2. Preenche: título, categoria, descrição
@@ -192,6 +199,7 @@
 ```
 
 ### Fluxos Alternativos
+
 ```
 [FA-01] Pausar serviço temporariamente
   1. Freelancer acessa o serviço ativo
@@ -206,6 +214,7 @@
 ```
 
 ### Fluxos de Exceção
+
 ```
 [FE-01] Título ou descrição muito curtos
   → Sistema exibe: "Descreva melhor o serviço para aumentar suas chances de contratação"
@@ -218,16 +227,17 @@
 
 ## 6. UC-04 — Buscar e Contratar Serviço
 
-| Campo | Detalhe |
-|---|---|
-| **ID** | UC-04 |
-| **Nome** | Buscar e Contratar Serviço |
-| **Atores** | Cliente |
-| **Pré-condição** | Cliente autenticado |
+| Campo            | Detalhe                                       |
+| ---------------- | --------------------------------------------- |
+| **ID**           | UC-04                                         |
+| **Nome**         | Buscar e Contratar Serviço                    |
+| **Atores**       | Cliente                                       |
+| **Pré-condição** | Cliente autenticado                           |
 | **Pós-condição** | Proposta de contratação enviada ao freelancer |
-| **Prioridade** | Alta |
+| **Prioridade**   | Alta                                          |
 
 ### Fluxo Principal
+
 ```
 1. Cliente acessa a tela de busca
 2. Seleciona categoria ou digita palavras-chave
@@ -244,6 +254,7 @@
 ```
 
 ### Fluxos Alternativos
+
 ```
 [FA-01] Nenhum resultado encontrado
   → Sistema sugere categorias próximas ou ampliar o raio de busca
@@ -254,6 +265,7 @@
 ```
 
 ### Fluxos de Exceção
+
 ```
 [FE-01] Cliente sem dados de pagamento cadastrados
   → Sistema redireciona para cadastrar método de pagamento antes de confirmar
@@ -266,21 +278,22 @@
 
 ## 7. UC-05 — Gerenciar Contratação
 
-| Campo | Detalhe |
-|---|---|
-| **ID** | UC-05 |
-| **Nome** | Gerenciar Contratação |
-| **Atores** | Cliente, Freelancer, Sistema de Notificações |
-| **Pré-condição** | Proposta de contratação enviada (UC-04) |
+| Campo            | Detalhe                                                     |
+| ---------------- | ----------------------------------------------------------- |
+| **ID**           | UC-05                                                       |
+| **Nome**         | Gerenciar Contratação                                       |
+| **Atores**       | Cliente, Freelancer, Sistema de Notificações                |
+| **Pré-condição** | Proposta de contratação enviada (UC-04)                     |
 | **Pós-condição** | Contratação concluída ou cancelada com histórico registrado |
-| **Prioridade** | Alta |
+| **Prioridade**   | Alta                                                        |
 
 ### Fluxo Principal
+
 ```
 1. Freelancer recebe notificação de nova proposta
 2. Analisa a proposta (descrição, prazo, valor)
 3. Aceita a proposta
-   └── [Alternativa] Recusa ou faz contra-proposta
+   └── [Alternativa] Recusa ou faz contraproposta (até 3 rodadas, RN-030)
 4. Sistema muda status para "Em andamento"
 5. Freelancer executa o serviço (o prazo é um dia, até 23:59 no horário dele; em geral na
    véspera, ele é lembrado do prazo)
@@ -288,7 +301,8 @@
 7. Sistema notifica o cliente
 8. Cliente analisa a entrega
    ├── Aprova → status "Concluído" → pagamento liberado
-   ├── Solicita revisão → freelancer entrega de novo
+   ├── Solicita revisão (até 2 sem custo por entrega/marco; o freelancer pode liberar mais uma, RN-023)
+   │   → freelancer entrega de novo
    │   (com o trabalho entregue — por marcos, todos os marcos —, o prazo não abre mais disputa sozinho;
    │   sem nova entrega em 7 dias, as duas partes são avisadas, sem sanção, RN-081)
    └── Não responde até a hora dita no aviso da entrega → aprovação automática (RN-024):
@@ -297,11 +311,17 @@
 ```
 
 ### Fluxos Alternativos
+
 ```
-[FA-01] Freelancer faz contra-proposta
-  1. Freelancer ajusta valor ou prazo e envia
-  2. Cliente recebe notificação
-  3. Cliente aceita, recusa ou negocia novamente
+[FA-01] Negociação antes do aceite
+  1. Quem tem a vez ajusta valor e prazo, ou valores/datas dos mesmos marcos, com mensagem
+  2. O outro participante recebe aviso e vê a oferta, a reserva atual e a hora de resposta na Sala
+  3. Pode aceitar, contrapropor ou encerrar; são até 5 ofertas em 3 rodadas (RN-030)
+     └── Na oferta 5, o freelancer só aceita ou recusa; título, descrição e pagamento não mudam
+  4. A reserva acompanha a última oferta do cliente; subir reserva a diferença, baixar devolve
+     └── O aceite pelo cliente ajusta o saldo antes de pagar, com a taxa da proposta inicial
+  5. Sem resposta até a hora gravada, encerra de dia no fuso de quem responde e devolve a reserva
+     └── Uma saída da negociação não é desistência depois do aceite (RN-026)
 
 [FA-02] Cancelamento pelo cliente
   1. Cliente toca em "Cancelar" na Sala (o cancelamento não pede motivo)
@@ -329,10 +349,15 @@
   2. O app mostra o valor antes de confirmar
   3. Sistema devolve ao cliente tudo o que está em garantia, registra a
      desistência na linha do tempo e avisa o cliente
-  4. O alerta de reputação da RN-026 segue pendente
+  4. Um evento é gravado junto com o cancelamento: conta no perfil por 60 dias, só como número
+     └── Com 3, alerta e revisão humana; o modal mostra o total previsto antes da confirmação
+  5. O cliente confirma que foi combinado em até 7 dias; o freelancer pode contestar uma vez
+     pelo Perfil enquanto conta; a equipe decide com nota privada, sem novo movimento financeiro
+     └── Confirmação ou decisão de desconsiderar tira o evento da contagem (RN-026)
 ```
 
 ### Fluxos de Exceção
+
 ```
 [FE-01] Prazo estourado sem entrega
   → Sistema avisa as duas partes a partir das 9h do dia seguinte, no fuso de quem entrega
@@ -348,6 +373,10 @@
   → Nada automático por prazo acontece entre 21h e 9h no fuso de quem é afetado
 
 [FE-02] Disputa aberta
+  → Manual: após tentativa no chat, 48 h da primeira entrega, ou do aceite se não houve entrega
+    (RN-062), sempre pelo menos 24 h antes da tácita; a Sala mostra a abertura. Antes dela, 409
+    dispute_too_early, sem congelar. Revisão/reentrega preservam a primeira entrega
+  → A automática por atraso do FE-01 usa a própria guarda e não espera essa janela
   → Contratação congelada e disputa na fila de mediação do admin (a automática, do FE-01,
     é aberta pela plataforma em nome do cliente)
   → Administrador intervém e emite resolução vinculante
@@ -357,16 +386,17 @@
 
 ## 8. UC-06 — Realizar Pagamento
 
-| Campo | Detalhe |
-|---|---|
-| **ID** | UC-06 |
-| **Nome** | Realizar Pagamento |
-| **Atores** | Cliente, MercadoPago, Sistema de Notificações |
-| **Pré-condição** | Proposta aceita pelo freelancer (UC-05) |
+| Campo            | Detalhe                                              |
+| ---------------- | ---------------------------------------------------- |
+| **ID**           | UC-06                                                |
+| **Nome**         | Realizar Pagamento                                   |
+| **Atores**       | Cliente, MercadoPago, Sistema de Notificações        |
+| **Pré-condição** | Proposta aceita pelo freelancer (UC-05)              |
 | **Pós-condição** | Pagamento retido em escrow ou liberado ao freelancer |
-| **Prioridade** | Alta |
+| **Prioridade**   | Alta                                                 |
 
 ### Fluxo Principal
+
 ```
 1. Cliente confirma a contratação
 2. Sistema exibe resumo: valor do serviço + taxa da plataforma
@@ -382,6 +412,7 @@
 ```
 
 ### Fluxos Alternativos
+
 ```
 [FA-01] Saque do freelancer
   1. Freelancer acessa "Carteira" → "Sacar"
@@ -397,6 +428,7 @@
 ```
 
 ### Fluxos de Exceção
+
 ```
 [FE-01] Falha no processamento pelo gateway
   → Sistema tenta automaticamente até 3 vezes
@@ -410,16 +442,17 @@
 
 ## 9. UC-07 — Avaliar Serviço
 
-| Campo | Detalhe |
-|---|---|
-| **ID** | UC-07 |
-| **Nome** | Avaliar Serviço |
-| **Atores** | Cliente, Freelancer |
-| **Pré-condição** | Contratação com status "Concluído" |
+| Campo            | Detalhe                                                   |
+| ---------------- | --------------------------------------------------------- |
+| **ID**           | UC-07                                                     |
+| **Nome**         | Avaliar Serviço                                           |
+| **Atores**       | Cliente, Freelancer                                       |
+| **Pré-condição** | Contratação com status "Concluído"                        |
 | **Pós-condição** | Avaliação publicada e nota média do freelancer atualizada |
-| **Prioridade** | Alta |
+| **Prioridade**   | Alta                                                      |
 
 ### Fluxo Principal
+
 ```
 1. Sistema notifica cliente após conclusão: "Como foi seu serviço com [Nome]?"
 2. Cliente acessa a avaliação
@@ -432,6 +465,7 @@
 ```
 
 ### Fluxos Alternativos
+
 ```
 [FA-01] Freelancer responde à avaliação
   1. Freelancer acessa a avaliação recebida
@@ -445,6 +479,7 @@
 ```
 
 ### Fluxos de Exceção
+
 ```
 [FE-01] Tentativa de avaliar sem contratação concluída
   → Sistema bloqueia: avaliações só são permitidas após conclusão confirmada
@@ -458,16 +493,17 @@
 
 ## 10. UC-08 — Usar o Chat
 
-| Campo | Detalhe |
-|---|---|
-| **ID** | UC-08 |
-| **Nome** | Usar o Chat |
-| **Atores** | Cliente, Freelancer, Sistema de Notificações |
-| **Pré-condição** | Usuários autenticados com contato iniciado |
-| **Pós-condição** | Mensagens entregues e histórico registrado |
-| **Prioridade** | Alta |
+| Campo            | Detalhe                                      |
+| ---------------- | -------------------------------------------- |
+| **ID**           | UC-08                                        |
+| **Nome**         | Usar o Chat                                  |
+| **Atores**       | Cliente, Freelancer, Sistema de Notificações |
+| **Pré-condição** | Usuários autenticados com contato iniciado   |
+| **Pós-condição** | Mensagens entregues e histórico registrado   |
+| **Prioridade**   | Alta                                         |
 
 ### Fluxo Principal
+
 ```
 1. Cliente acessa o perfil do freelancer
 2. Clica em "Enviar mensagem"
@@ -480,6 +516,7 @@
 ```
 
 ### Fluxos Alternativos
+
 ```
 [FA-01] Envio de arquivo ou imagem
   1. Usuário clica no ícone de anexo
@@ -492,6 +529,7 @@
 ```
 
 ### Fluxos de Exceção
+
 ```
 [FE-01] Arquivo muito grande
   → Sistema exibe: "Arquivo deve ter no máximo 10MB"
@@ -504,16 +542,17 @@
 
 ## 11. UC-09 — Acompanhar Gamificação
 
-| Campo | Detalhe |
-|---|---|
-| **ID** | UC-09 |
-| **Nome** | Acompanhar Gamificação |
-| **Atores** | Freelancer |
-| **Pré-condição** | Freelancer autenticado |
+| Campo            | Detalhe                                     |
+| ---------------- | ------------------------------------------- |
+| **ID**           | UC-09                                       |
+| **Nome**         | Acompanhar Gamificação                      |
+| **Atores**       | Freelancer                                  |
+| **Pré-condição** | Freelancer autenticado                      |
 | **Pós-condição** | Freelancer visualiza progresso e conquistas |
-| **Prioridade** | Média |
+| **Prioridade**   | Média                                       |
 
 ### Fluxo Principal
+
 ```
 1. Freelancer acessa "Conquistas" no dashboard
 2. Sistema exibe:
@@ -530,6 +569,7 @@
 ```
 
 ### Fluxos de Exceção
+
 ```
 [FE-01] Missão expirada
   → Sistema remove a missão e oferece novas para o próximo ciclo
@@ -542,16 +582,17 @@
 
 ## 12. UC-10 — Abrir Ticket de Suporte
 
-| Campo | Detalhe |
-|---|---|
-| **ID** | UC-10 |
-| **Nome** | Abrir Ticket de Suporte |
-| **Atores** | Cliente, Freelancer, Administrador |
-| **Pré-condição** | Usuário autenticado |
-| **Pós-condição** | Ticket registrado e em atendimento |
-| **Prioridade** | Alta |
+| Campo            | Detalhe                                                                                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ID**           | UC-10                                                                                                                                                         |
+| **Nome**         | Abrir Ticket de Suporte                                                                                                                                       |
+| **Atores**       | Cliente, Freelancer, Administrador                                                                                                                            |
+| **Pré-condição** | Usuário autenticado; para disputa financeira, participante da contratação em estado disputável e janela RN-062 aberta. Ticket geral não tem espera de entrega |
+| **Pós-condição** | Ticket registrado e em atendimento                                                                                                                            |
+| **Prioridade**   | Alta                                                                                                                                                          |
 
 ### Fluxo Principal
+
 ```
 1. Usuário acessa "Suporte" no menu
 2. Clica em "Abrir chamado"
@@ -567,6 +608,7 @@
 ```
 
 ### Fluxos de Exceção
+
 ```
 [FE-01] Disputa financeira sem contratação vinculada
   → Sistema solicita que o usuário vincule o ticket a uma contratação
@@ -579,16 +621,17 @@
 
 ## 13. UC-11 — Administrar a Plataforma
 
-| Campo | Detalhe |
-|---|---|
-| **ID** | UC-11 |
-| **Nome** | Administrar a Plataforma |
-| **Atores** | Administrador |
-| **Pré-condição** | Administrador autenticado com perfil admin |
+| Campo            | Detalhe                                        |
+| ---------------- | ---------------------------------------------- |
+| **ID**           | UC-11                                          |
+| **Nome**         | Administrar a Plataforma                       |
+| **Atores**       | Administrador                                  |
+| **Pré-condição** | Administrador autenticado com perfil admin     |
 | **Pós-condição** | Ações administrativas registradas em audit log |
-| **Prioridade** | Alta |
+| **Prioridade**   | Alta                                           |
 
 ### Fluxo Principal
+
 ```
 1. Administrador acessa o painel admin
 2. Visualiza dashboard com métricas em tempo real:
@@ -611,24 +654,24 @@
 
 Relaciona cada Caso de Uso com os Requisitos Funcionais e as Personas correspondentes.
 
-| Caso de Uso | Requisitos Funcionais | Persona Principal |
-|---|---|---|
-| UC-01 — Autenticar | RF-001 a RF-010 | Rafael, Camila, Marcos |
-| UC-02 — Gerenciar Perfil | RF-011 a RF-020 | Rafael, Marcos |
-| UC-03 — Publicar Serviço | RF-021 a RF-030 | Rafael, Marcos |
-| UC-04 — Buscar e Contratar | RF-025 a RF-031 | Camila |
-| UC-05 — Gerenciar Contratação | RF-031 a RF-040 | Rafael, Camila, Marcos |
-| UC-06 — Realizar Pagamento | RF-041 a RF-050 | Camila (paga), Rafael e Marcos (recebem) |
-| UC-07 — Avaliar Serviço | RF-051 a RF-056 | Camila (avalia), Rafael e Marcos (são avaliados) |
-| UC-08 — Usar o Chat | RF-057 a RF-062 | Rafael, Camila, Marcos |
-| UC-09 — Gamificação | RF-063 a RF-068 | Rafael, Marcos |
-| UC-10 — Suporte | RF-071 a RF-073 | Rafael, Camila, Marcos |
-| UC-11 — Admin | RF-076 a RF-078 | Administrador |
+| Caso de Uso                   | Requisitos Funcionais | Persona Principal                                |
+| ----------------------------- | --------------------- | ------------------------------------------------ |
+| UC-01 — Autenticar            | RF-001 a RF-010       | Rafael, Camila, Marcos                           |
+| UC-02 — Gerenciar Perfil      | RF-011 a RF-020       | Rafael, Marcos                                   |
+| UC-03 — Publicar Serviço      | RF-021 a RF-030       | Rafael, Marcos                                   |
+| UC-04 — Buscar e Contratar    | RF-025 a RF-031       | Camila                                           |
+| UC-05 — Gerenciar Contratação | RF-031 a RF-040       | Rafael, Camila, Marcos                           |
+| UC-06 — Realizar Pagamento    | RF-041 a RF-050       | Camila (paga), Rafael e Marcos (recebem)         |
+| UC-07 — Avaliar Serviço       | RF-051 a RF-056       | Camila (avalia), Rafael e Marcos (são avaliados) |
+| UC-08 — Usar o Chat           | RF-057 a RF-062       | Rafael, Camila, Marcos                           |
+| UC-09 — Gamificação           | RF-063 a RF-068       | Rafael, Marcos                                   |
+| UC-10 — Suporte               | RF-071 a RF-073       | Rafael, Camila, Marcos                           |
+| UC-11 — Admin                 | RF-076 a RF-078       | Administrador                                    |
 
 ---
 
 <div align="center">
 
-*casos-de-uso.md — Escambo v1.0.0 — NP2 — PAC Extensionista VII — Católica SC — 2026*
+_casos-de-uso.md — Escambo v1.1.0 — NP2 — PAC Extensionista VII — Católica SC — 2026_
 
 </div>

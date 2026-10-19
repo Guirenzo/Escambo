@@ -102,6 +102,7 @@ describe('avisos em tempo real', () => {
     ['review_received', [['notifications'], ['profiles'], ['reviews']]],
     ['content_removed', MODERATION],
     ['appeal_decided', MODERATION],
+    ['dropout_decided', [['notifications'], ['myDropouts'], ['publicFreelancer'], ['contract']]],
     // Aviso que não muda dado de tela nenhuma: só o sino atualiza.
     ['level_up', [['notifications']]],
     ['chat_message', [['notifications']]],

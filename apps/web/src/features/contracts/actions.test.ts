@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { contractActions, partyOf } from './actions';
+import type { Negotiation } from '@escambo/types';
 
 const base = {
   clientId: 1,
@@ -80,4 +81,99 @@ describe('contractActions (ações por status e papel)', () => {
     expect(deliver?.prompt).toBeTruthy();
     expect(revision?.prompt).toBeTruthy();
   });
+});
+
+describe('negociação: vez e oferta vista', () => {
+  const now = Date.parse('2026-10-08T15:00:00Z');
+  const negotiation = (seq: number): Negotiation => ({
+    seq,
+    turn: seq % 2 ? 'freelancer' : 'client',
+    round: Math.ceil(seq / 2) as 1 | 2 | 3,
+    canCounter: seq < 5,
+    countersLeft: Math.ceil((5 - seq) / 2),
+    current: null,
+    respondBy: '2026-10-09T15:00:00Z',
+  });
+  const negotiated = (seq: number, userId: number, extra: Partial<Negotiation> = {}) =>
+    contractActions(
+      { ...base, status: 'pending', negotiation: { ...negotiation(seq), ...extra } },
+      userId,
+      now,
+    ).map((a) => a.key);
+
+  it.each([1, 3])(
+    'oferta %i do cliente: só o freelancer aceita/contrapõe, cliente encerra',
+    (seq) => {
+      expect(negotiated(seq, 2)).toEqual(['accept', 'counter', 'reject']);
+      expect(negotiated(seq, 1)).toEqual(['cancel']);
+    },
+  );
+  it.each([2, 4])(
+    'oferta %i do freelancer: só o cliente aceita/contrapõe, freelancer sai',
+    (seq) => {
+      expect(negotiated(seq, 1)).toEqual(['accept_counter', 'counter', 'cancel']);
+      expect(negotiated(seq, 2)).toEqual(['reject']);
+    },
+  );
+  it('seq 5 só permite aceite/recusa do freelancer e encerramento pelo cliente', () => {
+    expect(negotiated(5, 2)).toEqual(['accept', 'reject']);
+    expect(negotiated(5, 1)).toEqual(['cancel']);
+    expect(negotiated(5, 2, { canCounter: true })).toEqual(['accept', 'reject']);
+  });
+  it('o instante limite já expirou: nem aceita nem contrapõe', () => {
+    expect(negotiated(3, 2, { respondBy: '2026-10-08T15:00:00Z' })).toEqual(['reject']);
+    expect(negotiated(4, 1, { respondBy: '2026-10-08T15:00:00Z' })).toEqual(['cancel']);
+  });
+  it('API pode retirar contraproposta antes da última rodada', () => {
+    expect(negotiated(2, 1, { canCounter: false })).toEqual(['accept_counter', 'cancel']);
+    expect(negotiated(2, 99)).toEqual([]);
+  });
+  it('troca continua com as ações antigas mesmo se houver dados de negociação', () => {
+    expect(
+      contractActions(
+        { ...base, status: 'pending', paymentMode: 'barter', negotiation: negotiation(2) },
+        1,
+        now,
+      ).map((a) => a.key),
+    ).toEqual(['cancel']);
+  });
+});
+
+describe('revisões e janela manual de disputa', () => {
+  it('revisões esgotadas escondem o pedido e só o freelancer pode liberar mais uma', () => {
+    const c = { ...base, status: 'delivered' as const, revisions: { used: 2, limit: 2 } };
+    expect(contractActions(c, 1).map((a) => a.key)).toEqual(['approve', 'dispute']);
+    expect(contractActions(c, 2).map((a) => a.key)).toEqual(['grant_revision', 'dispute']);
+    expect(contractActions({ ...c, hasMilestones: true }, 2).map((a) => a.key)).toEqual([
+      'dispute',
+    ]);
+    expect(contractActions({ ...c, status: 'revision_requested' }, 2).map((a) => a.key)).toEqual([
+      'deliver',
+      'dispute',
+    ]);
+  });
+  it('o legado ilimitado mantém revisão disponível mesmo depois do pedido 255', () => {
+    const c = { ...base, status: 'delivered' as const, revisions: { used: 300, limit: null } };
+    expect(contractActions(c, 1).map((a) => a.key)).toEqual(['approve', 'revision', 'dispute']);
+    expect(contractActions(c, 2).map((a) => a.key)).toEqual(['dispute']);
+  });
+  it('limite liberado reabre o pedido sem zerar o uso', () => {
+    const c = { ...base, status: 'delivered' as const, revisions: { used: 2, limit: 3 } };
+    expect(contractActions(c, 1).map((a) => a.key)).toEqual(['approve', 'revision', 'dispute']);
+    expect(contractActions(c, 2).map((a) => a.key)).toEqual(['dispute']);
+  });
+  it.each(['accepted', 'in_progress', 'delivered', 'revision_requested'] as const)(
+    'janela futura esconde disputa em %s para ambas as partes, abrindo no instante exato',
+    (status) => {
+      const c = { ...base, status, disputeOpensAt: '2026-10-08T15:00:00Z' };
+      for (const id of [1, 2]) {
+        expect(
+          contractActions(c, id, Date.parse(c.disputeOpensAt) - 1).map((a) => a.key),
+        ).not.toContain('dispute');
+        expect(contractActions(c, id, Date.parse(c.disputeOpensAt)).map((a) => a.key)).toContain(
+          'dispute',
+        );
+      }
+    },
+  );
 });

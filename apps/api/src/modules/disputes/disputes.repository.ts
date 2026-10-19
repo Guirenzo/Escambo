@@ -1,8 +1,15 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
+import type { PoolConnection } from 'mysql2/promise';
+import type { BrazilTimezone } from '@escambo/types';
 import { pool } from '../../config/db';
 import { clock } from '../../utils/clock';
 import { CLOSE_PENDING_EXTENSION } from '../contracts/deadline-sql';
+import { contractsRepository } from '../contracts/contracts.repository';
+import { clientZoneOf, freelancerZoneOf } from '../contracts/contract-zones';
+import { recoverDeliveryRules } from '../contracts/delivery-snapshots';
+import { disputeOpensAt, windowFacts } from '../contracts/dispute-window';
 import { applyWalletEffect } from '../wallet/wallet.ledger';
+import { lockWallets } from '../wallet/wallet.locks';
 
 export interface DisputeRow extends RowDataPacket {
   id: number;
@@ -20,22 +27,52 @@ export interface DisputeRow extends RowDataPacket {
 const OPEN_STATUSES = "('open', 'under_review', 'awaiting_parties')";
 const DISPUTABLE_STATUSES = ['accepted', 'in_progress', 'delivered', 'revision_requested'];
 
+interface DisputeDraft {
+  ulid: string;
+  contractId: number;
+  openedBy: number;
+  reason: string;
+  description: string;
+}
+export type ManualDisputeResult =
+  | { id: number }
+  | { refused: 'not_disputable' }
+  | { refused: 'too_early'; opensAt: Date | null; requesterZone: BrazilTimezone };
+
+/** O contrato já está travado; quem chama controla commit/rollback. */
+async function openInTx(
+  conn: PoolConnection,
+  d: DisputeDraft,
+  oldStatus: string,
+  now: Date,
+  guard = '',
+): Promise<number | null> {
+  const [upd] = await conn.query<ResultSetHeader>(
+    `UPDATE contracts c SET c.status = 'disputed', ${CLOSE_PENDING_EXTENSION('c')}
+      WHERE c.id = :contractId AND c.status = :oldStatus ${guard}`,
+    { contractId: d.contractId, oldStatus, now },
+  );
+  if (upd.affectedRows === 0) return null;
+  const [res] = await conn.query<ResultSetHeader>(
+    `INSERT INTO disputes (ulid, contract_id, opened_by, reason, description)
+     VALUES (:ulid, :contractId, :openedBy, :reason, :description)`,
+    { ...d },
+  );
+  await conn.query<ResultSetHeader>(
+    `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
+     VALUES (:contractId, :openedBy, :oldStatus, 'disputed', 'Disputa aberta')`,
+    { contractId: d.contractId, openedBy: d.openedBy, oldStatus },
+  );
+  return res.insertId;
+}
+
 export const disputesRepository = {
   /**
    * Abre a disputa e coloca o contrato em 'disputed' (bloqueia o escrow — RN-038), atômico. O
    * status anterior vai para a linha do tempo, e um pedido de extensão pendente se encerra. A
    * disputa automática (RN-029) passa `guard`: a gravação repete o que o job leu (ADR 57).
    */
-  async create(
-    d: {
-      ulid: string;
-      contractId: number;
-      openedBy: number;
-      reason: string;
-      description: string;
-    },
-    opts: { guard?: string; now?: Date } = {},
-  ): Promise<number | null> {
+  async create(d: DisputeDraft, opts: { guard?: string; now?: Date } = {}): Promise<number | null> {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -48,27 +85,58 @@ export const disputesRepository = {
         await conn.rollback();
         return null;
       }
-      const [upd] = await conn.query<ResultSetHeader>(
-        `UPDATE contracts c SET c.status = 'disputed', ${CLOSE_PENDING_EXTENSION('c')}
-          WHERE c.id = :contractId AND c.status = :oldStatus ${opts.guard ?? ''}`,
-        { contractId: d.contractId, oldStatus, now: opts.now ?? clock.now() },
-      );
-      if (upd.affectedRows === 0) {
+      const id = await openInTx(conn, d, oldStatus, opts.now ?? clock.now(), opts.guard);
+      if (id === null) {
         await conn.rollback();
         return null;
       }
-      const [res] = await conn.query<ResultSetHeader>(
-        `INSERT INTO disputes (ulid, contract_id, opened_by, reason, description)
-         VALUES (:ulid, :contractId, :openedBy, :reason, :description)`,
-        d,
-      );
-      await conn.query<ResultSetHeader>(
-        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
-         VALUES (:contractId, :openedBy, :oldStatus, 'disputed', 'Disputa aberta')`,
-        { contractId: d.contractId, openedBy: d.openedBy, oldStatus },
-      );
       await conn.commit();
-      return res.insertId;
+      return id;
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  },
+
+  /** RN-062: o relógio e a janela vêm da leitura feita depois da espera pela contratação. */
+  async createManual(d: DisputeDraft): Promise<ManualDisputeResult> {
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [current] = await conn.query<RowDataPacket[]>(
+        'SELECT status FROM contracts WHERE id = :contractId FOR UPDATE',
+        { contractId: d.contractId },
+      );
+      const oldStatus = current[0]?.status as string | undefined;
+      if (!oldStatus || !DISPUTABLE_STATUSES.includes(oldStatus)) {
+        await conn.rollback();
+        return { refused: 'not_disputable' };
+      }
+      await recoverDeliveryRules(conn, d.contractId);
+      const row = await contractsRepository.findById(d.contractId, conn);
+      if (!row) {
+        await conn.rollback();
+        return { refused: 'not_disputable' };
+      }
+      const opensAt = disputeOpensAt(windowFacts(row));
+      const now = clock.now();
+      if (!opensAt || now.getTime() < opensAt.getTime()) {
+        await conn.rollback();
+        return {
+          refused: 'too_early',
+          opensAt,
+          requesterZone: row.client_id === d.openedBy ? clientZoneOf(row) : freelancerZoneOf(row),
+        };
+      }
+      const id = await openInTx(conn, d, oldStatus, now);
+      if (id === null) {
+        await conn.rollback();
+        return { refused: 'not_disputable' };
+      }
+      await conn.commit();
+      return { id };
     } catch (err) {
       await conn.rollback();
       throw err;
@@ -128,6 +196,23 @@ export const disputesRepository = {
     try {
       await conn.beginTransaction();
 
+      // O agregado vem antes da disputa e das contas; resolved_by também referencia users.
+      await conn.query('SELECT id FROM contracts WHERE id = :contractId FOR UPDATE', {
+        contractId: p.contractId,
+      });
+      const [current] = await conn.query<RowDataPacket[]>(
+        'SELECT status FROM disputes WHERE id = :disputeId FOR UPDATE',
+        { disputeId: p.disputeId },
+      );
+      if (!current[0] || current[0].status === 'resolved') {
+        await conn.rollback();
+        return false;
+      }
+      const walletUserIds =
+        ['cash', 'credits'].includes(p.paymentMode) && p.escrowNet > 0
+          ? [p.freelancerId, ...(p.refundToClient > 0 ? [p.clientId] : [])]
+          : [];
+      await lockWallets(conn, walletUserIds, [p.adminId]);
       const [upd] = await conn.query<ResultSetHeader>(
         `UPDATE disputes
             SET status = 'resolved', resolution = :resolution, refund_percentage = :refundPercentage,

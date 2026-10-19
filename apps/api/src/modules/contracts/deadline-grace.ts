@@ -14,8 +14,12 @@ export const DEFAULT_DEADLINE_GRACE_HOURS = 24;
 export const DEFAULT_PROPOSAL_EXPIRY_HOURS = 72;
 /** Aprovação tácita (RN-024) quando a chave não está gravada, em dias corridos. */
 export const DEFAULT_TACIT_APPROVAL_DAYS = 5;
-/** Horas que o cliente tem para responder a um pedido de extensão (RN-028); sem resposta, expira. */
-export const EXTENSION_RESPONSE_HOURS = 48;
+/** Padrão de horas para responder à extensão (RN-028); a conta aceita o snapshot do painel. */
+export const DEFAULT_EXTENSION_RESPONSE_HOURS = 48;
+/** @deprecated Padrão legado; pedidos novos usam o snapshot de extension_response_hours. */
+export const EXTENSION_RESPONSE_HOURS = DEFAULT_EXTENSION_RESPONSE_HOURS;
+/** Revisões sem custo por entrega nova (RN-023). NULL no legado continua sem limite. */
+export const INCLUDED_REVISIONS = 2;
 /** Pedidos de extensão por contratação (RN-028): até 2, e só um pode ser aceito. */
 export const MAX_EXTENSION_REQUESTS = 2;
 /** Revisão sem nova entrega por esse tempo avisa as duas partes, uma vez (ADR 58). Fixo: não é sanção. */
@@ -30,6 +34,18 @@ export const EXTENSION_DECISION_MARGIN_MS = 12 * 3_600_000;
 export const EXTENSION_MIN_DECISION_MS = 6 * 3_600_000;
 
 const H = 3_600_000;
+
+/** Quantas revisões ainda cabem; null conserva o combinado ilimitado dos contratos antigos. */
+export function revisionsLeft(limit: number | null, used: number): number | null {
+  if (!Number.isSafeInteger(used) || used < 0) {
+    throw new RangeError('Contador de revisões inválido.');
+  }
+  if (limit === null) return null;
+  if (!Number.isSafeInteger(limit) || limit < 0) {
+    throw new RangeError('Limite de revisões inválido.');
+  }
+  return Math.max(0, limit - used);
+}
 
 /** O que o prazo precisa saber da contratação (linha do repositório, com as colunas calculadas). */
 export interface DeadlineRow {
@@ -132,7 +148,7 @@ export function noticeGraceEnd(
 }
 
 /**
- * Até quando o cliente responde a um pedido feito em `requestedAt` pedindo `proposed`: 48 h,
+ * Até quando o cliente responde a um pedido feito em `requestedAt` pedindo `proposed`: `hours`,
  * levadas para as 9h se caírem de noite, mas nunca depois do último instante diurno 12 h antes da
  * data pedida. Menos de 6 h para decidir: null (a data está perto demais).
  */
@@ -140,11 +156,14 @@ export function extensionRespondBy(p: {
   requestedAt: Date;
   proposed: Date;
   zone: BrazilTimezone;
+  /** Snapshot da chave extension_response_hours; ausente mantém as 48 h atuais. */
+  hours?: number;
 }): Date | null {
-  const byHours = humanize(
-    new Date(p.requestedAt.getTime() + EXTENSION_RESPONSE_HOURS * H),
-    p.zone,
-  );
+  const hours = p.hours ?? DEFAULT_EXTENSION_RESPONSE_HOURS;
+  if (!Number.isInteger(hours) || hours < 24 || hours > 168) {
+    throw new RangeError('Horas para responder à extensão devem estar entre 24 e 168.');
+  }
+  const byHours = humanize(new Date(p.requestedAt.getTime() + hours * H), p.zone);
   const byDate = lastHumanAtOrBefore(
     new Date(p.proposed.getTime() - EXTENSION_DECISION_MARGIN_MS),
     p.zone,

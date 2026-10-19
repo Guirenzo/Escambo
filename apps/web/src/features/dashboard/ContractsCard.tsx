@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Contract } from '@escambo/types';
 import { Button, Pill } from '../../components/ui';
 import { deadlinePill } from '../../lib/deadline';
-import { STATUS_LABEL, brl, dt } from '../../lib/format';
+import { statusLabel, brl, dt } from '../../lib/format';
 import { ContractActions } from '../contracts/ContractActions';
 
 const MODE_LABEL: Record<string, string> = {
@@ -55,7 +55,7 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
                 {c.paymentMode === 'credits' ? `${Math.round(c.price)} cr` : brl(c.price)}
               </td>
               <td>
-                <Pill status={c.status}>{STATUS_LABEL[c.status] ?? c.status}</Pill>
+                <Pill status={c.status}>{statusLabel(c)}</Pill>
               </td>
               <td>
                 <div className="acts">
@@ -65,7 +65,7 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
                   <ContractActions
                     contract={c}
                     size="mini"
-                    exclude={['reject', 'cancel', 'revision', 'dispute']}
+                    exclude={['reject', 'cancel', 'revision', 'grant_revision', 'dispute']}
                   />
                 </div>
               </td>

@@ -25,6 +25,23 @@ export interface WalletTxRow extends RowDataPacket {
 }
 
 export const walletRepository = {
+  /** Em autocommit: nunca chamar enquanto segura uma conexão/transação de dinheiro. */
+  async ensure(userId: number): Promise<void> {
+    await pool.query<ResultSetHeader>(`INSERT IGNORE INTO wallets (user_id) VALUES (:userId)`, {
+      userId,
+    });
+  },
+
+  /** Consulta sem criar carteira nem alterar os saldos (RN-007). */
+  async findByUserId(userId: number): Promise<WalletRow | undefined> {
+    const [rows] = await pool.query<WalletRow[]>(
+      `SELECT id, user_id, balance, balance_pending, currency, credits_balance, credits_pending
+         FROM wallets WHERE user_id = :userId LIMIT 1`,
+      { userId },
+    );
+    return rows[0];
+  },
+
   async listTransactions(userId: number, limit: number, offset: number): Promise<WalletTxRow[]> {
     const [rows] = await pool.query<WalletTxRow[]>(
       `SELECT id, amount, pending_delta, balance_after, pending_after, reason,
@@ -40,9 +57,7 @@ export const walletRepository = {
 
   /** Garante que o usuário tem carteira (uma por usuário) e a retorna. */
   async getOrCreate(userId: number): Promise<WalletRow> {
-    await pool.query<ResultSetHeader>(`INSERT IGNORE INTO wallets (user_id) VALUES (:userId)`, {
-      userId,
-    });
+    await this.ensure(userId);
     const [rows] = await pool.query<WalletRow[]>(
       `SELECT id, user_id, balance, balance_pending, currency, credits_balance, credits_pending
          FROM wallets WHERE user_id = :userId LIMIT 1`,

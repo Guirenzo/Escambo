@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeDb } from '../../test-support/fake-db';
+import { lockWalletRows, lockWalletUsers, lockWallets } from '../wallet/wallet.locks';
 import { paymentsRepository } from './payments.repository';
 
 vi.mock('../../config/db', async () => (await import('../../test-support/fake-db')).dbModule);
+vi.mock('../wallet/wallet.locks', () => ({
+  lockWalletRows: vi.fn(),
+  lockWalletUsers: vi.fn(),
+  lockWallets: vi.fn(),
+}));
 
 const NOW = new Date('2026-10-02T15:00:00.000Z');
 
@@ -43,6 +49,8 @@ const selected = (sql: string): string[] => /^SELECT (.+?) FROM /.exec(sql)![1]!
 describe('paymentsRepository', () => {
   beforeEach(() => {
     fakeDb.reset();
+    for (const lock of [lockWalletRows, lockWalletUsers, lockWallets])
+      vi.mocked(lock).mockReset().mockResolvedValue(undefined);
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(NOW);
   });
@@ -109,11 +117,11 @@ describe('paymentsRepository', () => {
 
     expect(fakeDb.sqls()).toEqual([
       `SELECT ${COLUMNS.join(', ')} FROM payments WHERE kind = 'topup' AND gateway_payment_id = :gatewayPaymentId LIMIT 1`,
-      `SELECT ${COLUMNS.join(', ')} FROM payments WHERE id = :id AND kind = 'topup' FOR UPDATE`,
+      "SELECT payer_id FROM payments WHERE id = :id AND kind = 'topup' AND status = 'pending'",
     ]);
-    // Sem linha, a liquidação para na trava: nada muda e a transação é desfeita.
+    // Sem depósito pendente, nenhuma conexão de transação é ocupada.
     expect(fakeDb.conn.commit).not.toHaveBeenCalled();
-    expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+    expect(fakeDb.conn.rollback).not.toHaveBeenCalled();
   });
 
   it('toda leitura de cobrança traz as colunas de que o depósito precisa (situação, prazo, código PIX)', async () => {
@@ -125,7 +133,7 @@ describe('paymentsRepository', () => {
     await paymentsRepository.settle(7, 'paid');
 
     expect(fakeDb.calls).toHaveLength(4);
-    for (const { sql } of fakeDb.calls) {
+    for (const { sql } of fakeDb.calls.slice(0, 3)) {
       expect(selected(sql)).toEqual(COLUMNS);
     }
   });
@@ -160,35 +168,28 @@ describe('paymentsRepository', () => {
   });
 
   describe('settle (liquidação idempotente, RNF-038)', () => {
-    it('pago: trava a cobrança, marca a data, credita a carteira do pagador e grava o extrato, tudo numa transação', async () => {
-      fakeDb.reply(
-        [pending()], // SELECT ... FOR UPDATE
-        { affectedRows: 1 }, // UPDATE payments
-        { affectedRows: 0 }, // INSERT IGNORE wallets
-        { affectedRows: 1 }, // UPDATE wallets (ledger)
-        [{ balance: '350.00', balance_pending: '20.00' }], // saldos depois do crédito
-        { insertId: 1, affectedRows: 1 }, // extrato
-      );
+    const preparePaid = (row = pending()) =>
+      fakeDb.reply([row], { affectedRows: 0 }, [row], { affectedRows: 1 });
 
+    it('garante a carteira em autocommit antes da conexão e liquida cobrança, saldo e extrato juntos', async () => {
+      preparePaid();
+      fakeDb.reply({ affectedRows: 1 }, [{ balance: '350.00', balance_pending: '20.00' }], {
+        insertId: 1,
+      });
       expect(await paymentsRepository.settle(7, 'paid')).toBe(true);
-
-      const calls = fakeDb.calls;
-      expect(calls).toHaveLength(6);
-      expect(calls[0]!.sql).toMatch(
-        /^SELECT .* FROM payments WHERE id = :id AND kind = 'topup' FOR UPDATE$/,
+      expect(lockWallets).toHaveBeenCalledExactlyOnceWith(fakeDb.conn, [44]);
+      const lockedAt = vi.mocked(lockWallets).mock.invocationCallOrder[0]!;
+      expect(fakeDb.conn.query.mock.invocationCallOrder[2]!).toBeLessThan(lockedAt);
+      expect(lockedAt).toBeLessThan(fakeDb.conn.query.mock.invocationCallOrder[3]!);
+      expect(fakeDb.calls[0]!.sql).toBe(
+        "SELECT payer_id FROM payments WHERE id = :id AND kind = 'topup' AND status = 'pending'",
       );
-      expect(calls[0]!.params).toEqual({ id: 7 });
-      expect(calls[1]!.sql).toBe(
-        'UPDATE payments SET status = :status, paid_at = :paidAt WHERE id = :id',
-      );
-      expect(calls[1]!.params).toEqual({ status: 'paid', paidAt: NOW, id: 7 });
-      expect(calls[2]!.sql).toBe('INSERT IGNORE INTO wallets (user_id) VALUES (:userId)');
-      expect(calls[2]!.params).toEqual({ userId: 44 });
-      // O crédito é o valor da cobrança, no saldo disponível de quem pagou; nada vai para o retido.
-      expect(calls[3]!.sql).toContain('UPDATE wallets');
-      expect(calls[3]!.params).toEqual({ pending: 0, balance: 150, userId: 44 });
-      expect(calls[5]!.sql).toContain('INSERT INTO wallet_transactions');
-      expect(calls[5]!.params).toEqual({
+      expect(fakeDb.calls[1]!.sql).toBe('INSERT IGNORE INTO wallets (user_id) VALUES (:userId)');
+      expect(fakeDb.calls[1]!.params).toEqual({ userId: 44 });
+      expect(fakeDb.calls[2]!.sql).toMatch(/FROM payments .* FOR UPDATE$/);
+      expect(fakeDb.calls[3]!.params).toEqual({ status: 'paid', paidAt: NOW, id: 7 });
+      expect(fakeDb.calls[4]!.params).toEqual({ pending: 0, balance: 150, userId: 44 });
+      expect(fakeDb.calls[6]!.params).toEqual({
         userId: 44,
         amount: 150,
         pendingDelta: 0,
@@ -199,191 +200,127 @@ describe('paymentsRepository', () => {
         paymentId: 7,
         withdrawalId: null,
       });
-
-      expect(fakeDb.conn.beginTransaction).toHaveBeenCalledTimes(1);
-      expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
+      const orders = fakeDb.pool.query.mock.invocationCallOrder;
+      const begin = fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!;
+      expect(orders[1]!).toBeLessThan(fakeDb.pool.getConnection.mock.invocationCallOrder[0]!);
+      expect(begin).toBeLessThan(orders[2]!);
+      expect(fakeDb.conn.commit.mock.invocationCallOrder[0]!).toBeGreaterThan(orders[6]!);
+      expect(fakeDb.pool.query.mock.contexts.slice(0, 2).every((ctx) => ctx === fakeDb.pool)).toBe(
+        true,
+      );
+      expect(fakeDb.pool.query.mock.contexts.slice(2).every((ctx) => ctx === fakeDb.conn)).toBe(
+        true,
+      );
       expect(fakeDb.conn.rollback).not.toHaveBeenCalled();
       expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
     });
 
-    it('falhou: muda o status sem data de pagamento e não toca na carteira', async () => {
+    it('falha de pagamento muda só o status e não cria nem movimenta carteira', async () => {
       fakeDb.reply([pending()], { affectedRows: 1 });
-
       expect(await paymentsRepository.settle(7, 'failed')).toBe(true);
-
       expect(fakeDb.calls).toHaveLength(2);
       expect(fakeDb.calls[1]!.params).toEqual({ status: 'failed', paidAt: null, id: 7 });
       expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
+      expect(fakeDb.sqls().some((sql) => sql.includes('wallet'))).toBe(false);
+    });
+
+    it('depósito ausente, não-topup ou já liquidado para na pré-leitura, sem transação nem crédito', async () => {
+      fakeDb.reply([]);
+      expect(await paymentsRepository.settle(999, 'paid')).toBe(false);
+      expect(fakeDb.calls).toHaveLength(1);
+      expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
       expect(fakeDb.conn.rollback).not.toHaveBeenCalled();
-      expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
     });
 
-    it('cobrança que já saiu de pendente (evento repetido) não é liquidada de novo: false, sem crédito', async () => {
+    it('relê o status sob trava: uma liquidação concorrente nunca duplica o crédito', async () => {
       for (const status of ['paid', 'failed', 'cancelled']) {
         fakeDb.reset();
-        fakeDb.reply([pending({ status })]);
-
+        fakeDb.reply([pending()], {}, [pending({ status })]);
         expect(await paymentsRepository.settle(7, 'paid')).toBe(false);
-
-        expect(fakeDb.calls).toHaveLength(1);
-        expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+        expect(fakeDb.sqls().some((sql) => sql.startsWith('UPDATE'))).toBe(false);
         expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
         expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
       }
     });
 
-    it('aviso de falha para cobrança já paga não desfaz o pagamento: false, sem UPDATE', async () => {
-      for (const status of ['paid', 'failed', 'cancelled']) {
-        fakeDb.reset();
-        fakeDb.reply([pending({ status })]);
-
-        expect(await paymentsRepository.settle(7, 'failed')).toBe(false);
-
-        expect(fakeDb.sqls().filter((sql) => sql.startsWith('UPDATE'))).toEqual([]);
-        expect(fakeDb.conn.commit).not.toHaveBeenCalled();
-        expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
-        expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
-      }
+    it('aviso de falha atrasado não desfaz depósito pago', async () => {
+      fakeDb.reply([pending({ status: 'paid' })]);
+      expect(await paymentsRepository.settle(7, 'failed')).toBe(false);
+      expect(fakeDb.calls).toHaveLength(1);
+      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
     });
 
-    it('o crédito vai para o pagador e no valor da própria cobrança, não para quem ou quanto o chamador disser', async () => {
-      fakeDb.reply(
-        [pending({ id: 15, payer_id: 81, amount: '19.99' })],
-        { affectedRows: 1 },
-        { affectedRows: 1 }, // a carteira não existia: o INSERT IGNORE cria
-        { affectedRows: 1 },
-        [{ balance: '19.99', balance_pending: '0.00' }],
-        { insertId: 2, affectedRows: 1 },
-      );
-
+    it('pagador e valor vêm da cobrança, e o extrato usa os saldos do banco', async () => {
+      preparePaid(pending({ id: 15, payer_id: 81, amount: '19.99' }));
+      fakeDb.reply({ affectedRows: 1 }, [{ balance: '19.99', balance_pending: '0.00' }], {});
       expect(await paymentsRepository.settle(15, 'paid')).toBe(true);
-
-      expect(fakeDb.calls[1]!.params).toEqual({ status: 'paid', paidAt: NOW, id: 15 });
-      expect(fakeDb.calls[2]!.params).toEqual({ userId: 81 });
-      expect(fakeDb.calls[3]!.params).toEqual({ pending: 0, balance: 19.99, userId: 81 });
-      expect(fakeDb.calls[4]!.params).toEqual({ userId: 81 });
-      expect(fakeDb.calls[5]!.params).toMatchObject({
+      expect(fakeDb.calls[1]!.params).toEqual({ userId: 81 });
+      expect(fakeDb.calls[4]!.params).toEqual({ pending: 0, balance: 19.99, userId: 81 });
+      expect(fakeDb.calls[6]!.params).toMatchObject({
         userId: 81,
         amount: 19.99,
         balanceAfter: 19.99,
-        pendingAfter: 0,
-        reason: 'deposit',
         paymentId: 15,
       });
-      expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
     });
 
-    it('se a trava da cobrança falha, nada é alterado: desfaz, propaga o erro e devolve a conexão', async () => {
-      const boom = new Error('deadlock');
-      fakeDb.reply(boom);
-
-      await expect(paymentsRepository.settle(7, 'paid')).rejects.toBe(boom);
-
-      expect(fakeDb.calls).toHaveLength(1);
-      expect(fakeDb.conn.commit).not.toHaveBeenCalled();
-      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
-      expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
+    it('pré-leitura ou criação falha antes de adquirir conexão, sem rollback alheio', async () => {
+      for (const stage of ['read', 'ensure']) {
+        fakeDb.reset();
+        const boom = new Error(stage);
+        if (stage === 'ensure') fakeDb.reply([pending()]);
+        fakeDb.reply(boom);
+        await expect(paymentsRepository.settle(7, 'paid')).rejects.toBe(boom);
+        expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+        expect(fakeDb.conn.rollback).not.toHaveBeenCalled();
+        expect(fakeDb.conn.release).not.toHaveBeenCalled();
+      }
     });
 
-    it('cobrança inexistente: false, sem alterar nada', async () => {
-      fakeDb.reply([]);
-
-      expect(await paymentsRepository.settle(999, 'paid')).toBe(false);
-
-      expect(fakeDb.calls).toHaveLength(1);
-      expect(fakeDb.conn.commit).not.toHaveBeenCalled();
-      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
-      expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
-    });
-
-    it('se a carteira recusa o crédito, a cobrança não fica paga: desfaz tudo e devolve false', async () => {
-      fakeDb.reply([pending()], { affectedRows: 1 }, { affectedRows: 0 }, { affectedRows: 0 });
-
-      expect(await paymentsRepository.settle(7, 'paid')).toBe(false);
-
-      // Parou no UPDATE da carteira: sem linha de extrato.
-      expect(fakeDb.calls).toHaveLength(4);
-      expect(fakeDb.conn.commit).not.toHaveBeenCalled();
-      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
-      expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
-    });
-
-    it('erro do banco no meio: desfaz, propaga o erro e devolve a conexão', async () => {
-      const boom = new Error('lock wait timeout');
-      fakeDb.reply([pending()], { affectedRows: 1 }, { affectedRows: 0 }, boom);
-
-      await expect(paymentsRepository.settle(7, 'paid')).rejects.toBe(boom);
-
-      // Falhou no crédito da carteira: a cobrança já tinha sido marcada, e é o rollback que a devolve.
-      expect(fakeDb.calls).toHaveLength(4);
-      expect(fakeDb.conn.commit).not.toHaveBeenCalled();
-      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
-      expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
-    });
-
-    it('se gravar o extrato falha, o crédito e a cobrança paga são desfeitos juntos (RNF-038)', async () => {
-      const boom = new Error('ER_LOCK_DEADLOCK');
-      fakeDb.reply(
-        [pending()],
-        { affectedRows: 1 },
-        { affectedRows: 0 },
-        { affectedRows: 1 }, // o saldo chegou a ser creditado
-        [{ balance: '150.00', balance_pending: '0.00' }],
-        boom, // INSERT do extrato
-      );
-
-      await expect(paymentsRepository.settle(7, 'paid')).rejects.toBe(boom);
-
-      expect(fakeDb.calls).toHaveLength(6);
-      expect(fakeDb.conn.commit).not.toHaveBeenCalled();
-      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
-      expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
-    });
-
-    it('se o commit falha, a liquidação não vale: desfaz, propaga o erro e devolve a conexão', async () => {
-      const boom = new Error('connection lost');
-      fakeDb.reply([pending()], { affectedRows: 1 });
-      fakeDb.conn.commit.mockRejectedValueOnce(boom);
-
-      await expect(paymentsRepository.settle(7, 'failed')).rejects.toBe(boom);
-
-      expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
-      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
-      expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
-    });
-
-    it('sem conexão disponível no pool, o erro sobe como veio e nenhuma instrução é executada', async () => {
+    it('falha ao adquirir conexão acontece depois da preparação, sem abrir transação', async () => {
+      fakeDb.reply([pending()], {});
       const boom = new Error('pool exhausted');
       fakeDb.pool.getConnection.mockRejectedValueOnce(boom);
-
       await expect(paymentsRepository.settle(7, 'paid')).rejects.toBe(boom);
-
-      expect(fakeDb.calls).toHaveLength(0);
+      expect(fakeDb.calls).toHaveLength(2);
       expect(fakeDb.conn.beginTransaction).not.toHaveBeenCalled();
-      expect(fakeDb.conn.rollback).not.toHaveBeenCalled();
       expect(fakeDb.conn.release).not.toHaveBeenCalled();
     });
 
-    it('a transação é aberta antes da trava da cobrança, e o commit só vem depois do extrato', async () => {
-      fakeDb.reply(
-        [pending()],
-        { affectedRows: 1 },
-        { affectedRows: 0 },
-        { affectedRows: 1 },
-        [{ balance: '150.00', balance_pending: '0.00' }],
-        { insertId: 1, affectedRows: 1 },
-      );
+    it('crédito recusado desfaz a cobrança e não grava extrato', async () => {
+      preparePaid();
+      fakeDb.reply({ affectedRows: 0 });
+      expect(await paymentsRepository.settle(7, 'paid')).toBe(false);
+      expect(fakeDb.calls).toHaveLength(5);
+      expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+    });
 
-      expect(await paymentsRepository.settle(7, 'paid')).toBe(true);
+    it('erro na trava, crédito ou extrato desfaz todo efeito transacional e propaga o erro', async () => {
+      for (const stage of ['lock', 'credit', 'ledger']) {
+        fakeDb.reset();
+        const boom = new Error(stage);
+        if (stage === 'lock') fakeDb.reply([pending()], {}, boom);
+        else {
+          preparePaid();
+          if (stage === 'ledger')
+            fakeDb.reply({ affectedRows: 1 }, [{ balance: '150.00', balance_pending: '0.00' }]);
+          fakeDb.reply(boom);
+        }
+        await expect(paymentsRepository.settle(7, 'paid')).rejects.toBe(boom);
+        expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+        expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+        expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
+      }
+    });
 
-      expect(fakeDb.pool.getConnection).toHaveBeenCalledTimes(1);
-      // Trava fora da transação não segura nada, e commit antes do extrato deixa o crédito sem linha.
-      const begin = fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!;
-      const commit = fakeDb.conn.commit.mock.invocationCallOrder[0]!;
-      const queries = fakeDb.conn.query.mock.invocationCallOrder;
-      expect(queries).toHaveLength(6);
-      expect(begin).toBeLessThan(queries[0]!);
-      expect(commit).toBeGreaterThan(queries[5]!);
+    it('erro no commit propaga e devolve a conexão depois do rollback', async () => {
+      fakeDb.reply([pending()], {});
+      const boom = new Error('connection lost');
+      fakeDb.conn.commit.mockRejectedValueOnce(boom);
+      await expect(paymentsRepository.settle(7, 'failed')).rejects.toBe(boom);
+      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+      expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
     });
   });
 

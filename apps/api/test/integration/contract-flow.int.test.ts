@@ -409,6 +409,12 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
     expect(byService.status, JSON.stringify(byService.body)).toBe(201);
     expect(byService.body).toMatchObject({ freelancerId: other.id, serviceId: othersService });
 
+    // RN-020: encerra a primeira proposta antes de testar a elegibilidade por perfil.
+    await request(app)
+      .post(`/api/contracts/${byService.body.id}/cancel`)
+      .set(auth(client.token))
+      .expect(200);
+
     // Cliente que também é freelancer (RN-006): com o perfil, recebe a proposta direta.
     await request(app)
       .put('/api/profiles/freelancer')

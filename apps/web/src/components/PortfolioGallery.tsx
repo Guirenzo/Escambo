@@ -1,3 +1,4 @@
+import { BusinessIconButton } from './BusinessActions';
 import { ChevronLeft, ChevronRight, ExternalLink, Flag, X, ZoomIn, ZoomOut } from 'lucide-react';
 import {
   useEffect,
@@ -385,7 +386,7 @@ export function PortfolioGallery({
         </h2>
         <div className="gallery-tools">
           {onReport && (
-            <button
+            <BusinessIconButton
               type="button"
               className="gallery-btn"
               aria-label={`Denunciar imagem de ${current.title}`}
@@ -393,7 +394,7 @@ export function PortfolioGallery({
               onClick={() => onReport(current)}
             >
               <Flag size={18} />
-            </button>
+            </BusinessIconButton>
           )}
           <button
             ref={closeButton}

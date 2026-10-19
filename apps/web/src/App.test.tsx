@@ -13,7 +13,7 @@ import { MAINTENANCE_EVENT } from './lib/api';
  */
 
 const auth = {
-  user: null as { id: number; role: string } | null,
+  user: null as { id: number; role: string; status?: 'active' | 'suspended' } | null,
   loading: false,
 };
 vi.mock('./lib/auth', () => ({ useAuth: () => auth }));
@@ -52,6 +52,7 @@ vi.mock('./features/views/NotificacoesView', () => ({
   NotificacoesView: () => <h1>Notificações</h1>,
 }));
 vi.mock('./features/views/PerfilView', () => ({ PerfilView: () => <h1>Perfil</h1> }));
+vi.mock('./features/views/SuporteView', () => ({ SuporteView: () => <h1>Suporte</h1> }));
 vi.mock('./features/views/AdminView', () => ({ AdminView: () => <h1>Administração</h1> }));
 vi.mock('./features/views/FreelancerView', async () => {
   const { useParams } = await import('react-router-dom');
@@ -164,10 +165,24 @@ describe('App: /login', () => {
 });
 
 describe('App: rotas com sessão', () => {
+  it('admin suspenso fica fora da administração e mantém acesso ao suporte', () => {
+    auth.user = { id: 9, role: 'admin', status: 'suspended' };
+    visit('/admin?ticket=7#suporte');
+    expect(heading()).toBe('Início');
+    expect(here()).toBe('/');
+  });
+
+  it('suporte com protocolo mantém o destino ao pedir login', () => {
+    auth.user = null;
+    visit('/suporte?ticket=7');
+    expect(heading()).toBe('Entrar');
+    expect(here()).toBe('/login');
+  });
   it.each([
     ['/', 'Início'],
     ['/servicos', 'Serviços'],
     ['/trocas', 'Trocas'],
+    ['/suporte?ticket=7', 'Suporte'],
     ['/ranking', 'Ranking'],
     ['/carteira', 'Carteira'],
     ['/notificacoes', 'Notificações'],

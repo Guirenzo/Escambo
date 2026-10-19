@@ -1,6 +1,9 @@
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { pool } from '../../config/db';
 import { applyWalletEffect } from '../wallet/wallet.ledger';
+import { walletRepository } from '../wallet/wallet.repository';
+import { lockWalletRows, lockWalletUsers, lockWallets } from '../wallet/wallet.locks';
+import { INCLUDED_REVISIONS } from '../contracts/deadline-grace';
 
 export interface BarterRow extends RowDataPacket {
   id: number;
@@ -59,10 +62,10 @@ async function insertBarterContract(
 ): Promise<number> {
   const [res] = await conn.query<ResultSetHeader>(
     `INSERT INTO contracts
-       (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, status, payment_mode, barter_agreement_id, accepted_at)
+       (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, fee_percentage, revision_limit, status, payment_mode, barter_agreement_id, accepted_at)
      VALUES
-       (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, 0, :price, 'accepted', 'barter', :agreementId, NOW())`,
-    { ...spec, agreementId },
+       (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, 0, :price, 0, :revisionLimit, 'accepted', 'barter', :agreementId, NOW())`,
+    { ...spec, agreementId, revisionLimit: INCLUDED_REVISIONS },
   );
   const contractId = res.insertId;
   await conn.query<ResultSetHeader>(
@@ -79,9 +82,6 @@ async function holdTorna(
   agreementId: number,
   hold: TornaHold,
 ): Promise<boolean> {
-  await conn.query<ResultSetHeader>(`INSERT IGNORE INTO wallets (user_id) VALUES (:userId)`, {
-    userId: hold.userId,
-  });
   const ok = await applyWalletEffect(conn, {
     userId: hold.userId,
     balanceDelta: -hold.amount,
@@ -103,6 +103,7 @@ async function holdTorna(
  */
 async function refundTorna(conn: PoolConnection, row: BarterRow): Promise<void> {
   if (row.torna_status !== 'held' || !row.cash_payer_id) return;
+  await lockWallets(conn, [row.cash_payer_id]);
   const amount = Number(row.cash_difference);
   const ok = await applyWalletEffect(conn, {
     userId: row.cash_payer_id,
@@ -158,9 +159,17 @@ export const barterRepository = {
     },
     hold: TornaHold | null,
   ): Promise<number | null> {
+    if (hold) await walletRepository.ensure(hold.userId);
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
+      // As FKs do acordo não podem adquirir users numa ordem diferente da financeira.
+      await lockWalletUsers(conn, [
+        data.proposerId,
+        data.receiverId,
+        ...(data.cashPayerId ? [data.cashPayerId] : []),
+        ...(hold ? [hold.userId] : []),
+      ]);
       const [res] = await conn.query<ResultSetHeader>(
         `INSERT INTO barter_agreements
            (ulid, proposer_id, receiver_id, offered_service_id, requested_service_id,
@@ -173,6 +182,7 @@ export const barterRepository = {
         data,
       );
       const id = res.insertId;
+      if (hold) await lockWalletRows(conn, [hold.userId]);
       if (hold && !(await holdTorna(conn, id, hold))) {
         await conn.rollback();
         return null;
@@ -275,6 +285,7 @@ export const barterRepository = {
     /** Reserva a fazer agora (torna ainda 'pending'); null quando já reservada ou sem torna. */
     hold: TornaHold | null;
   }): Promise<AcceptResult> {
+    if (params.hold) await walletRepository.ensure(params.hold.userId);
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -289,6 +300,15 @@ export const barterRepository = {
         return { ok: false, reason: 'conflict' };
       }
 
+      await lockWalletUsers(conn, [
+        params.acceptorId,
+        params.contractOffered.clientId,
+        params.contractOffered.freelancerId,
+        params.contractRequested.clientId,
+        params.contractRequested.freelancerId,
+        ...(params.hold ? [params.hold.userId] : []),
+      ]);
+      if (params.hold) await lockWalletRows(conn, [params.hold.userId]);
       if (params.hold && !(await holdTorna(conn, params.agreementId, params.hold))) {
         await conn.rollback();
         return { ok: false, reason: 'insufficient_balance' };
@@ -331,6 +351,18 @@ export const barterRepository = {
    * se a carteira recusar a liquidação.
    */
   async completeAndRelease(id: number): Promise<boolean> {
+    // As partes e o pagador são imutáveis; estado e valores continuam sob lockRow.
+    const [parties] = await pool.query<RowDataPacket[]>(
+      `SELECT proposer_id, receiver_id, cash_payer_id FROM barter_agreements WHERE id = :id`,
+      { id },
+    );
+    const party = parties[0];
+    if (!party) return false;
+    if (party.cash_payer_id) {
+      const recipientId =
+        party.cash_payer_id === party.proposer_id ? party.receiver_id : party.proposer_id;
+      await walletRepository.ensure(Number(recipientId));
+    }
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -348,14 +380,12 @@ export const barterRepository = {
         const fee = Number(row.platform_fee);
         const receiverId =
           row.cash_payer_id === row.proposer_id ? row.receiver_id : row.proposer_id;
+        await lockWallets(conn, [row.cash_payer_id, receiverId]);
         const paid = await applyWalletEffect(conn, {
           userId: row.cash_payer_id,
           balanceDelta: 0,
           pendingDelta: -torna,
           reason: 'barter_payment',
-        });
-        await conn.query<ResultSetHeader>(`INSERT IGNORE INTO wallets (user_id) VALUES (:userId)`, {
-          userId: receiverId,
         });
         const received = await applyWalletEffect(conn, {
           userId: receiverId,

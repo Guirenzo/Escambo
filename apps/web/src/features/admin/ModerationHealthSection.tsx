@@ -459,7 +459,7 @@ export function ModerationHealthSection() {
               <p className="muted tiny">
                 {removalsSentence(h)}
                 {h.queue.accountReviewsOpen > 0 &&
-                  ` ${plural(h.queue.accountReviewsOpen, 'conta', 'contas')} em revisão por reincidência.`}
+                  ` ${plural(h.queue.accountReviewsOpen, 'conta', 'contas')} em revisão (reincidência ou desistências).`}
               </p>
               <p className="muted tiny" data-testid="health-report">
                 {reportStatusLine(h.dailyReport)}

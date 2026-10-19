@@ -29,12 +29,31 @@ describe('recordConsentSchema', () => {
     ).toBe(true); // Termos 1.4: lembretes, aprovação automática avisada e o prazo no fuso de quem entrega (ADR 58)
     const next = recordConsentSchema.safeParse({
       type: 'terms_of_use',
-      version: '1.5',
+      version: '1.7',
       accepted: true,
     });
     expect(next.success).toBe(false);
     expect(next.error?.issues[0]?.message).toBe('Versão desconhecida deste documento');
   });
+
+  it.each([
+    ['terms_of_use', true],
+    ['terms_of_use', false],
+    ['privacy_policy', true],
+    ['privacy_policy', false],
+  ])('a versão 1.5 de %s aceita a resposta %s', (type, accepted) => {
+    expect(recordConsentSchema.safeParse({ type, version: '1.5', accepted }).success).toBe(true);
+  });
+
+  it.each(['terms_of_use', 'privacy_policy'])(
+    'a versão 1.6 de %s aceita ciência e recusa',
+    (type) => {
+      for (const accepted of [true, false])
+        expect(recordConsentSchema.safeParse({ type, version: '1.6', accepted }).success).toBe(
+          true,
+        );
+    },
+  );
 
   it('os outros tipos de consentimento não têm lista de versões', () => {
     expect(

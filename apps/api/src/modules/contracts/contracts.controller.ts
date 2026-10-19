@@ -4,15 +4,19 @@ import { notificationsService } from '../notifications/notifications.service';
 import {
   cancelBodySchema,
   contractIdSchema,
+  counterOfferSchema,
   createContractSchema,
   deliverMilestoneSchema,
   deliverSchema,
+  grantRevisionBodySchema,
   listContractsSchema,
   extensionDecisionBodySchema,
   extensionDecisionSchema,
   extensionSchema,
   milestoneParamsSchema,
   noteSchema,
+  offerAcceptParamsSchema,
+  offerDecisionBodySchema,
 } from './contracts.schema';
 import { contractsService } from './contracts.service';
 
@@ -40,22 +44,53 @@ export async function getContract(req: Request, res: Response): Promise<void> {
 
 export async function acceptContract(req: Request, res: Response): Promise<void> {
   const { id } = contractIdSchema.parse(req.params);
-  const contract = await contractsService.accept(id, uid(req));
-  void notificationsService.notify(contract.clientId, {
-    type: 'contract_accepted',
-    title: 'Sua proposta foi aceita',
-    data: { contractId: contract.id },
-  });
+  const { seq } = offerDecisionBodySchema.parse(req.body ?? {});
+  const contract = await contractsService.accept(id, uid(req), seq);
+  if (seq !== undefined && seq > 1) {
+    void auditService.log({
+      userId: uid(req),
+      action: 'contract_offer_accepted',
+      entityType: 'contract',
+      entityId: id,
+      newValue: { seq },
+      ...audit(req),
+    });
+  }
   res.json(contract);
 }
 
 export async function rejectContract(req: Request, res: Response): Promise<void> {
   const { id } = contractIdSchema.parse(req.params);
-  const contract = await contractsService.reject(id, uid(req));
-  void notificationsService.notify(contract.clientId, {
-    type: 'contract_rejected',
-    title: 'Sua proposta foi recusada',
-    data: { contractId: contract.id },
+  const { seq } = offerDecisionBodySchema.parse(req.body ?? {});
+  const contract = await contractsService.reject(id, uid(req), seq);
+  res.json(contract);
+}
+
+export async function counterOffer(req: Request, res: Response): Promise<void> {
+  const { id } = contractIdSchema.parse(req.params);
+  const input = counterOfferSchema.parse(req.body);
+  const contract = await contractsService.counter(id, uid(req), input);
+  void auditService.log({
+    userId: uid(req),
+    action: 'contract_offer_sent',
+    entityType: 'contract',
+    entityId: id,
+    newValue: { seq: input.seq + 1, price: input.price, deadlineAt: input.deadlineAt },
+    ...audit(req),
+  });
+  res.status(201).json(contract);
+}
+
+export async function acceptCounterOffer(req: Request, res: Response): Promise<void> {
+  const { id, seq } = offerAcceptParamsSchema.parse(req.params);
+  const contract = await contractsService.acceptCounter(id, uid(req), seq);
+  void auditService.log({
+    userId: uid(req),
+    action: 'contract_offer_accepted',
+    entityType: 'contract',
+    entityId: id,
+    newValue: { seq },
+    ...audit(req),
   });
   res.json(contract);
 }
@@ -90,6 +125,21 @@ export async function requestRevisionContract(req: Request, res: Response): Prom
   const { id } = contractIdSchema.parse(req.params);
   const { note } = noteSchema.parse(req.body);
   res.json(await contractsService.requestRevision(id, uid(req), note ?? null));
+}
+
+export async function grantRevisionContract(req: Request, res: Response): Promise<void> {
+  const { id } = contractIdSchema.parse(req.params);
+  grantRevisionBodySchema.parse(req.body);
+  const contract = await contractsService.grantRevision(id, uid(req));
+  void auditService.log({
+    userId: uid(req),
+    action: 'revision_granted',
+    entityType: 'contract',
+    entityId: id,
+    newValue: { limit: contract.revisions?.limit },
+    ...audit(req),
+  });
+  res.json(contract);
 }
 
 // ---------- Prazos (RN-028) ----------
@@ -153,11 +203,21 @@ export async function requestMilestoneRevision(req: Request, res: Response): Pro
     uid(req),
     note ?? null,
   );
-  void notificationsService.notify(contract.freelancerId, {
-    type: 'milestone_revision',
-    title: 'Revisão solicitada em um marco',
-    body: note ?? null,
-    data: { contractId: contract.id, milestoneId },
+  // O service avisa após confirmar a revisão, com o uso/limite da unidade (RN-023).
+  res.json(contract);
+}
+
+export async function grantMilestoneRevision(req: Request, res: Response): Promise<void> {
+  const { id, milestoneId } = milestoneParamsSchema.parse(req.params);
+  grantRevisionBodySchema.parse(req.body);
+  const contract = await contractsService.grantMilestoneRevision(id, milestoneId, uid(req));
+  void auditService.log({
+    userId: uid(req),
+    action: 'revision_granted',
+    entityType: 'contract',
+    entityId: id,
+    newValue: { milestoneId },
+    ...audit(req),
   });
   res.json(contract);
 }

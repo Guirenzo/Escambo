@@ -1,5 +1,16 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
-import { pool } from '../../config/db';
+import type { PoolConnection } from 'mysql2/promise';
+import { inTransaction, pool } from '../../config/db';
+
+export interface CreateMailInput {
+  userId: number | null;
+  to: string;
+  subject: string;
+  template: string;
+  text: string;
+  html: string;
+  provider: string;
+}
 
 export interface OutboxRow extends RowDataPacket {
   id: number;
@@ -18,21 +29,26 @@ export interface OutboxRow extends RowDataPacket {
 const COLS = `id, user_id, to_email, subject, template, text_body, status, provider, error, sent_at, created_at`;
 
 export const mailRepository = {
-  async create(d: {
-    userId: number | null;
-    to: string;
-    subject: string;
-    template: string;
-    text: string;
-    html: string;
-    provider: string;
-  }): Promise<number> {
-    const [res] = await pool.query<ResultSetHeader>(
+  async create(d: CreateMailInput, conn?: PoolConnection): Promise<number> {
+    const [res] = await (conn ?? pool).query<ResultSetHeader>(
       `INSERT INTO email_outbox (user_id, to_email, subject, template, text_body, html_body, provider)
        VALUES (:userId, :to, :subject, :template, :text, :html, :provider)`,
-      d,
+      { ...d },
     );
     return res.insertId;
+  },
+
+  /** RN-026: a nota privada não volta à caixa de saída após a anonimização. */
+  async createIfActive(d: CreateMailInput & { userId: number }): Promise<number | null> {
+    return inTransaction(async (conn) => {
+      const [owners] = await conn.query<RowDataPacket[]>(
+        'SELECT id, deleted_at FROM users WHERE id = :userId FOR UPDATE',
+        { userId: d.userId },
+      );
+      if (!owners[0] || owners[0].deleted_at != null) return null;
+      // A variante com conexão não abre outro checkout do pool durante a transação.
+      return this.create(d, conn);
+    });
   },
 
   async markSent(id: number): Promise<void> {

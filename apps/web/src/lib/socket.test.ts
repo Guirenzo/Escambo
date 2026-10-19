@@ -10,11 +10,15 @@ import { disconnectSocket, getSocket } from './socket';
 
 interface FakeSocket {
   auth: unknown;
+  connected: boolean;
+  connect: ReturnType<typeof vi.fn>;
   disconnect: ReturnType<typeof vi.fn>;
 }
 vi.mock('socket.io-client', () => ({
   io: vi.fn((options: { auth: unknown }): FakeSocket => ({
     auth: options.auth,
+    connected: true,
+    connect: vi.fn(),
     disconnect: vi.fn(),
   })),
 }));
@@ -52,15 +56,54 @@ describe('socket do app', () => {
     expect(ioMock).toHaveBeenCalledTimes(1);
   });
 
-  it('token renovado troca a credencial das próximas reconexões', () => {
+  it('token renovado refaz o handshake mesmo se o socket ainda estiver conectado', () => {
     setToken('velho');
     const socket = getSocket();
 
     setToken('novo');
 
     expect(socket.auth).toEqual({ token: 'novo' });
-    // Renovar o token não abre outra conexão.
+    // A mesma instância refaz o handshake para o servidor deixar de validar o JWT anterior.
     expect(ioMock).toHaveBeenCalledTimes(1);
+    expect(socket.disconnect).toHaveBeenCalledTimes(1);
+    expect(socket.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('token igual não interrompe uma conexão aberta', () => {
+    setToken('vigente');
+    const socket = getSocket();
+    setToken('vigente');
+    expect(socket.disconnect).not.toHaveBeenCalled();
+    expect(socket.connect).not.toHaveBeenCalled();
+    expect(ioMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('token igual recupera uma conexão já encerrada, sem desconectar de novo', () => {
+    setToken('vigente');
+    const socket = getSocket();
+    socket.connected = false;
+    setToken('vigente');
+    expect(socket.disconnect).not.toHaveBeenCalled();
+    expect(socket.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('refresh reconecta o socket existente se o JWT anterior encerrou a conexão', () => {
+    setToken('vencido');
+    const socket = getSocket();
+    socket.connected = false;
+    setToken('renovado');
+    expect(socket.auth).toEqual({ token: 'renovado' });
+    expect(socket.connect).toHaveBeenCalledTimes(1);
+    expect(ioMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('limpar token não tenta recuperar uma conexão encerrada', () => {
+    setToken('antigo');
+    const socket = getSocket();
+    socket.connected = false;
+    setToken(null);
+    expect(socket.auth).toEqual({ token: null });
+    expect(socket.connect).not.toHaveBeenCalled();
   });
 
   it('sair desconecta e a próxima conexão é nova, com o token de quem entrar', () => {

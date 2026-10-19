@@ -1,3 +1,12 @@
+vi.mock('../dropouts/dropouts.repository', () => ({
+  dropoutsRepository: {
+    listCounting: vi.fn().mockResolvedValue([]),
+    findByContractId: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+vi.mock('../dropouts/dropouts.service', () => ({
+  dropoutsService: { afterDropout: vi.fn().mockResolvedValue(undefined) },
+}));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../settings/settings.service', () => ({
@@ -20,6 +29,15 @@ vi.mock('./milestones.repository', () => ({
     listForContract: vi.fn().mockResolvedValue([]),
     escrowRemaining: vi.fn().mockResolvedValue(null),
     titlesByDelivery: vi.fn().mockResolvedValue({ delivered: [], missing: [] }),
+  },
+}));
+vi.mock('./offers.repository', () => ({
+  offersRepository: {
+    list: vi.fn().mockResolvedValue([]),
+    insert: vi.fn(),
+    ensureInitial: vi.fn(),
+    resolve: vi.fn(),
+    counter: vi.fn(),
   },
 }));
 
@@ -58,6 +76,7 @@ import { setClockForTests } from '../../utils/clock';
 import { cashSettlement, contractsService } from './contracts.service';
 import { contractsRepository, type ContractRow, type HistoryRow } from './contracts.repository';
 import { milestonesRepository } from './milestones.repository';
+import { offersRepository } from './offers.repository';
 import { authRepository, type UserRow } from '../auth/auth.repository';
 import { barterService } from '../barter/barter.service';
 import { gamificationService } from '../gamification/gamification.service';
@@ -793,6 +812,30 @@ describe('getById', () => {
     expect(reviewsRepository.findByContractIdWithResponse).toHaveBeenCalledWith(1);
     // Sem marcos, nem consulta a tabela deles.
     expect(c.milestones).toEqual([]);
+    expect(c.offers).toEqual([
+      {
+        seq: 1,
+        madeBy: 'client',
+        price: 1000,
+        platformFee: 150,
+        freelancerNet: 850,
+        deadlineAt: null,
+        deadlineZone: 'America/Sao_Paulo',
+        milestones: null,
+        message: null,
+        respondBy: null,
+        outcome: 'open',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        resolvedAt: null,
+      },
+    ]);
+    expect(c.negotiation?.current).toEqual(c.offers![0]);
+    expect(offersRepository.list).toHaveBeenCalledExactlyOnceWith(1);
+    expect(offersRepository.insert).not.toHaveBeenCalled();
+    expect(offersRepository.ensureInitial).not.toHaveBeenCalled();
+    expect(offersRepository.resolve).not.toHaveBeenCalled();
+    expect(offersRepository.counter).not.toHaveBeenCalled();
+    expect(repo.transition).not.toHaveBeenCalled();
     expect(milestonesRepository.listForContract).not.toHaveBeenCalled();
     expect(milestonesRepository.escrowRemaining).not.toHaveBeenCalled();
   });
@@ -988,6 +1031,8 @@ describe('requestRevision (entrega única)', () => {
       // O aviso de revisão parada conta a partir deste instante (ADR 58).
       timestampColumn: 'revision_requested_at',
       now: at,
+      countRevision: true,
+      guard: { sql: 'AND c.revisions_used = :revisionUsed', params: { revisionUsed: 0 } },
     });
     expect(c.revisionRequestedAt).toBe('2026-10-07T13:00:00.000Z');
     // Depois da entrega o prazo não cobra mais: aviso simples, sem furar o silêncio.
@@ -1089,7 +1134,8 @@ describe('quem age, quem paga e quem é avisado', () => {
       note: null,
       timestampColumn: 'accepted_at',
       now: AT,
-      guard: { sql: expect.any(String) },
+      guard: { sql: expect.any(String), params: { gOfferSeq: 1, gHeldPrice: 1000 } },
+      offerResolution: { seq: 1, heldPrice: 1000, outcome: 'accepted', feePercentage: 15 },
       milestonesTo: { from: ['pending'], to: 'funded' },
       walletEffects: [
         { userId: 7, pendingDelta: -1000, balanceDelta: 0, reason: 'payment' },
@@ -1098,7 +1144,7 @@ describe('quem age, quem paga e quem é avisado', () => {
     });
     // A hora avisada é a cumprida: nem depois da validade, nem depois do prazo.
     expect(flat(repo.transition.mock.calls[0]![0].guard!.sql)).toBe(
-      'AND (c.proposal_expires_at IS NULL OR c.proposal_expires_at > :now) AND (c.deadline_at IS NULL OR c.deadline_at > :now)',
+      'AND (c.proposal_expires_at IS NULL OR c.proposal_expires_at > :now) AND (c.deadline_at IS NULL OR c.deadline_at > :now) AND c.offer_seq = :gOfferSeq AND c.price = :gHeldPrice',
     );
     expect(c).toMatchObject({ id: 31, clientId: 7, freelancerId: 44, status: 'accepted' });
   });
@@ -1118,6 +1164,11 @@ describe('quem age, quem paga e quem é avisado', () => {
       from: 'pending',
       to: 'rejected',
       note: null,
+      guard: {
+        sql: 'AND c.offer_seq = :gOfferSeq AND c.price = :gHeldPrice',
+        params: { gOfferSeq: 1, gHeldPrice: 1000 },
+      },
+      offerResolution: { seq: 1, heldPrice: 1000, outcome: 'declined' },
       walletEffects: [{ userId: 7, pendingDelta: -1000, balanceDelta: 1000, reason: 'refund' }],
       milestonesTo: CANCEL_MILESTONES,
     });
@@ -1181,6 +1232,7 @@ describe('quem age, quem paga e quem é avisado', () => {
           'AND c.overdue_notified_at <=> :gNotice',
           'AND c.extension_status = :gExtStatus',
           'AND c.extension_requests = :gExtRequests',
+          'AND c.offer_seq = :gOfferSeq AND c.price = :gHeldPrice',
         ].join('\n'),
         params: {
           gDeadline: null,
@@ -1188,9 +1240,12 @@ describe('quem age, quem paga e quem é avisado', () => {
           gExtStatus: undefined,
           gExtRequests: 0,
           gEscrowCents: 100000,
+          gOfferSeq: 1,
+          gHeldPrice: 1000,
         },
       },
       milestonesTo: CANCEL_MILESTONES,
+      offerResolution: { seq: 1, heldPrice: 1000, outcome: 'withdrawn' },
       walletEffects: [{ userId: 7, pendingDelta: -1000, balanceDelta: 1000, reason: 'refund' }],
     });
     expect(notificationsService.notify).toHaveBeenCalledTimes(1);

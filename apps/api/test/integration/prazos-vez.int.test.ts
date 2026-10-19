@@ -14,6 +14,7 @@ import { formatDateTime, formatDeadline, formatDue, localParts } from '../../src
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
 import { DAY, fromNow, HOUR, isoFromNow, now, startDaytimeClock, stopClock } from './clock.helpers';
+import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 
 /**
  * A vez de quem entrega, a hora humana e a extensão de prazo (ADR 57) contra o MySQL real:
@@ -109,17 +110,20 @@ async function propose(
     milestones?: { title: string; amount: number }[];
   } = {},
 ): Promise<number> {
-  const res = await request(app)
-    .post('/api/contracts')
-    .set(auth(client.token))
-    .send({
-      freelancerId: freelancer.id,
-      title: 'Site institucional',
-      description: 'Layout, conteúdo e publicação do site da empresa',
-      price: opts.price ?? 300,
-      deadlineAt: opts.deadlineAt === undefined ? isoFromNow(5 * DAY) : opts.deadlineAt,
-      ...(opts.milestones ? { milestones: opts.milestones } : {}),
-    });
+  // Os jobs continuam responsáveis pelos contratos paralelos anteriores à RN-020.
+  const res = await withLegacyParallelContracts(client.id, freelancer.id, async () =>
+    request(app)
+      .post('/api/contracts')
+      .set(auth(client.token))
+      .send({
+        freelancerId: freelancer.id,
+        title: 'Site institucional',
+        description: 'Layout, conteúdo e publicação do site da empresa',
+        price: opts.price ?? 300,
+        deadlineAt: opts.deadlineAt === undefined ? isoFromNow(5 * DAY) : opts.deadlineAt,
+        ...(opts.milestones ? { milestones: opts.milestones } : {}),
+      }),
+  );
   expect(res.status, JSON.stringify(res.body)).toBe(201);
   return res.body.id as number;
 }

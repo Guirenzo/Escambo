@@ -18,10 +18,12 @@ import { env } from '../../config/env';
  * impressão), o horário de silêncio e os avisos retidos, as sessões, os registros de segurança e
  * os e-mails enviados — sem eles, "todos os seus dados" não era verdade (ADR 54). Formato 1.7: o
  * que a pessoa deixa sair durante o silêncio (push_quiet_pass: lista, ou null quando nunca
- * escolheu; ADR 56).
+ * escolheu; ADR 56). Formato 1.8: as ofertas das negociações de que participou e as desistências
+ * do freelancer titular, incluindo sua contestação e a decisão privada (ADR 61). Formato 1.9:
+ * chamados próprios e mensagens públicas de suporte; notas internas nunca entram na cópia.
  */
 
-export const EXPORT_FORMAT_VERSION = '1.7';
+export const EXPORT_FORMAT_VERSION = '1.9';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -71,6 +73,23 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
        JOIN contracts c ON c.id = h.contract_id
       WHERE c.client_id = :userId OR c.freelancer_id = :userId
       ORDER BY h.id`,
+    p,
+  );
+  const offers = await q(
+    `SELECT o.contract_id, o.seq, o.made_by, o.price, o.platform_fee, o.freelancer_net,
+            o.deadline_at, o.milestones, o.message, o.respond_by, o.outcome,
+            o.resolved_at, o.created_at
+       FROM contract_offers o
+       JOIN contracts c ON c.id = o.contract_id
+      WHERE c.client_id = :userId OR c.freelancer_id = :userId
+      ORDER BY o.id`,
+    p,
+  );
+  // A contestação é privada do freelancer: o cliente não a recebe na cópia de sua contratação.
+  const dropouts = await q(
+    `SELECT id, contract_id, dropped_at, client_agreed_at, appeal_text, appealed_at, decision,
+            decided_at, decision_note
+       FROM freelancer_dropouts WHERE freelancer_id = :userId ORDER BY id`,
     p,
   );
   const messages = await q(
@@ -134,6 +153,22 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
   const reports = await q(
     `SELECT id, target_type, target_id, reason, description, status, created_at
        FROM content_reports WHERE reporter_id = :userId ORDER BY id`,
+    p,
+  );
+  const supportTickets = await q(
+    `SELECT id, ulid, contract_id, category, subject, status, priority, assigned_to,
+            first_response_at, sla_due_at, sla_alerted_at, resolved_at, closed_at, created_at, updated_at
+       FROM support_tickets WHERE user_id = :userId ORDER BY id`,
+    p,
+  );
+  // A cópia de quem atendeu inclui suas mensagens públicas, sem revelar o assunto ou outros
+  // dados do chamado de terceiros. Notas internas não são parte da conversa do titular.
+  const supportMessages = await q(
+    `SELECT m.id, m.ticket_id, m.sender_id, m.message, m.created_at
+       FROM support_ticket_messages m
+       JOIN support_tickets t ON t.id = m.ticket_id
+      WHERE m.is_internal = 0 AND (t.user_id = :userId OR m.sender_id = :userId)
+      ORDER BY m.id`,
     p,
   );
   const moderation = await q(
@@ -201,6 +236,8 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     servicos: services,
     contratacoes: contracts,
     historicoDeContratacoes: history,
+    ofertas: offers,
+    desistencias: dropouts,
     mensagens: messages,
     avaliacoes: reviews,
     trocas: barters,
@@ -212,6 +249,7 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
       saques: withdrawals,
     },
     disputas: disputes,
+    suporte: { chamados: supportTickets, mensagens: supportMessages },
     denunciasFeitas: reports,
     moderacao: moderation,
     favoritos: favorites,

@@ -45,6 +45,64 @@ import { isPushEndpointAllowed } from './push.endpoint';
 import { resultForStatus } from './push.provider';
 
 describe('avisos push (ADR 52)', () => {
+  it('push de suporte abre a conversa correta e só o booleano true aponta para a equipe', () => {
+    expect(pushUrl('support_reply', { supportTicketId: 12, contractId: 99 })).toBe(
+      '/suporte?ticket=12',
+    );
+    expect(pushUrl('support_sla', { supportTicketId: 12, supportAdmin: true })).toBe(
+      '/admin?ticket=12#suporte',
+    );
+    for (const supportAdmin of [false, 'true', 1, null, undefined]) {
+      expect(pushUrl('support_resolved', { supportTicketId: 12, supportAdmin })).toBe(
+        '/suporte?ticket=12',
+      );
+    }
+  });
+
+  it.each([
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+    '12',
+    '../admin',
+    null,
+  ])('id de suporte inválido %s não vira link nem etiqueta de assunto', (supportTicketId) => {
+    expect(pushUrl('support_reply', { supportTicketId, supportAdmin: true })).toBe('/notificacoes');
+    expect(
+      buildPayload({
+        type: 'support_reply',
+        title: 'Atendimento',
+        data: { supportTicketId },
+        notificationId: 31,
+      }).tag,
+    ).toBe('support_reply:n31');
+  });
+
+  it('avisos do mesmo ticket compartilham etiqueta, sem trocar outro ticket no aparelho', () => {
+    const payload = (supportTicketId: number) =>
+      buildPayload({
+        type: 'support_reply',
+        title: 'Seu chamado recebeu atendimento',
+        data: { supportTicketId, contractId: 99 },
+        notificationId: 31,
+      });
+    expect(payload(12)).toMatchObject({ url: '/suporte?ticket=12', tag: 'support_reply:12' });
+    expect(payload(13).tag).toBe('support_reply:13');
+    expect(
+      buildPayload(
+        {
+          type: 'support_resolved',
+          title: 'Resolvido',
+          data: { supportTicketId: 12 },
+          notificationId: 32,
+        },
+        { ownTag: true },
+      ).tag,
+    ).toBe('support_resolved:12:n32');
+  });
   it('pushUrl leva para a tela do assunto; contratação manda em qualquer tipo', () => {
     expect(pushUrl('contract_proposal', { contractId: 42 })).toBe('/contratos/42');
     expect(pushUrl('milestone_approved', { contractId: '7' })).toBe('/contratos/7');
@@ -53,6 +111,9 @@ describe('avisos push (ADR 52)', () => {
     expect(pushUrl('deposit_confirmed', undefined)).toBe('/carteira');
     expect(pushUrl('saved_search_match', { searchId: 3 })).toBe('/servicos');
     expect(pushUrl('review_received', null)).toBe('/notificacoes');
+    expect(pushUrl('dropout_decided', { dropoutId: 9, contractId: 42 })).toBe(
+      '/perfil#desistencias',
+    );
   });
 
   it('trimBody junta espaços e corta com reticência', () => {
@@ -94,6 +155,7 @@ describe('avisos push (ADR 52)', () => {
     expect(tagOf({ paymentId: 6 })).toBe('t:6');
     expect(tagOf({ reviewId: 7 })).toBe('t:7');
     expect(tagOf({ removalId: 'r8' })).toBe('t:r8');
+    expect(tagOf({ dropoutId: 9 })).toBe('t:9');
     // Dois assuntos no mesmo aviso: vale o primeiro da lista, não a ordem das chaves do objeto.
     expect(tagOf({ disputeId: 2, contractId: 1 })).toBe('t:1');
     expect(tagOf({ removalId: 8, barterId: 3 })).toBe('t:3');
@@ -184,6 +246,12 @@ describe('o que sai no silêncio (ADR 56)', () => {
   });
 
   it.each([
+    'contract_counter_offer',
+    'contract_counter_offer_reminder',
+    'contract_revision_granted',
+    'dropout_decided',
+    'support_reply',
+    'support_resolved',
     'contract_proposal_reminder',
     'contract_deadline_reminder',
     'contract_approval_reminder',
@@ -451,6 +519,7 @@ describe('pushService: assinaturas e envio (ADR 52)', () => {
     };
     const account = (over: Record<string, unknown> = {}) => ({
       id: 7,
+      status: 'active',
       deleted_at: null,
       timezone: 'America/Sao_Paulo',
       push_quiet_start: null,
@@ -553,6 +622,39 @@ describe('pushService: assinaturas e envio (ADR 52)', () => {
       expect(users.findById).toHaveBeenCalledWith(7);
       expect(subs.listForUser).not.toHaveBeenCalled();
       expect(provider.send).not.toHaveBeenCalled();
+    });
+
+    it.each([noon, new Date('2026-09-15T01:00:00Z')])(
+      'conta banida não recebe aviso nem retém push às %s, mesmo com aparelho ligado',
+      async (now) => {
+        users.findById.mockResolvedValue(
+          account({ status: 'banned', push_quiet_start: 22, push_quiet_end: 7 }),
+        );
+        subs.listForUser.mockResolvedValue([device(1)]);
+
+        await pushService.notify(7, notice, now);
+
+        expect(users.findById).toHaveBeenCalledWith(7);
+        expect(subs.listForUser).not.toHaveBeenCalled();
+        expect(provider.send).not.toHaveBeenCalled();
+        expect(notifs.markPushHeld).not.toHaveBeenCalled();
+      },
+    );
+
+    it('conta suspensa continua recebendo avisos de consulta sem alterar as regras de silêncio', async () => {
+      users.findById.mockResolvedValue(account({ status: 'suspended' }));
+      subs.listForUser.mockResolvedValue([device(1)]);
+      provider.send.mockResolvedValue('sent');
+
+      await pushService.notify(7, notice, noon);
+
+      expect(provider.send).toHaveBeenCalledTimes(1);
+      expect(provider.send.mock.calls[0]![1]).toMatchObject({
+        title: 'Proposta',
+        body: 'x',
+        url: '/contratos/3',
+      });
+      expect(notifs.markPushHeld).not.toHaveBeenCalled();
     });
 
     it('dentro do silêncio, o aviso fica marcado como retido naquela notificação, com a hora do evento, e nada sai (ADR 54)', async () => {

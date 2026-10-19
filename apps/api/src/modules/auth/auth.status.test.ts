@@ -43,12 +43,19 @@ describe('conta suspensa/banida (RN-007)', () => {
     hash = hash || (await bcrypt.hash('senha-forte-123', 12));
   });
 
-  it('login é negado com 403 e código específico', async () => {
+  it('suspenso entra com sessão de consulta e o status atual na resposta', async () => {
     repo.findByEmail.mockResolvedValue(user('suspended', hash));
-    await expect(
-      authService.login({ email: 'pessoa@escambo.test', password: 'senha-forte-123' }),
-    ).rejects.toMatchObject({ statusCode: 403, code: 'account_suspended' });
+    const result = await authService.login({
+      email: 'pessoa@escambo.test',
+      password: 'senha-forte-123',
+    });
+    expect(result.user).toMatchObject({ id: 9, status: 'suspended', role: 'client' });
+    expect(result.accessToken).toEqual(expect.any(String));
+    expect(result.refreshToken).toEqual(expect.any(String));
+    expect(sessions.create).toHaveBeenCalledTimes(1);
+  });
 
+  it('login de banido continua negado com 403 account_banned, sem criar sessão', async () => {
     repo.findByEmail.mockResolvedValue(user('banned', hash));
     await expect(
       authService.login({ email: 'pessoa@escambo.test', password: 'senha-forte-123' }),
@@ -56,21 +63,60 @@ describe('conta suspensa/banida (RN-007)', () => {
     expect(sessions.create).not.toHaveBeenCalled();
   });
 
-  it('senha errada continua 401 (não revela o status)', async () => {
-    repo.findByEmail.mockResolvedValue(user('suspended', hash));
-    await expect(
-      authService.login({ email: 'pessoa@escambo.test', password: 'outra' }),
-    ).rejects.toMatchObject({ statusCode: 401 });
-  });
+  it.each(['suspended', 'banned'])(
+    'senha errada de %s continua 401 (não revela o status)',
+    async (status) => {
+      repo.findByEmail.mockResolvedValue(user(status, hash));
+      await expect(
+        authService.login({ email: 'pessoa@escambo.test', password: 'outra' }),
+      ).rejects.toMatchObject({ statusCode: 401 });
+    },
+  );
 
-  it('refresh de conta suspensa é negado e o token não é rotacionado', async () => {
+  it('refresh de suspenso rotaciona o token e mantém a sessão de consulta', async () => {
     sessions.findValidByHash.mockResolvedValue({ user_id: 9 } as SessionRow);
     repo.findById.mockResolvedValue(user('suspended', hash));
+    sessions.revokeByHash.mockResolvedValueOnce(true);
+    const result = await authService.refresh('qualquer');
+    expect(result.accessToken).toEqual(expect.any(String));
+    expect(result.refreshToken).toEqual(expect.any(String));
+    expect(sessions.revokeByHash).toHaveBeenCalledTimes(1);
+    expect(sessions.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('refresh de banido é negado sem rotacionar nem criar sessão', async () => {
+    sessions.findValidByHash.mockResolvedValue({ user_id: 9 } as SessionRow);
+    repo.findById.mockResolvedValue(user('banned', hash));
     await expect(authService.refresh('qualquer')).rejects.toMatchObject({
       statusCode: 403,
-      code: 'account_suspended',
+      code: 'account_banned',
     });
     expect(sessions.revokeByHash).not.toHaveBeenCalled();
+    expect(sessions.create).not.toHaveBeenCalled();
+  });
+
+  it('exclusão continua negando login e refresh mesmo se o status ainda estiver active', async () => {
+    const deleted = { ...user('active', hash), deleted_at: new Date() } as UserRow;
+    repo.findByEmail.mockResolvedValue(deleted);
+    repo.findById.mockResolvedValue(deleted);
+    sessions.findValidByHash.mockResolvedValue({ user_id: 9 } as SessionRow);
+    await expect(
+      authService.login({ email: deleted.email, password: 'senha-forte-123' }),
+    ).rejects.toMatchObject({ statusCode: 403, code: 'account_deleted' });
+    await expect(authService.refresh('qualquer')).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'account_deleted',
+    });
+    expect(sessions.revokeByHash).not.toHaveBeenCalled();
+    expect(sessions.create).not.toHaveBeenCalled();
+  });
+
+  it('suspenso em ADMIN_EMAILS não é promovido no login', async () => {
+    const suspended = { ...user('suspended', hash), email: 'root@escambo.test' } as UserRow;
+    repo.findByEmail.mockResolvedValue(suspended);
+    const result = await authService.login({ email: suspended.email, password: 'senha-forte-123' });
+    expect(result.user).toMatchObject({ role: 'client', status: 'suspended' });
+    expect(repo.updateRole).not.toHaveBeenCalled();
   });
 
   it('conta ativa entra normalmente', async () => {

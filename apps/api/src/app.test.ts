@@ -200,6 +200,11 @@ describe('aplicação Express', () => {
         // {id} vira 1: serve para número, ULID, chave ou nome de ação.
         const url = `/api${path.replace(/\{\w+\}/g, '1')}`;
         for (const method of Object.keys(item)) {
+          // OpenAPI permite parâmetros compartilhados no Path Item; só verbos HTTP são rotas.
+          if (
+            !['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace'].includes(method)
+          )
+            continue;
           if (!declares(stack, method, url)) missing.push(`${method.toUpperCase()} ${path}`);
         }
       }
@@ -453,8 +458,8 @@ describe('rotas dos módulos em /api', () => {
     settingsService.clearCache();
   });
 
-  it('monta os 25 módulos, e nada além deles', () => {
-    expect((router as unknown as { stack: Layer[] }).stack).toHaveLength(25);
+  it('monta os 27 módulos, incluindo suporte do titular e administrativo', () => {
+    expect((router as unknown as { stack: Layer[] }).stack).toHaveLength(27);
   });
 
   it.each([
@@ -477,6 +482,8 @@ describe('rotas dos módulos em /api', () => {
     ['get', '/api/reports'],
     ['get', '/api/moderation/removals'],
     ['get', '/api/disputes'],
+    ['get', '/api/support/tickets'],
+    ['get', '/api/admin/support/tickets'],
     ['get', '/api/admin/metrics'],
     ['post', '/api/media'],
   ] as const)('%s %s existe e exige login', async (method, path) => {

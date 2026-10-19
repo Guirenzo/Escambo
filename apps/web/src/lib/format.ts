@@ -1,4 +1,4 @@
-import type { AvailabilityPeriod, AvailablePeriods } from '@escambo/types';
+import type { AvailabilityPeriod, AvailablePeriods, Contract } from '@escambo/types';
 
 export const brl = (v: number): string =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -147,6 +147,11 @@ export const STATUS_LABEL: Record<string, string> = {
   disputed: 'Disputa',
 };
 
+export const statusLabel = (c: Pick<Contract, 'status' | 'negotiation'>): string =>
+  c.status === 'pending' && (c.negotiation?.seq ?? 0) > 1
+    ? 'Em negociação'
+    : (STATUS_LABEL[c.status] ?? c.status);
+
 export const MILESTONE_STATUS_LABEL: Record<string, string> = {
   pending: 'Aguardando aceite',
   funded: 'Em escrow',
@@ -184,6 +189,7 @@ export const RESOLUTION_LABEL: Record<string, string> = {
 export const WALLET_REASON_LABEL: Record<string, string> = {
   deposit: 'Depósito via PIX',
   hold: 'Reservado para a proposta',
+  hold_release: 'Reserva devolvida na negociação',
   payment: 'Pagamento da contratação',
   escrow_in: 'Recebido em escrow',
   escrow_release: 'Liberado do escrow',

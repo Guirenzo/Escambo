@@ -349,9 +349,74 @@ describe('reportsRepository', () => {
     expect(beforeWhere(sql)).toBe('SELECT 1 FROM content_reports');
     // Denúncia comum da conta (sem o prefixo) ou revisão já fechada não impede abrir outra.
     expect(whereOf(sql)).toBe(
-      "target_type = 'user' AND target_id = :userId AND status IN ('pending', 'reviewing') AND description LIKE 'Reincidência:%' LIMIT 1",
+      "target_type = 'user' AND target_id = :userId AND status IN ('pending', 'reviewing') AND (reporter_id IS NULL OR EXISTS (SELECT 1 FROM users review_reporter WHERE review_reporter.id = content_reports.reporter_id AND review_reporter.role = 'admin')) AND description LIKE :reviewPrefix LIMIT 1",
     );
-    expect(params).toEqual({ userId: 9 });
+    expect(params).toEqual({ userId: 9, reviewPrefix: 'Reincidência:%' });
+  });
+
+  it('prefixo digitado numa denúncia de usuário comum não bloqueia revisão: exige origem do sistema ou admin legado', async () => {
+    await reportsRepository.hasOpenAccountReview(9, 'Desistências:');
+    const { sql, params } = fakeDb.calls[0]!;
+    expect(sql).toContain(
+      "AND (reporter_id IS NULL OR EXISTS (SELECT 1 FROM users review_reporter WHERE review_reporter.id = content_reports.reporter_id AND review_reporter.role = 'admin')) AND description LIKE :reviewPrefix",
+    );
+    expect(params).toEqual({ userId: 9, reviewPrefix: 'Desistências:%' });
+    // Reincidência antiga usa reporter_id do admin; exigir só NULL perderia a revisão existente.
+    expect(sql).not.toContain('AND reporter_id IS NULL AND description');
+  });
+
+  describe('openAccountReview: uma revisão aberta por conta e causa', () => {
+    const review = {
+      userId: 9,
+      prefix: 'Desistências:' as const,
+      description: 'Desistências: 3 saídas. Revise a conta.',
+    };
+
+    it('trava a conta antes de procurar a causa e insere a revisão humana sem denunciante', async () => {
+      fakeDb.reply([{ id: 9 }], [], { insertId: 15 });
+      expect(await reportsRepository.openAccountReview(review)).toBe(true);
+      expect(fakeDb.calls[0]).toMatchObject({
+        sql: 'SELECT id FROM users WHERE id = :userId FOR UPDATE',
+        params: { userId: 9 },
+      });
+      expect(fakeDb.calls[1]!.params).toEqual({ userId: 9, reviewPrefix: 'Desistências:%' });
+      expect(fakeDb.calls[2]!.sql).toContain(
+        "VALUES (NULL, 'user', :userId, NULL, 'other', :description)",
+      );
+      expect(fakeDb.calls[2]!.params).toEqual({ userId: 9, description: review.description });
+      expect(fakeDb.conn.query.mock.contexts).toEqual([fakeDb.conn, fakeDb.conn, fakeDb.conn]);
+      expectCommitted();
+    });
+
+    it('revisão aberta da mesma causa não cria outra; conta inexistente nem consulta a fila', async () => {
+      fakeDb.reply([{ id: 9 }], [{ 1: 1 }]);
+      expect(await reportsRepository.openAccountReview(review)).toBe(false);
+      expect(fakeDb.calls).toHaveLength(2);
+      expectCommitted();
+      fakeDb.reset();
+      fakeDb.reply([]);
+      expect(await reportsRepository.openAccountReview(review)).toBe(false);
+      expect(fakeDb.calls).toHaveLength(1);
+    });
+
+    it('na reconciliação usa a conexão já travada e deixa o marcador/commit para o chamador', async () => {
+      fakeDb.reply([], { insertId: 15 });
+      expect(await reportsRepository.openAccountReview(review, fakeDb.conn as never)).toBe(true);
+      expect(fakeDb.conn.query.mock.contexts).toEqual([fakeDb.conn, fakeDb.conn]);
+      expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+      expect(fakeDb.conn.beginTransaction).not.toHaveBeenCalled();
+      expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+      expect(fakeDb.conn.rollback).not.toHaveBeenCalled();
+      expect(fakeDb.conn.release).not.toHaveBeenCalled();
+      expect(fakeDb.calls[0]!.params).toEqual({ userId: 9, reviewPrefix: 'Desistências:%' });
+    });
+
+    it('falha na gravação desfaz a transação e preserva a falha para a reconciliação tentar novamente', async () => {
+      const boom = new Error('conexão perdida');
+      fakeDb.reply([{ id: 9 }], [], boom);
+      await expect(reportsRepository.openAccountReview(review)).rejects.toBe(boom);
+      expectRolledBack();
+    });
   });
 
   describe('closeGroup (dispensar ou resolver)', () => {

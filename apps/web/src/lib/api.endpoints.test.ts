@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   api,
+  ACCOUNT_STATUS_EVENT,
   getRefreshToken,
   getToken,
   MAINTENANCE_EVENT,
@@ -137,6 +138,13 @@ describe('consultas (GET): cada método lê do caminho certo', () => {
       '/api/admin/withdrawals?status=all',
     ],
     ['profilesMe', () => api.profilesMe(), '/api/profiles/me'],
+    ['myDropouts', () => api.myDropouts(), '/api/profiles/me/dropouts'],
+    ['adminDropouts', () => api.adminDropouts(), '/api/admin/dropouts?status=appealed'],
+    [
+      'adminUserDropouts',
+      () => api.adminUserDropouts('freela-2'),
+      '/api/admin/users/freela-2/dropouts',
+    ],
     ['myPortfolio', () => api.myPortfolio(), '/api/profiles/portfolio'],
     ['reviews', () => api.reviews(9), '/api/reviews?freelancerId=9&limit=50'],
   ];
@@ -274,6 +282,86 @@ describe('gravações: verbo, caminho e corpo de cada método', () => {
       {},
     ],
     ['contractAction', () => api.contractAction(7, 'approve'), 'POST', '/api/contracts/7/approve'],
+    ['agreeDropout', () => api.agreeDropout(7), 'POST', '/api/contracts/7/dropout/agreed'],
+    [
+      'appealDropout',
+      () => api.appealDropout(2, 'O cliente pediu para encerrar.'),
+      'POST',
+      '/api/profiles/me/dropouts/2/appeal',
+      { text: 'O cliente pediu para encerrar.' },
+    ],
+    [
+      'adminDecideDropout',
+      () => api.adminDecideDropout(2, 'excuse', 'Combinada pelo chat.'),
+      'POST',
+      '/api/admin/dropouts/2/excuse',
+      { note: 'Combinada pelo chat.' },
+    ],
+    [
+      'cancelContract com contagem vista',
+      () => api.cancelContract(7, { expectedRefund: 200, expectedDropoutCount: 3 }),
+      'POST',
+      '/api/contracts/7/cancel',
+      { expectedRefund: 200, expectedDropoutCount: 3 },
+    ],
+    [
+      'libera revisão da entrega única',
+      () => api.grantContractRevision(7),
+      'POST',
+      '/api/contracts/7/revisions/grant',
+    ],
+    [
+      'libera revisão só de um marco',
+      () => api.grantMilestoneRevision(7, 71),
+      'POST',
+      '/api/contracts/7/milestones/71/revisions/grant',
+    ],
+    [
+      'aceita a oferta vista',
+      () => api.contractAction(7, 'accept', 3),
+      'POST',
+      '/api/contracts/7/accept',
+      { seq: 3 },
+    ],
+    [
+      'recusa a oferta vista',
+      () => api.contractAction(7, 'reject', 5),
+      'POST',
+      '/api/contracts/7/reject',
+      { seq: 5 },
+    ],
+    [
+      'aceita contraproposta vista',
+      () => api.acceptCounterOffer(7, 4),
+      'POST',
+      '/api/contracts/7/offers/4/accept',
+    ],
+    [
+      'contraproposta preserva os marcos',
+      () =>
+        api.counterOffer(7, {
+          seq: 3,
+          price: 50,
+          deadlineAt: null,
+          message: 'Novo valor',
+          milestones: [
+            { id: 21, amount: 30, dueAt: null },
+            { id: 22, amount: 20, dueAt: null },
+          ],
+        }),
+      'POST',
+      '/api/contracts/7/offers',
+      {
+        seq: 3,
+        price: 50,
+        deadlineAt: null,
+        message: 'Novo valor',
+        milestones: [
+          { id: 21, amount: 30, dueAt: null },
+          { id: 22, amount: 20, dueAt: null },
+        ],
+      },
+    ],
     [
       'cancelContract',
       () => api.cancelContract(7, { expectedRefund: 100 }),
@@ -803,6 +891,57 @@ describe('downloads com o token (blob + nome do arquivo)', () => {
 });
 
 describe('erros da API', () => {
+  it('403 de suspensão avisa o modo de consulta e preserva os dois tokens', async () => {
+    setSession({ accessToken: 'tok', refreshToken: 'refresh-1' });
+    stubFetch(reply(403, { error: 'account_suspended' }));
+    const status = listen(ACCOUNT_STATUS_EVENT);
+    const expired = listen(SESSION_EXPIRED_EVENT);
+    await expect(api.createService({} as never)).rejects.toThrow('account_suspended');
+    expect((status.handler.mock.calls[0]?.[0] as CustomEvent).detail).toBe('suspended');
+    expect(expired.handler).not.toHaveBeenCalled();
+    expect(getToken()).toBe('tok');
+    expect(getRefreshToken()).toBe('refresh-1');
+    status.stop();
+    expired.stop();
+  });
+
+  it('sincroniza suspensão e reativação pelos cabeçalhos, inclusive resposta sem corpo', async () => {
+    setSession({ accessToken: 'tok', refreshToken: 'refresh-1' });
+    stubFetch(
+      { ...reply(200, []), headers: new Headers({ 'X-Account-Status': 'suspended' }) },
+      { ...reply(204), headers: new Headers({ 'X-Account-Status': 'active' }) },
+    );
+    const status = listen(ACCOUNT_STATUS_EVENT);
+    await api.contracts();
+    await api.logout('refresh-1');
+    expect(status.handler.mock.calls.map(([event]) => (event as CustomEvent).detail)).toEqual([
+      'suspended',
+      'active',
+    ]);
+    expect(getToken()).toBe('tok');
+    status.stop();
+  });
+
+  it('não entrega status de uma resposta antiga após sair da sessão', async () => {
+    setSession({ accessToken: 'tok', refreshToken: 'refresh-1' });
+    let finish!: (value: unknown) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    );
+    const status = listen(ACCOUNT_STATUS_EVENT);
+    const request = api.contracts();
+    setSession(null);
+    finish({ ...reply(200, []), headers: new Headers({ 'X-Account-Status': 'suspended' }) });
+    await request;
+    expect(status.handler).not.toHaveBeenCalled();
+    status.stop();
+  });
   it('sem "message" usa o código do erro; sem corpo JSON, o status', async () => {
     stubFetch(reply(409, { error: 'extension_changed' }), {
       ok: false,
@@ -815,7 +954,7 @@ describe('erros da API', () => {
     await expect(api.contracts()).rejects.toThrow('Erro 500');
   });
 
-  it.each(['account_blocked', 'account_suspended', 'account_banned'])(
+  it.each(['account_blocked', 'account_banned', 'account_deleted'])(
     '403 %s com sessão aberta encerra a sessão local e avisa o app',
     async (code) => {
       setSession({ accessToken: 'tok', refreshToken: 'refresh-1' });

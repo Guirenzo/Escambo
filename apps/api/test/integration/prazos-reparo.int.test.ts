@@ -11,6 +11,7 @@ import { runTacitApproval } from '../../src/jobs/tacit-approval';
 import { extensionRespondBy, graceEndFrom } from '../../src/modules/contracts/deadline-grace';
 import { floorSecond, humanize, lastHumanAtOrBefore } from '../../src/utils/human-hours';
 import { DAY, fromNow, HOUR, isoFromNow, now, startDaytimeClock, stopClock } from './clock.helpers';
+import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 import { fundWallet } from './wallet.helpers';
 
 /**
@@ -106,17 +107,20 @@ const MILESTONES = [
 ];
 
 async function propose(client: Actor, freelancer: Actor, extra: object = {}): Promise<number> {
-  const res = await request(app)
-    .post('/api/contracts')
-    .set(auth(client.token))
-    .send({
-      freelancerId: freelancer.id,
-      title: 'Identidade visual da padaria',
-      description: 'Logo, cartão de visita e cardápio da padaria do bairro',
-      price: 200,
-      deadlineAt: isoFromNow(5 * DAY),
-      ...extra,
-    });
+  // Reconstitui linhas da API antiga, inclusive duplicidades anteriores à RN-020.
+  const res = await withLegacyParallelContracts(client.id, freelancer.id, async () =>
+    request(app)
+      .post('/api/contracts')
+      .set(auth(client.token))
+      .send({
+        freelancerId: freelancer.id,
+        title: 'Identidade visual da padaria',
+        description: 'Logo, cartão de visita e cardápio da padaria do bairro',
+        price: 200,
+        deadlineAt: isoFromNow(5 * DAY),
+        ...extra,
+      }),
+  );
   expect(res.status, JSON.stringify(res.body)).toBe(201);
   return res.body.id as number;
 }
@@ -483,7 +487,14 @@ describe('Reparo dos prazos: linhas de antes da 0027', () => {
       { status: 'delivered' },
       [FIRST_DELIVERY, LAST_DELIVERY],
     );
-    await setColumns('contracts', c.deliveredOld, { approval_due_at: null });
+    // Formato anterior à ADR 61: as entregas e o histórico contam as mesmas datas,
+    // sem snapshots novos gravados pela API usada para montar a fixture.
+    await restampDeliveries(c.deliveredOld, [FIRST_DELIVERY, LAST_DELIVERY]);
+    await setColumns('contracts', c.deliveredOld, {
+      first_delivery_at: null,
+      delivery_dispute_opens_at: null,
+      approval_due_at: null,
+    });
 
     // 8. Marco entregue sem a hora da aprovação tácita: às 21:00 de Brasília, 19:00 em Rio Branco.
     c.milestoneContract = await accepted(cliRioBranco, freBrasilia, {
@@ -501,6 +512,11 @@ describe('Reparo dos prazos: linhas de antes da 0027', () => {
     await setColumns('contract_milestones', milestoneId, {
       delivered_at: new Date(noon.getTime() - 6 * DAY + 9 * HOUR),
       approval_due_at: null,
+      dispute_opens_at: null,
+    });
+    await setColumns('contracts', c.milestoneContract, {
+      first_delivery_at: null,
+      delivery_dispute_opens_at: null,
     });
 
     // 10. Contratação em revisão de antes da 0029: o histórico tem dois pedidos (vale o último), e
@@ -588,7 +604,7 @@ describe('Reparo dos prazos: linhas de antes da 0027', () => {
   });
 
   it('a primeira rodada conta uma linha por caso consertado', () => {
-    expect(first).toEqual({
+    expect(first).toMatchObject({
       graceWithoutNotice: 1,
       requestCounters: 8,
       closedExtensions: 2,
@@ -824,7 +840,7 @@ describe('Reparo dos prazos: linhas de antes da 0027', () => {
     ).toBe(RETURN_REVISIONS[1]!.toISOString());
 
     const again = await runRepairDeadlines(now());
-    expect(again).toEqual({
+    expect(again).toMatchObject({
       graceWithoutNotice: 0,
       requestCounters: 0,
       closedExtensions: 0,

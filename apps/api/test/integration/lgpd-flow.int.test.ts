@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import type { RowDataPacket } from 'mysql2';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
@@ -91,8 +92,12 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       carteira: { extratoReais: { reason: string }[]; depositos: unknown[] };
       buscasSalvas: { name: string; query: string; alert_frequency: string }[];
       moderacao: unknown[];
+      sessoes: unknown[];
+      registrosDeSeguranca: unknown[];
     };
-    expect(data.formato).toBe('escambo-export/1.7');
+    expect(data.formato).toBe('escambo-export/1.9');
+    expect(data).toHaveProperty('ofertas', []);
+    expect(data).toHaveProperty('desistencias', []);
     // Formato 1.7 (ADR 56): o que a pessoa deixa sair no silêncio; nunca escolheu = null.
     expect((data as { titular: Record<string, unknown> }).titular).toHaveProperty(
       'push_quiet_pass',
@@ -142,10 +147,9 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       .expect(410);
     const job = await runExpireExports();
     expect(job.expired).toBeGreaterThanOrEqual(1);
-    const [rows] = await pool.query<{ status: string; file_url: string | null }[] & unknown[]>(
-      `SELECT status, file_url FROM data_export_requests WHERE id = :id`,
-      { id },
-    );
+    const [rows] = await pool.query<
+      (RowDataPacket & { status: string; file_url: string | null })[]
+    >(`SELECT status, file_url FROM data_export_requests WHERE id = :id`, { id });
     expect((rows as { status: string; file_url: string | null }[])[0]).toMatchObject({
       status: 'expired',
       file_url: null,
@@ -239,7 +243,7 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       .post('/api/auth/login')
       .send({ email: freelancer.email, password: freelancer.password });
     expect(login.status).toBe(401); // e-mail não existe mais
-    const [pushRows] = await pool.query<unknown[]>(
+    const [pushRows] = await pool.query<RowDataPacket[]>(
       'SELECT id FROM push_subscriptions WHERE endpoint = :endpoint',
       { endpoint: pushEndpoint },
     );
@@ -252,7 +256,7 @@ describe('LGPD: direitos do titular processados de verdade', () => {
     );
     expect(copies).toEqual([{ status: 'expired', file_url: null }]);
     await request(app).get(`/api/profiles/freelancer/${freelancerUlid}`).expect(404);
-    const [users] = await pool.query<unknown[]>(
+    const [users] = await pool.query<RowDataPacket[]>(
       `SELECT email, phone, password_hash, status, deleted_at, push_quiet_pass FROM users WHERE id = :id`,
       { id: freelancer.id },
     );

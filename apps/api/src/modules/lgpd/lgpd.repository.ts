@@ -194,6 +194,13 @@ export const lgpdRepository = {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
+      // As FKs da solicitação/auditoria também referenciam o admin. Trave as duas contas antes
+      // de qualquer dependente, na mesma ordem do suporte, para não formar um ciclo com respostas.
+      for (const lockId of [...new Set([userId, adminId])].sort((a, b) => a - b)) {
+        await conn.query<RowDataPacket[]>('SELECT id FROM users WHERE id = :lockId FOR UPDATE', {
+          lockId,
+        });
+      }
       const [upd] = await conn.query<ResultSetHeader>(
         `UPDATE data_deletion_requests
             SET status = 'completed', processed_by = :adminId, processed_at = NOW()
@@ -216,6 +223,18 @@ export const lgpdRepository = {
                 push_quiet_start = NULL, push_quiet_end = NULL, push_quiet_pass = NULL,
                 push_quiet_summary_id = NULL
           WHERE id = :userId`,
+        { userId },
+      );
+      await conn.query<ResultSetHeader>(
+        `UPDATE support_tickets SET subject = 'Conteúdo removido após anonimização do titular.'
+          WHERE user_id = :userId`,
+        { userId },
+      );
+      await conn.query<ResultSetHeader>(
+        `UPDATE support_ticket_messages m
+          JOIN support_tickets t ON t.id = m.ticket_id
+          SET m.message = 'Conteúdo removido após anonimização do titular.'
+          WHERE t.user_id = :userId OR m.sender_id = :userId`,
         { userId },
       );
       await conn.query<ResultSetHeader>(
@@ -248,6 +267,20 @@ export const lgpdRepository = {
       // que não saiu do disco).
       await conn.query<ResultSetHeader>(
         `UPDATE content_removals SET appeal_text = NULL, cleared_refs = NULL WHERE owner_id = :userId`,
+        { userId },
+      );
+      await conn.query<ResultSetHeader>(
+        `UPDATE freelancer_dropouts SET appeal_text = NULL, decision_note = NULL
+          WHERE freelancer_id = :userId`,
+        { userId },
+      );
+      // A decisão também guarda a justificativa privada na auditoria. Mantém o fato, o autor
+      // e a data, mas remove essa cópia do texto no mesmo commit da anonimização do titular.
+      await conn.query<ResultSetHeader>(
+        `UPDATE admin_actions a
+          JOIN freelancer_dropouts d ON a.target_type = 'dropout' AND a.target_id = d.id
+          SET a.description = 'Justificativa removida após anonimização do titular.'
+          WHERE d.freelancer_id = :userId AND a.action IN ('dropout_excused', 'dropout_upheld')`,
         { userId },
       );
       await conn.query<ResultSetHeader>(`DELETE FROM notifications WHERE user_id = :userId`, {

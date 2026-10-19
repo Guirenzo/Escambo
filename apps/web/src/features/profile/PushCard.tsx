@@ -1,3 +1,4 @@
+import { useReadOnlyAccount } from '../../lib/account-access';
 import { BellRing, MoonStar } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { QuietHours, QuietPassCategory, UpdateEmailPreferenceRequest } from '@escambo/types';
@@ -30,6 +31,7 @@ const plural = (n: number, one: string, many: string): string => (n === 1 ? one 
  * oferecer um botão que não funciona.
  */
 export function PushCard() {
+  const readOnly = useReadOnlyAccount();
   const toast = useToast();
   const { user, refreshUser } = useAuth();
   const [state, setState] = useState<PushState>('off');
@@ -79,6 +81,7 @@ export function PushCard() {
   }, [refresh]);
 
   async function turnOn(): Promise<void> {
+    if (readOnly) return;
     setBusy(true);
     try {
       const { publicKey } = await api.pushStatus();
@@ -114,6 +117,7 @@ export function PushCard() {
   }
 
   async function test(): Promise<void> {
+    if (readOnly) return;
     setBusy(true);
     try {
       const { sent } = await api.pushTest();
@@ -140,7 +144,7 @@ export function PushCard() {
       | (() => Promise<{ change: UpdateEmailPreferenceRequest; done: string }>),
     fail: string,
   ): Promise<void> {
-    if (savingQuiet) return;
+    if (readOnly || savingQuiet) return;
     setSavingQuiet(true);
     try {
       const { change, done } = typeof build === 'function' ? await build() : build;
@@ -278,12 +282,12 @@ export function PushCard() {
                 <Button variant="secondary" disabled={busy} onClick={() => void turnOff()}>
                   Desligar neste aparelho
                 </Button>
-                <Button variant="ghost" disabled={busy} onClick={() => void test()}>
+                <Button variant="ghost" disabled={readOnly || busy} onClick={() => void test()}>
                   Enviar aviso de teste
                 </Button>
               </>
             ) : (
-              <Button variant="secondary" disabled={busy} onClick={() => void turnOn()}>
+              <Button variant="secondary" disabled={readOnly || busy} onClick={() => void turnOn()}>
                 Ligar avisos neste aparelho
               </Button>
             )}
@@ -300,7 +304,7 @@ export function PushCard() {
             <input
               type="checkbox"
               checked={quiet !== null}
-              disabled={savingQuiet}
+              disabled={readOnly || savingQuiet}
               aria-describedby="push-quiet-hint"
               onChange={(e) => toggleQuiet(e.target.checked)}
             />
@@ -313,7 +317,7 @@ export function PushCard() {
                 aria-label="Início do silêncio"
                 aria-describedby="push-quiet-hint"
                 value={quiet.start}
-                disabled={savingQuiet}
+                disabled={readOnly || savingQuiet}
                 onChange={(e) => chooseQuiet('start', Number(e.target.value))}
               >
                 {DIGEST_HOURS.filter((h) => h !== quiet.end).map((h) => (
@@ -327,7 +331,7 @@ export function PushCard() {
                 aria-label="Fim do silêncio"
                 aria-describedby="push-quiet-hint"
                 value={quiet.end}
-                disabled={savingQuiet}
+                disabled={readOnly || savingQuiet}
                 onChange={(e) => chooseQuiet('end', Number(e.target.value))}
               >
                 {DIGEST_HOURS.filter((h) => h !== quiet.start).map((h) => (
@@ -348,7 +352,7 @@ export function PushCard() {
             <fieldset
               className="push-quiet-pass"
               data-testid="push-quiet-pass"
-              disabled={savingQuiet}
+              disabled={readOnly || savingQuiet}
             >
               <legend>Mesmo no silêncio, sai na hora</legend>
               {QUIET_PASS_ORDER.map((c) => (

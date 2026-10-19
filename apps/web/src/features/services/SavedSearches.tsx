@@ -1,3 +1,9 @@
+import {
+  BusinessButton,
+  BusinessForm,
+  BusinessIconButton,
+  BusinessModal,
+} from '../../components/BusinessActions';
 import { Bell, BellOff, Bookmark, BookmarkPlus, Pencil, X } from 'lucide-react';
 import { useId, useState, type FormEvent } from 'react';
 import type {
@@ -6,7 +12,7 @@ import type {
   SavedSearchFilters,
   UpdateSavedSearchRequest,
 } from '@escambo/types';
-import { Button, Field, Input, Modal } from '../../components/ui';
+import { Button, Field, Input } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { useSavedSearchMutations, useSavedSearches } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
@@ -124,7 +130,7 @@ export function SaveSearchButton({
 
   return (
     <>
-      <Button
+      <BusinessButton
         variant="ghost"
         className="toggle"
         onClick={start}
@@ -132,10 +138,10 @@ export function SaveSearchButton({
         title={empty ? 'Busque um texto ou escolha um filtro para salvar' : undefined}
       >
         <BookmarkPlus size={16} /> Salvar busca
-      </Button>
+      </BusinessButton>
       {open && (
-        <Modal title="Salvar busca" onClose={() => setOpen(false)}>
-          <form className="stack" onSubmit={save}>
+        <BusinessModal title="Salvar busca" onClose={() => setOpen(false)}>
+          <BusinessForm className="stack" onSubmit={save}>
             <p className="muted tiny">{summary(current)}</p>
             <Field label="Nome">
               <Input
@@ -154,8 +160,8 @@ export function SaveSearchButton({
             <Button type="submit" disabled={create.isPending}>
               {create.isPending ? 'Salvando…' : 'Salvar'}
             </Button>
-          </form>
-        </Modal>
+          </BusinessForm>
+        </BusinessModal>
       )}
     </>
   );
@@ -199,8 +205,8 @@ function EditSavedSearchModal({ search, onClose }: { search: SavedSearch; onClos
   }
 
   return (
-    <Modal title="Editar busca" onClose={onClose}>
-      <form className="stack" onSubmit={save}>
+    <BusinessModal title="Editar busca" onClose={onClose}>
+      <BusinessForm className="stack" onSubmit={save}>
         <p className="muted tiny">{summary(search)}</p>
         <Field label="Nome">
           <Input
@@ -219,8 +225,8 @@ function EditSavedSearchModal({ search, onClose }: { search: SavedSearch; onClos
         <Button type="submit" disabled={update.isPending}>
           {update.isPending ? 'Salvando…' : 'Salvar'}
         </Button>
-      </form>
-    </Modal>
+      </BusinessForm>
+    </BusinessModal>
   );
 }
 
@@ -273,7 +279,7 @@ export function SavedSearchesBar({ onApply }: { onApply: (s: SavedSearch) => voi
             >
               {label}
             </button>
-            <button
+            <BusinessIconButton
               type="button"
               className={`icon-btn saved-bell ${s.alertEnabled ? 'on' : ''}`}
               aria-pressed={s.alertEnabled}
@@ -286,23 +292,23 @@ export function SavedSearchesBar({ onApply }: { onApply: (s: SavedSearch) => voi
               onClick={() => void toggle(s)}
             >
               {s.alertEnabled ? <Bell size={14} /> : <BellOff size={14} />}
-            </button>
-            <button
+            </BusinessIconButton>
+            <BusinessIconButton
               type="button"
               className="icon-btn"
               aria-label={`Editar ${label}`}
               onClick={() => setEditing(s)}
             >
               <Pencil size={14} />
-            </button>
-            <button
+            </BusinessIconButton>
+            <BusinessIconButton
               type="button"
               className="icon-btn"
               aria-label={`Apagar ${label}`}
               onClick={() => void drop(s)}
             >
               <X size={14} />
-            </button>
+            </BusinessIconButton>
           </span>
         );
       })}

@@ -1,5 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { createContractSchema } from './contracts.schema';
+import type { CounterOfferRequest } from '@escambo/types';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import {
+  cancelBodySchema,
+  counterOfferSchema,
+  createContractSchema,
+  grantRevisionBodySchema,
+  offerAcceptParamsSchema,
+  offerDecisionBodySchema,
+  type CounterOfferInput,
+} from './contracts.schema';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -16,6 +25,216 @@ const ms = (dues: (string | null)[]) =>
   dues.map((dueAt, i) => ({ title: `Etapa ${i + 1}`, amount: 100, dueAt }));
 const messages = (input: unknown): string[] =>
   createContractSchema.safeParse(input).error?.issues.map((i) => i.message) ?? [];
+
+describe('liberação de uma revisão: corpo vazio', () => {
+  it('corpo ausente ou vazio concede a ação sem receber contador/limite do cliente', () => {
+    expect(grantRevisionBodySchema.parse(undefined)).toEqual({});
+    expect(grantRevisionBodySchema.parse({})).toEqual({});
+    for (const body of [{ limit: 3 }, { used: 0 }, { note: 'Outra' }, null, []])
+      expect(grantRevisionBodySchema.safeParse(body).success).toBe(false);
+  });
+});
+
+describe('cancelamento: contagem informativa opcional da RN-026', () => {
+  it('conserva reembolso e sequência; aceita somente contador positivo inteiro', () => {
+    expect(
+      cancelBodySchema.parse({ expectedRefund: 100, seq: 1, expectedDropoutCount: 3 }),
+    ).toEqual({ expectedRefund: 100, seq: 1, expectedDropoutCount: 3 });
+    expect(cancelBodySchema.parse(undefined)).toEqual({});
+    for (const value of [0, -1, 1.5, '3', null])
+      expect(cancelBodySchema.safeParse({ expectedDropoutCount: value }).success).toBe(false);
+    expect(cancelBodySchema.safeParse({ expectedDropoutCount: 3, freelancerId: 7 }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('counterOfferSchema: termos completos da negociação (RN-030)', () => {
+  const offer = { seq: 1, price: 300, deadlineAt: iso(10), message: 'Ajustar escopo e prazo' };
+  const milestones = [
+    { id: 11, amount: 150, dueAt: iso(3) },
+    { id: 12, amount: 150, dueAt: iso(6) },
+  ];
+  const fields = (input: unknown) =>
+    counterOfferSchema.safeParse(input).error?.issues.map((issue) => issue.path.join('.')) ?? [];
+
+  it('aceita entrega única com prazo ou null, e preserva os ids/valores/datas dos marcos', () => {
+    expect(counterOfferSchema.parse({ ...offer, deadlineAt: null })).toEqual({
+      ...offer,
+      deadlineAt: null,
+    });
+    expect(counterOfferSchema.parse({ ...offer, milestones })).toEqual({ ...offer, milestones });
+    expectTypeOf<CounterOfferInput>().toEqualTypeOf<CounterOfferRequest>();
+    expect(counterOfferSchema.parse({ ...offer, message: '  Revisar preço  ' }).message).toBe(
+      'Revisar preço',
+    );
+  });
+
+  it('seq, preço, prazo nullable e mensagem são obrigatórios; sequência vai de 1 a 5', () => {
+    for (const key of ['seq', 'price', 'deadlineAt', 'message']) {
+      const incomplete: Record<string, unknown> = { ...offer };
+      delete incomplete[key];
+      expect(fields(incomplete), key).toContain(key);
+    }
+    for (const seq of [1, 2, 3, 4, 5])
+      expect(counterOfferSchema.safeParse({ ...offer, seq }).success).toBe(true);
+    for (const seq of [0, 6, 1.5, '2', null])
+      expect(fields({ ...offer, seq }), String(seq)).toContain('seq');
+  });
+
+  it('mensagem tem de 5 a 500 caracteres depois de retirar espaços nas pontas', () => {
+    for (const message of ['     ', '  abc  ', 'x'.repeat(501)]) {
+      expect(fields({ ...offer, message })).toContain('message');
+    }
+    for (const message of ['cinco', 'x'.repeat(500)]) {
+      expect(counterOfferSchema.safeParse({ ...offer, message }).success).toBe(true);
+    }
+  });
+
+  it('dinheiro aceita centavos exatos no mínimo e teto, e barra frações/valores não finitos', () => {
+    for (const price of [10, 10.01, 1234.56, 99_999_999.99]) {
+      expect(counterOfferSchema.safeParse({ ...offer, price }).success, String(price)).toBe(true);
+    }
+    for (const price of [9.99, 10.005, 100_000_000, NaN, Infinity, -Infinity]) {
+      expect(fields({ ...offer, price }), String(price)).toContain('price');
+    }
+    expect(
+      fields({
+        ...offer,
+        milestones: [
+          { ...milestones[0], amount: 150.005 },
+          { ...milestones[1], amount: 149.995 },
+        ],
+      }),
+    ).toEqual(expect.arrayContaining(['milestones.0.amount', 'milestones.1.amount']));
+  });
+
+  it('marcos são de 2 a 10, ids inteiros positivos únicos, com dueAt explícito', () => {
+    for (const invalid of [
+      [],
+      [milestones[0]],
+      Array.from({ length: 11 }, (_, i) => ({ id: i + 1, amount: 1, dueAt: null })),
+    ]) {
+      expect(fields({ ...offer, milestones: invalid })).toContain('milestones');
+    }
+    for (const id of [0, -1, 1.5]) {
+      expect(fields({ ...offer, milestones: [{ ...milestones[0], id }, milestones[1]] })).toContain(
+        'milestones.0.id',
+      );
+    }
+    expect(fields({ ...offer, milestones: [milestones[0], milestones[0]] })).toContain(
+      'milestones',
+    );
+    expect(fields({ ...offer, milestones: [{ id: 11, amount: 150 }, milestones[1]] })).toContain(
+      'milestones.0.dueAt',
+    );
+    expect(
+      counterOfferSchema.safeParse({
+        ...offer,
+        price: 10,
+        milestones: Array.from({ length: 10 }, (_, i) => ({ id: i + 1, amount: 1, dueAt: null })),
+      }).success,
+    ).toBe(true);
+  });
+
+  it('soma dos marcos é exata em centavos; uma diferença de um centavo é recusada', () => {
+    expect(
+      counterOfferSchema.safeParse({
+        ...offer,
+        price: 10.01,
+        milestones: [
+          { id: 11, amount: 10, dueAt: null },
+          { id: 12, amount: 0.01, dueAt: null },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      fields({ ...offer, milestones: [{ ...milestones[0], amount: 149.99 }, milestones[1]] }),
+    ).toContain('milestones');
+    for (const amount of [0, -1, NaN, Infinity, 100_000_000]) {
+      expect(
+        fields({ ...offer, milestones: [{ ...milestones[0], amount }, milestones[1]] }),
+      ).toContain('milestones.0.amount');
+    }
+  });
+
+  it('prazos ficam no futuro e em ordem, inclusive através de marco sem prazo', () => {
+    expect(fields({ ...offer, deadlineAt: iso(-1) })).toContain('deadlineAt');
+    expect(fields({ ...offer, deadlineAt: 'amanhã' })).toContain('deadlineAt');
+    expect(
+      fields({ ...offer, milestones: [{ ...milestones[0], dueAt: iso(-1) }, milestones[1]] }),
+    ).toContain('milestones.0.dueAt');
+    expect(
+      fields({ ...offer, milestones: [{ ...milestones[0], dueAt: iso(7) }, milestones[1]] }),
+    ).toContain('milestones.1.dueAt');
+    expect(
+      fields({ ...offer, milestones: [milestones[0], { ...milestones[1], dueAt: iso(11) }] }),
+    ).toContain('milestones.1.dueAt');
+    expect(
+      counterOfferSchema.safeParse({
+        ...offer,
+        milestones: [{ ...milestones[0], dueAt: iso(6) }, milestones[1]],
+      }).success,
+    ).toBe(true);
+    expect(
+      fields({
+        ...offer,
+        milestones: [
+          { id: 11, amount: 100, dueAt: iso(7) },
+          { id: 12, amount: 100, dueAt: null },
+          { id: 13, amount: 100, dueAt: iso(6) },
+        ],
+      }),
+    ).toContain('milestones.2.dueAt');
+  });
+
+  it('não recebe títulos, forma de pagamento, líquido ou reserva calculados pelo cliente', () => {
+    for (const extra of [
+      { paymentMode: 'credits' },
+      { title: 'Outro contrato' },
+      { freelancerNet: 1 },
+      { platformFee: 0 },
+    ]) {
+      expect(counterOfferSchema.safeParse({ ...offer, ...extra }).success).toBe(false);
+    }
+    expect(
+      counterOfferSchema.safeParse({
+        ...offer,
+        milestones: [{ ...milestones[0], title: 'Trocar título' }, milestones[1]],
+      }).success,
+    ).toBe(false);
+    expect(counterOfferSchema.safeParse({ ...offer, milestones: null }).success).toBe(false);
+  });
+});
+
+describe('schemas da decisão: sequência vista e compatibilidade da oferta 1', () => {
+  it('accept/reject admitem corpo vazio ou seq inteiro de 1 a 5; rejeitam seq inválido/extra', () => {
+    expect(offerDecisionBodySchema.parse(undefined)).toEqual({});
+    expect(offerDecisionBodySchema.parse({})).toEqual({});
+    for (const seq of [1, 2, 3, 4, 5])
+      expect(offerDecisionBodySchema.parse({ seq })).toEqual({ seq });
+    for (const seq of [0, 6, 1.5, '1', null])
+      expect(offerDecisionBodySchema.safeParse({ seq }).success).toBe(false);
+    expect(offerDecisionBodySchema.safeParse({ seq: 1, price: 999 }).success).toBe(false);
+  });
+
+  it('aceite de contraproposta recebe id e seq da rota, ambos válidos', () => {
+    expect(offerAcceptParamsSchema.parse({ id: '12', seq: '2' })).toEqual({ id: 12, seq: 2 });
+    for (const seq of ['0', '6', '1.5', 'abc'])
+      expect(offerAcceptParamsSchema.safeParse({ id: '12', seq }).success).toBe(false);
+    expect(offerAcceptParamsSchema.safeParse({ id: '0', seq: '2' }).success).toBe(false);
+  });
+
+  it('cancelamento conserva expectedRefund e valida a sequência quando presente', () => {
+    expect(cancelBodySchema.parse({ expectedRefund: 250, seq: 2 })).toEqual({
+      expectedRefund: 250,
+      seq: 2,
+    });
+    expect(cancelBodySchema.parse(undefined)).toEqual({});
+    for (const seq of [0, 6, 1.5, '2'])
+      expect(cancelBodySchema.safeParse({ seq }).success).toBe(false);
+  });
+});
 
 describe('createContractSchema: marcos em créditos', () => {
   it('aceita marcos inteiros e recusa fração de crédito', () => {

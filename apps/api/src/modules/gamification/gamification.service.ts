@@ -138,8 +138,18 @@ export const gamificationService = {
   evaluateBadges,
   levelProgress,
 
-  async getProfile(userId: number): Promise<GamificationProfile> {
-    const xp = await gamificationRepository.getOrCreateXp(userId);
+  async getProfile(
+    userId: number,
+    options: { readOnly?: boolean } = {},
+  ): Promise<GamificationProfile> {
+    const initial = levelFor(0);
+    const xp = options.readOnly
+      ? ((await gamificationRepository.findXp(userId)) ?? {
+          total_xp: 0,
+          level: initial.level,
+          level_name: initial.name,
+        })
+      : await gamificationRepository.getOrCreateXp(userId);
     const now = new Date();
     // Um dia a mais na janela: o primeiro dia dela, no fuso da pessoa, entra inteiro.
     const since = new Date(now.getTime() - (STREAK_WINDOW_DAYS + 1) * DAY_MS);

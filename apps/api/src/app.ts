@@ -58,7 +58,13 @@ export function createApp() {
   // produção já força https no proxy (com HSTS).
   app.use(helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: null } } }));
   app.use(compression());
-  app.use(cors({ origin: corsOrigin(env.CORS_ORIGINS), credentials: true }));
+  app.use(
+    cors({
+      origin: corsOrigin(env.CORS_ORIGINS),
+      credentials: true,
+      exposedHeaders: ['X-Account-Status'],
+    }),
+  );
 
   // Log estruturado por requisição, com id correlacionável (echo em X-Request-Id).
   app.use(

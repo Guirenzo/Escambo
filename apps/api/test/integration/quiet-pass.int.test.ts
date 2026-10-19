@@ -1,5 +1,16 @@
+import type { RowDataPacket } from 'mysql2';
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { runOverdueContracts } from '../../src/jobs/overdue-contracts';
@@ -14,6 +25,7 @@ import { QUIET_PASS_CATEGORIES } from '../../src/modules/notifications/quiet-hou
 import { addHumanHours, isHumanInstant } from '../../src/utils/human-hours';
 import { formatDeadline, formatDue, hourIn } from '../../src/utils/timezone';
 import { DAY, fromNow, HOUR, isoFromNow, now, startDaytimeClock, stopClock } from './clock.helpers';
+import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 import { fundWallet } from './wallet.helpers';
 
 /**
@@ -78,16 +90,19 @@ async function silenced(a: Actor, quietPass?: string[]): Promise<Actor> {
 }
 
 async function contractFor(client: Actor, freelancer: Actor): Promise<number> {
-  const res = await request(app)
-    .post('/api/contracts')
-    .set(auth(client.token))
-    .send({
-      freelancerId: freelancer.id,
-      title: `Logo ${seq++}`,
-      description: 'Contratação do teste do que sai no silêncio',
-      price: 50,
-      deadlineAt: isoFromNow(5 * DAY),
-    });
+  // O silêncio e o resumo também abrangem contratos paralelos anteriores à RN-020.
+  const res = await withLegacyParallelContracts(client.id, freelancer.id, async () =>
+    request(app)
+      .post('/api/contracts')
+      .set(auth(client.token))
+      .send({
+        freelancerId: freelancer.id,
+        title: `Logo ${seq++}`,
+        description: 'Contratação do teste do que sai no silêncio',
+        price: 50,
+        deadlineAt: isoFromNow(5 * DAY),
+      }),
+  );
   expect(res.status, JSON.stringify(res.body)).toBe(201);
   await request(app)
     .post(`/api/contracts/${res.body.id}/accept`)
@@ -96,7 +111,7 @@ async function contractFor(client: Actor, freelancer: Actor): Promise<number> {
   return res.body.id as number;
 }
 
-interface NotifRow {
+interface NotifRow extends RowDataPacket {
   id: number;
   title: string;
   body: string | null;
@@ -108,7 +123,7 @@ async function latest(userId: number, type: string, contractId?: number): Promis
   await expect
     .poll(
       async () => {
-        const [rows] = await pool.query<(NotifRow & { length: number })[] & { length: number }>(
+        const [rows] = await pool.query<NotifRow[]>(
           `SELECT id, title, body, push_held_at FROM notifications
             WHERE user_id = :userId AND type = :type
               AND (:contractId IS NULL OR JSON_EXTRACT(data, '$.contractId') = :contractId)
@@ -130,7 +145,7 @@ async function held(n: NotifRow): Promise<boolean> {
   await expect
     .poll(
       async () => {
-        const [rows] = await pool.query<({ push_held_at: Date | null } & { length: number })[]>(
+        const [rows] = await pool.query<(RowDataPacket & { push_held_at: Date | null })[]>(
           'SELECT push_held_at FROM notifications WHERE id = :id',
           { id: n.id },
         );
@@ -169,7 +184,7 @@ async function deadlineCols(id: number): Promise<DeadlineCols> {
   return row;
 }
 
-let spy: ReturnType<typeof vi.spyOn<typeof simulatedPushProvider, 'send'>>;
+let spy: MockInstance<typeof simulatedPushProvider.send>;
 beforeAll(() => {
   startDaytimeClock();
 });
@@ -190,7 +205,7 @@ describe('O que sai durante o silêncio (ADR 56 e 57)', () => {
     const cliente = await actor('client');
     const me = async (a: Actor) =>
       (await request(app).get('/api/auth/me').set(auth(a.token)).expect(200)).body;
-    const prefs = (a: Actor, body: unknown) =>
+    const prefs = (a: Actor, body: Record<string, unknown>) =>
       request(app).put('/api/notifications/preferences').set(auth(a.token)).send(body);
 
     expect((await me(freela)).quietPass).toBeNull();
@@ -210,7 +225,7 @@ describe('O que sai durante o silêncio (ADR 56 e 57)', () => {
     await expect
       .poll(
         async () => {
-          const [rows] = await pool.query<({ new_value: unknown } & { length: number })[]>(
+          const [rows] = await pool.query<(RowDataPacket & { new_value: unknown })[]>(
             `SELECT new_value FROM audit_logs WHERE user_id = :id AND action = 'push_quiet_pass_changed'
               ORDER BY id DESC LIMIT 1`,
             { id: freela.id },
@@ -236,7 +251,7 @@ describe('O que sai durante o silêncio (ADR 56 e 57)', () => {
     await expect(
       pool.query(`UPDATE users SET push_quiet_pass = 'security' WHERE id = :id`, { id: freela.id }),
     ).rejects.toThrow();
-    const [cols] = await pool.query<({ t: string } & { length: number })[]>(
+    const [cols] = await pool.query<(RowDataPacket & { t: string })[]>(
       `SELECT COLUMN_TYPE AS t FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'push_quiet_pass'`,
     );
@@ -496,7 +511,7 @@ describe('O que sai durante o silêncio (ADR 56 e 57)', () => {
     await revisao(r1);
     const n1 = await latest(freela.id, 'contract_revision', r1);
     expect(n1.title).toMatch(/^Revisão pedida: Logo \d+$/);
-    expect(n1.body).toBe('Falta a versão em fundo escuro');
+    expect(n1.body).toBe('Revisão 1 de 2 sem custo. Falta a versão em fundo escuro');
     // Depois da entrega o prazo não cobra mais: a revisão não tem hora-limite e espera o silêncio.
     expect(await held(n1)).toBe(true);
     expect(callFor(n1)).toBeUndefined();

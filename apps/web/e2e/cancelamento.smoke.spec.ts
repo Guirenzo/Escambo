@@ -101,7 +101,9 @@ test('cancelar antes da metade do prazo: o modal mostra 50% e confirmar liquida 
   ).toBeVisible();
   expect(await wallet(request, client)).toMatchObject({ balance: 100, balancePending: 0 });
   expect(await wallet(request, freelancer)).toMatchObject({ balance: 85, balancePending: 0 });
-  await expect(page.locator('.timeline')).toContainText('Reembolso: 50%');
+  await expect(page.getByRole('list', { name: 'Histórico da contratação' })).toContainText(
+    'Reembolso: 50%',
+  );
 });
 
 test('o freelancer desiste: tudo volta para a cliente, que é avisada', async ({
@@ -153,11 +155,16 @@ test('entregue: a Sala diz até quando aprovar; em revisão não há Cancelar e 
   await openAs(page, client, `/contratos/${id}`);
   await settled(page);
   await expect(page.getByTestId('approval-due')).toContainText(
-    'Entrega registrada. Aprove, peça revisão ou abra disputa até',
+    'Entrega registrada. Aprove ou peça revisão até',
   );
   await expect(page.getByTestId('approval-due')).toContainText(
     'o pagamento é liberado ao freelancer',
   );
+  // RN-062: a entrega recém-registrada ainda tem a espera antes da disputa manual.
+  await expect(page.getByTestId('dispute-opens-at')).toContainText(
+    'Tentem resolver pelo chat primeiro: a disputa abre a partir de',
+  );
+  await expect(page.getByRole('button', { name: 'Abrir disputa' })).toHaveCount(0);
 
   const rev = await request.post(`/api/contracts/${id}/request-revision`, {
     headers: h(client.token),
@@ -175,12 +182,19 @@ test('entregue: a Sala diz até quando aprovar; em revisão não há Cancelar e 
     'se ela não vier em 7 dias, o Escambo lembra vocês dois, uma vez.',
   );
   await expect(page.getByRole('button', { name: 'Cancelar', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Abrir disputa' })).toBeVisible();
+  await expect(page.getByTestId('dispute-opens-at')).toContainText(
+    'Tentem resolver pelo chat primeiro: a disputa abre a partir de',
+  );
+  await expect(page.getByRole('button', { name: 'Abrir disputa' })).toHaveCount(0);
 
   await openAs(page, freelancer, `/contratos/${id}`);
   await settled(page);
   await expect(page.getByRole('button', { name: 'Desistir' })).toHaveCount(0);
   await expect(page.getByTestId('revision-since')).toContainText(': registre a nova entrega.');
+  await expect(page.getByTestId('dispute-opens-at')).toContainText(
+    'Tentem resolver pelo chat primeiro: a disputa abre a partir de',
+  );
+  await expect(page.getByRole('button', { name: 'Abrir disputa' })).toHaveCount(0);
 });
 
 test('prazo vencido: horas do aviso e da disputa; valor que mudou no meio é recusado', async ({

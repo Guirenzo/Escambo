@@ -1,5 +1,17 @@
-import { devices, expect, test } from '@playwright/test';
-import { PASSWORD, settled } from './helpers';
+import type { ContractWithHistory, MyDropouts } from '@escambo/types';
+import { devices, expect, test, type Page } from '@playwright/test';
+import { acceptContract, get, post } from './adr61-rights.helpers';
+import {
+  createAdmin,
+  createService,
+  createUser,
+  inputDatePlus,
+  openAs,
+  PASSWORD,
+  settled,
+  topUp,
+  type TestUser,
+} from './helpers';
 
 /**
  * Gera os prints usados no README (docs/screenshots) a partir dos dados de demonstração.
@@ -7,20 +19,31 @@ import { PASSWORD, settled } from './helpers';
  *   npm run demo:seed                 # popula a instância (uma vez)
  *   npm run -w apps/web screenshots   # gera os PNGs (1440x900 @2x)
  *
+ * Os prints 23–26 gravam JPGs e criam suas próprias contas fictícias, sem mudar a demo ou parâmetros globais.
+ * Exigem PAYMENTS_SIMULATE e ADMIN_EMAILS com @admin.escambo.test, como os demais e2e.
+ * O print 25 captura o cartão inteiro para incluir os parâmetros e as regras fixas.
+ *
  * Não roda no CI (é utilitário de documentação, não teste).
  */
 
 const OUT = '../../docs/screenshots';
-const shot = (name: string) => ({ path: `${OUT}/${name}.png`, fullPage: false as const });
+const shot = (name: string, jpg = false) =>
+  jpg
+    ? { path: `${OUT}/${name}.jpg`, type: 'jpeg' as const, quality: 90, fullPage: false as const }
+    : { path: `${OUT}/${name}.png`, fullPage: false as const };
 
 /** Tira o print só depois de todas as imagens (avatares) terminarem de carregar. */
-const snap = async (p: import('@playwright/test').Page, name: string): Promise<void> => {
+const snap = async (
+  p: import('@playwright/test').Page,
+  name: string,
+  jpg = false,
+): Promise<void> => {
   await p
     .waitForFunction(() => Array.from(document.images).every((i) => i.complete), null, {
       timeout: 8000,
     })
     .catch(() => undefined);
-  await p.screenshot(shot(name));
+  await p.screenshot(shot(name, jpg));
 };
 
 test.skip(!!process.env.CI, 'utilitário de documentação; não roda no CI');
@@ -59,6 +82,7 @@ test('gera os prints do README', async ({ page, request, browser }) => {
   });
   const contracts = ((await res.json()) as { items: { id: number; title: string }[] }).items;
   const landing = contracts.find((c) => c.title === 'Landing page em React') ?? contracts[0];
+  if (!landing) throw new Error('Rode demo:seed antes de gerar os prints da demonstração.');
   await page.goto(`/contratos/${landing.id}`);
   await settled(page);
   await expect(page.locator('.bubble').first()).toBeVisible();
@@ -343,4 +367,125 @@ test('gera os prints do README', async ({ page, request, browser }) => {
       await ctx.close();
     }
   }
+});
+
+test('gera os prints da ADR 61 com dados fictícios próprios', async ({ request, browser }) => {
+  test.setTimeout(120_000);
+  const freelancer = await createUser(request, 'freelancer');
+  const client = await createUser(request, 'client');
+  const admin = await createAdmin(request);
+  const service = await createService(request, freelancer, 500, 0, {
+    title: 'Landing page para apresentação',
+  });
+  await topUp(request, client, 1000);
+  const endOfDayPlus = (days: number): string =>
+    new Date(`${inputDatePlus(days)}T23:59:59-03:00`).toISOString();
+  const deadlineAt = endOfDayPlus(10);
+
+  // Cada captura abre uma sessão própria; nenhum token ou dado pertence às contas da demo.
+  const captureAs = async (
+    user: TestUser,
+    path: string,
+    capture: (page: Page) => Promise<void>,
+  ): Promise<void> => {
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      deviceScaleFactor: 2,
+    });
+    try {
+      const page = await context.newPage();
+      await openAs(page, user, path);
+      await settled(page);
+      await page.evaluate(() => document.fonts.ready.then(() => undefined));
+      await capture(page);
+    } finally {
+      await context.close();
+    }
+  };
+
+  // 23. Oferta por marcos: o cliente confere a contraproposta e os R$ 150 extras de reserva.
+  const proposed = await post<{ id: number }>(request, client, '/contracts', {
+    freelancerId: freelancer.id,
+    serviceId: service.id,
+    title: service.title,
+    description: 'Layout e implementação da página usada na apresentação do projeto.',
+    price: 500,
+    deadlineAt,
+    milestones: [
+      { title: 'Layout', amount: 200, dueAt: endOfDayPlus(5) },
+      { title: 'Implementação', amount: 300, dueAt: deadlineAt },
+    ],
+  });
+  const initial = await get<ContractWithHistory>(request, client, `/contracts/${proposed.id}`);
+  const milestones = initial.negotiation?.current?.milestones;
+  expect(milestones, 'Marcos da proposta inicial disponíveis para contrapropor').toHaveLength(2);
+  await post(request, freelancer, `/contracts/${proposed.id}/offers`, {
+    seq: 1,
+    price: 650,
+    deadlineAt: initial.negotiation!.current!.deadlineAt,
+    milestones: milestones!.map((milestone, index) => ({
+      id: milestone.id,
+      amount: index === 0 ? 250 : 400,
+      dueAt: milestone.dueAt,
+    })),
+    message: 'Incluí a adaptação para celular mantendo os mesmos marcos e o prazo combinado.',
+  });
+  await captureAs(client, `/contratos/${proposed.id}`, async (page) => {
+    await expect(page.getByTestId('negotiation')).toContainText('rodada 1 de 3');
+    await page.getByRole('button', { name: 'Aceitar contraproposta', exact: true }).click();
+    const modal = page.getByRole('dialog', { name: 'Aceitar contraproposta' });
+    await expect(modal).toBeVisible();
+    await expect(modal.getByTestId('reserve-preview')).toContainText(/R\$\s150,00/);
+    await expect(modal.getByRole('button', { name: 'Aceitar e contratar' })).toBeEnabled();
+    await snap(page, '23-negociacao', true);
+  });
+
+  // 24. Três desistências reais em contas fictícias: o perfil público mostra só número e alerta.
+  for (const title of ['Identidade visual', 'Revisão de layout', 'Protótipo navegável']) {
+    const id = await acceptContract(request, client, freelancer, {
+      serviceId: service.id,
+      title,
+      description: 'Contratação fictícia para demonstrar o histórico de desistências.',
+      price: 100,
+    });
+    await post(request, freelancer, `/contracts/${id}/cancel`);
+  }
+  const mine = await get<MyDropouts>(request, freelancer, '/profiles/me/dropouts');
+  expect(mine.count).toBe(3);
+  const { ulid } = await get<{ ulid: string }>(request, freelancer, '/auth/me');
+  await captureAs(client, `/freelancers/${ulid}`, async (page) => {
+    await expect(page.getByTestId('dropouts-alert')).toContainText('3 desistências');
+    await expect(page.getByTestId('desistencias-card')).toHaveCount(0);
+    await snap(page, '24-desistencias', true);
+  });
+
+  // 25. Consulta ao painel: exige os padrões 48/48, sem gravar configurações para preparar o print.
+  await captureAs(admin, '/admin', async (page) => {
+    const card = page.getByTestId('settings-card');
+    await expect(card.getByLabel('Resposta a uma contraproposta', { exact: true })).toHaveValue(
+      '48',
+    );
+    await expect(card.getByLabel('Resposta a um pedido de extensão', { exact: true })).toHaveValue(
+      '48',
+    );
+    const fixed = card.getByTestId('fixed-contract-rules');
+    await expect(fixed).toContainText('2 revisões sem custo por entrega ou marco');
+    await expect(fixed.locator('input, select, textarea, button')).toHaveCount(0);
+    await card.screenshot({ path: `${OUT}/25-parametros-adr61.jpg`, type: 'jpeg', quality: 90 });
+  });
+
+  // 26. O titular com consentimento anterior recebe o resumo da Política 1.5, sem expor casos.
+  await post(request, freelancer, '/lgpd/consents', {
+    type: 'privacy_policy',
+    version: '1.4',
+    accepted: true,
+  });
+  await captureAs(freelancer, '/', async (page) => {
+    const banner = page.getByRole('region', { name: 'Atualização da Política de Privacidade' });
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('versão 1.5');
+    await expect(banner).toContainText('últimos 60 dias');
+    await expect(banner.getByRole('button', { name: 'Não aceito' })).toBeVisible();
+    await snap(page, '26-politica-adr61', true);
+  });
 });

@@ -40,7 +40,9 @@ export const QUIET_PASS_BY_TYPE: Readonly<Record<string, QuietPassCategory | nul
   deadline_extension_declined: null,
   deadline_extension_expired: null,
   contract_revision: null,
+  contract_revision_granted: null,
   contract_proposal: null,
+  contract_counter_offer: null,
   contract_accepted: null,
   contract_rejected: null,
   contract_delivered: null,
@@ -68,8 +70,12 @@ export const QUIET_PASS_BY_TYPE: Readonly<Record<string, QuietPassCategory | nul
   review_received: null,
   content_removed: null,
   appeal_decided: null,
+  dropout_decided: null,
+  support_reply: null,
+  support_resolved: null,
   // ADR 58: lembretes, aprovação automática e revisão parada esperam o fim da janela.
   contract_proposal_reminder: null,
+  contract_counter_offer_reminder: null,
   contract_deadline_reminder: null,
   contract_approval_reminder: null,
   contract_extension_reminder: null,
@@ -95,8 +101,20 @@ const announcesDeadline = (type: string | undefined): boolean =>
   ((Object.hasOwn(QUIET_PASS_BY_TYPE, type) && QUIET_PASS_BY_TYPE[type] !== null) ||
     DEADLINE_FIRST_TYPES.has(type));
 
+const supportTicketIdOf = (data: Record<string, unknown> | null | undefined): number | null => {
+  const id = data?.supportTicketId;
+  return typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? id : null;
+};
+
 /** Para onde a notificação leva quando a pessoa toca no aviso. */
 export function pushUrl(type: string, data: Record<string, unknown> | null | undefined): string {
+  const supportTicketId = supportTicketIdOf(data);
+  if (supportTicketId !== null) {
+    return data?.supportAdmin === true
+      ? `/admin?ticket=${supportTicketId}#suporte`
+      : `/suporte?ticket=${supportTicketId}`;
+  }
+  if (type.startsWith('dropout_')) return '/perfil#desistencias';
   const contractId = data?.contractId;
   if (typeof contractId === 'number' || typeof contractId === 'string') {
     return `/contratos/${contractId}`;
@@ -115,6 +133,7 @@ export const trimBody = (body: string | null | undefined, max = 120): string => 
 
 /** O assunto do aviso: dois avisos do mesmo assunto se substituem no aparelho. */
 const TARGET_KEYS = [
+  'supportTicketId',
   'contractId',
   'disputeId',
   'barterId',
@@ -123,6 +142,7 @@ const TARGET_KEYS = [
   'paymentId',
   'reviewId',
   'removalId',
+  'dropoutId',
 ] as const;
 
 export function buildPayload(
@@ -136,9 +156,9 @@ export function buildPayload(
   },
   opts: { ownTag?: boolean } = {},
 ): PushPayload {
-  const target = TARGET_KEYS.map((key) => params.data?.[key]).find(
-    (value) => typeof value === 'number' || typeof value === 'string',
-  );
+  const target = TARGET_KEYS.map((key) =>
+    key === 'supportTicketId' ? supportTicketIdOf(params.data) : params.data?.[key],
+  ).find((value) => typeof value === 'number' || typeof value === 'string');
   // Sem assunto, cada aviso fica com etiqueta própria: um não apaga o outro no aparelho. O que sai
   // durante o silêncio (ADR 56) também: o mesmo tipo se repete na mesma contratação (nova recusa,
   // nova revisão), e trocar um aviso de mesma etiqueta não alerta de novo no Chrome nem no Firefox
@@ -276,9 +296,9 @@ export const pushService = {
     if (env.PUSH_PROVIDER === 'off') return;
     try {
       if (!PUSHED_NOTIFICATION_TYPES.has(params.type)) return;
-      // Conta encerrada não recebe aviso nenhum, como já vale para o e-mail.
+      // Avisos opcionais não entregam conteúdo a banidos/excluídos; suspenso mantém consulta.
       const user = await authRepository.findById(userId);
-      if (!user || user.deleted_at) return;
+      if (!user || user.deleted_at || user.status === 'banned') return;
       const zone = timezoneOf(user.timezone);
       const window = quietWindowOf(user.push_quiet_start, user.push_quiet_end);
       const category = passCategoryFor(params.type, params.passCategory);

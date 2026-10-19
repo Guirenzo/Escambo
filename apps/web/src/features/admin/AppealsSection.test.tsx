@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dtm } from '../../lib/format';
 import { ToastProvider } from '../../lib/toast';
 import { AppealsSection } from './AppealsSection';
+vi.mock('./DropoutsReview', () => ({ DropoutAppeals: () => null }));
 
 const adminAppeals = vi.fn();
 const adminAppealImage = vi.fn();
@@ -15,6 +16,7 @@ const adminDecideAppeal = vi.fn();
 vi.mock('../../lib/api', () => ({
   api: {
     adminAppeals: (status: string) => adminAppeals(status),
+    adminDropouts: () => Promise.resolve([]),
     adminAppealImage: (id: number) => adminAppealImage(id),
     adminDecideAppeal: (id: number, decision: string, body: unknown) =>
       adminDecideAppeal(id, decision, body),

@@ -2,7 +2,15 @@ import { act, render, renderHook, screen, waitFor } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import type { PublicUser } from '@escambo/types';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { api, getRefreshToken, getToken, SESSION_EXPIRED_EVENT, setSession, setToken } from './api';
+import {
+  ACCOUNT_STATUS_EVENT,
+  api,
+  getRefreshToken,
+  getToken,
+  SESSION_EXPIRED_EVENT,
+  setSession,
+  setToken,
+} from './api';
 import { AuthProvider, useAuth } from './auth';
 import { currentSubscription, lastDeviceEndpoint, rememberDeviceEndpoint } from './push';
 import { disconnectSocket } from './socket';
@@ -27,7 +35,8 @@ vi.mock('./api', async (importOriginal) => {
     },
   };
 });
-vi.mock('./socket', () => ({ disconnectSocket: vi.fn() }));
+const accountSocket = vi.hoisted(() => ({ on: vi.fn(), off: vi.fn() }));
+vi.mock('./socket', () => ({ disconnectSocket: vi.fn(), getSocket: () => accountSocket }));
 vi.mock('./push', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./push')>();
   return { ...actual, currentSubscription: vi.fn() };
@@ -42,7 +51,13 @@ const apiMock = api as unknown as Record<
   Mock
 >;
 
-const ana = { id: 1, ulid: 'u1', email: 'ana@escambo.test', role: 'freelancer' } as PublicUser;
+const ana = {
+  id: 1,
+  ulid: 'u1',
+  email: 'ana@escambo.test',
+  role: 'freelancer',
+  status: 'active',
+} as PublicUser;
 const tokens = { accessToken: 'acesso-1', refreshToken: 'refresh-1' };
 
 /** O que uma tela mostraria da sessão, com os botões que mexem nela. */
@@ -86,6 +101,7 @@ beforeEach(() => {
   vi.mocked(browserBrazilZone).mockReturnValue(null);
 });
 afterEach(() => {
+  vi.useRealTimers();
   setSession(null);
   rememberDeviceEndpoint(null);
 });
@@ -383,6 +399,100 @@ describe('sessão encerrada pelo cliente HTTP', () => {
 });
 
 describe('refreshUser', () => {
+  it('resposta atrasada da consulta não repõe a conta depois de sair', async () => {
+    const view = await mountLoggedIn();
+    let finish!: (user: PublicUser) => void;
+    apiMock.me.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.refreshUser();
+    });
+    act(() => view.result.current.logout());
+    await act(async () => {
+      finish(ana);
+      await pending;
+    });
+    expect(view.result.current.user).toBeNull();
+    expect(getToken()).toBeNull();
+  });
+
+  it('suspensão por HTTP mantém sessão; evento socket reativa sem recarregar', async () => {
+    const view = await mountLoggedIn();
+    act(() => window.dispatchEvent(new CustomEvent(ACCOUNT_STATUS_EVENT, { detail: 'suspended' })));
+    expect(view.result.current.user?.status).toBe('suspended');
+    expect(getToken()).toBe('acesso-1');
+    expect(disconnectSocket).not.toHaveBeenCalled();
+    const onStatus = accountSocket.on.mock.calls.find(([event]) => event === 'account:status')?.[1];
+    expect(onStatus).toBeTypeOf('function');
+    act(() => onStatus({ status: 'active' }));
+    expect(view.result.current.user?.status).toBe('active');
+  });
+
+  it('banimento no socket remove a sessão imediatamente', async () => {
+    const view = await mountLoggedIn();
+    const onStatus = accountSocket.on.mock.calls.find(([event]) => event === 'account:status')?.[1];
+    act(() => onStatus({ status: 'banned' }));
+    expect(view.result.current.user).toBeNull();
+    expect(getToken()).toBeNull();
+    expect(disconnectSocket).toHaveBeenCalledTimes(1);
+  });
+
+  it('recupera status no foco e ao voltar à aba, sem exigir atualização manual', async () => {
+    const view = await mountLoggedIn();
+    apiMock.me.mockResolvedValue({ ...ana, status: 'suspended' });
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(view.result.current.user?.status).toBe('suspended');
+    apiMock.me.mockResolvedValue(ana);
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(view.result.current.user?.status).toBe('active');
+    view.unmount();
+  });
+
+  it('consulta o status a cada 30 segundos enquanto a aba está visível', async () => {
+    vi.useFakeTimers();
+    setSession(tokens);
+    apiMock.me.mockResolvedValue(ana);
+    const view = mountHook();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(view.result.current.user).toEqual(ana);
+    apiMock.me.mockResolvedValue({ ...ana, status: 'suspended' });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(view.result.current.user?.status).toBe('suspended');
+    expect(apiMock.me).toHaveBeenCalledTimes(2);
+    view.unmount();
+  });
+
+  it('uma consulta antiga não desfaz o status mais recente recebido no socket', async () => {
+    const view = await mountLoggedIn();
+    let finish!: (user: PublicUser) => void;
+    apiMock.me.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    let pending!: Promise<void>;
+    act(() => {
+      pending = view.result.current.refreshUser();
+    });
+    act(() => window.dispatchEvent(new CustomEvent(ACCOUNT_STATUS_EVENT, { detail: 'suspended' })));
+    await act(async () => {
+      finish(ana);
+      await pending;
+    });
+    expect(view.result.current.user?.status).toBe('suspended');
+  });
   it('recarrega o usuário (ex.: depois de confirmar o e-mail)', async () => {
     const view = await mountLoggedIn();
     const verified = { ...ana, emailVerified: true };

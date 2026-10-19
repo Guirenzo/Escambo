@@ -7,6 +7,7 @@ import { APPEAL_STATUS_LABEL, dtm, REPORT_REASON_LABEL } from '../../lib/format'
 import { useAdminAppealDecision, useAdminAppeals, useAppealImage } from '../../lib/hooks';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
 import { useToast } from '../../lib/toast';
+import { DropoutAppeals } from './DropoutsReview';
 
 const TONE: Record<AdminAppeal['status'], string> = {
   appealed: 'pending',
@@ -258,6 +259,7 @@ export function AppealsSection() {
         )}
       </QueryState>
 
+      <DropoutAppeals />
       {deciding && (
         <Modal
           title={copyFor(deciding.decision, deciding.appeal).title}
