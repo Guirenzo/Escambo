@@ -78,6 +78,14 @@ export interface ContractRow extends RowDataPacket {
   client_timezone?: string | null;
 }
 
+export interface DeliveryRow extends RowDataPacket {
+  id: number;
+  message: string;
+  /** JSON com a lista de links; o driver pode devolver já lido ou como texto. */
+  files: unknown;
+  delivered_at: Date;
+}
+
 export interface HistoryRow extends RowDataPacket {
   old_status: string | null;
   new_status: string;
@@ -256,13 +264,43 @@ export const contractsRepository = {
     return rows[0];
   },
 
-  async listForUser(userId: number, limit: number, offset: number): Promise<ContractRow[]> {
+  /** Com `statuses`, só as contratações nesses status (filtro da lista, RF-040). */
+  async listForUser(
+    userId: number,
+    limit: number,
+    offset: number,
+    statuses?: string[],
+  ): Promise<ContractRow[]> {
+    const filtered = statuses && statuses.length > 0;
     const [rows] = await pool.query<ContractRow[]>(
       `SELECT ${CONTRACT_COLS} FROM contracts c
-        WHERE c.client_id = :userId OR c.freelancer_id = :userId
-        ORDER BY c.created_at DESC
+        WHERE (c.client_id = :userId OR c.freelancer_id = :userId)${filtered ? ' AND c.status IN (:statuses)' : ''}
+        ORDER BY c.created_at DESC, c.id DESC
         LIMIT ${limit} OFFSET ${offset}`,
-      { userId },
+      filtered ? { userId, statuses } : { userId },
+    );
+    return rows;
+  },
+
+  /** O total da lista acima, com o mesmo filtro: o painel diz quantas há, não só a página. */
+  async countForUser(userId: number, statuses?: string[]): Promise<number> {
+    const filtered = statuses && statuses.length > 0;
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS total FROM contracts c
+        WHERE (c.client_id = :userId OR c.freelancer_id = :userId)${filtered ? ' AND c.status IN (:statuses)' : ''}`,
+      filtered ? { userId, statuses } : { userId },
+    );
+    return Number(rows[0]?.total ?? 0);
+  },
+
+  /** Entregas únicas da contratação (RF-035), da primeira à reentrega mais recente. */
+  async listDeliveries(contractId: number): Promise<DeliveryRow[]> {
+    const [rows] = await pool.query<DeliveryRow[]>(
+      `SELECT id, message, files, delivered_at
+         FROM deliveries
+        WHERE contract_id = :contractId
+        ORDER BY delivered_at ASC, id ASC`,
+      { contractId },
     );
     return rows;
   },

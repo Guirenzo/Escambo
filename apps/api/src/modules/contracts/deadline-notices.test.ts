@@ -4,7 +4,9 @@ import {
   autoDisputeNotice,
   brl,
   cancelledNotice,
+  DELIVERY_EXCERPT_MAX,
   deliveredNotice,
+  deliveryExcerpt,
   milestoneDeliveredNotice,
   milestoneRevisionNotice,
   revisionGrantedNotice,
@@ -45,6 +47,22 @@ describe('revisões e disputa: o aviso só oferece ações disponíveis (ADR 61)
     expect(body).toContain('Aprove ou abra disputa');
     expect(body).not.toContain('peça revisão');
     expect(body).toContain('outra, só se o freelancer liberar');
+  });
+  it('a entrega única leva o começo da mensagem no fim do corpo, numa linha e cortada (RF-035)', () => {
+    const facts = { ...base, revisionLimit: 2, revisionsUsed: 0, disputeFrom: null };
+    expect(deliveredNotice({ ...facts, message: 'Segue o\n\nlink   do vídeo' }).params.body).toBe(
+      'Aprove, peça revisão ou abra disputa até sex, 16/10 às 09:00. Depois disso, a entrega é aprovada automaticamente. Mensagem: Segue o link do vídeo',
+    );
+    // Mensagem longa: só o começo, até 120 caracteres com as reticências; a íntegra fica na Sala.
+    const body = deliveredNotice({ ...facts, message: 'a'.repeat(130) }).params.body!;
+    expect(body.endsWith(` Mensagem: ${'a'.repeat(119)}…`)).toBe(true);
+    expect(deliveryExcerpt('a'.repeat(130))).toHaveLength(DELIVERY_EXCERPT_MAX);
+    expect(deliveryExcerpt('a'.repeat(120))).toBe('a'.repeat(120));
+    // O corte não deixa espaço antes das reticências.
+    expect(deliveryExcerpt(`${'a'.repeat(118)} bcd`)).toBe(`${'a'.repeat(118)}…`);
+    // Sem mensagem (ou só espaços), o corpo não ganha "Mensagem:".
+    expect(deliveredNotice({ ...facts, message: '   ' }).params.body).not.toContain('Mensagem:');
+    expect(deliveredNotice(facts).params.body).not.toContain('Mensagem:');
   });
   it('marco informa sua última revisão e sua própria aprovação', () => {
     const body = milestoneDeliveredNotice({

@@ -402,14 +402,58 @@ describe('contractsRepository', () => {
 
       expect(await contractsRepository.listForUser(7, 20, 40)).toBe(rows);
 
+      // O id desempata as criadas no mesmo segundo: "carregar mais" não repete nem pula nenhuma.
       expect(mainQuery(fakeDb.calls[0]!.sql)).toBe(
-        'FROM contracts c WHERE c.client_id = :userId OR c.freelancer_id = :userId ORDER BY c.created_at DESC LIMIT 20 OFFSET 40',
+        'FROM contracts c WHERE (c.client_id = :userId OR c.freelancer_id = :userId) ORDER BY c.created_at DESC, c.id DESC LIMIT 20 OFFSET 40',
       );
       expect(fakeDb.calls[0]!.params).toEqual({ userId: 7 });
       // A lista traz as mesmas colunas calculadas do detalhe (o prazo de cada cartão sai delas).
       await contractsRepository.findById(12);
       expect(columns(fakeDb.calls[0]!.sql)).toBe(columns(fakeDb.calls[1]!.sql));
       expect(columns(fakeDb.calls[0]!.sql)).toContain('AS client_timezone');
+    });
+
+    it('com filtro de status, a lista só traz esses status, ainda só de quem participa (RF-040)', async () => {
+      await contractsRepository.listForUser(7, 10, 0, ['accepted', 'in_progress']);
+      // Lista vazia é o mesmo que sem filtro (IN () seria SQL inválido).
+      await contractsRepository.listForUser(7, 10, 0, []);
+
+      expect(mainQuery(fakeDb.calls[0]!.sql)).toBe(
+        'FROM contracts c WHERE (c.client_id = :userId OR c.freelancer_id = :userId) AND c.status IN (:statuses) ORDER BY c.created_at DESC, c.id DESC LIMIT 10 OFFSET 0',
+      );
+      expect(fakeDb.calls[0]!.params).toEqual({ userId: 7, statuses: ['accepted', 'in_progress'] });
+      expect(mainQuery(fakeDb.calls[1]!.sql)).not.toContain('c.status IN');
+      expect(fakeDb.calls[1]!.params).toEqual({ userId: 7 });
+    });
+
+    it('o total conta todas as contratações de quem participa, com o mesmo filtro da lista', async () => {
+      fakeDb.reply([{ total: 23 }], [{ total: '4' }], []);
+
+      expect(await contractsRepository.countForUser(7)).toBe(23);
+      expect(await contractsRepository.countForUser(7, ['completed'])).toBe(4);
+      // Sem linha (não acontece com COUNT, mas o tipo permite): zero.
+      expect(await contractsRepository.countForUser(7)).toBe(0);
+
+      expect(fakeDb.calls[0]!.sql).toBe(
+        'SELECT COUNT(*) AS total FROM contracts c WHERE (c.client_id = :userId OR c.freelancer_id = :userId)',
+      );
+      expect(fakeDb.calls[0]!.params).toEqual({ userId: 7 });
+      expect(fakeDb.calls[1]!.sql).toBe(
+        'SELECT COUNT(*) AS total FROM contracts c WHERE (c.client_id = :userId OR c.freelancer_id = :userId) AND c.status IN (:statuses)',
+      );
+      expect(fakeDb.calls[1]!.params).toEqual({ userId: 7, statuses: ['completed'] });
+    });
+
+    it('as entregas únicas vêm da primeira à reentrega mais recente (RF-035)', async () => {
+      const rows = [{ id: 1, message: 'Primeira versão' }];
+      fakeDb.reply(rows);
+
+      expect(await contractsRepository.listDeliveries(12)).toBe(rows);
+
+      expect(fakeDb.calls[0]!.sql).toBe(
+        'SELECT id, message, files, delivered_at FROM deliveries WHERE contract_id = :contractId ORDER BY delivered_at ASC, id ASC',
+      );
+      expect(fakeDb.calls[0]!.params).toEqual({ contractId: 12 });
     });
 
     it('a linha do tempo vem na ordem em que foi gravada (RN-022)', async () => {

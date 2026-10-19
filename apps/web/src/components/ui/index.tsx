@@ -6,6 +6,7 @@ import type {
   ReactNode,
   SelectHTMLAttributes,
 } from 'react';
+import { errorMessage } from '../../lib/errors';
 
 /* Kit de componentes base — consistência visual em cima do sistema de design (styles.css). */
 
@@ -123,7 +124,7 @@ export function EmptyState({ children }: { children: ReactNode }) {
 }
 
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
-  const message = error instanceof Error ? error.message : 'Não foi possível carregar.';
+  const message = errorMessage(error, 'Não foi possível carregar.');
   return (
     <div className="state error-state" role="alert">
       <p className="error">

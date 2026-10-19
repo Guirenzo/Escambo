@@ -27,6 +27,8 @@ interface MilestoneDraft {
 }
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
+/** Centavo como a API arredonda a taxa (cancel-policy `money`): o 1e-6 segura o 0,005 do float. */
+const money = (v: number): number => Math.sign(v) * (Math.round(Math.abs(v) * 100 + 1e-6) / 100);
 
 /**
  * Cliente contrata um serviço — em dinheiro (carteira pré-paga: o valor é reservado já na
@@ -41,7 +43,8 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
   const wallet = useWallet();
   const settings = usePublicSettings();
   const freelancer = usePublicFreelancer(service.ownerUlid);
-  const feePct = settings.data?.platformFeePercentage ?? 15;
+  // A taxa vigente do painel (RF-043); enquanto não chega, a tela não chuta um número.
+  const feePct = settings.data?.platformFeePercentage;
   const create = useCreateContract();
 
   const [title, setTitle] = useState(service.title);
@@ -71,6 +74,9 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
   const creditsNeeded = Math.round(priceNum);
   const canCredits = priceNum > 0 && credits >= creditsNeeded;
   const missing = Math.max(0, round2(priceNum - balance));
+  // A mesma conta da API (taxa arredondada ao centavo; o líquido é o resto).
+  const fee = feePct != null ? money(priceNum * (feePct / 100)) : 0;
+  const net = money(priceNum - fee);
   const needsDeposit = mode === 'cash' && priceNum > 0 && missing > 0;
 
   const withMilestones = useMilestones;
@@ -236,7 +242,8 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
               <CreditCard size={14} /> Dinheiro
             </span>
             <small>
-              Saldo {wallet.data ? brl(balance) : '…'} · escrow em R$ · taxa {feePct}%
+              Saldo {wallet.data ? brl(balance) : '…'} · escrow em R$ · taxa{' '}
+              {feePct != null ? `${feePct}%` : '…'}
             </small>
           </label>
           <label
@@ -346,15 +353,28 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
 
         <div className="summary">
           <strong>{mode === 'credits' ? `${creditsNeeded} créditos` : brl(priceNum)}</strong>
-          <span className="muted tiny">
-            {mode === 'credits'
-              ? withMilestones
+          {mode === 'credits' ? (
+            <span className="muted tiny">
+              {withMilestones
                 ? 'retidos no aceite · liberados marco a marco'
-                : 'retidos no aceite · liberados na aprovação'
-              : withMilestones
-                ? 'reservado agora · liberado marco a marco (85% ao freelancer)'
-                : 'reservado agora · freelancer recebe 85% no escrow'}
-          </span>
+                : 'retidos no aceite · liberados na aprovação'}
+            </span>
+          ) : (
+            <span className="muted tiny" style={{ textAlign: 'right' }}>
+              <span style={{ display: 'block' }}>
+                {withMilestones
+                  ? 'reservado agora · liberado marco a marco'
+                  : 'reservado agora · liberado na aprovação'}
+              </span>
+              <span style={{ display: 'block' }} data-testid="fee-summary">
+                {feePct != null
+                  ? `taxa de ${feePct}% (${brl(fee)}) · o freelancer recebe ${brl(net)}${withMilestones ? ' somando os marcos' : ''}`
+                  : settings.isError
+                    ? 'Não deu para carregar a taxa agora; o valor líquido aparece na Sala.'
+                    : 'taxa da plataforma: carregando…'}
+              </span>
+            </span>
+          )}
         </div>
 
         {needsDeposit && (

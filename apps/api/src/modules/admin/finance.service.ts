@@ -139,17 +139,17 @@ export function toCsv(rows: LedgerExportRow[]): string {
     'saque_id',
   ];
   const lines = rows.map((r) => [
-      r.id,
-      new Date(r.created_at).toISOString(),
-      r.user_email,
-      r.reason,
-      ptNumber(r.amount),
-      ptNumber(r.pending_delta),
-      ptNumber(r.balance_after),
-      ptNumber(r.pending_after),
-      r.contract_id,
-      r.payment_id,
-      r.withdrawal_id,
-    ]);
+    r.id,
+    new Date(r.created_at).toISOString(),
+    r.user_email,
+    r.reason,
+    ptNumber(r.amount),
+    ptNumber(r.pending_delta),
+    ptNumber(r.balance_after),
+    ptNumber(r.pending_after),
+    r.contract_id,
+    r.payment_id,
+    r.withdrawal_id,
+  ]);
   return csvDocument(header, lines);
 }

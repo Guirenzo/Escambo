@@ -28,12 +28,15 @@ import type {
   Boost,
   BoostPlan,
   Category,
+  ChangePasswordRequest,
   ChatHistory,
   ChatMessage,
   ClientProfile,
   Consent,
   ContentReport,
   Contract,
+  ContractList,
+  ContractStatus,
   ContractWithHistory,
   ContractDropout,
   CounterOfferRequest,
@@ -90,12 +93,15 @@ import type {
   SavedSearch,
   Service,
   UpdateSavedSearchRequest,
+  UpdateServiceRequest,
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
   UpsertPortfolioItemRequest,
   Wallet,
-  WalletTransaction,
+  WalletTransactionsPage,
+  WalletTransactionsQuery,
   Withdrawal,
+  CreateWithdrawalRequest,
 } from '@escambo/types';
 
 const BASE_URL = '/api';
@@ -265,9 +271,56 @@ export class ApiRequestError extends Error {
   }
 }
 
+/**
+ * Mensagens para quando a API não diz nada (RNF-028): o navegador não alcançou o servidor
+ * ("Failed to fetch") ou a resposta não trouxe JSON (502 do proxy, página HTML de erro).
+ */
+export const NETWORK_ERROR_MESSAGE =
+  'Sem conexão com o servidor. Confira sua internet e tente de novo.';
+export const UNAVAILABLE_MESSAGE = 'Serviço indisponível no momento. Tente de novo em instantes.';
+
+/** Texto da falha pelo status HTTP, para a resposta de erro que não trouxe mensagem. */
+export function statusMessage(status: number): string {
+  if (status >= 500) return UNAVAILABLE_MESSAGE;
+  switch (status) {
+    case 401:
+      return 'Sua sessão terminou. Entre de novo para continuar.';
+    case 403:
+      return 'Você não tem permissão para fazer isso.';
+    case 404:
+      return 'Não encontramos o que você pediu.';
+    case 413:
+      return 'O envio passou do tamanho permitido.';
+    case 429:
+      return 'Muitas tentativas. Tente novamente em alguns minutos.';
+    default:
+      return 'Não foi possível concluir. Tente de novo.';
+  }
+}
+
+/** fetch que troca a falha de rede pela mensagem em português; o cancelamento segue como veio. */
+async function send(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    if ((error as { name?: unknown } | null)?.name === 'AbortError') throw error;
+    throw new ApiRequestError(NETWORK_ERROR_MESSAGE, 0, 'network_error');
+  }
+}
+
+/** Corpo de erro lido como objeto; JSON que não é objeto (null, lista, texto) vale como vazio. */
+function errorBody(data: unknown): { error?: unknown; message?: unknown; contractId?: unknown } {
+  return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+}
+
+/** A mensagem que a API mandou, se for texto de verdade. */
+function apiMessage(body: { message?: unknown }): string | undefined {
+  return typeof body.message === 'string' && body.message.trim() ? body.message : undefined;
+}
+
 async function request<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
   const token = accessToken;
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await send(`${BASE_URL}${path}`, {
     ...options,
     headers: {
       // FormData (upload): o navegador põe o Content-Type com o boundary do multipart.
@@ -291,14 +344,16 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
   }
   if (res.status === 204) return undefined as T;
   const data: unknown = await res.json().catch(() => ({}));
-  accountErrorResponse(res, token, data);
   if (!res.ok) {
-    const err = data as { error?: string; message?: string; contractId?: unknown };
-    if (res.status === 503 && err.error === 'maintenance') emit(MAINTENANCE_EVENT);
+    const err = errorBody(data);
+    accountErrorResponse(res, token, err);
+    const code = typeof err.error === 'string' ? err.error : undefined;
+    if (res.status === 503 && code === 'maintenance') emit(MAINTENANCE_EVENT);
+    // Sem mensagem da API (proxy, HTML, só o código), quem usa lê o que houve, e não "Erro 502".
     throw new ApiRequestError(
-      err.message ?? err.error ?? `Erro ${res.status}`,
+      apiMessage(err) ?? statusMessage(res.status),
       res.status,
-      err.error,
+      code,
       err.contractId,
     );
   }
@@ -328,7 +383,7 @@ async function fetchBlob(
   const fetchIt = async () => {
     const token = accessToken;
     responseToken = token;
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await send(`${BASE_URL}${path}`, {
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     });
     accountStatusResponse(res, token);
@@ -338,9 +393,13 @@ async function fetchBlob(
   if (res.status === 401 && responseToken === accessToken && (await refreshSession()))
     res = await fetchIt();
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    const body = errorBody(await res.json().catch(() => ({})));
     accountErrorResponse(res, responseToken, body);
-    throw new Error(body.message ?? `Erro ${res.status} ao ${what}`);
+    throw new ApiRequestError(
+      apiMessage(body) ?? `Não foi possível ${what}. ${statusMessage(res.status)}`,
+      res.status,
+      typeof body.error === 'string' ? body.error : undefined,
+    );
   }
   const fileName = fileNameFrom(res.headers.get('content-disposition') ?? '', fallbackName);
   return { blob: await res.blob(), fileName };
@@ -353,12 +412,29 @@ const financeQs = (q: { from?: string; to?: string; granularity: string }): stri
     Object.entries(q).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1] !== ''),
   ).toString();
 
+/** Query string do extrato de R$ (só os campos preenchidos). */
+function walletQuery(query: WalletTransactionsQuery): string {
+  const search = new URLSearchParams();
+  if (query.page != null) search.set('page', String(query.page));
+  if (query.limit != null) search.set('limit', String(query.limit));
+  if (query.from) search.set('from', query.from);
+  if (query.to) search.set('to', query.to);
+  return search.size ? `?${search}` : '';
+}
+
 function supportQuery(query: SupportTicketQuery): string {
   const search = new URLSearchParams();
   if (query.page != null) search.set('page', String(query.page));
   if (query.limit != null) search.set('limit', String(query.limit));
   if (query.status) search.set('status', query.status);
   return search.size ? `?${search}` : '';
+}
+
+/** Filtro da lista de contratações (RF-040): sem status, todas. */
+export interface ContractListQuery {
+  page?: number;
+  limit?: number;
+  status?: ContractStatus[];
 }
 
 export const api = {
@@ -419,6 +495,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ token, password }),
     }),
+  /**
+   * Troca de senha com login (RF-017). A API encerra todas as sessões e devolve um par novo só
+   * para esta: guardá-lo aqui é o que mantém a pessoa dentro (o refresh antigo já não vale).
+   */
+  changePassword: async (body: ChangePasswordRequest): Promise<RefreshResponse> => {
+    const tokens = await request<RefreshResponse>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    setSession({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
+    return tokens;
+  },
 
   // dashboard
   wallet: () => request<Wallet>('/wallet'),
@@ -452,9 +540,21 @@ export const api = {
   deleteSavedSearch: (id: number) => request<void>(`/saved-searches/${id}`, { method: 'DELETE' }),
   createService: (body: CreateServiceRequest) =>
     request<Service>('/services', { method: 'POST', body: JSON.stringify(body) }),
+  /** "Meus serviços" (RF-030): os do dono, pausados inclusive (a busca só traz os ativos). */
+  myServices: () => request<Service[]>('/services/mine'),
+  /** Edita o serviço; `{ isActive }` sozinho pausa ou reativa (RF-030). */
+  updateService: (id: number, body: UpdateServiceRequest) =>
+    request<Service>(`/services/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   // contratações
-  contracts: () => request<Paginated<Contract>>('/contracts'),
+  /** Lista do painel (RF-040): página, limite e filtro por status; o total vem da API. */
+  contracts: (query: ContractListQuery = {}) => {
+    const qs = new URLSearchParams();
+    if (query.page != null) qs.set('page', String(query.page));
+    if (query.limit != null) qs.set('limit', String(query.limit));
+    if (query.status?.length) qs.set('status', query.status.join(','));
+    return request<ContractList>(`/contracts${qs.size ? `?${qs}` : ''}`);
+  },
   createContract: (body: CreateContractRequest) =>
     request<Contract>('/contracts', { method: 'POST', body: JSON.stringify(body) }),
   contractDetail: (id: number) => request<ContractWithHistory>(`/contracts/${id}`),
@@ -557,7 +657,9 @@ export const api = {
     }),
 
   // carteira: extrato de R$, depósitos (PIX via gateway) e saques
-  walletTransactions: () => request<Paginated<WalletTransaction>>('/wallet/transactions'),
+  /** Extrato de R$; `from`/`to` (dias, no fuso da conta) filtram o período (RF-047). */
+  walletTransactions: (query: WalletTransactionsQuery = {}) =>
+    request<WalletTransactionsPage>(`/wallet/transactions${walletQuery(query)}`),
   deposits: () => request<Paginated<Deposit>>('/wallet/deposits'),
   deposit: (id: number) => request<Deposit>(`/wallet/deposits/${id}`),
   createDeposit: (body: CreateDepositRequest) =>
@@ -565,7 +667,7 @@ export const api = {
   simulateDeposit: (id: number) =>
     request<Deposit>(`/wallet/deposits/${id}/simulate`, { method: 'POST' }),
   withdrawals: () => request<Paginated<Withdrawal>>('/withdrawals'),
-  requestWithdrawal: (body: { amount: number; method: 'pix' | 'bank'; pixKey?: string }) =>
+  requestWithdrawal: (body: CreateWithdrawalRequest) =>
     request<Withdrawal>('/withdrawals', { method: 'POST', body: JSON.stringify(body) }),
   cancelWithdrawal: (id: number) =>
     request<Withdrawal>(`/withdrawals/${id}/cancel`, { method: 'POST' }),

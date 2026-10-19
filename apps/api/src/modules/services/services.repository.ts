@@ -100,6 +100,10 @@ const periodCondition = (path: string, period: string): string =>
 /** O texto da busca como "contém" no LIKE: %, _ e a própria barra valem como texto (ESCAPE '\'). */
 export const likeContains = (text: string): string => `%${text.replace(/[\\%_]/g, '\\$&')}%`;
 
+/** Impulsionamento ativo do serviço (ranqueia no topo e trava o "Impulsionar" do dono). */
+const BOOSTED_EXPR = `EXISTS(SELECT 1 FROM boosts bo
+        WHERE bo.service_id = s.id AND bo.status = 'active' AND bo.expires_at > NOW())`;
+
 /** Quem presta o serviço: nome e reputação (avg_rating/total_reviews são mantidos pelo módulo de reviews). */
 const OWNER_COLS = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, pf.available_days AS owner_available_days, pf.available_periods AS owner_available_periods, pf.is_available AS owner_is_available, u.timezone AS owner_timezone`;
 
@@ -225,10 +229,6 @@ export const servicesRepository = {
     }
     const sort = filters.sort ?? 'relevance';
 
-    // Impulsionamento ativo do serviço (ranqueia no topo).
-    const boostedExpr = `EXISTS(SELECT 1 FROM boosts bo
-        WHERE bo.service_id = s.id AND bo.status = 'active' AND bo.expires_at > NOW())`;
-
     const geo = filters.lat !== undefined && filters.lng !== undefined;
 
     // Descoberta local: distância (Haversine, km) ao ponto pesquisado, do dono do serviço.
@@ -243,7 +243,7 @@ export const servicesRepository = {
       // (evita HAVING sem GROUP BY, que é problemático no MySQL 8).
       const [rows] = await pool.query<ServiceRow[]>(
         `SELECT * FROM (
-           SELECT s.*, ${distanceExpr} AS distance_km, ${boostedExpr} AS boosted, ${OWNER_COLS}
+           SELECT s.*, ${distanceExpr} AS distance_km, ${BOOSTED_EXPR} AS boosted, ${OWNER_COLS}
              FROM services s
              JOIN users u ON u.id = s.user_id
              JOIN profiles_freelancer pf ON pf.user_id = s.user_id
@@ -260,13 +260,28 @@ export const servicesRepository = {
 
     // limit/offset são inteiros validados (Zod) — seguros para interpolar.
     const [rows] = await pool.query<ServiceRow[]>(
-      `SELECT s.*, ${boostedExpr} AS boosted, ${OWNER_COLS} FROM services s
+      `SELECT s.*, ${BOOSTED_EXPR} AS boosted, ${OWNER_COLS} FROM services s
         JOIN users u ON u.id = s.user_id
         LEFT JOIN profiles_freelancer pf ON pf.user_id = s.user_id
         WHERE ${where.join(' AND ')}
         ORDER BY ${orderClause(sort, false)}
         LIMIT ${filters.limit} OFFSET ${filters.offset}`,
       params,
+    );
+    return rows;
+  },
+
+  /**
+   * "Meus serviços" (RF-030): todos os do dono, pausados inclusive, porque a busca só mostra os
+   * ativos e sem esta lista o pausado some para quem o pausou. Os excluídos não voltam. Do mais
+   * novo para o mais antigo, para o card não mudar de lugar ao pausar ou reativar.
+   */
+  async listByOwner(userId: number): Promise<ServiceRow[]> {
+    const [rows] = await pool.query<ServiceRow[]>(
+      `SELECT s.*, ${BOOSTED_EXPR} AS boosted FROM services s
+        WHERE s.user_id = :userId AND s.deleted_at IS NULL
+        ORDER BY s.created_at DESC, s.id DESC`,
+      { userId },
     );
     return rows;
   },

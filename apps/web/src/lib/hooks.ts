@@ -10,6 +10,7 @@ import type {
   CreateContentReportRequest,
   CreateContractRequest,
   CounterOfferRequest,
+  ContractStatus,
   AdminReportAction,
   AppealDecision,
   CreateDepositRequest,
@@ -21,9 +22,11 @@ import type {
   PortfolioItem,
   ResolveDisputeRequest,
   UpdateSavedSearchRequest,
+  UpdateServiceRequest,
   UpsertClientProfileRequest,
   UpsertFreelancerProfileRequest,
   UpsertPortfolioItemRequest,
+  CreateWithdrawalRequest,
 } from '@escambo/types';
 import { api, type ServiceQuery } from './api';
 import { orderByIds } from './reorder';
@@ -159,16 +162,58 @@ export const useServicesInfinite = (p?: Omit<ServiceQuery, 'page' | 'limit'>) =>
     getNextPageParam: (last) => (last.items.length === SERVICES_PAGE ? last.page + 1 : undefined),
   });
 
-export const useContracts = () =>
-  useQuery({ queryKey: qk.contracts, queryFn: () => api.contracts() });
+export const CONTRACTS_PAGE = 20;
+
+/**
+ * Lista de contratações do painel (RF-040): acumula páginas ("carregar mais") e sabe pelo total da
+ * API se há mais. A chave fica sob `qk.contracts`: toda ação que invalida a lista alcança o filtro.
+ */
+export const useContractList = (status: ContractStatus[] = []) =>
+  useInfiniteQuery({
+    queryKey: [...qk.contracts, 'list', status] as const,
+    queryFn: ({ pageParam }) =>
+      api.contracts({
+        page: pageParam,
+        limit: CONTRACTS_PAGE,
+        ...(status.length > 0 ? { status } : {}),
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (last, pages) =>
+      last.items.length > 0 && pages.reduce((n, p) => n + p.items.length, 0) < last.total
+        ? last.page + 1
+        : undefined,
+  });
 export const useContractDetail = (id: number) =>
   useQuery({ queryKey: qk.contract(id), queryFn: () => api.contractDetail(id) });
 export const useChatHistory = (id: number) =>
   useQuery({ queryKey: qk.chat(id), queryFn: () => api.chatHistory(id) });
 export const useWithdrawals = () =>
   useQuery({ queryKey: qk.withdrawals, queryFn: () => api.withdrawals() });
-export const useWalletTransactions = () =>
-  useQuery({ queryKey: qk.walletTransactions, queryFn: () => api.walletTransactions() });
+/** Tamanho da página do extrato de R$ ("Carregar mais" traz a próxima). */
+export const WALLET_TX_PAGE = 20;
+
+/** Período do extrato de R$ (RF-047): dias "AAAA-MM-DD", no fuso da conta; vazio = tudo. */
+export interface WalletPeriod {
+  from?: string;
+  to?: string;
+}
+
+/**
+ * Extrato de R$ paginado e filtrado por período: acumula as páginas e sabe se há mais pelo
+ * `hasMore` da API. Período invertido não vai à API (a tela avisa). A chave começa por
+ * qk.walletTransactions: o que invalida o extrato invalida todos os períodos e páginas.
+ */
+export const useWalletTransactions = (period: WalletPeriod = {}) => {
+  const p = { from: period.from || undefined, to: period.to || undefined };
+  return useInfiniteQuery({
+    queryKey: [...qk.walletTransactions, p] as const,
+    queryFn: ({ pageParam }) =>
+      api.walletTransactions({ ...p, page: pageParam, limit: WALLET_TX_PAGE }),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
+    enabled: !(p.from && p.to && p.from > p.to),
+  });
+};
 export const useDeposits = () => useQuery({ queryKey: qk.deposits, queryFn: () => api.deposits() });
 /** Situação de uma cobrança; enquanto pendente, consulta a cada 3 s (o webhook pode chegar a qualquer momento). */
 export const useDeposit = (id: number | null, poll: boolean) =>
@@ -446,6 +491,20 @@ export function useCreateService() {
   });
 }
 
+/** "Meus serviços" (RF-030): debaixo de ['services'], então criar, editar e pausar já a recarregam. */
+export const useMyServices = () =>
+  useQuery({ queryKey: ['services', 'mine'] as const, queryFn: () => api.myServices() });
+
+/** Edita, pausa ou reativa um serviço; recarrega a busca, o perfil público e "meus serviços". */
+export function useUpdateService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: number; body: UpdateServiceRequest }) =>
+      api.updateService(id, body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['services'] }),
+  });
+}
+
 export function useSendMessage(contractId: number) {
   const qc = useQueryClient();
   return useMutation({
@@ -511,8 +570,7 @@ export function useCancelWithdrawal() {
 export function useRequestWithdrawal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { amount: number; method: 'pix' | 'bank'; pixKey?: string }) =>
-      api.requestWithdrawal(body),
+    mutationFn: (body: CreateWithdrawalRequest) => api.requestWithdrawal(body),
     onSuccess: () => invalidateWallet(qc),
   });
 }

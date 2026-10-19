@@ -5,7 +5,7 @@ import type { Service } from '@escambo/types';
 import type { ComponentProps } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ServiceCard } from './ServiceCard';
+import { ServiceCard, servicePrice } from './ServiceCard';
 import { AccountAccessProvider } from '../../lib/account-access';
 
 const publicSettings = vi.fn();
@@ -100,7 +100,30 @@ describe('ServiceCard', () => {
     );
     expect(screen.getByRole('img', { name: '4.5 de 5, 12 avaliações' })).toBeInTheDocument();
     expect(screen.queryByText('remoto')).not.toBeInTheDocument();
+    expect(screen.getByText('presencial')).toBeInTheDocument();
     expect(screen.queryByText('Destaque')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pausado')).not.toBeInTheDocument();
+  });
+
+  it('preço por hora leva "/h", e prazo de 1 dia fica no singular', () => {
+    renderCard({ service: service({ priceType: 'hourly', price: 80, deliveryDays: 1 }) });
+    expect(screen.getByText('R$ 80,00/h')).toBeInTheDocument();
+    expect(screen.getByText('1 dia')).toBeInTheDocument();
+  });
+
+  it('a combinar mostra "a combinar" mesmo com um preço guardado', () => {
+    renderCard({ service: service({ priceType: 'negotiable', price: 300 }) });
+    expect(screen.getByText('a combinar')).toBeInTheDocument();
+    expect(screen.queryByText('R$ 300,00')).not.toBeInTheDocument();
+  });
+
+  it('servicePrice: fixo, por hora e a combinar, e sem preço é sempre "a combinar"', () => {
+    // O brl separa "R$" do valor com espaço sem quebra; aqui vale o texto como se lê.
+    const plain = (text: string): string => text.replace(/\s/g, ' ');
+    expect(plain(servicePrice({ priceType: 'fixed', price: 150 }))).toBe('R$ 150,00');
+    expect(plain(servicePrice({ priceType: 'hourly', price: 45.5 }))).toBe('R$ 45,50/h');
+    expect(servicePrice({ priceType: 'negotiable', price: null })).toBe('a combinar');
+    expect(servicePrice({ priceType: 'hourly', price: null })).toBe('a combinar');
   });
 
   it('sem preço diz "a combinar"; na busca por proximidade a distância toma o lugar do prazo', () => {
@@ -278,6 +301,57 @@ describe('ServiceCard', () => {
 
     expect(screen.queryByRole('button', { name: 'Propor troca' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Contratar' })).toBeInTheDocument();
+  });
+
+  describe('meus serviços (RF-030)', () => {
+    it('ativo: "Impulsionar", "Editar" e "Pausar", cada um devolvendo o serviço', async () => {
+      const user = userEvent.setup();
+      const s = service();
+      const onEdit = vi.fn();
+      const onToggleActive = vi.fn();
+      const { onBoost } = renderCard({ service: s, mine: true, onEdit, onToggleActive });
+
+      await user.click(screen.getByRole('button', { name: 'Editar' }));
+      await user.click(screen.getByRole('button', { name: 'Pausar' }));
+      await user.click(screen.getByRole('button', { name: 'Impulsionar' }));
+      expect(onEdit.mock.calls).toEqual([[s]]);
+      expect(onToggleActive.mock.calls).toEqual([[s]]);
+      expect(onBoost.mock.calls).toEqual([[s]]);
+      expect(screen.queryByTestId('paused-note')).not.toBeInTheDocument();
+    });
+
+    it('pausado: selo "Pausado" em texto, o aviso do que muda, "Reativar" e nada de impulsionar (RN-017)', async () => {
+      const user = userEvent.setup();
+      const s = service({ isActive: false });
+      const onToggleActive = vi.fn();
+      renderCard({ service: s, mine: true, onEdit: vi.fn(), onToggleActive });
+
+      expect(screen.getByText('Pausado')).toBeInTheDocument();
+      expect(screen.getByTestId('paused-note')).toHaveTextContent(
+        'Fora da busca e sem propostas novas. Os contratos em andamento continuam.',
+      );
+      expect(screen.queryByRole('button', { name: /Impulsion/ })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Reativar' }));
+      expect(onToggleActive.mock.calls).toEqual([[s]]);
+    });
+
+    it('enquanto salva a pausa, o botão trava dizendo "Salvando…"', () => {
+      renderCard({ mine: true, onToggleActive: vi.fn(), toggling: true });
+      expect(screen.getByRole('button', { name: 'Salvando…' })).toBeDisabled();
+    });
+
+    it('sem quem trate edição e pausa (busca), o dono só vê "Impulsionar"', () => {
+      renderCard({ mine: true });
+      expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Pausar' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Impulsionar' })).toBeInTheDocument();
+    });
+
+    it('conta suspensa não edita nem pausa', async () => {
+      renderCard({ mine: true, onEdit: vi.fn(), onToggleActive: vi.fn() }, 'suspended');
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Editar' })).toBeDisabled());
+      expect(screen.getByRole('button', { name: 'Pausar' })).toBeDisabled();
+    });
   });
 
   it('com a troca desligada pela plataforma, "Propor troca" some e "Contratar" fica', async () => {

@@ -46,7 +46,9 @@ vi.mock('./contracts.repository', () => ({
     create: vi.fn(),
     findById: vi.fn(),
     listForUser: vi.fn(),
+    countForUser: vi.fn(),
     listHistory: vi.fn(),
+    listDeliveries: vi.fn(),
     transition: vi.fn(),
     deliver: vi.fn(),
   },
@@ -174,6 +176,7 @@ type FakeFields = Partial<{
   accepted_at: Date | null;
   overdue_notified_at: Date | null;
   created_at: Date;
+  deliveries_count: number;
 }>;
 
 function fakeRow(o: FakeFields = {}): ContractRow {
@@ -838,6 +841,67 @@ describe('getById', () => {
     expect(repo.transition).not.toHaveBeenCalled();
     expect(milestonesRepository.listForContract).not.toHaveBeenCalled();
     expect(milestonesRepository.escrowRemaining).not.toHaveBeenCalled();
+    // Sem entrega registrada, nem consulta a tabela delas (RF-035).
+    expect(c.deliveries).toEqual([]);
+    expect(repo.listDeliveries).not.toHaveBeenCalled();
+  });
+
+  it('com entrega registrada, o detalhe traz cada entrega com a mensagem, os links e a data (RF-035)', async () => {
+    repo.findById.mockResolvedValue(
+      fakeRow({ client_id: 1, freelancer_id: 2, status: 'delivered', deliveries_count: 4 }),
+    );
+    repo.listHistory.mockResolvedValue([]);
+    repo.listDeliveries.mockResolvedValue([
+      // O driver devolve o JSON já lido…
+      {
+        id: 3,
+        message: 'Primeira versão do vídeo',
+        files: ['https://cdn.escambo.test/v1.mp4'],
+        delivered_at: new Date('2026-10-02T12:00:00Z'),
+      },
+      // …ou como texto; e a entrega só com a mensagem tem files null.
+      {
+        id: 5,
+        message: 'Corrigi a trilha',
+        files: '["https://cdn.escambo.test/v2.mp4", 7]',
+        delivered_at: new Date('2026-10-04T15:30:00Z'),
+      },
+      {
+        id: 6,
+        message: 'Só a legenda',
+        files: null,
+        delivered_at: new Date('2026-10-05T10:00:00Z'),
+      },
+      {
+        id: 7,
+        message: 'Texto torto',
+        files: '{quebrado',
+        delivered_at: new Date('2026-10-06T10:00:00Z'),
+      },
+    ] as never);
+
+    // As duas partes leem as mesmas entregas.
+    for (const viewer of [1, 2]) {
+      const c = await contractsService.getById(1, viewer);
+      expect(c.deliveries).toEqual([
+        {
+          id: 3,
+          message: 'Primeira versão do vídeo',
+          files: ['https://cdn.escambo.test/v1.mp4'],
+          deliveredAt: '2026-10-02T12:00:00.000Z',
+        },
+        {
+          id: 5,
+          message: 'Corrigi a trilha',
+          files: ['https://cdn.escambo.test/v2.mp4'],
+          deliveredAt: '2026-10-04T15:30:00.000Z',
+        },
+        { id: 6, message: 'Só a legenda', files: [], deliveredAt: '2026-10-05T10:00:00.000Z' },
+        { id: 7, message: 'Texto torto', files: [], deliveredAt: '2026-10-06T10:00:00.000Z' },
+      ]);
+    }
+    expect(repo.listDeliveries).toHaveBeenCalledTimes(2);
+    expect(repo.listDeliveries).toHaveBeenCalledWith(1);
   });
 
   it('o cancelamento calculado só acompanha a contratação enquanto ela pode ser cancelada', async () => {
@@ -930,16 +994,33 @@ describe('listMine', () => {
       fakeRow({ id: 8 }),
     ]);
 
+    repo.countForUser.mockResolvedValue(42);
+
     const page = await contractsService.listMine(7, { page: 3, limit: 20 });
 
     // Página 3 de 20 em 20: pula as 40 primeiras.
-    expect(repo.listForUser).toHaveBeenCalledWith(7, 20, 40);
+    expect(repo.listForUser).toHaveBeenCalledWith(7, 20, 40, undefined);
     expect(page.page).toBe(3);
     expect(page.limit).toBe(20);
+    // O total é de todas as contratações, não só da página (RF-040).
+    expect(page.total).toBe(42);
+    expect(repo.countForUser).toHaveBeenCalledWith(7, undefined);
     expect(page.items.map((c) => [c.id, c.status, c.price, c.freelancerNet])).toEqual([
       [9, 'accepted', 1000, 850],
       [8, 'pending', 1000, 850],
     ]);
+  });
+
+  it('o filtro de status vale para a página e para o total (RF-040)', async () => {
+    repo.listForUser.mockResolvedValue([fakeRow({ id: 4, status: 'completed' })]);
+    repo.countForUser.mockResolvedValue(1);
+
+    const page = await contractsService.listMine(7, { page: 1, limit: 10, status: ['completed'] });
+
+    expect(repo.listForUser).toHaveBeenCalledWith(7, 10, 0, ['completed']);
+    expect(repo.countForUser).toHaveBeenCalledWith(7, ['completed']);
+    expect(page).toMatchObject({ page: 1, limit: 10, total: 1 });
+    expect(page.items.map((c) => c.status)).toEqual(['completed']);
   });
 });
 

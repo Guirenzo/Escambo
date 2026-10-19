@@ -44,6 +44,15 @@ export interface PublicFreelancerRow extends FreelancerRow {
   ulid: string;
   level: number;
   level_name: string;
+  /** XP acumulado (RF-068); 0 para quem ainda não tem linha em user_xp. */
+  total_xp: number;
+}
+
+/** Badge conquistada, como o perfil público mostra (RF-015). */
+export interface PublicBadgeRow extends RowDataPacket {
+  slug: string;
+  name: string;
+  awarded_at: Date;
 }
 
 export const profilesRepository = {
@@ -226,7 +235,8 @@ export const profilesRepository = {
       `SELECT pf.full_name, pf.avatar_url, pf.bio, pf.headline, pf.city, pf.state,
               pf.latitude, pf.longitude, pf.is_available, pf.available_days, pf.available_periods,
               pf.avg_rating, pf.total_reviews, pf.total_contracts, pf.response_time_hours, u.timezone,
-              u.id AS user_id, u.ulid, COALESCE(ux.level, 1) AS level, COALESCE(ux.level_name, 'Iniciante') AS level_name
+              u.id AS user_id, u.ulid, COALESCE(ux.level, 1) AS level, COALESCE(ux.level_name, 'Iniciante') AS level_name,
+              COALESCE(ux.total_xp, 0) AS total_xp
          FROM users u
          JOIN profiles_freelancer pf ON pf.user_id = u.id
          LEFT JOIN user_xp ux ON ux.user_id = u.id
@@ -234,5 +244,22 @@ export const profilesRepository = {
       { ulid },
     );
     return rows[0];
+  },
+
+  /**
+   * Badges conquistadas, da mais recente para a mais antiga (RF-015). Duas no mesmo segundo (a do
+   * primeiro contrato e a dos critérios saem juntas) desempatam pela ordem de concessão, para as
+   * 3 em destaque (RN-058) não trocarem de lugar a cada visita.
+   */
+  async listBadges(userId: number): Promise<PublicBadgeRow[]> {
+    const [rows] = await pool.query<PublicBadgeRow[]>(
+      `SELECT b.slug, b.name, ub.awarded_at
+         FROM user_badges ub
+         JOIN badges b ON b.id = ub.badge_id
+        WHERE ub.user_id = :userId
+        ORDER BY ub.awarded_at DESC, ub.id DESC`,
+      { userId },
+    );
+    return rows;
   },
 };

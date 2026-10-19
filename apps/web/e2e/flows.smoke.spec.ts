@@ -43,6 +43,10 @@ test('cliente pede revisão da entrega na Sala; o freelancer vê "Entregar revis
   await settled(page);
   await expect(page.getByText(/aprovada automaticamente/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Aprovar entrega' })).toBeVisible();
+  // RF-035: o cliente lê na Sala a mensagem que veio com a entrega.
+  await expect(
+    page.getByRole('region', { name: 'Entregas' }).getByText('Primeira versão entregue.'),
+  ).toBeVisible();
 
   page.once('dialog', (d) => void d.accept('Ajustar as cores do rodapé'));
   await page.getByRole('button', { name: 'Pedir revisão' }).click();

@@ -583,6 +583,35 @@ describe('servicesRepository', () => {
     });
   });
 
+  describe('listByOwner (meus serviços, RF-030)', () => {
+    it('traz os serviços do dono, pausados inclusive e sem os excluídos, do mais novo ao mais antigo, com o destaque', async () => {
+      const rows = [
+        { id: 9, user_id: 7, is_active: 0 },
+        { id: 4, user_id: 7, is_active: 1 },
+      ];
+      fakeDb.reply(rows);
+
+      expect(await servicesRepository.listByOwner(7)).toBe(rows);
+
+      expect(fakeDb.calls).toHaveLength(1);
+      expect(fakeDb.calls[0]!.sql).toBe(
+        'SELECT s.*, ' +
+          "EXISTS(SELECT 1 FROM boosts bo WHERE bo.service_id = s.id AND bo.status = 'active' AND bo.expires_at > NOW()) AS boosted " +
+          'FROM services s WHERE s.user_id = :userId AND s.deleted_at IS NULL ' +
+          'ORDER BY s.created_at DESC, s.id DESC',
+      );
+      // Nada de is_active = 1: é justamente o pausado que a busca esconde.
+      expect(fakeDb.calls[0]!.sql).not.toContain('is_active');
+      expect(fakeDb.calls[0]!.params).toEqual({ userId: 7 });
+    });
+
+    it('a falha do banco sobe para quem chamou', async () => {
+      const boom = new Error('ER_LOCK_WAIT_TIMEOUT');
+      fakeDb.reply(boom);
+      await expect(servicesRepository.listByOwner(7)).rejects.toBe(boom);
+    });
+  });
+
   it('softDelete marca a remoção e tira do ar, sem apagar a linha', async () => {
     fakeDb.reply({ affectedRows: 1 });
 

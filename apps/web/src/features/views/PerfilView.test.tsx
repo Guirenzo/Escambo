@@ -37,6 +37,8 @@ const api = vi.hoisted(() => ({
   exportRequests: vi.fn(),
   consents: vi.fn(),
   deletionRequests: vi.fn(),
+  // Troca de senha (RF-017), no cartão "Senha".
+  changePassword: vi.fn(),
 }));
 vi.mock('../../lib/api', () => ({ api }));
 
@@ -689,5 +691,32 @@ describe('PerfilView: avaliações recebidas', () => {
     expect(await received().findByText('Bom trabalho, entregou no prazo.')).toBeVisible();
     expect(api.reviews).toHaveBeenCalledTimes(2);
     expect(api.reviews).toHaveBeenLastCalledWith(7);
+  });
+});
+
+describe('PerfilView: troca de senha (RF-017)', () => {
+  it('o Perfil tem o cartão "Senha", junto da privacidade, e troca pela API com a atual e a nova', async () => {
+    const user = userEvent.setup({ delay: null });
+    api.changePassword.mockResolvedValue({ accessToken: 'a', refreshToken: 'r' });
+    renderView();
+
+    const form = within(await screen.findByRole('form', { name: 'Trocar senha' }));
+    await user.type(form.getByLabelText('Senha atual'), 'senha-antiga-1');
+    await user.type(form.getByLabelText('Nova senha'), 'senha-nova-123');
+    await user.type(form.getByLabelText('Confirmar nova senha'), 'senha-nova-123');
+    await user.click(form.getByRole('button', { name: 'Trocar senha' }));
+
+    await waitFor(() =>
+      expect(api.changePassword).toHaveBeenCalledWith({
+        currentPassword: 'senha-antiga-1',
+        newPassword: 'senha-nova-123',
+      }),
+    );
+    expect(
+      await screen.findByText('Senha alterada. As outras sessões foram encerradas.'),
+    ).toBeInTheDocument();
+    // Nenhum dos formulários de perfil foi enviado junto.
+    expect(api.putFreelancerProfile).not.toHaveBeenCalled();
+    expect(api.putClientProfile).not.toHaveBeenCalled();
   });
 });

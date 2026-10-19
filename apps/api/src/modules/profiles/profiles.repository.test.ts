@@ -353,5 +353,37 @@ describe('profilesRepository', () => {
       expect(params).toEqual({ ulid: 'U' });
       expect(fakeDb.calls[1]!.params).toEqual({ ulid: 'X' });
     });
+
+    it('o perfil público traz o XP acumulado, 0 para quem ainda não tem linha de XP (RF-068)', async () => {
+      fakeDb.reply([]);
+
+      await profilesRepository.findPublicFreelancerByUlid('U');
+
+      expect(fakeDb.calls[0]!.sql).toContain(
+        "COALESCE(ux.level_name, 'Iniciante') AS level_name, COALESCE(ux.total_xp, 0) AS total_xp FROM users u",
+      );
+    });
+  });
+
+  describe('listBadges', () => {
+    it('as badges do usuário, da mais recente para a mais antiga, desempatando pela ordem de concessão', async () => {
+      const rows = [
+        { slug: 'top-rated', name: 'Bem avaliado', awarded_at: new Date('2026-10-02T12:00:00Z') },
+        {
+          slug: 'first-deal',
+          name: 'Primeiro negócio',
+          awarded_at: new Date('2026-09-01T12:00:00Z'),
+        },
+      ];
+      fakeDb.reply(rows);
+
+      expect(await profilesRepository.listBadges(7)).toBe(rows);
+
+      const { sql, params } = fakeDb.calls[0]!;
+      expect(sql).toBe(
+        'SELECT b.slug, b.name, ub.awarded_at FROM user_badges ub JOIN badges b ON b.id = ub.badge_id WHERE ub.user_id = :userId ORDER BY ub.awarded_at DESC, ub.id DESC',
+      );
+      expect(params).toEqual({ userId: 7 });
+    });
   });
 });

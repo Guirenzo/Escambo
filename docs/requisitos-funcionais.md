@@ -43,7 +43,7 @@
 | RF-012 | O freelancer deve poder adicionar itens ao portfólio com título, descrição e imagem                | Alta       | Implementado |
 | RF-013 | O freelancer deve poder definir sua disponibilidade (disponível / indisponível)                    | Alta       | Implementado |
 | RF-014 | O cliente deve poder visualizar o perfil completo do freelancer antes de contratar                 | Alta       | Implementado |
-| RF-015 | O sistema deve exibir no perfil do freelancer: nota média, total de serviços e badges conquistadas | Alta       | Parcial |
+| RF-015 | O sistema deve exibir no perfil do freelancer: nota média, total de serviços e badges conquistadas | Alta       | Implementado |
 | RF-016 | O sistema deve exibir o tempo médio de resposta do freelancer em seu perfil                        | Média      | Implementado |
 | RF-017 | O usuário deve poder editar seus dados pessoais a qualquer momento                                 | Alta       | Parcial |
 | RF-018 | O sistema deve suportar perfil do tipo empresa com CNPJ, logo e dados corporativos                 | Baixa      | Não implementado |
@@ -56,7 +56,7 @@
 | ID     | Descrição                                                                                          | Prioridade | Status   |
 | ------ | -------------------------------------------------------------------------------------------------- | ---------- | -------- |
 | RF-021 | O sistema deve disponibilizar um catálogo hierárquico de categorias e subcategorias de serviços    | Alta       | Implementado |
-| RF-022 | O freelancer deve poder cadastrar serviços com título, descrição, tipo de preço e prazo de entrega | Alta       | Parcial |
+| RF-022 | O freelancer deve poder cadastrar serviços com título, descrição, tipo de preço e prazo de entrega | Alta       | Implementado |
 | RF-023 | O freelancer deve poder marcar um serviço como remoto, presencial ou ambos                         | Alta       | Parcial |
 | RF-024 | O freelancer deve poder adicionar tags ao serviço para facilitar a busca                           | Média      | Não implementado |
 | RF-025 | O cliente deve poder buscar serviços por categoria, localização e faixa de preço                   | Alta       | Implementado |
@@ -64,7 +64,7 @@
 | RF-027 | O sistema deve permitir filtrar serviços por nota mínima do profissional                           | Média      | Implementado |
 | RF-028 | O sistema deve exibir serviços impulsionados em destaque no topo dos resultados de busca           | Média      | Implementado |
 | RF-029 | O sistema deve registrar e exibir o número de visualizações de cada serviço ao freelancer          | Média      | Não implementado |
-| RF-030 | O freelancer deve poder ativar e desativar serviços sem excluí-los                                 | Alta       | Parcial |
+| RF-030 | O freelancer deve poder ativar e desativar serviços sem excluí-los                                 | Alta       | Implementado |
 ---
 
 ## Módulo 04 — Contratações
@@ -80,7 +80,7 @@
 | RF-037 | O sistema deve liberar o pagamento ao freelancer somente após a conclusão confirmada pelo cliente                                                                                                     | Alta       | Implementado |
 | RF-038 | O sistema deve permitir cancelamento de contratação com política de reembolso definida                                                                                                                | Média      | Implementado |
 | RF-039 | O sistema deve notificar ambas as partes a cada mudança de status na contratação                                                                                                                      | Alta       | Implementado |
-| RF-040 | O sistema deve exibir histórico completo de contratações no painel do usuário                                                                                                                         | Alta       | Parcial |
+| RF-040 | O sistema deve exibir histórico completo de contratações no painel do usuário                                                                                                                         | Alta       | Implementado |
 > ℹ️ RF-032/RF-036: as rodadas e a reserva seguem a RN-030; as revisões seguem a RN-023. O número da oferta e os contadores lidos são reconferidos na transação; tela antiga não movimenta dinheiro nem consome outro pedido (ADR 61).
 
 > ℹ️ RF-038: a política é a da RN-025, numa conta só que a Sala mostra antes de confirmar e que a liquidação repete; se o valor mudar no meio, nada se move. O freelancer também pode desistir, e tudo o que está em garantia volta ao cliente (ADR 57).
@@ -95,9 +95,9 @@
 | ------ | ------------------------------------------------------------------------------------------------ | ---------- | -------- |
 | RF-041 | O sistema deve processar pagamentos via MercadoPago (PIX, cartão de crédito, boleto)             | Alta       | Fora do escopo |
 | RF-042 | O pagamento do cliente deve ficar retido em escrow até a conclusão confirmada do serviço         | Alta       | Implementado |
-| RF-043 | O sistema deve calcular e exibir a taxa da plataforma de forma transparente antes da confirmação | Alta       | Parcial |
+| RF-043 | O sistema deve calcular e exibir a taxa da plataforma de forma transparente antes da confirmação | Alta       | Implementado |
 | RF-044 | O freelancer deve ter uma carteira digital com saldo disponível e saldo pendente separados       | Alta       | Implementado |
-| RF-045 | O freelancer deve poder solicitar saque via PIX ou transferência bancária                        | Alta       | Parcial |
+| RF-045 | O freelancer deve poder solicitar saque via PIX ou transferência bancária                        | Alta       | Implementado |
 | RF-046 | O sistema deve processar saques dentro do prazo configurado pelo administrador                   | Alta       | Parcial |
 | RF-047 | O sistema deve exibir histórico detalhado de transações com filtro por período                   | Alta       | Parcial |
 | RF-048 | O sistema deve emitir notificação ao receber e ao processar um pagamento                         | Alta       | Implementado |
@@ -138,7 +138,7 @@
 | RF-065 | O sistema deve emitir badges automaticamente ao atingir marcos definidos                                               | Alta       | Parcial |
 | RF-066 | O sistema deve disponibilizar missões periódicas com recompensas em XP                                                 | Média      | Não implementado |
 | RF-067 | O sistema deve exibir ranking local de freelancers por categoria e nota                                                | Média      | Parcial |
-| RF-068 | O sistema deve exibir no perfil o nível atual, XP acumulado e badges conquistadas                                      | Alta       | Parcial |
+| RF-068 | O sistema deve exibir no perfil o nível atual, XP acumulado e badges conquistadas                                      | Alta       | Implementado |
 ---
 
 ## Módulos 09 a 14
@@ -209,7 +209,7 @@ Requisitos distribuídos por módulos existentes (Serviços, Contratações, Sup
 | Recursos avançados (RF-086–092)  | 7            | 4      | 3      | 0     |
 | **Total**                        | **92**       | **67** | **23** | **2** |
 
-> ℹ️ Situação conferida no código e nos testes em 19/10/2026 (v1.42.0): **58 implementados, 22 parciais, 10 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
+> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.43.0: **65 implementados, 15 parciais, 10 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
 
 > ℹ️ O total ficou em **92 requisitos funcionais**, superando os 72 planejados inicialmente — resultado do detalhamento granular e da inclusão da **troca de serviços (escambo)** e de recursos avançados de confiança e segurança (v1.1.0), com dois requisitos de desistência e revisão humana acrescentados pelo ADR 61 (v1.2.0).
 

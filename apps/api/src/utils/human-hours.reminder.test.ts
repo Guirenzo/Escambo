@@ -28,6 +28,8 @@ const SEX_FIM = endOfDayIn(BRT, '2026-10-02');
  * desenho: cada linha saiu do protótipo e várias matam um mutante (nomeado no fim da linha).
  */
 describe('reminderSlot', () => {
+  // Uma linha por caso, como a tabela do desenho: o Prettier quebraria cada uma em cinco.
+  // prettier-ignore
   const cases: [string, Date | null, Date, BrazilTimezone, Date | null][] = [
     // [caso, início, vencimento, fuso de quem recebe, slot]
     ['1 entrega, véspera', at(BRT, '2026-09-28 11:00'), SEX_FIM, BRT, at(BRT, '2026-10-01 09:00')],
@@ -96,14 +98,18 @@ describe('reminderDue', () => {
   });
 
   it('sem slot, nunca', () => {
-    expect(reminderDue({ now: at(BRT, '2026-10-01 12:00'), slot: null, due: SEX_FIM, zone: BRT })).toBe(false);
+    expect(
+      reminderDue({ now: at(BRT, '2026-10-01 12:00'), slot: null, due: SEX_FIM, zone: BRT }),
+    ).toBe(false);
   });
 });
 
 describe('nineAtOrBefore', () => {
   it('as 9h de hoje se já passaram; senão, as de ontem', () => {
     expect(nineAtOrBefore(at(BRT, '2026-10-01 09:00'), BRT)).toEqual(at(BRT, '2026-10-01 09:00'));
-    expect(nineAtOrBefore(at(BRT, '2026-10-01 08:59:59'), BRT)).toEqual(at(BRT, '2026-09-30 09:00'));
+    expect(nineAtOrBefore(at(BRT, '2026-10-01 08:59:59'), BRT)).toEqual(
+      at(BRT, '2026-09-30 09:00'),
+    );
   });
 });
 

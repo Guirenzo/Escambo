@@ -325,7 +325,7 @@ Componentes que se repetem entre telas e devem ser criados uma vez no Figma:
 
 ---
 
-## 9. Evolução implementada na candidata 1.42.0 (ADR 61)
+## 9. Evolução implementada na 1.42.0 (ADR 61)
 
 Os wireframes anteriores são o desenho inicial. A Sala agora tem negociação com vez e até três rodadas, modal de contraproposta, prévia da reserva, histórico privado e validade da oferta. Entrega única e marcos mostram revisões usadas/incluídas, liberação de mais uma pelo freelancer e a hora para abrir disputa. Perfil público mostra somente o número de desistências em 60 dias e alerta; o Perfil próprio contém a contestação privada, e o admin decide com nota. O cliente confirma acordo na Sala em até sete dias, sem mover dinheiro.
 

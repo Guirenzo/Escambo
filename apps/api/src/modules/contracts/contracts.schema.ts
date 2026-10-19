@@ -233,8 +233,37 @@ export const cancelBodySchema = z
   .default({});
 export type CancelBody = z.infer<typeof cancelBodySchema>;
 
+export const CONTRACT_STATUSES = [
+  'pending',
+  'accepted',
+  'rejected',
+  'in_progress',
+  'delivered',
+  'revision_requested',
+  'completed',
+  'cancelled',
+  'disputed',
+] as const;
+
+/**
+ * Filtro por status da lista (RF-040): `?status=accepted,in_progress` ou o parâmetro repetido.
+ * Vazio vale como sem filtro; status desconhecido é 422, em vez de uma lista vazia sem explicação.
+ */
+const statusFilterSchema = z.preprocess(
+  (v) => {
+    if (v === undefined) return undefined;
+    const parts = (Array.isArray(v) ? v : [v])
+      .flatMap((p) => (typeof p === 'string' ? p.split(',') : [p]))
+      .map((p) => (typeof p === 'string' ? p.trim() : p))
+      .filter((p) => p !== '');
+    return parts.length === 0 ? undefined : [...new Set(parts)];
+  },
+  z.array(z.enum(CONTRACT_STATUSES, { message: 'Status de contratação desconhecido' })).optional(),
+);
+
 export const listContractsSchema = z.object({
   page: z.coerce.number().int().positive().max(10_000).default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
+  status: statusFilterSchema,
 });
 export type ListContractsInput = z.infer<typeof listContractsSchema>;

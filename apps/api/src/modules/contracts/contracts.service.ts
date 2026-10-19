@@ -4,12 +4,13 @@ import type {
   CancelStage,
   CancelTerms,
   Contract,
+  ContractDelivery,
+  ContractList,
   ContractStatus,
   ContractStatusHistoryEntry,
   ContractWithHistory,
   Milestone,
   MilestoneStatus,
-  Paginated,
   PaymentMode,
 } from '@escambo/types';
 import { logger } from '../../config/logger';
@@ -48,6 +49,7 @@ import {
   contractsRepository,
   OVERDUE_DISPUTE_GUARD,
   type ContractRow,
+  type DeliveryRow,
 } from './contracts.repository';
 import {
   milestonesRepository,
@@ -307,6 +309,28 @@ function toMilestone(m: MilestoneRow, row: ContractRow): Milestone {
       (row.status === 'accepted' || row.status === 'in_progress')
         ? iso(m.revision_requested_at)
         : null,
+  };
+}
+
+/** Os links gravados em JSON: lista de textos, nunca null (texto inválido vira lista vazia). */
+function deliveryFiles(raw: unknown): string[] {
+  let value = raw;
+  if (typeof raw === 'string') {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  return Array.isArray(value) ? value.filter((f): f is string => typeof f === 'string') : [];
+}
+
+function toDelivery(d: DeliveryRow): ContractDelivery {
+  return {
+    id: d.id,
+    message: d.message,
+    files: deliveryFiles(d.files),
+    deliveredAt: new Date(d.delivered_at).toISOString(),
   };
 }
 
@@ -738,14 +762,24 @@ export const contractsService = {
     return contract;
   },
 
-  async listMine(uid: number, input: ListContractsInput): Promise<Paginated<Contract>> {
-    const rows = await contractsRepository.listForUser(
-      uid,
-      input.limit,
-      (input.page - 1) * input.limit,
-    );
+  /** RF-040: a página pedida e o total de quem pede, os dois com o mesmo filtro de status. */
+  async listMine(uid: number, input: ListContractsInput): Promise<ContractList> {
+    const [rows, total] = await Promise.all([
+      contractsRepository.listForUser(
+        uid,
+        input.limit,
+        (input.page - 1) * input.limit,
+        input.status,
+      ),
+      contractsRepository.countForUser(uid, input.status),
+    ]);
     const ctx = await viewCtx();
-    return { items: rows.map((r) => toContract(r, ctx)), page: input.page, limit: input.limit };
+    return {
+      items: rows.map((r) => toContract(r, ctx)),
+      page: input.page,
+      limit: input.limit,
+      total,
+    };
   },
 
   async getById(id: number, uid: number): Promise<ContractWithHistory> {
@@ -771,6 +805,11 @@ export const contractsService = {
     const offers = row.barter_agreement_id
       ? []
       : (await offersRepository.list(id)).map((o) => toOffer(o, row));
+    // RF-035: a mensagem (e os links) de cada entrega única; sem entrega, nem consulta.
+    const deliveries =
+      Number(row.deliveries_count ?? 0) > 0
+        ? (await contractsRepository.listDeliveries(id)).map(toDelivery)
+        : [];
     const contract = toContract(row, ctx);
     if (contract.negotiation?.seq === 1 && offers.length === 0) {
       // Legado ainda não reparado: expõe a proposta existente sem escrever durante o GET.
@@ -811,7 +850,16 @@ export const contractsService = {
           counts: counts(dropoutRow, ctx.now),
         }
       : null;
-    return { ...contract, history: entries, review, milestones, cancellation, offers, dropout };
+    return {
+      ...contract,
+      history: entries,
+      deliveries,
+      review,
+      milestones,
+      cancellation,
+      offers,
+      dropout,
+    };
   },
 
   async counter(id: number, uid: number, input: CounterOfferInput): Promise<ContractWithHistory> {
@@ -1396,6 +1444,7 @@ export const contractsService = {
         revisionLimit: delivered.revision_limit ?? null,
         revisionsUsed: Number(delivered.revisions_used ?? 0),
         disputeFrom: opens && opens > clock.now() ? formatDue(opens, cz) : null,
+        message: input.message,
       }),
     );
     return toContract(delivered, await viewCtx());

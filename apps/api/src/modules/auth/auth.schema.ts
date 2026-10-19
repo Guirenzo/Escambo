@@ -3,9 +3,12 @@ import { BRAZIL_TIMEZONES } from '../../utils/timezone';
 
 /** Validação de entrada (RNF-015: schema em 100% das rotas). */
 
+/** Regra de força da senha: a mesma no cadastro, na redefinição e na troca com login (RF-017). */
+export const passwordSchema = z.string().min(8, 'A senha deve ter ao menos 8 caracteres');
+
 export const registerSchema = z.object({
   email: z.string().email('E-mail inválido'),
-  password: z.string().min(8, 'A senha deve ter ao menos 8 caracteres'),
+  password: passwordSchema,
   role: z.enum(['client', 'freelancer', 'company']).default('client'),
   /** Fuso detectado no aparelho (ADR 51); só os do Brasil. */
   timezone: z.enum(BRAZIL_TIMEZONES).optional(),
@@ -30,8 +33,14 @@ export const forgotPasswordSchema = z.object({
 });
 export const resetPasswordSchema = z.object({
   token: z.string().min(16).max(255),
-  password: z.string().min(8, 'A senha deve ter ao menos 8 caracteres'),
+  password: passwordSchema,
 });
+/** Troca de senha com login (RF-017): a atual confirma que é o titular; a nova segue o cadastro. */
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Informe a senha atual'),
+  newPassword: passwordSchema,
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export const verifyEmailSchema = z.object({
   token: z.string().min(16).max(255),
 });

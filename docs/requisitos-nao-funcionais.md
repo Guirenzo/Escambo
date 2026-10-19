@@ -91,9 +91,9 @@ Confiabilidade    → integridade de dados, tratamento de erros
 | ID | Descrição | Métrica | Prioridade | Situação |
 |---|---|---|---|---|
 | RNF-025 | O fluxo de contratação deve ser concluído com poucas interações | Máximo de 5 telas/interações do início ao envio da proposta | Alta | Implementado |
-| RNF-026 | A interface web deve ser responsiva para diferentes tamanhos de tela | Compatível com desktop, tablet e mobile (≥ 320px de largura) | Alta | Parcial |
+| RNF-026 | A interface web deve ser responsiva para diferentes tamanhos de tela | Compatível com desktop, tablet e mobile (≥ 320px de largura) | Alta | Implementado |
 | RNF-027 | O app mobile deve funcionar nos sistemas operacionais mais utilizados | iOS 14+ e Android 10+ | Alta | Fora do escopo |
-| RNF-028 | Mensagens de erro devem ser claras, contextuais e orientadas à ação do usuário | Nenhuma mensagem técnica exposta ao usuário final | Alta | Parcial |
+| RNF-028 | Mensagens de erro devem ser claras, contextuais e orientadas à ação do usuário | Nenhuma mensagem técnica exposta ao usuário final | Alta | Implementado |
 | RNF-029 | A interface web deve respeitar diretrizes mínimas de acessibilidade | Nível AA do WCAG 2.1 (contraste, navegação por teclado, ARIA) | Média | Parcial |
 
 ---
@@ -103,8 +103,8 @@ Confiabilidade    → integridade de dados, tratamento de erros
 | ID | Descrição | Métrica | Prioridade | Situação |
 |---|---|---|---|---|
 | RNF-030 | Os módulos críticos do sistema devem ter cobertura mínima de testes automatizados | ≥ 70% de cobertura nos módulos de autenticação, pagamentos e contratações | Alta | Implementado |
-| RNF-031 | A API deve ter documentação atualizada e acessível | OpenAPI/Swagger publicado e atualizado a cada release | Alta | Parcial |
-| RNF-032 | O código deve seguir padrões de estilo definidos e verificados automaticamente | ESLint + Prettier configurados com CI bloqueando PRs com erros | Alta | Parcial |
+| RNF-031 | A API deve ter documentação atualizada e acessível | OpenAPI/Swagger publicado e atualizado a cada release | Alta | Implementado |
+| RNF-032 | O código deve seguir padrões de estilo definidos e verificados automaticamente | ESLint + Prettier configurados com CI bloqueando PRs com erros | Alta | Implementado |
 | RNF-033 | O projeto deve ter pipeline de CI/CD automatizado | GitHub Actions com build, lint e testes em cada Pull Request | Média | Implementado |
 | RNF-034 | Variáveis de configuração devem ser externalizadas do código | 100% das configs via variáveis de ambiente | Alta | Implementado |
 

@@ -157,6 +157,20 @@ describe('cartão de avisos no navegador', () => {
     expect(emailPreference).not.toHaveBeenCalled();
   });
 
+  it('falha técnica ao gravar o silêncio não aparece em inglês: vira o texto do cartão (RNF-028)', async () => {
+    const user = userEvent.setup();
+    status();
+    updateEmailPreference.mockRejectedValueOnce(
+      new TypeError("Cannot read properties of undefined (reading 'quietHours')"),
+    );
+    render(wrap(<PushCard />));
+
+    await user.click(quietToggle(await quietGroup()));
+
+    expect(await screen.findByText('Não foi possível salvar o silêncio')).toBeInTheDocument();
+    expect(screen.queryByText(/Cannot read properties/)).not.toBeInTheDocument();
+  });
+
   it('com a janela gravada: seleções sem a hora do outro lado, "(do dia seguinte)" e a dica completa', async () => {
     const user = userEvent.setup();
     authUser.user.quietHours = { start: 22, end: 7 };

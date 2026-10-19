@@ -11,13 +11,16 @@ vi.mock('./wallet.repository', () => ({
 vi.mock('../credits/credits.service', () => ({
   creditsService: { ensureWelcome: vi.fn() },
 }));
+vi.mock('../auth/user-zone', () => ({ userZone: vi.fn() }));
 
 import { walletService } from './wallet.service';
 import { walletRepository, type WalletRow, type WalletTxRow } from './wallet.repository';
 import { creditsService } from '../credits/credits.service';
+import { userZone } from '../auth/user-zone';
 
 const repo = vi.mocked(walletRepository);
 const credits = vi.mocked(creditsService);
+const zone = vi.mocked(userZone);
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -187,10 +190,11 @@ describe('walletService.listTransactions', () => {
 
     const page = await walletService.listTransactions(7, 3, 20);
 
-    expect(repo.listTransactions).toHaveBeenCalledWith(7, 20, 40);
+    expect(repo.listTransactions).toHaveBeenCalledWith(7, 21, 40, {});
     expect(page).toEqual({
       page: 3,
       limit: 20,
+      hasMore: false,
       items: [
         {
           id: 31,
@@ -240,7 +244,73 @@ describe('walletService.listTransactions', () => {
       items: [],
       page: 1,
       limit: 50,
+      hasMore: false,
     });
-    expect(repo.listTransactions).toHaveBeenCalledWith(7, 50, 0);
+    expect(repo.listTransactions).toHaveBeenCalledWith(7, 51, 0, {});
+    // Sem período, o fuso da conta nem é consultado.
+    expect(zone).not.toHaveBeenCalled();
+  });
+
+  const row = (id: number) =>
+    ({
+      id,
+      amount: '10.00',
+      pending_delta: '0.00',
+      balance_after: '10.00',
+      pending_after: '0.00',
+      reason: 'deposit',
+      contract_id: null,
+      payment_id: id,
+      withdrawal_id: null,
+      created_at: new Date('2026-10-01T12:00:00Z'),
+    }) as unknown as WalletTxRow;
+
+  it('veio um lançamento além do limite: devolve só o limite e avisa que há mais ("Carregar mais")', async () => {
+    repo.listTransactions.mockResolvedValue([row(9), row(8), row(7)]);
+
+    const page = await walletService.listTransactions(7, 2, 2);
+
+    expect(repo.listTransactions).toHaveBeenCalledWith(7, 3, 2, {});
+    expect(page.items.map((t) => t.id)).toEqual([9, 8]);
+    expect(page).toMatchObject({ page: 2, limit: 2, hasMore: true });
+  });
+
+  it('página exatamente cheia, sem o lançamento a mais: é a última', async () => {
+    repo.listTransactions.mockResolvedValue([row(9), row(8)]);
+
+    const page = await walletService.listTransactions(7, 1, 2);
+
+    expect(page.items.map((t) => t.id)).toEqual([9, 8]);
+    expect(page.hasMore).toBe(false);
+  });
+
+  it('com período, os dias são os do fuso da conta de quem lê (RF-047)', async () => {
+    zone.mockResolvedValue('America/Manaus');
+    repo.listTransactions.mockResolvedValue([row(5)]);
+
+    const page = await walletService.listTransactions(31, 1, 20, {
+      from: '2026-10-01',
+      to: '2026-10-05',
+    });
+
+    expect(zone).toHaveBeenCalledWith(31);
+    expect(repo.listTransactions).toHaveBeenCalledWith(31, 21, 0, {
+      from: new Date('2026-10-01T04:00:00.000Z'),
+      to: new Date('2026-10-06T04:00:00.000Z'),
+    });
+    expect(page).toMatchObject({ page: 1, limit: 20, hasMore: false });
+    expect(page.items).toHaveLength(1);
+  });
+
+  it('período invertido: 400 invalid_range, sem consultar o fuso nem o extrato', async () => {
+    await expect(
+      walletService.listTransactions(31, 1, 20, { from: '2026-10-05', to: '2026-10-01' }),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'invalid_range',
+      message: 'Período inválido: a data inicial precisa ser até a final',
+    });
+    expect(zone).not.toHaveBeenCalled();
+    expect(repo.listTransactions).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,14 @@
 import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
 import { ArrowDownToLine, Coins, Landmark, Lock, MailWarning, QrCode, Wallet } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
-import type { CreditReason, Deposit, WalletTransaction } from '@escambo/types';
-import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
+import { useMemo, useState, type FormEvent } from 'react';
+import type {
+  CreateWithdrawalRequest,
+  CreditReason,
+  Deposit,
+  WalletTransaction,
+  WithdrawalMethod,
+} from '@escambo/types';
+import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
@@ -24,6 +30,7 @@ import {
   useWalletTransactions,
   useWithdrawals,
 } from '../../lib/hooks';
+import { timezoneLabel } from '../../lib/timezones';
 import { useToast } from '../../lib/toast';
 import { DepositModal } from '../wallet/DepositModal';
 
@@ -76,13 +83,32 @@ export function CarteiraView() {
   const minWithdrawal = usePublicSettings().data?.minWithdrawalAmount ?? 20;
   const withdrawals = useWithdrawals();
   const deposits = useDeposits();
-  const ledger = useWalletTransactions();
+  // Período do extrato de R$ (RF-047): dias no fuso da conta; vazio = sem limite daquele lado.
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const invalidPeriod = from !== '' && to !== '' && from > to;
+  const ledger = useWalletTransactions({ from, to });
+  // As páginas juntas; um lançamento novo no meio da paginação não aparece duas vezes.
+  const ledgerItems = useMemo(() => {
+    const seen = new Set<number>();
+    return (ledger.data?.pages ?? [])
+      .flatMap((p) => p.items)
+      .filter((t) => {
+        if (seen.has(t.id)) return false;
+        seen.add(t.id);
+        return true;
+      });
+  }, [ledger.data]);
   const creditTx = useCreditTransactions();
   const request = useRequestWithdrawal();
   const cancelWithdrawal = useCancelWithdrawal();
   const toast = useToast();
   const [amount, setAmount] = useState('');
+  const [method, setMethod] = useState<WithdrawalMethod>('pix');
   const [pixKey, setPixKey] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [bankAgency, setBankAgency] = useState('');
+  const [bankAccount, setBankAccount] = useState('');
   const [tab, setTab] = useState<'brl' | 'credits'>('brl');
   const [depositing, setDepositing] = useState<null | { initial?: Deposit }>(null);
   const [resending, setResending] = useState(false);
@@ -103,11 +129,19 @@ export function CarteiraView() {
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
+    // Só os dados do destino escolhido vão para a API (RF-045: PIX ou transferência bancária).
+    const body: CreateWithdrawalRequest =
+      method === 'pix'
+        ? { amount: Number(amount), method, pixKey }
+        : { amount: Number(amount), method, bankName, bankAgency, bankAccount };
     try {
-      await request.mutateAsync({ amount: Number(amount), method: 'pix', pixKey });
+      await request.mutateAsync(body);
       toast.success('Saque solicitado! Você recebe um aviso quando for pago.');
       setAmount('');
       setPixKey('');
+      setBankName('');
+      setBankAgency('');
+      setBankAccount('');
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Erro no saque');
     }
@@ -147,7 +181,7 @@ export function CarteiraView() {
           <strong className="kpi-value" data-testid="wallet-balance">
             {w ? brl(w.balance) : '—'}
           </strong>
-          <span className="muted tiny">para contratar ou sacar via PIX</span>
+          <span className="muted tiny">para contratar ou sacar (PIX ou transferência)</span>
         </div>
         <div className="kpi amber">
           <div className="kpi-top">
@@ -218,16 +252,58 @@ export function CarteiraView() {
                 required
               />
             </Field>
-            <Field label="Chave PIX">
-              <Input
-                value={pixKey}
-                onChange={(e) => setPixKey(e.target.value)}
-                required
-                placeholder="e-mail / telefone / aleatória"
-              />
+            <Field label="Receber por">
+              <Select
+                value={method}
+                onChange={(e) => setMethod(e.target.value as WithdrawalMethod)}
+              >
+                <option value="pix">PIX</option>
+                <option value="bank">Transferência bancária</option>
+              </Select>
             </Field>
+            {method === 'pix' ? (
+              <Field label="Chave PIX">
+                <Input
+                  value={pixKey}
+                  onChange={(e) => setPixKey(e.target.value)}
+                  required
+                  maxLength={255}
+                  placeholder="e-mail / telefone / aleatória"
+                />
+              </Field>
+            ) : (
+              <>
+                <Field label="Banco">
+                  <Input
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    required
+                    maxLength={100}
+                    placeholder="nome ou código do banco"
+                  />
+                </Field>
+                <Field label="Agência">
+                  <Input
+                    value={bankAgency}
+                    onChange={(e) => setBankAgency(e.target.value)}
+                    required
+                    maxLength={10}
+                    placeholder="sem o dígito"
+                  />
+                </Field>
+                <Field label="Conta">
+                  <Input
+                    value={bankAccount}
+                    onChange={(e) => setBankAccount(e.target.value)}
+                    required
+                    maxLength={20}
+                    placeholder="com o dígito"
+                  />
+                </Field>
+              </>
+            )}
             <Button type="submit" variant="secondary" disabled={request.isPending}>
-              {request.isPending ? '…' : 'Sacar (mín. R$20)'}
+              {request.isPending ? '…' : `Sacar (mín. ${brl(minWithdrawal)})`}
             </Button>
           </BusinessForm>
         )}
@@ -261,22 +337,79 @@ export function CarteiraView() {
             </div>
           </div>
           {tab === 'brl' ? (
-            <QueryState
-              isLoading={ledger.isLoading}
-              error={ledger.error}
-              data={ledger.data}
-              isEmpty={(d) => d.items.length === 0}
-              empty="Nenhuma movimentação em reais ainda. Faça um depósito para contratar."
-              onRetry={() => void ledger.refetch()}
-            >
-              {(d) => (
-                <ul className="list credit-tx" data-testid="ledger">
-                  {d.items.map((t) => (
-                    <LedgerRow key={t.id} t={t} />
-                  ))}
-                </ul>
+            <>
+              <div className="filters-bar" role="group" aria-label="Período do extrato">
+                <label className="filter">
+                  De
+                  <input
+                    type="date"
+                    value={from}
+                    max={to || undefined}
+                    onChange={(e) => setFrom(e.target.value)}
+                  />
+                </label>
+                <label className="filter">
+                  Até
+                  <input
+                    type="date"
+                    value={to}
+                    min={from || undefined}
+                    onChange={(e) => setTo(e.target.value)}
+                  />
+                </label>
+                {(from || to) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setFrom('');
+                      setTo('');
+                    }}
+                  >
+                    Limpar período
+                  </Button>
+                )}
+              </div>
+              <p className="muted tiny">Dias no horário de {timezoneLabel(user?.timezone)}.</p>
+              {invalidPeriod ? (
+                <p role="alert">A data inicial precisa ser até a final.</p>
+              ) : (
+                <QueryState
+                  isLoading={ledger.isLoading}
+                  error={ledger.error}
+                  data={ledger.data ? ledgerItems : undefined}
+                  isEmpty={(d) => d.length === 0}
+                  empty={
+                    from || to
+                      ? 'Nenhuma movimentação em reais nesse período.'
+                      : 'Nenhuma movimentação em reais ainda. Faça um depósito para contratar.'
+                  }
+                  onRetry={() => void ledger.refetch()}
+                >
+                  {(items) => (
+                    <>
+                      <ul className="list credit-tx" data-testid="ledger">
+                        {items.map((t) => (
+                          <LedgerRow key={t.id} t={t} />
+                        ))}
+                      </ul>
+                      {ledger.hasNextPage && (
+                        <div className="center">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => void ledger.fetchNextPage()}
+                            disabled={ledger.isFetchingNextPage}
+                          >
+                            {ledger.isFetchingNextPage ? 'Carregando…' : 'Carregar mais'}
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </QueryState>
               )}
-            </QueryState>
+            </>
           ) : (
             <QueryState
               isLoading={creditTx.isLoading}

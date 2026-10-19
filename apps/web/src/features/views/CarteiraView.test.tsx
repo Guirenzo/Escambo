@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type {
   CreditTransaction,
@@ -35,7 +35,7 @@ vi.mock('../../lib/api', () => ({
     publicSettings: () => publicSettings(),
     withdrawals: () => withdrawals(),
     deposits: () => deposits(),
-    walletTransactions: () => walletTransactions(),
+    walletTransactions: (query: unknown) => walletTransactions(query),
     creditTransactions: () => creditTransactions(),
     requestWithdrawal: (body: unknown) => requestWithdrawal(body),
     cancelWithdrawal: (id: number) => cancelWithdrawal(id),
@@ -51,6 +51,7 @@ const auth = {
     id: number;
     email: string;
     emailVerified?: boolean;
+    timezone?: string;
   } | null,
 };
 vi.mock('../../lib/auth', () => ({ useAuth: () => auth }));
@@ -410,6 +411,173 @@ describe('CarteiraView: extrato', () => {
   });
 });
 
+describe('CarteiraView: extrato por período e "Carregar mais" (RF-047)', () => {
+  const ledgerPage = (items: WalletTransaction[], number: number, hasMore: boolean) => ({
+    items,
+    page: number,
+    limit: 20,
+    hasMore,
+  });
+
+  it('pede 20 por vez; com mais lançamentos, "Carregar mais" junta a próxima página abaixo', async () => {
+    const user = userEvent.setup();
+    walletTransactions
+      .mockResolvedValueOnce(
+        ledgerPage([tx({ id: 3 }), tx({ id: 2, reason: 'withdrawal', amount: -50 })], 1, true),
+      )
+      // Um lançamento novo empurrou o 2 para a página seguinte: ele não aparece duas vezes.
+      .mockResolvedValueOnce(
+        ledgerPage(
+          [
+            tx({ id: 2, reason: 'withdrawal', amount: -50 }),
+            tx({ id: 1, reason: 'payment', amount: -30 }),
+          ],
+          2,
+          false,
+        ),
+      );
+    renderView();
+
+    const more = await within(card('Extrato')).findByRole('button', { name: 'Carregar mais' });
+    expect(walletTransactions).toHaveBeenCalledWith({ page: 1, limit: 20 });
+    expect(within(card('Extrato')).getAllByRole('listitem')).toHaveLength(2);
+
+    await user.click(more);
+
+    await waitFor(() => expect(within(card('Extrato')).getAllByRole('listitem')).toHaveLength(3));
+    expect(walletTransactions).toHaveBeenLastCalledWith({ page: 2, limit: 20 });
+    const rows = within(card('Extrato')).getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('Depósito via PIX');
+    expect(rows[1]).toHaveTextContent('Saque solicitado');
+    expect(rows[2]).toHaveTextContent('Pagamento da contratação');
+    // Última página: o botão some.
+    expect(
+      within(card('Extrato')).queryByRole('button', { name: 'Carregar mais' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('enquanto a próxima página chega, o botão fica travado em "Carregando…"', async () => {
+    const user = userEvent.setup();
+    let release!: (p: ReturnType<typeof ledgerPage>) => void;
+    walletTransactions
+      .mockResolvedValueOnce(ledgerPage([tx({ id: 3 })], 1, true))
+      .mockReturnValueOnce(new Promise((resolve) => (release = resolve)));
+    renderView();
+
+    await user.click(await within(card('Extrato')).findByRole('button', { name: 'Carregar mais' }));
+
+    const busy = await within(card('Extrato')).findByRole('button', { name: 'Carregando…' });
+    expect(busy).toBeDisabled();
+    release(ledgerPage([tx({ id: 1 })], 2, false));
+    await waitFor(() => expect(within(card('Extrato')).getAllByRole('listitem')).toHaveLength(2));
+  });
+
+  it('sem "hasMore", não há "Carregar mais"', async () => {
+    walletTransactions.mockResolvedValue(ledgerPage([tx({ id: 1 })], 1, false));
+    renderView();
+
+    await within(card('Extrato')).findByText('Depósito via PIX');
+    expect(
+      within(card('Extrato')).queryByRole('button', { name: 'Carregar mais' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('de/até vão para a API; período sem nada tem o próprio aviso; "Limpar período" volta ao extrato inteiro', async () => {
+    const user = userEvent.setup();
+    renderView();
+    await within(card('Extrato')).findByText(
+      'Nenhuma movimentação em reais ainda. Faça um depósito para contratar.',
+    );
+
+    const period = within(card('Extrato')).getByRole('group', { name: 'Período do extrato' });
+    const from = within(period).getByLabelText('De');
+    const to = within(period).getByLabelText('Até');
+    expect(from).toHaveAttribute('type', 'date');
+    expect(within(card('Extrato')).getByText('Dias no horário de Brasília.')).toBeInTheDocument();
+    expect(
+      within(period).queryByRole('button', { name: 'Limpar período' }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(from, { target: { value: '2026-10-01' } });
+    await waitFor(() =>
+      expect(walletTransactions).toHaveBeenLastCalledWith({
+        from: '2026-10-01',
+        page: 1,
+        limit: 20,
+      }),
+    );
+    // Uma data não passa da outra: o calendário trava no limite.
+    expect(to).toHaveAttribute('min', '2026-10-01');
+
+    fireEvent.change(to, { target: { value: '2026-10-15' } });
+    await waitFor(() =>
+      expect(walletTransactions).toHaveBeenLastCalledWith({
+        from: '2026-10-01',
+        to: '2026-10-15',
+        page: 1,
+        limit: 20,
+      }),
+    );
+    expect(from).toHaveAttribute('max', '2026-10-15');
+    expect(
+      await within(card('Extrato')).findByText('Nenhuma movimentação em reais nesse período.'),
+    ).toBeInTheDocument();
+
+    const callsBefore = walletTransactions.mock.calls.length;
+    await user.click(within(period).getByRole('button', { name: 'Limpar período' }));
+
+    expect(from).toHaveValue('');
+    expect(to).toHaveValue('');
+    expect(
+      await within(card('Extrato')).findByText(
+        'Nenhuma movimentação em reais ainda. Faça um depósito para contratar.',
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(walletTransactions.mock.calls.length).toBeGreaterThan(callsBefore));
+    expect(walletTransactions).toHaveBeenLastCalledWith({ page: 1, limit: 20 });
+  });
+
+  it('período invertido: avisa ali mesmo e não pede nada à API', async () => {
+    renderView();
+    await within(card('Extrato')).findByText(
+      'Nenhuma movimentação em reais ainda. Faça um depósito para contratar.',
+    );
+    const period = within(card('Extrato')).getByRole('group', { name: 'Período do extrato' });
+
+    fireEvent.change(within(period).getByLabelText('Até'), { target: { value: '2026-10-01' } });
+    fireEvent.change(within(period).getByLabelText('De'), { target: { value: '2026-10-15' } });
+
+    expect(await within(card('Extrato')).findByRole('alert')).toHaveTextContent(
+      'A data inicial precisa ser até a final.',
+    );
+    expect(within(card('Extrato')).queryByTestId('ledger')).not.toBeInTheDocument();
+    expect(
+      walletTransactions.mock.calls.some(([q]) => (q as { from?: string }).from === '2026-10-15'),
+    ).toBe(false);
+  });
+
+  it('os dias são os do fuso da conta, e o filtro é só do extrato em reais', async () => {
+    const user = userEvent.setup();
+    auth.user = {
+      id: 1,
+      email: 'bruno@escambo.test',
+      emailVerified: true,
+      timezone: 'America/Manaus',
+    };
+    renderView();
+
+    expect(
+      await within(card('Extrato')).findByText('Dias no horário de Manaus.'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Créditos' }));
+    expect(
+      within(card('Extrato')).queryByRole('group', { name: 'Período do extrato' }),
+    ).not.toBeInTheDocument();
+    expect(within(card('Extrato')).queryByText('Dias no horário de Manaus.')).toBeNull();
+  });
+});
+
 describe('CarteiraView: pedir saque', () => {
   it('o mínimo do saque vem das configurações da plataforma', async () => {
     publicSettings.mockResolvedValue({ minWithdrawalAmount: 35 });
@@ -419,6 +587,10 @@ describe('CarteiraView: pedir saque', () => {
       'min',
       '35',
     );
+    // O botão diz o mesmo mínimo (antes, "R$20" fixo).
+    expect(
+      screen.getByRole('button', { name: /^Sacar \(mín\. R\$\s35,00\)$/ }),
+    ).toBeInTheDocument();
   });
 
   it('envia valor e chave PIX, avisa, limpa o formulário e recarrega a carteira', async () => {
@@ -448,6 +620,87 @@ describe('CarteiraView: pedir saque', () => {
     expect(wallet).toHaveBeenCalledTimes(2);
     expect(walletTransactions).toHaveBeenCalledTimes(2);
     expect(deposits).toHaveBeenCalledTimes(2);
+  });
+
+  it('o PIX vem escolhido; por transferência, a chave dá lugar a banco, agência e conta (RF-045)', async () => {
+    const user = userEvent.setup();
+    renderView();
+    await screen.findByText('R$ 820,50');
+
+    const method = screen.getByLabelText('Receber por');
+    expect(method).toHaveValue('pix');
+    expect(
+      within(method)
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['PIX', 'Transferência bancária']);
+    expect(screen.queryByLabelText('Banco')).not.toBeInTheDocument();
+
+    await user.selectOptions(method, 'bank');
+
+    expect(screen.queryByLabelText('Chave PIX')).not.toBeInTheDocument();
+    const bank = screen.getByLabelText('Banco');
+    const agency = screen.getByLabelText('Agência');
+    const account = screen.getByLabelText('Conta');
+    // Os mesmos tetos da API (withdrawal.schema): o campo não deixa passar do tamanho.
+    for (const [field, max] of [
+      [bank, '100'],
+      [agency, '10'],
+      [account, '20'],
+    ] as const) {
+      expect(field).toBeRequired();
+      expect(field).toHaveAttribute('maxLength', max);
+    }
+  });
+
+  it('por transferência: envia banco, agência e conta (sem chave PIX), avisa e limpa o formulário', async () => {
+    const user = userEvent.setup();
+    renderView();
+    await screen.findByText('R$ 820,50');
+
+    await user.selectOptions(screen.getByLabelText('Receber por'), 'bank');
+    await user.type(screen.getByLabelText(/^Valor \(R\$\)/), '80');
+    await user.type(screen.getByLabelText('Banco'), 'Banco do Brasil');
+    await user.type(screen.getByLabelText('Agência'), '1234');
+    await user.type(screen.getByLabelText('Conta'), '56789-0');
+    await user.click(screen.getByRole('button', { name: /^Sacar/ }));
+
+    await waitFor(() => expect(requestWithdrawal).toHaveBeenCalledTimes(1));
+    expect(requestWithdrawal).toHaveBeenCalledWith({
+      amount: 80,
+      method: 'bank',
+      bankName: 'Banco do Brasil',
+      bankAgency: '1234',
+      bankAccount: '56789-0',
+    });
+    expect(
+      await screen.findByText('Saque solicitado! Você recebe um aviso quando for pago.'),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Banco')).toHaveValue('');
+    expect(screen.getByLabelText('Agência')).toHaveValue('');
+    expect(screen.getByLabelText('Conta')).toHaveValue('');
+    // A forma escolhida fica para o próximo saque.
+    expect(screen.getByLabelText('Receber por')).toHaveValue('bank');
+  });
+
+  it('voltar para PIX: só a chave vai, e os dados bancários digitados ficam de fora', async () => {
+    const user = userEvent.setup();
+    renderView();
+    await screen.findByText('R$ 820,50');
+
+    await user.selectOptions(screen.getByLabelText('Receber por'), 'bank');
+    await user.type(screen.getByLabelText('Banco'), 'Banco do Brasil');
+    await user.selectOptions(screen.getByLabelText('Receber por'), 'pix');
+    await user.type(screen.getByLabelText(/^Valor \(R\$\)/), '50');
+    await user.type(screen.getByLabelText('Chave PIX'), 'bruno@pix.com');
+    await user.click(screen.getByRole('button', { name: /^Sacar/ }));
+
+    await waitFor(() => expect(requestWithdrawal).toHaveBeenCalledTimes(1));
+    expect(requestWithdrawal).toHaveBeenCalledWith({
+      amount: 50,
+      method: 'pix',
+      pixKey: 'bruno@pix.com',
+    });
   });
 
   it('enquanto o pedido está indo, o botão fica desabilitado', async () => {

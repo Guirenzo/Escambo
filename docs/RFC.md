@@ -43,7 +43,7 @@ MIT — Open Source
 | 2.3    | Set/2026 | Fluxos alternativos alinhados aos prazos da v1.39.0 (ADR 57): aprovação tácita em **5 dias corridos** (e não úteis); cancelamento com a desistência do freelancer (devolve tudo ao cliente), reembolso integral no atraso sem entrega a partir do aviso, a metade do prazo contada do aceite e a confirmação com os valores na tela; disputa por prazo aberta pela plataforma depois do aviso das 9h e da carência, direto na mediação, sem ticket de suporte; contagem das regras de negócio atualizada (total **78**); nota de que as Figuras 3 a 5 são da v2.2 |
 | 2.4    | Out/2026 | Engenharia de entrega como construída (ADR 59): checklist das Directions atualizado (CI/CD, cobertura, análise estática, monitoramento e Wiki atendidos, com o ponteiro para cada um); seções 7 e 8 alinhadas ao que está no repositório (Vitest, Docker Compose com imagens no GHCR, Caddy, deploy pelo GitHub Actions, Prometheus e Grafana)                                                                                                                                                                                                                    |
 | 2.5    | Out/2026 | Lembretes de prazo (ADR 58): o fluxo da aprovação tácita ganha o lembrete ao cliente e o aviso às duas partes quando ela acontece; o prazo de entrega é uma data no horário de quem entrega; revisão parada há 7 dias avisa as duas partes; contagem das regras de negócio de 78 para **81** (RN-079 a RN-081)                                                                                                                                                                                                                                                    |
-| 2.6    | Out/2026 | Candidata local 1.42.0 (ADR 61): contraproposta em até 5 ofertas/3 rodadas, reserva acompanhando a última oferta do cliente; 2 revisões por entrega ou marco; disputa manual com hora de abertura; contagem pública de desistências e revisão humana com confirmação/contestação; parâmetros de resposta, Termos e Política 1.5 e exportação 1.8. O detalhamento passa a 92 RFs; permanecem 81 RNs. A implantação aguarda revisão e autorização                                                                                                                   |
+| 2.6    | Out/2026 | 1.42.0 (ADR 61): contraproposta em até 5 ofertas/3 rodadas, reserva acompanhando a última oferta do cliente; 2 revisões por entrega ou marco; disputa manual com hora de abertura; contagem pública de desistências e revisão humana com confirmação/contestação; parâmetros de resposta, Termos e Política 1.5 e exportação 1.8. O detalhamento passa a 92 RFs; permanecem 81 RNs. A implantação aguarda revisão e autorização                                                                                                                   |
 
 ---
 
@@ -206,7 +206,7 @@ Tornar a contratação de serviços tão simples quanto o uso de um aplicativo d
 - Fluxo completo de contratação funcionando do início ao fim sem erros
 - Pagamento via MercadoPago processado e saldo creditado na carteira do freelancer
 - API respondendo em menos de 300ms em 95% das requisições
-- Banco de dados com 60 tabelas de aplicação (baseline + migrations da candidata 1.42.0), conforme a modelagem atual
+- Banco de dados com 60 tabelas de aplicação (baseline + migrations da 1.42.0), conforme a modelagem atual
 - 92 requisitos funcionais e 42 requisitos não funcionais especificados, com situação de implementação nos documentos de rastreabilidade
 - Cobertura de testes de ao menos 75% no backend e 25% no frontend nos módulos críticos
 - Pipeline de CI/CD ativo, com lint, testes e build executados a cada push
@@ -281,7 +281,7 @@ Os requisitos estão organizados por módulo. Abaixo, os principais de cada um.
 **Módulo de Contratações**
 
 - RF-011 — O sistema deve permitir que o cliente envie proposta de contratação a um freelancer
-- RF-012 — O sistema deve permitir que o freelancer aceite, recuse ou faça contraproposta — **atendido na candidata 1.42.0**: até 5 ofertas em 3 rodadas, com vez, validade e reserva conferidas (RN-030, ADR 61; RF-032 no documento detalhado)
+- RF-012 — O sistema deve permitir que o freelancer aceite, recuse ou faça contraproposta — **atendido na 1.42.0**: até 5 ofertas em 3 rodadas, com vez, validade e reserva conferidas (RN-030, ADR 61; RF-032 no documento detalhado)
 - RF-013 — O sistema deve rastrear o status da contratação em cada etapa do fluxo
 - RF-014 — O sistema deve permitir que o freelancer registre a entrega com mensagem e arquivos
 - RF-015 — O sistema deve permitir que o cliente aprove a entrega ou solicite revisão — 2 revisões sem custo por entrega ou marco, com liberação extra pelo freelancer e legado sem limite (RN-023, ADR 61)
@@ -722,7 +722,7 @@ O banco de dados principal do Escambo é o MySQL 8. A escolha por um banco relac
 
 A seção apresenta o modelo de dados em três partes: o DER, o esquema relacional e, no final, uma visão conceitual em documentos (NoSQL). Essa última parte não altera a stack nem o escopo da entrega, que continua baseada em MySQL 8. Ela serve apenas para mostrar como alguns módulos de leitura intensa, como o chat e as notificações, poderiam ser otimizados no futuro com uma modelagem denormalizada.
 
-A candidata 1.42.0 tem 60 tabelas de aplicação nos 15 módulos, sem contar schema_migrations. As figuras seguintes são o desenho conceitual anterior; a evolução com ofertas/desistências está em [`docs/modelagem-banco.md`](./modelagem-banco.md), e o DDL executável é apps/api/db/schema.sql mais apps/api/db/migrations/.
+A 1.42.0 tem 60 tabelas de aplicação nos 15 módulos, sem contar schema_migrations. As figuras seguintes são o desenho conceitual anterior; a evolução com ofertas/desistências está em [`docs/modelagem-banco.md`](./modelagem-banco.md), e o DDL executável é apps/api/db/schema.sql mais apps/api/db/migrations/.
 
 ---
 

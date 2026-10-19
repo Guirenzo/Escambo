@@ -1,4 +1,5 @@
 import type {
+  Badge,
   ClientProfile,
   FreelancerProfile,
   MyProfiles,
@@ -39,6 +40,9 @@ export function parseDays(v: number[] | string | null | undefined): number[] | n
   }
   return Array.isArray(arr) ? arr.filter((d): d is number => Number.isInteger(d)) : null;
 }
+
+/** Quantas badges ficam em destaque no perfil público (RN-058); as demais vão em "Conquistas". */
+export const FEATURED_BADGES_MAX = 3;
 
 /** Dias sem repetição, em ordem (domingo primeiro), prontos para a coluna JSON. */
 export const normalizeDays = (days: number[] | null | undefined): string | null =>
@@ -210,16 +214,26 @@ export const profilesService = {
     const r: PublicFreelancerRow | undefined =
       await profilesRepository.findPublicFreelancerByUlid(ulid);
     if (!r) throw new HttpError(404, 'Perfil não encontrado', 'profile_not_found');
-    const [portfolio, summary] = await Promise.all([
+    const [portfolio, summary, badgeRows] = await Promise.all([
       profilesRepository.listPortfolio(r.user_id),
       dropoutsService.publicSummary(r.user_id),
+      profilesRepository.listBadges(r.user_id),
     ]);
+    const badges: Badge[] = badgeRows.map((b) => ({
+      slug: b.slug,
+      name: b.name,
+      awardedAt: new Date(b.awarded_at).toISOString(),
+    }));
     return {
       ...toFreelancer(r),
       userId: r.user_id,
       userUlid: r.ulid,
       level: r.level,
       levelName: r.level_name,
+      totalXp: Number(r.total_xp ?? 0),
+      badges,
+      // RN-058: ainda não há escolha do freelancer; ficam em destaque as mais recentes.
+      featuredBadges: badges.slice(0, FEATURED_BADGES_MAX),
       portfolio: portfolio.map(toPortfolioItem),
       // O perfil público nunca recebe a lista, as datas ou os textos privados da contestação.
       dropouts: { count: summary.count, windowDays: 60, alert: summary.alert },
