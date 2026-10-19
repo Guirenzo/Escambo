@@ -473,9 +473,9 @@ export function PortfolioGallery({
           <button
             type="button"
             className="gallery-zoom-level"
-            aria-label={
-              zoomed ? `Voltar ao tamanho inteiro (${percent}%)` : 'Tamanho inteiro (100%)'
-            }
+            // O texto visível (o percentual) tem de estar no nome, e fora de parênteses: o
+            // leitor de voz e o axe (label-content-name-mismatch) ignoram o que vai entre eles.
+            aria-label={zoomed ? `Voltar ao tamanho inteiro: ${percent}%` : 'Tamanho inteiro: 100%'}
             aria-disabled={!zoomed}
             onClick={resetZoom}
           >
