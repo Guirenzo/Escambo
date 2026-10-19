@@ -9,6 +9,7 @@ const { service } = vi.hoisted(() => ({
   service: {
     create: vi.fn(),
     list: vi.fn(),
+    listMine: vi.fn(),
     getById: vi.fn(),
     update: vi.fn(),
     remove: vi.fn(),
@@ -280,6 +281,42 @@ describe('serviços: borda HTTP', () => {
         error: 'period_requires_day',
         message: 'Escolha o dia para filtrar por período',
       });
+    });
+  });
+
+  describe('GET /api/services/mine (meus serviços)', () => {
+    const paused = { ...landing, id: 6, title: 'Logo', isActive: false };
+
+    it('exige login: sem token é 401 e o service nem é chamado', async () => {
+      const res = await request(app).get('/api/services/mine').expect(401);
+      expect(res.body.error).toBe('missing_token');
+      expect(service.listMine).not.toHaveBeenCalled();
+    });
+
+    it('devolve os serviços de quem está logado, pausados inclusive, do jeito que o service mandou', async () => {
+      service.listMine.mockResolvedValue([paused, landing]);
+
+      const res = await request(app).get('/api/services/mine').set(bearer(7)).expect(200);
+
+      expect(res.body).toEqual([paused, landing]);
+      expect(service.listMine.mock.calls).toEqual([[7]]);
+    });
+
+    it('não é confundida com o detalhe: "mine" não vira id nem passa pela busca pública', async () => {
+      service.listMine.mockResolvedValue([]);
+
+      await request(app).get('/api/services/mine').set(bearer(7)).expect(200);
+
+      expect(service.getById).not.toHaveBeenCalled();
+      expect(service.list).not.toHaveBeenCalled();
+    });
+
+    it('a query string não muda de quem é a lista: ownerId de outra pessoa é ignorado', async () => {
+      service.listMine.mockResolvedValue([]);
+
+      await request(app).get('/api/services/mine?ownerId=99').set(bearer(7)).expect(200);
+
+      expect(service.listMine.mock.calls).toEqual([[7]]);
     });
   });
 
@@ -737,6 +774,7 @@ describe('serviços: borda HTTP', () => {
     const bad = { Authorization: 'Bearer nao-e-um-jwt' };
     const responses = [
       await request(app).post('/api/services').set(bad).send(validBody),
+      await request(app).get('/api/services/mine').set(bad),
       await request(app).patch('/api/services/5').set(bad).send({ title: 'Novo título' }),
       await request(app).delete('/api/services/5').set(bad),
     ];
@@ -745,6 +783,7 @@ describe('serviços: borda HTTP', () => {
       expect(res.body.error).toBe('invalid_token');
     }
     expect(service.create).not.toHaveBeenCalled();
+    expect(service.listMine).not.toHaveBeenCalled();
     expect(service.update).not.toHaveBeenCalled();
     expect(service.remove).not.toHaveBeenCalled();
   });
@@ -776,6 +815,7 @@ describe('serviços: borda HTTP', () => {
     const responses = [
       await request(app).get('/api/services'),
       await request(app).get('/api/services/5'),
+      await request(app).get('/api/services/mine').set(bearer(7)),
       await request(app).post('/api/services').set(bearer(7)).send(validBody),
       await request(app).patch('/api/services/5').set(bearer(7)).send({ title: 'Novo título' }),
       await request(app).delete('/api/services/5').set(bearer(7)),
@@ -788,6 +828,7 @@ describe('serviços: borda HTTP', () => {
     // Cada rota chegou ao seu service (a falha não foi de validação nem de login).
     expect(service.list).toHaveBeenCalledTimes(1);
     expect(service.getById.mock.calls).toEqual([[5]]);
+    expect(service.listMine.mock.calls).toEqual([[7]]);
     expect(service.create).toHaveBeenCalledTimes(1);
     expect(service.update.mock.calls).toEqual([[5, 7, { title: 'Novo título' }]]);
     expect(service.remove.mock.calls).toEqual([[5, 7]]);

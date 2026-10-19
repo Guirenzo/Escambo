@@ -62,6 +62,35 @@ describe('walletRepository', () => {
     expect(fakeDb.calls[0]!.params).toEqual({ userId: 7 });
   });
 
+  it('com período, filtra a data do lançamento: início inclusivo, fim exclusivo (RF-047)', async () => {
+    const from = new Date('2026-10-01T03:00:00.000Z');
+    const to = new Date('2026-10-03T03:00:00.000Z');
+
+    await walletRepository.listTransactions(7, 21, 0, { from, to });
+
+    expect(fakeDb.calls[0]!.sql).toContain(
+      'FROM wallet_transactions WHERE user_id = :userId AND created_at >= :from AND created_at < :to ORDER BY id DESC LIMIT 21 OFFSET 0',
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ userId: 7, from, to });
+  });
+
+  it('só o início ou só o fim do período: só aquele lado entra no filtro', async () => {
+    const from = new Date('2026-09-15T05:00:00.000Z');
+    const to = new Date('2026-10-01T03:00:00.000Z');
+
+    await walletRepository.listTransactions(7, 21, 20, { from });
+    await walletRepository.listTransactions(7, 21, 20, { to });
+
+    expect(fakeDb.calls[0]!.sql).toContain(
+      'WHERE user_id = :userId AND created_at >= :from ORDER BY id DESC LIMIT 21 OFFSET 20',
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ userId: 7, from });
+    expect(fakeDb.calls[1]!.sql).toContain(
+      'WHERE user_id = :userId AND created_at < :to ORDER BY id DESC LIMIT 21 OFFSET 20',
+    );
+    expect(fakeDb.calls[1]!.params).toEqual({ userId: 7, to });
+  });
+
   it('getOrCreate de quem ainda não tinha carteira devolve a recém-criada, lida depois do INSERT', async () => {
     const created = { id: 9, user_id: 31, balance: '0.00', balance_pending: '0.00' };
     fakeDb.reply({ affectedRows: 1, insertId: 9 }, [created]);

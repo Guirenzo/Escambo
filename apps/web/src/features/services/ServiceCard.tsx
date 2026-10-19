@@ -1,5 +1,5 @@
 import { BusinessButton, BusinessIconButton } from '../../components/BusinessActions';
-import { ArrowLeftRight, Heart, Rocket } from 'lucide-react';
+import { ArrowLeftRight, Heart, Pause, Pencil, Play, Rocket } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Service } from '@escambo/types';
 import { Avatar } from '../../components/Avatar';
@@ -9,7 +9,16 @@ import { useAuth } from '../../lib/auth';
 import { usePublicSettings } from '../../lib/hooks';
 import { zoneNote } from '../../lib/timezones';
 
-/** Card de serviço da busca e do perfil público: quem presta, preço, distância, favorito e ações. */
+/** Preço como o anúncio mostra: por hora leva "/h"; sem preço (ou a combinar) é "a combinar". */
+export function servicePrice(s: Pick<Service, 'priceType' | 'price'>): string {
+  if (s.priceType === 'negotiable' || s.price == null) return 'a combinar';
+  return s.priceType === 'hourly' ? `${brl(s.price)}/h` : brl(s.price);
+}
+
+/**
+ * Card de serviço da busca, do perfil público e de "Meus serviços": quem presta, preço, prazo,
+ * distância, modalidade, favorito e ações. Em "Meus serviços" o dono também edita, pausa e reativa.
+ */
 export function ServiceCard({
   service: s,
   mine,
@@ -19,6 +28,9 @@ export function ServiceCard({
   favorited,
   onToggleFavorite,
   onProposeBarter,
+  onEdit,
+  onToggleActive,
+  toggling = false,
 }: {
   service: Service;
   mine: boolean;
@@ -29,6 +41,12 @@ export function ServiceCard({
   onToggleFavorite?: (s: Service) => void;
   /** Só para freelancers: propor troca do próprio serviço por este. */
   onProposeBarter?: (s: Service) => void;
+  /** Só em "Meus serviços": abre a edição do serviço. */
+  onEdit?: (s: Service) => void;
+  /** Só em "Meus serviços": pausa o ativo e reativa o pausado (RF-030). */
+  onToggleActive?: (s: Service) => void;
+  /** A pausa ou a reativação deste serviço está em andamento. */
+  toggling?: boolean;
 }) {
   const barterEnabled = usePublicSettings().data?.barterEnabled ?? true;
   const viewerZone = useAuth().user?.timezone;
@@ -43,7 +61,8 @@ export function ServiceCard({
               <Rocket size={12} /> Destaque
             </span>
           )}
-          {s.isRemote && <span className="tag">remoto</span>}
+          {!s.isActive && <span className="pill status-pending">Pausado</span>}
+          <span className="tag">{s.isRemote ? 'remoto' : 'presencial'}</span>
           {onToggleFavorite && !mine && (
             <BusinessIconButton
               type="button"
@@ -83,21 +102,42 @@ export function ServiceCard({
         </div>
       )}
       <p className="muted clamp">{s.description}</p>
+      {!s.isActive && (
+        <p className="muted tiny" data-testid="paused-note">
+          Fora da busca e sem propostas novas. Os contratos em andamento continuam.
+        </p>
+      )}
       <div className="svc-foot">
-        <span className="price">{s.price != null ? brl(s.price) : 'a combinar'}</span>
+        <span className="price">{servicePrice(s)}</span>
         <span className="muted tiny">
           {s.distanceKm != null
             ? `${s.distanceKm} km de você`
             : s.deliveryDays != null
-              ? `${s.deliveryDays} dias`
+              ? `${s.deliveryDays} ${s.deliveryDays === 1 ? 'dia' : 'dias'}`
               : ''}
         </span>
       </div>
       <div className="svc-actions">
         {mine ? (
-          <BusinessButton variant="mini" onClick={() => onBoost(s)} disabled={s.boosted}>
-            <Rocket size={14} /> {s.boosted ? 'Impulsionado' : 'Impulsionar'}
-          </BusinessButton>
+          <>
+            {/* Serviço pausado não é impulsionado (RN-017). */}
+            {s.isActive && (
+              <BusinessButton variant="mini" onClick={() => onBoost(s)} disabled={s.boosted}>
+                <Rocket size={14} /> {s.boosted ? 'Impulsionado' : 'Impulsionar'}
+              </BusinessButton>
+            )}
+            {onEdit && (
+              <BusinessButton variant="mini" onClick={() => onEdit(s)}>
+                <Pencil size={14} /> Editar
+              </BusinessButton>
+            )}
+            {onToggleActive && (
+              <BusinessButton variant="mini" onClick={() => onToggleActive(s)} disabled={toggling}>
+                {s.isActive ? <Pause size={14} /> : <Play size={14} />}{' '}
+                {toggling ? 'Salvando…' : s.isActive ? 'Pausar' : 'Reativar'}
+              </BusinessButton>
+            )}
+          </>
         ) : (
           <>
             <BusinessButton variant="mini" onClick={() => onContratar(s)}>

@@ -8,6 +8,7 @@ vi.mock('./profiles.repository', () => ({
     findClientByUserId: vi.fn(),
     findPublicFreelancerByUlid: vi.fn(),
     listPortfolio: vi.fn().mockResolvedValue([]),
+    listBadges: vi.fn().mockResolvedValue([]),
   },
 }));
 vi.mock('../dropouts/dropouts.service', () => ({
@@ -16,12 +17,13 @@ vi.mock('../dropouts/dropouts.service', () => ({
 
 import { computeEscamboScore } from '../score/score.service';
 import { dropoutsService } from '../dropouts/dropouts.service';
-import { parseDays, profilesService } from './profiles.service';
+import { FEATURED_BADGES_MAX, parseDays, profilesService } from './profiles.service';
 import {
   profilesRepository,
   type ClientRow,
   type FreelancerRow,
   type PortfolioRow,
+  type PublicBadgeRow,
   type PublicFreelancerRow,
 } from './profiles.repository';
 
@@ -536,5 +538,80 @@ describe('Escambo Score no perfil: sai dos números da própria linha', () => {
       socialProof: 50,
       responsiveness: 100,
     });
+  });
+});
+
+describe('perfil público: XP e badges (RF-015, RF-068, RN-058)', () => {
+  const ULID = '01HZXULIDEXAMPLE0000000000';
+  const publicRow = (o: Record<string, unknown> = {}): PublicFreelancerRow =>
+    ({
+      ...freelancerRow(),
+      user_id: 44,
+      ulid: ULID,
+      level: 4,
+      level_name: 'Especialista',
+      total_xp: 2350,
+      ...o,
+    }) as unknown as PublicFreelancerRow;
+  const badge = (slug: string, name: string, at: string): PublicBadgeRow =>
+    ({ slug, name, awarded_at: new Date(at) }) as PublicBadgeRow;
+
+  it('mostra o XP acumulado e todas as badges do dono do perfil, com a data em ISO', async () => {
+    repo.findPublicFreelancerByUlid.mockResolvedValue(publicRow());
+    repo.listBadges.mockResolvedValueOnce([
+      badge('top-rated', 'Bem avaliado', '2026-10-02T12:00:00Z'),
+      badge('first-deal', 'Primeiro negócio', '2026-09-01T12:00:00Z'),
+    ]);
+
+    const p = await profilesService.getPublicFreelancer(ULID);
+
+    // As badges são as do dono do perfil (id numérico da linha), não as de quem pediu.
+    expect(repo.listBadges).toHaveBeenCalledWith(44);
+    expect(p.totalXp).toBe(2350);
+    expect(p.level).toBe(4);
+    expect(p.levelName).toBe('Especialista');
+    expect(p.badges).toEqual([
+      { slug: 'top-rated', name: 'Bem avaliado', awardedAt: '2026-10-02T12:00:00.000Z' },
+      { slug: 'first-deal', name: 'Primeiro negócio', awardedAt: '2026-09-01T12:00:00.000Z' },
+    ]);
+    expect(p.featuredBadges).toEqual(p.badges);
+  });
+
+  it('em destaque ficam só as 3 mais recentes, na ordem que o banco devolve; as outras seguem na lista', async () => {
+    repo.findPublicFreelancerByUlid.mockResolvedValue(publicRow());
+    repo.listBadges.mockResolvedValueOnce([
+      badge('d', 'Quarta', '2026-10-04T12:00:00Z'),
+      badge('c', 'Terceira', '2026-10-03T12:00:00Z'),
+      badge('b', 'Segunda', '2026-10-02T12:00:00Z'),
+      badge('a', 'Primeira', '2026-10-01T12:00:00Z'),
+    ]);
+
+    const p = await profilesService.getPublicFreelancer(ULID);
+
+    expect(FEATURED_BADGES_MAX).toBe(3);
+    expect(p.featuredBadges.map((b) => b.slug)).toEqual(['d', 'c', 'b']);
+    expect(p.badges.map((b) => b.slug)).toEqual(['d', 'c', 'b', 'a']);
+  });
+
+  it('quem ainda não ganhou nada: XP numérico, sem badges e nada em destaque', async () => {
+    // O mysql2 pode devolver o COALESCE como texto; o perfil sempre mostra número.
+    repo.findPublicFreelancerByUlid.mockResolvedValue(
+      publicRow({ total_xp: '0', level: 1, level_name: 'Iniciante' }),
+    );
+
+    const p = await profilesService.getPublicFreelancer(ULID);
+
+    expect(p.totalXp).toBe(0);
+    expect(p.badges).toEqual([]);
+    expect(p.featuredBadges).toEqual([]);
+  });
+
+  it('perfil que não existe nem consulta as badges', async () => {
+    repo.findPublicFreelancerByUlid.mockResolvedValue(undefined);
+
+    await expect(profilesService.getPublicFreelancer(ULID)).rejects.toMatchObject({
+      code: 'profile_not_found',
+    });
+    expect(repo.listBadges).not.toHaveBeenCalled();
   });
 });

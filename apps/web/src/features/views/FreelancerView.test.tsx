@@ -11,7 +11,7 @@ import type {
 } from '@escambo/types';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dtm } from '../../lib/format';
+import { dt, dtm } from '../../lib/format';
 import { ToastProvider } from '../../lib/toast';
 import { FreelancerView } from './FreelancerView';
 
@@ -54,6 +54,9 @@ const profile = (o: Partial<PublicFreelancerProfile> = {}): PublicFreelancerProf
   userUlid: 'u-marina',
   level: 4,
   levelName: 'Especialista',
+  totalXp: 2350,
+  badges: [],
+  featuredBadges: [],
   portfolio: [],
   fullName: 'Marina Alves',
   avatarUrl: null,
@@ -684,5 +687,65 @@ describe('FreelancerView: contratar, trocar e moderar', () => {
     await screen.findByRole('heading', { level: 1, name: 'Marina Alves' });
     expect(screen.queryByRole('button', { name: 'Banir' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Suspender' })).toBeNull();
+  });
+});
+
+describe('FreelancerView: XP e conquistas (RF-015, RF-068, RN-058)', () => {
+  const badge = (slug: string, name: string, awardedAt: string) => ({ slug, name, awardedAt });
+  const ALL = [
+    badge('client-favorite', 'Client Favorite', '2026-10-04T12:00:00.000Z'),
+    badge('top-rated', 'Top Rated', '2026-10-02T12:00:00.000Z'),
+    badge('fast-delivery', 'Fast Delivery', '2026-09-20T12:00:00.000Z'),
+    badge('first-deal', 'First Deal', '2026-09-01T12:00:00.000Z'),
+  ];
+
+  it('mostra o XP acumulado ao lado do nível', async () => {
+    renderAt();
+    await screen.findByRole('heading', { level: 1, name: 'Marina Alves' });
+    expect(screen.getByText('Nível 4 · Especialista')).toBeInTheDocument();
+    expect(screen.getByTestId('total-xp')).toHaveTextContent('2.350 XP');
+  });
+
+  it('as badges em destaque aparecem no topo, e todas, com a data, em "Conquistas"', async () => {
+    api.publicFreelancer.mockResolvedValue(
+      profile({ badges: ALL, featuredBadges: ALL.slice(0, 3) }),
+    );
+    renderAt();
+    await screen.findByRole('heading', { level: 1, name: 'Marina Alves' });
+
+    const featured = screen.getByRole('list', { name: 'Conquistas em destaque' });
+    expect(
+      within(featured)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent?.trim()),
+    ).toEqual(['Client Favorite', 'Top Rated', 'Fast Delivery']);
+
+    const card = within(screen.getByTestId('achievements'));
+    expect(card.getByRole('heading', { name: 'Conquistas' })).toBeInTheDocument();
+    expect(card.getByText('4 badges')).toBeInTheDocument();
+    const all = card.getByRole('list', { name: 'Badges conquistadas' });
+    const items = within(all).getAllByRole('listitem');
+    expect(items).toHaveLength(4);
+    expect(items[3]).toHaveTextContent('First Deal');
+    expect(items[3]).toHaveTextContent(`desde ${dt('2026-09-01T12:00:00.000Z')}`);
+  });
+
+  it('uma badge só: "1 badge", no singular', async () => {
+    api.publicFreelancer.mockResolvedValue(
+      profile({ badges: ALL.slice(3), featuredBadges: ALL.slice(3) }),
+    );
+    renderAt();
+    await screen.findByRole('heading', { level: 1, name: 'Marina Alves' });
+    expect(within(screen.getByTestId('achievements')).getByText('1 badge')).toBeInTheDocument();
+  });
+
+  it('sem badges: nada em destaque e o cartão diz que ainda não há conquistas', async () => {
+    renderAt();
+    await screen.findByRole('heading', { level: 1, name: 'Marina Alves' });
+    expect(screen.queryByRole('list', { name: 'Conquistas em destaque' })).toBeNull();
+    const card = within(screen.getByTestId('achievements'));
+    expect(card.getByText('0 badges')).toBeInTheDocument();
+    expect(card.getByText('Nenhuma badge conquistada ainda.')).toBeInTheDocument();
+    expect(card.queryByRole('list')).toBeNull();
   });
 });

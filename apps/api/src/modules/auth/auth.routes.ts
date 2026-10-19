@@ -3,6 +3,7 @@ import { authenticate } from '../../middlewares/authenticate';
 import { loginRateLimiter } from '../../middlewares/rate-limit';
 import { asyncHandler } from '../../utils/async-handler';
 import {
+  changePassword,
   forgotPassword,
   login,
   logout,
@@ -34,3 +35,5 @@ authRoutes.post(
 );
 authRoutes.post('/forgot-password', loginRateLimiter, asyncHandler(forgotPassword));
 authRoutes.post('/reset-password', loginRateLimiter, asyncHandler(resetPassword));
+// Troca com login (RF-017): o login é conferido antes, e errar a senha atual gasta tentativa.
+authRoutes.post('/change-password', authenticate, loginRateLimiter, asyncHandler(changePassword));

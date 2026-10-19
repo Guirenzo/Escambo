@@ -1,5 +1,12 @@
-import type { Paginated, Wallet, WalletReason, WalletTransaction } from '@escambo/types';
+import type {
+  Wallet,
+  WalletReason,
+  WalletTransaction,
+  WalletTransactionsPage,
+} from '@escambo/types';
+import { userZone } from '../auth/user-zone';
 import { creditsService } from '../credits/credits.service';
+import { periodRange, type WalletPeriod } from './wallet.period';
 import { walletRepository, type WalletTxRow } from './wallet.repository';
 
 function toWalletTransaction(r: WalletTxRow): WalletTransaction {
@@ -46,13 +53,28 @@ export const walletService = {
     };
   },
 
-  /** Extrato de R$ (ledger): depósitos, reservas, escrow, reembolsos e saques. */
+  /**
+   * Extrato de R$ (ledger): depósitos, reservas, escrow, reembolsos e saques. O período (RF-047) é
+   * de dias no fuso da conta de quem lê; pede um lançamento a mais para saber se há outra página.
+   */
   async listTransactions(
     userId: number,
     page: number,
     limit: number,
-  ): Promise<Paginated<WalletTransaction>> {
-    const rows = await walletRepository.listTransactions(userId, limit, (page - 1) * limit);
-    return { items: rows.map(toWalletTransaction), page, limit };
+    period: WalletPeriod = {},
+  ): Promise<WalletTransactionsPage> {
+    const range = await periodRange(period, () => userZone(userId));
+    const rows = await walletRepository.listTransactions(
+      userId,
+      limit + 1,
+      (page - 1) * limit,
+      range,
+    );
+    return {
+      items: rows.slice(0, limit).map(toWalletTransaction),
+      page,
+      limit,
+      hasMore: rows.length > limit,
+    };
   },
 };

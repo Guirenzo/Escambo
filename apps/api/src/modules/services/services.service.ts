@@ -111,6 +111,12 @@ export const servicesService = {
     return { items: rows.map(toService), page: input.page, limit: input.limit };
   },
 
+  /** "Meus serviços" (RF-030): os do dono, pausados inclusive, para ele pausar e reativar. */
+  async listMine(ownerId: number): Promise<Service[]> {
+    const rows = await servicesRepository.listByOwner(ownerId);
+    return rows.map(toService);
+  },
+
   async getById(id: number): Promise<Service> {
     const row = await servicesRepository.findById(id);
     if (!row) throw new HttpError(404, 'Serviço não encontrado', 'service_not_found');

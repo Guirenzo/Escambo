@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type {
   Contract,
   ContractOffer,
@@ -18,6 +19,7 @@ import type {
   OfferWalletEffect,
 } from '../modules/contracts/offers';
 import type { WalletEffect } from '../modules/wallet/wallet.ledger';
+import { router } from '../routes';
 import {
   openapiDocument,
   SWAGGER_UI_FILES,
@@ -25,6 +27,9 @@ import {
   swaggerInitJs,
   swaggerUiDistDir,
 } from './openapi';
+
+// O router da API carrega os módulos inteiros: sem banco, como nos outros testes de unidade.
+vi.mock('./db', async () => (await import('../test-support/fake-db')).dbModule);
 
 const METHODS = ['get', 'post', 'put', 'patch', 'delete'] as const;
 
@@ -663,5 +668,216 @@ describe('página do Swagger UI', () => {
     // Com o resolvedor do Node (o padrão), não lança: devolve a pasta ou null.
     const real = swaggerUiDistDir();
     expect(real === null || real.endsWith('swagger-ui-dist')).toBe(true);
+  });
+});
+
+interface RouterLayer {
+  regexp: RegExp & { fast_slash?: boolean };
+  keys: Array<{ name: string | number }>;
+  route?: { path: unknown; methods: Record<string, boolean> };
+  handle: { stack?: RouterLayer[] };
+}
+
+/** Prefixo em que o Express 4 montou um sub-router: ele guarda só a expressão regular do caminho. */
+function mountPath(layer: RouterLayer): string {
+  if (layer.regexp.fast_slash) return '';
+  let key = 0;
+  const path = layer.regexp.source
+    .replace(/^\^/, '')
+    .replace('\\/?(?=\\/|$)', '')
+    .replaceAll('(?:\\/([^/]+?))', () => `/:${String(layer.keys[key++]?.name)}`)
+    .replace(/\\\//g, '/');
+  if (!/^(\/[\w:-]+)+$/.test(path)) throw new Error(`Montagem que o teste não lê: ${layer.regexp}`);
+  return path;
+}
+
+/** `:id` do Express vira `{id}` do OpenAPI (sem a restrição entre parênteses nem o `?`). */
+const asOpenApi = (path: string): string => path.replace(/:(\w+)(\([^)]*\))?\??/g, '{$1}');
+
+/** Toda rota declarada no router da API, como "MÉTODO /caminho/{param}" (relativo a /api). */
+function declaredRoutes(stack: RouterLayer[], prefix = ''): string[] {
+  const out: string[] = [];
+  for (const layer of stack) {
+    if (layer.route) {
+      const { path, methods } = layer.route;
+      if (typeof path !== 'string') throw new Error(`Rota sem caminho em texto: ${String(path)}`);
+      const full = asOpenApi(`${prefix}${path === '/' ? '' : path}` || '/');
+      for (const method of Object.keys(methods)) out.push(`${method.toUpperCase()} ${full}`);
+    } else if (layer.handle.stack) {
+      out.push(...declaredRoutes(layer.handle.stack, prefix + mountPath(layer)));
+    }
+  }
+  return out;
+}
+
+/** O nome do parâmetro pode mudar entre a rota e o documento (`:ulid` e `{id}`): compara a forma. */
+const shape = (id: string): string => id.replace(/\{\w+\}/g, '{}');
+
+/** RNF-031: o documento acompanha a API. Rota nova sem documentação quebra o teste. */
+describe('documento OpenAPI e as rotas da API', () => {
+  const routes = declaredRoutes((router as unknown as { stack: RouterLayer[] }).stack);
+
+  it('lê o router de verdade: prefixos, parâmetros e métodos', () => {
+    expect(routes.length).toBeGreaterThan(150);
+    expect(routes).toContain('GET /health/live');
+    expect(routes).toContain('POST /contracts/{id}/accept');
+    expect(routes).toContain('GET /support/tickets/{id}');
+    expect(routes).toContain('PATCH /admin/support/tickets/{id}');
+    expect(routes.every((id) => /^(GET|POST|PUT|PATCH|DELETE) \//.test(id))).toBe(true);
+  });
+
+  it('toda rota da API está no documento, com o mesmo método', () => {
+    const documented = new Set(operations().map(({ id }) => shape(id)));
+    const missing = [...new Set(routes)].filter((id) => !documented.has(shape(id)));
+    expect(missing).toEqual([]);
+  });
+
+  it('a versão do documento é a do app (package.json), e não um número parado no tempo', () => {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8')) as {
+      version: string;
+    };
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(openapiDocument.info.version).toBe(pkg.version);
+  });
+});
+
+/** Rotas novas ou mudadas na rodada de lacunas de 19/10 e as 6 operações que o documento não tinha. */
+describe('documento OpenAPI: lacunas de 19/10', () => {
+  const { schemas } = openapiDocument.components;
+  const json = (path: string, method: (typeof METHODS)[number], status: string) =>
+    operation(path, method).responses[status]?.content?.['application/json'].schema;
+  interface Parameter {
+    name: string;
+    in: string;
+    schema: { type?: string; format?: string; items?: { enum?: string[] } };
+  }
+  const parameters = (path: string, method: (typeof METHODS)[number]) =>
+    (openapiDocument.paths[path][method] as { parameters: Parameter[] }).parameters;
+
+  it('as 6 operações que faltavam: protegidas, 204 e os erros de cada uma', () => {
+    for (const [path, errors] of [
+      ['/barters/{id}/reject', ['403', '404', '409']],
+      ['/barters/{id}/cancel', ['403', '404', '409']],
+      ['/notifications/{id}/read', ['404']],
+      ['/admin/users/{ulid}/suspend', ['404', '409']],
+      ['/admin/users/{ulid}/reactivate', ['404']],
+    ] as const) {
+      const op = operation(path, 'post');
+      expect(op.security, path).toEqual([{ bearerAuth: [] }]);
+      expect(Object.keys(op.responses).sort(), path).toEqual(['204', ...errors]);
+    }
+    const unfavorite = operation('/favorites/{targetType}/{targetId}', 'delete');
+    expect(unfavorite.security).toEqual([{ bearerAuth: [] }]);
+    expect(unfavorite.responses['204']?.description).toBe('Sem conteúdo');
+    expect(parameters('/favorites/{targetType}/{targetId}', 'delete')).toEqual([
+      {
+        name: 'targetType',
+        in: 'path',
+        required: true,
+        schema: { type: 'string', enum: ['service', 'freelancer'] },
+      },
+      { name: 'targetId', in: 'path', required: true, schema: { type: 'integer', minimum: 1 } },
+    ]);
+    expect(
+      operation('/admin/users/{ulid}/suspend', 'post').responses['409']?.description,
+    ).toContain('cannot_moderate_admin');
+    expect(operation('/reports', 'get').security).toEqual([{ bearerAuth: [] }]);
+    expect(operation('/lgpd/deletion-requests', 'get').security).toEqual([{ bearerAuth: [] }]);
+  });
+
+  it('GET /services/mine: lista de Service do dono, pausados inclusive, com login', () => {
+    const op = operation('/services/mine', 'get');
+    expect(op.tags).toEqual(['Serviços']);
+    expect(op.summary).toContain('Meus serviços (pausados inclusive)');
+    expect(op.security).toEqual([{ bearerAuth: [] }]);
+    expect(json('/services/mine', 'get', '200')).toEqual({
+      type: 'array',
+      items: { $ref: '#/components/schemas/Service' },
+    });
+    expect(schemas.Service.properties.isActive).toEqual({ type: 'boolean' });
+    expect(schemas.Service.properties.boosted.type).toBe('boolean');
+    expect(schemas.Service.properties).not.toHaveProperty('ownerName');
+    expect(
+      operation('/services/{id}', 'patch').requestBody?.content['application/json'].schema,
+    ).toEqual({ $ref: '#/components/schemas/UpdateService' });
+    expect(schemas.UpdateService.properties.isActive.type).toBe('boolean');
+    expect(schemas.UpdateService).not.toHaveProperty('required');
+  });
+
+  it('POST /auth/change-password: corpo, o par novo de tokens e os erros', () => {
+    const op = operation('/auth/change-password', 'post');
+    expect(op.tags).toEqual(['Auth']);
+    expect(op.security).toEqual([{ bearerAuth: [] }]);
+    expect(op.requestBody?.content['application/json'].schema).toEqual({
+      $ref: '#/components/schemas/ChangePassword',
+    });
+    expect(schemas.ChangePassword).toEqual({
+      type: 'object',
+      required: ['currentPassword', 'newPassword'],
+      properties: {
+        currentPassword: { type: 'string', minLength: 1 },
+        newPassword: { type: 'string', minLength: 8 },
+      },
+    });
+    expect(json('/auth/change-password', 'post', '200')).toEqual({
+      $ref: '#/components/schemas/RefreshResponse',
+    });
+    expect(schemas.RefreshResponse.required).toEqual(['accessToken', 'refreshToken']);
+    expect(Object.keys(op.responses)).toEqual(['200', '400', '401', '403', '404', '422', '429']);
+    expect(op.responses['400']?.description).toContain('wrong_password');
+    expect(op.responses['400']?.description).toContain('same_password');
+  });
+
+  it('GET /contracts: filtro de status, paginação e o total', () => {
+    const [page, limit, status] = parameters('/contracts', 'get');
+    expect(page).toMatchObject({ name: 'page', in: 'query', schema: { maximum: 10_000 } });
+    expect(limit).toMatchObject({ name: 'limit', in: 'query', schema: { maximum: 100 } });
+    expect(status).toMatchObject({ name: 'status', in: 'query', style: 'form', explode: true });
+    expect(status?.schema.items?.enum).toEqual(schemas.Contract.properties.status.enum);
+    expect(schemas.ContractsPage.required).toEqual(['items', 'page', 'limit', 'total']);
+    expect(operation('/contracts', 'get').responses['422']?.description).toContain(
+      'Status de contratação desconhecido',
+    );
+  });
+
+  it('GET /contracts/{id}: as entregas únicas; a entrega cita o trecho no aviso', () => {
+    expect(schemas.ContractWithHistory.allOf[1].properties.deliveries.items).toEqual({
+      $ref: '#/components/schemas/ContractDelivery',
+    });
+    expect(schemas.ContractDelivery.required).toEqual(['id', 'message', 'files', 'deliveredAt']);
+    expect(schemas.ContractDelivery.properties.files).toEqual({
+      type: 'array',
+      items: { type: 'string' },
+    });
+    expect(operation('/contracts/{id}/deliver', 'post').summary).toContain('120 caracteres');
+  });
+
+  it('GET /wallet/transactions: período em dias, página com hasMore e os erros novos', () => {
+    const params = parameters('/wallet/transactions', 'get');
+    expect(params.map((p) => p.name)).toEqual(['page', 'limit', 'from', 'to']);
+    expect(params[2]?.schema).toEqual({ type: 'string', format: 'date' });
+    expect(json('/wallet/transactions', 'get', '200')).toEqual({
+      $ref: '#/components/schemas/WalletTransactionsPage',
+    });
+    expect(schemas.WalletTransactionsPage.required).toEqual(['items', 'page', 'limit', 'hasMore']);
+    expect(schemas.WalletTransactionsPage.properties.items.items).toEqual({
+      $ref: '#/components/schemas/WalletTransaction',
+    });
+    const op = operation('/wallet/transactions', 'get');
+    expect(op.responses['400']?.description).toContain('invalid_range');
+    expect(op.responses['422']?.description).toContain(
+      'Informe um dia válido no formato AAAA-MM-DD',
+    );
+    expect(Object.keys(schemas.CreateWithdrawal.properties)).toEqual(
+      expect.arrayContaining(['bankName', 'bankAgency', 'bankAccount']),
+    );
+  });
+
+  it('perfil público: XP, badges e até 3 em destaque', () => {
+    const profile = schemas.PublicFreelancerProfile.properties;
+    expect(profile.totalXp).toMatchObject({ type: 'integer', minimum: 0 });
+    expect(profile.badges.items).toEqual({ $ref: '#/components/schemas/Badge' });
+    expect(profile.featuredBadges).toMatchObject({ type: 'array', maxItems: 3 });
+    expect(schemas.Badge.required).toEqual(['slug', 'name', 'awardedAt']);
   });
 });

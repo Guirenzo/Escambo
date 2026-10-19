@@ -43,6 +43,7 @@ import {
   PendingAttachment,
 } from '../contracts/ChatAttachment';
 import { CancelModal } from '../contracts/CancelModal';
+import { DeliveriesSection } from '../contracts/DeliveriesSection';
 import { DropoutAgreement } from '../contracts/DropoutAgreement';
 import { ContractActions } from '../contracts/ContractActions';
 import { DisputeWindowNotice, RevisionSummary } from '../contracts/ContractRuleNotices';
@@ -519,6 +520,7 @@ export function SalaContratoView({
             </QueryState>
           </section>
 
+          {c && <DeliveriesSection contract={c} myId={myId} />}
           {c && <NegotiationSection contract={c} myId={myId} />}
           {c && <DeadlineSection contract={c} myId={myId} />}
           {c && <RevisionSince contract={c} myId={myId} />}

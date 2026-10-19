@@ -19,6 +19,7 @@ const { service, limiter } = vi.hoisted(() => ({
     resendVerification: vi.fn(),
     forgotPassword: vi.fn(),
     resetPassword: vi.fn(),
+    changePassword: vi.fn(),
   },
   // No lugar do loginRateLimiter: deixa passar e registra por qual rota passou.
   limiter: vi.fn((_req: Request, _res: Response, next: NextFunction) => next()),
@@ -587,6 +588,84 @@ describe('autenticação: borda HTTP', () => {
     });
   });
 
+  describe('POST /api/auth/change-password (RF-017)', () => {
+    const valid = { currentPassword: 'senha-antiga-123', newPassword: 'senha-nova-456' };
+
+    it('exige login com token válido, antes de gastar tentativa', async () => {
+      const semToken = await request(app).post('/api/auth/change-password').send(valid).expect(401);
+      expect(semToken.body.error).toBe('missing_token');
+      const tokenRuim = await request(app)
+        .post('/api/auth/change-password')
+        .set({ Authorization: 'Bearer nao-e-um-jwt' })
+        .send(valid)
+        .expect(401);
+      expect(tokenRuim.body.error).toBe('invalid_token');
+      expect(service.changePassword).not.toHaveBeenCalled();
+      expect(limiter).not.toHaveBeenCalled();
+    });
+
+    it('troca a senha do usuário do token, e não de quem o corpo disser, e devolve o par novo desta sessão', async () => {
+      service.changePassword.mockResolvedValue(TOKENS);
+
+      const res = await request(app)
+        .post('/api/auth/change-password')
+        .set(bearer(7))
+        .set('User-Agent', AGENT)
+        .send({ ...valid, userId: 99, sub: 'ulid-99' })
+        .expect(200);
+
+      expect(res.body).toEqual(TOKENS);
+      expect(service.changePassword).toHaveBeenCalledTimes(1);
+      // Campos fora do schema não chegam ao service.
+      expect(service.changePassword).toHaveBeenCalledWith(7, valid, CTX);
+      expect(limiter).toHaveBeenCalledTimes(1);
+    });
+
+    it('a nova senha segue a regra do cadastro (mínimo de 8) e a atual é obrigatória', async () => {
+      const short = await request(app)
+        .post('/api/auth/change-password')
+        .set(bearer(7))
+        .send({ currentPassword: 'senha-antiga-123', newPassword: '1234567' })
+        .expect(422);
+      expect(short.body.details.newPassword).toEqual(['A senha deve ter ao menos 8 caracteres']);
+
+      const noCurrent = await request(app)
+        .post('/api/auth/change-password')
+        .set(bearer(7))
+        .send({ currentPassword: '', newPassword: 'senha-nova-456' })
+        .expect(422);
+      expect(noCurrent.body.details.currentPassword).toEqual(['Informe a senha atual']);
+
+      const missing = await request(app)
+        .post('/api/auth/change-password')
+        .set(bearer(7))
+        .send({})
+        .expect(422);
+      expect(Object.keys(missing.body.details).sort()).toEqual(['currentPassword', 'newPassword']);
+      expect(service.changePassword).not.toHaveBeenCalled();
+
+      // O limite em si passa: exatamente 8 caracteres.
+      service.changePassword.mockResolvedValue(TOKENS);
+      await request(app)
+        .post('/api/auth/change-password')
+        .set(bearer(7))
+        .send({ currentPassword: 'x', newPassword: '12345678' })
+        .expect(200);
+    });
+
+    it('senha atual errada sai como 400 wrong_password, com a mensagem para a tela', async () => {
+      service.changePassword.mockRejectedValue(
+        new HttpError(400, 'Senha atual incorreta', 'wrong_password'),
+      );
+      const res = await request(app)
+        .post('/api/auth/change-password')
+        .set(bearer(7))
+        .send(valid)
+        .expect(400);
+      expect(res.body).toEqual({ error: 'wrong_password', message: 'Senha atual incorreta' });
+    });
+  });
+
   describe('conta banida pela moderação (RN-007)', () => {
     afterEach(() => blocklist.delete(7));
 
@@ -597,6 +676,7 @@ describe('autenticação: borda HTTP', () => {
         request(app).post('/api/auth/logout-all'),
         request(app).get('/api/auth/me'),
         request(app).post('/api/auth/resend-verification'),
+        request(app).post('/api/auth/change-password'),
       ]) {
         const res = await call.set(bearer(7)).expect(403);
         expect(res.body).toEqual({
@@ -607,6 +687,7 @@ describe('autenticação: borda HTTP', () => {
       expect(service.logoutAll).not.toHaveBeenCalled();
       expect(service.getByUlid).not.toHaveBeenCalled();
       expect(service.resendVerification).not.toHaveBeenCalled();
+      expect(service.changePassword).not.toHaveBeenCalled();
       // No reenvio a conta é barrada antes do limitador: a tentativa nem conta.
       expect(limiter).not.toHaveBeenCalled();
 
@@ -620,6 +701,20 @@ describe('autenticação: borda HTTP', () => {
 
   describe('conta suspensa pela moderação (RN-007)', () => {
     afterEach(() => blocklist.delete(7));
+
+    it('troca a senha mesmo suspensa: é segurança da conta (RF-017)', async () => {
+      blocklist.add(7, 'suspended');
+      service.changePassword.mockResolvedValue(TOKENS);
+
+      const res = await request(app)
+        .post('/api/auth/change-password')
+        .set(bearer(7))
+        .send({ currentPassword: 'senha-antiga-123', newPassword: 'senha-nova-456' })
+        .expect(200);
+
+      expect(res.body).toEqual(TOKENS);
+      expect(service.changePassword).toHaveBeenCalledTimes(1);
+    });
 
     it('consulta o próprio usuário e encerra sessões, mas não reenvia confirmação de e-mail', async () => {
       blocklist.add(7, 'suspended');
@@ -660,6 +755,11 @@ describe('autenticação: borda HTTP', () => {
       ['/resend-verification', 'resendVerification', {}],
       ['/forgot-password', 'forgotPassword', { email: 'ana@escambo.test' }],
       ['/reset-password', 'resetPassword', { token: LINK_TOKEN, password: 'nova-senha-123' }],
+      [
+        '/change-password',
+        'changePassword',
+        { currentPassword: 'senha-antiga-123', newPassword: 'nova-senha-123' },
+      ],
     ] as const)(
       'POST %s responde 500 internal_error em JSON, sem vazar a mensagem do erro',
       async (path, method, body) => {
@@ -693,6 +793,7 @@ describe('autenticação: borda HTTP', () => {
         '/resend-verification',
         '/forgot-password',
         '/reset-password',
+        '/change-password',
       ]) {
         const res = await request(app).get(`/api/auth${path}`).set(bearer(7)).expect(404);
         expect(res.body.error).toBe('not_found');
@@ -713,6 +814,7 @@ describe('autenticação: borda HTTP', () => {
       ['/resend-verification', {}],
       ['/forgot-password', { email: 'ana@escambo.test' }],
       ['/reset-password', { token: LINK_TOKEN, password: 'nova-senha-123' }],
+      ['/change-password', { currentPassword: 'senha-antiga-123', newPassword: 'nova-senha-123' }],
     ])('POST %s passa pelo limitador de tentativas', async (path, body) => {
       const res = await request(app).post(`/api/auth${path}`).set(bearer(7)).send(body);
       // A requisição é válida e foi atendida: o limitador estava no caminho dela.
@@ -749,6 +851,7 @@ describe('autenticação: borda HTTP', () => {
           .send({ token: LINK_TOKEN, password: 'nova-senha-123' })
           .expect(429);
         await request(app).post('/api/auth/resend-verification').set(bearer(7)).expect(429);
+        await request(app).post('/api/auth/change-password').set(bearer(7)).send({}).expect(429);
       } finally {
         limiter.mockImplementation((_req, _res, next) => next());
       }

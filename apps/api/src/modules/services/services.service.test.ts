@@ -10,6 +10,7 @@ vi.mock('./services.repository', () => ({
     categoryIsActive: vi.fn().mockResolvedValue(true),
     findById: vi.fn(),
     list: vi.fn(),
+    listByOwner: vi.fn(),
     update: vi.fn(),
     softDelete: vi.fn(),
   },
@@ -513,6 +514,27 @@ describe('servicesService.getById — o serviço como a API devolve', () => {
     for (const key of ['distanceKm', 'boosted', 'ownerName', 'ownerUlid', 'ownerAvailableNow']) {
       expect(service).not.toHaveProperty(key);
     }
+  });
+});
+
+describe('servicesService.listMine — meus serviços (RF-030)', () => {
+  it('pede ao banco os serviços do dono e devolve cada um no formato da API, pausado e impulsionado inclusive', async () => {
+    repo.listByOwner.mockResolvedValue([
+      fakeRow({ id: 2, user_id: 7, is_active: 0, boosted: 0 } as FakeServiceFields),
+      fakeRow({ id: 1, user_id: 7, boosted: 1 } as FakeServiceFields),
+    ]);
+
+    expect(await servicesService.listMine(7)).toEqual([
+      { ...landing, id: 2, ownerId: 7, isActive: false, boosted: false },
+      { ...landing, id: 1, ownerId: 7, boosted: true },
+    ]);
+    expect(repo.listByOwner.mock.calls).toEqual([[7]]);
+    expect(repo.list).not.toHaveBeenCalled();
+  });
+
+  it('quem ainda não publicou nada recebe a lista vazia', async () => {
+    repo.listByOwner.mockResolvedValue([]);
+    expect(await servicesService.listMine(9)).toEqual([]);
   });
 });
 

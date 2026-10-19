@@ -21,7 +21,7 @@ vi.mock('../../lib/api', () => ({
   api: {
     wallet: () => wallet(),
     gamification: () => gamification(),
-    contracts: () => contracts(),
+    contracts: (query: unknown) => contracts(query),
     profilesMe: () => profilesMe(),
     contractAction: (id: number, action: string) => contractAction(id, action),
   },
@@ -128,7 +128,8 @@ const contractOf = (o: Partial<Contract> & { id: number }): Contract => ({
   ...o,
 });
 
-const page = (items: Contract[]) => ({ items, page: 1, limit: 20 });
+/** Uma página da lista; o total é o da API (RF-040), por padrão igual ao que veio. */
+const page = (items: Contract[], total = items.length) => ({ items, page: 1, limit: 20, total });
 
 beforeEach(() => {
   auth.user = { id: 1, email: 'bruno@escambo.test', role: 'freelancer' };
@@ -298,6 +299,15 @@ describe('InicioView', () => {
     expect(within(lesson).getByText(/· Créditos$/)).toBeInTheDocument();
     expect(within(lesson).getByText('30 cr')).toBeInTheDocument();
     expect(within(lesson).getByText('Concluído')).toBeInTheDocument();
+  });
+
+  it('o total é o da API, não o tamanho da página carregada (RF-040)', async () => {
+    contracts.mockResolvedValue(page([contractOf({ id: 5, title: 'Logo da padaria' })], 37));
+    renderView();
+
+    expect(await screen.findByRole('row', { name: /Logo da padaria/ })).toBeInTheDocument();
+    expect(screen.getByText('37 no total')).toBeInTheDocument();
+    expect(contracts).toHaveBeenCalledWith({ page: 1, limit: 20 });
   });
 
   it('"Sala" abre a sala daquela contratação', async () => {

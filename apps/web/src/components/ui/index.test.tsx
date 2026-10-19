@@ -193,6 +193,19 @@ describe('estados de tela', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
+  it('erro técnico do JavaScript não aparece cru: vira a mensagem genérica (RNF-028)', () => {
+    const { unmount } = render(
+      <ErrorState error={new TypeError("Cannot read properties of undefined (reading 'items')")} />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar.');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Cannot read properties');
+    unmount();
+
+    // A mensagem da API (ou de uma regra nossa) continua aparecendo como veio.
+    render(<ErrorState error={new Error('Serviço indisponível no momento.')} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Serviço indisponível no momento.');
+  });
+
   it('QueryState: vazio sem mensagem própria usa a padrão', () => {
     render(
       <QueryState

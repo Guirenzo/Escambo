@@ -9,6 +9,7 @@ import type {
   NegotiationTurn,
   OfferOutcome,
 } from '@escambo/types';
+import { buildInfo } from './build-info';
 
 const bearer = [{ bearerAuth: [] as string[] }];
 const res200 = { '200': { description: 'OK' } };
@@ -86,6 +87,29 @@ const jsonResponse = (status: '200' | '201', schema: string) => ({
     description: status === '201' ? 'Criado' : 'OK',
     content: { 'application/json': { schema: ref(schema) } },
   },
+});
+/** Resposta de erro no formato padrão ({ error, message }), com os códigos possíveis na descrição. */
+const errorResponse = (description: string) => ({
+  description,
+  content: { 'application/json': { schema: ref('Error') } },
+});
+const pageParameters = [
+  {
+    name: 'page',
+    in: 'query',
+    schema: { type: 'integer', minimum: 1, maximum: 10_000, default: 1 },
+  },
+  {
+    name: 'limit',
+    in: 'query',
+    schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+  },
+];
+const idPathParameter = (name: string, schema: Record<string, unknown>) => ({
+  name,
+  in: 'path',
+  required: true,
+  schema,
 });
 const offerPathParameters = [
   { name: 'id', in: 'path', required: true, schema: { type: 'integer', minimum: 1 } },
@@ -430,7 +454,8 @@ export const openapiDocument: Record<string, any> = {
   openapi: '3.0.3',
   info: {
     title: 'Escambo API',
-    version: '1.1.0',
+    // A do app (package.json): o documento acompanha cada release sem edição à mão.
+    version: buildInfo.version,
     description:
       'API do Escambo — marketplace de serviços com escrow, gamificação e troca de serviços (escambo). Autenticação via Bearer JWT; identidade, papel e status são conferidos no banco a cada requisição. RN-007: suspensos podem entrar, renovar sessão e consultar; ações de negócio retornam 403 account_suspended, incluindo acesso administrativo. Permanecem disponíveis suporte próprio (abrir, responder e encerrar), logout/logout-all, consentimentos, solicitações LGPD, remoção de push e contestações próprias de remoção/desistência. Banimento ou exclusão bloqueiam o acesso autenticado. Prazos e processamento já iniciado continuam. Atendimento de suporte não altera dinheiro ou prazos de contratos; disputa financeira mantém suas próprias regras.',
   },
@@ -619,7 +644,27 @@ export const openapiDocument: Record<string, any> = {
         ...obj({ note: { type: 'string', minLength: 10, maxLength: 500 } }, ['note']),
         additionalProperties: false,
       },
-      PublicFreelancerProfile: obj({ dropouts: ref('DropoutSummary') }),
+      Badge: obj({ slug: { type: 'string' }, name: { type: 'string' }, awardedAt: timestamp }, [
+        'slug',
+        'name',
+        'awardedAt',
+      ]),
+      PublicFreelancerProfile: obj({
+        dropouts: ref('DropoutSummary'),
+        totalXp: { ...nonnegativeInteger, description: 'XP acumulado (0 sem XP registrado).' },
+        badges: {
+          type: 'array',
+          items: ref('Badge'),
+          description:
+            'Da mais recente para a mais antiga; no mesmo segundo, a concedida por último vem antes.',
+        },
+        featuredBadges: {
+          type: 'array',
+          maxItems: 3,
+          items: ref('Badge'),
+          description: 'RN-058: as 3 primeiras de badges (não há escolha do freelancer).',
+        },
+      }),
       CancelTerms: obj({ dropout: nullableRef('DropoutPreview') }),
       AdminDropouts: { type: 'array', items: ref('AdminDropout') },
       OfferDecision: {
@@ -692,6 +737,12 @@ export const openapiDocument: Record<string, any> = {
               review: { type: 'object', nullable: true },
               cancellation: nullableRef('CancelTerms'),
               dropout: nullableRef('ContractDropout'),
+              deliveries: {
+                type: 'array',
+                items: ref('ContractDelivery'),
+                description:
+                  'Entregas únicas, da primeira à reentrega mais recente. Vazio sem entrega ou por marcos (cada marco traz deliveryNote).',
+              },
               offers: {
                 type: 'array',
                 items: ref('ContractOffer'),
@@ -732,8 +783,22 @@ export const openapiDocument: Record<string, any> = {
           items: { type: 'array', items: ref('Contract') },
           page: { type: 'integer', minimum: 1 },
           limit: { type: 'integer', minimum: 1, maximum: 100 },
+          total: {
+            ...nonnegativeInteger,
+            description:
+              'Todas as contratações em que a pessoa é cliente ou freelancer, já com o filtro de status.',
+          },
         },
-        ['items', 'page', 'limit'],
+        ['items', 'page', 'limit', 'total'],
+      ),
+      ContractDelivery: obj(
+        {
+          id: { type: 'integer', minimum: 1 },
+          message: { type: 'string' },
+          files: { type: 'array', items: { type: 'string' } },
+          deliveredAt: timestamp,
+        },
+        ['id', 'message', 'files', 'deliveredAt'],
       ),
       ExtensionDecision: obj({
         seq: {
@@ -772,9 +837,123 @@ export const openapiDocument: Record<string, any> = {
         {
           amount: { type: 'number', minimum: 20 },
           method: { type: 'string', enum: ['pix', 'bank'] },
-          pixKey: { type: 'string', nullable: true },
+          pixKey: { type: 'string', nullable: true, description: 'Obrigatória com method pix.' },
+          bankName: {
+            type: 'string',
+            maxLength: 100,
+            nullable: true,
+            description: 'Com method bank, banco, agência e conta são obrigatórios.',
+          },
+          bankAgency: { type: 'string', maxLength: 10, nullable: true },
+          bankAccount: { type: 'string', maxLength: 20, nullable: true },
         },
         ['amount', 'method'],
+      ),
+      ChangePassword: obj(
+        {
+          currentPassword: { type: 'string', minLength: 1 },
+          newPassword: { type: 'string', minLength: 8 },
+        },
+        ['currentPassword', 'newPassword'],
+      ),
+      RefreshResponse: obj({ accessToken: { type: 'string' }, refreshToken: { type: 'string' } }, [
+        'accessToken',
+        'refreshToken',
+      ]),
+      Service: obj(
+        {
+          id: { type: 'integer', minimum: 1 },
+          categoryId: { type: 'integer', minimum: 1 },
+          ownerId: { type: 'integer', minimum: 1 },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          priceType: { type: 'string', enum: ['fixed', 'hourly', 'negotiable'] },
+          price: { type: 'number', nullable: true },
+          deliveryDays: { type: 'integer', nullable: true },
+          isRemote: { type: 'boolean' },
+          isActive: { type: 'boolean' },
+          createdAt: timestamp,
+          boosted: { type: 'boolean', description: 'Impulsionamento ativo.' },
+        },
+        [
+          'id',
+          'categoryId',
+          'ownerId',
+          'title',
+          'description',
+          'priceType',
+          'price',
+          'deliveryDays',
+          'isRemote',
+          'isActive',
+          'createdAt',
+        ],
+      ),
+      UpdateService: {
+        ...obj({
+          categoryId: { type: 'integer', minimum: 1 },
+          title: { type: 'string', minLength: 3, maxLength: 150 },
+          description: { type: 'string', minLength: 10 },
+          priceType: { type: 'string', enum: ['fixed', 'hourly', 'negotiable'] },
+          price: { type: 'number', nullable: true },
+          deliveryDays: { type: 'integer', minimum: 1, nullable: true },
+          isRemote: { type: 'boolean' },
+          isActive: { type: 'boolean', description: 'false pausa o serviço; true reativa.' },
+        }),
+        description:
+          'Campos a mudar, todos opcionais: a edição manda o serviço inteiro; pausar e reativar mandam só isActive.',
+      },
+      WalletTransaction: obj(
+        {
+          id: { type: 'integer', minimum: 1 },
+          amount: { type: 'number', description: 'Variação do saldo disponível (+ entra, - sai).' },
+          pendingDelta: { type: 'number', description: 'Variação do saldo retido.' },
+          balanceAfter: { type: 'number' },
+          pendingAfter: { type: 'number' },
+          reason: {
+            type: 'string',
+            enum: [
+              'deposit',
+              'hold',
+              'hold_release',
+              'payment',
+              'escrow_in',
+              'escrow_release',
+              'escrow_refund',
+              'refund',
+              'withdrawal',
+              'withdrawal_refund',
+              'barter_hold',
+              'barter_payment',
+              'barter_in',
+            ],
+          },
+          contractId: { type: 'integer', nullable: true },
+          paymentId: { type: 'integer', nullable: true },
+          withdrawalId: { type: 'integer', nullable: true },
+          createdAt: timestamp,
+        },
+        [
+          'id',
+          'amount',
+          'pendingDelta',
+          'balanceAfter',
+          'pendingAfter',
+          'reason',
+          'contractId',
+          'paymentId',
+          'withdrawalId',
+          'createdAt',
+        ],
+      ),
+      WalletTransactionsPage: obj(
+        {
+          items: { type: 'array', items: ref('WalletTransaction') },
+          page: { type: 'integer', minimum: 1 },
+          limit: { type: 'integer', minimum: 1, maximum: 100 },
+          hasMore: { type: 'boolean', description: 'Há lançamentos depois desta página.' },
+        },
+        ['items', 'page', 'limit', 'hasMore'],
       ),
       ResolveDispute: obj(
         {
@@ -967,7 +1146,7 @@ export const openapiDocument: Record<string, any> = {
       get: {
         ...op(
           'Perfis',
-          'Perfil público do freelancer (nota, nível e resumo de desistências sem datas ou textos privados)',
+          'Perfil público do freelancer (nota, nível, XP, badges com até 3 em destaque e resumo de desistências sem datas ou textos privados)',
           { responses: jsonResponse('200', 'PublicFreelancerProfile') },
         ),
         parameters: [{ name: 'ulid', in: 'path', required: true, schema: { type: 'string' } }],
@@ -985,21 +1164,79 @@ export const openapiDocument: Record<string, any> = {
         responses: res201,
       }),
     },
+    '/services/mine': {
+      get: op(
+        'Serviços',
+        'Meus serviços (pausados inclusive): sempre os de quem está logado (?ownerId é ignorado), sem os excluídos e sem paginação, do mais novo ao mais antigo, com boosted e sem os campos do prestador',
+        {
+          auth: true,
+          responses: {
+            '200': {
+              description: 'OK',
+              content: {
+                'application/json': { schema: { type: 'array', items: ref('Service') } },
+              },
+            },
+            '401': errorResponse('missing_token ou invalid_token'),
+            '403': errorResponse('account_blocked'),
+          },
+        },
+      ),
+    },
     '/services/{id}': {
       get: op('Serviços', 'Detalhe do serviço'),
-      patch: op('Serviços', 'Atualiza (dono)', { auth: true }),
+      patch: op('Serviços', 'Atualiza (dono): edita o serviço inteiro ou pausa/reativa', {
+        auth: true,
+        body: ref('UpdateService'),
+      }),
       delete: op('Serviços', 'Remove (dono, soft delete)', { auth: true, responses: res204 }),
     },
 
     '/contracts': {
-      get: op(
-        'Contratações',
-        'Minhas contratações, com a vez da negociação (current nulo na lista)',
-        {
-          auth: true,
-          responses: jsonResponse('200', 'ContractsPage'),
-        },
-      ),
+      get: {
+        ...op(
+          'Contratações',
+          'Minhas contratações (como cliente ou freelancer), com a vez da negociação (current nulo na lista) e o total; ordem created_at DESC, id DESC',
+          {
+            auth: true,
+            responses: {
+              ...jsonResponse('200', 'ContractsPage'),
+              '401': errorResponse('missing_token ou invalid_token'),
+              '422': errorResponse(
+                'validation_error: status desconhecido (details.status = ["Status de contratação desconhecido"]) ou page/limit fora da faixa',
+              ),
+            },
+          },
+        ),
+        parameters: [
+          ...pageParameters,
+          {
+            name: 'status',
+            in: 'query',
+            description:
+              'Filtro (RF-040): separado por vírgula (?status=accepted,in_progress) ou com o parâmetro repetido (?status=completed&status=cancelled). Repetidos são ignorados; vazio vale como sem filtro.',
+            style: 'form',
+            explode: true,
+            schema: {
+              type: 'array',
+              items: {
+                type: 'string',
+                enum: [
+                  'pending',
+                  'accepted',
+                  'rejected',
+                  'in_progress',
+                  'delivered',
+                  'revision_requested',
+                  'completed',
+                  'cancelled',
+                  'disputed',
+                ],
+              },
+            },
+          },
+        ],
+      },
       post: op('Contratações', 'Cria proposta e reserva o valor', {
         auth: true,
         body: { $ref: '#/components/schemas/CreateContract' },
@@ -1103,7 +1340,13 @@ export const openapiDocument: Record<string, any> = {
         },
       ),
     },
-    '/contracts/{id}/deliver': { post: op('Contratações', 'Registra entrega', { auth: true }) },
+    '/contracts/{id}/deliver': {
+      post: op(
+        'Contratações',
+        'Registra entrega; o aviso ao cliente (contract_delivered) termina com " Mensagem: " e o começo da mensagem, numa linha só, até 120 caracteres com reticências',
+        { auth: true },
+      ),
+    },
     '/contracts/{id}/approve': {
       post: op('Contratações', 'Cliente aprova (libera escrow)', { auth: true }),
     },
@@ -1310,6 +1553,29 @@ export const openapiDocument: Record<string, any> = {
         responses: res204,
       }),
     },
+    '/auth/change-password': {
+      post: op(
+        'Auth',
+        'Troca a senha com login (RF-017): revoga todas as sessões anteriores, devolve o par novo desta sessão e avisa por e-mail. Aceita conta suspensa; o login é conferido antes do limite de tentativas',
+        {
+          auth: true,
+          body: ref('ChangePassword'),
+          responses: {
+            ...jsonResponse('200', 'RefreshResponse'),
+            '400': errorResponse(
+              'wrong_password (senha atual incorreta, ou conta sem senha gravada) ou same_password (a nova é igual à atual)',
+            ),
+            '401': errorResponse('missing_token ou invalid_token'),
+            '403': errorResponse('account_blocked (conta banida) ou account_deleted'),
+            '404': errorResponse('user_not_found'),
+            '422': errorResponse(
+              'validation_error: details.currentPassword ("Informe a senha atual") ou details.newPassword ("A senha deve ter ao menos 8 caracteres")',
+            ),
+            '429': errorResponse('too_many_requests (o mesmo limite do login)'),
+          },
+        },
+      ),
+    },
     '/admin/emails': {
       get: op('Admin', 'Caixa de saída de e-mails (limit, userId)', { auth: true }),
     },
@@ -1318,9 +1584,38 @@ export const openapiDocument: Record<string, any> = {
       get: op('Carteira', 'Saldo R$ + créditos Escambo (disponível e em escrow)', { auth: true }),
     },
     '/wallet/transactions': {
-      get: op('Carteira', 'Extrato de R$ (depósitos, reservas, escrow, reembolsos, saques)', {
-        auth: true,
-      }),
+      get: {
+        ...op(
+          'Carteira',
+          'Extrato de R$ (depósitos, reservas, escrow, reembolsos, saques), do mais novo ao mais antigo. from/to (RF-047) filtram por dia no fuso da conta, os dois inclusivos; sem eles, o extrato inteiro',
+          {
+            auth: true,
+            responses: {
+              ...jsonResponse('200', 'WalletTransactionsPage'),
+              '400': errorResponse(
+                'invalid_range: "Período inválido: a data inicial precisa ser até a final" (from depois de to)',
+              ),
+              '401': errorResponse('missing_token ou invalid_token'),
+              '403': errorResponse('account_blocked'),
+              '422': errorResponse(
+                'validation_error: details.from ou details.to = ["Informe um dia válido no formato AAAA-MM-DD"]; page/limit fora da faixa',
+              ),
+            },
+          },
+        ),
+        parameters: [
+          ...pageParameters,
+          ...['from', 'to'].map((name) => ({
+            name,
+            in: 'query',
+            description:
+              name === 'from'
+                ? 'Primeiro dia (AAAA-MM-DD, no fuso da conta; sem escolha, America/Sao_Paulo).'
+                : 'Último dia (AAAA-MM-DD), inclusivo até 23:59:59 no fuso da conta.',
+            schema: { type: 'string', format: 'date' },
+          })),
+        ],
+      },
     },
     '/wallet/deposits': {
       get: op('Carteira', 'Meus depósitos', { auth: true }),
@@ -1356,7 +1651,7 @@ export const openapiDocument: Record<string, any> = {
     },
     '/withdrawals': {
       get: op('Saques', 'Meus saques', { auth: true }),
-      post: op('Saques', 'Solicita saque (mín. R$20)', {
+      post: op('Saques', 'Solicita saque (mín. R$20) por Pix ou conta bancária', {
         auth: true,
         body: { $ref: '#/components/schemas/CreateWithdrawal' },
         responses: res201,
@@ -1396,12 +1691,56 @@ export const openapiDocument: Record<string, any> = {
         { auth: true },
       ),
     },
+    '/barters/{id}/reject': {
+      post: {
+        ...op(
+          'Troca (Escambo)',
+          'Recusa a troca proposta (só quem recebeu); a torna reservada volta ao pagador',
+          {
+            auth: true,
+            responses: {
+              ...res204,
+              '403': errorResponse('forbidden: só quem recebeu a proposta pode recusar'),
+              '404': errorResponse('barter_not_found'),
+              '409': errorResponse('invalid_status: a troca não está mais proposta'),
+            },
+          },
+        ),
+        parameters: offerPathParameters,
+      },
+    },
+    '/barters/{id}/cancel': {
+      post: {
+        ...op('Troca (Escambo)', 'Cancela a troca ainda proposta (qualquer das partes)', {
+          auth: true,
+          responses: {
+            ...res204,
+            '403': errorResponse('forbidden: você não participa desta troca'),
+            '404': errorResponse('barter_not_found'),
+            '409': errorResponse('invalid_status: só é possível cancelar uma troca ainda proposta'),
+          },
+        }),
+        parameters: offerPathParameters,
+      },
+    },
 
     '/notifications': {
       get: op('Notificações', 'Minhas notificações + não lidas', { auth: true }),
     },
     '/notifications/read-all': {
       post: op('Notificações', 'Marca todas como lidas', { auth: true }),
+    },
+    '/notifications/{id}/read': {
+      post: {
+        ...op('Notificações', 'Marca uma notificação como lida (só as próprias)', {
+          auth: true,
+          responses: {
+            ...res204,
+            '404': errorResponse('notification_not_found (não existe ou é de outra pessoa)'),
+          },
+        }),
+        parameters: offerPathParameters,
+      },
     },
 
     '/messaging/contracts/{id}': {
@@ -1427,6 +1766,21 @@ export const openapiDocument: Record<string, any> = {
       get: op('Trust & Safety', 'Meus favoritos', { auth: true }),
       post: op('Trust & Safety', 'Favoritar serviço/freelancer', { auth: true, responses: res201 }),
     },
+    '/favorites/{targetType}/{targetId}': {
+      delete: {
+        ...op('Trust & Safety', 'Remove dos favoritos (sem erro se já não estava)', {
+          auth: true,
+          responses: {
+            ...res204,
+            '422': errorResponse('validation_error: targetType ou targetId inválido'),
+          },
+        }),
+        parameters: [
+          idPathParameter('targetType', { type: 'string', enum: ['service', 'freelancer'] }),
+          idPathParameter('targetId', { type: 'integer', minimum: 1 }),
+        ],
+      },
+    },
     '/saved-searches': {
       get: op('Serviços', 'Minhas buscas salvas', { auth: true }),
       post: op(
@@ -1446,6 +1800,7 @@ export const openapiDocument: Record<string, any> = {
       delete: op('Serviços', 'Apaga a busca salva', { auth: true }),
     },
     '/reports': {
+      get: op('Trust & Safety', 'Minhas denúncias e a situação de cada uma', { auth: true }),
       post: op(
         'Trust & Safety',
         'Denunciar conteúdo, usuário ou imagem (avatar e portfolio_item guardam a imagem denunciada; recusa a própria imagem, alvo sem imagem e denúncia repetida)',
@@ -1645,8 +2000,34 @@ export const openapiDocument: Record<string, any> = {
         body: { $ref: '#/components/schemas/ResolveDispute' },
       }),
     },
+    '/admin/users/{ulid}/suspend': {
+      post: {
+        ...op(
+          'Admin',
+          'Suspende usuário (RN-007): mantém login e consulta; ações de negócio respondem 403 account_suspended',
+          {
+            auth: true,
+            responses: {
+              ...res204,
+              '404': errorResponse('user_not_found'),
+              '409': errorResponse('cannot_moderate_admin: administradores não são suspensos'),
+            },
+          },
+        ),
+        parameters: [idPathParameter('ulid', { type: 'string' })],
+      },
+    },
     '/admin/users/{ulid}/ban': {
       post: op('Admin', 'Bane usuário', { auth: true, responses: res204 }),
+    },
+    '/admin/users/{ulid}/reactivate': {
+      post: {
+        ...op('Admin', 'Reativa usuário suspenso ou banido (volta a active)', {
+          auth: true,
+          responses: { ...res204, '404': errorResponse('user_not_found') },
+        }),
+        parameters: [idPathParameter('ulid', { type: 'string' })],
+      },
     },
     '/admin/withdrawals': {
       get: op('Admin', 'Fila de saques (status=open|all|…)', { auth: true }),
@@ -1666,6 +2047,7 @@ export const openapiDocument: Record<string, any> = {
       post: op('LGPD', 'Registra consentimento', { auth: true, responses: res201 }),
     },
     '/lgpd/deletion-requests': {
+      get: op('LGPD', 'Meus pedidos de exclusão de conta e a situação de cada um', { auth: true }),
       post: op('LGPD', 'Direito ao esquecimento', { auth: true, responses: res201 }),
     },
     '/lgpd/export-requests': {

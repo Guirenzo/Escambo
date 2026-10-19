@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { QuietHours, QuietPassCategory, UpdateEmailPreferenceRequest } from '@escambo/types';
 import { Button } from '../../components/ui';
 import { api } from '../../lib/api';
+import { errorMessage } from '../../lib/errors';
 import { useAuth } from '../../lib/auth';
 import { DIGEST_HOURS, digestHourLabel } from '../../lib/format';
 import {
@@ -91,7 +92,7 @@ export function PushCard() {
       toast.success('Pronto: este aparelho vai avisar você.');
     } catch (er) {
       await refresh();
-      toast.error(er instanceof Error ? er.message : 'Não foi possível ligar os avisos');
+      toast.error(errorMessage(er, 'Não foi possível ligar os avisos'));
     } finally {
       setBusy(false);
     }
@@ -110,7 +111,7 @@ export function PushCard() {
       await refresh();
       toast.success('Avisos desligados neste aparelho.');
     } catch (er) {
-      toast.error(er instanceof Error ? er.message : 'Não foi possível desligar');
+      toast.error(errorMessage(er, 'Não foi possível desligar'));
     } finally {
       setBusy(false);
     }
@@ -128,7 +129,7 @@ export function PushCard() {
           : 'Nenhum aparelho ligado para receber o teste.',
       );
     } catch (er) {
-      toast.error(er instanceof Error ? er.message : 'Não foi possível enviar o teste');
+      toast.error(errorMessage(er, 'Não foi possível enviar o teste'));
     } finally {
       setBusy(false);
     }
@@ -153,7 +154,7 @@ export function PushCard() {
       await refresh();
       toast.success(done);
     } catch (er) {
-      toast.error(er instanceof Error ? er.message : fail);
+      toast.error(errorMessage(er, fail));
     } finally {
       setSavingQuiet(false);
     }

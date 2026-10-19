@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Category, Favorite, Paginated, SavedSearch, Service } from '@escambo/types';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WEEKDAY_SHORT } from '../../lib/format';
 import { ToastProvider } from '../../lib/toast';
@@ -25,6 +25,8 @@ const api = vi.hoisted(() => ({
   removeFavorite: vi.fn(),
   publicSettings: vi.fn(),
   createService: vi.fn(),
+  myServices: vi.fn(),
+  updateService: vi.fn(),
   savedSearches: vi.fn(),
   createSavedSearch: vi.fn(),
   wallet: vi.fn(),
@@ -112,6 +114,15 @@ function Where() {
   const l = useLocation();
   return <p data-testid="rota">{l.pathname + l.search}</p>;
 }
+/** A notificação do alerta abrindo /servicos?busca=5 com a tela já montada. */
+function OpenAlert() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate('/servicos?busca=5')}>
+      Abrir o alerta 5
+    </button>
+  );
+}
 /** A navegação do roteador é uma transição: a rota nova pode chegar um instante depois do clique. */
 const expectRoute = (path: string) =>
   waitFor(() => expect(screen.getByTestId('rota').textContent).toBe(path));
@@ -129,6 +140,7 @@ function renderView(entry = '/servicos') {
                 <>
                   <ServicosView />
                   <Where />
+                  <OpenAlert />
                 </>
               }
             />
@@ -185,6 +197,7 @@ beforeEach(() => {
     platformFeePercentage: 15,
   });
   api.createService.mockResolvedValue(service({ id: 99 }));
+  api.myServices.mockResolvedValue([]);
   api.savedSearches.mockResolvedValue([]);
   api.createSavedSearch.mockResolvedValue(saved());
   api.wallet.mockResolvedValue({ balance: 1000, balancePending: 0, credits: 50 });
@@ -668,7 +681,7 @@ describe('ServicosView: novo serviço', () => {
     expect(screen.queryByRole('heading', { name: 'Novo serviço' })).toBeNull();
   });
 
-  it('publica com a categoria escolhida, preço fixo e remoto; depois fecha e limpa o formulário', async () => {
+  it('publica com a categoria escolhida e, sem mexer no resto, preço fixo, sem prazo e remoto; depois fecha e limpa o formulário', async () => {
     const user = userEvent.setup({ delay: null });
     api.listServices
       .mockResolvedValueOnce(pageOf([service()]))
@@ -687,6 +700,7 @@ describe('ServicosView: novo serviço', () => {
       description: 'Logo simples em vetor.',
       priceType: 'fixed',
       price: 150.5,
+      deliveryDays: null,
       isRemote: true,
     });
     expect(await screen.findByText('Serviço publicado!')).toBeVisible();
@@ -700,6 +714,47 @@ describe('ServicosView: novo serviço', () => {
     expect(form().getByLabelText('Título')).toHaveValue('');
     expect(form().getByLabelText('Descrição')).toHaveValue('');
     expect(form().getByLabelText('Preço (R$) · mínimo R$ 10,00')).toHaveValue(null);
+  });
+
+  it('publica por hora, com prazo de entrega e presencial (RF-022 e RF-023)', async () => {
+    const user = userEvent.setup({ delay: null });
+    await openView();
+    await user.click(screen.getByRole('button', { name: 'Novo serviço' }));
+    await user.type(form().getByLabelText('Título'), 'Aula de violão');
+    await user.type(form().getByLabelText('Descrição'), 'Aula presencial para iniciantes.');
+    await user.selectOptions(form().getByLabelText('Tipo de preço'), 'Por hora');
+    await user.type(form().getByLabelText('Preço por hora (R$)'), '60');
+    await user.type(form().getByLabelText('Prazo de entrega em dias (opcional)'), '2');
+    await user.selectOptions(form().getByLabelText('Modalidade'), 'Presencial');
+    await user.click(form().getByRole('button', { name: 'Publicar' }));
+
+    expect(api.createService).toHaveBeenCalledWith({
+      categoryId: 1,
+      title: 'Aula de violão',
+      description: 'Aula presencial para iniciantes.',
+      priceType: 'hourly',
+      price: 60,
+      deliveryDays: 2,
+      isRemote: false,
+    });
+  });
+
+  it('a combinar publica sem preço, e o formulário diz que o valor sai da proposta', async () => {
+    const user = userEvent.setup({ delay: null });
+    await openView();
+    await user.click(screen.getByRole('button', { name: 'Novo serviço' }));
+    await user.type(form().getByLabelText('Título'), 'Consultoria de marca');
+    await user.type(form().getByLabelText('Descrição'), 'Conversa para entender o negócio.');
+    await user.selectOptions(form().getByLabelText('Tipo de preço'), 'A combinar');
+    expect(form().queryByLabelText(/Preço \(R\$\)/)).toBeNull();
+    expect(
+      form().getByText('Sem preço no anúncio: o valor é combinado na proposta.'),
+    ).toBeVisible();
+    await user.click(form().getByRole('button', { name: 'Publicar' }));
+
+    expect(api.createService).toHaveBeenCalledWith(
+      expect.objectContaining({ priceType: 'negotiable', price: null, isRemote: true }),
+    );
   });
 
   it('sem escolher categoria, vai a primeira da lista', async () => {
@@ -766,6 +821,78 @@ describe('ServicosView: novo serviço', () => {
     expect(await form().findByRole('button', { name: 'Salvando…' })).toBeDisabled();
     await act(async () => finish(service({ id: 99 })));
     expect(await screen.findByText('Serviço publicado!')).toBeVisible();
+  });
+});
+
+describe('ServicosView: meus serviços (RF-030)', () => {
+  const form = () => within(screen.getByRole('heading', { name: 'Novo serviço' }).closest('form')!);
+
+  it('a aba "Meus serviços" troca a busca pela lista do dono, pausados inclusive, e volta', async () => {
+    const user = userEvent.setup({ delay: null });
+    api.myServices.mockResolvedValue([
+      service({ id: 21, ownerId: ME, title: 'Logo pausado', isActive: false }),
+    ]);
+    await openView();
+    expect(screen.getByRole('tab', { name: 'Buscar serviços' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(api.myServices).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('tab', { name: 'Meus serviços' }));
+    expect(screen.getByRole('tab', { name: 'Meus serviços' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(await screen.findByText('Logo pausado')).toBeVisible();
+    expect(screen.getByText('Pausado')).toBeVisible();
+    expect(screen.queryByPlaceholderText('Buscar serviços…')).toBeNull();
+    expect(screen.queryByTestId('filters')).toBeNull();
+    expect(api.myServices).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('tab', { name: 'Buscar serviços' }));
+    expect(searchInput()).toBeVisible();
+    expect(screen.queryByText('Logo pausado')).toBeNull();
+  });
+
+  it('o formulário de novo serviço também abre na aba "Meus serviços", e o publicado entra na lista', async () => {
+    const user = userEvent.setup({ delay: null });
+    api.myServices
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([service({ id: 99, ownerId: ME, title: 'Logo para padaria' })]);
+    await openView();
+    await user.click(screen.getByRole('tab', { name: 'Meus serviços' }));
+    expect(
+      await screen.findByText(
+        'Você ainda não publicou nenhum serviço. Use "Novo serviço" para publicar o primeiro.',
+      ),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Novo serviço' }));
+    await user.type(form().getByLabelText('Título'), 'Logo para padaria');
+    await user.type(form().getByLabelText('Descrição'), 'Logo simples em vetor.');
+    await user.type(form().getByLabelText('Preço (R$) · mínimo R$ 10,00'), '150');
+    await user.click(form().getByRole('button', { name: 'Publicar' }));
+
+    expect(await screen.findByText('Logo para padaria')).toBeVisible();
+    expect(api.myServices).toHaveBeenCalledTimes(2);
+  });
+
+  it('o link do alerta de busca salva, aberto com a tela já em "Meus serviços", volta para a busca', async () => {
+    const user = userEvent.setup({ delay: null });
+    api.savedSearches.mockResolvedValue([saved()]);
+    await openView();
+    await user.click(screen.getByRole('tab', { name: 'Meus serviços' }));
+    await user.click(screen.getByRole('button', { name: 'Abrir o alerta 5' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: 'Buscar serviços' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      ),
+    );
+    expect(searchInput()).toHaveValue('logo');
+    await expectRoute('/servicos');
   });
 });
 

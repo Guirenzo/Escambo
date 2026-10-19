@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import {
+  changePasswordSchema,
   forgotPasswordSchema,
   loginSchema,
   refreshSchema,
@@ -72,4 +73,10 @@ export async function resetPassword(req: Request, res: Response): Promise<void> 
   const { token, password } = resetPasswordSchema.parse(req.body);
   await authService.resetPassword(token, password);
   res.status(204).send();
+}
+
+/** Rota protegida — troca a senha (RF-017) e devolve o par novo desta sessão; as outras caem. */
+export async function changePassword(req: Request, res: Response): Promise<void> {
+  const input = changePasswordSchema.parse(req.body);
+  res.json(await authService.changePassword(req.user!.uid, input, context(req)));
 }

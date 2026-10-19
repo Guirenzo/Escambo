@@ -192,28 +192,72 @@ describe('ContratarModal: proposta em dinheiro', () => {
     expect(cashRadio()).toBeChecked();
     expect(milestonesToggle()).not.toBeChecked();
     expect(screen.getByText('R$ 200,00')).toBeInTheDocument();
-    expect(
-      screen.getByText('reservado agora · freelancer recebe 85% no escrow'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('reservado agora · liberado na aprovação')).toBeInTheDocument();
     await walletLoaded();
+    // Taxa de 15% do painel: R$ 30,00 de taxa e R$ 170,00 ao freelancer, antes de enviar.
+    await waitFor(() =>
+      expect(screen.getByTestId('fee-summary')).toHaveTextContent(
+        /^taxa de 15% \(R\$\s30,00\) · o freelancer recebe R\$\s170,00$/,
+      ),
+    );
   });
 
   it('o cartão "Dinheiro" mostra "…" até a carteira chegar, depois o saldo e a taxa da plataforma', async () => {
     publicSettings.mockResolvedValue({ platformFeePercentage: 12 });
     renderModal();
 
-    // Antes das respostas: sem saldo conhecido e com a taxa padrão de 15%.
-    expect(cashRadio()).toHaveAccessibleName(/Saldo … · escrow em R\$ · taxa 15%$/);
+    // Antes das respostas: nem saldo nem taxa conhecidos, e a tela não chuta a taxa (RF-043).
+    expect(cashRadio()).toHaveAccessibleName(/Saldo … · escrow em R\$ · taxa …$/);
+    expect(screen.getByTestId('fee-summary')).toHaveTextContent('taxa da plataforma: carregando…');
 
     await waitFor(() =>
       expect(cashRadio()).toHaveAccessibleName(/Saldo R\$\s500,00 · escrow em R\$ · taxa 12%$/),
     );
   });
 
-  // Defeito de produção (ContratarModal.tsx, resumo): o cartão "Dinheiro" usa a taxa vigente
-  // (platformFeePercentage), mas o resumo escreve "85%" fixo; com taxa de 12% a tela diz "taxa 12%"
-  // e "freelancer recebe 85%" ao mesmo tempo.
-  it.todo('o resumo diz quanto o freelancer recebe pela taxa vigente (taxa de 12% → 88%)');
+  // RF-043: o resumo escrevia "85%" fixo; com taxa de 12% a tela dizia "taxa 12%" e "freelancer
+  // recebe 85%" ao mesmo tempo. Agora a taxa e o líquido saem da taxa vigente, em R$.
+  it('o resumo diz a taxa vigente e quanto o freelancer recebe, em R$, e acompanha o valor', async () => {
+    const user = userEvent.setup({ delay: null });
+    publicSettings.mockResolvedValue({ platformFeePercentage: 12 });
+    renderModal();
+    await walletLoaded();
+
+    const fee = () => screen.getByTestId('fee-summary');
+    await waitFor(() =>
+      expect(fee()).toHaveTextContent(
+        /^taxa de 12% \(R\$\s24,00\) · o freelancer recebe R\$\s176,00$/,
+      ),
+    );
+    expect(screen.queryByText(/85%/)).not.toBeInTheDocument();
+
+    // R$ 10,05 a 12%: R$ 1,206 de taxa vira R$ 1,21 (o centavo da API) e sobram R$ 8,84.
+    await retype(user, screen.getByLabelText('Valor'), '10.05');
+    expect(fee()).toHaveTextContent(/^taxa de 12% \(R\$\s1,21\) · o freelancer recebe R\$\s8,84$/);
+  });
+
+  it('taxa zero também aparece: o freelancer recebe o valor inteiro', async () => {
+    publicSettings.mockResolvedValue({ platformFeePercentage: 0 });
+    renderModal();
+    await walletLoaded();
+    await waitFor(() =>
+      expect(screen.getByTestId('fee-summary')).toHaveTextContent(
+        /^taxa de 0% \(R\$\s0,00\) · o freelancer recebe R\$\s200,00$/,
+      ),
+    );
+  });
+
+  it('se a taxa não carrega, o resumo diz isso em vez de inventar um número', async () => {
+    publicSettings.mockRejectedValue(new Error('fora do ar'));
+    renderModal();
+    await walletLoaded();
+    await waitFor(() =>
+      expect(screen.getByTestId('fee-summary')).toHaveTextContent(
+        'Não deu para carregar a taxa agora; o valor líquido aparece na Sala.',
+      ),
+    );
+    expect(cashRadio()).toHaveAccessibleName(/taxa …$/);
+  });
 
   it('serviço com 1 dia de prazo: sugere amanhã e escreve "1 dia"', () => {
     renderModal(service({ deliveryDays: 1 }));
@@ -694,9 +738,10 @@ describe('ContratarModal: dividir em marcos', () => {
     expect(msDue(1)).toHaveValue('');
     expect(screen.queryByLabelText('Título do marco 3')).not.toBeInTheDocument();
     expect(screen.getByText('R$ 0,00 de R$ 200,00')).toBeInTheDocument();
-    expect(
-      screen.getByText('reservado agora · liberado marco a marco (85% ao freelancer)'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('reservado agora · liberado marco a marco')).toBeInTheDocument();
+    expect(screen.getByTestId('fee-summary')).toHaveTextContent(
+      /^taxa de 15% \(R\$\s30,00\) · o freelancer recebe R\$\s170,00 somando os marcos$/,
+    );
     expect(submitButton()).toBeDisabled();
 
     // Desmarcar volta à proposta simples.

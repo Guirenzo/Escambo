@@ -361,6 +361,29 @@ describe('contratações: borda HTTP', () => {
       expect(service.listMine).toHaveBeenCalledWith(FREELANCER, { page: 3, limit: 50 });
     });
 
+    it('filtra por status (RF-040) e devolve o total que o service contou', async () => {
+      service.listMine.mockResolvedValue({ items: [], page: 2, limit: 20, total: 23 });
+      const res = await request(app)
+        .get('/api/contracts?page=2&status=accepted,in_progress')
+        .set(bearer(FREELANCER))
+        .expect(200);
+      expect(res.body).toEqual({ items: [], page: 2, limit: 20, total: 23 });
+      expect(service.listMine).toHaveBeenCalledWith(FREELANCER, {
+        page: 2,
+        limit: 20,
+        status: ['accepted', 'in_progress'],
+      });
+    });
+
+    it('status desconhecido no filtro é recusado antes do service', async () => {
+      const res = await request(app)
+        .get('/api/contracts?status=pago')
+        .set(bearer(FREELANCER))
+        .expect(422);
+      expect(res.body.details).toEqual({ status: ['Status de contratação desconhecido'] });
+      expect(service.listMine).not.toHaveBeenCalled();
+    });
+
     it('a falha do service na listagem vira resposta de erro, sem derrubar o pedido', async () => {
       service.listMine.mockRejectedValueOnce(
         new HttpError(503, 'Banco fora do ar', 'db_unavailable'),

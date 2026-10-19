@@ -395,18 +395,33 @@ function deliveredResponse(
   return `${actions} até ${f.approvalDue}.${dispute}${revisions} Depois ${dispute || revisions ? `de ${f.approvalDue}` : 'disso'}, ${unit} automaticamente.`;
 }
 
+/** Quanto da mensagem da entrega vai no aviso: o começo; a mensagem inteira fica na Sala. */
+export const DELIVERY_EXCERPT_MAX = 120;
+
+/** O começo da mensagem numa linha só, cortado com reticências (o mesmo corte do aviso do chat). */
+export function deliveryExcerpt(message: string, max = DELIVERY_EXCERPT_MAX): string {
+  const text = message.replace(/\s+/g, ' ').trim();
+  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
+/**
+ * Entrega única (RF-035): até quando o cliente responde vem primeiro (o aparelho corta o corpo em
+ * 120 caracteres) e o começo da mensagem do freelancer fecha o corpo, como no aviso do marco.
+ */
 export function deliveredNotice(
   f: DeliveryReviewFacts & {
     contractId: number;
     title: string;
     approvalDue: string;
+    message?: string;
   },
 ): DeadlineNotice {
+  const excerpt = f.message ? deliveryExcerpt(f.message) : '';
   return {
     params: {
       type: 'contract_delivered',
       title: `Entrega registrada: ${f.title}`,
-      body: deliveredResponse(f),
+      body: `${deliveredResponse(f)}${excerpt ? ` Mensagem: ${excerpt}` : ''}`,
       data: { contractId: f.contractId },
     },
   };
