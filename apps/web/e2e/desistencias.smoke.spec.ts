@@ -19,7 +19,10 @@ test('três desistências: alerta público, contestação privada, acordo e deci
   const titles = ['Layout privado A', 'Layout privado B', 'Layout privado C'].map(
     (title) => `${title} ${freelancer.id}`,
   );
-  for (const title of titles) {
+  // Uma por vez: a RN-020 só deixa uma contratação direta aberta por par, e a desistência a
+  // encerra. As duas primeiras desistências vão pela API; a terceira usa o modal com o retrato da
+  // contagem e do dinheiro.
+  for (const [i, title] of titles.entries()) {
     const id = await acceptContract(request, client, freelancer, {
       serviceId: service.id,
       title,
@@ -27,10 +30,8 @@ test('três desistências: alerta público, contestação privada, acordo e deci
       price: 100,
     });
     ids.push(id);
+    if (i < titles.length - 1) await post(request, freelancer, `/contracts/${id}/cancel`);
   }
-  // Duas anteriores pela API; a terceira usa o modal com o retrato da contagem e do dinheiro.
-  await post(request, freelancer, `/contracts/${ids[0]}/cancel`);
-  await post(request, freelancer, `/contracts/${ids[1]}/cancel`);
   await openAs(page, freelancer, `/contratos/${ids[2]}`);
   await settled(page);
   await page.getByRole('button', { name: 'Desistir', exact: true }).click();
