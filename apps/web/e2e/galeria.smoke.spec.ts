@@ -77,7 +77,7 @@ test('galeria do portfólio: amplia, navega pelo teclado, devolve o foco e abre 
   const canvas = logoDialog.locator('.gallery-canvas');
   await logoDialog.getByRole('button', { name: 'Ampliar imagem' }).click();
   await expect(
-    logoDialog.getByRole('button', { name: 'Voltar ao tamanho inteiro (150%)' }),
+    logoDialog.getByRole('button', { name: 'Voltar ao tamanho inteiro: 150%' }),
   ).toBeVisible();
   await page.keyboard.press('+');
   await expect(canvas).toHaveAttribute('style', /scale\(2\.25\)/);
