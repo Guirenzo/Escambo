@@ -262,6 +262,40 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
+### Atualizar para a 1.44.0 (ADR 62)
+
+Cinco migrations (0035 a 0039, todas aditivas e seguras de rodar de novo) e dois scripts, uma vez só.
+
+**1. Chave de cifragem (opcional, recomendada, RNF-017).** Gere a chave e guarde uma cópia **fora da VPS** (no gerenciador de senhas, por exemplo): sem ela, os destinos de saque já cifrados não são mais lidos.
+
+```bash
+openssl rand -base64 32
+```
+
+No `.env` da VPS: `FIELD_ENCRYPTION_KEY=<o valor>`. Sem a chave, a API sobe e grava a chave PIX e os dados bancários em texto puro, como antes, e avisa no log na subida. Chave mal formatada (que não seja 32 bytes em base64) impede a subida, sem repetir o valor no log. Para trocar a chave: a nova em `FIELD_ENCRYPTION_KEY`, a antiga em `FIELD_ENCRYPTION_OLD_KEYS` (separadas por vírgula, só para ler), e o passo 4 de novo.
+
+**2. Backup antes** (`scripts/backup-db.sh`, seção 4). A 0035 recria a tabela `services` (1,5 s com 20 mil serviços, 5,4 s com 100 mil) e a 0039 recria `withdrawals`: as gravações nessas tabelas esperam o fim do ALTER.
+
+**3. Deploy normal** (workflow ou à mão, acima). O job `migrate` aplica as migrations. No deploy à mão, baixe também a página de fora do ar (o compose agora monta `deploy/status` no Caddy):
+
+```bash
+mkdir -p deploy/status
+curl -fsSL "https://raw.githubusercontent.com/Guirenzo/Escambo/main/deploy/status/fora-do-ar.html" -o deploy/status/fora-do-ar.html
+```
+
+**4. Uma vez, com a API já no ar:**
+
+```bash
+# Badges que quem já cumpria o critério antes da 1.44.0 ainda não ganhou (RF-065)
+docker compose -f docker-compose.prod.yml run --rm --no-deps api node dist/scripts/reevaluate-badges.js
+# Só com a FIELD_ENCRYPTION_KEY: cifra os saques antigos, ainda em texto puro (RNF-017)
+docker compose -f docker-compose.prod.yml run --rm --no-deps api node dist/scripts/encrypt-withdrawal-fields.js
+```
+
+Os dois são idempotentes: rodar de novo não concede nem regrava nada. O segundo sai com código 1 se algum valor cifrado não puder ser lido (chave errada); nesse caso, confira a chave antes de rodar de novo.
+
+**5. Conferir.** `curl -s https://SEU_DOMINIO/api/health` mostra o commit da 1.44.0, e o log da API na subida diz se a cifragem está ligada (`docker compose -f docker-compose.prod.yml logs api | grep -i cifr`). No painel do admin aparecem os parâmetros novos: prazos do saque por PIX e por transferência, e a previsão de volta da manutenção.
+
 ### Atualizar para a 1.42.0 (ADR 61)
 
 **Estado em 13/10/2026:** código e documentação locais, sem publicação/tag/deploy. A etapa 11 passou com 4.382 unitários API, 376 integrações MySQL completas e 34 E2Es desktop/mobile sobre as novas imagens Docker; união de cobertura com 99,06% das linhas e gate de 75% aprovado. Lint/typecheck/build passaram. Revisão de produção sem achado acionável, snapshot identificado e recursos QA exclusivos encerrados. A campanha G.5, os 176 E2Es completos da etapa 8 e a reprodução dos prints 23–26 são provas históricas separadas, não somadas a esses totais. Resultados, hashes e limites estão em [validação de entrega](./docs/validacao-entrega-adr61.md), [evidencias-validacao.md](./docs/evidencias-validacao.md) e [mutacoes-adr61.md](./docs/mutacoes-adr61.md). As instruções abaixo são para a futura implantação aprovada. Antes de executá-la, confira o candidato, backup, imagem/commit efetivamente publicados e mostre o comando e destino a quem autoriza. Não trate o número de versão local como uma imagem disponível no GHCR.

@@ -38,11 +38,11 @@ Confiabilidade    → integridade de dados, tratamento de erros
 
 | ID | Descrição | Métrica | Prioridade | Situação |
 |---|---|---|---|---|
-| RNF-001 | A API deve responder requisições em tempo adequado sob carga normal | P95 ≤ 300ms para endpoints de leitura | Alta | Parcial |
-| RNF-002 | A API deve responder requisições de escrita (contratação, pagamento) em tempo adequado | P95 ≤ 500ms para endpoints de escrita | Alta | Parcial |
+| RNF-001 | A API deve responder requisições em tempo adequado sob carga normal | P95 ≤ 300ms para endpoints de leitura | Alta | Implementado |
+| RNF-002 | A API deve responder requisições de escrita (contratação, pagamento) em tempo adequado | P95 ≤ 500ms para endpoints de escrita | Alta | Implementado |
 | RNF-003 | O app mobile deve atingir boa pontuação de performance no Lighthouse | Score ≥ 85 no Lighthouse Mobile | Alta | Fora do escopo |
-| RNF-004 | A busca de serviços deve retornar resultados rapidamente mesmo com grande volume de dados | Resultados em ≤ 400ms com 100k registros | Alta | Não implementado |
-| RNF-005 | O sistema de chat deve entregar mensagens em tempo real | Latência de entrega ≤ 500ms via WebSocket | Alta | Parcial |
+| RNF-004 | A busca de serviços deve retornar resultados rapidamente mesmo com grande volume de dados | Resultados em ≤ 400ms com 100k registros | Alta | Parcial |
+| RNF-005 | O sistema de chat deve entregar mensagens em tempo real | Latência de entrega ≤ 500ms via WebSocket | Alta | Implementado |
 | RNF-006 | Imagens e assets estáticos devem ser servidos com cache e compressão | Cache-Control configurado + imagens em WebP | Média | Implementado |
 
 ---
@@ -54,7 +54,7 @@ Confiabilidade    → integridade de dados, tratamento de erros
 | RNF-007 | A plataforma deve ter alta disponibilidade em produção | Uptime ≥ 99,5% ao mês (≤ 3,6h de downtime/mês) | Alta | Parcial |
 | RNF-008 | O sistema deve se recuperar automaticamente de falhas transitórias | Health checks com restart automático via processo supervisor | Alta | Implementado |
 | RNF-009 | O banco de dados deve ter backup automático diário | Backups diários com retenção mínima de 7 dias | Alta | Parcial |
-| RNF-010 | O sistema deve exibir página de manutenção clara quando estiver indisponível | Página estática de status com previsão de retorno | Média | Parcial |
+| RNF-010 | O sistema deve exibir página de manutenção clara quando estiver indisponível | Página estática de status com previsão de retorno | Média | Implementado |
 
 ---
 
@@ -68,8 +68,8 @@ Confiabilidade    → integridade de dados, tratamento de erros
 | RNF-014 | O sistema deve implementar rate limiting para prevenir abuso e ataques de força bruta | Máximo de 10 tentativas de login por IP em 5 minutos | Alta | Implementado |
 | RNF-015 | O sistema deve validar e sanitizar todos os dados de entrada para prevenir injeção | Validação via schema (Zod/Joi) em 100% das rotas | Alta | Implementado |
 | RNF-016 | O sistema deve implementar proteção contra CSRF nas rotas autenticadas | Tokens CSRF ou uso exclusivo de JWT no header Authorization | Alta | Implementado |
-| RNF-017 | Dados sensíveis (CPF, dados bancários) devem ser armazenados com criptografia adicional | AES-256 para campos sensíveis no banco | Alta | Não implementado |
-| RNF-018 | O sistema deve registrar tentativas de acesso não autorizado | Log de erros 401/403 com IP e timestamp | Alta | Parcial |
+| RNF-017 | Dados sensíveis (CPF, dados bancários) devem ser armazenados com criptografia adicional | AES-256 para campos sensíveis no banco | Alta | Parcial |
+| RNF-018 | O sistema deve registrar tentativas de acesso não autorizado | Log de erros 401/403 com IP e timestamp | Alta | Implementado |
 | RNF-019 | A plataforma deve utilizar CDN com proteção contra DDoS | Cloudflare com WAF ativado | Alta | Não implementado |
 | RNF-020 | Segredos e variáveis de ambiente nunca devem estar no repositório | Uso de `.env` + secrets manager; `.gitignore` validado | Alta | Parcial |
 
@@ -81,7 +81,7 @@ Confiabilidade    → integridade de dados, tratamento de erros
 |---|---|---|---|---|
 | RNF-021 | A arquitetura do backend deve ser modular e permitir extração futura de microsserviços | Módulos isolados com responsabilidade única | Alta | Parcial |
 | RNF-022 | O banco de dados deve suportar crescimento sem degradação significativa de performance | Índices em todas as FKs e colunas de busca; explain plan validado | Alta | Parcial |
-| RNF-023 | O sistema deve suportar múltiplas conexões simultâneas de WebSocket sem degradação | Pool de conexões configurado; teste com ≥ 500 conexões simultâneas | Média | Parcial |
+| RNF-023 | O sistema deve suportar múltiplas conexões simultâneas de WebSocket sem degradação | Pool de conexões configurado; teste com ≥ 500 conexões simultâneas | Média | Implementado |
 | RNF-024 | A infraestrutura deve permitir escalonamento horizontal da API | Deploy stateless; sessões em Redis ou JWT (sem server-side session) | Média | Parcial |
 
 ---
@@ -137,7 +137,7 @@ Requisitos acrescentados junto com a troca de serviços e os recursos avançados
 | ID | Categoria | Descrição | Métrica | Prioridade | Situação |
 |---|---|---|---|---|---|
 | RNF-041 | Conformidade | O sistema deve permitir a exportação dos dados pessoais do usuário (portabilidade) | Arquivo de dados gerado e disponibilizado em ≤ 15 dias úteis (LGPD Art. 18, V) | Alta | Implementado |
-| RNF-042 | Segurança | O sistema deve oferecer verificação em duas etapas (2FA) e cifrar segredos/chaves sensíveis | MFA via TOTP; segredos de MFA e chaves PIX/bancárias cifrados em AES-256, com chave em secrets manager (nunca no banco em texto plano) | Alta | Não implementado |
+| RNF-042 | Segurança | O sistema deve oferecer verificação em duas etapas (2FA) e cifrar segredos/chaves sensíveis | MFA via TOTP; segredos de MFA e chaves PIX/bancárias cifrados em AES-256, com chave em secrets manager (nunca no banco em texto plano) | Alta | Parcial |
 
 ---
 

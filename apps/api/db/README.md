@@ -43,8 +43,11 @@ mysql -u root -p escambo < apps/api/db/seed.sql
 - `created_at` / `updated_at` em todas as tabelas; `deleted_at` (soft delete) nas críticas.
 - Valores monetários em `DECIMAL(10,2)` (nunca `FLOAT`).
 - Encoding `utf8mb4` / `utf8mb4_unicode_ci`; engine `InnoDB`.
-- Campos sensíveis (CPF, dados bancários, chave PIX, token OAuth, segredo TOTP) são cifrados em
-  **AES-256** pela aplicação — a chave fica em *secrets manager*, nunca no banco.
+- A chave PIX e os dados bancários dos saques são cifrados pela aplicação em **AES-256-GCM** desde a
+  1.44.0 (RNF-017, migration 0039, `utils/field-crypto.ts`), quando a `FIELD_ENCRYPTION_KEY` está
+  configurada. A chave fica no `.env` da VPS, nunca no banco. O CPF não é coletado e não há token
+  OAuth nem 2FA no código (a tabela `user_mfa` existe só no schema): se entrarem, usam o mesmo
+  utilitário. O `schema.sql` (baseline) mostra os tamanhos originais dessas colunas; a 0039 os aumenta.
 
 > `schema.sql` é **gerado**. Não edite à mão: ajuste `docs/modelagem-banco.md` e regenere extraindo
 > os blocos `sql` em ordem (ver histórico do repositório).
