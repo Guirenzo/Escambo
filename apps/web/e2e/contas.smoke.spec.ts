@@ -78,6 +78,9 @@ test('esqueci minha senha: link por e-mail redefine a senha e encerra as sessõe
   await page.goto('/login');
   await page.getByRole('link', { name: 'Esqueci minha senha' }).click();
   await expect(page).toHaveURL(/\/esqueci-senha/);
+  // O react-router troca a tela numa transição: logo depois da URL mudar, o "E-mail" na tela
+  // ainda é o do login. Espera a tela nova antes de preencher.
+  await expect(page.getByRole('heading', { name: 'Esqueci minha senha' })).toBeVisible();
   await page.getByLabel('E-mail').fill(user.email);
   await page.getByRole('button', { name: 'Enviar link' }).click();
   await expect(page.getByTestId('forgot-sent')).toContainText(user.email);

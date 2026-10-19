@@ -1253,6 +1253,11 @@ button.toggle.on {
 }
 .chat-input input {
   flex: 1;
+  /* Sem isso o campo fica na largura natural (~200 px) e, a 320 px, empurra o Enviar para fora. */
+  min-width: 0;
+}
+.chat-input button {
+  flex: none;
 }
 .chat-hint {
   margin: 6px 0 0;
