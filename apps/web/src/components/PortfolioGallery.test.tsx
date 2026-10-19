@@ -484,7 +484,7 @@ describe('PortfolioGallery: zoom', () => {
   it('abre inteira: 100%, reduzir e voltar ao inteiro indisponíveis, ampliar disponível', async () => {
     await open(1);
     expect(screen.getByRole('group', { name: 'Zoom da imagem' })).toBeInTheDocument();
-    const whole = screen.getByRole('button', { name: 'Tamanho inteiro (100%)' });
+    const whole = screen.getByRole('button', { name: 'Tamanho inteiro: 100%' });
     expect(whole).toHaveTextContent(/^100%$/);
     expect(whole).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('button', { name: 'Reduzir imagem' })).toHaveAttribute(
@@ -501,9 +501,10 @@ describe('PortfolioGallery: zoom', () => {
   it('+ amplia 1,5×, - reduz e 0 volta ao inteiro', async () => {
     const user = await open(1);
     await user.keyboard('+');
-    expect(
-      screen.getByRole('button', { name: 'Voltar ao tamanho inteiro (150%)' }),
-    ).toHaveAttribute('aria-disabled', 'false');
+    expect(screen.getByRole('button', { name: 'Voltar ao tamanho inteiro: 150%' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
     expect(transform('Logo da padaria')).toBe('translate3d(0px, 0px, 0) scale(1.5)');
     await user.keyboard('=');
     expect(level()).toHaveTextContent(/^225%$/);
@@ -525,8 +526,8 @@ describe('PortfolioGallery: zoom', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Reduzir imagem' }));
     expect(level()).toHaveTextContent(/^150%$/);
-    await user.click(screen.getByRole('button', { name: 'Voltar ao tamanho inteiro (150%)' }));
-    expect(screen.getByRole('button', { name: 'Tamanho inteiro (100%)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Voltar ao tamanho inteiro: 150%' }));
+    expect(screen.getByRole('button', { name: 'Tamanho inteiro: 100%' })).toBeInTheDocument();
   });
 
   it('o zoom para em 400% e avisa que não dá para ampliar mais', async () => {
@@ -600,7 +601,7 @@ describe('PortfolioGallery: zoom', () => {
     await user.keyboard('+');
     await user.click(screen.getByRole('button', { name: 'Próximo trabalho' }));
     expect(onShow).toHaveBeenLastCalledWith(3);
-    expect(screen.getByRole('button', { name: 'Tamanho inteiro (100%)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tamanho inteiro: 100%' })).toBeInTheDocument();
     expect(transform('Cartaz do festival')).toBe('translate3d(0px, 0px, 0) scale(1)');
     // Inteira de novo, a seta volta a trocar de trabalho.
     await user.keyboard('{ArrowRight}');
@@ -803,6 +804,6 @@ describe('PortfolioGallery: zoom', () => {
   // último trabalho ampliado e só é ignorado enquanto outro trabalho está aberto. Ampliar o 1
   // (150%), ir ao 3 e voltar ao 1 mostra o 1 de novo em 150%, contra "trocar de trabalho volta ao
   // tamanho inteiro" (ADR 43). Quando for corrigido, vira teste: abrir o 1, "+", "Próximo
-  // trabalho", "Trabalho anterior" e conferir "Tamanho inteiro (100%)".
+  // trabalho", "Trabalho anterior" e conferir "Tamanho inteiro: 100%".
   it.todo('voltar a um trabalho que tinha ficado ampliado mostra-o inteiro, em 100%');
 });
