@@ -2,7 +2,7 @@
 
 Registro da candidata local **1.42.0**, iniciado em **16/10/2026** e atualizado em **19/10/2026**. A RN-020 impede uma nova proposta direta ao mesmo freelancer enquanto o cliente tem uma contratação direta aberta com ele. A interface conserva o formulário e permite abrir a contratação existente. O trabalho continua no checkout `C:/Users/guilherme/Documents/EscamboRepo-regras`, ramo `feat/regras-pendentes`, base `60e983e78db2a2691fd3bfdb5b9d2832e1843818`.
 
-**Estado deste registro em 19/10/2026:** rascunho técnico; a integração completa final, a verificação final da demonstração, a conferência de fontes e o encerramento dos recursos temporários ainda precisam ser consolidados abaixo. Os resultados já concluídos estão separados dos pendentes. Não houve commit, push, tag, PR, merge, publicação, deploy ou SSH nesta etapa.
+**Estado deste registro em 19/10/2026:** etapa encerrada. A integração completa final e a repetição do seed passaram. O código foi commitado no ramo `feat/regras-pendentes` (`83ae12b`) e enviado para revisão no PR #26, sem tag, publicação ou deploy.
 
 Regras e decisões: [RN-020](./regras-de-negocio.md#rn-020--proposta-única-por-par-cliente-freelancer) e [complemento da ADR 61, etapa 14](./decisoes.md#complemento-da-adr-61--proposta-única-etapa-14-16102026). As provas de suporte da etapa 13 permanecem históricas em [validação de entrega](./validacao-entrega-adr61.md).
 
@@ -47,7 +47,7 @@ A OpenAPI documenta a resposta 409 por `anyOf` entre `ActiveContractError` e o e
 
 O seed de demonstração tinha cenários simultâneos de Ana com Rafael. Para uma base nova, os cenários passam a usar clientes distintos: Beatriz no motion graphics, Ana na abertura com extensão de prazo e Caio na vinheta. O seletor `demoClientFor` procura o cenário já existente na conta principal e na alternativa antes de escolher uma conta, preservando cenários de execuções anteriores. Os perfis e saldos fictícios das contas adicionais são preparados pelo mesmo script.
 
-**Validação final do seed: pendente de consolidação.** A execução inicial, a recuperação de base parcial e a repetição devem ser registradas com seus resultados e artefatos antes do fechamento. A mudança descrita acima não é, por si só, prova de idempotência.
+**Validação final do seed (19/10/2026):** a base nova e a repetição terminaram com código 0, os contratos ficaram idênticos entre as duas rodadas e nenhuma dupla ficou com mais de uma contratação direta aberta (`demo-final-summary.json`, `demo-final-fresh.log`, `demo-final-rerun.log`).
 
 A regressão antiga também construía múltiplos contratos ativos da mesma dupla para testar prazos, mensagens, notificações e concorrência financeira. Esses dados podem existir antes da RN-020 e continuam precisando de cobertura. Quando o cenário permite, a preparação passou a usar participantes distintos. Quando o histórico paralelo é necessário, `test/integration/helpers/legacy-parallel-contracts.ts` prepara a fixture explicitamente:
 
@@ -71,7 +71,7 @@ Datas abaixo são as datas locais de execução em Brasília (`America/Sao_Paulo
 | Web focal de cliente HTTP e modal                         | 16/10/2026 | **74 aprovados**, dois arquivos, zero falhas e dois TODO já incluídos nos 16 da suíte completa | `web-focal.json`                                  |
 | Integração RN-020 inicial, MySQL 8                        | 16/10/2026 | **18/18**, um arquivo                                                                          | `integration-focal.json`                          |
 | Integração focal após ajustes de fixtures                 | 19/10/2026 | **59/59**, cinco arquivos, incluindo **20 casos RN-020**                                       | `integration-root-final.json`                     |
-| Integração completa final, MySQL 8                        | 19/10/2026 | **Pendente de consolidação**                                                                   | A preencher após a rodada completa                |
+| Integração completa final, MySQL 8 | 19/10/2026 | **447/447**, 72 arquivos, sem falhas ou pendências | `integration-all-final.json` |
 | E2E selecionado, desktop e celular                        | 16/10/2026 | **22/22**, quatro specs, um worker; zero retries, falhas, skipped ou flaky                     | `e2e-final.json`, `e2e-final.log`                 |
 | Typecheck, ESLint e build das aplicações                  | 16/10/2026 | Aprovados; build local em Windows                                                              | `typecheck.log`, `lint.log`, `build.log`          |
 | TypeScript explícito de integração/E2E e lint das adições | 16/10/2026 | Aprovados                                                                                      | `extra-typecheck.log`, `lint-final-additions.log` |
@@ -86,7 +86,7 @@ Os 20 casos RN-020 da rodada focal de 19/10 incluem a matriz de estados, indepen
 
 A primeira API completa, em 16/10, teve **4.615 aprovados e uma falha**, em 203 arquivos (`api-unit.json`). A expectativa exata de respostas da OpenAPI ainda continha somente 201 e foi atualizada para incluir o 409 documentado. O focal OpenAPI passou com **27/27** no mesmo dia (`openapi-final.json`), e a execução completa de 19/10 passou com 4.616/4.616.
 
-A primeira integração completa, em 16/10, registrou **394 aprovados, 37 falhas e 14 pendentes**, de 445 casos declarados em 72 arquivos; 15 arquivos tiveram falha (`integration-all-first.json`). A nova guarda recusou fixtures que tentavam criar vários contratos diretos abertos da mesma dupla. No reparo de prazos, a falha na preparação impediu a execução dos 14 casos. Os testes foram adaptados para participantes independentes ou para histórico pré-RN-020 explícito, sem remover a guarda da aplicação e sem relaxar as assertions de negócio. A rodada completa final permanece a preencher na tabela.
+A primeira integração completa, em 16/10, registrou **394 aprovados, 37 falhas e 14 pendentes**, de 445 casos declarados em 72 arquivos; 15 arquivos tiveram falha (`integration-all-first.json`). A nova guarda recusou fixtures que tentavam criar vários contratos diretos abertos da mesma dupla. No reparo de prazos, a falha na preparação impediu a execução dos 14 casos. Os testes foram adaptados para participantes independentes ou para histórico pré-RN-020 explícito, sem remover a guarda da aplicação e sem relaxar as assertions de negócio. A rodada completa final, em 19/10, passou com **447/447** em 72 arquivos (`integration-all-final.json`).
 
 O primeiro E2E terminou com **20/22**, em 16/10 (`e2e-first.json`). Os dois casos em créditos tentavam clicar diretamente no radio nativo oculto pela apresentação visual. O seletor passou a clicar no texto visível exato **Créditos Escambo**; a requisição também confere `paymentMode`. A rodada final passou com 22/22. As tentativas anteriores e seus logs não são apresentadas como execuções aprovadas.
 

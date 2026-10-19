@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 export type ToastKind = 'success' | 'error' | 'info';
 
@@ -20,11 +29,25 @@ const ToastContext = createContext<ToastApi | null>(null);
 /** Feedback global não bloqueante (sucesso/erro) — substitui alerts e mensagens soltas. */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<Toast[]>([]);
+  // Os timers de saída morrem com o provider: um toast pendente não atualiza estado depois de a
+  // árvore sair (troca de tela na raiz, fim de um teste).
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const timer of pending) clearTimeout(timer);
+      pending.clear();
+    };
+  }, []);
 
   const push = useCallback((message: string, kind: ToastKind = 'info') => {
     const id = Date.now() + Math.random();
     setItems((prev) => [...prev, { id, kind, message }]);
-    setTimeout(() => setItems((prev) => prev.filter((t) => t.id !== id)), 4000);
+    const timer = setTimeout(() => {
+      timers.current.delete(timer);
+      setItems((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+    timers.current.add(timer);
   }, []);
 
   const api = useMemo<ToastApi>(

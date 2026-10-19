@@ -305,3 +305,7 @@ A primeira regressão revelou expectativas antigas do número de rotas e da vers
 Sem anexos ou edição/exclusão de mensagens de suporte nesta etapa. Prazos/jobs continuam durante suspensão; operações ou envios já admitidos não são cancelados atomicamente. RN-020, gateway real e infraestrutura/backup do destino permanecem pendentes. Não se atribui à etapa validação do CI publicado ou do servidor público.
 
 Evidências: qa-adr61-stage13/api-{unit,integration}-results.json, web-unit-results.json, coverage/consolidated-final.json, docker-smoke.json, docker-e2e.json, docker-e2e-expectations.json, runtime-source-check.json, final-runtime-check.json, cleanup.json e logs.
+
+## Proposta única — etapa 14 encerrada em 19/10/2026
+
+A RN-020 (uma contratação direta aberta por par cliente→freelancer, também com envios simultâneos) tem registro próprio em [validação da RN-020](./validacao-rn020.md). Na rodada final de 19/10/2026, passaram **4.616** testes unitários da API, **447/447** de integração em 72 arquivos e a repetição do seed de demonstração, sem dupla com mais de uma contratação direta aberta. O código foi commitado no ramo `feat/regras-pendentes` e enviado para revisão no PR #26; tag, publicação e deploy continuam pendentes.
