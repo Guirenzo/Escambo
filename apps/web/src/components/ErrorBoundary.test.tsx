@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { ErrorBoundary } from './ErrorBoundary';
 
+const { report } = vi.hoisted(() => ({ report: vi.fn() }));
+vi.mock('../lib/report-error', () => ({ reportClientError: report }));
+
 /** Última linha de defesa: erro de render vira uma tela com um texto amigável e o botão de recarregar. */
 
 function Broken(): never {
@@ -64,6 +67,20 @@ describe('ErrorBoundary', () => {
     expect(own).toBeDefined();
     expect((own![1] as Error).message).toBe('Saldo veio sem valor');
     expect(own![2]).toContain('Broken');
+  });
+
+  it('relata o erro de render à API, com a pilha de componentes (RNF-040)', () => {
+    report.mockClear();
+    render(
+      <ErrorBoundary>
+        <Broken />
+      </ErrorBoundary>,
+    );
+    expect(report).toHaveBeenCalledTimes(1);
+    const [kind, error, componentStack] = report.mock.calls[0]!;
+    expect(kind).toBe('render');
+    expect((error as Error).message).toBe('Saldo veio sem valor');
+    expect(componentStack).toContain('Broken');
   });
 
   it('Recarregar recarrega a página', async () => {

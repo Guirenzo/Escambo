@@ -189,31 +189,38 @@ export const useChatHistory = (id: number) =>
   useQuery({ queryKey: qk.chat(id), queryFn: () => api.chatHistory(id) });
 export const useWithdrawals = () =>
   useQuery({ queryKey: qk.withdrawals, queryFn: () => api.withdrawals() });
-/** Tamanho da página do extrato de R$ ("Carregar mais" traz a próxima). */
+/** Tamanho da página dos extratos de R$ e de créditos ("Carregar mais" traz a próxima). */
 export const WALLET_TX_PAGE = 20;
 
-/** Período do extrato de R$ (RF-047): dias "AAAA-MM-DD", no fuso da conta; vazio = tudo. */
+/** Período dos extratos (RF-047): dias "AAAA-MM-DD", no fuso da conta; vazio = tudo. */
 export interface WalletPeriod {
   from?: string;
   to?: string;
 }
 
 /**
- * Extrato de R$ paginado e filtrado por período: acumula as páginas e sabe se há mais pelo
- * `hasMore` da API. Período invertido não vai à API (a tela avisa). A chave começa por
- * qk.walletTransactions: o que invalida o extrato invalida todos os períodos e páginas.
+ * Extrato paginado e filtrado por período (R$ ou créditos): acumula as páginas e sabe se há mais
+ * pelo `hasMore` da API. Período invertido não vai à API (a tela avisa). A chave começa pela do
+ * extrato: o que invalida o extrato invalida todos os períodos e páginas.
  */
-export const useWalletTransactions = (period: WalletPeriod = {}) => {
+function usePeriodLedger<Page extends { page: number; hasMore: boolean }>(
+  key: readonly string[],
+  period: WalletPeriod,
+  fetchPage: (query: WalletPeriod & { page: number; limit: number }) => Promise<Page>,
+) {
   const p = { from: period.from || undefined, to: period.to || undefined };
   return useInfiniteQuery({
-    queryKey: [...qk.walletTransactions, p] as const,
-    queryFn: ({ pageParam }) =>
-      api.walletTransactions({ ...p, page: pageParam, limit: WALLET_TX_PAGE }),
+    queryKey: [...key, p] as const,
+    queryFn: ({ pageParam }) => fetchPage({ ...p, page: pageParam, limit: WALLET_TX_PAGE }),
     initialPageParam: 1,
-    getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
+    getNextPageParam: (last: Page) => (last.hasMore ? last.page + 1 : undefined),
     enabled: !(p.from && p.to && p.from > p.to),
   });
-};
+}
+
+/** Extrato de R$ por período (RF-047). */
+export const useWalletTransactions = (period: WalletPeriod = {}) =>
+  usePeriodLedger(qk.walletTransactions, period, (query) => api.walletTransactions(query));
 export const useDeposits = () => useQuery({ queryKey: qk.deposits, queryFn: () => api.deposits() });
 /** Situação de uma cobrança; enquanto pendente, consulta a cada 3 s (o webhook pode chegar a qualquer momento). */
 export const useDeposit = (id: number | null, poll: boolean) =>
@@ -491,6 +498,14 @@ export function useCreateService() {
   });
 }
 
+/** Detalhe do serviço (debaixo de ['services']: editar e pausar já o recarregam). */
+export const useService = (id: number) =>
+  useQuery({
+    queryKey: ['services', 'detail', id] as const,
+    queryFn: () => api.service(id),
+    enabled: Number.isInteger(id) && id > 0,
+  });
+
 /** "Meus serviços" (RF-030): debaixo de ['services'], então criar, editar e pausar já a recarregam. */
 export const useMyServices = () =>
   useQuery({ queryKey: ['services', 'mine'] as const, queryFn: () => api.myServices() });
@@ -511,6 +526,14 @@ export function useSendMessage(contractId: number) {
     mutationFn: (content: string) => api.sendMessage(contractId, content),
     onSuccess: () => void qc.invalidateQueries({ queryKey: qk.chat(contractId) }),
   });
+}
+
+/**
+ * Leitura (RF-059): marca como lidas as recebidas até a mensagem dada. Não recarrega o histórico:
+ * quem mandou fica sabendo pelo evento `message:read`, e a própria Sala também o recebe.
+ */
+export function useMarkChatRead(contractId: number) {
+  return useMutation({ mutationFn: (upTo: number) => api.markChatRead(contractId, upTo) });
 }
 
 /** Imagem ou arquivo no chat, com legenda opcional. */
@@ -628,8 +651,9 @@ export function usePutClientProfile() {
 }
 
 // ---------- Fase B: diferenciais ----------
-export const useCreditTransactions = () =>
-  useQuery({ queryKey: qk.creditTransactions, queryFn: () => api.creditTransactions() });
+/** Extrato de créditos por período e com "Carregar mais", como o de R$ (RF-047). */
+export const useCreditTransactions = (period: WalletPeriod = {}) =>
+  usePeriodLedger(qk.creditTransactions, period, (query) => api.creditTransactions(query));
 export const useBoostPlans = () =>
   useQuery({ queryKey: qk.boostPlans, queryFn: () => api.boostPlans(), staleTime: 5 * 60_000 });
 export const useMyBoosts = () => useQuery({ queryKey: qk.myBoosts, queryFn: () => api.myBoosts() });

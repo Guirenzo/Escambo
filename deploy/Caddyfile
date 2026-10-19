@@ -18,4 +18,25 @@
 
 	# SPA + /api + /socket.io (WebSocket) — o nginx do web resolve o resto.
 	reverse_proxy web:8080
+
+	# Web fora do ar (RNF-010): o Caddy não alcançou o nginx. Só os erros do próprio Caddy caem
+	# aqui; um 503 que a API devolve (modo de manutenção, ADR 33) passa direto para o app.
+	handle_errors 502 503 504 {
+		# Chamada do app: JSON no formato de erro da API, que o app troca pela tela de fora do ar.
+		@api path /api/* /socket.io/*
+		handle @api {
+			header Content-Type "application/json; charset=utf-8"
+			header Retry-After 30
+			header Cache-Control no-store
+			respond `{"error":"service_unavailable","message":"O Escambo está fora do ar no momento. Tente de novo em instantes."}` 503
+		}
+		# Navegação: a página estática de deploy/status, montada no container (docker-compose.prod.yml).
+		handle {
+			root * /srv/status
+			rewrite * /fora-do-ar.html
+			header Retry-After 30
+			header Cache-Control no-store
+			file_server
+		}
+	}
 }

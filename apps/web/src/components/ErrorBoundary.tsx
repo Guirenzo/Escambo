@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { reportClientError } from '../lib/report-error';
 
 interface Props {
   children: ReactNode;
@@ -17,6 +18,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('Erro não tratado na UI', error, info.componentStack);
+    // RNF-040: a tela quebrada chega à equipe (log, métrica e Sentry), não só ao console.
+    reportClientError('render', error, info.componentStack);
   }
 
   override render(): ReactNode {

@@ -9,6 +9,7 @@ import { startMetricsServer } from './config/metrics';
 import { captureError, flushSentry, initSentry } from './config/sentry';
 import { createSocketServer } from './config/socket';
 import { startJobs, stopJobs } from './jobs/scheduler';
+import { logFieldEncryptionStatus } from './utils/field-crypto';
 
 /** Espera o banco ficar disponível antes de subir (resiliência a boot fora de ordem). */
 async function waitForDb(retries = 10, delayMs = 1500): Promise<void> {
@@ -40,6 +41,7 @@ async function main(): Promise<void> {
       { version: buildInfo.version, commit: buildInfo.commit },
       `API Escambo em http://localhost:${env.PORT}/api (env: ${env.NODE_ENV})`,
     );
+    logFieldEncryptionStatus(); // RNF-017: cifragem ligada, ou o aviso de texto puro (warn em produção)
     startJobs(); // aprovação tácita etc. (JOBS_ENABLED)
   });
 

@@ -22,6 +22,7 @@ import type {
   DisputeResolution,
 } from '@escambo/types';
 import { Button, Field, Input, Modal, PageHeader, QueryState } from '../../components/ui';
+import { dueDayText } from '../../lib/business-days';
 import {
   brl,
   DELETION_STATUS_LABEL,
@@ -465,6 +466,7 @@ export function AdminView() {
           <strong className="kpi-value">{m ? m.pendingWithdrawals : '—'}</strong>
           <span className="muted tiny">
             {m ? `${brl(m.pendingWithdrawalsAmount)} a pagar` : ''}
+            {m && m.overdueWithdrawals > 0 ? ` · ${m.overdueWithdrawals} atrasado(s)` : ''}
           </span>
         </div>
       </div>
@@ -577,6 +579,7 @@ export function AdminView() {
                 <thead>
                   <tr>
                     <th>Saque</th>
+                    <th>Prazo</th>
                     <th>Titular</th>
                     <th>Valor</th>
                     <th>Destino</th>
@@ -590,6 +593,19 @@ export function AdminView() {
                       <td className="cell-title">
                         <strong>#{w.id}</strong>
                         <span className="muted tiny">pedido em {dtm(w.createdAt)}</span>
+                      </td>
+                      <td>
+                        {/* RN-035: a fila já vem pelo prazo; o atrasado ganha a marca. */}
+                        {w.dueAt ? (
+                          <span className="muted tiny">até {dueDayText(w.dueAt)}</span>
+                        ) : (
+                          <span className="muted tiny">—</span>
+                        )}
+                        {w.overdue && (
+                          <div>
+                            <span className="pill status-cancelled">Atrasado</span>
+                          </div>
+                        )}
                       </td>
                       <td className="cell-title">
                         <strong>{w.userName ?? '—'}</strong>

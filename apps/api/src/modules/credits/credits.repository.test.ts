@@ -22,6 +22,18 @@ describe('creditsRepository', () => {
       vi.mocked(lock).mockReset().mockResolvedValue(undefined);
   });
 
+  it('hasWelcome lê sem trava se o bônus de boas-vindas do usuário já saiu', async () => {
+    fakeDb.reply([{ 1: 1 }], []);
+    expect(await creditsRepository.hasWelcome(7)).toBe(true);
+    expect(await creditsRepository.hasWelcome(8)).toBe(false);
+    expect(fakeDb.sqls()).toEqual([
+      "SELECT 1 FROM credit_transactions WHERE user_id = :userId AND reason = 'welcome' LIMIT 1",
+      "SELECT 1 FROM credit_transactions WHERE user_id = :userId AND reason = 'welcome' LIMIT 1",
+    ]);
+    expect(fakeDb.calls.map((c) => c.params)).toEqual([{ userId: 7 }, { userId: 8 }]);
+    expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
+  });
+
   describe('grantWelcomeIfNew (bônus de boas-vindas, uma única vez)', () => {
     it('bônus zero ou negativo não abre conexão nem transação', async () => {
       await creditsRepository.grantWelcomeIfNew(7, 0);
@@ -221,5 +233,22 @@ describe('creditsRepository', () => {
 
     expect(fakeDb.calls[0]!.sql).toMatch(/ ORDER BY id DESC LIMIT 50 OFFSET 0$/);
     expect(fakeDb.calls[0]!.params).toEqual({ userId: 7 });
+  });
+
+  it('com período, filtra a data do lançamento como o extrato de R$: início inclusivo, fim exclusivo (RF-047)', async () => {
+    const from = new Date('2026-10-01T03:00:00.000Z');
+    const to = new Date('2026-10-03T03:00:00.000Z');
+
+    await creditsRepository.listTransactions(7, 21, 0, { from, to });
+    await creditsRepository.listTransactions(7, 21, 20, { to });
+
+    expect(fakeDb.calls[0]!.sql).toContain(
+      'FROM credit_transactions WHERE user_id = :userId AND created_at >= :from AND created_at < :to ORDER BY id DESC LIMIT 21 OFFSET 0',
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ userId: 7, from, to });
+    expect(fakeDb.calls[1]!.sql).toContain(
+      'WHERE user_id = :userId AND created_at < :to ORDER BY id DESC LIMIT 21 OFFSET 20',
+    );
+    expect(fakeDb.calls[1]!.params).toEqual({ userId: 7, to });
   });
 });

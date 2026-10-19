@@ -1,5 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeDb } from '../../test-support/fake-db';
+import {
+  FIELD_UNAVAILABLE,
+  openField,
+  sealField,
+  setFieldKeysForTests,
+} from '../../utils/field-crypto';
 import { lockWalletRows, lockWalletUsers, lockWallets } from '../wallet/wallet.locks';
 import { withdrawalRepository } from './withdrawal.repository';
 
@@ -22,7 +28,7 @@ const WALLET_TX = 'ledger:recordWalletTx';
 const steps = (): string[] => fakeDb.sqls().map((s) => s.split(' ').slice(0, 3).join(' '));
 
 const COLUMNS =
-  'w.id, w.user_id, w.amount, w.status, w.pix_key, w.bank_name, w.bank_agency, w.bank_account, w.gateway_ref, w.created_at, w.processed_at';
+  'w.id, w.user_id, w.amount, w.status, w.pix_key, w.bank_name, w.bank_agency, w.bank_account, w.gateway_ref, w.created_at, w.processed_at, w.due_at';
 const HOLDER_JOINS =
   'FROM withdrawals w JOIN users u ON u.id = w.user_id LEFT JOIN profiles_freelancer fp ON fp.user_id = w.user_id LEFT JOIN profiles_client cp ON cp.user_id = w.user_id';
 
@@ -76,6 +82,8 @@ describe('withdrawalRepository', () => {
   });
 
   describe('createIfSufficient (RN-034, RNF-038)', () => {
+    // Prazo já calculado pelo service (RN-035): o repository só o grava junto.
+    const dueAt = new Date('2026-10-20T02:59:59.000Z');
     const params = {
       userId: 7,
       amount: 100,
@@ -83,6 +91,7 @@ describe('withdrawalRepository', () => {
       bankName: null,
       bankAgency: null,
       bankAccount: null,
+      dueAt,
     };
 
     it('debita o saldo, grava o saque e a linha do extrato na mesma transação, nessa ordem', async () => {
@@ -118,7 +127,7 @@ describe('withdrawalRepository', () => {
       });
 
       expect(fakeDb.calls[3]!.sql).toContain(
-        'INSERT INTO withdrawals (user_id, wallet_id, amount, bank_name, bank_agency, bank_account, pix_key) VALUES (:userId, :walletId, :amount, :bankName, :bankAgency, :bankAccount, :pixKey)',
+        'INSERT INTO withdrawals (user_id, wallet_id, amount, bank_name, bank_agency, bank_account, pix_key, due_at) VALUES (:userId, :walletId, :amount, :bankName, :bankAgency, :bankAccount, :pixKey, :dueAt)',
       );
       expect(fakeDb.calls[3]!.params).toEqual({
         userId: 7,
@@ -128,6 +137,7 @@ describe('withdrawalRepository', () => {
         bankAgency: null,
         bankAccount: null,
         pixKey: 'chave@escambo.test',
+        dueAt,
       });
 
       expect(fakeDb.calls[4]!.params).toEqual({
@@ -154,6 +164,7 @@ describe('withdrawalRepository', () => {
         bankName: 'Banco do Brasil',
         bankAgency: '0001',
         bankAccount: '12345-6',
+        dueAt,
       });
 
       // O id da carteira vai como número, mesmo que o driver devolva texto.
@@ -165,6 +176,7 @@ describe('withdrawalRepository', () => {
         bankAgency: '0001',
         bankAccount: '12345-6',
         pixKey: null,
+        dueAt,
       });
       expect(fakeDb.calls[2]!.params).toMatchObject({ balanceDelta: -250.75 });
       expect(fakeDb.calls[4]!.params).toMatchObject({ balanceDelta: -250.75, withdrawalId: 78 });
@@ -218,7 +230,8 @@ describe('withdrawalRepository', () => {
     const row = { id: 42, user_id: 7, status: 'requested' };
     fakeDb.reply([row], []);
 
-    expect(await withdrawalRepository.findById(42)).toBe(row);
+    // Cópia da linha com o destino decifrado (RNF-017); sem destino gravado, igual à que veio.
+    expect(await withdrawalRepository.findById(42)).toStrictEqual(row);
     expect(await withdrawalRepository.findById(43)).toBeUndefined();
 
     expect(fakeDb.calls[0]!.sql).toBe(
@@ -232,7 +245,7 @@ describe('withdrawalRepository', () => {
     const rows = [{ id: 2 }, { id: 1 }];
     fakeDb.reply(rows);
 
-    expect(await withdrawalRepository.listForUser(7, 20, 40)).toBe(rows);
+    expect(await withdrawalRepository.listForUser(7, 20, 40)).toStrictEqual(rows);
 
     const { sql, params } = fakeDb.calls[0]!;
     // O id desempata saques criados no mesmo segundo, para a paginação não repetir nem pular linha.
@@ -251,11 +264,13 @@ describe('withdrawalRepository', () => {
   });
 
   describe('listForAdmin (fila do admin)', () => {
-    it('traz os saques nos status pedidos, do mais antigo para o mais novo, com o titular', async () => {
+    it('traz os saques nos status pedidos, pelo prazo (RN-035), com o titular', async () => {
       const rows = [{ id: 1 }, { id: 2 }];
       fakeDb.reply(rows);
 
-      expect(await withdrawalRepository.listForAdmin(['requested', 'processing'], 200)).toBe(rows);
+      expect(
+        await withdrawalRepository.listForAdmin(['requested', 'processing'], 200),
+      ).toStrictEqual(rows);
 
       const { sql, params } = fakeDb.calls[0]!;
       expect(sql).toContain(HOLDER_JOINS);
@@ -263,8 +278,10 @@ describe('withdrawalRepository', () => {
       expect(sql).toContain(
         'u.ulid AS user_ulid, u.email AS user_email, COALESCE(fp.full_name, cp.full_name) AS user_name',
       );
+      // O que vence antes vem primeiro; saque antigo sem prazo entra pela data do pedido, e o
+      // pedido mais antigo (depois o id) desempata.
       expect(sql).toMatch(
-        /WHERE w\.status IN \(:statuses\) ORDER BY w\.created_at ASC, w\.id ASC LIMIT 200$/,
+        /WHERE w\.status IN \(:statuses\) ORDER BY COALESCE\(w\.due_at, w\.created_at\) ASC, w\.created_at ASC, w\.id ASC LIMIT 200$/,
       );
       expect(params).toEqual({ statuses: ['requested', 'processing'] });
     });
@@ -279,7 +296,7 @@ describe('withdrawalRepository', () => {
     const row = { id: 42, user_email: 'f@escambo.test' };
     fakeDb.reply([row], []);
 
-    expect(await withdrawalRepository.findForAdmin(42)).toBe(row);
+    expect(await withdrawalRepository.findForAdmin(42)).toStrictEqual(row);
     expect(await withdrawalRepository.findForAdmin(43)).toBeUndefined();
 
     const { sql } = fakeDb.calls[0]!;
@@ -443,5 +460,144 @@ describe('withdrawalRepository', () => {
         expectRolledBack();
       },
     );
+  });
+
+  describe('destino cifrado em repouso (RNF-017)', () => {
+    const KEY = Buffer.alloc(32, 0x42).toString('base64');
+    const plain = (stored: unknown): string | null => {
+      if (stored === null) return null;
+      const opened = openField(stored as string);
+      return opened.ok ? opened.value : `falhou: ${opened.reason}`;
+    };
+
+    beforeEach(() => setFieldKeysForTests({ current: KEY }));
+    afterEach(() => setFieldKeysForTests(null));
+
+    it('o pedido grava a chave PIX cifrada: o INSERT não leva o valor em texto', async () => {
+      fakeDb.reply({ affectedRows: 0 }, [{ id: 31 }], { insertId: 77, affectedRows: 1 });
+
+      await withdrawalRepository.createIfSufficient({
+        userId: 7,
+        amount: 100,
+        pixKey: 'chave@escambo.test',
+        bankName: null,
+        bankAgency: null,
+        bankAccount: null,
+        dueAt: new Date('2026-10-20T02:59:59.000Z'),
+      });
+
+      const insert = fakeDb.calls.find((c) => c.sql.startsWith('INSERT INTO withdrawals'))!;
+      const params = insert.params as Record<string, unknown>;
+      expect(params.pixKey).toMatch(/^enc:v1:[0-9a-f]{8}:/);
+      expect(JSON.stringify(insert)).not.toContain('chave@escambo.test');
+      expect(plain(params.pixKey)).toBe('chave@escambo.test');
+      expect([params.bankName, params.bankAgency, params.bankAccount]).toEqual([null, null, null]);
+    });
+
+    it('transferência: banco, agência e conta vão cifrados, cada um com o seu IV', async () => {
+      fakeDb.reply({ affectedRows: 0 }, [{ id: 31 }], { insertId: 78, affectedRows: 1 });
+
+      await withdrawalRepository.createIfSufficient({
+        userId: 7,
+        amount: 100,
+        pixKey: null,
+        bankName: 'Banco do Brasil',
+        bankAgency: '0001',
+        bankAccount: '0001',
+        dueAt: new Date('2026-10-21T02:59:59.000Z'),
+      });
+
+      const params = fakeDb.calls.find((c) => c.sql.startsWith('INSERT INTO withdrawals'))!
+        .params as Record<string, unknown>;
+      expect(params.pixKey).toBeNull();
+      expect(plain(params.bankName)).toBe('Banco do Brasil');
+      expect(plain(params.bankAgency)).toBe('0001');
+      expect(plain(params.bankAccount)).toBe('0001');
+      // Mesmo valor, cifras diferentes: o banco não revela que agência e conta são iguais.
+      expect(params.bankAgency).not.toBe(params.bankAccount);
+    });
+
+    it('as leituras decifram o destino: titular, fila e saque do admin; o legado passa como está', async () => {
+      const sealedRow = { id: 1, pix_key: sealField('chave@escambo.test'), bank_name: null };
+      const legacyRow = { id: 2, pix_key: null, bank_name: 'Itaú', bank_agency: '0001' };
+      fakeDb.reply([sealedRow], [sealedRow, legacyRow], [legacyRow, sealedRow], [sealedRow]);
+
+      expect(await withdrawalRepository.findById(1)).toEqual({
+        ...sealedRow,
+        pix_key: 'chave@escambo.test',
+      });
+      expect(await withdrawalRepository.listForUser(7, 20, 0)).toEqual([
+        { ...sealedRow, pix_key: 'chave@escambo.test' },
+        legacyRow,
+      ]);
+      expect(await withdrawalRepository.listForAdmin(['requested'], 200)).toEqual([
+        legacyRow,
+        { ...sealedRow, pix_key: 'chave@escambo.test' },
+      ]);
+      expect(await withdrawalRepository.findForAdmin(1)).toEqual({
+        ...sealedRow,
+        pix_key: 'chave@escambo.test',
+      });
+    });
+
+    it('valor cifrado que não decifra não derruba a lista: vai como "[indisponível]"', async () => {
+      const sealed = sealField('chave@escambo.test');
+      setFieldKeysForTests({ current: Buffer.alloc(32, 0x43).toString('base64') });
+      fakeDb.reply([
+        { id: 1, pix_key: sealed },
+        { id: 2, pix_key: 'legado@escambo.test' },
+      ]);
+
+      expect(await withdrawalRepository.listForAdmin(['requested'], 200)).toEqual([
+        { id: 1, pix_key: FIELD_UNAVAILABLE },
+        { id: 2, pix_key: 'legado@escambo.test' },
+      ]);
+    });
+
+    it('fields:encrypt: o lote vem pelo id, só com destino fora da chave atual, e sem decifrar', async () => {
+      const rows = [{ id: 5, pix_key: 'legado@escambo.test' }];
+      fakeDb.reply(rows);
+
+      expect(await withdrawalRepository.listStoredToSeal(4, 'enc:v1:abcdef01:', 50)).toBe(rows);
+
+      const { sql, params } = fakeDb.calls[0]!;
+      expect(sql).toBe(
+        'SELECT id, pix_key, bank_name, bank_agency, bank_account FROM withdrawals WHERE id > :afterId AND ( ' +
+          '(pix_key IS NOT NULL AND pix_key NOT LIKE :pattern COLLATE utf8mb4_bin) OR ' +
+          '(bank_name IS NOT NULL AND bank_name NOT LIKE :pattern COLLATE utf8mb4_bin) OR ' +
+          '(bank_agency IS NOT NULL AND bank_agency NOT LIKE :pattern COLLATE utf8mb4_bin) OR ' +
+          '(bank_account IS NOT NULL AND bank_account NOT LIKE :pattern COLLATE utf8mb4_bin)) ' +
+          'ORDER BY id LIMIT 50',
+      );
+      expect(params).toEqual({ afterId: 4, pattern: 'enc:v1:abcdef01:%' });
+    });
+
+    it('fields:encrypt: regrava só se o gravado ainda for o lido, sem mexer no updated_at', async () => {
+      fakeDb.reply({ affectedRows: 1 }, { affectedRows: 0 });
+      const from = { pixKey: 'legado', bankName: null, bankAgency: null, bankAccount: null };
+      const to = { pixKey: 'enc:v1:x', bankName: null, bankAgency: null, bankAccount: null };
+
+      expect(await withdrawalRepository.replaceStoredDestination(9, from, to)).toBe(true);
+      expect(await withdrawalRepository.replaceStoredDestination(9, from, to)).toBe(false);
+
+      const { sql, params } = fakeDb.calls[0]!;
+      expect(sql).toBe(
+        'UPDATE withdrawals SET pix_key = :pixKey, bank_name = :bankName, bank_agency = :bankAgency, ' +
+          'bank_account = :bankAccount, updated_at = updated_at WHERE id = :id ' +
+          'AND pix_key <=> :fromPixKey AND bank_name <=> :fromBankName ' +
+          'AND bank_agency <=> :fromBankAgency AND bank_account <=> :fromBankAccount',
+      );
+      expect(params).toEqual({
+        id: 9,
+        pixKey: 'enc:v1:x',
+        bankName: null,
+        bankAgency: null,
+        bankAccount: null,
+        fromPixKey: 'legado',
+        fromBankName: null,
+        fromBankAgency: null,
+        fromBankAccount: null,
+      });
+    });
   });
 });

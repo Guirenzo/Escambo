@@ -1,4 +1,4 @@
-import type { RequestHandler } from 'express';
+import type { Request, RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 import {
@@ -24,6 +24,21 @@ declare global {
     interface Request {
       user?: AuthPayload;
     }
+  }
+}
+
+/**
+ * Quem chama uma rota pública, se mandou um token válido (sem consultar a conta): serve só para a
+ * rota tratar o dono de outro jeito (ex.: não contar a visualização do próprio serviço), nunca para
+ * dar acesso. Sem token, ou com token inválido ou vencido, é anônimo.
+ */
+export function optionalUserId(req: Request): number | undefined {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) return undefined;
+  try {
+    return validateAccessIdentity(jwt.verify(header.slice(7), env.JWT_SECRET)).uid;
+  } catch {
+    return undefined;
   }
 }
 

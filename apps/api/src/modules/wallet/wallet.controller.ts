@@ -1,18 +1,6 @@
 import type { Request, Response } from 'express';
-import { z } from 'zod';
-import { isCalendarDay } from './wallet.period';
+import { ledgerQuerySchema as listSchema } from './wallet.period';
 import { walletService } from './wallet.service';
-
-/** Dia do período do extrato: "AAAA-MM-DD" que existe no calendário. */
-const day = z.string().refine(isCalendarDay, 'Informe um dia válido no formato AAAA-MM-DD');
-
-const listSchema = z.object({
-  // Teto na página: sem ele, ?page=1e20 vira OFFSET 2e+21 e o MySQL recusa (500).
-  page: z.coerce.number().int().positive().max(10_000).default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
-  from: day.optional(),
-  to: day.optional(),
-});
 
 /**
  * GET /api/wallet/transactions — extrato de R$ do usuário logado. `from`/`to` (RF-047) filtram por

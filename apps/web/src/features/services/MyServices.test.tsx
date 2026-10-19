@@ -91,8 +91,11 @@ describe('MyServices: a lista', () => {
     expect(screen.getByTestId('my-services-count')).toHaveTextContent('2 serviços · 1 pausado');
     expect(card('Logo pausado').getByText('Pausado')).toBeVisible();
     expect(card('Aula de violão').queryByText('Pausado')).toBeNull();
-    // Os dados de quem presta não aparecem: é a lista do próprio dono.
-    expect(screen.queryByRole('link')).toBeNull();
+    // Os dados de quem presta não aparecem: é a lista do próprio dono. Link, só os títulos (detalhe).
+    expect(screen.getAllByRole('link').map((l) => l.getAttribute('href'))).toEqual([
+      '/servicos/21',
+      '/servicos/22',
+    ]);
   });
 
   it('um serviço só, ativo: contagem no singular e sem a parte dos pausados', async () => {
@@ -237,9 +240,37 @@ describe('MyServices: editar (RF-022 e RF-023)', () => {
       price: null,
       deliveryDays: null,
       isRemote: true,
+      modality: 'remote',
+      tags: [],
     });
     expect(await screen.findByText('Serviço atualizado!')).toBeVisible();
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('a edição traz a modalidade e as tags do serviço; tirar uma tag e salvar manda a lista nova (RF-023, RF-024)', async () => {
+    const user = userEvent.setup();
+    api.myServices.mockResolvedValue([
+      service({ isRemote: true, modality: 'both', tags: ['violão', 'iniciantes'], viewsCount: 5 }),
+    ]);
+    renderList();
+    expect((await found('Aula de violão')).getByTestId('views-count')).toHaveTextContent(
+      '5 visualizações',
+    );
+    await user.click(card('Aula de violão').getByRole('button', { name: 'Editar' }));
+    expect(dialog().getByLabelText('Modalidade')).toHaveValue('both');
+    const chips = dialog().getByRole('list', { name: 'Tags do serviço' });
+    expect(
+      within(chips)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['violão', 'iniciantes']);
+
+    await user.click(dialog().getByRole('button', { name: 'Remover a tag iniciantes' }));
+    await user.click(dialog().getByRole('button', { name: 'Salvar alterações' }));
+    expect(api.updateService).toHaveBeenCalledWith(
+      21,
+      expect.objectContaining({ modality: 'both', isRemote: true, tags: ['violão'] }),
+    );
   });
 
   it('a combinar que vira preço fixo pede o preço, com o mínimo da plataforma (RN-016)', async () => {

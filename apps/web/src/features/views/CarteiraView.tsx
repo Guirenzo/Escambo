@@ -6,11 +6,18 @@ import type {
   CreditReason,
   Deposit,
   WalletTransaction,
+  Withdrawal,
   WithdrawalMethod,
 } from '@escambo/types';
 import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import {
+  businessDaysLabel,
+  DEFAULT_WITHDRAWAL_BUSINESS_DAYS,
+  dueDayText,
+  withdrawalDueAt,
+} from '../../lib/business-days';
 import { usePageTitle } from '../../lib/title';
 import {
   brl,
@@ -30,9 +37,16 @@ import {
   useWalletTransactions,
   useWithdrawals,
 } from '../../lib/hooks';
-import { timezoneLabel } from '../../lib/timezones';
 import { useToast } from '../../lib/toast';
 import { DepositModal } from '../wallet/DepositModal';
+import {
+  isInvertedPeriod,
+  LoadMore,
+  NO_PERIOD,
+  PeriodFilter,
+  uniqueItems,
+  type LedgerPeriod,
+} from '../wallet/LedgerControls';
 
 const REASON_LABEL: Record<CreditReason, string> = {
   welcome: 'Bônus de boas-vindas',
@@ -44,6 +58,19 @@ const REASON_LABEL: Record<CreditReason, string> = {
   grant: 'Crédito concedido',
   boost: 'Impulsionamento',
 };
+
+/** Saque ainda não pago (aguardando ou em processamento): é o que tem prazo a cumprir. */
+const isOpen = (w: Withdrawal): boolean => w.status === 'requested' || w.status === 'processing';
+
+/**
+ * O prazo de um saque aberto (RN-035), no calendário de Brasília: "cai até qua, 21/10", ou
+ * "prazo era qua, 21/10" quando já passou sem o pagamento.
+ */
+function dueNote(w: Withdrawal, now: number): string {
+  if (!w.dueAt || !isOpen(w)) return '';
+  const day = dueDayText(w.dueAt);
+  return new Date(w.dueAt).getTime() < now ? ` · prazo era ${day}` : ` · cai até ${day}`;
+}
 
 /** Uma linha do extrato de R$: movimento do disponível ou, quando só o retido muda, do retido. */
 function LedgerRow({ t }: { t: WalletTransaction }) {
@@ -80,26 +107,18 @@ export function CarteiraView() {
   usePageTitle('Carteira');
   const { user } = useAuth();
   const wallet = useWallet();
-  const minWithdrawal = usePublicSettings().data?.minWithdrawalAmount ?? 20;
+  const settings = usePublicSettings().data;
+  const minWithdrawal = settings?.minWithdrawalAmount ?? 20;
   const withdrawals = useWithdrawals();
   const deposits = useDeposits();
-  // Período do extrato de R$ (RF-047): dias no fuso da conta; vazio = sem limite daquele lado.
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const invalidPeriod = from !== '' && to !== '' && from > to;
-  const ledger = useWalletTransactions({ from, to });
-  // As páginas juntas; um lançamento novo no meio da paginação não aparece duas vezes.
-  const ledgerItems = useMemo(() => {
-    const seen = new Set<number>();
-    return (ledger.data?.pages ?? [])
-      .flatMap((p) => p.items)
-      .filter((t) => {
-        if (seen.has(t.id)) return false;
-        seen.add(t.id);
-        return true;
-      });
-  }, [ledger.data]);
-  const creditTx = useCreditTransactions();
+  // Período dos extratos (RF-047), o mesmo nas duas abas: dias no fuso da conta.
+  const [period, setPeriod] = useState<LedgerPeriod>(NO_PERIOD);
+  const invalidPeriod = isInvertedPeriod(period);
+  const filtered = period.from !== '' || period.to !== '';
+  const ledger = useWalletTransactions(period);
+  const ledgerItems = useMemo(() => uniqueItems(ledger.data?.pages), [ledger.data]);
+  const creditTx = useCreditTransactions(period);
+  const creditItems = useMemo(() => uniqueItems(creditTx.data?.pages), [creditTx.data]);
   const request = useRequestWithdrawal();
   const cancelWithdrawal = useCancelWithdrawal();
   const toast = useToast();
@@ -114,6 +133,10 @@ export function CarteiraView() {
   const [resending, setResending] = useState(false);
   // Saque é a única ação que tira dinheiro da plataforma: a API exige e-mail confirmado (403).
   const canWithdraw = user?.emailVerified ?? true;
+  // Prazo da forma escolhida (RN-035): a previsão daqui; o que vale é o dueAt que a API grava.
+  const businessDays =
+    settings?.withdrawalBusinessDays?.[method] ?? DEFAULT_WITHDRAWAL_BUSINESS_DAYS[method];
+  const now = Date.now();
 
   async function resend(): Promise<void> {
     setResending(true);
@@ -135,8 +158,12 @@ export function CarteiraView() {
         ? { amount: Number(amount), method, pixKey }
         : { amount: Number(amount), method, bankName, bankAgency, bankAccount };
     try {
-      await request.mutateAsync(body);
-      toast.success('Saque solicitado! Você recebe um aviso quando for pago.');
+      const created = await request.mutateAsync(body);
+      toast.success(
+        created.dueAt
+          ? `Saque solicitado! Cai até ${dueDayText(created.dueAt)}. Você recebe um aviso quando for pago.`
+          : 'Saque solicitado! Você recebe um aviso quando for pago.',
+      );
       setAmount('');
       setPixKey('');
       setBankName('');
@@ -261,6 +288,10 @@ export function CarteiraView() {
                 <option value="bank">Transferência bancária</option>
               </Select>
             </Field>
+            <p className="muted tiny" data-testid="withdraw-due">
+              Em até {businessDaysLabel(businessDays)} (seg. a sex.): cai até{' '}
+              {dueDayText(withdrawalDueAt(businessDays))}.
+            </p>
             {method === 'pix' ? (
               <Field label="Chave PIX">
                 <Input
@@ -336,108 +367,68 @@ export function CarteiraView() {
               </button>
             </div>
           </div>
-          {tab === 'brl' ? (
-            <>
-              <div className="filters-bar" role="group" aria-label="Período do extrato">
-                <label className="filter">
-                  De
-                  <input
-                    type="date"
-                    value={from}
-                    max={to || undefined}
-                    onChange={(e) => setFrom(e.target.value)}
-                  />
-                </label>
-                <label className="filter">
-                  Até
-                  <input
-                    type="date"
-                    value={to}
-                    min={from || undefined}
-                    onChange={(e) => setTo(e.target.value)}
-                  />
-                </label>
-                {(from || to) && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setFrom('');
-                      setTo('');
-                    }}
-                  >
-                    Limpar período
-                  </Button>
-                )}
-              </div>
-              <p className="muted tiny">Dias no horário de {timezoneLabel(user?.timezone)}.</p>
-              {invalidPeriod ? (
-                <p role="alert">A data inicial precisa ser até a final.</p>
-              ) : (
-                <QueryState
-                  isLoading={ledger.isLoading}
-                  error={ledger.error}
-                  data={ledger.data ? ledgerItems : undefined}
-                  isEmpty={(d) => d.length === 0}
-                  empty={
-                    from || to
-                      ? 'Nenhuma movimentação em reais nesse período.'
-                      : 'Nenhuma movimentação em reais ainda. Faça um depósito para contratar.'
-                  }
-                  onRetry={() => void ledger.refetch()}
-                >
-                  {(items) => (
-                    <>
-                      <ul className="list credit-tx" data-testid="ledger">
-                        {items.map((t) => (
-                          <LedgerRow key={t.id} t={t} />
-                        ))}
-                      </ul>
-                      {ledger.hasNextPage && (
-                        <div className="center">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={() => void ledger.fetchNextPage()}
-                            disabled={ledger.isFetchingNextPage}
-                          >
-                            {ledger.isFetchingNextPage ? 'Carregando…' : 'Carregar mais'}
-                          </Button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </QueryState>
+          <PeriodFilter value={period} onChange={setPeriod} timezone={user?.timezone} />
+          {invalidPeriod ? (
+            <p role="alert">A data inicial precisa ser até a final.</p>
+          ) : tab === 'brl' ? (
+            <QueryState
+              isLoading={ledger.isLoading}
+              error={ledger.error}
+              data={ledger.data ? ledgerItems : undefined}
+              isEmpty={(d) => d.length === 0}
+              empty={
+                filtered
+                  ? 'Nenhuma movimentação em reais nesse período.'
+                  : 'Nenhuma movimentação em reais ainda. Faça um depósito para contratar.'
+              }
+              onRetry={() => void ledger.refetch()}
+            >
+              {(items) => (
+                <>
+                  <ul className="list credit-tx" data-testid="ledger">
+                    {items.map((t) => (
+                      <LedgerRow key={t.id} t={t} />
+                    ))}
+                  </ul>
+                  <LoadMore query={ledger} />
+                </>
               )}
-            </>
+            </QueryState>
           ) : (
             <QueryState
               isLoading={creditTx.isLoading}
               error={creditTx.error}
-              data={creditTx.data}
-              isEmpty={(d) => d.items.length === 0}
-              empty="Nenhuma movimentação de créditos ainda."
+              data={creditTx.data ? creditItems : undefined}
+              isEmpty={(d) => d.length === 0}
+              empty={
+                filtered
+                  ? 'Nenhuma movimentação de créditos nesse período.'
+                  : 'Nenhuma movimentação de créditos ainda.'
+              }
               onRetry={() => void creditTx.refetch()}
             >
-              {(d) => (
-                <ul className="list credit-tx">
-                  {d.items.map((t) => (
-                    <li key={t.id}>
-                      <div>
-                        <strong>{REASON_LABEL[t.reason] ?? t.reason}</strong>
-                        <div className="muted tiny">
-                          {dtm(t.createdAt)}
-                          {t.contractId != null ? ` · contrato #${t.contractId}` : ''} · saldo após:{' '}
-                          {t.balanceAfter}
+              {(items) => (
+                <>
+                  <ul className="list credit-tx" data-testid="credit-ledger">
+                    {items.map((t) => (
+                      <li key={t.id}>
+                        <div>
+                          <strong>{REASON_LABEL[t.reason] ?? t.reason}</strong>
+                          <div className="muted tiny">
+                            {dtm(t.createdAt)}
+                            {t.contractId != null ? ` · contrato #${t.contractId}` : ''} · saldo
+                            após: {t.balanceAfter}
+                          </div>
                         </div>
-                      </div>
-                      <span className={`amt ${t.amount >= 0 ? 'pos' : 'neg'}`}>
-                        {t.amount >= 0 ? '+' : ''}
-                        {t.amount}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                        <span className={`amt ${t.amount >= 0 ? 'pos' : 'neg'}`}>
+                          {t.amount >= 0 ? '+' : ''}
+                          {t.amount}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <LoadMore query={creditTx} />
+                </>
               )}
             </QueryState>
           )}
@@ -467,6 +458,7 @@ export function CarteiraView() {
                         <div className="muted tiny">
                           {x.method === 'pix' ? 'PIX' : 'Conta'} · {x.maskedDestination} ·{' '}
                           {dtm(x.processedAt ?? x.createdAt)}
+                          {dueNote(x, now)}
                         </div>
                       </div>
                       <div className="acts">

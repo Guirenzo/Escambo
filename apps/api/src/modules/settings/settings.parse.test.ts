@@ -45,6 +45,22 @@ describe('parseNumberSetting (número de uma chave de platform_settings)', () =>
     },
   );
 
+  it.each([
+    ['withdrawal_pix_business_days', 1],
+    ['withdrawal_bank_business_days', 2],
+  ] as const)(
+    '%s (RN-035) preserva inteiros de 1 a 10 dias úteis e usa o padrão (%i) para dado inválido',
+    (key, standard) => {
+      for (const raw of [null, undefined, '', '  ', 'abc', 'Infinity', '0', '-1', '11', '1.5']) {
+        // Prazo zero, negativo ou quebrado travaria o pedido de saque (RangeError no cálculo).
+        expect(parseNumberSetting(raw, 7, key)).toBe(standard);
+      }
+      expect(parseNumberSetting('1', 5, key)).toBe(1);
+      expect(parseNumberSetting('10', 5, key)).toBe(10);
+      expect(parseNumberSetting(' 3 ', 5, key)).toBe(3);
+    },
+  );
+
   it('a leitura de outras chaves conserva zero, decimal e valores fora de faixas antigas', () => {
     expect(parseNumberSetting('0', 7, 'strike_upload_block_days')).toBe(0);
     expect(parseNumberSetting('12.5', 10, 'min_service_price')).toBe(12.5);

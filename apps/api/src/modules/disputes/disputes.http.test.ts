@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { blocklist } from '../../config/blocklist';
-import { bearer, routerApp } from '../../test-support/http';
+import { bearer, routerApp, businessAudits } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
 import { openDispute } from './disputes.controller';
 import { disputesRoutes } from './disputes.routes';
@@ -70,7 +70,7 @@ describe('disputas: borda HTTP', () => {
       expect(service.open).not.toHaveBeenCalled();
       expect(service.listMine).not.toHaveBeenCalled();
       expect(service.getById).not.toHaveBeenCalled();
-      expect(auditLog).not.toHaveBeenCalled();
+      expect(businessAudits(auditLog)).toEqual([]);
 
       // O bloqueio é da conta, não da rota: outra pessoa continua passando.
       service.listMine.mockResolvedValue([]);

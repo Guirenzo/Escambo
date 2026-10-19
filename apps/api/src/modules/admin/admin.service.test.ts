@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../disputes/disputes.repository', () => ({
   disputesRepository: { findById: vi.fn(), listOpen: vi.fn(), resolve: vi.fn() },
@@ -41,6 +41,7 @@ import { authRepository } from '../auth/auth.repository';
 import { sessionRepository } from '../auth/session.repository';
 import { milestonesRepository } from '../contracts/milestones.repository';
 import { notificationsService } from '../notifications/notifications.service';
+import { setClockForTests } from '../../utils/clock';
 
 const disputes = vi.mocked(disputesRepository);
 const contracts = vi.mocked(contractsRepository);
@@ -764,7 +765,12 @@ describe('adminService.moderateUser (RN-007): efeito imediato', () => {
 });
 
 describe('adminService.getMetrics', () => {
+  afterEach(() => setClockForTests(null));
+
   it('traduz a linha do banco para o resumo do painel, com os decimais em número', async () => {
+    // O atraso dos saques (RN-035) é medido no relógio do fluxo, que vai para a consulta.
+    const now = new Date('2026-10-19T15:00:00.000Z');
+    setClockForTests(now, { frozen: true });
     admin.metrics.mockResolvedValue({
       users: 12,
       freelancers: 5,
@@ -775,6 +781,7 @@ describe('adminService.getMetrics', () => {
       in_escrow: '850.00',
       pending_withdrawals: '2',
       pending_withdrawals_amount: '300.00',
+      overdue_withdrawals: '1',
       deposits_total: '2000.00',
       users_balance: '700.25',
       pending_deletions: '3',
@@ -790,10 +797,12 @@ describe('adminService.getMetrics', () => {
       inEscrow: 850,
       pendingWithdrawals: 2,
       pendingWithdrawalsAmount: 300,
+      overdueWithdrawals: 1,
       depositsTotal: 2000,
       usersBalance: 700.25,
       pendingDeletions: 3,
     });
     expect(admin.metrics).toHaveBeenCalledTimes(1);
+    expect(admin.metrics).toHaveBeenCalledWith(now);
   });
 });

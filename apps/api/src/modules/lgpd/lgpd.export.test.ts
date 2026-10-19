@@ -10,6 +10,7 @@ vi.mock('../../config/db', () => ({
 
 import { pool } from '../../config/db';
 import { env } from '../../config/env';
+import { sealField, setFieldKeysForTests } from '../../utils/field-crypto';
 import {
   buildExport,
   deleteExportFile,
@@ -23,7 +24,7 @@ import {
 const query = vi.mocked(pool.query);
 
 /**
- * A cópia de dados no formato 1.9: o que entra, e o que não pode entrar. O banco é
+ * A cópia de dados no formato 1.10: o que entra, e o que não pode entrar. O banco é
  * mockado: o que se prova é o SQL que a exportação manda e as chaves do arquivo.
  */
 beforeEach(() => {
@@ -33,11 +34,11 @@ beforeEach(() => {
 
 const sqlSent = (): string[] => query.mock.calls.map((c) => String(c[0]));
 
-describe('cópia de dados 1.9 (ADR 54, 56 e 61)', () => {
+describe('cópia de dados 1.10 (ADR 54, 56, 61 e RF-059)', () => {
   it('declara o formato novo e as seções novas, mesmo vazias', async () => {
     const out = await buildExport(7);
-    expect(EXPORT_FORMAT_VERSION).toBe('1.9');
-    expect(out.formato).toBe('escambo-export/1.9');
+    expect(EXPORT_FORMAT_VERSION).toBe('1.10');
+    expect(out.formato).toBe('escambo-export/1.10');
     expect(out).toHaveProperty('ofertas', []);
     expect(out).toHaveProperty('desistencias', []);
     expect(out.suporte).toEqual({ chamados: [], mensagens: [] });
@@ -289,7 +290,13 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
       'bank_agency',
       'bank_account',
     ]);
-    expectColumns('FROM messages m', ['m.sender_id', 'm.content', 'm.file_name', 'm.created_at']);
+    expectColumns('FROM messages m', [
+      'm.sender_id',
+      'm.content',
+      'm.file_name',
+      'm.created_at',
+      'm.read_at',
+    ]);
     expectColumns('FROM reviews WHERE', ['reviewer_id', 'reviewee_id', 'rating', 'comment']);
     expectColumns('FROM wallets WHERE', ['balance', 'balance_pending', 'credits_balance']);
     // Os "técnicos" que a política declara (ADR 54).
@@ -374,7 +381,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
     }
 
     expect(out).toEqual({
-      formato: 'escambo-export/1.9',
+      formato: 'escambo-export/1.10',
       exportadoEm: '2026-10-01T12:00:00.000Z',
       titular: { id: 7, ulid: '01USER', email: 'ana@escambo.test', push_quiet_pass: null },
       perfis: { freelancer: { full_name: 'Ana Freela' }, cliente: { full_name: 'Ana Cliente' } },
@@ -407,6 +414,32 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
       emailsEnviados: [{ t: 'emails' }],
       solicitacoesLgpd: [{ t: 'lgpdRequests' }],
     });
+  });
+
+  it('os saques saem com o destino decifrado (RNF-017); o legado em texto puro como está e o ilegível como "[indisponível]"', async () => {
+    setFieldKeysForTests({ current: Buffer.alloc(32, 0x4c).toString('base64') });
+    try {
+      const rows = [
+        { id: 1, amount: '50.00', pix_key: sealField('ana@pix.test'), bank_name: null },
+        { id: 2, amount: '60.00', pix_key: null, bank_name: 'Itaú', bank_account: '12-3' },
+        { id: 3, amount: '70.00', pix_key: 'enc:v1:quebrado', bank_name: null },
+      ];
+      query.mockImplementation((async (sql: string) => [
+        sql.includes('FROM withdrawals') ? rows : [],
+        [],
+      ]) as never);
+
+      const out = (await buildExport(7)) as { carteira: { saques: unknown[] } };
+
+      expect(out.carteira.saques).toEqual([
+        { id: 1, amount: '50.00', pix_key: 'ana@pix.test', bank_name: null },
+        { id: 2, amount: '60.00', pix_key: null, bank_name: 'Itaú', bank_account: '12-3' },
+        { id: 3, amount: '70.00', pix_key: '[indisponível]', bank_name: null },
+      ]);
+      expect(JSON.stringify(out)).not.toContain('enc:v1:');
+    } finally {
+      setFieldKeysForTests(null);
+    }
   });
 
   it('quem não tem perfil nem carteira sai com null nessas seções, e o titular ao menos com o id', async () => {

@@ -5,6 +5,9 @@ import type {
   WithdrawalMethod,
   WithdrawalStatus,
 } from '@escambo/types';
+import { businessDueAt } from '../../utils/business-days';
+import { clock } from '../../utils/clock';
+import { FIELD_UNAVAILABLE } from '../../utils/field-crypto';
 import { HttpError } from '../../utils/http-error';
 import { adminRepository } from '../admin/admin.repository';
 import { authRepository } from '../auth/auth.repository';
@@ -19,6 +22,8 @@ import { settingsService } from '../settings/settings.service';
 
 /** Mascara chave PIX / conta na resposta (nunca expõe o valor completo). */
 function mask(value: string): string {
+  // Destino cifrado que não decifrou (RNF-017): o marcador vai inteiro, e não "••••vel]".
+  if (value === FIELD_UNAVAILABLE) return value;
   const v = value.trim();
   return v.length <= 4 ? '••••' : `••••${v.slice(-4)}`;
 }
@@ -42,11 +47,23 @@ function toWithdrawal(row: WithdrawalRow): Withdrawal {
     maskedDestination: mask(destination),
     createdAt: new Date(row.created_at).toISOString(),
     processedAt: row.processed_at ? new Date(row.processed_at).toISOString() : null,
+    dueAt: row.due_at ? new Date(row.due_at).toISOString() : null,
   };
 }
 
+const OPEN: WithdrawalStatus[] = ['requested', 'processing'];
+
+/** Ainda não pago e já passou do prazo gravado no pedido (RN-035), no relógio do fluxo. */
+function isOverdue(row: WithdrawalRow, now: Date): boolean {
+  return (
+    OPEN.includes(row.status as WithdrawalStatus) &&
+    row.due_at !== null &&
+    new Date(row.due_at).getTime() < now.getTime()
+  );
+}
+
 /** Visão do admin: destino completo, porque é ele quem executa o pagamento. */
-function toAdminWithdrawal(row: AdminWithdrawalRow): AdminWithdrawal {
+function toAdminWithdrawal(row: AdminWithdrawalRow, now: Date): AdminWithdrawal {
   return {
     ...toWithdrawal(row),
     userId: row.user_id,
@@ -54,10 +71,9 @@ function toAdminWithdrawal(row: AdminWithdrawalRow): AdminWithdrawal {
     userEmail: row.user_email,
     userName: row.user_name,
     destination: destinationOf(row),
+    overdue: isOverdue(row, now),
   };
 }
-
-const OPEN: WithdrawalStatus[] = ['requested', 'processing'];
 
 async function loadOr404(id: number): Promise<WithdrawalRow> {
   const row = await withdrawalRepository.findById(id);
@@ -77,6 +93,8 @@ export const withdrawalService = {
     if (!user?.email_verified_at) {
       throw new HttpError(403, 'Confirme seu e-mail para sacar', 'email_not_verified');
     }
+    // Prazo (RN-035) com o parâmetro que vale agora: gravado no saque, não muda se o admin mexer.
+    const businessDays = await settingsService.withdrawalBusinessDays(input.method);
     const id = await withdrawalRepository.createIfSufficient({
       userId,
       amount: input.amount,
@@ -84,6 +102,7 @@ export const withdrawalService = {
       bankName: input.method === 'bank' ? (input.bankName ?? null) : null,
       bankAgency: input.method === 'bank' ? (input.bankAgency ?? null) : null,
       bankAccount: input.method === 'bank' ? (input.bankAccount ?? null) : null,
+      dueAt: businessDueAt(clock.now(), businessDays),
     });
     if (id === null) {
       throw new HttpError(400, 'Saldo insuficiente para o saque', 'insufficient_balance'); // RN-034
@@ -125,7 +144,10 @@ export const withdrawalService = {
         : filter === 'all'
           ? ['requested', 'processing', 'completed', 'failed', 'cancelled']
           : [filter];
-    return (await withdrawalRepository.listForAdmin(statuses, 200)).map(toAdminWithdrawal);
+    const now = clock.now();
+    return (await withdrawalRepository.listForAdmin(statuses, 200)).map((row) =>
+      toAdminWithdrawal(row, now),
+    );
   },
 
   /** requested → processing: o admin assumiu o pagamento. */
@@ -177,6 +199,6 @@ export const withdrawalService = {
   async adminView(id: number): Promise<AdminWithdrawal> {
     const row = await withdrawalRepository.findForAdmin(id);
     if (!row) throw new HttpError(404, 'Saque não encontrado', 'withdrawal_not_found');
-    return toAdminWithdrawal(row);
+    return toAdminWithdrawal(row, clock.now());
   },
 };

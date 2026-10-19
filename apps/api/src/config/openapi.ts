@@ -8,6 +8,7 @@ import type {
   DropoutStatus,
   NegotiationTurn,
   OfferOutcome,
+  WithdrawalStatus,
 } from '@escambo/types';
 import { buildInfo } from './build-info';
 
@@ -324,6 +325,46 @@ const preparedContractSchemas = {
   }),
 };
 
+/** Leitura no chat (RF-059): o pedido, a resposta e o evento Socket.IO message:read. */
+const chatReadSchemas = {
+  MarkChatRead: {
+    ...obj({
+      upTo: {
+        type: 'integer',
+        minimum: 1,
+        description: 'Última mensagem exibida; sem ele, todas as recebidas contam como lidas.',
+      },
+    }),
+    description: 'Corpo opcional: só as mensagens recebidas até upTo viram lidas.',
+  },
+  ChatReadReceipt: obj(
+    {
+      conversationId: { type: 'integer', minimum: 1, nullable: true },
+      marked: {
+        ...nonnegativeInteger,
+        description: 'Quantas viraram lidas agora (0 = já estavam).',
+      },
+      upToId: { type: 'integer', minimum: 1, nullable: true },
+      readAt: nullableTimestamp,
+    },
+    ['conversationId', 'marked', 'upToId', 'readAt'],
+  ),
+  ChatReadEvent: {
+    ...obj(
+      {
+        contractId: { type: 'integer', minimum: 1 },
+        conversationId: { type: 'integer', minimum: 1 },
+        readerId: { type: 'integer', minimum: 1 },
+        upToId: { type: 'integer', minimum: 1 },
+        readAt: timestamp,
+      },
+      ['contractId', 'conversationId', 'readerId', 'upToId', 'readAt'],
+    ),
+    description:
+      'Evento Socket.IO message:read, emitido na sala contract:<id> de cada contratação do par, só quando alguma mensagem mudou: as recebidas por readerId até upToId estão lidas.',
+  },
+};
+
 const supportStatuses = ['open', 'in_progress', 'waiting_user', 'resolved', 'closed'];
 const supportPriorities = ['low', 'medium', 'high', 'critical'];
 const supportSchemas = {
@@ -450,6 +491,158 @@ const supportErrors = {
   },
 };
 
+/** Prazo de saque (RN-035, RF-046, RF-078) e extrato de créditos com período (RF-047). */
+const withdrawalStatuses = [
+  'requested',
+  'processing',
+  'completed',
+  'failed',
+  'cancelled',
+] as const satisfies readonly WithdrawalStatus[];
+const withdrawalProperties = {
+  id: { type: 'integer' },
+  amount: { type: 'number' },
+  status: { type: 'string', enum: withdrawalStatuses },
+  method: { type: 'string', enum: ['pix', 'bank'] },
+  maskedDestination: {
+    type: 'string',
+    description:
+      'Chave PIX ou conta com só os 4 últimos caracteres; "[indisponível]" se o dado cifrado não pôde ser lido (RNF-017).',
+  },
+  createdAt: timestamp,
+  processedAt: nullableTimestamp,
+  dueAt: {
+    ...nullableTimestamp,
+    description:
+      'Prazo de pagamento (RN-035): 23:59:59 de Brasília do n-ésimo dia útil (seg a sex, sem descontar feriados) depois do dia do pedido, com n = withdrawal_pix_business_days ou withdrawal_bank_business_days no momento do pedido. Gravado no saque: mudar o parâmetro depois não o altera. null só em saque encerrado antes da 1.44.0.',
+  },
+};
+const withdrawalRequired = [
+  'id',
+  'amount',
+  'status',
+  'method',
+  'maskedDestination',
+  'createdAt',
+  'processedAt',
+  'dueAt',
+];
+const withdrawalSchemas = {
+  Withdrawal: obj(withdrawalProperties, withdrawalRequired),
+  WithdrawalsPage: obj(
+    {
+      items: { type: 'array', items: ref('Withdrawal') },
+      page: { type: 'integer', minimum: 1 },
+      limit: { type: 'integer', minimum: 1, maximum: 100 },
+    },
+    ['items', 'page', 'limit'],
+  ),
+  AdminWithdrawal: obj(
+    {
+      ...withdrawalProperties,
+      userId: { type: 'integer' },
+      userUlid: { type: 'string' },
+      userEmail: { type: 'string' },
+      userName: { type: 'string', nullable: true },
+      destination: {
+        type: 'string',
+        description:
+          'Destino completo: é o admin quem paga. Gravado cifrado (RNF-017); o que não decifra vem como "[indisponível]".',
+      },
+      overdue: {
+        type: 'boolean',
+        description: 'Aguardando ou em processamento e já passou de dueAt (RN-035).',
+      },
+    },
+    [
+      ...withdrawalRequired,
+      'userId',
+      'userUlid',
+      'userEmail',
+      'userName',
+      'destination',
+      'overdue',
+    ],
+  ),
+  AdminMetrics: obj(
+    {
+      users: nonnegativeInteger,
+      freelancers: nonnegativeInteger,
+      contracts: nonnegativeInteger,
+      completedContracts: nonnegativeInteger,
+      openDisputes: nonnegativeInteger,
+      platformFees: { type: 'number' },
+      inEscrow: { type: 'number' },
+      pendingWithdrawals: nonnegativeInteger,
+      pendingWithdrawalsAmount: { type: 'number' },
+      overdueWithdrawals: {
+        ...nonnegativeInteger,
+        description: 'Saques aguardando ou em processamento que já passaram do prazo (RN-035).',
+      },
+      depositsTotal: { type: 'number' },
+      usersBalance: { type: 'number' },
+      pendingDeletions: nonnegativeInteger,
+    },
+    [
+      'users',
+      'freelancers',
+      'contracts',
+      'completedContracts',
+      'openDisputes',
+      'platformFees',
+      'inEscrow',
+      'pendingWithdrawals',
+      'pendingWithdrawalsAmount',
+      'overdueWithdrawals',
+      'depositsTotal',
+      'usersBalance',
+      'pendingDeletions',
+    ],
+  ),
+  CreditTransaction: obj(
+    {
+      id: { type: 'integer' },
+      amount: { type: 'integer', description: 'Assinado: + entra, - sai.' },
+      balanceAfter: { type: 'integer' },
+      reason: {
+        type: 'string',
+        enum: [
+          'welcome',
+          'escrow_hold',
+          'escrow_in',
+          'escrow_release',
+          'escrow_refund',
+          'refund',
+          'grant',
+          'boost',
+        ],
+      },
+      contractId: { type: 'integer', nullable: true },
+      createdAt: timestamp,
+    },
+    ['id', 'amount', 'balanceAfter', 'reason', 'contractId', 'createdAt'],
+  ),
+  CreditTransactionsPage: obj(
+    {
+      items: { type: 'array', items: ref('CreditTransaction') },
+      page: { type: 'integer', minimum: 1 },
+      limit: { type: 'integer', minimum: 1, maximum: 100 },
+      hasMore: { type: 'boolean', description: 'Há lançamentos depois desta página.' },
+    },
+    ['items', 'page', 'limit', 'hasMore'],
+  ),
+};
+/** Período dos extratos (RF-047): os mesmos `from`/`to` no de R$ e no de créditos. */
+const ledgerPeriodParameters = ['from', 'to'].map((name) => ({
+  name,
+  in: 'query',
+  description:
+    name === 'from'
+      ? 'Primeiro dia (AAAA-MM-DD, no fuso da conta; sem escolha, America/Sao_Paulo).'
+      : 'Último dia (AAAA-MM-DD), inclusivo até 23:59:59 no fuso da conta.',
+  schema: { type: 'string', format: 'date' },
+}));
+
 export const openapiDocument: Record<string, any> = {
   openapi: '3.0.3',
   info: {
@@ -457,7 +650,7 @@ export const openapiDocument: Record<string, any> = {
     // A do app (package.json): o documento acompanha cada release sem edição à mão.
     version: buildInfo.version,
     description:
-      'API do Escambo — marketplace de serviços com escrow, gamificação e troca de serviços (escambo). Autenticação via Bearer JWT; identidade, papel e status são conferidos no banco a cada requisição. RN-007: suspensos podem entrar, renovar sessão e consultar; ações de negócio retornam 403 account_suspended, incluindo acesso administrativo. Permanecem disponíveis suporte próprio (abrir, responder e encerrar), logout/logout-all, consentimentos, solicitações LGPD, remoção de push e contestações próprias de remoção/desistência. Banimento ou exclusão bloqueiam o acesso autenticado. Prazos e processamento já iniciado continuam. Atendimento de suporte não altera dinheiro ou prazos de contratos; disputa financeira mantém suas próprias regras.',
+      'API do Escambo — marketplace de serviços com escrow, gamificação e troca de serviços (escambo). Autenticação via Bearer JWT; identidade, papel e status são conferidos no banco a cada requisição. RN-007: suspensos podem entrar, renovar sessão e consultar; ações de negócio retornam 403 account_suspended, incluindo acesso administrativo. Permanecem disponíveis suporte próprio (abrir, responder e encerrar), logout/logout-all, consentimentos, solicitações LGPD, remoção de push, contestações próprias de remoção/desistência e o registro de leitura do chat (RF-059). Banimento ou exclusão bloqueiam o acesso autenticado. Prazos e processamento já iniciado continuam. Atendimento de suporte não altera dinheiro ou prazos de contratos; disputa financeira mantém suas próprias regras.',
   },
   servers: [{ url: '/api', description: 'API' }],
   tags: [
@@ -596,10 +789,28 @@ export const openapiDocument: Record<string, any> = {
           priceType: { type: 'string', enum: ['fixed', 'hourly', 'negotiable'] },
           price: { type: 'number', nullable: true },
           deliveryDays: { type: 'integer', nullable: true },
-          isRemote: { type: 'boolean' },
+          isRemote: {
+            type: 'boolean',
+            description: 'Compatível: true = remoto, false = presencial (padrão).',
+          },
+          modality: ref('ServiceModality'),
+          tags: ref('ServiceTags'),
         },
         ['categoryId', 'title', 'description'],
       ),
+      ServiceModality: {
+        type: 'string',
+        enum: ['remote', 'onsite', 'both'],
+        description:
+          'RF-023: remoto, presencial ou os dois. Quando vem junto do isRemote, vale a modality.',
+      },
+      ServiceTags: {
+        type: 'array',
+        maxItems: 10,
+        items: { type: 'string', minLength: 2, maxLength: 30 },
+        description:
+          'RF-024/RN-018: até 10 tags de 2 a 30 caracteres (depois do trim), com letras, números, espaço e + # . / _ -. Gravadas normalizadas (espaços reduzidos, minúsculas); repetida, sem diferenciar maiúsculas nem acento, é 422. Na edição, a lista substitui a anterior ([] tira todas).',
+      },
       CreateContract: obj(
         {
           freelancerId: { type: 'integer' },
@@ -870,7 +1081,19 @@ export const openapiDocument: Record<string, any> = {
           priceType: { type: 'string', enum: ['fixed', 'hourly', 'negotiable'] },
           price: { type: 'number', nullable: true },
           deliveryDays: { type: 'integer', nullable: true },
-          isRemote: { type: 'boolean' },
+          isRemote: { type: 'boolean', description: 'Atende remoto: true em remote e em both.' },
+          modality: ref('ServiceModality'),
+          tags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Tags do serviço (RF-024), em ordem alfabética.',
+          },
+          viewsCount: {
+            type: 'integer',
+            minimum: 0,
+            description:
+              'Visualizações do detalhe (RF-029). Só em GET /services/mine, para o dono; nunca na busca nem no detalhe público.',
+          },
           isActive: { type: 'boolean' },
           createdAt: timestamp,
           boosted: { type: 'boolean', description: 'Impulsionamento ativo.' },
@@ -898,6 +1121,8 @@ export const openapiDocument: Record<string, any> = {
           price: { type: 'number', nullable: true },
           deliveryDays: { type: 'integer', minimum: 1, nullable: true },
           isRemote: { type: 'boolean' },
+          modality: ref('ServiceModality'),
+          tags: ref('ServiceTags'),
           isActive: { type: 'boolean', description: 'false pausa o serviço; true reativa.' },
         }),
         description:
@@ -968,6 +1193,8 @@ export const openapiDocument: Record<string, any> = {
       ),
       ...preparedContractSchemas,
       ...supportSchemas,
+      ...withdrawalSchemas,
+      ...chatReadSchemas,
     },
   },
   paths: {
@@ -1154,10 +1381,30 @@ export const openapiDocument: Record<string, any> = {
     },
 
     '/services': {
-      get: op(
-        'Serviços',
-        'Lista/busca serviços (categoryId, q, isRemote, minPrice/maxPrice, maxDeliveryDays, minRating, day=0..6 (atende no dia), period=morning|afternoon|evening (com day; dia e período valem no fuso de cada freelancer), now=true (atende agora, no fuso de cada freelancer — ADR 48), sort, page, limit; lat+lng+radiusKm = descoberta local por proximidade)',
-      ),
+      get: {
+        ...op(
+          'Serviços',
+          'Lista/busca serviços (categoryId, q, isRemote, minPrice/maxPrice, maxDeliveryDays, minRating, day=0..6 (atende no dia), period=morning|afternoon|evening (com day; dia e período valem no fuso de cada freelancer), now=true (atende agora, no fuso de cada freelancer — ADR 48), sort, page, limit; lat+lng+radiusKm = descoberta local por proximidade)',
+        ),
+        parameters: [
+          {
+            name: 'q',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', minLength: 1, maxLength: 255 },
+            description:
+              'Texto (RNF-004): título e descrição pelo FULLTEXT em BOOLEAN MODE, cada palavra obrigatória e como prefixo ("design" acha "designer"); palavras vazias ("de", "para", "the") são ignoradas; palavra com menos de 3 letras ("ux", "3d", "c++") vale como "contém". Também acha pelas tags: o nome que começa com o texto inteiro. A ordenação continua a do sort (relevância = destaque primeiro).',
+          },
+          {
+            name: 'isRemote',
+            in: 'query',
+            required: false,
+            schema: { type: 'string', enum: ['true', 'false'] },
+            description:
+              'true = atende remoto, false = atende presencial; o serviço que atende dos dois jeitos (modality both) entra nos dois.',
+          },
+        ],
+      },
       post: op('Serviços', 'Cria serviço', {
         auth: true,
         body: { $ref: '#/components/schemas/CreateService' },
@@ -1167,7 +1414,7 @@ export const openapiDocument: Record<string, any> = {
     '/services/mine': {
       get: op(
         'Serviços',
-        'Meus serviços (pausados inclusive): sempre os de quem está logado (?ownerId é ignorado), sem os excluídos e sem paginação, do mais novo ao mais antigo, com boosted e sem os campos do prestador',
+        'Meus serviços (pausados inclusive): sempre os de quem está logado (?ownerId é ignorado), sem os excluídos e sem paginação, do mais novo ao mais antigo, com boosted, tags e viewsCount (RF-029, só aqui) e sem os campos do prestador',
         {
           auth: true,
           responses: {
@@ -1184,7 +1431,19 @@ export const openapiDocument: Record<string, any> = {
       ),
     },
     '/services/{id}': {
-      get: op('Serviços', 'Detalhe do serviço'),
+      get: {
+        ...op(
+          'Serviços',
+          'Detalhe do serviço (público, pausado inclusive): o serviço com quem presta, destaque, modalidade e tags. Abrir conta uma visualização (RF-029) quando quem abre não é o dono — o token é opcional e só serve para reconhecer o dono — e o mesmo visitante (conta, ou IP sem login) conta uma vez a cada 30 min. O número não sai aqui: só em /services/mine.',
+          {
+            responses: {
+              ...jsonResponse('200', 'Service'),
+              '404': errorResponse('service_not_found'),
+              '422': errorResponse('validation_error: id que não é inteiro positivo'),
+            },
+          },
+        ),
+      },
       patch: op('Serviços', 'Atualiza (dono): edita o serviço inteiro ou pausa/reativa', {
         auth: true,
         body: ref('UpdateService'),
@@ -1603,18 +1862,7 @@ export const openapiDocument: Record<string, any> = {
             },
           },
         ),
-        parameters: [
-          ...pageParameters,
-          ...['from', 'to'].map((name) => ({
-            name,
-            in: 'query',
-            description:
-              name === 'from'
-                ? 'Primeiro dia (AAAA-MM-DD, no fuso da conta; sem escolha, America/Sao_Paulo).'
-                : 'Último dia (AAAA-MM-DD), inclusivo até 23:59:59 no fuso da conta.',
-            schema: { type: 'string', format: 'date' },
-          })),
-        ],
+        parameters: [...pageParameters, ...ledgerPeriodParameters],
       },
     },
     '/wallet/deposits': {
@@ -1637,7 +1885,27 @@ export const openapiDocument: Record<string, any> = {
       }),
     },
     '/credits/transactions': {
-      get: op('Carteira', 'Extrato de créditos Escambo (time-bank)', { auth: true }),
+      get: {
+        ...op(
+          'Carteira',
+          'Extrato de créditos Escambo (time-bank), do mais novo ao mais antigo. from/to (RF-047) filtram por dia no fuso da conta, os dois inclusivos, como no extrato de R$; sem eles, o extrato inteiro',
+          {
+            auth: true,
+            responses: {
+              ...jsonResponse('200', 'CreditTransactionsPage'),
+              '400': errorResponse(
+                'invalid_range: "Período inválido: a data inicial precisa ser até a final" (from depois de to)',
+              ),
+              '401': errorResponse('missing_token ou invalid_token'),
+              '403': errorResponse('account_blocked'),
+              '422': errorResponse(
+                'validation_error: details.from ou details.to = ["Informe um dia válido no formato AAAA-MM-DD"]; page/limit fora da faixa',
+              ),
+            },
+          },
+        ),
+        parameters: [...pageParameters, ...ledgerPeriodParameters],
+      },
     },
     '/boosts/plans': {
       get: op('Impulsionamento', 'Planos de impulsionamento (custo em créditos)', { auth: true }),
@@ -1650,15 +1918,38 @@ export const openapiDocument: Record<string, any> = {
       }),
     },
     '/withdrawals': {
-      get: op('Saques', 'Meus saques', { auth: true }),
-      post: op('Saques', 'Solicita saque (mín. R$20) por Pix ou conta bancária', {
-        auth: true,
-        body: { $ref: '#/components/schemas/CreateWithdrawal' },
-        responses: res201,
-      }),
+      get: {
+        ...op('Saques', 'Meus saques, do mais novo ao mais antigo, cada um com o prazo (dueAt)', {
+          auth: true,
+          responses: jsonResponse('200', 'WithdrawalsPage'),
+        }),
+        parameters: pageParameters,
+      },
+      post: op(
+        'Saques',
+        'Solicita saque (mín. min_withdrawal_amount, padrão R$20) por Pix ou conta bancária. A resposta traz o prazo de pagamento (dueAt, RN-035): withdrawal_pix_business_days (padrão 1) ou withdrawal_bank_business_days (padrão 2) dias úteis, gravado no saque',
+        {
+          auth: true,
+          body: { $ref: '#/components/schemas/CreateWithdrawal' },
+          responses: {
+            ...jsonResponse('201', 'Withdrawal'),
+            '400': errorResponse('insufficient_balance'),
+            '403': errorResponse('email_not_verified ou conta bloqueada'),
+            '422': errorResponse('below_minimum ou validation_error'),
+          },
+        },
+      ),
     },
     '/withdrawals/{id}/cancel': {
-      post: op('Saques', 'Cancela saque ainda não processado (valor volta)', { auth: true }),
+      post: op('Saques', 'Cancela saque ainda não processado (valor volta)', {
+        auth: true,
+        responses: {
+          ...jsonResponse('200', 'Withdrawal'),
+          '403': errorResponse('forbidden (saque de outra pessoa)'),
+          '404': errorResponse('withdrawal_not_found'),
+          '409': errorResponse('invalid_transition (já em processamento ou encerrado)'),
+        },
+      }),
     },
 
     '/reviews': {
@@ -1744,11 +2035,32 @@ export const openapiDocument: Record<string, any> = {
     },
 
     '/messaging/contracts/{id}': {
-      get: op('Chat', 'Histórico do chat do contrato (partes)', { auth: true }),
+      get: op(
+        'Chat',
+        'Histórico do chat do contrato (partes). Cada mensagem traz readAt: quando o destinatário leu (RF-059), null enquanto não lida',
+        { auth: true },
+      ),
       post: op(
         'Chat',
         'Envia mensagem (persiste + broadcast Socket.IO). Texto com sinal de negociação por fora (chave Pix, CPF, telefone, e-mail, WhatsApp, "por fora") sai com signals para as duas partes e entra sozinho na fila de denúncias, sem ser barrado (ADR 45)',
         { auth: true, responses: res201 },
+      ),
+    },
+    '/messaging/contracts/{id}/read': {
+      post: op(
+        'Chat',
+        'Marca como lidas as mensagens recebidas até upTo (RF-059); as próprias nunca mudam. Idempotente; quando algo muda, emite message:read (ChatReadEvent) nas salas do par. Permitido à conta suspensa: registra a leitura, sem conteúdo novo',
+        {
+          auth: true,
+          body: ref('MarkChatRead'),
+          bodyRequired: false,
+          responses: {
+            ...jsonResponse('200', 'ChatReadReceipt'),
+            '403': errorResponse('forbidden (não participa da contratação) ou conta bloqueada'),
+            '404': errorResponse('contract_not_found'),
+            '422': errorResponse('validation_error: id ou upTo inválido'),
+          },
+        },
       ),
     },
     '/messaging/contracts/{id}/attachments': {
@@ -1952,7 +2264,13 @@ export const openapiDocument: Record<string, any> = {
         'Imagem pública de perfil ou portfólio (cache imutável de um ano); ?w=128, ?w=480 ou ?w=960 devolve a miniatura em WebP, gerada na primeira leitura',
       ),
     },
-    '/admin/metrics': { get: op('Admin', 'Métricas da plataforma', { auth: true }) },
+    '/admin/metrics': {
+      get: op(
+        'Admin',
+        'Métricas da plataforma, com os saques pendentes e quantos deles já passaram do prazo (overdueWithdrawals, RN-035)',
+        { auth: true, responses: jsonResponse('200', 'AdminMetrics') },
+      ),
+    },
     '/admin/moderation/health': {
       get: op(
         'Admin',
@@ -1975,7 +2293,13 @@ export const openapiDocument: Record<string, any> = {
     '/settings/public': {
       get: op(
         'Plataforma',
-        'Parâmetros públicos: comissão, aprovação tácita, validade da proposta, horas para responder a contraproposta e extensão, mínimos, trocas, manutenção e regras fixas das contratações (somente leitura)',
+        'Parâmetros públicos: comissão, aprovação tácita, validade da proposta, horas para responder a contraproposta e extensão, mínimos, prazo do saque em dias úteis por forma de recebimento (withdrawalBusinessDays: { pix, bank }, RN-035), trocas, manutenção com a hora prevista da volta (maintenanceReturnAt, RNF-010; nula sem previsão) e regras fixas das contratações (somente leitura)',
+      ),
+    },
+    '/client-errors': {
+      post: op(
+        'Plataforma',
+        'O app relata um erro do navegador (RNF-040): { kind: render | error | rejection, message, stack?, componentStack?, path }. Vira log em warn, a métrica escambo_client_errors_total e, com SENTRY_DSN, um evento marcado como do web. Sem login; até 30 por IP a cada 15 min; responde 204',
       ),
     },
     '/admin/settings': {
@@ -2030,7 +2354,36 @@ export const openapiDocument: Record<string, any> = {
       },
     },
     '/admin/withdrawals': {
-      get: op('Admin', 'Fila de saques (status=open|all|…)', { auth: true }),
+      get: {
+        ...op(
+          'Admin',
+          'Fila de saques (status=open|all|…, até 200), pelo prazo (dueAt, RN-035): o que vence antes vem primeiro, e overdue marca o que ainda não foi pago e passou do prazo',
+          {
+            auth: true,
+            responses: {
+              '200': {
+                description: 'OK',
+                content: {
+                  'application/json': {
+                    schema: { type: 'array', items: ref('AdminWithdrawal') },
+                  },
+                },
+              },
+            },
+          },
+        ),
+        parameters: [
+          {
+            name: 'status',
+            in: 'query',
+            schema: {
+              type: 'string',
+              enum: ['open', 'all', ...withdrawalStatuses],
+              default: 'open',
+            },
+          },
+        ],
+      },
     },
     '/admin/withdrawals/{id}/process': {
       post: op('Admin', 'Assume o saque (requested → processing)', { auth: true }),

@@ -1,7 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../settings/settings.service', () => ({
-  settingsService: { minWithdrawal: vi.fn().mockResolvedValue(20) },
+  settingsService: {
+    minWithdrawal: vi.fn().mockResolvedValue(20),
+    withdrawalBusinessDays: vi.fn(),
+  },
 }));
 
 vi.mock('./withdrawal.repository', () => ({
@@ -13,6 +16,7 @@ vi.mock('../notifications/notifications.service', () => ({
   notificationsService: { notify: vi.fn() },
 }));
 
+import { setClockForTests } from '../../utils/clock';
 import { HttpError } from '../../utils/http-error';
 import { authRepository, type UserRow } from '../auth/auth.repository';
 import { settingsService } from '../settings/settings.service';
@@ -22,6 +26,12 @@ import { withdrawalService } from './withdrawal.service';
 const repo = vi.mocked(withdrawalRepository);
 const users = vi.mocked(authRepository);
 const minWithdrawal = vi.mocked(settingsService.minWithdrawal);
+const businessDays = vi.mocked(settingsService.withdrawalBusinessDays);
+
+/** Sexta, 09/10/2026, 15:00 em Brasília: PIX (1 dia útil) vence na segunda, TED (2) na terça. */
+const FRIDAY_AFTERNOON = new Date('2026-10-09T18:00:00.000Z');
+const PIX_DUE = new Date('2026-10-13T02:59:59.000Z');
+const BANK_DUE = new Date('2026-10-14T02:59:59.000Z');
 
 const withdrawalRow = (o: Record<string, unknown> = {}): WithdrawalRow =>
   ({
@@ -36,6 +46,7 @@ const withdrawalRow = (o: Record<string, unknown> = {}): WithdrawalRow =>
     gateway_ref: null,
     created_at: new Date('2026-09-10T12:00:00Z'),
     processed_at: null,
+    due_at: new Date('2026-09-12T02:59:59Z'),
     ...o,
   }) as unknown as WithdrawalRow;
 
@@ -52,7 +63,12 @@ const userRow = (verified: boolean): UserRow =>
 
 const input = { amount: 100, method: 'pix' as const, pixKey: 'chave-secreta@escambo.test' };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  setClockForTests(FRIDAY_AFTERNOON, { frozen: true });
+  businessDays.mockImplementation(async (method) => (method === 'pix' ? 1 : 2));
+});
+afterEach(() => setClockForTests(null));
 
 describe('withdrawalService.request', () => {
   it('exige e-mail confirmado: 403 email_not_verified sem tocar no saldo', async () => {
@@ -159,6 +175,7 @@ describe('withdrawalService.request', () => {
       bankName: null,
       bankAgency: null,
       bankAccount: null,
+      dueAt: PIX_DUE,
     });
     expect(repo.findById).toHaveBeenCalledWith(42);
   });
@@ -174,6 +191,7 @@ describe('withdrawalService.request', () => {
         bank_name: 'Banco do Brasil',
         bank_agency: '0001',
         bank_account: '12345-6',
+        due_at: BANK_DUE,
       }),
     );
 
@@ -193,6 +211,7 @@ describe('withdrawalService.request', () => {
       bankName: 'Banco do Brasil',
       bankAgency: '0001',
       bankAccount: '12345-6',
+      dueAt: BANK_DUE,
     });
     expect(w).toEqual({
       id: 43,
@@ -202,6 +221,7 @@ describe('withdrawalService.request', () => {
       maskedDestination: '••••45-6',
       createdAt: '2026-09-10T12:00:00.000Z',
       processedAt: null,
+      dueAt: '2026-10-14T02:59:59.000Z',
     });
   });
 
@@ -230,10 +250,70 @@ describe('withdrawalService.request', () => {
     const empty = { userId: 7, pixKey: null, bankName: null, bankAgency: null, bankAccount: null };
 
     await withdrawalService.request(7, { amount: 100, method: 'pix' });
-    expect(repo.createIfSufficient.mock.calls[0]![0]).toStrictEqual({ ...empty, amount: 100 });
+    expect(repo.createIfSufficient.mock.calls[0]![0]).toStrictEqual({
+      ...empty,
+      amount: 100,
+      dueAt: PIX_DUE,
+    });
 
     await withdrawalService.request(7, { amount: 200, method: 'bank' });
-    expect(repo.createIfSufficient.mock.calls[1]![0]).toStrictEqual({ ...empty, amount: 200 });
+    expect(repo.createIfSufficient.mock.calls[1]![0]).toStrictEqual({
+      ...empty,
+      amount: 200,
+      dueAt: BANK_DUE,
+    });
+  });
+});
+
+describe('withdrawalService.request: prazo do saque (RN-035)', () => {
+  beforeEach(() => {
+    users.findById.mockResolvedValue(userRow(true));
+    repo.createIfSufficient.mockResolvedValue(42);
+    repo.findById.mockResolvedValue(withdrawalRow());
+  });
+
+  it('lê o parâmetro da forma escolhida, na hora do pedido, e grava o fim do n-ésimo dia útil', async () => {
+    await withdrawalService.request(7, input);
+    expect(businessDays).toHaveBeenLastCalledWith('pix');
+    expect(repo.createIfSufficient.mock.calls[0]![0].dueAt).toEqual(PIX_DUE);
+
+    await withdrawalService.request(7, {
+      amount: 100,
+      method: 'bank',
+      bankName: 'Banco do Brasil',
+      bankAgency: '0001',
+      bankAccount: '12345-6',
+    });
+    expect(businessDays).toHaveBeenLastCalledWith('bank');
+    expect(repo.createIfSufficient.mock.calls[1]![0].dueAt).toEqual(BANK_DUE);
+  });
+
+  it('o admin aumentou o prazo do PIX para 3 dias úteis: o pedido seguinte já sai com ele', async () => {
+    businessDays.mockResolvedValueOnce(3);
+    await withdrawalService.request(7, input);
+    // Sexta + 3 dias úteis = quarta, 14/10, 23:59:59 de Brasília.
+    expect(repo.createIfSufficient.mock.calls[0]![0].dueAt).toEqual(
+      new Date('2026-10-15T02:59:59.000Z'),
+    );
+  });
+
+  it('sexta à noite em Brasília (sábado em UTC) ainda conta como sexta', async () => {
+    setClockForTests(new Date('2026-10-10T01:30:00.000Z'), { frozen: true });
+    await withdrawalService.request(7, input);
+    expect(repo.createIfSufficient.mock.calls[0]![0].dueAt).toEqual(PIX_DUE);
+  });
+
+  it('pedido recusado antes (mínimo ou e-mail) nem lê o prazo', async () => {
+    await withdrawalService.request(7, { ...input, amount: 1 }).catch(() => undefined);
+    users.findById.mockResolvedValue(userRow(false));
+    await withdrawalService.request(7, input).catch(() => undefined);
+    expect(businessDays).not.toHaveBeenCalled();
+    expect(repo.createIfSufficient).not.toHaveBeenCalled();
+  });
+
+  it('a resposta traz o prazo gravado no saque, em ISO', async () => {
+    repo.findById.mockResolvedValue(withdrawalRow({ due_at: PIX_DUE }));
+    expect((await withdrawalService.request(7, input)).dueAt).toBe('2026-10-13T02:59:59.000Z');
   });
 });
 
@@ -281,6 +361,7 @@ describe('withdrawalService.listMine', () => {
         maskedDestination: '••••test',
         createdAt: '2026-09-10T12:00:00.000Z',
         processedAt: '2026-09-11T09:30:00.000Z',
+        dueAt: '2026-09-12T02:59:59.000Z',
       },
       {
         id: 1,
@@ -290,7 +371,20 @@ describe('withdrawalService.listMine', () => {
         maskedDestination: '••••65-4',
         createdAt: '2026-09-10T12:00:00.000Z',
         processedAt: null,
+        dueAt: '2026-09-12T02:59:59.000Z',
       },
     ]);
+  });
+
+  it('destino cifrado que não decifrou (RNF-017) vai como "[indisponível]", sem máscara por cima', async () => {
+    repo.listForUser.mockResolvedValue([withdrawalRow({ pix_key: '[indisponível]' })]);
+    const { items } = await withdrawalService.listMine(7, { page: 1, limit: 20 });
+    expect(items[0]).toMatchObject({ method: 'pix', maskedDestination: '[indisponível]' });
+  });
+
+  it('saque encerrado antes de o prazo existir (1.44.0) vem com dueAt null', async () => {
+    repo.listForUser.mockResolvedValue([withdrawalRow({ status: 'completed', due_at: null })]);
+    const { items } = await withdrawalService.listMine(7, { page: 1, limit: 20 });
+    expect(items[0]!.dueAt).toBeNull();
   });
 });

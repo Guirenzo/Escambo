@@ -65,7 +65,10 @@ export function assertBusinessWrite(account: CurrentAccount): void {
   }
 }
 
-/** Exceções do próprio titular: suporte, privacidade, segurança e recurso de moderação. */
+/**
+ * Exceções do próprio titular: suporte, privacidade, segurança, recurso de moderação e o registro
+ * de leitura do chat.
+ */
 export function suspendedRequestAllowed(method: string, originalUrl: string): boolean {
   const path = originalUrl.split('?')[0]!.replace(/\/+$/, '').toLowerCase();
   if (/^\/api\/admin(?:\/|$)/.test(path)) return false;
@@ -83,6 +86,9 @@ export function suspendedRequestAllowed(method: string, originalUrl: string): bo
       ].includes(path) ||
       /^\/api\/moderation\/removals\/\d+\/appeal$/.test(path) ||
       /^\/api\/profiles\/me\/dropouts\/\d+\/appeal$/.test(path) ||
+      // Marcar como lida registra a consulta (RF-059): não cria conteúdo, conversa nem efeito de
+      // negócio, e bloquear deixaria "Enviada" para quem mandou uma mensagem que já foi lida.
+      /^\/api\/messaging\/contracts\/\d+\/read$/.test(path) ||
       /^\/api\/support\/tickets\/\d+\/(messages|close)$/.test(path)
     );
   }

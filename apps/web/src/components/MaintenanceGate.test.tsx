@@ -3,8 +3,8 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { PublicSettings } from '@escambo/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MAINTENANCE_EVENT } from '../lib/api';
-import { MaintenanceGate, MaintenanceView } from './MaintenanceGate';
+import { MAINTENANCE_EVENT, OUTAGE_EVENT } from '../lib/api';
+import { MaintenanceGate, MaintenanceView, returnForecast } from './MaintenanceGate';
 
 /**
  * Modo de manutenção (ADR 33): o 503 do cliente HTTP troca o app pela tela de manutenção até a
@@ -20,13 +20,17 @@ vi.mock('../lib/api', async (importOriginal) => {
 const auth = { user: null as { id: number; role: string } | null };
 vi.mock('../lib/auth', () => ({ useAuth: () => auth }));
 
-const settings = (maintenanceMode: boolean): PublicSettings => ({
+const settings = (
+  maintenanceMode: boolean,
+  maintenanceReturnAt: string | null = null,
+): PublicSettings => ({
   platformFeePercentage: 15,
   tacitApprovalDays: 5,
   proposalExpiryHours: 72,
   counterOfferResponseHours: 48,
   minServicePrice: 10,
   minWithdrawalAmount: 20,
+  withdrawalBusinessDays: { pix: 1, bank: 2 },
   barterEnabled: true,
   deadlineGraceHours: 24,
   extensionResponseHours: 48,
@@ -40,6 +44,7 @@ const settings = (maintenanceMode: boolean): PublicSettings => ({
     dropoutAgreementDays: 7,
   },
   maintenanceMode,
+  maintenanceReturnAt,
 });
 
 function show() {
@@ -60,6 +65,13 @@ function show() {
 const apiSaysMaintenance = (): void => {
   act(() => {
     window.dispatchEvent(new Event(MAINTENANCE_EVENT));
+  });
+};
+
+/** O que o cliente HTTP faz quando o proxy responde que a API está fora do ar (RNF-010). */
+const apiIsDown = (): void => {
+  act(() => {
+    window.dispatchEvent(new Event(OUTAGE_EVENT));
   });
 };
 
@@ -85,6 +97,19 @@ describe('MaintenanceView', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('fora do ar: diz que a equipe já está cuidando e que a tela tenta de novo sozinha', () => {
+    render(<MaintenanceView onRetry={vi.fn()} busy={false} kind="outage" />);
+    const alert = screen.getByRole('alert');
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'O Escambo está fora do ar' }),
+    ).toBeVisible();
+    expect(alert).toHaveTextContent(
+      'Já estamos cuidando disso. Suas contratações, saldo e mensagens continuam guardados; nada se perde enquanto isso.',
+    );
+    expect(alert).toHaveTextContent('Esta tela tenta de novo sozinha a cada 30 segundos.');
+    expect(alert).not.toHaveTextContent('manutenção');
   });
 
   it('verificando: o botão muda de texto e fica desabilitado', () => {
@@ -254,5 +279,131 @@ describe('MaintenanceGate', () => {
     await waitFor(() => expect(publicSettings).toHaveBeenCalledTimes(1));
     await act(async () => {});
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+  it('o aviso de fora do ar troca o app pela tela de fora do ar', () => {
+    show();
+    apiIsDown();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'O Escambo está fora do ar' }),
+    ).toBeVisible();
+    expect(screen.queryByText('Início')).not.toBeInTheDocument();
+  });
+
+  it('fora do ar vale também para o admin: a API não responde para ninguém', () => {
+    auth.user = { id: 9, role: 'admin' };
+    show();
+    apiIsDown();
+    expect(screen.getByRole('alert')).toHaveTextContent('O Escambo está fora do ar');
+    expect(screen.queryByText('Início')).not.toBeInTheDocument();
+  });
+
+  it('API voltou em manutenção: a tela de fora do ar vira a de manutenção', async () => {
+    const user = userEvent.setup();
+    show();
+    await waitFor(() => expect(publicSettings).toHaveBeenCalledTimes(1));
+    apiIsDown();
+    publicSettings.mockResolvedValue(settings(true));
+    await user.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Estamos em manutenção' }),
+    ).toBeVisible();
+    expect(screen.queryByText('Início')).not.toBeInTheDocument();
+  });
+
+  it('API voltou em manutenção e quem vê é admin: volta ao app, com a faixa', async () => {
+    const user = userEvent.setup();
+    auth.user = { id: 9, role: 'admin' };
+    show();
+    await waitFor(() => expect(publicSettings).toHaveBeenCalledTimes(1));
+    apiIsDown();
+    publicSettings.mockResolvedValue(settings(true));
+    await user.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    expect(await screen.findByText('Início')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('API de volta e fora de manutenção: o app volta', async () => {
+    const user = userEvent.setup();
+    show();
+    await waitFor(() => expect(publicSettings).toHaveBeenCalledTimes(1));
+    apiIsDown();
+    await user.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    expect(await screen.findByText('Início')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('desmontado, para de ouvir o aviso de fora do ar', () => {
+    const listen = vi.spyOn(window, 'addEventListener');
+    const unlisten = vi.spyOn(window, 'removeEventListener');
+    const { unmount } = show();
+    const handler = listen.mock.calls.find(([type]) => type === OUTAGE_EVENT)?.[1];
+    expect(handler).toBeInstanceOf(Function);
+    unmount();
+    expect(unlisten).toHaveBeenCalledWith(OUTAGE_EVENT, handler);
+  });
+});
+
+describe('previsão de volta da manutenção (RNF-010)', () => {
+  const now = new Date(2026, 9, 19, 14, 0);
+
+  it('hoje, amanhã ou com a data, no horário de quem vê', () => {
+    expect(returnForecast(new Date(2026, 9, 19, 15, 40).toISOString(), now)).toBe('hoje às 15:40');
+    expect(returnForecast(new Date(2026, 9, 20, 1, 10).toISOString(), now)).toBe('amanhã às 01:10');
+    expect(returnForecast(new Date(2026, 9, 22, 9, 0).toISOString(), now)).toBe('22/10 às 09:00');
+  });
+
+  it('sem previsão, inválida ou que já passou: nada (vale o "Voltamos em instantes")', () => {
+    expect(returnForecast(null, now)).toBeNull();
+    expect(returnForecast(undefined, now)).toBeNull();
+    expect(returnForecast('não é data', now)).toBeNull();
+    expect(returnForecast(new Date(2026, 9, 19, 13, 59).toISOString(), now)).toBeNull();
+  });
+
+  it('a tela de manutenção diz a previsão no lugar do "Voltamos em instantes"', () => {
+    const inOneHour = new Date(Date.now() + 60 * 60_000).toISOString();
+    render(<MaintenanceView onRetry={vi.fn()} busy={false} returnAt={inOneHour} />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(/Previsão de volta: (hoje|amanhã) às \d{2}:\d{2}\./);
+    expect(alert).not.toHaveTextContent('Voltamos em instantes');
+  });
+
+  it('fora do ar não mostra previsão: a queda não foi planejada', () => {
+    const inOneHour = new Date(Date.now() + 60 * 60_000).toISOString();
+    render(<MaintenanceView onRetry={vi.fn()} busy={false} kind="outage" returnAt={inOneHour} />);
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Previsão de volta');
+  });
+
+  it('o portão usa a previsão dos parâmetros e a atualiza a cada verificação', async () => {
+    const user = userEvent.setup();
+    const first = new Date(Date.now() + 30 * 60_000);
+    publicSettings.mockResolvedValue(settings(true, first.toISOString()));
+    show();
+    await waitFor(() => expect(publicSettings).toHaveBeenCalledTimes(1));
+    apiSaysMaintenance();
+    expect(await screen.findByText(/Previsão de volta: .*\./)).toBeInTheDocument();
+
+    const later = new Date(Date.now() + 2 * 24 * 60 * 60_000);
+    publicSettings.mockResolvedValue(settings(true, later.toISOString()));
+    await user.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+    const day = later.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    expect(await screen.findByText(new RegExp(`Previsão de volta: ${day} às`))).toBeInTheDocument();
+  });
+
+  it('a previsão que veio no 503 aparece na hora, sem esperar a próxima verificação', () => {
+    show();
+    const at = new Date(Date.now() + 40 * 60_000).toISOString();
+    act(() => {
+      window.dispatchEvent(new CustomEvent(MAINTENANCE_EVENT, { detail: { returnAt: at } }));
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(/Previsão de volta: (hoje|amanhã) às/);
+    expect(publicSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('aviso sem previsão (ou com valor que não é texto) mantém o "Voltamos em instantes"', () => {
+    show();
+    act(() => {
+      window.dispatchEvent(new CustomEvent(MAINTENANCE_EVENT, { detail: { returnAt: 123 } }));
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Voltamos em instantes');
   });
 });

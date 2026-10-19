@@ -1,7 +1,13 @@
 import type { BrazilTimezone } from '@escambo/types';
 import { describe, expect, it, vi } from 'vitest';
 import { HttpError } from '../../utils/http-error';
-import { isCalendarDay, periodRange } from './wallet.period';
+import {
+  isCalendarDay,
+  ledgerPage,
+  ledgerQuerySchema,
+  periodRange,
+  rangeFilter,
+} from './wallet.period';
 
 const zone = (z: BrazilTimezone) => vi.fn(async () => z);
 
@@ -84,5 +90,70 @@ describe('periodRange', () => {
       code: 'invalid_range',
     });
     expect(zoneOf).not.toHaveBeenCalled();
+  });
+});
+
+/** O que os dois extratos (R$ e créditos) dividem: a query, o filtro SQL e a página com "mais". */
+describe('ledgerQuerySchema (query dos extratos)', () => {
+  it('página 1 e 20 por página por padrão; período opcional, em dias que existem', () => {
+    expect(ledgerQuerySchema.parse({})).toEqual({ page: 1, limit: 20 });
+    expect(
+      ledgerQuerySchema.parse({ page: '2', limit: '50', from: '2026-10-01', to: '2026-10-15' }),
+    ).toEqual({ page: 2, limit: 50, from: '2026-10-01', to: '2026-10-15' });
+  });
+
+  it.each([
+    [{ from: '2026-02-30' }, 'from'],
+    [{ to: '01/10/2026' }, 'to'],
+    [{ limit: '101' }, 'limit'],
+    [{ page: '10001' }, 'page'],
+  ])('%o é recusado no campo %s', (query, field) => {
+    const parsed = ledgerQuerySchema.safeParse(query);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.path).toEqual([field]);
+  });
+});
+
+describe('rangeFilter (filtro SQL do período)', () => {
+  const from = new Date('2026-10-01T03:00:00.000Z');
+  const to = new Date('2026-10-03T03:00:00.000Z');
+
+  it('sem período, nada; com os dois lados, início inclusivo e fim exclusivo', () => {
+    expect(rangeFilter({})).toEqual({ sql: '', params: {} });
+    expect(rangeFilter({ from, to })).toEqual({
+      sql: ' AND created_at >= :from AND created_at < :to',
+      params: { from, to },
+    });
+  });
+
+  it('só um lado: só ele entra', () => {
+    expect(rangeFilter({ from })).toEqual({ sql: ' AND created_at >= :from', params: { from } });
+    expect(rangeFilter({ to })).toEqual({ sql: ' AND created_at < :to', params: { to } });
+  });
+});
+
+describe('ledgerPage (página com "Carregar mais")', () => {
+  it('com uma linha a mais que o limite, ela fica de fora e diz que há outra página', () => {
+    expect(ledgerPage([3, 2, 1], 1, 2, (n) => n * 10)).toEqual({
+      items: [30, 20],
+      page: 1,
+      limit: 2,
+      hasMore: true,
+    });
+  });
+
+  it('página cheia sem sobra, ou curta, é a última', () => {
+    expect(ledgerPage([2, 1], 3, 2, String)).toEqual({
+      items: ['2', '1'],
+      page: 3,
+      limit: 2,
+      hasMore: false,
+    });
+    expect(ledgerPage([], 1, 20, String)).toEqual({
+      items: [],
+      page: 1,
+      limit: 20,
+      hasMore: false,
+    });
   });
 });

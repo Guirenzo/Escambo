@@ -31,6 +31,7 @@ import type {
   ChangePasswordRequest,
   ChatHistory,
   ChatMessage,
+  ChatReadReceipt,
   ClientProfile,
   Consent,
   ContentReport,
@@ -49,7 +50,8 @@ import type {
   CreateReviewRequest,
   CreateSavedSearchRequest,
   CreateServiceRequest,
-  CreditTransaction,
+  CreditTransactionsPage,
+  CreditTransactionsQuery,
   DataDeletionRequest,
   DataExportRequest,
   Deposit,
@@ -114,6 +116,8 @@ export const SESSION_EXPIRED_EVENT = 'escambo:session-expired';
 export const ACCOUNT_STATUS_EVENT = 'escambo:account-status';
 /** A API respondeu 503 em modo de manutenção (ADR 33): o app mostra a tela de manutenção. */
 export const MAINTENANCE_EVENT = 'escambo:maintenance';
+/** O proxy (nginx ou Caddy) não alcançou a API ou o web (RNF-010): o app mostra a tela de fora do ar. */
+export const OUTAGE_EVENT = 'escambo:outage';
 
 /** Filtros da busca de serviços (lat+lng+radiusKm = descoberta local por proximidade). */
 export type ServiceSort =
@@ -122,6 +126,8 @@ export type ServiceSort =
 export interface ServiceQuery {
   q?: string;
   categoryId?: number;
+  /** true = atende remoto, false = atende presencial; "remoto e presencial" entra nos dois. */
+  isRemote?: boolean;
   ownerId?: number;
   lat?: number;
   lng?: number;
@@ -309,7 +315,12 @@ async function send(url: string, init: RequestInit): Promise<Response> {
 }
 
 /** Corpo de erro lido como objeto; JSON que não é objeto (null, lista, texto) vale como vazio. */
-function errorBody(data: unknown): { error?: unknown; message?: unknown; contractId?: unknown } {
+function errorBody(data: unknown): {
+  error?: unknown;
+  message?: unknown;
+  contractId?: unknown;
+  returnAt?: unknown;
+} {
   return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
 }
 
@@ -348,7 +359,12 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
     const err = errorBody(data);
     accountErrorResponse(res, token, err);
     const code = typeof err.error === 'string' ? err.error : undefined;
-    if (res.status === 503 && code === 'maintenance') emit(MAINTENANCE_EVENT);
+    // Com previsão de volta (RNF-010), o 503 traz a hora: a tela a mostra sem outra chamada.
+    if (res.status === 503 && code === 'maintenance')
+      emit(MAINTENANCE_EVENT, {
+        returnAt: typeof err.returnAt === 'string' ? err.returnAt : null,
+      });
+    if (res.status === 503 && code === 'service_unavailable') emit(OUTAGE_EVENT);
     // Sem mensagem da API (proxy, HTML, só o código), quem usa lê o que houve, e não "Erro 502".
     throw new ApiRequestError(
       apiMessage(err) ?? statusMessage(res.status),
@@ -412,7 +428,7 @@ const financeQs = (q: { from?: string; to?: string; granularity: string }): stri
     Object.entries(q).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1] !== ''),
   ).toString();
 
-/** Query string do extrato de R$ (só os campos preenchidos). */
+/** Query string dos extratos de R$ e de créditos (só os campos preenchidos). */
 function walletQuery(query: WalletTransactionsQuery): string {
   const search = new URLSearchParams();
   if (query.page != null) search.set('page', String(query.page));
@@ -542,6 +558,8 @@ export const api = {
     request<Service>('/services', { method: 'POST', body: JSON.stringify(body) }),
   /** "Meus serviços" (RF-030): os do dono, pausados inclusive (a busca só traz os ativos). */
   myServices: () => request<Service[]>('/services/mine'),
+  /** Detalhe do serviço; abrir soma uma visualização (RF-029) quando quem abre não é o dono. */
+  service: (id: number) => request<Service>(`/services/${id}`),
   /** Edita o serviço; `{ isActive }` sozinho pausa ou reativa (RF-030). */
   updateService: (id: number, body: UpdateServiceRequest) =>
     request<Service>(`/services/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -655,6 +673,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ content }),
     }),
+  /** Leitura (RF-059): marca como lidas as recebidas até `upTo`, a última que a tela mostrou. */
+  markChatRead: (contractId: number, upTo?: number) =>
+    request<ChatReadReceipt>(`/messaging/contracts/${contractId}/read`, {
+      method: 'POST',
+      body: JSON.stringify(upTo ? { upTo } : {}),
+    }),
 
   // carteira: extrato de R$, depósitos (PIX via gateway) e saques
   /** Extrato de R$; `from`/`to` (dias, no fuso da conta) filtram o período (RF-047). */
@@ -710,7 +734,9 @@ export const api = {
     request<{ read: number }>('/notifications/read-all', { method: 'POST' }),
 
   // créditos Escambo (time-bank)
-  creditTransactions: () => request<Paginated<CreditTransaction>>('/credits/transactions'),
+  /** Extrato de créditos; `from`/`to` (dias, no fuso da conta) como no de R$ (RF-047). */
+  creditTransactions: (query: CreditTransactionsQuery = {}) =>
+    request<CreditTransactionsPage>(`/credits/transactions${walletQuery(query)}`),
 
   // impulsionamento (boosts)
   boostPlans: () => request<BoostPlan[]>('/boosts/plans'),

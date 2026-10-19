@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
   createSocketServer: vi.fn(),
   startJobs: vi.fn(),
   stopJobs: vi.fn(),
+  logFieldEncryptionStatus: vi.fn(),
 }));
 vi.mock('node:http', () => ({
   createServer: h.createServer,
@@ -37,6 +38,9 @@ vi.mock('./config/sentry', () => ({
 }));
 vi.mock('./config/socket', () => ({ createSocketServer: h.createSocketServer }));
 vi.mock('./jobs/scheduler', () => ({ startJobs: h.startJobs, stopJobs: h.stopJobs }));
+vi.mock('./utils/field-crypto', () => ({
+  logFieldEncryptionStatus: h.logFieldEncryptionStatus,
+}));
 
 type Handler = (...args: unknown[]) => void;
 type Called = { mock: { invocationCallOrder: number[] } };
@@ -143,10 +147,14 @@ describe('servidor da API', () => {
       await boot();
       expect(h.startJobs).not.toHaveBeenCalled();
       expect(h.logger.info).not.toHaveBeenCalled();
+      expect(h.logFieldEncryptionStatus).not.toHaveBeenCalled();
 
       onListening!();
 
       expect(h.startJobs).toHaveBeenCalledTimes(1);
+      // RNF-017: a situação da cifragem de campo sai uma vez, na subida (o texto é da field-crypto).
+      expect(h.logFieldEncryptionStatus).toHaveBeenCalledTimes(1);
+      expect(h.logFieldEncryptionStatus).toHaveBeenCalledWith();
       expect(h.logger.info.mock.calls).toEqual([
         [
           { version: buildInfo.version, commit: buildInfo.commit },

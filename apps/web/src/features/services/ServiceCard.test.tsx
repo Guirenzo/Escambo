@@ -149,14 +149,15 @@ describe('ServiceCard', () => {
     });
 
     expect(screen.getByText('Bruna Lima')).toBeInTheDocument();
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    // Só o título é link (abre o detalhe); o nome de quem presta, sem ulid, não.
+    expect(screen.getAllByRole('link').map((l) => l.textContent)).toEqual(['Logo profissional']);
     expect(screen.getByRole('img', { name: '0.0 de 5, 0 avaliações' })).toBeInTheDocument();
   });
 
   it('serviço sem o nome de quem presta não mostra a linha do prestador', () => {
     renderCard({ service: service({ ownerName: undefined, ownerAvailableNow: true }) });
 
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('link').map((l) => l.textContent)).toEqual(['Logo profissional']);
     expect(screen.queryByRole('img', { name: /de 5/ })).not.toBeInTheDocument();
     expect(screen.queryByText('atende agora')).not.toBeInTheDocument();
     expect(screen.getByText('Logo profissional')).toBeInTheDocument();
@@ -351,6 +352,55 @@ describe('ServiceCard', () => {
       renderCard({ mine: true, onEdit: vi.fn(), onToggleActive: vi.fn() }, 'suspended');
       await waitFor(() => expect(screen.getByRole('button', { name: 'Editar' })).toBeDisabled());
       expect(screen.getByRole('button', { name: 'Pausar' })).toBeDisabled();
+    });
+  });
+
+  describe('catálogo (RF-023, RF-024, RF-029)', () => {
+    it('o título abre o detalhe do serviço', () => {
+      renderCard();
+      expect(screen.getByRole('link', { name: 'Logo profissional' })).toHaveAttribute(
+        'href',
+        '/servicos/5',
+      );
+    });
+
+    it('a modalidade vem da modality; "remoto e presencial" quando atende dos dois jeitos', () => {
+      renderCard({ service: service({ isRemote: true, modality: 'both' }) });
+      expect(screen.getByText('remoto e presencial')).toBeInTheDocument();
+    });
+
+    it('as tags aparecem, cada uma como link para a busca por ela', () => {
+      renderCard({ service: service({ tags: ['figma', 'ui/ux'] }) });
+      const list = screen.getByRole('list', { name: 'Tags' });
+      expect(list).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Buscar pela tag figma' })).toHaveAttribute(
+        'href',
+        '/servicos?q=figma',
+      );
+      expect(screen.getByRole('link', { name: 'Buscar pela tag ui/ux' })).toHaveAttribute(
+        'href',
+        '/servicos?q=ui%2Fux',
+      );
+    });
+
+    it('sem tags, não há lista de tags', () => {
+      renderCard({ service: service({ tags: [] }) });
+      expect(screen.queryByRole('list', { name: 'Tags' })).not.toBeInTheDocument();
+    });
+
+    it('o dono vê as visualizações, no singular e no plural; na busca, nunca', () => {
+      renderCard({ mine: true, service: service({ viewsCount: 1 }) });
+      expect(screen.getByTestId('views-count')).toHaveTextContent('1 visualização');
+    });
+
+    it('milhar com ponto e plural', () => {
+      renderCard({ mine: true, service: service({ viewsCount: 1234 }) });
+      expect(screen.getByTestId('views-count')).toHaveTextContent('1.234 visualizações');
+    });
+
+    it('fora de "Meus serviços" (ou sem o número), as visualizações não aparecem', () => {
+      renderCard({ mine: false, service: service({ viewsCount: 7 }) });
+      expect(screen.queryByTestId('views-count')).not.toBeInTheDocument();
     });
   });
 

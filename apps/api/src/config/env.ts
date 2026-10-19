@@ -3,6 +3,18 @@ import { z } from 'zod';
 import { JOBS_INTERVAL_MAX_MS } from '../utils/human-hours';
 
 /**
+ * Chave AES-256 em base64 canônico: 32 bytes, com o "=" final, sem espaço nem o alfabeto do
+ * base64url. O Buffer aceitaria quase qualquer texto (ignora o que não entende) e devolveria uma
+ * chave curta ou diferente da que foi guardada — e o que fosse cifrado com ela não voltaria.
+ */
+function isAes256Key(value: string): boolean {
+  const key = Buffer.from(value, 'base64');
+  return key.length === 32 && key.toString('base64') === value;
+}
+
+const FIELD_KEY_HINT = '32 bytes em base64 (gere com "openssl rand -base64 32")';
+
+/**
  * Validação das variáveis de ambiente (RNF-034: configs externalizadas).
  * Se faltar/estiver inválida, a API não sobe — falha cedo e claro.
  */
@@ -121,6 +133,27 @@ const envSchema = z.object({
   SENTRY_DSN: z.string().default(''),
   // Ambiente mostrado no Sentry (produção, homologação…); vazio = NODE_ENV.
   SENTRY_ENVIRONMENT: z.string().default(''),
+
+  // --- Cifragem de campo (RNF-017) ---
+  // Chave AES-256 da chave PIX e dos dados bancários dos saques. Vazia = grava em texto puro, como
+  // antes, e a API avisa na subida. Fica fora do banco e do repositório: sem ela, o que foi
+  // cifrado não volta. O valor nunca aparece na mensagem de erro.
+  FIELD_ENCRYPTION_KEY: z
+    .string()
+    .trim()
+    .default('')
+    .refine((v) => v === '' || isAes256Key(v), {
+      message: `FIELD_ENCRYPTION_KEY deve ter ${FIELD_KEY_HINT}`,
+    }),
+  // Rotação: chaves anteriores, separadas por vírgula, só para LER o que foi cifrado com elas. Depois
+  // de trocar a chave, o fields:encrypt regrava tudo com a atual e estas podem sair.
+  FIELD_ENCRYPTION_OLD_KEYS: z
+    .string()
+    .trim()
+    .default('')
+    .refine((v) => v === '' || v.split(',').every((k) => isAes256Key(k.trim())), {
+      message: `cada chave de FIELD_ENCRYPTION_OLD_KEYS deve ter ${FIELD_KEY_HINT}`,
+    }),
 });
 
 /**

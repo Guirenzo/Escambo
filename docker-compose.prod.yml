@@ -57,6 +57,11 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no .env}
       DB_NAME: ${DB_NAME:-escambo}
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env (32+ caracteres aleatórios)}
+      # Cifragem da chave PIX e dos dados bancários dos saques (RNF-017): 32 bytes em base64.
+      # Opcional por enquanto: vazia, a API grava em texto puro e avisa no log da subida. Com ela,
+      # rode uma vez o encrypt-withdrawal-fields para as linhas antigas (.env.prod.example).
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-}
+      FIELD_ENCRYPTION_OLD_KEYS: ${FIELD_ENCRYPTION_OLD_KEYS:-}
       # Caddy → nginx (web) → API: dois saltos confiáveis no X-Forwarded-For, para que rate limit
       # e logs usem o IP real do usuário.
       TRUST_PROXY: '2'
@@ -130,6 +135,8 @@ services:
       - '${HTTPS_PORT:-443}:443/udp'
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Página de "fora do ar" que o Caddy serve quando o web não responde (RNF-010).
+      - ./deploy/status:/srv/status:ro
       - caddy_data:/data
       - caddy_config:/config
 

@@ -1,5 +1,5 @@
 import { BusinessButton, BusinessIconButton } from '../../components/BusinessActions';
-import { ArrowLeftRight, Heart, Pause, Pencil, Play, Rocket } from 'lucide-react';
+import { ArrowLeftRight, Eye, Heart, Pause, Pencil, Play, Rocket } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Service } from '@escambo/types';
 import { Avatar } from '../../components/Avatar';
@@ -8,6 +8,8 @@ import { brl, formatAvailability } from '../../lib/format';
 import { useAuth } from '../../lib/auth';
 import { usePublicSettings } from '../../lib/hooks';
 import { zoneNote } from '../../lib/timezones';
+import { MODALITY_LABEL, modalityOf } from './ServiceForm';
+import { tagSearchPath } from './tags';
 
 /** Preço como o anúncio mostra: por hora leva "/h"; sem preço (ou a combinar) é "a combinar". */
 export function servicePrice(s: Pick<Service, 'priceType' | 'price'>): string {
@@ -15,9 +17,34 @@ export function servicePrice(s: Pick<Service, 'priceType' | 'price'>): string {
   return s.priceType === 'hourly' ? `${brl(s.price)}/h` : brl(s.price);
 }
 
+/** Modalidade no selo do card e do detalhe: "remoto", "presencial" ou "remoto e presencial". */
+export const modalityTag = (s: Pick<Service, 'modality' | 'isRemote'>): string =>
+  MODALITY_LABEL[modalityOf(s)].toLowerCase();
+
+/** "1 visualização", "12 visualizações" (RF-029). */
+export const viewsLabel = (n: number): string =>
+  `${n.toLocaleString('pt-BR')} ${n === 1 ? 'visualização' : 'visualizações'}`;
+
+/** As tags do serviço; cada uma é um link para a busca por ela (RF-024). */
+export function ServiceTags({ tags }: { tags?: string[] }) {
+  if (!tags?.length) return null;
+  return (
+    <ul className="svc-tags" aria-label="Tags">
+      {tags.map((tag) => (
+        <li key={tag}>
+          <Link to={tagSearchPath(tag)} className="svc-tag" aria-label={`Buscar pela tag ${tag}`}>
+            {tag}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
  * Card de serviço da busca, do perfil público e de "Meus serviços": quem presta, preço, prazo,
- * distância, modalidade, favorito e ações. Em "Meus serviços" o dono também edita, pausa e reativa.
+ * distância, modalidade, tags, favorito e ações; o título abre o detalhe. Em "Meus serviços" o dono
+ * também vê as visualizações (RF-029), edita, pausa e reativa.
  */
 export function ServiceCard({
   service: s,
@@ -54,7 +81,11 @@ export function ServiceCard({
   return (
     <div className="card service">
       <div className="svc-top">
-        <strong>{s.title}</strong>
+        <strong>
+          <Link to={`/servicos/${s.id}`} className="svc-title">
+            {s.title}
+          </Link>
+        </strong>
         <span className="svc-actions">
           {s.boosted && (
             <span className="chip level">
@@ -62,7 +93,7 @@ export function ServiceCard({
             </span>
           )}
           {!s.isActive && <span className="pill status-pending">Pausado</span>}
-          <span className="tag">{s.isRemote ? 'remoto' : 'presencial'}</span>
+          <span className="tag">{modalityTag(s)}</span>
           {onToggleFavorite && !mine && (
             <BusinessIconButton
               type="button"
@@ -102,6 +133,12 @@ export function ServiceCard({
         </div>
       )}
       <p className="muted clamp">{s.description}</p>
+      <ServiceTags tags={s.tags} />
+      {mine && s.viewsCount !== undefined && (
+        <p className="muted tiny svc-views" data-testid="views-count">
+          <Eye size={12} aria-hidden="true" /> {viewsLabel(s.viewsCount)}
+        </p>
+      )}
       {!s.isActive && (
         <p className="muted tiny" data-testid="paused-note">
           Fora da busca e sem propostas novas. Os contratos em andamento continuam.

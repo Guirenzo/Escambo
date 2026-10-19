@@ -69,6 +69,41 @@ describe('Chaves restantes de platform_settings', () => {
     expect((await request(app).get('/api/settings/public')).body.maintenanceMode).toBe(false);
   });
 
+  it('previsão de volta (RNF-010): a hora vai nos parâmetros públicos, no Retry-After e na mensagem', async () => {
+    const admin = await registerAndLogin('client', true);
+    try {
+      await put(admin.token, 'maintenance_return_minutes', 45).expect(200);
+      // Desligado, a previsão não aparece: ela é da manutenção.
+      expect((await request(app).get('/api/settings/public')).body.maintenanceReturnAt).toBeNull();
+
+      const before = Date.now();
+      await put(admin.token, 'maintenance_mode', true).expect(200);
+      const pub = (await request(app).get('/api/settings/public')).body;
+      const at = Date.parse(pub.maintenanceReturnAt);
+      // Contada da última mudança (o modo, agora), com a precisão de segundo do DATETIME.
+      expect(at).toBeGreaterThanOrEqual(before - 1000 + 45 * 60_000);
+      expect(at).toBeLessThanOrEqual(Date.now() + 45 * 60_000);
+
+      const blocked = await request(app).get('/api/services').expect(503);
+      expect(blocked.body.returnAt).toBe(pub.maintenanceReturnAt);
+      const retry = Number(blocked.headers['retry-after']);
+      expect(retry).toBeGreaterThan(44 * 60);
+      expect(retry).toBeLessThanOrEqual(45 * 60);
+      expect(blocked.body.message).toMatch(
+        /^Estamos em manutenção\. Previsão de volta: \d{2}:\d{2}/,
+      );
+
+      await put(admin.token, 'maintenance_return_minutes', 0).expect(200);
+      expect((await request(app).get('/api/settings/public')).body.maintenanceReturnAt).toBeNull();
+      expect((await request(app).get('/api/services').expect(503)).headers['retry-after']).toBe(
+        '120',
+      );
+    } finally {
+      await put(admin.token, 'maintenance_mode', false).expect(200);
+      await put(admin.token, 'maintenance_return_minutes', 0).expect(200);
+    }
+  });
+
   it('trocas desligadas: propor dá 403 barter_disabled; ligadas de novo, passa', async () => {
     const admin = await registerAndLogin('client', true);
     const a = await registerAndLogin('freelancer');

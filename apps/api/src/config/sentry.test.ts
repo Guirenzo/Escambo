@@ -55,6 +55,36 @@ describe('sentry', () => {
     await s.flushSentry(500);
     expect(flush).toHaveBeenCalledWith(500);
   });
+
+  it('erro do navegador (RNF-040): sem SENTRY_DSN não vai a lugar nenhum', async () => {
+    const s = await import('./sentry');
+    await s.initSentry();
+    s.captureClientError({ kind: 'render', message: 'quebrou', path: '/servicos' });
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it('erro do navegador vai como ClientError, com a pilha do app e marcado como do web', async () => {
+    vi.stubEnv('SENTRY_DSN', 'https://chave@o0.ingest.sentry.io/1');
+    const s = await import('./sentry');
+    await s.initSentry();
+
+    s.captureClientError({
+      kind: 'rejection',
+      message: 'falhou no app',
+      stack: 'TypeError: falhou no app\n    at x (index.js:1:1)',
+      path: '/carteira',
+    });
+    s.captureClientError({ kind: 'error', message: 'sem pilha', path: '/' });
+
+    const [first, second] = captureException.mock.calls;
+    expect(first![0]).toMatchObject({
+      name: 'ClientError',
+      message: 'falhou no app',
+      stack: 'TypeError: falhou no app\n    at x (index.js:1:1)',
+    });
+    expect(first![1]).toEqual({ tags: { source: 'web', kind: 'rejection', path: '/carteira' } });
+    expect(second![0].stack).toBe('ClientError: sem pilha');
+  });
 });
 
 describe('scrubEvent', () => {

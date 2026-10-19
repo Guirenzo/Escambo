@@ -197,6 +197,7 @@ export interface CreateFavoriteRequest {
 /** Filtros de uma busca salva (ADR 35): os mesmos da busca de serviços, sem ordenação. */
 export interface SavedSearchFilters {
   categoryId?: number;
+  /** true = atende remoto, false = atende presencial; quem atende dos dois jeitos entra nos dois. */
   isRemote?: boolean;
   lat?: number;
   lng?: number;
@@ -579,6 +580,8 @@ export interface AdminMetrics {
   /** Saques aguardando processamento (quantidade e valor). */
   pendingWithdrawals: number;
   pendingWithdrawalsAmount: number;
+  /** Dos pendentes, quantos já passaram do prazo gravado no pedido (RN-035). */
+  overdueWithdrawals: number;
   /** Total já depositado pelos clientes (pagamentos confirmados). */
   depositsTotal: number;
   /** Saldo disponível somado de todas as carteiras (passivo com usuários). */
@@ -635,8 +638,11 @@ export type PlatformSettingKey =
   | 'moderation_sla_report_enabled'
   | 'min_service_price'
   | 'min_withdrawal_amount'
+  | 'withdrawal_pix_business_days'
+  | 'withdrawal_bank_business_days'
   | 'barter_enabled'
-  | 'maintenance_mode';
+  | 'maintenance_mode'
+  | 'maintenance_return_minutes';
 
 export type PlatformSettingType = 'integer' | 'decimal' | 'boolean';
 
@@ -679,6 +685,11 @@ export interface PublicSettings {
   counterOfferResponseHours: number;
   minServicePrice: number;
   minWithdrawalAmount: number;
+  /**
+   * Prazo do saque em dias úteis por forma de recebimento (RN-035): seg a sex no calendário de
+   * Brasília, sem feriados. O prazo de cada saque fica gravado nele (`Withdrawal.dueAt`).
+   */
+  withdrawalBusinessDays: Record<WithdrawalMethod, number>;
   barterEnabled: boolean;
   /** Carência da RN-029: do aviso de atraso até a disputa automática (ADR 57). */
   deadlineGraceHours: number;
@@ -688,6 +699,8 @@ export interface PublicSettings {
   fixedContractRules: FixedContractRules;
   /** Ligado: a API responde 503 para quem não é admin; o app mostra a tela de manutenção. */
   maintenanceMode: boolean;
+  /** Hora prevista da volta da manutenção (RNF-010); nula sem previsão ou fora de manutenção. */
+  maintenanceReturnAt: string | null;
 }
 
 /** Para que a imagem vai (ADR 38): avatar sai quadrado; portfólio cabe em 1600 px e pode animar. */
@@ -922,6 +935,9 @@ export interface Category {
 
 export type ServicePriceType = 'fixed' | 'hourly' | 'negotiable';
 
+/** Modalidade (RF-023): remoto, presencial ou os dois ("both" é remoto e presencial). */
+export type ServiceModality = 'remote' | 'onsite' | 'both';
+
 export interface Service {
   id: number;
   categoryId: number;
@@ -931,7 +947,14 @@ export interface Service {
   priceType: ServicePriceType;
   price: number | null;
   deliveryDays: number | null;
+  /** Atende remoto: true em "remote" e em "both" (compatível com quem só conhece remoto/presencial). */
   isRemote: boolean;
+  /** Modalidade (RF-023); a API sempre manda. */
+  modality?: ServiceModality;
+  /** Tags (RF-024, RN-018): até 10, normalizadas em minúsculas, em ordem alfabética. */
+  tags?: string[];
+  /** Visualizações do detalhe (RF-029): só em "Meus serviços", para o dono. */
+  viewsCount?: number;
   isActive: boolean;
   createdAt: string;
   /** Distância em km até o ponto pesquisado (só na busca por proximidade). */
@@ -991,6 +1014,10 @@ export interface CreateServiceRequest {
   price?: number | null;
   deliveryDays?: number | null;
   isRemote?: boolean;
+  /** Vale mais que isRemote quando os dois vêm. */
+  modality?: ServiceModality;
+  /** RN-018: até 10, de 2 a 30 caracteres, sem repetir; na edição, a lista substitui a anterior. */
+  tags?: string[];
 }
 
 export type UpdateServiceRequest = Partial<CreateServiceRequest> & { isActive?: boolean };
@@ -1396,6 +1423,8 @@ export interface ChatMessage {
   removedAt: string | null;
   /** Sinais de negociação por fora achados no texto (ADR 45); vazio quando limpa ou removida. */
   signals: OffPlatformSignal[];
+  /** Quando o destinatário leu (RF-059); null enquanto não lida. */
+  readAt: string | null;
 }
 
 /** O que a detecção de negociação por fora achou numa mensagem (ADR 45). */
@@ -1414,6 +1443,35 @@ export interface SendMessageRequest {
 
 /** Payload emitido no evento realtime `message:new`. */
 export type ChatMessageEvent = ChatMessage & { contractId: number };
+
+/** Corpo de POST /messaging/contracts/:id/read: até qual mensagem a tela mostrou (RF-059). */
+export interface MarkChatReadRequest {
+  /** Id da última mensagem exibida; sem ele, todas as recebidas contam como lidas. */
+  upTo?: number;
+}
+
+/** Resposta de POST /messaging/contracts/:id/read. */
+export interface ChatReadReceipt {
+  /** null quando o par ainda não tem conversa (nada a marcar). */
+  conversationId: number | null;
+  /** Quantas mensagens recebidas viraram lidas agora (0 = já estavam: a chamada é idempotente). */
+  marked: number;
+  /** Maior id marcado agora; null quando nada mudou. */
+  upToId: number | null;
+  readAt: string | null;
+}
+
+/**
+ * Payload do evento realtime `message:read`: as mensagens recebidas por `readerId` até `upToId`
+ * estão lidas. Vai para a sala de cada contratação do par, com o id dela.
+ */
+export interface ChatReadEvent {
+  contractId: number;
+  conversationId: number;
+  readerId: number;
+  upToId: number;
+  readAt: string;
+}
 
 // --- Carteira ---
 
@@ -1511,6 +1569,14 @@ export interface CreditTransaction {
   reason: CreditReason;
   contractId: number | null;
   createdAt: string;
+}
+
+/** Filtro do extrato de créditos (RF-047): o mesmo do extrato de R$ (dias no fuso da conta). */
+export type CreditTransactionsQuery = WalletTransactionsQuery;
+
+/** Uma página do extrato de créditos; `hasMore` diz se há lançamentos depois dela. */
+export interface CreditTransactionsPage extends Paginated<CreditTransaction> {
+  hasMore: boolean;
 }
 
 // --- Avaliações ---
@@ -1632,6 +1698,11 @@ export interface Withdrawal {
   maskedDestination: string; // chave PIX / conta mascarada
   createdAt: string;
   processedAt: string | null;
+  /**
+   * Prazo de pagamento (RN-035): 23:59:59 de Brasília do último dia útil, calculado e gravado no
+   * pedido. null só em saque já encerrado antes de o prazo existir (1.44.0).
+   */
+  dueAt: string | null;
 }
 
 /** Saque na fila do admin (destino completo: é o admin quem paga). */
@@ -1641,6 +1712,8 @@ export interface AdminWithdrawal extends Withdrawal {
   userEmail: string;
   userName: string | null;
   destination: string;
+  /** Ainda não pago (aguardando ou em processamento) e já passou do prazo. */
+  overdue: boolean;
 }
 
 export interface CreateWithdrawalRequest {

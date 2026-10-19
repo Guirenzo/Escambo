@@ -29,6 +29,7 @@ const MESSAGE_FIELDS = [
   'file_purged_reason',
   'removed_at',
   'off_platform',
+  'read_at',
 ].sort();
 
 /** As colunas pedidas no SELECT até `until`, em ordem alfabética (a ordem no SQL não importa). */
@@ -277,6 +278,75 @@ describe('messagingRepository', () => {
         }),
       ).rejects.toBe(boom);
       expect(fakeDb.calls).toHaveLength(1);
+    });
+  });
+
+  describe('markRead (leitura, RF-059)', () => {
+    it('acha a maior não lida recebida até upTo e grava só até ela, com o horário em segundos inteiros', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-19T12:00:00.789Z'));
+      try {
+        fakeDb.reply([{ last: '9' }], { affectedRows: 2 });
+
+        expect(await messagingRepository.markRead(5, 20, 12)).toEqual({
+          marked: 2,
+          upToId: 9,
+          readAt: new Date('2026-10-19T12:00:00.000Z'),
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(fakeDb.calls).toHaveLength(2);
+      const [find, update] = fakeDb.calls;
+      expect(find!.sql).toBe(
+        'SELECT MAX(id) AS last FROM messages WHERE conversation_id = :conversationId AND read_at IS NULL AND sender_id <> :readerId AND id <= :upTo',
+      );
+      expect(find!.params).toEqual({ conversationId: 5, readerId: 20, upTo: 12 });
+      // Só as que o leitor recebeu (sender_id <> leitor) e ainda sem leitura: a primeira fica.
+      expect(update!.sql).toBe(
+        'UPDATE messages SET is_read = 1, read_at = :readAt WHERE conversation_id = :conversationId AND read_at IS NULL AND sender_id <> :readerId AND id <= :last',
+      );
+      expect(update!.params).toEqual({
+        conversationId: 5,
+        readerId: 20,
+        readAt: new Date('2026-10-19T12:00:00.000Z'),
+        last: 9,
+      });
+    });
+
+    it('sem upTo, a busca não limita o id', async () => {
+      fakeDb.reply([{ last: 4 }], { affectedRows: 1 });
+
+      expect(await messagingRepository.markRead(5, 10, null)).toMatchObject({
+        marked: 1,
+        upToId: 4,
+      });
+      expect(fakeDb.calls[0]!.sql).not.toContain(':upTo');
+      expect(fakeDb.calls[0]!.sql).toMatch(/sender_id <> :readerId$/);
+    });
+
+    it('idempotente: nada não lido encerra sem escrever', async () => {
+      fakeDb.reply([{ last: null }]);
+
+      expect(await messagingRepository.markRead(5, 10, 9)).toEqual({
+        marked: 0,
+        upToId: null,
+        readAt: null,
+      });
+      expect(fakeDb.calls).toHaveLength(1);
+      expect(fakeDb.calls[0]!.sql).not.toContain('UPDATE');
+    });
+
+    it('outra aba marcou as mesmas no meio do caminho: devolve que nada mudou por esta chamada', async () => {
+      fakeDb.reply([{ last: 9 }], { affectedRows: 0 });
+
+      expect(await messagingRepository.markRead(5, 10, 9)).toEqual({
+        marked: 0,
+        upToId: null,
+        readAt: null,
+      });
+      expect(fakeDb.calls).toHaveLength(2);
     });
   });
 

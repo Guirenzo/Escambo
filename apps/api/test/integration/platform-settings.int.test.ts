@@ -40,7 +40,7 @@ afterAll(async () => {
 });
 
 describe('Parâmetros da plataforma', () => {
-  it('admin lista os dezessete parâmetros com padrão, limites e sem autor; não-admin toma 403', async () => {
+  it('admin lista os dezenove parâmetros com padrão, limites e sem autor; não-admin toma 403', async () => {
     const admin = await registerAndLogin('client', true);
     const res = await request(app).get('/api/admin/settings').set(auth(admin.token)).expect(200);
     expect(res.body.map((s: { key: string }) => s.key)).toEqual([
@@ -59,8 +59,11 @@ describe('Parâmetros da plataforma', () => {
       'moderation_sla_report_enabled',
       'min_service_price',
       'min_withdrawal_amount',
+      'withdrawal_pix_business_days',
+      'withdrawal_bank_business_days',
       'barter_enabled',
       'maintenance_mode',
+      'maintenance_return_minutes',
     ]);
     const fee = res.body.find((s: { key: string }) => s.key === 'platform_fee_percentage');
     expect(fee).toMatchObject({ value: 15, defaultValue: 15, min: 0, max: 50, unit: '%' });

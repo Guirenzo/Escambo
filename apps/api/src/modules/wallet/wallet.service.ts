@@ -6,7 +6,7 @@ import type {
 } from '@escambo/types';
 import { userZone } from '../auth/user-zone';
 import { creditsService } from '../credits/credits.service';
-import { periodRange, type WalletPeriod } from './wallet.period';
+import { ledgerPage, periodRange, type WalletPeriod } from './wallet.period';
 import { walletRepository, type WalletTxRow } from './wallet.repository';
 
 function toWalletTransaction(r: WalletTxRow): WalletTransaction {
@@ -70,11 +70,6 @@ export const walletService = {
       (page - 1) * limit,
       range,
     );
-    return {
-      items: rows.slice(0, limit).map(toWalletTransaction),
-      page,
-      limit,
-      hasMore: rows.length > limit,
-    };
+    return ledgerPage(rows, page, limit, toWalletTransaction);
   },
 };

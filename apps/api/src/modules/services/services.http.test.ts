@@ -321,12 +321,30 @@ describe('serviços: borda HTTP', () => {
   });
 
   describe('GET /api/services/:id (pública)', () => {
-    it('devolve o serviço sem login, com o id convertido para número', async () => {
+    it('devolve o serviço sem login, com o id convertido para número e o visitante anônimo (o IP)', async () => {
       service.getById.mockResolvedValue(landing);
       const res = await request(app).get('/api/services/5').expect(200);
       expect(res.body).toEqual(landing);
       expect(service.getById).toHaveBeenCalledTimes(1);
-      expect(service.getById).toHaveBeenCalledWith(5);
+      expect(service.getById).toHaveBeenCalledWith(5, {
+        userId: undefined,
+        ip: expect.any(String),
+      });
+    });
+
+    it('com token válido, o service sabe quem abriu (o dono não conta visualização, RF-029)', async () => {
+      service.getById.mockResolvedValue(landing);
+      await request(app).get('/api/services/5').set(bearer(7)).expect(200);
+      expect(service.getById.mock.calls[0]![1]).toMatchObject({ userId: 7 });
+    });
+
+    it('token inválido não barra a rota pública: segue anônimo', async () => {
+      service.getById.mockResolvedValue(landing);
+      await request(app)
+        .get('/api/services/5')
+        .set({ Authorization: 'Bearer nao-e-um-jwt' })
+        .expect(200);
+      expect(service.getById.mock.calls[0]![1]).toMatchObject({ userId: undefined });
     });
 
     it('id que não é inteiro positivo é erro de validação', async () => {
@@ -344,7 +362,7 @@ describe('serviços: borda HTTP', () => {
       );
       const res = await request(app).get('/api/services/999').expect(404);
       expect(res.body).toEqual({ error: 'service_not_found', message: 'Serviço não encontrado' });
-      expect(service.getById.mock.calls).toEqual([[999]]);
+      expect(service.getById.mock.calls.map(([id]) => id)).toEqual([999]);
     });
 
     it('a descoberta é pública de verdade: lista e detalhe respondem mesmo com um token inválido', async () => {
@@ -554,6 +572,104 @@ describe('serviços: borda HTTP', () => {
         error: 'price_below_minimum',
         message: 'Preço mínimo é R$ 10,00 (RN-016)',
       });
+    });
+  });
+
+  describe('tags e modalidade no cadastro e na edição (RF-023, RF-024, RN-018)', () => {
+    const post = (body: Record<string, unknown>) =>
+      request(app)
+        .post('/api/services')
+        .set(bearer(7))
+        .send({ ...validBody, ...body });
+    const patch = (body: Record<string, unknown>) =>
+      request(app).patch('/api/services/5').set(bearer(7)).send(body);
+
+    it('as tags chegam ao service normalizadas: sem espaço nas pontas, espaços internos reduzidos, em minúsculas', async () => {
+      service.create.mockResolvedValue(landing);
+      await post({ tags: ['  React  Native ', 'UI/UX', 'Programação', 'c++'] }).expect(201);
+      expect(service.create.mock.calls[0]![1].tags).toEqual([
+        'react native',
+        'ui/ux',
+        'programação',
+        'c++',
+      ]);
+    });
+
+    it('limites da RN-018: 10 tags passam, 11 não; 2 e 30 caracteres passam, 1 e 31 não', async () => {
+      service.create.mockResolvedValue(landing);
+      const ten = Array.from({ length: 10 }, (_, i) => `tag${i}`);
+      await post({ tags: ten }).expect(201);
+      await post({ tags: ['ab', 'x'.repeat(30)] }).expect(201);
+
+      const eleven = await post({ tags: [...ten, 'tag10'] }).expect(422);
+      expect(eleven.body.details).toEqual({ tags: ['No máximo 10 tags por serviço (RN-018)'] });
+      for (const tags of [['a'], ['x'.repeat(31)], ['   '], ['  b  ']]) {
+        const res = await post({ tags }).expect(422);
+        expect(res.body.details).toEqual({
+          tags: ['Cada tag tem de 2 a 30 caracteres (RN-018)'],
+        });
+      }
+      expect(service.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('tag repetida (sem diferenciar maiúsculas nem acento) é recusada', async () => {
+      for (const tags of [
+        ['React', 'react'],
+        ['programação', 'PROGRAMACAO'],
+        ['ui  ux', 'UI UX'],
+      ]) {
+        const res = await post({ tags }).expect(422);
+        expect(res.body.details.tags[0]).toMatch(/^Tag repetida: "/);
+      }
+      expect(service.create).not.toHaveBeenCalled();
+    });
+
+    it('caractere fora do permitido, tag que não é texto ou lista que não é lista são recusados', async () => {
+      for (const tags of [['<script>'], ['vírgula,junto'], [42], 'react']) {
+        const res = await post({ tags }).expect(422);
+        expect(Object.keys(res.body.details)).toEqual(['tags']);
+      }
+      expect(service.create).not.toHaveBeenCalled();
+    });
+
+    it('modalidade: remote, onsite e both passam (com o isRemote antigo junto); outra é recusada', async () => {
+      service.create.mockResolvedValue(landing);
+      service.update.mockResolvedValue(landing);
+      await post({ modality: 'both' }).expect(201);
+      expect(service.create.mock.calls[0]![1]).toMatchObject({ modality: 'both', isRemote: false });
+      await patch({ modality: 'onsite', isRemote: true }).expect(200);
+      expect(service.update.mock.calls[0]).toEqual([5, 7, { modality: 'onsite', isRemote: true }]);
+
+      const res = await post({ modality: 'ambos' }).expect(422);
+      expect(Object.keys(res.body.details)).toEqual(['modality']);
+    });
+
+    it('na edição, a lista de tags substitui a anterior; [] tira todas; sem o campo, nada muda', async () => {
+      service.update.mockResolvedValue(landing);
+      await patch({ tags: ['Logo', 'Figma'] }).expect(200);
+      await patch({ tags: [] }).expect(200);
+      await patch({ title: 'Novo título' }).expect(200);
+      expect(service.update.mock.calls.map(([, , input]) => input)).toEqual([
+        { tags: ['logo', 'figma'] },
+        { tags: [] },
+        { title: 'Novo título' },
+      ]);
+      const res = await patch({ tags: ['ok', 'OK'] }).expect(422);
+      expect(Object.keys(res.body.details)).toEqual(['tags']);
+    });
+
+    it('o texto da busca tem até 255 caracteres (como a busca salva)', async () => {
+      service.list.mockResolvedValue({ items: [], page: 1, limit: 20 });
+      await request(app)
+        .get('/api/services')
+        .query({ q: 'x'.repeat(255) })
+        .expect(200);
+      const res = await request(app)
+        .get('/api/services')
+        .query({ q: 'x'.repeat(256) })
+        .expect(422);
+      expect(Object.keys(res.body.details)).toEqual(['q']);
+      expect(service.list).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -827,7 +943,7 @@ describe('serviços: borda HTTP', () => {
     }
     // Cada rota chegou ao seu service (a falha não foi de validação nem de login).
     expect(service.list).toHaveBeenCalledTimes(1);
-    expect(service.getById.mock.calls).toEqual([[5]]);
+    expect(service.getById.mock.calls.map(([id]) => id)).toEqual([5]);
     expect(service.listMine.mock.calls).toEqual([[7]]);
     expect(service.create).toHaveBeenCalledTimes(1);
     expect(service.update.mock.calls).toEqual([[5, 7, { title: 'Novo título' }]]);

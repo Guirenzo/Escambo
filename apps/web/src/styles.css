@@ -1040,6 +1040,78 @@ button.toggle.on {
   gap: 6px;
   flex-wrap: wrap;
 }
+/* Catálogo (1.44.0): título que abre o detalhe, tags do serviço (RF-024) e visualizações (RF-029). */
+.svc-title {
+  color: inherit;
+  text-decoration: none;
+}
+.svc-title:hover,
+.svc-title:focus-visible {
+  text-decoration: underline;
+}
+.svc-tags,
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.svc-tag {
+  display: inline-block;
+  padding: 2px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.svc-tag:hover,
+.svc-tag:focus-visible {
+  border-color: var(--green);
+  color: var(--green);
+}
+.svc-views {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.svc-detail h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+.svc-description {
+  white-space: pre-line;
+}
+.tags-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green-ink);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.tag-chip-remove {
+  padding: 3px;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+}
+.tag-chip-remove:hover,
+.tag-chip-remove:focus-visible {
+  background: var(--surface);
+}
 .price {
   font-weight: 700;
   color: var(--text);
@@ -1199,6 +1271,18 @@ button.toggle.on {
 .chat-hint.off-platform svg {
   flex: none;
   margin-top: 2px;
+}
+/* Hora + leitura (RF-059) no pé da bolha: ✓ Enviada, ✓✓ Lida. */
+.bubble-meta {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.read-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 .bubble-flag {
   display: inline-flex;

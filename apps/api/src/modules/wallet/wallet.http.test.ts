@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { blocklist } from '../../config/blocklist';
-import { bearer, routerApp } from '../../test-support/http';
+import { bearer, routerApp, businessAudits } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
 import { walletRoutes } from './wallet.routes';
 import { getWallet } from './wallet.controller';
@@ -93,7 +93,7 @@ describe('carteira e depósitos: borda HTTP', () => {
       for (const fn of [...Object.values(wallet), ...Object.values(payments)]) {
         expect(fn).not.toHaveBeenCalled();
       }
-      expect(log).not.toHaveBeenCalled();
+      expect(businessAudits(log)).toEqual([]);
 
       // O bloqueio é da conta, não da rota: outro usuário segue usando a carteira dele.
       wallet.getBalance.mockResolvedValue({ balance: 0 });

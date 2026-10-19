@@ -8,7 +8,7 @@ import type {
   WalletTransaction,
   Withdrawal,
 } from '@escambo/types';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dtm } from '../../lib/format';
 import { ToastProvider } from '../../lib/toast';
 import { CarteiraView } from './CarteiraView';
@@ -36,7 +36,7 @@ vi.mock('../../lib/api', () => ({
     withdrawals: () => withdrawals(),
     deposits: () => deposits(),
     walletTransactions: (query: unknown) => walletTransactions(query),
-    creditTransactions: () => creditTransactions(),
+    creditTransactions: (query: unknown) => creditTransactions(query),
     requestWithdrawal: (body: unknown) => requestWithdrawal(body),
     cancelWithdrawal: (id: number) => cancelWithdrawal(id),
     resendVerification: (...args: unknown[]) => resendVerification(...args),
@@ -125,6 +125,7 @@ const withdrawalOf = (o: Partial<Withdrawal> & { id: number }): Withdrawal => ({
   maskedDestination: 'b***@pix.com',
   createdAt: '2026-09-18T10:00:00.000Z',
   processedAt: null,
+  dueAt: null,
   ...o,
 });
 
@@ -556,7 +557,7 @@ describe('CarteiraView: extrato por período e "Carregar mais" (RF-047)', () => 
     ).toBe(false);
   });
 
-  it('os dias são os do fuso da conta, e o filtro é só do extrato em reais', async () => {
+  it('os dias são os do fuso da conta, e o mesmo período vale para a aba de créditos', async () => {
     const user = userEvent.setup();
     auth.user = {
       id: 1,
@@ -569,12 +570,196 @@ describe('CarteiraView: extrato por período e "Carregar mais" (RF-047)', () => 
     expect(
       await within(card('Extrato')).findByText('Dias no horário de Manaus.'),
     ).toBeInTheDocument();
+    const period = within(card('Extrato')).getByRole('group', { name: 'Período do extrato' });
+    fireEvent.change(within(period).getByLabelText('De'), { target: { value: '2026-10-01' } });
 
     await user.click(screen.getByRole('tab', { name: 'Créditos' }));
+    const same = within(card('Extrato')).getByRole('group', { name: 'Período do extrato' });
+    expect(within(same).getByLabelText('De')).toHaveValue('2026-10-01');
+    expect(within(card('Extrato')).getByText('Dias no horário de Manaus.')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(creditTransactions).toHaveBeenLastCalledWith({
+        from: '2026-10-01',
+        page: 1,
+        limit: 20,
+      }),
+    );
+  });
+});
+
+describe('CarteiraView: extrato de créditos por período e "Carregar mais" (RF-047)', () => {
+  const creditPage = (items: CreditTransaction[], number: number, hasMore: boolean) => ({
+    items,
+    page: number,
+    limit: 20,
+    hasMore,
+  });
+
+  it('pede 20 por vez; "Carregar mais" junta a próxima página sem repetir lançamento', async () => {
+    const user = userEvent.setup();
+    creditTransactions
+      .mockResolvedValueOnce(creditPage([creditTx({ id: 3 }), creditTx({ id: 2 })], 1, true))
+      .mockResolvedValueOnce(
+        creditPage(
+          [creditTx({ id: 2 }), creditTx({ id: 1, reason: 'boost', amount: -10 })],
+          2,
+          false,
+        ),
+      );
+    renderView();
+
+    await user.click(screen.getByRole('tab', { name: 'Créditos' }));
+    const more = await within(card('Extrato')).findByRole('button', { name: 'Carregar mais' });
+    expect(creditTransactions).toHaveBeenCalledWith({ page: 1, limit: 20 });
+    expect(within(card('Extrato')).getAllByRole('listitem')).toHaveLength(2);
+
+    await user.click(more);
+
+    await waitFor(() => expect(within(card('Extrato')).getAllByRole('listitem')).toHaveLength(3));
+    expect(creditTransactions).toHaveBeenLastCalledWith({ page: 2, limit: 20 });
+    expect(within(card('Extrato')).getAllByRole('listitem')[2]).toHaveTextContent(
+      'Impulsionamento',
+    );
     expect(
-      within(card('Extrato')).queryByRole('group', { name: 'Período do extrato' }),
+      within(card('Extrato')).queryByRole('button', { name: 'Carregar mais' }),
     ).not.toBeInTheDocument();
-    expect(within(card('Extrato')).queryByText('Dias no horário de Manaus.')).toBeNull();
+  });
+
+  it('de/até vão para a API de créditos; período sem nada tem o próprio aviso; "Limpar período" volta', async () => {
+    const user = userEvent.setup();
+    renderView();
+    await user.click(screen.getByRole('tab', { name: 'Créditos' }));
+    expect(
+      await within(card('Extrato')).findByText('Nenhuma movimentação de créditos ainda.'),
+    ).toBeInTheDocument();
+
+    const period = within(card('Extrato')).getByRole('group', { name: 'Período do extrato' });
+    fireEvent.change(within(period).getByLabelText('De'), { target: { value: '2026-10-01' } });
+    fireEvent.change(within(period).getByLabelText('Até'), { target: { value: '2026-10-15' } });
+
+    await waitFor(() =>
+      expect(creditTransactions).toHaveBeenLastCalledWith({
+        from: '2026-10-01',
+        to: '2026-10-15',
+        page: 1,
+        limit: 20,
+      }),
+    );
+    expect(
+      await within(card('Extrato')).findByText('Nenhuma movimentação de créditos nesse período.'),
+    ).toBeInTheDocument();
+
+    await user.click(within(period).getByRole('button', { name: 'Limpar período' }));
+    expect(
+      await within(card('Extrato')).findByText('Nenhuma movimentação de créditos ainda.'),
+    ).toBeInTheDocument();
+    expect(creditTransactions).toHaveBeenLastCalledWith({ page: 1, limit: 20 });
+  });
+
+  it('período invertido: avisa na aba de créditos e não pede nada à API', async () => {
+    const user = userEvent.setup();
+    renderView();
+    await user.click(screen.getByRole('tab', { name: 'Créditos' }));
+    const period = within(card('Extrato')).getByRole('group', { name: 'Período do extrato' });
+
+    fireEvent.change(within(period).getByLabelText('Até'), { target: { value: '2026-10-01' } });
+    fireEvent.change(within(period).getByLabelText('De'), { target: { value: '2026-10-15' } });
+
+    expect(await within(card('Extrato')).findByRole('alert')).toHaveTextContent(
+      'A data inicial precisa ser até a final.',
+    );
+    expect(within(card('Extrato')).queryByTestId('credit-ledger')).not.toBeInTheDocument();
+    expect(
+      creditTransactions.mock.calls.some(([q]) => (q as { from?: string }).from === '2026-10-15'),
+    ).toBe(false);
+  });
+});
+
+describe('CarteiraView: prazo do saque (RN-035)', () => {
+  // Segunda, 19/10/2026, 10:00 em Brasília. Só o Date é falso: os timers seguem reais.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-19T13:00:00.000Z'));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('ao escolher PIX ou transferência, o formulário diz em quantos dias úteis e o dia em que cai', async () => {
+    const user = userEvent.setup();
+    publicSettings.mockResolvedValue({
+      minWithdrawalAmount: 20,
+      withdrawalBusinessDays: { pix: 1, bank: 3 },
+    });
+    renderView();
+
+    const due = screen.getByTestId('withdraw-due');
+    // Antes dos parâmetros chegarem, os padrões da RN-035 (PIX: 1 dia útil).
+    expect(due).toHaveTextContent('Em até 1 dia útil (seg. a sex.): cai até ter, 20/10.');
+
+    await user.selectOptions(screen.getByLabelText('Receber por'), 'bank');
+    // O parâmetro do admin vale: 3 dias úteis a partir de segunda = quinta.
+    await waitFor(() =>
+      expect(screen.getByTestId('withdraw-due')).toHaveTextContent(
+        'Em até 3 dias úteis (seg. a sex.): cai até qui, 22/10.',
+      ),
+    );
+
+    await user.selectOptions(screen.getByLabelText('Receber por'), 'pix');
+    expect(screen.getByTestId('withdraw-due')).toHaveTextContent('cai até ter, 20/10.');
+  });
+
+  it('sexta à noite: o prazo pula o fim de semana', async () => {
+    vi.setSystemTime(new Date('2026-10-24T01:30:00.000Z')); // sex, 23/10, 22:30 em Brasília
+    publicSettings.mockResolvedValue({ minWithdrawalAmount: 20 });
+    renderView();
+
+    expect(screen.getByTestId('withdraw-due')).toHaveTextContent('cai até seg, 26/10.');
+  });
+
+  it('pedido feito: o aviso diz o dia que a API gravou', async () => {
+    const user = userEvent.setup();
+    requestWithdrawal.mockResolvedValue(
+      withdrawalOf({ id: 99, dueAt: '2026-10-21T02:59:59.000Z' }),
+    );
+    renderView();
+    await screen.findByText('R$ 820,50');
+
+    await user.type(screen.getByLabelText(/^Valor \(R\$\)/), '50');
+    await user.type(screen.getByLabelText('Chave PIX'), 'bruno@pix.com');
+    await user.click(screen.getByRole('button', { name: /^Sacar/ }));
+
+    expect(
+      await screen.findByText(
+        'Saque solicitado! Cai até ter, 20/10. Você recebe um aviso quando for pago.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('a lista diz até quando cai cada saque aberto, avisa o que passou do prazo e cala nos encerrados', async () => {
+    withdrawals.mockResolvedValue(
+      page([
+        withdrawalOf({ id: 4, status: 'requested', dueAt: '2026-10-21T02:59:59.000Z' }),
+        withdrawalOf({ id: 3, status: 'processing', dueAt: '2026-10-17T02:59:59.000Z' }),
+        withdrawalOf({
+          id: 2,
+          status: 'completed',
+          dueAt: '2026-10-16T02:59:59.000Z',
+          processedAt: '2026-10-15T12:00:00.000Z',
+        }),
+        withdrawalOf({ id: 1, status: 'requested', dueAt: null }),
+      ]),
+    );
+    renderView();
+
+    await within(card('Saques')).findAllByText('R$ 150,00');
+    const rows = within(card('Saques')).getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent(
+      `PIX · b***@pix.com · ${dtm('2026-09-18T10:00:00.000Z')} · cai até ter, 20/10`,
+    );
+    expect(rows[1]).toHaveTextContent('· prazo era sex, 16/10');
+    expect(rows[1]).not.toHaveTextContent('cai até');
+    expect(rows[2]).not.toHaveTextContent('cai até');
+    expect(rows[2]).not.toHaveTextContent('prazo era');
+    expect(rows[3]).not.toHaveTextContent('cai até');
   });
 });
 

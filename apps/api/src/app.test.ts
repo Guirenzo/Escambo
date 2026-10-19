@@ -458,8 +458,8 @@ describe('rotas dos módulos em /api', () => {
     settingsService.clearCache();
   });
 
-  it('monta os 27 módulos, incluindo suporte do titular e administrativo', () => {
-    expect((router as unknown as { stack: Layer[] }).stack).toHaveLength(27);
+  it('monta os 28 módulos, incluindo suporte do titular e administrativo e o relato de erro do app', () => {
+    expect((router as unknown as { stack: Layer[] }).stack).toHaveLength(28);
   });
 
   it.each([
@@ -522,6 +522,14 @@ describe('rotas dos módulos em /api', () => {
     // Sem nada gravado em platform_settings valem os padrões, e a manutenção está desligada.
     expect(settings.body).toMatchObject({ maintenanceMode: false, barterEnabled: true });
     expect(typeof settings.body.platformFeePercentage).toBe('number');
+  });
+
+  it('o relato de erro do app (RNF-040) está em /api/client-errors e responde sem login', async () => {
+    await request(app)
+      .post('/api/client-errors')
+      .send({ kind: 'render', message: 'quebrou', path: '/servicos?x=1' })
+      .expect(204);
+    await request(app).post('/api/client-errors').send({ kind: 'outro' }).expect(422);
   });
 
   it('o webhook de pagamento está em /api/payments/webhook e fica desligado sem o segredo configurado', async () => {

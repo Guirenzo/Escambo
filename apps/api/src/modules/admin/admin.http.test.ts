@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { blocklist } from '../../config/blocklist';
-import { bearer, routerApp } from '../../test-support/http';
+import { bearer, routerApp, businessAudits } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
 import { adminRoutes } from './admin.routes';
 
@@ -98,7 +98,9 @@ const everyService = [
 const expectNothingReached = (): void => {
   for (const svc of everyService) {
     for (const [name, fn] of Object.entries(svc)) {
-      expect(fn, `${name} não devia ter sido chamado`).not.toHaveBeenCalled();
+      // A recusa vai para a auditoria como access.denied (RNF-018); ação de admin, nenhuma.
+      const calls = fn === audit ? businessAudits(fn) : fn.mock.calls;
+      expect(calls, `${name} não devia ter sido chamado`).toEqual([]);
     }
   }
 };

@@ -1,0 +1,3090 @@
+{
+  "iniciadoEm": "2026-10-19T15:15:36.170Z",
+  "maquina": {
+    "cpu": "AMD Ryzen 7 5700X 8-Core Processor",
+    "nucleosLogicos": 16,
+    "nucleosFisicos": 8,
+    "memoriaGB": 31.9,
+    "so": "Windows 11 Pro (10.0.26200)",
+    "node": "v22.14.0",
+    "mysql": {
+      "versao": "8.0.46",
+      "bufferPoolMB": 128,
+      "maxConexoes": 151
+    },
+    "docker": {
+      "versao": "29.5.3",
+      "so": "Docker Desktop",
+      "cpus": 16,
+      "memoriaGB": 16
+    },
+    "versaoApi": "1.43.0"
+  },
+  "config": {
+    "dbPool": 10,
+    "niveis": "10,50,100",
+    "taxasEscrita": "25,50,100",
+    "taxasLeitura": "50,100,200",
+    "duracaoS": 30,
+    "aquecimentoS": 10,
+    "conexoes": "500,1000",
+    "latenciaS": 30,
+    "fundos": "100/s,50vu",
+    "volume": {
+      "freelancers": 250,
+      "clientes": 250,
+      "servicos": 10000,
+      "paresWs": 30
+    },
+    "reaproveitado": false,
+    "env": "NODE_ENV=production, LOG_LEVEL=info, JOBS_ENABLED=false, MAIL_PROVIDER=simulated, PUSH_PROVIDER=simulated, RATE_LIMIT_MAX alto"
+  },
+  "api": {
+    "commit": "dfd1622",
+    "health": {
+      "status": "ok",
+      "db": "up",
+      "version": "1.43.0",
+      "commit": "dfd1622",
+      "uptime": 2,
+      "timestamp": "2026-10-19T15:15:51.032Z"
+    }
+  },
+  "segundosSeed": 342,
+  "volumeAntes": {
+    "users": 500,
+    "services": 10000,
+    "contracts": 30,
+    "payments": 250,
+    "withdrawals": 0,
+    "wallet_transactions": 280,
+    "messages": 0,
+    "notifications": 280,
+    "email_outbox": 780
+  },
+  "escrita": [
+    {
+      "cenario": "escrita",
+      "modo": "vus",
+      "vus": 10,
+      "taxaAlvo": null,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 2877,
+      "erros": 0,
+      "vazao": 95.9,
+      "rotas": {
+        "POST /contracts (proposta/contratação)": {
+          "n": 1011,
+          "p50": 76.1,
+          "p95": 443,
+          "p99": 555.4,
+          "max": 677,
+          "media": 144.5,
+          "requisicoes": 1011,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 33.7
+        },
+        "POST /wallet/deposits (cobrança PIX)": {
+          "n": 770,
+          "p50": 29.2,
+          "p95": 191.6,
+          "p99": 262.9,
+          "max": 456.5,
+          "media": 56.3,
+          "requisicoes": 770,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 25.7
+        },
+        "POST /wallet/deposits/:id/simulate (pagamento simulado)": {
+          "n": 382,
+          "p50": 54.8,
+          "p95": 335.4,
+          "p99": 434.3,
+          "max": 572.6,
+          "media": 104.8,
+          "requisicoes": 382,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 12.7
+        },
+        "POST /withdrawals (pedido de saque)": {
+          "n": 714,
+          "p50": 50.6,
+          "p95": 310.3,
+          "p99": 393.7,
+          "max": 479.9,
+          "media": 96.2,
+          "requisicoes": 714,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 23.8
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 0.46,
+        "memoriaMB": 253
+      },
+      "mysql": {
+        "cpu": "41.80%",
+        "mem": "1.121GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 40091,
+        "comandosPorRequisicao": 13.9,
+        "escritasPorRequisicao": 4.7,
+        "commitsExplicitosPorRequisicao": 0.7,
+        "maisCaras": [
+          {
+            "sql": "COMMIT",
+            "execucoes": 2057,
+            "msMedio": 21.04,
+            "segundosTotal": 43.3,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `audit_logs` ( `user_id` , ACTION , `entity_type` , `entity_id` , `old_value` , `new_value` , `ip_address` , `user_agent` ) VALUES (...)",
+            "execucoes": 1836,
+            "msMedio": 21.1,
+            "segundosTotal": 38.7,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "UPDATE `email_outbox` SET STATUS = ? , `sent_at` = NOW ( ) WHERE `id` = ?",
+            "execucoes": 1368,
+            "msMedio": 22.35,
+            "segundosTotal": 30.6,
+            "linhasExaminadasPorExec": 1
+          },
+          {
+            "sql": "INSERT INTO `email_outbox` ( `user_id` , `to_email` , SUBJECT , `template` , `text_body` , `html_body` , `provider` ) VALUES (...)",
+            "execucoes": 1378,
+            "msMedio": 22.01,
+            "segundosTotal": 30.3,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 2063,
+            "msMedio": 8.41,
+            "segundosTotal": 17.4,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `payments` ( `kind` , `contract_id` , `payer_id` , `payee_id` , `amount` , `platform_fee` , `net_amount` , `method` , STATUS , `gateway` , `gateway_",
+            "execucoes": 757,
+            "msMedio": 21.59,
+            "segundosTotal": 16.3,
+            "linhasExaminadasPorExec": 0
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 12,
+        "amostrasComOutrosBancos": 0,
+        "bancos": {}
+      }
+    },
+    {
+      "cenario": "escrita",
+      "modo": "vus",
+      "vus": 50,
+      "taxaAlvo": null,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 5681,
+      "erros": 0,
+      "vazao": 189.4,
+      "rotas": {
+        "POST /contracts (proposta/contratação)": {
+          "n": 1921,
+          "p50": 387,
+          "p95": 451.3,
+          "p99": 480.8,
+          "max": 512,
+          "media": 389.7,
+          "requisicoes": 1921,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 64
+        },
+        "POST /wallet/deposits (cobrança PIX)": {
+          "n": 1535,
+          "p50": 131.4,
+          "p95": 163.9,
+          "p99": 178,
+          "max": 206.2,
+          "media": 133.3,
+          "requisicoes": 1535,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 51.2
+        },
+        "POST /wallet/deposits/:id/simulate (pagamento simulado)": {
+          "n": 734,
+          "p50": 263.6,
+          "p95": 317.2,
+          "p99": 338.1,
+          "max": 360.6,
+          "media": 265.3,
+          "requisicoes": 734,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 24.5
+        },
+        "POST /withdrawals (pedido de saque)": {
+          "n": 1491,
+          "p50": 223.9,
+          "p95": 268.4,
+          "p99": 291.6,
+          "max": 373.4,
+          "media": 226.3,
+          "requisicoes": 1491,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 49.7
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 0.7,
+        "memoriaMB": 262
+      },
+      "mysql": {
+        "cpu": "83.37%",
+        "mem": "1.123GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 79110,
+        "comandosPorRequisicao": 13.9,
+        "escritasPorRequisicao": 4.7,
+        "commitsExplicitosPorRequisicao": 0.7,
+        "maisCaras": [
+          {
+            "sql": "COMMIT",
+            "execucoes": 4121,
+            "msMedio": 10.53,
+            "segundosTotal": 43.4,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `audit_logs` ( `user_id` , ACTION , `entity_type` , `entity_id` , `old_value` , `new_value` , `ip_address` , `user_agent` ) VALUES (...)",
+            "execucoes": 3721,
+            "msMedio": 10.39,
+            "segundosTotal": 38.7,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `email_outbox` ( `user_id` , `to_email` , SUBJECT , `template` , `text_body` , `html_body` , `provider` ) VALUES (...)",
+            "execucoes": 2674,
+            "msMedio": 10.7,
+            "segundosTotal": 28.6,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "UPDATE `email_outbox` SET STATUS = ? , `sent_at` = NOW ( ) WHERE `id` = ?",
+            "execucoes": 2662,
+            "msMedio": 10.76,
+            "segundosTotal": 28.6,
+            "linhasExaminadasPorExec": 1
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 4139,
+            "msMedio": 3.88,
+            "segundosTotal": 16.1,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `payments` ( `kind` , `contract_id` , `payer_id` , `payee_id` , `amount` , `platform_fee` , `net_amount` , `method` , STATUS , `gateway` , `gateway_",
+            "execucoes": 1532,
+            "msMedio": 10.41,
+            "segundosTotal": 16,
+            "linhasExaminadasPorExec": 0
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 13,
+        "amostrasComOutrosBancos": 5,
+        "bancos": {
+          "escambo_negado_test": 5,
+          "escambo_test_catalogo_bench": 3
+        }
+      }
+    },
+    {
+      "cenario": "escrita",
+      "modo": "vus",
+      "vus": 100,
+      "taxaAlvo": null,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 5631,
+      "erros": 0,
+      "vazao": 187.7,
+      "rotas": {
+        "POST /contracts (proposta/contratação)": {
+          "n": 1968,
+          "p50": 769.9,
+          "p95": 847,
+          "p99": 933.2,
+          "max": 1029.9,
+          "media": 775.1,
+          "requisicoes": 1968,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 65.6
+        },
+        "POST /wallet/deposits (cobrança PIX)": {
+          "n": 1454,
+          "p50": 256.9,
+          "p95": 303.8,
+          "p99": 340.9,
+          "max": 377.4,
+          "media": 260.4,
+          "requisicoes": 1454,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 48.5
+        },
+        "POST /wallet/deposits/:id/simulate (pagamento simulado)": {
+          "n": 714,
+          "p50": 519.9,
+          "p95": 580.1,
+          "p99": 622.6,
+          "max": 663.8,
+          "media": 522.9,
+          "requisicoes": 714,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 23.8
+        },
+        "POST /withdrawals (pedido de saque)": {
+          "n": 1495,
+          "p50": 434.5,
+          "p95": 501.4,
+          "p99": 574,
+          "max": 662.2,
+          "media": 439,
+          "requisicoes": 1495,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 49.8
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 0.7,
+        "memoriaMB": 259
+      },
+      "mysql": {
+        "cpu": "80.29%",
+        "mem": "1.139GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 80784,
+        "comandosPorRequisicao": 14.3,
+        "escritasPorRequisicao": 4.9,
+        "commitsExplicitosPorRequisicao": 0.7,
+        "maisCaras": [
+          {
+            "sql": "COMMIT",
+            "execucoes": 4207,
+            "msMedio": 10.27,
+            "segundosTotal": 43.2,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `audit_logs` ( `user_id` , ACTION , `entity_type` , `entity_id` , `old_value` , `new_value` , `ip_address` , `user_agent` ) VALUES (...)",
+            "execucoes": 3653,
+            "msMedio": 10.15,
+            "segundosTotal": 37.1,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "UPDATE `email_outbox` SET STATUS = ? , `sent_at` = NOW ( ) WHERE `id` = ?",
+            "execucoes": 2739,
+            "msMedio": 10.6,
+            "segundosTotal": 29,
+            "linhasExaminadasPorExec": 1
+          },
+          {
+            "sql": "INSERT INTO `email_outbox` ( `user_id` , `to_email` , SUBJECT , `template` , `text_body` , `html_body` , `provider` ) VALUES (...)",
+            "execucoes": 2735,
+            "msMedio": 10.43,
+            "segundosTotal": 28.5,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 4225,
+            "msMedio": 3.73,
+            "segundosTotal": 15.8,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `payments` ( `kind` , `contract_id` , `payer_id` , `payee_id` , `amount` , `platform_fee` , `net_amount` , `method` , STATUS , `gateway` , `gateway_",
+            "execucoes": 1458,
+            "msMedio": 10.15,
+            "segundosTotal": 14.8,
+            "linhasExaminadasPorExec": 0
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 13,
+        "amostrasComOutrosBancos": 9,
+        "bancos": {
+          "escambo_test_catalogo_bench": 5,
+          "escambo_test_catalogo_bench100": 4
+        }
+      }
+    }
+  ],
+  "escritaTaxa": [
+    {
+      "cenario": "escrita",
+      "modo": "taxa",
+      "vus": null,
+      "taxaAlvo": 25,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 29.999999999999943,
+      "requisicoes": 862,
+      "erros": 0,
+      "vazao": 28.7,
+      "rotas": {
+        "POST /contracts (proposta/contratação)": {
+          "n": 288,
+          "p50": 23.4,
+          "p95": 30.7,
+          "p99": 41.2,
+          "max": 43.1,
+          "media": 24.2,
+          "requisicoes": 288,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 9.6
+        },
+        "POST /wallet/deposits (cobrança PIX)": {
+          "n": 240,
+          "p50": 9.9,
+          "p95": 13.7,
+          "p99": 16.7,
+          "max": 20.8,
+          "media": 10.3,
+          "requisicoes": 240,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 8
+        },
+        "POST /wallet/deposits/:id/simulate (pagamento simulado)": {
+          "n": 112,
+          "p50": 18.2,
+          "p95": 24.2,
+          "p99": 26.2,
+          "max": 26.5,
+          "media": 18.7,
+          "requisicoes": 112,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 3.7
+        },
+        "POST /withdrawals (pedido de saque)": {
+          "n": 222,
+          "p50": 18.2,
+          "p95": 24.6,
+          "p99": 28.9,
+          "max": 34.4,
+          "media": 18.9,
+          "requisicoes": 222,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 7.4
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 0.13,
+        "memoriaMB": 148
+      },
+      "mysql": {
+        "cpu": "113.59%",
+        "mem": "1.171GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 11816,
+        "comandosPorRequisicao": 13.7,
+        "escritasPorRequisicao": 4.7,
+        "commitsExplicitosPorRequisicao": 0.7,
+        "maisCaras": [
+          {
+            "sql": "INSERT INTO `audit_logs` ( `user_id` , ACTION , `entity_type` , `entity_id` , `old_value` , `new_value` , `ip_address` , `user_agent` ) VALUES (...)",
+            "execucoes": 574,
+            "msMedio": 5.62,
+            "segundosTotal": 3.2,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "COMMIT",
+            "execucoes": 622,
+            "msMedio": 5.07,
+            "segundosTotal": 3.2,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "UPDATE `email_outbox` SET STATUS = ? , `sent_at` = NOW ( ) WHERE `id` = ?",
+            "execucoes": 400,
+            "msMedio": 6.07,
+            "segundosTotal": 2.4,
+            "linhasExaminadasPorExec": 1
+          },
+          {
+            "sql": "INSERT INTO `email_outbox` ( `user_id` , `to_email` , SUBJECT , `template` , `text_body` , `html_body` , `provider` ) VALUES (...)",
+            "execucoes": 400,
+            "msMedio": 5.65,
+            "segundosTotal": 2.3,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 623,
+            "msMedio": 2.84,
+            "segundosTotal": 1.8,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `payments` ( `kind` , `contract_id` , `payer_id` , `payee_id` , `amount` , `platform_fee` , `net_amount` , `method` , STATUS , `gateway` , `gateway_",
+            "execucoes": 240,
+            "msMedio": 5.84,
+            "segundosTotal": 1.4,
+            "linhasExaminadasPorExec": 0
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 13,
+        "amostrasComOutrosBancos": 13,
+        "bancos": {
+          "escambo_test_catalogo_bench100": 13
+        }
+      }
+    },
+    {
+      "cenario": "escrita",
+      "modo": "taxa",
+      "vus": null,
+      "taxaAlvo": 50,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 1623,
+      "erros": 0,
+      "vazao": 54.1,
+      "rotas": {
+        "POST /contracts (proposta/contratação)": {
+          "n": 547,
+          "p50": 86,
+          "p95": 1279.4,
+          "p99": 1682.7,
+          "max": 2009.5,
+          "media": 319.9,
+          "requisicoes": 547,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 18.2
+        },
+        "POST /wallet/deposits (cobrança PIX)": {
+          "n": 428,
+          "p50": 42.9,
+          "p95": 561.3,
+          "p99": 905.8,
+          "max": 985.1,
+          "media": 145.7,
+          "requisicoes": 428,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 14.3
+        },
+        "POST /wallet/deposits/:id/simulate (pagamento simulado)": {
+          "n": 201,
+          "p50": 77.5,
+          "p95": 918.8,
+          "p99": 1255.4,
+          "max": 1462.2,
+          "media": 251.2,
+          "requisicoes": 201,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 6.7
+        },
+        "POST /withdrawals (pedido de saque)": {
+          "n": 447,
+          "p50": 64.3,
+          "p95": 766.5,
+          "p99": 1133.2,
+          "max": 1386.2,
+          "media": 197.6,
+          "requisicoes": 447,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 14.9
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 0.31,
+        "memoriaMB": 153
+      },
+      "mysql": {
+        "cpu": "140.33%",
+        "mem": "1.188GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 22467,
+        "comandosPorRequisicao": 13.8,
+        "escritasPorRequisicao": 4.7,
+        "commitsExplicitosPorRequisicao": 0.7,
+        "maisCaras": [
+          {
+            "sql": "COMMIT",
+            "execucoes": 1169,
+            "msMedio": 21.82,
+            "segundosTotal": 25.5,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `audit_logs` ( `user_id` , ACTION , `entity_type` , `entity_id` , `old_value` , `new_value` , `ip_address` , `user_agent` ) VALUES (...)",
+            "execucoes": 1041,
+            "msMedio": 22.53,
+            "segundosTotal": 23.5,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "UPDATE `email_outbox` SET STATUS = ? , `sent_at` = NOW ( ) WHERE `id` = ?",
+            "execucoes": 725,
+            "msMedio": 20.46,
+            "segundosTotal": 14.8,
+            "linhasExaminadasPorExec": 1
+          },
+          {
+            "sql": "INSERT INTO `email_outbox` ( `user_id` , `to_email` , SUBJECT , `template` , `text_body` , `html_body` , `provider` ) VALUES (...)",
+            "execucoes": 734,
+            "msMedio": 19.84,
+            "segundosTotal": 14.6,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `payments` ( `kind` , `contract_id` , `payer_id` , `payee_id` , `amount` , `platform_fee` , `net_amount` , `method` , STATUS , `gateway` , `gateway_",
+            "execucoes": 431,
+            "msMedio": 29.6,
+            "segundosTotal": 12.8,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 1180,
+            "msMedio": 9.9,
+            "segundosTotal": 11.7,
+            "linhasExaminadasPorExec": 0
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 13,
+        "amostrasComOutrosBancos": 13,
+        "bancos": {
+          "escambo_test_catalogo_bench100": 13
+        }
+      }
+    },
+    {
+      "cenario": "escrita",
+      "modo": "taxa",
+      "vus": null,
+      "taxaAlvo": 100,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 1135,
+      "erros": 0,
+      "vazao": 37.8,
+      "rotas": {
+        "POST /contracts (proposta/contratação)": {
+          "n": 205,
+          "p50": 23581.7,
+          "p95": 25081.7,
+          "p99": 25108.9,
+          "max": 25128.1,
+          "media": 24005.6,
+          "requisicoes": 205,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 6.8
+        },
+        "POST /wallet/deposits (cobrança PIX)": {
+          "n": 482,
+          "p50": 12533,
+          "p95": 16775.6,
+          "p99": 16884.4,
+          "max": 16899.1,
+          "media": 12227.3,
+          "requisicoes": 482,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 16.1
+        },
+        "POST /wallet/deposits/:id/simulate (pagamento simulado)": {
+          "n": 114,
+          "p50": 18298.5,
+          "p95": 19989.5,
+          "p99": 20737,
+          "max": 20752.5,
+          "media": 17932.7,
+          "requisicoes": 114,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 3.8
+        },
+        "POST /withdrawals (pedido de saque)": {
+          "n": 334,
+          "p50": 16891.2,
+          "p95": 19380.1,
+          "p99": 19436.9,
+          "max": 20138.8,
+          "media": 16316.9,
+          "requisicoes": 334,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 11.1
+        }
+      },
+      "descartadasPeloCliente": 207,
+      "api": {
+        "cpuNucleos": 0.39,
+        "memoriaMB": 333
+      },
+      "mysql": {
+        "cpu": "72.38%",
+        "mem": "1.198GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 26265,
+        "comandosPorRequisicao": 23.1,
+        "escritasPorRequisicao": 7.1,
+        "commitsExplicitosPorRequisicao": 1.1,
+        "maisCaras": [
+          {
+            "sql": "COMMIT",
+            "execucoes": 1271,
+            "msMedio": 37.29,
+            "segundosTotal": 47.4,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `audit_logs` ( `user_id` , ACTION , `entity_type` , `entity_id` , `old_value` , `new_value` , `ip_address` , `user_agent` ) VALUES (...)",
+            "execucoes": 1140,
+            "msMedio": 37.5,
+            "segundosTotal": 42.8,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `payments` ( `kind` , `contract_id` , `payer_id` , `payee_id` , `amount` , `platform_fee` , `net_amount` , `method` , STATUS , `gateway` , `gateway_",
+            "execucoes": 622,
+            "msMedio": 35.31,
+            "segundosTotal": 22,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 1367,
+            "msMedio": 15.31,
+            "segundosTotal": 20.9,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "INSERT INTO `email_outbox` ( `user_id` , `to_email` , SUBJECT , `template` , `text_body` , `html_body` , `provider` ) VALUES (...)",
+            "execucoes": 579,
+            "msMedio": 30.51,
+            "segundosTotal": 17.7,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "UPDATE `email_outbox` SET STATUS = ? , `sent_at` = NOW ( ) WHERE `id` = ?",
+            "execucoes": 494,
+            "msMedio": 27.04,
+            "segundosTotal": 13.4,
+            "linhasExaminadasPorExec": 1
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 12,
+        "amostrasComOutrosBancos": 12,
+        "bancos": {
+          "escambo_test_catalogo": 12
+        }
+      }
+    }
+  ],
+  "leitura": [
+    {
+      "cenario": "leitura",
+      "modo": "vus",
+      "vus": 10,
+      "taxaAlvo": null,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 8537,
+      "erros": 0,
+      "vazao": 284.6,
+      "rotas": {
+        "GET /categories": {
+          "n": 416,
+          "p50": 2.8,
+          "p95": 6.1,
+          "p99": 8.3,
+          "max": 14.2,
+          "media": 3.3,
+          "requisicoes": 416,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 13.9
+        },
+        "GET /gamification/leaderboard (ranking)": {
+          "n": 394,
+          "p50": 4.5,
+          "p95": 9.2,
+          "p99": 20.7,
+          "max": 49.5,
+          "media": 5.3,
+          "requisicoes": 394,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 13.1
+        },
+        "GET /profiles/freelancer/:ulid (perfil público)": {
+          "n": 846,
+          "p50": 5,
+          "p95": 11.2,
+          "p99": 21.6,
+          "max": 42.1,
+          "media": 6,
+          "requisicoes": 846,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 28.2
+        },
+        "GET /services (busca sem texto)": {
+          "n": 1317,
+          "p50": 112.5,
+          "p95": 143.2,
+          "p99": 169.8,
+          "max": 236,
+          "media": 114.8,
+          "requisicoes": 1317,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 43.9
+        },
+        "GET /services (categoria + preço + ordem)": {
+          "n": 870,
+          "p50": 6.1,
+          "p95": 11.3,
+          "p99": 18.8,
+          "max": 80,
+          "media": 6.9,
+          "requisicoes": 870,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 29
+        },
+        "GET /services (proximidade lat/lng)": {
+          "n": 443,
+          "p50": 67.5,
+          "p95": 87.3,
+          "p99": 105,
+          "max": 137.8,
+          "media": 69,
+          "requisicoes": 443,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 14.8
+        },
+        "GET /services/:id (detalhe)": {
+          "n": 1263,
+          "p50": 2.2,
+          "p95": 5.7,
+          "p99": 10.7,
+          "max": 23.3,
+          "media": 2.8,
+          "requisicoes": 1263,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 42.1
+        },
+        "GET /services?q= (busca com texto)": {
+          "n": 1311,
+          "p50": 55.5,
+          "p95": 74.5,
+          "p99": 90.6,
+          "max": 189.1,
+          "media": 56.8,
+          "requisicoes": 1311,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 43.7
+        },
+        "GET /wallet (carteira)": {
+          "n": 825,
+          "p50": 19.7,
+          "p95": 40.2,
+          "p99": 88,
+          "max": 212.7,
+          "media": 23,
+          "requisicoes": 825,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 27.5
+        },
+        "GET /wallet/transactions (extrato)": {
+          "n": 852,
+          "p50": 5.2,
+          "p95": 11.9,
+          "p99": 27.3,
+          "max": 83.7,
+          "media": 6.3,
+          "requisicoes": 852,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 28.4
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 0.62,
+        "memoriaMB": 356
+      },
+      "mysql": {
+        "cpu": "781.17%",
+        "mem": "1.217GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 18171,
+        "comandosPorRequisicao": 2.1,
+        "escritasPorRequisicao": 0.2,
+        "commitsExplicitosPorRequisicao": 0,
+        "maisCaras": [
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 1320,
+            "msMedio": 110.31,
+            "segundosTotal": 145.6,
+            "linhasExaminadasPorExec": 30038
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 1312,
+            "msMedio": 52.37,
+            "segundosTotal": 68.7,
+            "linhasExaminadasPorExec": 10835
+          },
+          {
+            "sql": "SELECT * FROM ( SELECT `s` . * , ( ? * `ACOS` ( `LEAST` ( ? , `COS` ( `RADIANS` (?) ) * `COS` ( `RADIANS` ( `pf` . `latitude` ) ) * `COS` ( `RADIANS` ( `pf` . `",
+            "execucoes": 445,
+            "msMedio": 64.58,
+            "segundosTotal": 28.7,
+            "linhasExaminadasPorExec": 1279
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 1644,
+            "msMedio": 4.06,
+            "segundosTotal": 6.7,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 871,
+            "msMedio": 2.39,
+            "segundosTotal": 2.1,
+            "linhasExaminadasPorExec": 648
+          },
+          {
+            "sql": "SELECT `id` , `ulid` , ROLE , STATUS , `deleted_at` FROM `users` WHERE `id` = ? AND `ulid` = ? LIMIT ?",
+            "execucoes": 2072,
+            "msMedio": 0.23,
+            "segundosTotal": 0.5,
+            "linhasExaminadasPorExec": 1
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 13,
+        "amostrasComOutrosBancos": 7,
+        "bancos": {
+          "escambo_test_catalogo_migtest_support": 5,
+          "escambo_test_catalogo": 2
+        }
+      }
+    },
+    {
+      "cenario": "leitura",
+      "modo": "vus",
+      "vus": 50,
+      "taxaAlvo": null,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 9503,
+      "erros": 0,
+      "vazao": 316.8,
+      "rotas": {
+        "GET /categories": {
+          "n": 492,
+          "p50": 79,
+          "p95": 130.5,
+          "p99": 150.5,
+          "max": 176.2,
+          "media": 81.8,
+          "requisicoes": 492,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 16.4
+        },
+        "GET /gamification/leaderboard (ranking)": {
+          "n": 456,
+          "p50": 147.8,
+          "p95": 219.7,
+          "p99": 241.6,
+          "max": 286,
+          "media": 152.4,
+          "requisicoes": 456,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 15.2
+        },
+        "GET /profiles/freelancer/:ulid (perfil público)": {
+          "n": 932,
+          "p50": 152.1,
+          "p95": 225.1,
+          "p99": 257.6,
+          "max": 306.2,
+          "media": 157.7,
+          "requisicoes": 932,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 31.1
+        },
+        "GET /services (busca sem texto)": {
+          "n": 1409,
+          "p50": 186.4,
+          "p95": 240.7,
+          "p99": 271,
+          "max": 308,
+          "media": 189.7,
+          "requisicoes": 1409,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 47
+        },
+        "GET /services (categoria + preço + ordem)": {
+          "n": 1005,
+          "p50": 80.9,
+          "p95": 129,
+          "p99": 149.5,
+          "max": 223.1,
+          "media": 83.9,
+          "requisicoes": 1005,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 33.5
+        },
+        "GET /services (proximidade lat/lng)": {
+          "n": 473,
+          "p50": 143.2,
+          "p95": 199.1,
+          "p99": 232.1,
+          "max": 287.1,
+          "media": 146.8,
+          "requisicoes": 473,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 15.8
+        },
+        "GET /services/:id (detalhe)": {
+          "n": 1482,
+          "p50": 74.9,
+          "p95": 122.5,
+          "p99": 146.4,
+          "max": 209.5,
+          "media": 78.5,
+          "requisicoes": 1482,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 49.4
+        },
+        "GET /services?q= (busca com texto)": {
+          "n": 1419,
+          "p50": 129.2,
+          "p95": 180.5,
+          "p99": 204,
+          "max": 268.4,
+          "media": 132.6,
+          "requisicoes": 1419,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 47.3
+        },
+        "GET /wallet (carteira)": {
+          "n": 901,
+          "p50": 400,
+          "p95": 511.5,
+          "p99": 550.2,
+          "max": 579.2,
+          "media": 399.2,
+          "requisicoes": 901,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 30
+        },
+        "GET /wallet/transactions (extrato)": {
+          "n": 934,
+          "p50": 153.8,
+          "p95": 217,
+          "p99": 242.8,
+          "max": 273.8,
+          "media": 155.2,
+          "requisicoes": 934,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 31.1
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 0.64,
+        "memoriaMB": 368
+      },
+      "mysql": {
+        "cpu": "883.41%",
+        "mem": "1.217GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 20290,
+        "comandosPorRequisicao": 2.1,
+        "escritasPorRequisicao": 0.2,
+        "commitsExplicitosPorRequisicao": 0,
+        "maisCaras": [
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 1418,
+            "msMedio": 108.26,
+            "segundosTotal": 153.5,
+            "linhasExaminadasPorExec": 30059
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 1424,
+            "msMedio": 51.75,
+            "segundosTotal": 73.7,
+            "linhasExaminadasPorExec": 10822
+          },
+          {
+            "sql": "SELECT * FROM ( SELECT `s` . * , ( ? * `ACOS` ( `LEAST` ( ? , `COS` ( `RADIANS` (?) ) * `COS` ( `RADIANS` ( `pf` . `latitude` ) ) * `COS` ( `RADIANS` ( `pf` . `",
+            "execucoes": 475,
+            "msMedio": 64.57,
+            "segundosTotal": 30.7,
+            "linhasExaminadasPorExec": 1290
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 1815,
+            "msMedio": 3.42,
+            "segundosTotal": 6.2,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 1008,
+            "msMedio": 2.37,
+            "segundosTotal": 2.4,
+            "linhasExaminadasPorExec": 648
+          },
+          {
+            "sql": "SELECT `id` , `ulid` , ROLE , STATUS , `deleted_at` FROM `users` WHERE `id` = ? AND `ulid` = ? LIMIT ?",
+            "execucoes": 2311,
+            "msMedio": 0.19,
+            "segundosTotal": 0.4,
+            "linhasExaminadasPorExec": 1
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 13,
+        "amostrasComOutrosBancos": 1,
+        "bancos": {
+          "escambo_test_catalogo": 1
+        }
+      }
+    },
+    {
+      "cenario": "leitura",
+      "modo": "vus",
+      "vus": 100,
+      "taxaAlvo": null,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 9096,
+      "erros": 0,
+      "vazao": 303.2,
+      "rotas": {
+        "GET /categories": {
+          "n": 463,
+          "p50": 178.8,
+          "p95": 255.2,
+          "p99": 301.4,
+          "max": 369.2,
+          "media": 182.1,
+          "requisicoes": 463,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 15.4
+        },
+        "GET /gamification/leaderboard (ranking)": {
+          "n": 453,
+          "p50": 352.9,
+          "p95": 475.4,
+          "p99": 568.8,
+          "max": 589.1,
+          "media": 356.8,
+          "requisicoes": 453,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 15.1
+        },
+        "GET /profiles/freelancer/:ulid (perfil público)": {
+          "n": 907,
+          "p50": 352,
+          "p95": 472.5,
+          "p99": 561.1,
+          "max": 603.7,
+          "media": 358.9,
+          "requisicoes": 907,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 30.2
+        },
+        "GET /services (busca sem texto)": {
+          "n": 1347,
+          "p50": 290.3,
+          "p95": 376.4,
+          "p99": 427.7,
+          "max": 484.8,
+          "media": 293.5,
+          "requisicoes": 1347,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 44.9
+        },
+        "GET /services (categoria + preço + ordem)": {
+          "n": 893,
+          "p50": 185.7,
+          "p95": 271.2,
+          "p99": 317.4,
+          "max": 371.1,
+          "media": 189.4,
+          "requisicoes": 893,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 29.8
+        },
+        "GET /services (proximidade lat/lng)": {
+          "n": 501,
+          "p50": 248,
+          "p95": 319.6,
+          "p99": 363.6,
+          "max": 447.7,
+          "media": 249.1,
+          "requisicoes": 501,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 16.7
+        },
+        "GET /services/:id (detalhe)": {
+          "n": 1341,
+          "p50": 176.2,
+          "p95": 244.7,
+          "p99": 297.4,
+          "max": 367.5,
+          "media": 179.4,
+          "requisicoes": 1341,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 44.7
+        },
+        "GET /services?q= (busca com texto)": {
+          "n": 1400,
+          "p50": 230.2,
+          "p95": 313.4,
+          "p99": 358.7,
+          "max": 451,
+          "media": 235.1,
+          "requisicoes": 1400,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 46.7
+        },
+        "GET /wallet (carteira)": {
+          "n": 910,
+          "p50": 875,
+          "p95": 1103.1,
+          "p99": 1306.6,
+          "max": 1336.2,
+          "media": 885.2,
+          "requisicoes": 910,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 30.3
+        },
+        "GET /wallet/transactions (extrato)": {
+          "n": 881,
+          "p50": 349.1,
+          "p95": 470,
+          "p99": 582.7,
+          "max": 607.8,
+          "media": 357.5,
+          "requisicoes": 881,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 29.4
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 0.65,
+        "memoriaMB": 366
+      },
+      "mysql": {
+        "cpu": "877.32%",
+        "mem": "1.217GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 20186,
+        "comandosPorRequisicao": 2.2,
+        "escritasPorRequisicao": 0.2,
+        "commitsExplicitosPorRequisicao": 0,
+        "maisCaras": [
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 1360,
+            "msMedio": 110.06,
+            "segundosTotal": 149.7,
+            "linhasExaminadasPorExec": 30059
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 1415,
+            "msMedio": 52.54,
+            "segundosTotal": 74.3,
+            "linhasExaminadasPorExec": 10832
+          },
+          {
+            "sql": "SELECT * FROM ( SELECT `s` . * , ( ? * `ACOS` ( `LEAST` ( ? , `COS` ( `RADIANS` (?) ) * `COS` ( `RADIANS` ( `pf` . `latitude` ) ) * `COS` ( `RADIANS` ( `pf` . `",
+            "execucoes": 506,
+            "msMedio": 64.52,
+            "segundosTotal": 32.6,
+            "linhasExaminadasPorExec": 1275
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 1865,
+            "msMedio": 3.47,
+            "segundosTotal": 6.5,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 900,
+            "msMedio": 2.44,
+            "segundosTotal": 2.2,
+            "linhasExaminadasPorExec": 647
+          },
+          {
+            "sql": "SELECT `id` , `ulid` , ROLE , STATUS , `deleted_at` FROM `users` WHERE `id` = ? AND `ulid` = ? LIMIT ?",
+            "execucoes": 2290,
+            "msMedio": 0.19,
+            "segundosTotal": 0.4,
+            "linhasExaminadasPorExec": 1
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 13,
+        "amostrasComOutrosBancos": 2,
+        "bancos": {
+          "escambo_test_catalogo": 2
+        }
+      }
+    }
+  ],
+  "leituraTaxa": [
+    {
+      "cenario": "leitura",
+      "modo": "taxa",
+      "vus": null,
+      "taxaAlvo": 50,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 1498,
+      "erros": 0,
+      "vazao": 49.9,
+      "rotas": {
+        "GET /categories": {
+          "n": 80,
+          "p50": 2.3,
+          "p95": 3,
+          "p99": 5.5,
+          "max": 5.5,
+          "media": 2.3,
+          "requisicoes": 80,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 2.7
+        },
+        "GET /gamification/leaderboard (ranking)": {
+          "n": 83,
+          "p50": 3.5,
+          "p95": 4.4,
+          "p99": 10.3,
+          "max": 10.3,
+          "media": 3.6,
+          "requisicoes": 83,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 2.8
+        },
+        "GET /profiles/freelancer/:ulid (perfil público)": {
+          "n": 146,
+          "p50": 3.3,
+          "p95": 4,
+          "p99": 4.8,
+          "max": 5.4,
+          "media": 3.3,
+          "requisicoes": 146,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 4.9
+        },
+        "GET /services (busca sem texto)": {
+          "n": 213,
+          "p50": 57.9,
+          "p95": 72.8,
+          "p99": 81.4,
+          "max": 84,
+          "media": 59.9,
+          "requisicoes": 213,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 7.1
+        },
+        "GET /services (categoria + preço + ordem)": {
+          "n": 155,
+          "p50": 4.4,
+          "p95": 5.7,
+          "p99": 6.8,
+          "max": 7.8,
+          "media": 4.5,
+          "requisicoes": 155,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 5.2
+        },
+        "GET /services (proximidade lat/lng)": {
+          "n": 57,
+          "p50": 35,
+          "p95": 43.5,
+          "p99": 55.9,
+          "max": 55.9,
+          "media": 35.7,
+          "requisicoes": 57,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 1.9
+        },
+        "GET /services/:id (detalhe)": {
+          "n": 205,
+          "p50": 2.1,
+          "p95": 2.5,
+          "p99": 3.3,
+          "max": 12.4,
+          "media": 2.1,
+          "requisicoes": 205,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 6.8
+        },
+        "GET /services?q= (busca com texto)": {
+          "n": 212,
+          "p50": 31,
+          "p95": 41.7,
+          "p99": 46.2,
+          "max": 52.7,
+          "media": 32.4,
+          "requisicoes": 212,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 7.1
+        },
+        "GET /wallet (carteira)": {
+          "n": 165,
+          "p50": 12.8,
+          "p95": 16.2,
+          "p99": 18.1,
+          "max": 18.4,
+          "media": 13.1,
+          "requisicoes": 165,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 5.5
+        },
+        "GET /wallet/transactions (extrato)": {
+          "n": 182,
+          "p50": 3.8,
+          "p95": 4.8,
+          "p99": 5.8,
+          "max": 6.4,
+          "media": 3.9,
+          "requisicoes": 182,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 6.1
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 0.12,
+        "memoriaMB": 353
+      },
+      "mysql": {
+        "cpu": "92.65%",
+        "mem": "1.217GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 3360,
+        "comandosPorRequisicao": 2.2,
+        "escritasPorRequisicao": 0.2,
+        "commitsExplicitosPorRequisicao": 0,
+        "maisCaras": [
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 213,
+            "msMedio": 57.02,
+            "segundosTotal": 12.1,
+            "linhasExaminadasPorExec": 30065
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 212,
+            "msMedio": 29.54,
+            "segundosTotal": 6.3,
+            "linhasExaminadasPorExec": 10822
+          },
+          {
+            "sql": "SELECT * FROM ( SELECT `s` . * , ( ? * `ACOS` ( `LEAST` ( ? , `COS` ( `RADIANS` (?) ) * `COS` ( `RADIANS` ( `pf` . `latitude` ) ) * `COS` ( `RADIANS` ( `pf` . `",
+            "execucoes": 57,
+            "msMedio": 32.68,
+            "segundosTotal": 1.9,
+            "linhasExaminadasPorExec": 1271
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 330,
+            "msMedio": 2.67,
+            "segundosTotal": 0.9,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 155,
+            "msMedio": 1.77,
+            "segundosTotal": 0.3,
+            "linhasExaminadasPorExec": 648
+          },
+          {
+            "sql": "SELECT `id` , `ulid` , ROLE , STATUS , `deleted_at` FROM `users` WHERE `id` = ? AND `ulid` = ? LIMIT ?",
+            "execucoes": 430,
+            "msMedio": 0.27,
+            "segundosTotal": 0.1,
+            "linhasExaminadasPorExec": 1
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 13,
+        "amostrasComOutrosBancos": 4,
+        "bancos": {
+          "escambo_test_catalogo": 4
+        }
+      }
+    },
+    {
+      "cenario": "leitura",
+      "modo": "taxa",
+      "vus": null,
+      "taxaAlvo": 100,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 2999,
+      "erros": 0,
+      "vazao": 100,
+      "rotas": {
+        "GET /categories": {
+          "n": 146,
+          "p50": 2.3,
+          "p95": 3.6,
+          "p99": 5,
+          "max": 5.1,
+          "media": 2.4,
+          "requisicoes": 146,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 4.9
+        },
+        "GET /gamification/leaderboard (ranking)": {
+          "n": 174,
+          "p50": 3.3,
+          "p95": 4.8,
+          "p99": 5.8,
+          "max": 6.5,
+          "media": 3.5,
+          "requisicoes": 174,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 5.8
+        },
+        "GET /profiles/freelancer/:ulid (perfil público)": {
+          "n": 297,
+          "p50": 3.3,
+          "p95": 4.5,
+          "p99": 5.2,
+          "max": 6.6,
+          "media": 3.3,
+          "requisicoes": 297,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 9.9
+        },
+        "GET /services (busca sem texto)": {
+          "n": 468,
+          "p50": 63.6,
+          "p95": 89.5,
+          "p99": 102.7,
+          "max": 114.5,
+          "media": 66.2,
+          "requisicoes": 468,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 15.6
+        },
+        "GET /services (categoria + preço + ordem)": {
+          "n": 318,
+          "p50": 4.4,
+          "p95": 6.2,
+          "p99": 7.1,
+          "max": 8.2,
+          "media": 4.5,
+          "requisicoes": 318,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 10.6
+        },
+        "GET /services (proximidade lat/lng)": {
+          "n": 129,
+          "p50": 36.6,
+          "p95": 58.1,
+          "p99": 62.7,
+          "max": 70.1,
+          "media": 39.3,
+          "requisicoes": 129,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 4.3
+        },
+        "GET /services/:id (detalhe)": {
+          "n": 424,
+          "p50": 2,
+          "p95": 3,
+          "p99": 4.3,
+          "max": 7.3,
+          "media": 2,
+          "requisicoes": 424,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 14.1
+        },
+        "GET /services?q= (busca com texto)": {
+          "n": 440,
+          "p50": 32.8,
+          "p95": 48.1,
+          "p99": 58.9,
+          "max": 61.4,
+          "media": 34.5,
+          "requisicoes": 440,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 14.7
+        },
+        "GET /wallet (carteira)": {
+          "n": 286,
+          "p50": 13.1,
+          "p95": 17.9,
+          "p99": 21.2,
+          "max": 25.6,
+          "media": 13.6,
+          "requisicoes": 286,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 9.5
+        },
+        "GET /wallet/transactions (extrato)": {
+          "n": 317,
+          "p50": 3.7,
+          "p95": 5.1,
+          "p99": 5.6,
+          "max": 6,
+          "media": 3.8,
+          "requisicoes": 317,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 10.6
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 0.21,
+        "memoriaMB": 354
+      },
+      "mysql": {
+        "cpu": "212.37%",
+        "mem": "1.218GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 6389,
+        "comandosPorRequisicao": 2.1,
+        "escritasPorRequisicao": 0.2,
+        "commitsExplicitosPorRequisicao": 0,
+        "maisCaras": [
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 469,
+            "msMedio": 63.23,
+            "segundosTotal": 29.7,
+            "linhasExaminadasPorExec": 30059
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 440,
+            "msMedio": 31.62,
+            "segundosTotal": 13.9,
+            "linhasExaminadasPorExec": 10824
+          },
+          {
+            "sql": "SELECT * FROM ( SELECT `s` . * , ( ? * `ACOS` ( `LEAST` ( ? , `COS` ( `RADIANS` (?) ) * `COS` ( `RADIANS` ( `pf` . `latitude` ) ) * `COS` ( `RADIANS` ( `pf` . `",
+            "execucoes": 129,
+            "msMedio": 36.29,
+            "segundosTotal": 4.7,
+            "linhasExaminadasPorExec": 1264
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 572,
+            "msMedio": 2.8,
+            "segundosTotal": 1.6,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 318,
+            "msMedio": 1.77,
+            "segundosTotal": 0.6,
+            "linhasExaminadasPorExec": 649
+          },
+          {
+            "sql": "SELECT `id` , `ulid` , ROLE , STATUS , `deleted_at` FROM `users` WHERE `id` = ? AND `ulid` = ? LIMIT ?",
+            "execucoes": 777,
+            "msMedio": 0.23,
+            "segundosTotal": 0.2,
+            "linhasExaminadasPorExec": 1
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 13,
+        "amostrasComOutrosBancos": 4,
+        "bancos": {
+          "escambo_catalogo_test": 4
+        }
+      }
+    },
+    {
+      "cenario": "leitura",
+      "modo": "taxa",
+      "vus": null,
+      "taxaAlvo": 200,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 5995,
+      "erros": 0,
+      "vazao": 199.8,
+      "rotas": {
+        "GET /categories": {
+          "n": 289,
+          "p50": 3.4,
+          "p95": 95.7,
+          "p99": 176.9,
+          "max": 190.1,
+          "media": 15.5,
+          "requisicoes": 289,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 9.6
+        },
+        "GET /gamification/leaderboard (ranking)": {
+          "n": 310,
+          "p50": 4.9,
+          "p95": 76,
+          "p99": 176.2,
+          "max": 251.6,
+          "media": 15.3,
+          "requisicoes": 310,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 10.3
+        },
+        "GET /profiles/freelancer/:ulid (perfil público)": {
+          "n": 561,
+          "p50": 4.8,
+          "p95": 157.7,
+          "p99": 230.8,
+          "max": 280.9,
+          "media": 24.3,
+          "requisicoes": 561,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 18.7
+        },
+        "GET /services (busca sem texto)": {
+          "n": 872,
+          "p50": 104.2,
+          "p95": 220.6,
+          "p99": 268.9,
+          "max": 321.6,
+          "media": 116.4,
+          "requisicoes": 872,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 29.1
+        },
+        "GET /services (categoria + preço + ordem)": {
+          "n": 645,
+          "p50": 6.2,
+          "p95": 74.4,
+          "p99": 119.9,
+          "max": 177.5,
+          "media": 15.2,
+          "requisicoes": 645,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 21.5
+        },
+        "GET /services (proximidade lat/lng)": {
+          "n": 300,
+          "p50": 59.8,
+          "p95": 181,
+          "p99": 214.5,
+          "max": 223,
+          "media": 74.2,
+          "requisicoes": 300,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 10
+        },
+        "GET /services/:id (detalhe)": {
+          "n": 923,
+          "p50": 2.7,
+          "p95": 74.3,
+          "p99": 116.3,
+          "max": 177.8,
+          "media": 11.4,
+          "requisicoes": 923,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 30.8
+        },
+        "GET /services?q= (busca com texto)": {
+          "n": 910,
+          "p50": 52.5,
+          "p95": 125.3,
+          "p99": 186.2,
+          "max": 252.2,
+          "media": 61.6,
+          "requisicoes": 910,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 30.3
+        },
+        "GET /wallet (carteira)": {
+          "n": 596,
+          "p50": 18.3,
+          "p95": 241.5,
+          "p99": 530.2,
+          "max": 585.7,
+          "media": 52.3,
+          "requisicoes": 596,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 19.9
+        },
+        "GET /wallet/transactions (extrato)": {
+          "n": 589,
+          "p50": 5.6,
+          "p95": 181.6,
+          "p99": 227.9,
+          "max": 276.2,
+          "media": 27.2,
+          "requisicoes": 589,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 19.6
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 0.48,
+        "memoriaMB": 357
+      },
+      "mysql": {
+        "cpu": "630.76%",
+        "mem": "1.09GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 12759,
+        "comandosPorRequisicao": 2.1,
+        "escritasPorRequisicao": 0.2,
+        "commitsExplicitosPorRequisicao": 0,
+        "maisCaras": [
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 874,
+            "msMedio": 103.05,
+            "segundosTotal": 90.1,
+            "linhasExaminadasPorExec": 30061
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 910,
+            "msMedio": 49.66,
+            "segundosTotal": 45.2,
+            "linhasExaminadasPorExec": 10856
+          },
+          {
+            "sql": "SELECT * FROM ( SELECT `s` . * , ( ? * `ACOS` ( `LEAST` ( ? , `COS` ( `RADIANS` (?) ) * `COS` ( `RADIANS` ( `pf` . `latitude` ) ) * `COS` ( `RADIANS` ( `pf` . `",
+            "execucoes": 300,
+            "msMedio": 58.38,
+            "segundosTotal": 17.5,
+            "linhasExaminadasPorExec": 1280
+          },
+          {
+            "sql": "INSERT IGNORE INTO `wallets` ( `user_id` ) VALUES (?)",
+            "execucoes": 1189,
+            "msMedio": 4.11,
+            "segundosTotal": 4.9,
+            "linhasExaminadasPorExec": 0
+          },
+          {
+            "sql": "SELECT `s` . * , EXISTS ( SELECT ? FROM `boosts` `bo` WHERE `bo` . `service_id` = `s` . `id` AND `bo` . `status` = ? AND `bo` . `expires_at` > NOW ( ) ) AS `boo",
+            "execucoes": 646,
+            "msMedio": 2.42,
+            "segundosTotal": 1.6,
+            "linhasExaminadasPorExec": 648
+          },
+          {
+            "sql": "SELECT `id` , `ulid` , ROLE , STATUS , `deleted_at` FROM `users` WHERE `id` = ? AND `ulid` = ? LIMIT ?",
+            "execucoes": 1493,
+            "msMedio": 0.27,
+            "segundosTotal": 0.4,
+            "linhasExaminadasPorExec": 1
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 13,
+        "amostrasComOutrosBancos": 0,
+        "bancos": {}
+      }
+    }
+  ],
+  "teto": [
+    {
+      "cenario": "teto",
+      "modo": "vus",
+      "vus": 50,
+      "taxaAlvo": null,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 64982,
+      "erros": 0,
+      "vazao": 2166.1,
+      "rotas": {
+        "GET /health/live (sem banco)": {
+          "n": 64982,
+          "p50": 21.8,
+          "p95": 33.5,
+          "p99": 47.8,
+          "max": 202.7,
+          "media": 23,
+          "requisicoes": 64982,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 2166.1
+        }
+      },
+      "descartadasPeloCliente": 0,
+      "api": {
+        "cpuNucleos": 1.08,
+        "memoriaMB": 625
+      },
+      "mysql": {
+        "cpu": "0.42%",
+        "mem": "1.09GiB / 15.58GiB"
+      },
+      "banco": {
+        "comandos": 295,
+        "comandosPorRequisicao": 0,
+        "escritasPorRequisicao": 0,
+        "commitsExplicitosPorRequisicao": 0,
+        "maisCaras": [
+          {
+            "sql": "SELECT VALUE FROM `platform_settings` WHERE `key_name` = ? LIMIT ?",
+            "execucoes": 295,
+            "msMedio": 0.19,
+            "segundosTotal": 0.1,
+            "linhasExaminadasPorExec": 1
+          }
+        ]
+      },
+      "interferencia": {
+        "amostras": 12,
+        "amostrasComOutrosBancos": 0,
+        "bancos": {}
+      }
+    }
+  ],
+  "ws": [
+    {
+      "conexoesPedidas": 500,
+      "conectadas": 500,
+      "falhas": 0,
+      "errosConexao": {},
+      "segundosParaAbrir": 0.8,
+      "tempoConexao": {
+        "n": 500,
+        "p50": 62.6,
+        "p95": 81.7,
+        "p99": 83.5,
+        "max": 89.9,
+        "media": 68.3
+      },
+      "segundosDePe": 194,
+      "vivasNoFim": 500,
+      "comPingDoServidor": 500,
+      "quedas": {},
+      "api": {
+        "memoriaAntesMB": 654,
+        "memoriaConectadasMB": 624,
+        "kbPorConexao": -61
+      },
+      "salas": 30,
+      "latencias": [
+        {
+          "fundo": null,
+          "modo": "rest",
+          "segundos": 15,
+          "enviadas": 449,
+          "mensagem": {
+            "n": 448,
+            "p50": 23.8,
+            "p95": 30.8,
+            "p99": 34.5,
+            "max": 36.2,
+            "media": 24.2,
+            "naoEntregues": 1,
+            "pctAte500ms": 100
+          },
+          "aviso": {
+            "n": 448,
+            "p50": 29.7,
+            "p95": 38.7,
+            "p99": 43.2,
+            "max": 44.1,
+            "media": 30.2,
+            "naoEntregues": 1,
+            "pctAte500ms": 100
+          },
+          "respostaEnvio": {
+            "n": 448,
+            "p50": 22.7,
+            "p95": 29.3,
+            "p99": 33.3,
+            "max": 35.5,
+            "media": 23.1
+          }
+        },
+        {
+          "fundo": "leitura a 100 req/s",
+          "modo": "rest",
+          "segundos": 30,
+          "enviadas": 892,
+          "mensagem": {
+            "n": 892,
+            "p50": 26.8,
+            "p95": 39.8,
+            "p99": 44.8,
+            "max": 51.1,
+            "media": 27.9,
+            "naoEntregues": 0,
+            "pctAte500ms": 100
+          },
+          "aviso": {
+            "n": 892,
+            "p50": 33.8,
+            "p95": 48.1,
+            "p99": 57.5,
+            "max": 71.4,
+            "media": 34.9,
+            "naoEntregues": 0,
+            "pctAte500ms": 100
+          },
+          "respostaEnvio": {
+            "n": 892,
+            "p50": 25.6,
+            "p95": 37.9,
+            "p99": 42.8,
+            "max": 47.5,
+            "media": 26.6
+          }
+        },
+        {
+          "fundo": "leitura a 100 req/s",
+          "modo": "socket",
+          "segundos": 30,
+          "enviadas": 892,
+          "mensagem": {
+            "n": 892,
+            "p50": 26.2,
+            "p95": 38,
+            "p99": 48.2,
+            "max": 87.2,
+            "media": 27.4,
+            "naoEntregues": 0,
+            "pctAte500ms": 100
+          },
+          "aviso": {
+            "n": 892,
+            "p50": 33.6,
+            "p95": 47.5,
+            "p99": 55.4,
+            "max": 103.6,
+            "media": 34.6,
+            "naoEntregues": 0,
+            "pctAte500ms": 100
+          },
+          "respostaEnvio": {
+            "n": 892,
+            "p50": 25.4,
+            "p95": 36.1,
+            "p99": 45.4,
+            "max": 85.8,
+            "media": 26.2
+          }
+        },
+        {
+          "fundo": "leitura com 50 VUs",
+          "modo": "rest",
+          "segundos": 30,
+          "enviadas": 895,
+          "mensagem": {
+            "n": 895,
+            "p50": 723.5,
+            "p95": 990.9,
+            "p99": 1177,
+            "max": 1228.3,
+            "media": 739.7,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "aviso": {
+            "n": 895,
+            "p50": 821.2,
+            "p95": 1120.4,
+            "p99": 1309.4,
+            "max": 1352.1,
+            "media": 835.3,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "respostaEnvio": {
+            "n": 895,
+            "p50": 633.4,
+            "p95": 880,
+            "p99": 1056.8,
+            "max": 1126.2,
+            "media": 651.6
+          }
+        },
+        {
+          "fundo": "leitura com 50 VUs",
+          "modo": "socket",
+          "segundos": 30,
+          "enviadas": 874,
+          "mensagem": {
+            "n": 874,
+            "p50": 760.8,
+            "p95": 1388.8,
+            "p99": 1853.6,
+            "max": 1915.1,
+            "media": 802.9,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "aviso": {
+            "n": 874,
+            "p50": 858.4,
+            "p95": 1591.9,
+            "p99": 2017.1,
+            "max": 2106.8,
+            "media": 904.5,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "respostaEnvio": {
+            "n": 874,
+            "p50": 666,
+            "p95": 1189.1,
+            "p99": 1648.2,
+            "max": 1700.6,
+            "media": 705.7
+          }
+        }
+      ],
+      "cargasDeFundo": [
+        {
+          "rotulo": "leitura a 100 req/s",
+          "cpuNucleosApi": 0.34,
+          "outrosBancosAtivos": [],
+          "resultado": {
+            "cenario": "leitura",
+            "vus": null,
+            "taxaAlvo": 100,
+            "segundos": 74.2174916,
+            "requisicoes": 7420,
+            "erros": 0,
+            "vazao": 100,
+            "rotas": {
+              "GET /categories": {
+                "n": 357,
+                "p50": 2.3,
+                "p95": 4.7,
+                "p99": 8,
+                "max": 10.4,
+                "media": 2.6,
+                "requisicoes": 357,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 4.8
+              },
+              "GET /gamification/leaderboard (ranking)": {
+                "n": 369,
+                "p50": 3.6,
+                "p95": 6.1,
+                "p99": 8.8,
+                "max": 15,
+                "media": 3.9,
+                "requisicoes": 369,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 5
+              },
+              "GET /profiles/freelancer/:ulid (perfil público)": {
+                "n": 792,
+                "p50": 3.3,
+                "p95": 6,
+                "p99": 8.8,
+                "max": 11.7,
+                "media": 3.6,
+                "requisicoes": 792,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 10.7
+              },
+              "GET /services (busca sem texto)": {
+                "n": 1129,
+                "p50": 61.2,
+                "p95": 94.5,
+                "p99": 123.1,
+                "max": 146.9,
+                "media": 64.9,
+                "requisicoes": 1129,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 15.2
+              },
+              "GET /services (categoria + preço + ordem)": {
+                "n": 721,
+                "p50": 4.5,
+                "p95": 7.4,
+                "p99": 9.9,
+                "max": 18,
+                "media": 4.9,
+                "requisicoes": 721,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 9.7
+              },
+              "GET /services (proximidade lat/lng)": {
+                "n": 348,
+                "p50": 35.6,
+                "p95": 57.5,
+                "p99": 80,
+                "max": 83.5,
+                "media": 38.4,
+                "requisicoes": 348,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 4.7
+              },
+              "GET /services/:id (detalhe)": {
+                "n": 1110,
+                "p50": 2.1,
+                "p95": 4.2,
+                "p99": 6.4,
+                "max": 23.2,
+                "media": 2.3,
+                "requisicoes": 1110,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 15
+              },
+              "GET /services?q= (busca com texto)": {
+                "n": 1167,
+                "p50": 32.7,
+                "p95": 53.5,
+                "p99": 63.5,
+                "max": 74,
+                "media": 34.7,
+                "requisicoes": 1167,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 15.7
+              },
+              "GET /wallet (carteira)": {
+                "n": 725,
+                "p50": 13.1,
+                "p95": 19.6,
+                "p99": 28.6,
+                "max": 45.7,
+                "media": 14.1,
+                "requisicoes": 725,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 9.8
+              },
+              "GET /wallet/transactions (extrato)": {
+                "n": 702,
+                "p50": 3.9,
+                "p95": 6.7,
+                "p99": 10.2,
+                "max": 18.9,
+                "media": 4.2,
+                "requisicoes": 702,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 9.5
+              }
+            }
+          }
+        },
+        {
+          "rotulo": "leitura com 50 VUs",
+          "cpuNucleosApi": 0.7,
+          "outrosBancosAtivos": [],
+          "resultado": {
+            "cenario": "leitura",
+            "vus": 50,
+            "taxaAlvo": null,
+            "segundos": 75.18685719999999,
+            "requisicoes": 21327,
+            "erros": 0,
+            "vazao": 283.7,
+            "rotas": {
+              "GET /categories": {
+                "n": 1124,
+                "p50": 86.2,
+                "p95": 139,
+                "p99": 215,
+                "max": 365.6,
+                "media": 90.7,
+                "requisicoes": 1124,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 14.9
+              },
+              "GET /gamification/leaderboard (ranking)": {
+                "n": 1036,
+                "p50": 168.7,
+                "p95": 257.5,
+                "p99": 359.1,
+                "max": 658.3,
+                "media": 175.3,
+                "requisicoes": 1036,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 13.8
+              },
+              "GET /profiles/freelancer/:ulid (perfil público)": {
+                "n": 2135,
+                "p50": 169,
+                "p95": 255.8,
+                "p99": 381.7,
+                "max": 652.8,
+                "media": 177,
+                "requisicoes": 2135,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 28.4
+              },
+              "GET /services (busca sem texto)": {
+                "n": 3146,
+                "p50": 191.9,
+                "p95": 262.8,
+                "p99": 368.3,
+                "max": 558.6,
+                "media": 198.2,
+                "requisicoes": 3146,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 41.8
+              },
+              "GET /services (categoria + preço + ordem)": {
+                "n": 2107,
+                "p50": 89.1,
+                "p95": 150.5,
+                "p99": 207.7,
+                "max": 363.2,
+                "media": 94.6,
+                "requisicoes": 2107,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 28
+              },
+              "GET /services (proximidade lat/lng)": {
+                "n": 1073,
+                "p50": 148.1,
+                "p95": 209.5,
+                "p99": 290.3,
+                "max": 462,
+                "media": 154.2,
+                "requisicoes": 1073,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 14.3
+              },
+              "GET /services/:id (detalhe)": {
+                "n": 3202,
+                "p50": 85.1,
+                "p95": 139,
+                "p99": 192.1,
+                "max": 357.7,
+                "media": 89.6,
+                "requisicoes": 3202,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 42.6
+              },
+              "GET /services?q= (busca com texto)": {
+                "n": 3148,
+                "p50": 137.5,
+                "p95": 199.9,
+                "p99": 288.7,
+                "max": 434.7,
+                "media": 142.8,
+                "requisicoes": 3148,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 41.9
+              },
+              "GET /wallet (carteira)": {
+                "n": 2169,
+                "p50": 427.9,
+                "p95": 596.9,
+                "p99": 977.7,
+                "max": 1312.4,
+                "media": 449.7,
+                "requisicoes": 2169,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 28.8
+              },
+              "GET /wallet/transactions (extrato)": {
+                "n": 2187,
+                "p50": 170.7,
+                "p95": 253.6,
+                "p99": 377.9,
+                "max": 668.8,
+                "media": 177.3,
+                "requisicoes": 2187,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 29.1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "conexoesPedidas": 1000,
+      "conectadas": 1000,
+      "falhas": 0,
+      "errosConexao": {},
+      "segundosParaAbrir": 1.3,
+      "tempoConexao": {
+        "n": 1000,
+        "p50": 55.9,
+        "p95": 62.9,
+        "p99": 64.6,
+        "max": 64.9,
+        "media": 56.5
+      },
+      "segundosDePe": 194,
+      "vivasNoFim": 1000,
+      "comPingDoServidor": 1000,
+      "quedas": {},
+      "api": {
+        "memoriaAntesMB": 291,
+        "memoriaConectadasMB": 294,
+        "kbPorConexao": 3
+      },
+      "salas": 30,
+      "latencias": [
+        {
+          "fundo": null,
+          "modo": "rest",
+          "segundos": 15,
+          "enviadas": 448,
+          "mensagem": {
+            "n": 447,
+            "p50": 22.7,
+            "p95": 30.7,
+            "p99": 39.2,
+            "max": 115.5,
+            "media": 24.1,
+            "naoEntregues": 1,
+            "pctAte500ms": 100
+          },
+          "aviso": {
+            "n": 447,
+            "p50": 29.1,
+            "p95": 39.7,
+            "p99": 47.6,
+            "max": 130.7,
+            "media": 30.8,
+            "naoEntregues": 1,
+            "pctAte500ms": 100
+          },
+          "respostaEnvio": {
+            "n": 447,
+            "p50": 21.8,
+            "p95": 29.7,
+            "p99": 38.5,
+            "max": 114.5,
+            "media": 23.2
+          }
+        },
+        {
+          "fundo": "leitura a 100 req/s",
+          "modo": "rest",
+          "segundos": 30,
+          "enviadas": 891,
+          "mensagem": {
+            "n": 891,
+            "p50": 26.8,
+            "p95": 41.1,
+            "p99": 92.7,
+            "max": 125.6,
+            "media": 28.7,
+            "naoEntregues": 0,
+            "pctAte500ms": 100
+          },
+          "aviso": {
+            "n": 891,
+            "p50": 34.8,
+            "p95": 50.1,
+            "p99": 109.9,
+            "max": 154.2,
+            "media": 36.6,
+            "naoEntregues": 0,
+            "pctAte500ms": 100
+          },
+          "respostaEnvio": {
+            "n": 891,
+            "p50": 25.8,
+            "p95": 39.1,
+            "p99": 84.6,
+            "max": 118.8,
+            "media": 27.3
+          }
+        },
+        {
+          "fundo": "leitura a 100 req/s",
+          "modo": "socket",
+          "segundos": 30,
+          "enviadas": 893,
+          "mensagem": {
+            "n": 893,
+            "p50": 23.7,
+            "p95": 35,
+            "p99": 60.7,
+            "max": 114.4,
+            "media": 25.2,
+            "naoEntregues": 0,
+            "pctAte500ms": 100
+          },
+          "aviso": {
+            "n": 893,
+            "p50": 31,
+            "p95": 44.5,
+            "p99": 77.6,
+            "max": 129.2,
+            "media": 32.6,
+            "naoEntregues": 0,
+            "pctAte500ms": 100
+          },
+          "respostaEnvio": {
+            "n": 893,
+            "p50": 22.9,
+            "p95": 33.6,
+            "p99": 56.5,
+            "max": 105.8,
+            "media": 24.3
+          }
+        },
+        {
+          "fundo": "leitura com 50 VUs",
+          "modo": "rest",
+          "segundos": 30,
+          "enviadas": 893,
+          "mensagem": {
+            "n": 893,
+            "p50": 745.2,
+            "p95": 1002.4,
+            "p99": 1256,
+            "max": 1319.8,
+            "media": 768.5,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "aviso": {
+            "n": 893,
+            "p50": 841,
+            "p95": 1110.3,
+            "p99": 1386,
+            "max": 1448,
+            "media": 866.7,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "respostaEnvio": {
+            "n": 893,
+            "p50": 650.7,
+            "p95": 898.7,
+            "p99": 1141.1,
+            "max": 1218.9,
+            "media": 674.9
+          }
+        },
+        {
+          "fundo": "leitura com 50 VUs",
+          "modo": "socket",
+          "segundos": 30,
+          "enviadas": 895,
+          "mensagem": {
+            "n": 895,
+            "p50": 667.7,
+            "p95": 1025.9,
+            "p99": 1131.1,
+            "max": 1168,
+            "media": 701.8,
+            "naoEntregues": 0,
+            "pctAte500ms": 0.1
+          },
+          "aviso": {
+            "n": 895,
+            "p50": 759.1,
+            "p95": 1137.6,
+            "p99": 1238.3,
+            "max": 1288.6,
+            "media": 791.6,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "respostaEnvio": {
+            "n": 895,
+            "p50": 584,
+            "p95": 898.9,
+            "p99": 1044.2,
+            "max": 1081.2,
+            "media": 618
+          }
+        }
+      ],
+      "cargasDeFundo": [
+        {
+          "rotulo": "leitura a 100 req/s",
+          "cpuNucleosApi": 0.32,
+          "outrosBancosAtivos": [],
+          "resultado": {
+            "cenario": "leitura",
+            "vus": null,
+            "taxaAlvo": 100,
+            "segundos": 74.08116519999999,
+            "requisicoes": 7403,
+            "erros": 0,
+            "vazao": 99.9,
+            "rotas": {
+              "GET /categories": {
+                "n": 356,
+                "p50": 2.1,
+                "p95": 4.3,
+                "p99": 5.9,
+                "max": 12.1,
+                "media": 2.4,
+                "requisicoes": 356,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 4.8
+              },
+              "GET /gamification/leaderboard (ranking)": {
+                "n": 369,
+                "p50": 3.2,
+                "p95": 6.5,
+                "p99": 8.9,
+                "max": 16,
+                "media": 3.6,
+                "requisicoes": 369,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 5
+              },
+              "GET /profiles/freelancer/:ulid (perfil público)": {
+                "n": 790,
+                "p50": 3.1,
+                "p95": 5.9,
+                "p99": 17.7,
+                "max": 45.5,
+                "media": 3.7,
+                "requisicoes": 790,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 10.7
+              },
+              "GET /services (busca sem texto)": {
+                "n": 1125,
+                "p50": 59.7,
+                "p95": 101.6,
+                "p99": 139.9,
+                "max": 176.8,
+                "media": 65,
+                "requisicoes": 1125,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 15.2
+              },
+              "GET /services (categoria + preço + ordem)": {
+                "n": 719,
+                "p50": 4.2,
+                "p95": 7.2,
+                "p99": 9.6,
+                "max": 17.7,
+                "media": 4.6,
+                "requisicoes": 719,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 9.7
+              },
+              "GET /services (proximidade lat/lng)": {
+                "n": 348,
+                "p50": 34.3,
+                "p95": 54.3,
+                "p99": 71.1,
+                "max": 92.6,
+                "media": 37.2,
+                "requisicoes": 348,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 4.7
+              },
+              "GET /services/:id (detalhe)": {
+                "n": 1107,
+                "p50": 1.9,
+                "p95": 4,
+                "p99": 7.3,
+                "max": 26.2,
+                "media": 2.2,
+                "requisicoes": 1107,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 14.9
+              },
+              "GET /services?q= (busca com texto)": {
+                "n": 1164,
+                "p50": 31.9,
+                "p95": 51.1,
+                "p99": 72.5,
+                "max": 106.5,
+                "media": 34.4,
+                "requisicoes": 1164,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 15.7
+              },
+              "GET /wallet (carteira)": {
+                "n": 723,
+                "p50": 12.7,
+                "p95": 20.6,
+                "p99": 41.5,
+                "max": 91.7,
+                "media": 14.1,
+                "requisicoes": 723,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 9.8
+              },
+              "GET /wallet/transactions (extrato)": {
+                "n": 702,
+                "p50": 3.6,
+                "p95": 7.3,
+                "p99": 13.9,
+                "max": 40.8,
+                "media": 4.2,
+                "requisicoes": 702,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 9.5
+              }
+            }
+          }
+        },
+        {
+          "rotulo": "leitura com 50 VUs",
+          "cpuNucleosApi": 0.74,
+          "outrosBancosAtivos": [],
+          "resultado": {
+            "cenario": "leitura",
+            "vus": 50,
+            "taxaAlvo": null,
+            "segundos": 75.1794384,
+            "requisicoes": 22318,
+            "erros": 0,
+            "vazao": 296.9,
+            "rotas": {
+              "GET /categories": {
+                "n": 1170,
+                "p50": 80.1,
+                "p95": 137.5,
+                "p99": 197.6,
+                "max": 294.9,
+                "media": 85.3,
+                "requisicoes": 1170,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 15.6
+              },
+              "GET /gamification/leaderboard (ranking)": {
+                "n": 1096,
+                "p50": 159.1,
+                "p95": 250.7,
+                "p99": 340.3,
+                "max": 421.5,
+                "media": 167.3,
+                "requisicoes": 1096,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 14.6
+              },
+              "GET /profiles/freelancer/:ulid (perfil público)": {
+                "n": 2255,
+                "p50": 161.7,
+                "p95": 266.5,
+                "p99": 354.3,
+                "max": 447.7,
+                "media": 170.6,
+                "requisicoes": 2255,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 30
+              },
+              "GET /services (busca sem texto)": {
+                "n": 3297,
+                "p50": 183.5,
+                "p95": 267.1,
+                "p99": 330.2,
+                "max": 408.1,
+                "media": 190.6,
+                "requisicoes": 3297,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 43.9
+              },
+              "GET /services (categoria + preço + ordem)": {
+                "n": 2196,
+                "p50": 85,
+                "p95": 148.6,
+                "p99": 205.3,
+                "max": 304.9,
+                "media": 90.3,
+                "requisicoes": 2196,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 29.2
+              },
+              "GET /services (proximidade lat/lng)": {
+                "n": 1119,
+                "p50": 140.9,
+                "p95": 219.4,
+                "p99": 263,
+                "max": 342.6,
+                "media": 146.9,
+                "requisicoes": 1119,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 14.9
+              },
+              "GET /services/:id (detalhe)": {
+                "n": 3341,
+                "p50": 80.5,
+                "p95": 142.3,
+                "p99": 193.1,
+                "max": 280.4,
+                "media": 85,
+                "requisicoes": 3341,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 44.4
+              },
+              "GET /services?q= (busca com texto)": {
+                "n": 3290,
+                "p50": 131.6,
+                "p95": 206.4,
+                "p99": 261.9,
+                "max": 324.9,
+                "media": 137.5,
+                "requisicoes": 3290,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 43.8
+              },
+              "GET /wallet (carteira)": {
+                "n": 2264,
+                "p50": 414.4,
+                "p95": 597.1,
+                "p99": 754.6,
+                "max": 944.3,
+                "media": 425.8,
+                "requisicoes": 2264,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 30.1
+              },
+              "GET /wallet/transactions (extrato)": {
+                "n": 2290,
+                "p50": 161.8,
+                "p95": 258.8,
+                "p99": 350.1,
+                "max": 422.7,
+                "media": 169.2,
+                "requisicoes": 2290,
+                "erros": 0,
+                "codigosErro": {},
+                "vazao": 30.5
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "volumeDepois": {
+    "users": 500,
+    "services": 10000,
+    "contracts": 9581,
+    "payments": 7478,
+    "withdrawals": 7236,
+    "wallet_transactions": 20611,
+    "messages": 8200,
+    "notifications": 21575,
+    "email_outbox": 13875
+  },
+  "diagnosticoBusca": {
+    "busca sem texto (como a API)": {
+      "tipoAcesso": "ALL",
+      "indice": null,
+      "linhasEstimadas": 9905,
+      "extra": "Using where; Using temporary; Using filesort",
+      "msMediana": 45.4
+    },
+    "busca com texto, LIKE (como a API)": {
+      "tipoAcesso": "ALL",
+      "indice": null,
+      "linhasEstimadas": 9905,
+      "extra": "Using where; Using temporary; Using filesort",
+      "msMediana": 28.2
+    },
+    "termo inexistente, LIKE (como a API)": {
+      "tipoAcesso": "ALL",
+      "indice": null,
+      "linhasEstimadas": 9905,
+      "extra": "Using where; Using temporary; Using filesort",
+      "msMediana": 25.9
+    },
+    "comparação: texto via FULLTEXT": {
+      "tipoAcesso": "fulltext",
+      "indice": "ft_svc_search",
+      "linhasEstimadas": 1,
+      "extra": "Using where; Ft_hints: no_ranking; Using temporary; Using filesort",
+      "msMediana": 5
+    },
+    "comparação: sem texto e sem destaque na ordem": {
+      "tipoAcesso": "ALL",
+      "indice": null,
+      "linhasEstimadas": 9905,
+      "extra": "Using where; Using filesort",
+      "msMediana": 14.7
+    }
+  },
+  "apiDerrubada": true
+}

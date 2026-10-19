@@ -6,9 +6,10 @@ import { z } from 'zod';
 import { HttpError } from '../utils/http-error';
 import { errorHandler } from './error-handler';
 
-const { captureError } = vi.hoisted(() => ({ captureError: vi.fn() }));
+const { captureError, auditLog } = vi.hoisted(() => ({ captureError: vi.fn(), auditLog: vi.fn() }));
 vi.mock('../config/sentry', () => ({ captureError }));
 vi.mock('../config/logger', () => ({ logger: { error: vi.fn() } }));
+vi.mock('../modules/audit/audit.service', () => ({ auditService: { log: auditLog } }));
 
 function app() {
   const a = express();
@@ -70,6 +71,35 @@ describe('errorHandler', () => {
     const res = await request(app()).get('/http').expect(404);
     expect(res.body).toEqual({ error: 'not_found', message: 'Contratação não encontrada' });
     expect(captureError).not.toHaveBeenCalled();
+  });
+
+  it('503 de manutenção expõe a previsão de volta (RNF-010), e só ela, em ISO', async () => {
+    const res = await request(app())
+      .post('/public-dispute')
+      .send({
+        status: 503,
+        code: 'maintenance',
+        data: { returnAt: '2026-10-19T16:37:48.000Z', contractId: 9, opensAt: null },
+      })
+      .expect(503);
+    expect(res.body).toEqual({
+      error: 'maintenance',
+      message: 'A disputa ainda não abriu',
+      returnAt: '2026-10-19T16:37:48.000Z',
+    });
+  });
+
+  it.each([
+    [503, 'maintenance', 'amanhã'],
+    [503, 'maintenance', '2026-10-19 16:37'],
+    [503, 'service_unavailable', '2026-10-19T16:37:48.000Z'],
+    [409, 'maintenance', '2026-10-19T16:37:48.000Z'],
+  ])('%i %s com returnAt %s: o campo não sai', async (status, code, returnAt) => {
+    const res = await request(app())
+      .post('/public-dispute')
+      .send({ status, code, data: { returnAt } })
+      .expect(status);
+    expect(res.body).not.toHaveProperty('returnAt');
   });
 
   it.each(['2026-10-10T15:00:00.000Z', null])(
@@ -262,5 +292,100 @@ describe('errorHandler', () => {
     expect(JSON.stringify(res.body)).not.toContain('fulano');
     expect(captureError).toHaveBeenCalledTimes(1);
     expect(captureError.mock.lastCall?.[0]).toBeInstanceOf(Error);
+  });
+});
+
+describe('acesso negado no audit_logs (RNF-018)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  /** Rota que recusa com o status e o código pedidos, com ou sem alguém logado. */
+  function denying() {
+    const a = express();
+    a.set('trust proxy', true);
+    a.use(express.json());
+    a.post('/api/contracts/:id/approve', (req) => {
+      if (req.body.uid) req.user = { sub: 'U', uid: req.body.uid, role: 'client' };
+      throw new HttpError(req.body.status, 'Recusado', req.body.code);
+    });
+    a.use(errorHandler);
+    return a;
+  }
+
+  it('403 de dono ou papel grava access.denied com quem, de onde e onde, sem a query', async () => {
+    await request(denying())
+      .post('/api/contracts/42/approve?token=segredo')
+      .set('X-Forwarded-For', '203.0.113.9')
+      .set('User-Agent', 'vitest-agente')
+      .send({ status: 403, code: 'forbidden', uid: 5 })
+      .expect(403);
+    expect(auditLog).toHaveBeenCalledTimes(1);
+    expect(auditLog).toHaveBeenCalledWith({
+      userId: 5,
+      action: 'access.denied',
+      entityType: 'route',
+      newValue: {
+        method: 'POST',
+        path: '/api/contracts/42/approve',
+        status: 403,
+        code: 'forbidden',
+      },
+      ip: '203.0.113.9',
+      userAgent: 'vitest-agente',
+    });
+    expect(JSON.stringify(auditLog.mock.calls)).not.toContain('segredo');
+  });
+
+  it.each(['admin_only', 'account_banned', 'account_blocked', 'account_deleted'])(
+    '403 %s também é registrado, sem conta logada quando não há',
+    async (code) => {
+      await request(denying())
+        .post('/api/contracts/1/approve')
+        .send({ status: 403, code })
+        .expect(403);
+      expect(auditLog).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: null, action: 'access.denied' }),
+      );
+    },
+  );
+
+  it('webhook com segredo errado (401) é registrado', async () => {
+    await request(denying())
+      .post('/api/contracts/1/approve')
+      .send({ status: 401, code: 'invalid_webhook_secret' })
+      .expect(401);
+    expect(auditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'access.denied',
+        newValue: expect.objectContaining({ status: 401, code: 'invalid_webhook_secret' }),
+      }),
+    );
+  });
+
+  it.each([
+    [401, 'invalid_token'],
+    [401, 'missing_token'],
+    [401, 'invalid_credentials'],
+    [403, 'email_not_verified'],
+    [403, 'barter_disabled'],
+    [404, 'not_found'],
+    [409, 'forbidden'],
+  ])(
+    '%i %s não vai para o audit_logs (token vencido, regra de negócio ou outro status)',
+    async (status, code) => {
+      await request(denying())
+        .post('/api/contracts/1/approve')
+        .send({ status, code })
+        .expect(status);
+      expect(auditLog).not.toHaveBeenCalled();
+    },
+  );
+
+  it('a resposta não espera o audit_logs: banco lento não segura a recusa', async () => {
+    auditLog.mockReturnValueOnce(new Promise(() => {}));
+    const res = await request(denying())
+      .post('/api/contracts/1/approve')
+      .send({ status: 403, code: 'forbidden' })
+      .expect(403);
+    expect(res.body).toEqual({ error: 'forbidden', message: 'Recusado' });
   });
 });

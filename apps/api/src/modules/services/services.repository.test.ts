@@ -32,8 +32,25 @@ function fromLast(sql: string, marker: string): string {
 
 const BASE = 's.deleted_at IS NULL AND s.is_active = 1';
 
-/** O texto da busca no título ou na descrição, com a barra como escape do LIKE. */
-const LIKE_Q = String.raw`(s.title LIKE :q ESCAPE '\\' OR s.description LIKE :q ESCAPE '\\')`;
+/** Uma palavra como "contém" no título ou na descrição, com a barra como escape do LIKE. */
+const containsSql = (alias: string, i: number): string =>
+  String.raw`(${alias}.title LIKE :qContains${i} ESCAPE '\\' OR ${alias}.description LIKE :qContains${i} ESCAPE '\\')`;
+
+/** Os serviços com tag que começa com o texto. */
+const TAG_HITS = String.raw`SELECT stp.service_id FROM service_tags st JOIN service_tag_pivot stp ON stp.tag_id = st.id WHERE st.name LIKE :qTag ESCAPE '\\'`;
+
+/** Fallback (nenhuma palavra cabe no FULLTEXT): cada palavra "contém", ou a tag com o prefixo. */
+const likeOrTag = (words: string[]): string =>
+  `((${words.map((_, i) => containsSql('s', i)).join(' AND ')}) OR s.id IN (${TAG_HITS}))`;
+
+/** Com palavra que o índice guarda: a tabela derivada dos ids que casam conduz o JOIN. */
+const ftJoin = (containsCount = 0): string =>
+  'JOIN (SELECT ts.id FROM services ts WHERE ' +
+  [
+    'MATCH(ts.title, ts.description) AGAINST (:qFulltext IN BOOLEAN MODE)',
+    ...Array.from({ length: containsCount }, (_, i) => containsSql('ts', i)),
+  ].join(' AND ') +
+  ` UNION ${TAG_HITS}) AS hit ON hit.id = s.id`;
 
 /** Período em available_periods (ADR 34): sem objeto, ou sem a chave do dia, vale o dia todo. */
 const periodSql = (path: string, period: string): string =>
@@ -57,25 +74,30 @@ describe('servicesRepository', () => {
       price: 500,
       deliveryDays: 7,
       isRemote: true,
+      isOnsite: false,
+      tags: [] as string[],
     };
+    const { tags: _noTags, ...columns } = data;
 
     it('grava o serviço do dono e devolve o id gerado', async () => {
       fakeDb.reply({ insertId: 31, affectedRows: 1 });
 
       expect(await servicesRepository.create(data)).toBe(31);
 
+      // Sem tags, só o INSERT do serviço (dentro da transação).
       expect(fakeDb.calls).toHaveLength(1);
       const { sql, params } = fakeDb.calls[0]!;
       expect(sql).toBe(
-        'INSERT INTO services (user_id, category_id, title, description, price_type, price, delivery_days, is_remote) ' +
-          'VALUES (:userId, :categoryId, :title, :description, :priceType, :price, :deliveryDays, :isRemote)',
+        'INSERT INTO services (user_id, category_id, title, description, price_type, price, delivery_days, is_remote, is_onsite) ' +
+          'VALUES (:userId, :categoryId, :title, :description, :priceType, :price, :deliveryDays, :isRemote, :isOnsite)',
       );
-      // O booleano vai como 1/0 (TINYINT); o resto, como veio.
-      expect(params).toEqual({ ...data, isRemote: 1 });
+      // Os booleanos vão como 1/0 (TINYINT); o resto, como veio.
+      expect(params).toEqual({ ...columns, isRemote: 1, isOnsite: 0 });
+      expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
     });
 
-    it('presencial vira 0, e preço e prazo ausentes vão como NULL', async () => {
-      fakeDb.reply({ insertId: 32, affectedRows: 1 });
+    it('presencial vira 0/1, remoto e presencial (os dois) 1/1, e preço e prazo ausentes vão como NULL', async () => {
+      fakeDb.reply({ insertId: 32, affectedRows: 1 }, { insertId: 33, affectedRows: 1 });
 
       await servicesRepository.create({
         ...data,
@@ -83,22 +105,123 @@ describe('servicesRepository', () => {
         price: null,
         deliveryDays: null,
         isRemote: false,
+        isOnsite: true,
       });
+      await servicesRepository.create({ ...data, isRemote: true, isOnsite: true });
 
       expect(fakeDb.calls[0]!.params).toEqual({
-        ...data,
+        ...columns,
         priceType: 'negotiable',
         price: null,
         deliveryDays: null,
         isRemote: 0,
+        isOnsite: 1,
       });
+      expect(fakeDb.calls[1]!.params).toMatchObject({ isRemote: 1, isOnsite: 1 });
+    });
+
+    it('com tags: cria as que faltam (reaproveitando as que existem) e liga todas, na mesma transação', async () => {
+      fakeDb.reply({ insertId: 40, affectedRows: 1 });
+
+      await servicesRepository.create({ ...data, tags: ['logo', 'programação', 'ui/ux'] });
+
+      expect(fakeDb.sqls()).toEqual([
+        expect.stringContaining('INSERT INTO services '),
+        'INSERT INTO service_tags (name, slug) VALUES (:name0, :slug0), (:name1, :slug1), (:name2, :slug2) ON DUPLICATE KEY UPDATE id = id',
+        'INSERT INTO service_tag_pivot (service_id, tag_id) SELECT :serviceId, id FROM service_tags WHERE name IN (:names)',
+      ]);
+      // O slug é a chave sem acento, com hífen no lugar do espaço; o nome guarda o acento.
+      expect(fakeDb.calls[1]!.params).toEqual({
+        serviceId: 40,
+        name0: 'logo',
+        slug0: 'logo',
+        name1: 'programação',
+        slug1: 'programacao',
+        name2: 'ui/ux',
+        slug2: 'ui/ux',
+      });
+      expect(fakeDb.calls[2]!.params).toEqual({
+        serviceId: 40,
+        names: ['logo', 'programação', 'ui/ux'],
+      });
+      expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
     });
 
     it('a falha do banco (categoria inexistente, por exemplo) sobe para quem chamou', async () => {
       const boom = new Error('ER_NO_REFERENCED_ROW_2');
       fakeDb.reply(boom);
       await expect(servicesRepository.create(data)).rejects.toBe(boom);
+      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
     });
+
+    it('a falha ao gravar as tags desfaz o serviço também (rollback)', async () => {
+      const boom = new Error('ER_DATA_TOO_LONG');
+      fakeDb.reply({ insertId: 41, affectedRows: 1 }, boom);
+      await expect(servicesRepository.create({ ...data, tags: ['logo'] })).rejects.toBe(boom);
+      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+      expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findPublicById (detalhe)', () => {
+    it('traz o serviço com o destaque e quem presta; removido não volta, pausado volta', async () => {
+      const row = { id: 5, user_id: 7, owner_name: 'Ana' };
+      fakeDb.reply([row]);
+
+      expect(await servicesRepository.findPublicById(5)).toBe(row);
+
+      const { sql, params } = fakeDb.calls[0]!;
+      expect(sql.startsWith('SELECT s.*, EXISTS(SELECT 1 FROM boosts bo')).toBe(true);
+      expect(sql).toContain('pf.full_name AS owner_name');
+      expect(sql).toContain(
+        ' FROM services s JOIN users u ON u.id = s.user_id LEFT JOIN profiles_freelancer pf ON pf.user_id = s.user_id' +
+          ' WHERE s.id = :id AND s.deleted_at IS NULL LIMIT 1',
+      );
+      expect(sql).not.toContain('is_active');
+      expect(params).toEqual({ id: 5 });
+    });
+
+    it('sem linha, devolve undefined', async () => {
+      fakeDb.reply([]);
+      expect(await servicesRepository.findPublicById(9)).toBeUndefined();
+    });
+  });
+
+  describe('tagsByServiceIds', () => {
+    it('uma consulta para todos os ids, agrupada por serviço e em ordem alfabética', async () => {
+      fakeDb.reply([
+        { service_id: 3, name: 'figma' },
+        { service_id: 3, name: 'logo' },
+        { service_id: 8, name: 'react' },
+      ]);
+
+      const tags = await servicesRepository.tagsByServiceIds([3, 5, 8]);
+
+      expect([...tags]).toEqual([
+        [3, ['figma', 'logo']],
+        [8, ['react']],
+      ]);
+      expect(fakeDb.calls).toHaveLength(1);
+      expect(fakeDb.calls[0]!.sql).toBe(
+        'SELECT stp.service_id, st.name FROM service_tag_pivot stp JOIN service_tags st ON st.id = stp.tag_id' +
+          ' WHERE stp.service_id IN (:ids) ORDER BY stp.service_id, st.name',
+      );
+      expect(fakeDb.calls[0]!.params).toEqual({ ids: [3, 5, 8] });
+    });
+
+    it('sem ids (busca vazia), não vai ao banco', async () => {
+      expect((await servicesRepository.tagsByServiceIds([])).size).toBe(0);
+      expect(fakeDb.calls).toHaveLength(0);
+    });
+  });
+
+  it('incrementViews soma uma visualização sem mexer no updated_at (ser visto não é editar)', async () => {
+    fakeDb.reply({ affectedRows: 1 });
+    await servicesRepository.incrementViews(5);
+    expect(fakeDb.calls[0]!.sql).toBe(
+      'UPDATE services SET views_count = views_count + 1, updated_at = updated_at WHERE id = :id',
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ id: 5 });
   });
 
   describe('findById', () => {
@@ -214,9 +337,15 @@ describe('servicesRepository', () => {
         's.created_at < :createdBefore',
         { createdBefore },
       ],
-      ['só remotos', { isRemote: true }, 's.is_remote = :isRemote', { isRemote: 1 }],
-      ['só presenciais', { isRemote: false }, 's.is_remote = :isRemote', { isRemote: 0 }],
-      ['texto no título ou na descrição', { q: 'logo' }, LIKE_Q, { q: '%logo%' }],
+      // RF-023: "os dois" (is_remote = 1 e is_onsite = 1) entra nos dois filtros.
+      ['atende remoto', { isRemote: true }, 's.is_remote = 1', {}],
+      ['atende presencial', { isRemote: false }, 's.is_onsite = 1', {}],
+      [
+        'texto curto demais para o índice (fallback): "contém" no título ou na descrição, ou tag',
+        { q: 'ux' },
+        likeOrTag(['ux']),
+        { qContains0: '%ux%', qTag: 'ux%' },
+      ],
       ['preço mínimo', { minPrice: 100 }, 's.price >= :minPrice', { minPrice: 100 }],
       [
         'preço mínimo zero ainda filtra (serviço sem preço fica de fora)',
@@ -255,28 +384,70 @@ describe('servicesRepository', () => {
       expect(params).toEqual(expectedParams);
     });
 
-    it('o texto da busca vai como parâmetro, nunca dentro do SQL (aspas e ponto e vírgula não mudam a instrução)', async () => {
-      const text = `x' OR '1'='1; DROP TABLE services`;
+    it('texto com palavra que o índice guarda: o FULLTEXT (prefixo, todas obrigatórias) e as tags conduzem a busca', async () => {
+      const { sql, params } = await runList({ q: 'Design de Logo' });
+      expect(sql).toContain(` FROM services s ${ftJoin()} JOIN users u ON u.id = s.user_id `);
+      // O texto não vira predicado no WHERE: quem filtra é a tabela derivada.
+      expect(whereOf(sql)).toBe(BASE);
+      // "de" é palavra vazia: fica fora do MATCH; a tag é o texto inteiro normalizado.
+      expect(params).toEqual({ qFulltext: '+design* +logo*', qTag: 'design de logo%' });
+    });
+
+    it('palavra que o índice não guarda, junto de uma que guarda, filtra só o que o MATCH achou', async () => {
+      const { sql, params } = await runList({ q: 'designer ux' });
+      expect(sql).toContain(` FROM services s ${ftJoin(1)} JOIN users u `);
+      expect(params).toEqual({
+        qFulltext: '+designer*',
+        qContains0: '%ux%',
+        qTag: 'designer ux%',
+      });
+    });
+
+    it('o texto da busca vai como parâmetro, nunca dentro do SQL (aspas, ponto e vírgula e operadores do FULLTEXT não mudam a instrução)', async () => {
+      const text = `x' OR '1'='1; DROP TABLE services -logo +"a" @2 ~b*`;
       const { sql, params } = await runList({ q: text });
-      expect(whereOf(sql)).toBe(`${BASE} AND ${LIKE_Q}`);
       expect(sql).not.toContain('DROP');
-      expect(params).toEqual({ q: `%${text}%` });
+      expect(sql).not.toContain('logo');
+      // No MATCH só entram letras e números de cada palavra, com o + e o * da própria busca.
+      expect(params.qFulltext).toBe('+drop* +table* +services* +logo*');
+      expect(params.qTag).toBe(`x' or '1'='1; drop table services -logo +"a" @2 ~b*%`);
+      // O resto vira "contém", como texto: x (sem o apóstrofo da ponta), 1'='1, 2 e b ("a" é
+      // palavra vazia).
+      expect(Object.keys(params).filter((k) => k.startsWith('qContains'))).toHaveLength(4);
+      expect([params.qContains0, params.qContains1]).toEqual(['%x%', `%1'='1%`]);
     });
 
     it.each([
-      ['100%', String.raw`%100\%%`],
-      ['_', String.raw`%\_%`],
-      ['%', String.raw`%\%%`],
-      [String.raw`C:\temp`, String.raw`%C:\\temp%`],
-      [String.raw`50\%_off`, String.raw`%50\\\%\_off%`],
+      ['100%', '+100*', String.raw`100\%%`],
+      [String.raw`C:\temp`, '+temp*', String.raw`c:\\temp%`],
     ])(
-      'curinga do LIKE na busca "%s" vale como texto: escapado com a barra do ESCAPE',
-      async (text, pattern) => {
-        const { sql, params } = await runList({ q: text });
-        expect(whereOf(sql)).toBe(`${BASE} AND ${LIKE_Q}`);
-        expect(params).toEqual({ q: pattern });
+      'curinga do LIKE na tag da busca "%s" vale como texto: escapado com a barra do ESCAPE',
+      async (text, fulltext, tag) => {
+        const { params } = await runList({ q: text });
+        expect(params).toMatchObject({ qFulltext: fulltext, qTag: tag });
       },
     );
+
+    it.each([
+      ['_', String.raw`%\_%`, String.raw`\_%`],
+      ['%', String.raw`%\%%`, String.raw`\%%`],
+      ['c++', '%c++%', 'c++%'],
+      [String.raw`5\%_1`, String.raw`%5\\\%\_1%`, String.raw`5\\\%\_1%`],
+    ])(
+      'fallback "%s": o curinga do LIKE vale como texto, no "contém" e na tag',
+      async (text, contains, tag) => {
+        const { sql, params } = await runList({ q: text });
+        expect(whereOf(sql)).toBe(`${BASE} AND ${likeOrTag([text])}`);
+        expect(params).toEqual({ qContains0: contains, qTag: tag });
+      },
+    );
+
+    it('texto só com espaços não filtra (nada a procurar)', async () => {
+      const { sql, params } = await runList({ q: '   ' });
+      expect(whereOf(sql)).toBe(BASE);
+      expect(sql).not.toContain('hit');
+      expect(params).toEqual({});
+    });
 
     it('as datas da janela chegam ao banco como a mesma instância de Date (sem virar texto)', async () => {
       const { params } = await runList({ createdFrom, createdBefore });
@@ -322,19 +493,19 @@ describe('servicesRepository', () => {
           BASE,
           's.category_id = :categoryId',
           's.user_id = :ownerId',
-          's.is_remote = :isRemote',
-          LIKE_Q,
+          's.is_remote = 1',
           's.price >= :minPrice',
           's.price <= :maxPrice',
           's.delivery_days IS NOT NULL AND s.delivery_days <= :maxDeliveryDays',
           'COALESCE(pf.avg_rating, 0) >= :minRating',
         ].join(' AND '),
       );
+      expect(sql).toContain(` FROM services s ${ftJoin()} JOIN users u `);
       expect(params).toEqual({
         categoryId: 3,
         ownerId: 9,
-        isRemote: 1,
-        q: '%site%',
+        qFulltext: '+site*',
+        qTag: 'site%',
         minPrice: 50,
         maxPrice: 500,
         maxDeliveryDays: 10,
@@ -514,14 +685,17 @@ describe('servicesRepository', () => {
       });
 
       const { sql, params } = fakeDb.calls[0]!;
+      // A busca de texto entra na tabela derivada da distância, antes do corte pelo raio.
       expect(sql).toContain(
-        ` WHERE ${BASE} AND s.category_id = :categoryId AND ${LIKE_Q}` +
+        ` FROM services s ${ftJoin()} JOIN users u ON u.id = s.user_id JOIN profiles_freelancer pf ON pf.user_id = s.user_id` +
+          ` WHERE ${BASE} AND s.category_id = :categoryId` +
           ' AND pf.available_days IS NOT NULL AND JSON_CONTAINS(pf.available_days, :dayJson)' +
           ' AND pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL ) AS sub WHERE sub.distance_km <= :radius ',
       );
       expect(params).toEqual({
         categoryId: 3,
-        q: '%logo%',
+        qFulltext: '+logo*',
+        qTag: 'logo%',
         dayJson: '6',
         lat: -26.3,
         lng: -48.85,
@@ -580,6 +754,34 @@ describe('servicesRepository', () => {
     it('sem nenhum campo, não vai ao banco (um UPDATE sem SET seria erro de sintaxe)', async () => {
       expect(await servicesRepository.update(5, {})).toBeUndefined();
       expect(fakeDb.calls).toHaveLength(0);
+    });
+
+    it('com tags: as colunas e a troca da lista inteira de tags na mesma transação', async () => {
+      await servicesRepository.update(5, { title: 'Novo título' }, ['logo']);
+
+      expect(fakeDb.sqls()).toEqual([
+        'UPDATE services SET title = :title WHERE id = :id',
+        'DELETE FROM service_tag_pivot WHERE service_id = :id',
+        'INSERT INTO service_tags (name, slug) VALUES (:name0, :slug0) ON DUPLICATE KEY UPDATE id = id',
+        'INSERT INTO service_tag_pivot (service_id, tag_id) SELECT :serviceId, id FROM service_tags WHERE name IN (:names)',
+      ]);
+      expect(fakeDb.calls[1]!.params).toEqual({ id: 5 });
+      expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
+    });
+
+    it('só as tags (sem coluna): não há UPDATE; lista vazia só desliga as tags do serviço', async () => {
+      await servicesRepository.update(5, {}, []);
+
+      expect(fakeDb.sqls()).toEqual(['DELETE FROM service_tag_pivot WHERE service_id = :id']);
+      expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
+    });
+
+    it('a falha ao trocar as tags desfaz a edição (rollback)', async () => {
+      const boom = new Error('ER_LOCK_WAIT_TIMEOUT');
+      fakeDb.reply({ affectedRows: 1 }, boom);
+      await expect(servicesRepository.update(5, { title: 'Novo' }, ['logo'])).rejects.toBe(boom);
+      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+      expect(fakeDb.conn.commit).not.toHaveBeenCalled();
     });
   });
 

@@ -10,6 +10,7 @@ vi.mock('./messaging.repository', () => ({
     findAttachment: vi.fn(),
     findById: vi.fn(),
     pairContractIds: vi.fn(),
+    markRead: vi.fn(),
     markPurged: vi.fn().mockResolvedValue(undefined),
   },
 }));
@@ -195,6 +196,7 @@ describe('messagingService.history', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       removedAt: null,
       signals: [],
+      readAt: null,
     });
   });
 });
@@ -307,6 +309,7 @@ describe('messagingService.send', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       removedAt: null,
       signals: [],
+      readAt: null,
     });
     expect(realtime.emitToContract).toHaveBeenCalledTimes(1);
     expect(realtime.emitToContract).toHaveBeenCalledWith(1, 'message:new', {
@@ -679,6 +682,7 @@ describe('notificationBody', () => {
     createdAt: '',
     removedAt: null,
     signals: [],
+    readAt: null,
   };
   it('usa a legenda quando há; senão descreve o anexo', () => {
     expect(notificationBody({ ...base, type: 'text', content: 'oi', attachment: null })).toBe('oi');
@@ -803,6 +807,7 @@ describe('messagingService.history: o que cada mensagem mostra', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       removedAt: '2026-09-10T12:00:00.000Z',
       signals: [],
+      readAt: null,
     });
   });
 
@@ -1219,6 +1224,7 @@ describe('messagingService.announceChange (moderação, ADR 44)', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
       removedAt: '2026-09-10T12:00:00.000Z',
       signals: [],
+      readAt: null,
       contractId: 3,
     });
   });
@@ -1264,5 +1270,151 @@ describe('messagingService.announceChange (moderação, ADR 44)', () => {
 
     expect(mRepo.findById).toHaveBeenCalledTimes(2);
     expect(realtime.emitToContract).not.toHaveBeenCalled();
+  });
+});
+
+describe('messagingService.markRead (leitura, RF-059)', () => {
+  const READ_AT = new Date('2026-10-19T12:00:00Z');
+
+  beforeEach(() => {
+    cRepo.findById.mockResolvedValue(fakeContract());
+    mRepo.findByPair.mockResolvedValue({ id: 5, contract_id: 1 } as unknown as ConversationRow);
+  });
+
+  it('marca as recebidas até a última exibida, avisa a sala de cada contratação do par e devolve o recibo', async () => {
+    mRepo.markRead.mockResolvedValue({ marked: 2, upToId: 9, readAt: READ_AT });
+    mRepo.pairContractIds.mockResolvedValue([1, 4]);
+
+    const receipt = await messagingService.markRead(1, 20, 9);
+
+    expect(receipt).toEqual({
+      conversationId: 5,
+      marked: 2,
+      upToId: 9,
+      readAt: '2026-10-19T12:00:00.000Z',
+    });
+    // Quem lê é o freelancer (20): só as mensagens que ele recebeu, na conversa do par.
+    expect(mRepo.findByPair).toHaveBeenCalledWith(10, 20);
+    expect(mRepo.markRead).toHaveBeenCalledWith(5, 20, 9);
+    const event = {
+      conversationId: 5,
+      readerId: 20,
+      upToId: 9,
+      readAt: '2026-10-19T12:00:00.000Z',
+    };
+    expect(vi.mocked(realtime.emitToContract).mock.calls).toEqual([
+      [1, 'message:read', { ...event, contractId: 1 }],
+      [4, 'message:read', { ...event, contractId: 4 }],
+    ]);
+    // Ler não cria conversa, mensagem nem notificação.
+    expect(mRepo.getOrCreate).not.toHaveBeenCalled();
+    expect(mRepo.insertMessage).not.toHaveBeenCalled();
+    expect(notificationsService.notify).not.toHaveBeenCalled();
+  });
+
+  it('sem upTo, todas as recebidas contam como lidas', async () => {
+    mRepo.markRead.mockResolvedValue({ marked: 1, upToId: 3, readAt: READ_AT });
+
+    await messagingService.markRead(1, 10);
+
+    expect(mRepo.markRead).toHaveBeenCalledWith(5, 10, null);
+  });
+
+  it('idempotente: sem nada a marcar devolve marked 0 e não avisa ninguém', async () => {
+    mRepo.markRead.mockResolvedValue({ marked: 0, upToId: null, readAt: null });
+
+    expect(await messagingService.markRead(1, 10, 9)).toEqual({
+      conversationId: 5,
+      marked: 0,
+      upToId: null,
+      readAt: null,
+    });
+    expect(mRepo.pairContractIds).not.toHaveBeenCalled();
+    expect(realtime.emitToContract).not.toHaveBeenCalled();
+  });
+
+  it('par ainda sem conversa: nada a marcar, e a conversa não é criada', async () => {
+    mRepo.findByPair.mockResolvedValue(undefined);
+
+    expect(await messagingService.markRead(1, 10, 9)).toEqual({
+      conversationId: null,
+      marked: 0,
+      upToId: null,
+      readAt: null,
+    });
+    expect(mRepo.markRead).not.toHaveBeenCalled();
+    expect(mRepo.getOrCreate).not.toHaveBeenCalled();
+    expect(realtime.emitToContract).not.toHaveBeenCalled();
+  });
+
+  it('contratação que não existe dá 404, e quem não participa recebe 403, antes de tocar na conversa', async () => {
+    cRepo.findById.mockResolvedValueOnce(undefined);
+    await expect(messagingService.markRead(1, 10, 9)).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'contract_not_found',
+    });
+    await expect(messagingService.markRead(1, 99, 9)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'forbidden',
+    });
+    expect(mRepo.findByPair).not.toHaveBeenCalled();
+    expect(mRepo.markRead).not.toHaveBeenCalled();
+  });
+
+  it('se as contratações do par não puderem ser lidas, o aviso vai ao menos para a sala de origem', async () => {
+    mRepo.markRead.mockResolvedValue({ marked: 1, upToId: 9, readAt: READ_AT });
+    const boom = new Error('banco fora');
+    mRepo.pairContractIds.mockRejectedValueOnce(boom);
+    const warn = vi.spyOn(logger, 'warn');
+
+    const receipt = await messagingService.markRead(1, 20, 9);
+
+    expect(receipt.marked).toBe(1);
+    expect(vi.mocked(realtime.emitToContract).mock.calls).toEqual([
+      [
+        1,
+        'message:read',
+        {
+          conversationId: 5,
+          readerId: 20,
+          upToId: 9,
+          readAt: '2026-10-19T12:00:00.000Z',
+          contractId: 1,
+        },
+      ],
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      { err: boom, conversationId: 5 },
+      'tempo real: contratações do par não lidas; o aviso de leitura vai só para a sala de origem',
+    );
+    warn.mockRestore();
+  });
+});
+
+describe('messagingService.history: lida ou não (RF-059)', () => {
+  beforeEach(() => {
+    cRepo.findById.mockResolvedValue(fakeContract());
+    mRepo.getOrCreate.mockResolvedValue(5);
+  });
+
+  it('a mensagem lida traz readAt; a não lida, null; a removida pela moderação conserva a leitura', async () => {
+    mRepo.listMessages.mockResolvedValue([
+      fakeMsg({ id: 1, read_at: new Date('2026-10-19T12:00:00Z') }),
+      fakeMsg({ id: 2, read_at: null }),
+      fakeMsg({
+        id: 3,
+        read_at: new Date('2026-10-19T12:05:00Z'),
+        removed_at: new Date('2026-10-19T13:00:00Z'),
+      }),
+    ]);
+
+    const h = await messagingService.history(1, 20);
+
+    expect(h.messages.map((m) => m.readAt)).toEqual([
+      '2026-10-19T12:00:00.000Z',
+      null,
+      '2026-10-19T12:05:00.000Z',
+    ]);
+    expect(h.messages[2]!.content).toBe('');
   });
 });

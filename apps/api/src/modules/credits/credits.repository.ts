@@ -1,5 +1,6 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { pool } from '../../config/db';
+import { rangeFilter, type WalletRange } from '../wallet/wallet.period';
 import { walletRepository } from '../wallet/wallet.repository';
 import { lockWalletUsers } from '../wallet/wallet.locks';
 
@@ -18,6 +19,18 @@ export const creditsRepository = {
    * Concede o bônus de boas-vindas uma única vez (idempotente). Serializa por
    * usuário com SELECT ... FOR UPDATE para não conceder em dobro sob concorrência.
    */
+  /**
+   * Leitura sem trava: o bônus de boas-vindas já saiu? É o atalho do caminho comum (toda leitura
+   * da carteira); a conferência que vale, sob a trava, é a do grantWelcomeIfNew.
+   */
+  async hasWelcome(userId: number): Promise<boolean> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT 1 FROM credit_transactions WHERE user_id = :userId AND reason = 'welcome' LIMIT 1`,
+      { userId },
+    );
+    return rows.length > 0;
+  },
+
   async grantWelcomeIfNew(userId: number, bonus: number): Promise<void> {
     if (bonus <= 0) return;
     await walletRepository.ensure(userId);
@@ -60,14 +73,21 @@ export const creditsRepository = {
     }
   },
 
-  async listTransactions(userId: number, limit: number, offset: number): Promise<CreditTxRow[]> {
+  /** Extrato de créditos, do mais novo ao mais antigo; o período (RF-047) é [from, to) em UTC. */
+  async listTransactions(
+    userId: number,
+    limit: number,
+    offset: number,
+    range: WalletRange = {},
+  ): Promise<CreditTxRow[]> {
+    const period = rangeFilter(range);
     const [rows] = await pool.query<CreditTxRow[]>(
       `SELECT id, user_id, amount, balance_after, reason, contract_id, created_at
          FROM credit_transactions
-        WHERE user_id = :userId
+        WHERE user_id = :userId${period.sql}
         ORDER BY id DESC
         LIMIT ${limit} OFFSET ${offset}`,
-      { userId },
+      { userId, ...period.params },
     );
     return rows;
   },

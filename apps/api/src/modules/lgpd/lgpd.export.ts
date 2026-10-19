@@ -6,6 +6,7 @@ import type { Readable } from 'node:stream';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { env } from '../../config/env';
+import { openDestination } from '../withdrawal/withdrawal.fields';
 
 /**
  * Portabilidade (LGPD, art. 18, V): monta a cópia de tudo que a plataforma guarda sobre o
@@ -21,9 +22,11 @@ import { env } from '../../config/env';
  * escolheu; ADR 56). Formato 1.8: as ofertas das negociações de que participou e as desistências
  * do freelancer titular, incluindo sua contestação e a decisão privada (ADR 61). Formato 1.9:
  * chamados próprios e mensagens públicas de suporte; notas internas nunca entram na cópia.
+ * Formato 1.10: cada mensagem do chat traz read_at, quando o destinatário leu (RF-059).
+ * Também na 1.10: cada serviço traz is_onsite (atende presencial, RF-023) e as tags (RF-024).
  */
 
-export const EXPORT_FORMAT_VERSION = '1.9';
+export const EXPORT_FORMAT_VERSION = '1.10';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -55,8 +58,11 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     p,
   );
   const services = await q(
-    `SELECT id, title, description, price_type, price, delivery_days, is_remote, is_active,
-            views_count, created_at, deleted_at
+    `SELECT id, title, description, price_type, price, delivery_days, is_remote, is_onsite,
+            is_active, views_count, created_at, deleted_at,
+            (SELECT GROUP_CONCAT(st.name ORDER BY st.name SEPARATOR ', ')
+               FROM service_tag_pivot stp JOIN service_tags st ON st.id = stp.tag_id
+              WHERE stp.service_id = services.id) AS tags
        FROM services WHERE user_id = :userId ORDER BY id`,
     p,
   );
@@ -92,9 +98,10 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
        FROM freelancer_dropouts WHERE freelancer_id = :userId ORDER BY id`,
     p,
   );
+  // read_at (1.10): quando o destinatário leu — o mesmo "Lida" que as duas partes já veem no chat.
   const messages = await q(
     `SELECT m.id, cv.contract_id, m.sender_id, m.type, m.content, m.file_name, m.file_size_bytes,
-            m.created_at
+            m.created_at, m.read_at
        FROM messages m
        JOIN conversations cv ON cv.id = m.conversation_id
       WHERE cv.participant_a = :userId OR cv.participant_b = :userId
@@ -135,12 +142,16 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
        FROM payments WHERE payer_id = :userId AND kind = 'topup' ORDER BY id`,
     p,
   );
-  const withdrawals = await q(
-    `SELECT id, amount, status, pix_key, bank_name, bank_agency, bank_account, gateway_ref,
-            processed_at, created_at
-       FROM withdrawals WHERE user_id = :userId ORDER BY id`,
-    p,
-  );
+  // O destino é do titular e vai legível: decifrado como no app (RNF-017); o que não decifra sai
+  // como "[indisponível]".
+  const withdrawals = (
+    await q(
+      `SELECT id, amount, status, pix_key, bank_name, bank_agency, bank_account, gateway_ref,
+              processed_at, created_at
+         FROM withdrawals WHERE user_id = :userId ORDER BY id`,
+      p,
+    )
+  ).map((row) => openDestination(row));
   const disputes = await q(
     `SELECT d.id, d.contract_id, d.opened_by, d.reason, d.description, d.status, d.resolution,
             d.refund_percentage, d.resolution_note, d.resolved_at, d.created_at

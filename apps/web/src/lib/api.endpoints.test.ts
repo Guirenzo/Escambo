@@ -5,6 +5,7 @@ import {
   getRefreshToken,
   getToken,
   MAINTENANCE_EVENT,
+  OUTAGE_EVENT,
   SESSION_EXPIRED_EVENT,
   SESSION_TOKEN_EVENT,
   setSession,
@@ -94,6 +95,16 @@ describe('consultas (GET): cada método lê do caminho certo', () => {
     ['emailPreference', () => api.emailPreference(), '/api/notifications/preferences'],
     ['pushStatus sem aparelho', () => api.pushStatus(), '/api/notifications/push'],
     ['creditTransactions', () => api.creditTransactions(), '/api/credits/transactions'],
+    [
+      'creditTransactions com página e período (RF-047)',
+      () => api.creditTransactions({ page: 2, limit: 20, from: '2026-10-01', to: '2026-10-15' }),
+      '/api/credits/transactions?page=2&limit=20&from=2026-10-01&to=2026-10-15',
+    ],
+    [
+      'creditTransactions só com o início do período (o vazio não vai)',
+      () => api.creditTransactions({ page: 1, from: '2026-10-01', to: '' }),
+      '/api/credits/transactions?page=1&from=2026-10-01',
+    ],
     ['boostPlans', () => api.boostPlans(), '/api/boosts/plans'],
     ['myBoosts', () => api.myBoosts(), '/api/boosts'],
     ['barters', () => api.barters(), '/api/barters'],
@@ -250,6 +261,27 @@ describe('gravações: verbo, caminho e corpo de cada método', () => {
       { categoryId: 2, title: 'Logo', description: 'Marca completa' },
     ],
     ['myServices', () => api.myServices(), 'GET', '/api/services/mine'],
+    ['service (detalhe, RF-029)', () => api.service(11), 'GET', '/api/services/11'],
+    [
+      'createService (modalidade e tags, RF-023/RF-024)',
+      () =>
+        api.createService({
+          categoryId: 2,
+          title: 'Logo',
+          description: 'Marca completa',
+          modality: 'both',
+          tags: ['logo', 'figma'],
+        }),
+      'POST',
+      '/api/services',
+      {
+        categoryId: 2,
+        title: 'Logo',
+        description: 'Marca completa',
+        modality: 'both',
+        tags: ['logo', 'figma'],
+      },
+    ],
     [
       'updateService',
       () => api.updateService(11, { priceType: 'hourly', price: 80, deliveryDays: 2 }),
@@ -435,6 +467,20 @@ describe('gravações: verbo, caminho e corpo de cada método', () => {
       'POST',
       '/api/messaging/contracts/7',
       { content: 'Olá' },
+    ],
+    [
+      'markChatRead até a última mensagem exibida',
+      () => api.markChatRead(7, 31),
+      'POST',
+      '/api/messaging/contracts/7/read',
+      { upTo: 31 },
+    ],
+    [
+      'markChatRead sem upTo marca todas as recebidas',
+      () => api.markChatRead(7),
+      'POST',
+      '/api/messaging/contracts/7/read',
+      {},
     ],
     [
       'createDeposit',
@@ -766,6 +812,14 @@ describe('busca de serviços e relatório financeiro: só os filtros preenchidos
     expect(sent(fetchMock, 1).url).toBe('/api/services');
   });
 
+  it('listServices manda a modalidade como isRemote, inclusive o false (presencial, RF-023)', async () => {
+    const fetchMock = stubFetch();
+    await api.listServices({ isRemote: false });
+    await api.listServices({ q: 'logo', isRemote: true });
+    expect(sent(fetchMock, 0).url).toBe('/api/services?isRemote=false');
+    expect(sent(fetchMock, 1).url).toBe('/api/services?q=logo&isRemote=true');
+  });
+
   it('contracts manda página, limite e os status separados por vírgula; filtro vazio fica de fora (RF-040)', async () => {
     const fetchMock = stubFetch();
     await api.contracts({ page: 2, limit: 20, status: ['accepted', 'in_progress'] });
@@ -1084,6 +1138,40 @@ describe('erros da API', () => {
     const maintenance = listen(MAINTENANCE_EVENT);
     await expect(api.categories()).rejects.toThrow('Voltamos já');
     expect(maintenance.handler).toHaveBeenCalledTimes(1);
+    expect((maintenance.handler.mock.calls[0]![0] as CustomEvent).detail).toEqual({
+      returnAt: null,
+    });
+    maintenance.stop();
+  });
+
+  it('503 de manutenção com previsão leva a hora da volta no aviso (RNF-010)', async () => {
+    stubFetch(
+      reply(503, { error: 'maintenance', message: 'x', returnAt: '2026-10-19T16:37:48.000Z' }),
+    );
+    const maintenance = listen(MAINTENANCE_EVENT);
+    await expect(api.categories()).rejects.toThrow('x');
+    expect((maintenance.handler.mock.calls[0]![0] as CustomEvent).detail).toEqual({
+      returnAt: '2026-10-19T16:37:48.000Z',
+    });
+    maintenance.stop();
+  });
+
+  it('503 do proxy com a API fora do ar avisa o app para mostrar a tela de fora do ar', async () => {
+    stubFetch(
+      reply(503, {
+        error: 'service_unavailable',
+        message: 'O Escambo está fora do ar no momento. Tente de novo em instantes.',
+      }),
+    );
+    const outage = listen(OUTAGE_EVENT);
+    const maintenance = listen(MAINTENANCE_EVENT);
+    await expect(api.categories()).rejects.toMatchObject({
+      message: 'O Escambo está fora do ar no momento. Tente de novo em instantes.',
+      code: 'service_unavailable',
+    });
+    expect(outage.handler).toHaveBeenCalledTimes(1);
+    expect(maintenance.handler).not.toHaveBeenCalled();
+    outage.stop();
     maintenance.stop();
   });
 

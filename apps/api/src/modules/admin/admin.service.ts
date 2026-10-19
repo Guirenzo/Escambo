@@ -1,6 +1,7 @@
 import type { AdminMetrics, Dispute } from '@escambo/types';
 import { blocklist } from '../../config/blocklist';
 import { realtime } from '../../config/realtime';
+import { clock } from '../../utils/clock';
 import { HttpError } from '../../utils/http-error';
 import { authRepository } from '../auth/auth.repository';
 import { sessionRepository } from '../auth/session.repository';
@@ -165,7 +166,7 @@ export const adminService = {
   },
 
   async getMetrics(): Promise<AdminMetrics> {
-    const m = await adminRepository.metrics();
+    const m = await adminRepository.metrics(clock.now());
     return {
       users: m.users,
       freelancers: m.freelancers,
@@ -176,6 +177,7 @@ export const adminService = {
       inEscrow: Number(m.in_escrow),
       pendingWithdrawals: Number(m.pending_withdrawals),
       pendingWithdrawalsAmount: Number(m.pending_withdrawals_amount),
+      overdueWithdrawals: Number(m.overdue_withdrawals),
       depositsTotal: Number(m.deposits_total),
       usersBalance: Number(m.users_balance),
       pendingDeletions: Number(m.pending_deletions),

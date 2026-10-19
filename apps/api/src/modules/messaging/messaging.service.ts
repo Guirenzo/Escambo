@@ -1,4 +1,11 @@
-import type { ChatAttachment, ChatHistory, ChatMessage, OffPlatformSignal } from '@escambo/types';
+import type {
+  ChatAttachment,
+  ChatHistory,
+  ChatMessage,
+  ChatReadEvent,
+  ChatReadReceipt,
+  OffPlatformSignal,
+} from '@escambo/types';
 import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
 import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
@@ -71,6 +78,8 @@ function toMessage(row: MessageRow): ChatMessage {
     createdAt: new Date(row.created_at).toISOString(),
     removedAt,
     signals: removedAt ? [] : parseSignals(row.off_platform),
+    // Lida (RF-059) não é conteúdo: continua valendo na mensagem removida pela moderação.
+    readAt: row.read_at ? new Date(row.read_at).toISOString() : null,
   };
 }
 
@@ -132,25 +141,36 @@ async function recordResponseTime(ctx: ConversationContext, messageId: number): 
 }
 
 /**
- * Transmite a mensagem nova. A conversa é a mesma em todas as contratações do par e cada parte
+ * Transmite um evento do chat. A conversa é a mesma em todas as contratações do par e cada parte
  * acompanha o chat na sala do contrato que está aberto na tela (que só aceita evento com o id dele):
  * vai para a sala de cada contratação, com o id dela, como o aviso de mudança (announceChange). Se
- * a lista não puder ser lida, vai ao menos para a sala de onde a mensagem saiu.
+ * a lista não puder ser lida, vai ao menos para a sala de onde o evento saiu.
  */
-async function broadcastNew(ctx: ConversationContext, message: ChatMessage): Promise<void> {
+async function broadcastToPair(
+  conversationId: number,
+  originContractId: number,
+  event: 'message:new' | 'message:read',
+  payload: object,
+): Promise<void> {
   let contractIds: number[];
   try {
-    contractIds = await messagingRepository.pairContractIds(ctx.conversationId);
+    contractIds = await messagingRepository.pairContractIds(conversationId);
   } catch (err) {
+    const what = event === 'message:new' ? 'a mensagem' : 'o aviso de leitura';
     logger.warn(
-      { err, conversationId: ctx.conversationId },
-      'tempo real: contratações do par não lidas; a mensagem vai só para a sala de origem',
+      { err, conversationId },
+      `tempo real: contratações do par não lidas; ${what} vai só para a sala de origem`,
     );
-    contractIds = [ctx.contract.id];
+    contractIds = [originContractId];
   }
   for (const contractId of contractIds) {
-    realtime.emitToContract(contractId, 'message:new', { ...message, contractId });
+    realtime.emitToContract(contractId, event, { ...payload, contractId });
   }
+}
+
+/** A mensagem nova vai para a sala de cada contratação do par. */
+async function broadcastNew(ctx: ConversationContext, message: ChatMessage): Promise<void> {
+  await broadcastToPair(ctx.conversationId, ctx.contract.id, 'message:new', message);
 }
 
 /** Depois de persistir: responsividade, tempo real e notificação — igual para texto e anexo. */
@@ -244,6 +264,40 @@ export const messagingService = {
       contractId,
       otherPartyId: ctx.otherPartyId,
       messages: rows.map(toMessage),
+    };
+  },
+
+  /**
+   * Leitura (RF-059): marca como lidas as mensagens que `uid` recebeu na conversa do par, até
+   * `upTo` (a última que a tela mostrou). Só a parte que recebeu marca — as próprias nunca mudam —
+   * e quem não participa da contratação recebe 404/403 como no histórico. Idempotente: sem nada a
+   * marcar não grava nem avisa. Consultar não cria conversa (findByPair), então vale também para a
+   * conta suspensa, que só registra que leu. Quando algo muda, avisa as salas do par
+   * (`message:read`) para quem mandou ver "Lida" na hora.
+   */
+  async markRead(contractId: number, uid: number, upTo?: number): Promise<ChatReadReceipt> {
+    const ctx = await authorizedContext(contractId, uid);
+    const conversation = await messagingRepository.findByPair(
+      ctx.contract.client_id,
+      ctx.contract.freelancer_id,
+    );
+    if (!conversation) return { conversationId: null, marked: 0, upToId: null, readAt: null };
+    const result = await messagingRepository.markRead(conversation.id, uid, upTo ?? null);
+    if (result.upToId === null) {
+      return { conversationId: conversation.id, marked: 0, upToId: null, readAt: null };
+    }
+    const readAt = result.readAt.toISOString();
+    await broadcastToPair(conversation.id, contractId, 'message:read', {
+      conversationId: conversation.id,
+      readerId: uid,
+      upToId: result.upToId,
+      readAt,
+    } satisfies Omit<ChatReadEvent, 'contractId'>);
+    return {
+      conversationId: conversation.id,
+      marked: result.marked,
+      upToId: result.upToId,
+      readAt,
     };
   },
 

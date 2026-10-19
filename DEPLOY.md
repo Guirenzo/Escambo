@@ -41,7 +41,7 @@ sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sud
 
 ## 2. Primeira subida
 
-Poucos arquivos vão para a VPS: o compose de produção, o `Caddyfile`, o `.env` e (opcional) os
+Poucos arquivos vão para a VPS: o compose de produção, o `Caddyfile` e a página de fora do ar, o `.env` e (opcional) os
 scripts de backup. Não precisa clonar o repositório. A configuração do monitoramento (`deploy/monitoring/`,
 opcional) chega sozinha no primeiro deploy pelo workflow Deploy (seção 3).
 
@@ -49,8 +49,9 @@ opcional) chega sozinha no primeiro deploy pelo workflow Deploy (seção 3).
 sudo mkdir -p /opt/escambo && sudo chown "$USER" /opt/escambo && cd /opt/escambo
 base=https://raw.githubusercontent.com/Guirenzo/Escambo/main
 curl -fsSLO "$base/docker-compose.prod.yml"
-mkdir -p deploy scripts
+mkdir -p deploy/status scripts
 curl -fsSL "$base/deploy/Caddyfile" -o deploy/Caddyfile
+curl -fsSL "$base/deploy/status/fora-do-ar.html" -o deploy/status/fora-do-ar.html
 curl -fsSL "$base/scripts/backup-db.sh"  -o scripts/backup-db.sh
 curl -fsSL "$base/scripts/backup-uploads.sh" -o scripts/backup-uploads.sh
 curl -fsSL "$base/scripts/restore-db.sh" -o scripts/restore-db.sh
@@ -133,6 +134,8 @@ curl -s https://SEU_DOMINIO/api/health   # confira o commit
 ```
 
 Se o compose ou a pasta `deploy/` mudaram naquela versão, baixe-os de novo antes (os `curl` da seção 2).
+
+**Fora do ar (RNF-010):** se o web (nginx) não responde, o Caddy serve `deploy/status/fora-do-ar.html`, que tenta de novo sozinha a cada 30 s. Se a API cai e o web está de pé, o nginx devolve às chamadas do app um 503 em JSON (`service_unavailable`), e o app troca a tela pela de fora do ar até a API voltar. O modo de manutenção (ADR 33) continua sendo o caminho para uma parada planejada.
 
 Guarde a tag que está no ar antes de uma mudança grande:
 

@@ -356,11 +356,22 @@ describe('authService.login', () => {
     const compare = vi.spyOn(bcrypt, 'compare');
 
     await expect(
-      authService.login({ email: 'rafael@exemplo.com', password: 'senha12345' }),
+      authService.login({ email: 'rafael@exemplo.com', password: 'senha12345' }, CTX),
     ).rejects.toMatchObject({ statusCode: 401, code: 'invalid_credentials' });
 
-    expect(compare).not.toHaveBeenCalled();
+    // Compara com um hash que ninguém tem (o mesmo custo de uma conta real), nunca com o nulo.
+    expect(compare).toHaveBeenCalledTimes(1);
+    expect(compare.mock.calls[0]![1]).toMatch(/^\$2[aby]\$/);
     expect(sessions.create).not.toHaveBeenCalled();
+    expect(vi.mocked(auditService).log).toHaveBeenCalledWith({
+      userId: 1,
+      action: 'auth.login_failed',
+      entityType: 'user',
+      entityId: 1,
+      newValue: { reason: 'no_password' },
+      ip: '127.0.0.1',
+      userAgent: 'vitest',
+    });
     compare.mockRestore();
   });
 
@@ -400,6 +411,63 @@ describe('authService.login', () => {
       message: 'Credenciais inválidas',
     });
     expect(sessions.create).not.toHaveBeenCalled();
+  });
+
+  it('senha errada fica no audit_logs com o IP e o id da conta-alvo (RNF-018)', async () => {
+    repo.findByEmail.mockResolvedValue(fakeUser({ id: 7, password_hash: KNOWN_HASH }));
+    await expect(
+      authService.login({ email: 'rafael@exemplo.com', password: 'errada' }, CTX),
+    ).rejects.toMatchObject({ code: 'invalid_credentials' });
+    expect(vi.mocked(auditService).log).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(auditService).log).toHaveBeenCalledWith({
+      userId: 7,
+      action: 'auth.login_failed',
+      entityType: 'user',
+      entityId: 7,
+      newValue: { reason: 'wrong_password' },
+      ip: '127.0.0.1',
+      userAgent: 'vitest',
+    });
+  });
+
+  it('conta inexistente: registra a tentativa sem guardar o e-mail digitado (RNF-018)', async () => {
+    repo.findByEmail.mockResolvedValue(undefined);
+    await expect(
+      authService.login({ email: 'naoexiste@exemplo.com', password: 'senha12345' }, CTX),
+    ).rejects.toMatchObject({ code: 'invalid_credentials' });
+    expect(vi.mocked(auditService).log).toHaveBeenCalledWith({
+      userId: null,
+      action: 'auth.login_failed',
+      entityType: null,
+      entityId: null,
+      newValue: { reason: 'unknown_account' },
+      ip: '127.0.0.1',
+      userAgent: 'vitest',
+    });
+    expect(JSON.stringify(vi.mocked(auditService).log.mock.calls)).not.toContain('naoexiste');
+  });
+
+  it('conta inexistente também passa pelo bcrypt: o tempo não revela se o e-mail existe', async () => {
+    repo.findByEmail.mockResolvedValue(undefined);
+    const compare = vi.spyOn(bcrypt, 'compare');
+    await expect(
+      authService.login({ email: 'naoexiste@exemplo.com', password: 'senha12345' }),
+    ).rejects.toMatchObject({ code: 'invalid_credentials' });
+    await expect(
+      authService.login({ email: 'outro@exemplo.com', password: 'senha12345' }),
+    ).rejects.toMatchObject({ code: 'invalid_credentials' });
+    expect(compare).toHaveBeenCalledTimes(2);
+    // O hash de mentira é calculado uma vez e reaproveitado.
+    expect(compare.mock.calls[0]![1]).toBe(compare.mock.calls[1]![1]);
+    compare.mockRestore();
+  });
+
+  it('login certo não registra tentativa falha', async () => {
+    repo.findByEmail.mockResolvedValue(fakeUser({ password_hash: KNOWN_HASH }));
+    await authService.login({ email: 'rafael@exemplo.com', password: 'senha12345' }, CTX);
+    expect(vi.mocked(auditService).log).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'auth.login_failed' }),
+    );
   });
 
   it('rejeita usuário inexistente (401)', async () => {

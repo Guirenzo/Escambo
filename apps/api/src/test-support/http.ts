@@ -31,3 +31,13 @@ export function tokenFor(uid: number, role = 'client'): string {
 export function bearer(uid: number, role = 'client'): { Authorization: string } {
   return { Authorization: `Bearer ${tokenFor(uid, role)}` };
 }
+
+/**
+ * O que foi para a auditoria como ação de negócio. A recusa em si (`access.denied`, gravada pelo
+ * error-handler, RNF-018) não conta: o teste que diz "nada auditado" fala da ação que não aconteceu.
+ */
+export function businessAudits(log: { mock: { calls: unknown[][] } }): unknown[] {
+  return log.mock.calls.filter(
+    ([entry]) => (entry as { action?: string })?.action !== 'access.denied',
+  );
+}

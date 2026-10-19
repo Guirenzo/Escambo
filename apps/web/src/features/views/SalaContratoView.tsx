@@ -2,6 +2,8 @@ import { BusinessForm } from '../../components/BusinessActions';
 import { useReadOnlyAccount } from '../../lib/account-access';
 import {
   ArrowLeft,
+  Check,
+  CheckCheck,
   Hourglass,
   ListChecks,
   MessageSquare,
@@ -19,7 +21,12 @@ import {
   type DragEvent,
   type FormEvent,
 } from 'react';
-import type { ChatMessage, ChatMessageEvent, ContractWithHistory } from '@escambo/types';
+import type {
+  ChatMessage,
+  ChatMessageEvent,
+  ChatReadEvent,
+  ContractWithHistory,
+} from '@escambo/types';
 import { StarInput, Stars } from '../../components/Stars';
 import { Button, Input, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
@@ -29,6 +36,7 @@ import {
   useChatHistory,
   useContractDetail,
   useCreateReview,
+  useMarkChatRead,
   useRespondReview,
   useSendAttachment,
   useSendMessage,
@@ -130,6 +138,23 @@ function DueNotice({
     );
   }
   return null;
+}
+
+/** Leitura (RF-059) de uma mensagem que eu mandei: ícone e texto, não só cor. */
+function ReadStatus({ readAt }: { readAt: string | null }) {
+  return readAt ? (
+    <span
+      className="muted tiny read-status"
+      data-testid="read-status"
+      title={`Lida em ${dtm(readAt)}`}
+    >
+      <CheckCheck size={14} aria-hidden="true" /> Lida
+    </span>
+  ) : (
+    <span className="muted tiny read-status" data-testid="read-status">
+      <Check size={14} aria-hidden="true" /> Enviada
+    </span>
+  );
 }
 
 const MODE_LABEL: Record<string, string> = {
@@ -305,8 +330,10 @@ export function SalaContratoView({
   const history = useChatHistory(contractId);
   const send = useSendMessage(contractId);
   const sendFile = useSendAttachment(contractId);
+  const { mutate: markReadUpTo } = useMarkChatRead(contractId);
 
   const [live, setLive] = useState<ChatMessage[]>([]); // mensagens que chegaram pelo socket
+  const [reads, setReads] = useState<ChatReadEvent[]>([]); // leituras avisadas pelo socket
   const [connected, setConnected] = useState(false);
   const [draft, setDraft] = useState('');
   const [disputeOpen, setDisputeOpen] = useState(false);
@@ -348,23 +375,76 @@ export function SalaContratoView({
       if (m.contractId !== contractId) return;
       setLive((prev) => [...prev.filter((x) => x.id !== m.id), m]);
     };
+    // Leitura (RF-059): a outra parte leu até upToId; "Enviada" vira "Lida" na hora.
+    const onRead = (r: ChatReadEvent): void => {
+      if (r.contractId !== contractId) return;
+      setReads((prev) => [...prev, r]);
+    };
     socket.on('message:new', append);
     socket.on('message:updated', replace);
+    socket.on('message:read', onRead);
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('message:new', append);
       socket.off('message:updated', replace);
+      socket.off('message:read', onRead);
     };
   }, [contractId]);
 
-  // Histórico (cache) + mensagens ao vivo, sem duplicar, em ordem.
+  // Histórico (cache) + mensagens ao vivo, sem duplicar, em ordem, com as leituras avisadas.
   const messages = useMemo(() => {
     const byId = new Map<number, ChatMessage>();
     for (const m of history.data?.messages ?? []) byId.set(m.id, m);
-    for (const m of live) byId.set(m.id, m);
-    return [...byId.values()].sort((a, b) => a.id - b.id);
-  }, [history.data, live]);
+    for (const m of live) {
+      // A versão ao vivo é a mais nova, mas a leitura que o histórico já trouxe continua valendo.
+      const readAt = m.readAt ?? byId.get(m.id)?.readAt ?? null;
+      byId.set(m.id, { ...m, readAt });
+    }
+    return [...byId.values()]
+      .map((m) => {
+        if (m.readAt) return m;
+        // A primeira leitura que cobre a mensagem dá o horário; quem lê é sempre a outra parte.
+        // Só as desta Sala: trocar de contratação sem sair da tela não leva a leitura de outra.
+        const read = reads.find(
+          (r) => r.contractId === contractId && r.readerId !== m.senderId && r.upToId >= m.id,
+        );
+        return read ? { ...m, readAt: read.readAt } : m;
+      })
+      .sort((a, b) => a.id - b.id);
+  }, [history.data, live, reads, contractId]);
+
+  // A maior mensagem recebida ainda não lida (0 = nenhuma).
+  const lastUnread = useMemo(
+    () =>
+      messages.reduce((max, m) => (m.senderId !== myId && !m.readAt && m.id > max ? m.id : max), 0),
+    [messages, myId],
+  );
+
+  // Até onde esta tela já pediu para marcar, por contratação (os ids são da plataforma toda).
+  const markedUpTo = useRef({ contractId, upTo: 0 });
+
+  // Marca como lidas as recebidas quando a conversa está na tela: ao abrir, quando chega mensagem
+  // nova e quando a aba volta a ficar visível. Aba escondida não marca nada.
+  useEffect(() => {
+    if (markedUpTo.current.contractId !== contractId) markedUpTo.current = { contractId, upTo: 0 };
+    if (!lastUnread) return;
+    const done = markedUpTo.current;
+    const mark = (): void => {
+      if (document.visibilityState !== 'visible' || lastUnread <= done.upTo) return;
+      const previous = done.upTo;
+      done.upTo = lastUnread;
+      markReadUpTo(lastUnread, {
+        // Falhou (rede): a próxima mensagem ou a volta à aba tentam de novo.
+        onError: () => {
+          if (done.upTo === lastUnread) done.upTo = previous;
+        },
+      });
+    };
+    mark();
+    document.addEventListener('visibilitychange', mark);
+    return () => document.removeEventListener('visibilitychange', mark);
+  }, [contractId, lastUnread, markReadUpTo]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -578,7 +658,10 @@ export function SalaContratoView({
                       do escrow
                     </span>
                   )}
-                  <span className="muted tiny">{hm(m.createdAt)}</span>
+                  <span className="bubble-meta">
+                    <span className="muted tiny">{hm(m.createdAt)}</span>
+                    {m.senderId === myId && !m.removedAt && <ReadStatus readAt={m.readAt} />}
+                  </span>
                 </div>
               ))
             )}

@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../modules/settings/settings.service', () => ({
-  settingsService: { maintenanceMode: vi.fn() },
+  settingsService: { maintenanceMode: vi.fn(), maintenanceReturnAt: vi.fn() },
 }));
 
 import { env } from '../config/env';
@@ -10,6 +10,7 @@ import { settingsService } from '../modules/settings/settings.service';
 import { maintenanceGate, RETRY_AFTER_SECONDS } from './maintenance';
 
 const mode = vi.mocked(settingsService.maintenanceMode);
+const returnAt = vi.mocked(settingsService.maintenanceReturnAt);
 
 function run(path: string, authorization?: string) {
   const req = { path, headers: authorization ? { authorization } : {} } as never;
@@ -22,7 +23,10 @@ function run(path: string, authorization?: string) {
 const token = (role: string) => `Bearer ${jwt.sign({ sub: 'u', uid: 1, role }, env.JWT_SECRET)}`;
 
 describe('maintenanceGate (ADR 33)', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    returnAt.mockResolvedValue(null);
+  });
 
   it('desligado: passa tudo sem olhar o token', async () => {
     mode.mockResolvedValue(false);
@@ -54,6 +58,32 @@ describe('maintenanceGate (ADR 33)', () => {
       expect((await run(p)).err, p).toBeUndefined();
     }
     expect((await run('/settings/publico')).err).toMatchObject({ statusCode: 503 });
+  });
+
+  it('com previsão de volta, o Retry-After é o tempo que falta e a mensagem diz a hora (RNF-010)', async () => {
+    mode.mockResolvedValue(true);
+    const at = new Date(Date.now() + 45 * 60_000);
+    returnAt.mockResolvedValue(at);
+    const { err, headers } = await run('/services');
+    // A hora vai junto no erro, para o app mostrar sem pedir os parâmetros de novo.
+    expect((err as { publicData?: unknown }).publicData).toEqual({ returnAt: at.toISOString() });
+    const seconds = Number(headers['Retry-After']);
+    expect(seconds).toBeGreaterThan(44 * 60);
+    expect(seconds).toBeLessThanOrEqual(45 * 60);
+    expect((err as Error).message).toMatch(
+      /^Estamos em manutenção\. Previsão de volta: \d{2}:\d{2} \(horário de Brasília\)\.$/,
+    );
+  });
+
+  it('previsão a menos de 30 s manda esperar 30 s; previsão que já passou volta ao padrão', async () => {
+    mode.mockResolvedValue(true);
+    returnAt.mockResolvedValue(new Date(Date.now() + 5_000));
+    expect((await run('/services')).headers['Retry-After']).toBe('30');
+    returnAt.mockResolvedValue(new Date(Date.now() - 60_000));
+    const late = await run('/services');
+    expect(late.headers['Retry-After']).toBe(String(RETRY_AFTER_SECONDS));
+    expect((late.err as Error).message).toBe('Estamos em manutenção. Voltamos em instantes.');
+    expect((late.err as { publicData?: unknown }).publicData).toBeUndefined();
   });
 
   it('erro ao ler a chave sobe para o error handler (não derruba a requisição em silêncio)', async () => {

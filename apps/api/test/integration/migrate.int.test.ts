@@ -35,6 +35,16 @@ const RULE_MIGRATIONS = [
   '0034_suporte_sla',
 ];
 
+/**
+ * As migrations esperadas, em ordem, seguidas só de posteriores a elas: uma migration nova (de
+ * outra frente) entra no upgrade sem quebrar o que estes testes conferem.
+ */
+function expectAppliedFrom(applied: string[], expected: string[]): void {
+  expect(applied.slice(0, expected.length)).toEqual(expected);
+  const last = expected[expected.length - 1]!;
+  expect(applied.slice(expected.length).filter((name) => name <= last)).toEqual([]);
+}
+
 let conn: Connection;
 
 async function dropDb(database = DB): Promise<void> {
@@ -660,7 +670,7 @@ describe('upgrade ADR 61 com dados até 0030', () => {
       await old.query(prefix);
       await old.query(prefix);
       const upgraded = await migrate(old);
-      expect(upgraded.applied).toEqual(RULE_MIGRATIONS);
+      expectAppliedFrom(upgraded.applied, RULE_MIGRATIONS);
       expect(upgraded.skipped).toEqual(legacy.map((step) => step.name));
       const [contracts] = await old.query<RowDataPacket[]>(
         `SELECT title, description, price, platform_fee, freelancer_net, status, offer_seq,
@@ -792,7 +802,7 @@ describe('upgrade do suporte com chamados legados até 0033', () => {
         'CREATE INDEX idx_st_sla ON support_tickets(first_response_at,sla_alerted_at,sla_due_at)',
       );
       await old.query("UPDATE support_tickets SET updated_at='2026-10-01 12:00:00'");
-      expect((await migrate(old)).applied).toEqual(['0034_suporte_sla']);
+      expectAppliedFrom((await migrate(old)).applied, ['0034_suporte_sla']);
       const [tickets] = await old.query<RowDataPacket[]>(`SELECT id,subject,status,priority,
         DATE_FORMAT(first_response_at,'%Y-%m-%d %H:%i:%s') AS first_response,
         DATE_FORMAT(sla_due_at,'%Y-%m-%d %H:%i:%s') AS due,

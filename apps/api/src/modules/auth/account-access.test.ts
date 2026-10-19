@@ -118,6 +118,9 @@ describe('matriz somente leitura', () => {
     ['POST', '/api/support/tickets/21/close/'],
     ['POST', '/api/moderation/removals/21/appeal'],
     ['POST', '/api/profiles/me/dropouts/12/appeal'],
+    // Registro de leitura do chat (RF-059): não é conteúdo novo.
+    ['POST', '/api/messaging/contracts/42/read'],
+    ['POST', '/api/messaging/contracts/42/read/?source=sala'],
     ['DELETE', '/api/notifications/push'],
   ])('preserva exceção explícita %s %s', (method, path) => {
     expect(suspendedRequestAllowed(method!, path!)).toBe(true);
@@ -144,6 +147,10 @@ describe('matriz somente leitura', () => {
     ['POST', '/api/support/tickets/21/reopen'],
     ['PATCH', '/api/support/tickets/21'],
     ['POST', '/api/admin/support/tickets/21/messages'],
+    ['POST', '/api/messaging/contracts/42'],
+    ['POST', '/api/messaging/contracts/42/attachments'],
+    ['POST', '/api/messaging/contracts/42/read/extra'],
+    ['POST', '/api/messaging/contracts/abc/read'],
   ])('nega ação de negócio ou caminho fora da exceção %s %s', (method, path) => {
     expect(suspendedRequestAllowed(method!, path!)).toBe(false);
   });

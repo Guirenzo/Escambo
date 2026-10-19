@@ -31,8 +31,12 @@ vi.mock('../contracts/contracts.repository', () => ({
 vi.mock('../notifications/notifications.service', () => ({
   notificationsService: { notify: vi.fn().mockResolvedValue(undefined) },
 }));
+vi.mock('../gamification/gamification.service', () => ({
+  gamificationService: { onBarterCompleted: vi.fn() },
+}));
 
 import { barterService } from './barter.service';
+import { gamificationService } from '../gamification/gamification.service';
 import { barterRepository, type BarterRow } from './barter.repository';
 import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
 import { notificationsService } from '../notifications/notifications.service';
@@ -41,6 +45,7 @@ import { settingsService } from '../settings/settings.service';
 const repo = vi.mocked(barterRepository);
 const contracts = vi.mocked(contractsRepository);
 const notify = vi.mocked(notificationsService.notify);
+const onBarterCompleted = vi.mocked(gamificationService.onBarterCompleted);
 
 type FakeBarterFields = Partial<{
   receiver_id: number;
@@ -1336,6 +1341,49 @@ describe('onLinkedContractCompleted: condições isoladas', () => {
     }
     expect(repo.completeAndRelease).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
+    expect(onBarterCompleted).not.toHaveBeenCalled();
+  });
+
+  it('troca concluída agora: as badges das duas partes são reavaliadas depois da conclusão (RF-065)', async () => {
+    repo.findById.mockResolvedValue(active());
+    contracts.findById.mockResolvedValue(contractStatus('completed'));
+    repo.completeAndRelease.mockResolvedValue(true);
+
+    await barterService.onLinkedContractCompleted(1);
+
+    expect(onBarterCompleted.mock.calls).toEqual([[1], [2]]);
+    expect(repo.completeAndRelease.mock.invocationCallOrder[0]!).toBeLessThan(
+      onBarterCompleted.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('troca que outra requisição já concluiu ou que a carteira recusou: ninguém é reavaliado', async () => {
+    repo.findById.mockResolvedValue(active());
+    contracts.findById.mockResolvedValue(contractStatus('completed'));
+    repo.completeAndRelease
+      .mockResolvedValueOnce(false)
+      .mockRejectedValueOnce(new Error('carteira'));
+
+    await barterService.onLinkedContractCompleted(1);
+    await barterService.onLinkedContractCompleted(1);
+
+    expect(onBarterCompleted).not.toHaveBeenCalled();
+  });
+
+  it('a gamificação que falha para uma parte é registrada e não impede a outra nem os avisos', async () => {
+    const boom = new Error('deadlock');
+    repo.findById.mockResolvedValue(active());
+    contracts.findById.mockResolvedValue(contractStatus('completed'));
+    repo.completeAndRelease.mockResolvedValue(true);
+    onBarterCompleted.mockRejectedValueOnce(boom);
+
+    await expect(barterService.onLinkedContractCompleted(1)).resolves.toBeUndefined();
+
+    expect(onBarterCompleted.mock.calls).toEqual([[1], [2]]);
+    expect(logger.warn.mock.calls).toEqual([
+      [{ err: boom, barterId: 1 }, 'gamificação (onBarterCompleted) falhou'],
+    ]);
+    expect(notify).toHaveBeenCalledTimes(2);
   });
 });
 

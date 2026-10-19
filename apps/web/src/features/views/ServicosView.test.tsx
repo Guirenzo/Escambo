@@ -702,6 +702,8 @@ describe('ServicosView: novo serviço', () => {
       price: 150.5,
       deliveryDays: null,
       isRemote: true,
+      modality: 'remote',
+      tags: [],
     });
     expect(await screen.findByText('Serviço publicado!')).toBeVisible();
     expect(screen.queryByRole('heading', { name: 'Novo serviço' })).toBeNull();
@@ -736,6 +738,8 @@ describe('ServicosView: novo serviço', () => {
       price: 60,
       deliveryDays: 2,
       isRemote: false,
+      modality: 'onsite',
+      tags: [],
     });
   });
 
@@ -1059,5 +1063,101 @@ describe('ServicosView: buscas salvas', () => {
       alertEnabled: true,
       alertFrequency: 'hourly',
     });
+  });
+});
+
+describe('ServicosView: catálogo (RF-023 e RF-024)', () => {
+  it('filtro de modalidade: remoto e presencial viram isRemote; "Limpar filtros" desfaz', async () => {
+    const user = userEvent.setup({ delay: null });
+    await openView();
+    expect(optionsOf('Filtrar por modalidade')).toEqual(['qualquer', 'remoto', 'presencial']);
+
+    await user.selectOptions(combo('Filtrar por modalidade'), 'presencial');
+    await expectQuery({ isRemote: false });
+    await user.selectOptions(combo('Filtrar por modalidade'), 'remoto');
+    await expectQuery({ isRemote: true });
+
+    await user.click(screen.getByRole('button', { name: 'Limpar filtros' }));
+    await waitFor(() => expect(api.listServices).toHaveBeenLastCalledWith(PAGE));
+    expect(combo('Filtrar por modalidade')).toHaveValue('');
+  });
+
+  it('a modalidade entra na busca salva e volta ao aplicar', async () => {
+    const user = userEvent.setup({ delay: null });
+    api.savedSearches.mockResolvedValue([
+      saved({ name: 'Presenciais', query: null, filters: { isRemote: false } }),
+    ]);
+    await openView();
+    await user.selectOptions(combo('Filtrar por modalidade'), 'remoto');
+    await user.click(screen.getByRole('button', { name: 'Salvar busca' }));
+    const dialog = screen.getByRole('dialog', { name: 'Salvar busca' });
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar' }));
+    expect(api.createSavedSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ filters: { isRemote: true } }),
+    );
+
+    await user.click(
+      within(screen.getByRole('group', { name: 'Buscas salvas' })).getByRole('button', {
+        name: 'Presenciais',
+      }),
+    );
+    await expectQuery({ isRemote: false });
+    expect(combo('Filtrar por modalidade')).toHaveValue('onsite');
+  });
+
+  it('link de tag (?q=figma) busca por ela, preenche o campo e limpa o endereço', async () => {
+    await openView('/servicos?q=figma');
+    await expectQuery({ q: 'figma' });
+    expect(searchInput()).toHaveValue('figma');
+    await expectRoute('/servicos');
+  });
+
+  it('clicar na tag de um card busca por ela; vindo de "Meus serviços", volta para a busca', async () => {
+    const user = userEvent.setup({ delay: null });
+    api.listServices.mockResolvedValue(pageOf([service({ tags: ['ui/ux'] })]));
+    api.myServices.mockResolvedValue([
+      service({ id: 21, ownerId: ME, title: 'Meu logo', tags: ['vetor'], viewsCount: 3 }),
+    ]);
+    await openView();
+
+    await user.click(await screen.findByRole('link', { name: 'Buscar pela tag ui/ux' }));
+    await expectQuery({ q: 'ui/ux' });
+    expect(searchInput()).toHaveValue('ui/ux');
+
+    await user.click(screen.getByRole('tab', { name: 'Meus serviços' }));
+    expect(await screen.findByTestId('views-count')).toHaveTextContent('3 visualizações');
+    await user.click(screen.getByRole('link', { name: 'Buscar pela tag vetor' }));
+    await expectQuery({ q: 'vetor' });
+    expect(screen.getByRole('tab', { name: 'Buscar serviços' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('publica "remoto e presencial" com tags (Enter e vírgula), e o isRemote vai junto', async () => {
+    const user = userEvent.setup({ delay: null });
+    await openView();
+    await user.click(screen.getByRole('button', { name: 'Novo serviço' }));
+    const form = () =>
+      within(screen.getByRole('heading', { name: 'Novo serviço' }).closest('form')!);
+    expect(
+      within(form().getByLabelText('Modalidade'))
+        .getAllByRole('option')
+        .map((o) => o.textContent),
+    ).toEqual(['Remoto', 'Presencial', 'Remoto e presencial']);
+    await user.type(form().getByLabelText('Título'), 'Fotografia de eventos');
+    await user.type(form().getByLabelText('Descrição'), 'Cobertura completa do evento.');
+    await user.type(form().getByLabelText('Preço (R$) · mínimo R$ 10,00'), '900');
+    await user.selectOptions(form().getByLabelText('Modalidade'), 'Remoto e presencial');
+    await user.type(form().getByLabelText('Tags (opcional)'), 'Fotografia{Enter}Casamento,');
+    await user.click(form().getByRole('button', { name: 'Publicar' }));
+
+    expect(api.createService).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isRemote: true,
+        modality: 'both',
+        tags: ['fotografia', 'casamento'],
+      }),
+    );
   });
 });

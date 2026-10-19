@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test';
 import { createAdmin, createUser, openAs, settled, topUp, verifyEmail } from './helpers';
 
 /**
- * Carteira: saque por transferência bancária (RF-045) e extrato de R$ por período (RF-047).
+ * Carteira: saque por transferência bancária (RF-045) com o prazo em dias úteis (RN-035) e os
+ * extratos de R$ e de créditos por período (RF-047).
  * Roda em desktop e mobile.
  */
 
@@ -18,7 +19,11 @@ test('freelancer saca por transferência bancária e filtra o extrato por perío
   await openAs(page, freelancer, '/carteira');
   await settled(page);
   const form = page.locator('form', { hasText: 'Solicitar saque' });
+  // Prazo do saque (RN-035): o formulário diz em quantos dias úteis e o dia em que cai.
+  await expect(form.getByTestId('withdraw-due')).toContainText('Em até 1 dia útil');
   await form.getByLabel('Receber por').selectOption('bank');
+  await expect(form.getByTestId('withdraw-due')).toContainText('Em até 2 dias úteis');
+  await expect(form.getByTestId('withdraw-due')).toContainText('cai até');
   await expect(form.getByLabel('Chave PIX')).toHaveCount(0);
   await form.getByLabel('Valor (R$)').fill('80');
   await form.getByLabel('Banco', { exact: true }).fill('Banco do Brasil');
@@ -26,10 +31,11 @@ test('freelancer saca por transferência bancária e filtra o extrato por perío
   await form.getByLabel('Conta', { exact: true }).fill('56789-0');
   await form.getByRole('button', { name: /Sacar/ }).click();
 
-  await expect(page.locator('.toast', { hasText: 'Saque solicitado' })).toBeVisible();
+  await expect(page.locator('.toast', { hasText: 'Saque solicitado' })).toContainText('Cai até');
   await expect(page.getByTestId('wallet-balance')).toHaveText('R$ 120,00');
   const row = page.getByTestId('withdrawals').locator('li', { hasText: 'R$ 80,00' });
   await expect(row).toContainText('Conta · ••••89-0');
+  await expect(row).toContainText('cai até');
   await expect(row.locator('.pill')).toHaveText('Aguardando');
 
   // Extrato por período: o depósito e o saque são de hoje; janeiro de 2020 não tem nada.
@@ -39,6 +45,10 @@ test('freelancer saca por transferência bancária e filtra o extrato por perío
   await period.getByLabel('De').fill('2020-01-01');
   await period.getByLabel('Até').fill('2020-01-31');
   await expect(page.getByText('Nenhuma movimentação em reais nesse período.')).toBeVisible();
+  // O mesmo período vale para o extrato de créditos.
+  await page.getByRole('tab', { name: 'Créditos' }).click();
+  await expect(page.getByText('Nenhuma movimentação de créditos nesse período.')).toBeVisible();
+  await page.getByRole('tab', { name: 'Reais' }).click();
 
   await period.getByRole('button', { name: 'Limpar período' }).click();
   await expect(ledger.locator('li', { hasText: 'Saque solicitado' })).toBeVisible();

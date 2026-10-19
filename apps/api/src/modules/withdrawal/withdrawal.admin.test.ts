@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./withdrawal.repository', () => ({
   withdrawalRepository: {
@@ -26,6 +26,7 @@ import {
   type WithdrawalRow,
 } from './withdrawal.repository';
 import { withdrawalService } from './withdrawal.service';
+import { setClockForTests } from '../../utils/clock';
 
 const repo = vi.mocked(withdrawalRepository);
 const notify = vi.mocked(notificationsService.notify);
@@ -42,6 +43,7 @@ const base: {
   gateway_ref: string | null;
   created_at: Date;
   processed_at: Date | null;
+  due_at: Date | null;
 } = {
   id: 9,
   user_id: 4,
@@ -54,7 +56,11 @@ const base: {
   gateway_ref: null,
   created_at: new Date('2026-09-01T00:00:00Z'),
   processed_at: null,
+  // PIX pedido na segunda, 31/08, 21:00 de Brasília: vence na terça, 01/09, 23:59:59 (RN-035).
+  due_at: new Date('2026-09-02T02:59:59Z'),
 };
+/** O relógio do fluxo na terça, 01/09, ao meio-dia de Brasília: o saque de base ainda está no prazo. */
+const TUESDAY_NOON = new Date('2026-09-01T15:00:00Z');
 const row = (o: Partial<typeof base> = {}): WithdrawalRow =>
   ({ ...base, ...o }) as unknown as WithdrawalRow;
 const adminRow = (o: Partial<typeof base> = {}): AdminWithdrawalRow =>
@@ -66,7 +72,11 @@ const adminRow = (o: Partial<typeof base> = {}): AdminWithdrawalRow =>
     user_name: 'Freela',
   }) as unknown as AdminWithdrawalRow;
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  setClockForTests(TUESDAY_NOON, { frozen: true });
+});
+afterEach(() => setClockForTests(null));
 
 describe('processamento de saques pelo admin', () => {
   it('complete: marca pago, registra a ação e avisa o titular (destino mascarado)', async () => {
@@ -186,6 +196,8 @@ describe('cancelamento pelo titular', () => {
       maskedDestination: '••••4321',
       createdAt: '2026-09-01T00:00:00.000Z',
       processedAt: '2026-09-02T08:00:00.000Z',
+      // O prazo gravado continua no saque: cancelar não o apaga.
+      dueAt: '2026-09-02T02:59:59.000Z',
     });
 
     expect(repo.findById).toHaveBeenCalledTimes(2);
@@ -251,11 +263,13 @@ describe('fila de saques do admin', () => {
         maskedDestination: '••••4321',
         createdAt: '2026-09-01T00:00:00.000Z',
         processedAt: null,
+        dueAt: '2026-09-02T02:59:59.000Z',
         userId: 4,
         userUlid: '01USERULID00000000000000000',
         userEmail: 'freela@escambo.test',
         userName: 'Freela',
         destination: 'chave-pix-final-4321',
+        overdue: false,
       },
       {
         id: 10,
@@ -265,11 +279,13 @@ describe('fila de saques do admin', () => {
         maskedDestination: '••••45-6',
         createdAt: '2026-09-01T00:00:00.000Z',
         processedAt: null,
+        dueAt: '2026-09-02T02:59:59.000Z',
         userId: 4,
         userUlid: '01USERULID00000000000000000',
         userEmail: 'freela@escambo.test',
         userName: 'Freela',
         destination: 'Banco do Brasil · 0001 · 12345-6',
+        overdue: false,
       },
     ]);
   });
@@ -293,6 +309,31 @@ describe('fila de saques do admin', () => {
     expect(onlyBank!).toMatchObject({ method: 'bank', maskedDestination: '••••' });
   });
 
+  it('destino cifrado que não decifrou (RNF-017) aparece como "[indisponível]", inteiro, e a fila não cai', async () => {
+    repo.listForAdmin.mockResolvedValue([
+      adminRow({ pix_key: '[indisponível]' }),
+      adminRow({
+        pix_key: null,
+        bank_name: 'Banco do Brasil',
+        bank_agency: '0001',
+        bank_account: '[indisponível]',
+      }),
+    ]);
+
+    const [pix, bank] = await withdrawalService.listForAdmin('open');
+
+    expect(pix).toMatchObject({
+      method: 'pix',
+      destination: '[indisponível]',
+      maskedDestination: '[indisponível]',
+    });
+    expect(bank).toMatchObject({
+      method: 'bank',
+      destination: 'Banco do Brasil · 0001 · [indisponível]',
+      maskedDestination: '[indisponível]',
+    });
+  });
+
   it('titular sem perfil preenchido aparece na fila com o nome nulo', async () => {
     repo.listForAdmin.mockResolvedValue([
       { ...adminRow(), user_name: null } as unknown as AdminWithdrawalRow,
@@ -301,6 +342,34 @@ describe('fila de saques do admin', () => {
     expect(item!.userName).toBeNull();
     expect(item!.userEmail).toBe('freela@escambo.test');
     expect(repo.listForAdmin).toHaveBeenCalledWith(['requested'], 200);
+  });
+
+  it('atrasado (RN-035) é o que ainda não foi pago e cujo prazo já passou do relógio do fluxo', async () => {
+    const due = new Date('2026-09-02T02:59:59Z');
+    repo.listForAdmin.mockResolvedValue([
+      adminRow({ id: 1, status: 'requested' }),
+      adminRow({ id: 2, status: 'processing' }),
+      adminRow({ id: 3, status: 'completed' }),
+      adminRow({ id: 4, status: 'failed' }),
+      adminRow({ id: 5, status: 'cancelled' }),
+      adminRow({ id: 6, status: 'requested', due_at: null }),
+    ]);
+    const overdue = async (): Promise<Record<number, boolean>> =>
+      Object.fromEntries(
+        (await withdrawalService.listForAdmin('all')).map((w) => [w.id, w.overdue]),
+      );
+
+    // No último segundo do prazo ainda não está atrasado.
+    setClockForTests(due, { frozen: true });
+    expect(await overdue()).toEqual({ 1: false, 2: false, 3: false, 4: false, 5: false, 6: false });
+
+    // Um segundo depois: só os que faltam pagar e têm prazo.
+    setClockForTests(new Date(due.getTime() + 1000), { frozen: true });
+    expect(await overdue()).toEqual({ 1: true, 2: true, 3: false, 4: false, 5: false, 6: false });
+
+    // A visão de um saque só (depois de uma ação) usa a mesma regra.
+    repo.findForAdmin.mockResolvedValue(adminRow({ status: 'processing' }));
+    expect((await withdrawalService.adminView(9)).overdue).toBe(true);
   });
 
   it('adminView: 404 withdrawal_not_found quando o saque não existe', async () => {
@@ -526,11 +595,14 @@ describe('processamento de saques pelo admin: recusas, registro e aviso', () => 
       maskedDestination: '••••4321',
       createdAt: '2026-09-01T00:00:00.000Z',
       processedAt: '2026-09-03T10:00:00.000Z',
+      dueAt: '2026-09-02T02:59:59.000Z',
       userId: 4,
       userUlid: '01USERULID00000000000000000',
       userEmail: 'freela@escambo.test',
       userName: 'Freela',
       destination: 'chave-pix-final-4321',
+      // Pago depois do prazo não é "atrasado": já não há o que pagar.
+      overdue: false,
     });
     expect(repo.findForAdmin).toHaveBeenLastCalledWith(9);
     expect(repo.closeAndRefund).not.toHaveBeenCalled();

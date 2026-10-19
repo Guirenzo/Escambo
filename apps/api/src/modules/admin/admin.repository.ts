@@ -11,6 +11,7 @@ export interface MetricsRow extends RowDataPacket {
   in_escrow: string;
   pending_withdrawals: number;
   pending_withdrawals_amount: string;
+  overdue_withdrawals: number;
   deposits_total: string;
   users_balance: string;
   pending_deletions: number;
@@ -39,7 +40,8 @@ export const adminRepository = {
     );
   },
 
-  async metrics(): Promise<MetricsRow> {
+  /** Resumo do painel. `now` é o relógio do fluxo (ADR 57): saque atrasado é o que passou dele. */
+  async metrics(now: Date): Promise<MetricsRow> {
     const [rows] = await pool.query<MetricsRow[]>(
       `SELECT
          (SELECT COUNT(*) FROM users) AS users,
@@ -53,9 +55,12 @@ export const adminRepository = {
          (SELECT COALESCE(SUM(balance_pending), 0) FROM wallets) AS in_escrow,
          (SELECT COUNT(*) FROM withdrawals WHERE status IN ('requested','processing')) AS pending_withdrawals,
          (SELECT COALESCE(SUM(amount), 0) FROM withdrawals WHERE status IN ('requested','processing')) AS pending_withdrawals_amount,
+         -- Prazo gravado no pedido (RN-035) que já passou sem o saque ser pago.
+         (SELECT COUNT(*) FROM withdrawals WHERE status IN ('requested','processing') AND due_at < :now) AS overdue_withdrawals,
          (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE kind = 'topup' AND status = 'paid') AS deposits_total,
          (SELECT COALESCE(SUM(balance), 0) FROM wallets) AS users_balance,
          (SELECT COUNT(*) FROM data_deletion_requests WHERE status IN ('pending','processing')) AS pending_deletions`,
+      { now },
     );
     return rows[0]!;
   },

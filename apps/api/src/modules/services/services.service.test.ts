@@ -9,6 +9,9 @@ vi.mock('./services.repository', () => ({
     create: vi.fn(),
     categoryIsActive: vi.fn().mockResolvedValue(true),
     findById: vi.fn(),
+    findPublicById: vi.fn(),
+    tagsByServiceIds: vi.fn().mockResolvedValue(new Map()),
+    incrementViews: vi.fn(),
     list: vi.fn(),
     listByOwner: vi.fn(),
     update: vi.fn(),
@@ -16,8 +19,9 @@ vi.mock('./services.repository', () => ({
   },
 }));
 
-import { servicesService } from './services.service';
+import { modalityColumns, modalityOf, servicesService } from './services.service';
 import { servicesRepository, type ServiceRow } from './services.repository';
+import { serviceViews } from './service-views';
 import { settingsService } from '../settings/settings.service';
 
 const repo = vi.mocked(servicesRepository);
@@ -33,6 +37,7 @@ type FakeServiceFields = Partial<{
   price: string | null;
   delivery_days: number | null;
   is_remote: number;
+  is_onsite: number;
   is_active: number;
   views_count: number;
   created_at: Date;
@@ -90,6 +95,8 @@ describe('servicesService.create', () => {
           price: 500,
           deliveryDays: 7,
           isRemote: true,
+          isOnsite: false,
+          tags: [],
         },
       ],
     ]);
@@ -99,14 +106,15 @@ describe('servicesService.create', () => {
 });
 
 describe('servicesService.getById', () => {
-  it('lança 404 quando não existe', async () => {
-    repo.findById.mockResolvedValue(undefined);
-    await expect(servicesService.getById(999)).rejects.toMatchObject({
+  it('lança 404 quando não existe, e nada é contado', async () => {
+    repo.findPublicById.mockResolvedValue(undefined);
+    await expect(servicesService.getById(999, { ip: '10.0.0.1' })).rejects.toMatchObject({
       statusCode: 404,
       code: 'service_not_found',
       message: 'Serviço não encontrado',
     });
-    expect(repo.findById.mock.calls).toEqual([[999]]);
+    expect(repo.findPublicById.mock.calls).toEqual([[999]]);
+    expect(repo.incrementViews).not.toHaveBeenCalled();
   });
 });
 
@@ -131,7 +139,7 @@ describe('servicesService.update', () => {
 
     const s = await servicesService.update(1, 5, { title: 'Atualizado' });
 
-    expect(repo.update.mock.calls).toEqual([[1, { title: 'Atualizado' }]]);
+    expect(repo.update.mock.calls).toEqual([[1, { title: 'Atualizado' }, undefined]]);
     // Lê o serviço antes (dono) e de novo depois de gravar: o que volta é a linha atualizada.
     expect(repo.findById.mock.calls).toEqual([[1], [1]]);
     expect(s.title).toBe('Atualizado');
@@ -350,6 +358,8 @@ const landing = {
   price: 500,
   deliveryDays: 7,
   isRemote: true,
+  modality: 'remote',
+  tags: [],
   isActive: true,
   createdAt: '2026-01-01T00:00:00.000Z',
 };
@@ -386,6 +396,8 @@ describe('servicesService.create — o que é gravado e o preço mínimo (RN-016
           price: null,
           deliveryDays: null,
           isRemote: false,
+          isOnsite: true,
+          tags: [],
         },
       ],
     ]);
@@ -393,6 +405,32 @@ describe('servicesService.create — o que é gravado e o preço mínimo (RN-016
     expect(repo.findById.mock.calls).toEqual([[31]]);
     // A combinar não tem preço para comparar: o mínimo nem é consultado.
     expect(settings.minServicePrice).not.toHaveBeenCalled();
+  });
+
+  it('modalidade (RF-023): "both" grava remoto e presencial; a modality vale mais que o isRemote', async () => {
+    repo.create.mockResolvedValue(31);
+    repo.findById.mockResolvedValue(fakeRow({ is_remote: 1, is_onsite: 1 }));
+
+    const created = await servicesService.create(7, { ...input, modality: 'both' });
+    await servicesService.create(7, { ...input, isRemote: true, modality: 'onsite' });
+
+    expect(created).toMatchObject({ isRemote: true, modality: 'both' });
+    expect(repo.create.mock.calls.map(([data]) => [data.isRemote, data.isOnsite])).toEqual([
+      [true, true],
+      [false, true],
+    ]);
+  });
+
+  it('tags (RF-024): vão ao repositório como vieram do schema, e a resposta traz as gravadas', async () => {
+    repo.create.mockResolvedValue(31);
+    repo.findById.mockResolvedValue(fakeRow({ id: 31 }));
+    repo.tagsByServiceIds.mockResolvedValueOnce(new Map([[31, ['figma', 'logo']]]));
+
+    const created = await servicesService.create(7, { ...input, tags: ['logo', 'figma'] });
+
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ tags: ['logo', 'figma'] }));
+    expect(created.tags).toEqual(['figma', 'logo']);
+    expect(repo.tagsByServiceIds.mock.calls).toEqual([[[31]]]);
   });
 
   it('preço fixo abaixo do mínimo vigente é 422 price_below_minimum e nada é gravado', async () => {
@@ -471,14 +509,17 @@ describe('servicesService.create — o que é gravado e o preço mínimo (RN-016
 });
 
 describe('servicesService.getById — o serviço como a API devolve', () => {
+  beforeEach(() => serviceViews.clear());
+
   it('converte a linha do banco: DECIMAL em número, flags em boolean, data em ISO', async () => {
-    repo.findById.mockResolvedValue(fakeRow());
+    repo.findPublicById.mockResolvedValue(fakeRow());
     expect(await servicesService.getById(1)).toEqual(landing);
-    expect(repo.findById.mock.calls).toEqual([[1]]);
+    expect(repo.findPublicById.mock.calls).toEqual([[1]]);
+    expect(repo.tagsByServiceIds.mock.calls).toEqual([[[1]]]);
   });
 
   it('sem preço continua null (não vira 0), e o 404 leva o código service_not_found', async () => {
-    repo.findById.mockResolvedValueOnce(
+    repo.findPublicById.mockResolvedValueOnce(
       fakeRow({ price_type: 'negotiable', price: null, delivery_days: null, is_remote: 0 }),
     );
     expect(await servicesService.getById(1)).toEqual({
@@ -487,9 +528,10 @@ describe('servicesService.getById — o serviço como a API devolve', () => {
       price: null,
       deliveryDays: null,
       isRemote: false,
+      modality: 'onsite',
     });
 
-    repo.findById.mockResolvedValueOnce(undefined);
+    repo.findPublicById.mockResolvedValueOnce(undefined);
     await expect(servicesService.getById(2)).rejects.toMatchObject({
       statusCode: 404,
       code: 'service_not_found',
@@ -498,7 +540,7 @@ describe('servicesService.getById — o serviço como a API devolve', () => {
 
   it('data de criação que chega do banco como texto sai como veio (não passa por Date)', async () => {
     // Com dateStrings no driver a coluna DATETIME chega como texto; toISOString nem existe ali.
-    repo.findById.mockResolvedValue(
+    repo.findPublicById.mockResolvedValue(
       fakeRow({ created_at: '2026-01-01 00:00:00' as unknown as Date }),
     );
     expect(await servicesService.getById(1)).toEqual({
@@ -507,13 +549,101 @@ describe('servicesService.getById — o serviço como a API devolve', () => {
     });
   });
 
-  it('serviço pausado volta com isActive false, e o detalhe não traz os campos do prestador nem da busca', async () => {
-    repo.findById.mockResolvedValue(fakeRow({ is_active: 0 }));
+  it('serviço pausado volta com isActive false; nunca traz as visualizações nem a distância', async () => {
+    repo.findPublicById.mockResolvedValue(fakeRow({ is_active: 0, views_count: 42 }));
     const service = await servicesService.getById(1);
     expect(service).toEqual({ ...landing, isActive: false });
-    for (const key of ['distanceKm', 'boosted', 'ownerName', 'ownerUlid', 'ownerAvailableNow']) {
-      expect(service).not.toHaveProperty(key);
-    }
+    for (const key of ['distanceKm', 'viewsCount']) expect(service).not.toHaveProperty(key);
+  });
+
+  it('o detalhe traz quem presta, o destaque, a modalidade e as tags', async () => {
+    repo.findPublicById.mockResolvedValue(
+      fakeRow({
+        is_remote: 1,
+        is_onsite: 1,
+        boosted: 1,
+        owner_ulid: '01HZX',
+        owner_name: 'Ana',
+        owner_avatar_url: null,
+        owner_avg_rating: '4.50',
+        owner_total_reviews: 3,
+        owner_available_days: null,
+        owner_available_periods: null,
+        owner_is_available: 1,
+        owner_timezone: null,
+      } as never),
+    );
+    repo.tagsByServiceIds.mockResolvedValueOnce(new Map([[1, ['figma', 'logo']]]));
+
+    expect(await servicesService.getById(1)).toEqual({
+      ...landing,
+      modality: 'both',
+      tags: ['figma', 'logo'],
+      boosted: true,
+      ownerUlid: '01HZX',
+      ownerName: 'Ana',
+      ownerAvatarUrl: null,
+      ownerRating: 4.5,
+      ownerReviews: 3,
+      ownerAvailableDays: null,
+      ownerAvailablePeriods: null,
+      ownerAvailableNow: false,
+      ownerTimezone: 'America/Sao_Paulo',
+    });
+  });
+});
+
+describe('servicesService.getById — visualizações (RF-029)', () => {
+  beforeEach(() => {
+    serviceViews.clear();
+    repo.findPublicById.mockResolvedValue(fakeRow({ id: 1, user_id: 7 }));
+  });
+
+  it('o dono abrindo o próprio serviço não conta', async () => {
+    await servicesService.getById(1, { userId: 7, ip: '10.0.0.1' });
+    expect(repo.incrementViews).not.toHaveBeenCalled();
+    expect(serviceViews.size()).toBe(0);
+  });
+
+  it('outra conta conta uma vez; recarregar dentro da janela não conta de novo', async () => {
+    await servicesService.getById(1, { userId: 8, ip: '10.0.0.1' });
+    await servicesService.getById(1, { userId: 8, ip: '10.0.0.2' });
+    expect(repo.incrementViews.mock.calls).toEqual([[1]]);
+  });
+
+  it('sem login, o visitante é o IP: IPs diferentes contam cada um', async () => {
+    await servicesService.getById(1, { ip: '10.0.0.1' });
+    await servicesService.getById(1, { ip: '10.0.0.1' });
+    await servicesService.getById(1, { ip: '10.0.0.2' });
+    await servicesService.getById(1);
+    expect(repo.incrementViews).toHaveBeenCalledTimes(3);
+  });
+
+  it('a falha ao gravar a visualização não derruba o detalhe', async () => {
+    repo.incrementViews.mockRejectedValueOnce(new Error('ER_LOCK_WAIT_TIMEOUT'));
+    expect(await servicesService.getById(1, { ip: '10.0.0.9' })).toMatchObject({ id: 1 });
+    expect(repo.incrementViews).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('modalidade (RF-023): colunas e leitura', () => {
+  it.each<[number, number | undefined, string]>([
+    [1, 0, 'remote'],
+    [0, 1, 'onsite'],
+    [1, 1, 'both'],
+    // Linha sem is_onsite (montada à mão): o inverso de is_remote, como o DEFAULT da coluna.
+    [1, undefined, 'remote'],
+    [0, undefined, 'onsite'],
+    // Nenhum dos dois (gravado direto no banco) conta como presencial.
+    [0, 0, 'onsite'],
+  ])('is_remote %s e is_onsite %s é "%s"', (isRemote, isOnsite, modality) => {
+    expect(modalityOf({ is_remote: isRemote, is_onsite: isOnsite })).toBe(modality);
+  });
+
+  it('cada modalidade vira as duas colunas', () => {
+    expect(modalityColumns('remote')).toEqual({ isRemote: true, isOnsite: false });
+    expect(modalityColumns('onsite')).toEqual({ isRemote: false, isOnsite: true });
+    expect(modalityColumns('both')).toEqual({ isRemote: true, isOnsite: true });
   });
 });
 
@@ -525,11 +655,28 @@ describe('servicesService.listMine — meus serviços (RF-030)', () => {
     ]);
 
     expect(await servicesService.listMine(7)).toEqual([
-      { ...landing, id: 2, ownerId: 7, isActive: false, boosted: false },
-      { ...landing, id: 1, ownerId: 7, boosted: true },
+      { ...landing, id: 2, ownerId: 7, isActive: false, boosted: false, viewsCount: 0 },
+      { ...landing, id: 1, ownerId: 7, boosted: true, viewsCount: 0 },
     ]);
     expect(repo.listByOwner.mock.calls).toEqual([[7]]);
     expect(repo.list).not.toHaveBeenCalled();
+  });
+
+  it('é aqui (e só aqui) que o dono vê as visualizações (RF-029) e as tags de cada serviço, lidas de uma vez', async () => {
+    repo.listByOwner.mockResolvedValue([
+      fakeRow({ id: 2, user_id: 7, views_count: 15 }),
+      fakeRow({ id: 1, user_id: 7, views_count: '3' as unknown as number }),
+    ]);
+    repo.tagsByServiceIds.mockResolvedValueOnce(new Map([[1, ['logo']]]));
+
+    const mine = await servicesService.listMine(7);
+
+    expect(mine.map((s) => [s.id, s.viewsCount, s.tags])).toEqual([
+      [2, 15, []],
+      [1, 3, ['logo']],
+    ]);
+    // Uma consulta para as tags de todos (sem N+1).
+    expect(repo.tagsByServiceIds.mock.calls).toEqual([[[2, 1]]]);
   });
 
   it('quem ainda não publicou nada recebe a lista vazia', async () => {
@@ -565,13 +712,46 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
           price_type: 'hourly',
           price: 80,
           delivery_days: 3,
+          // isRemote false (cliente antigo) é presencial: as duas colunas da modalidade.
           is_remote: 0,
+          is_onsite: 1,
           is_active: 0,
         },
+        undefined,
       ],
-      [1, { is_remote: 1, is_active: 1 }],
-      [1, {}],
+      [1, { is_remote: 1, is_onsite: 0, is_active: 1 }, undefined],
+      [1, {}, undefined],
     ]);
+  });
+
+  it('modalidade (RF-023): "both" grava remoto e presencial, e a modality vale mais que o isRemote', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7 }));
+
+    await servicesService.update(1, 7, { modality: 'both' });
+    await servicesService.update(1, 7, { modality: 'onsite', isRemote: true });
+    await servicesService.update(1, 7, { modality: 'remote' });
+
+    expect(repo.update.mock.calls).toEqual([
+      [1, { is_remote: 1, is_onsite: 1 }, undefined],
+      [1, { is_remote: 0, is_onsite: 1 }, undefined],
+      [1, { is_remote: 1, is_onsite: 0 }, undefined],
+    ]);
+  });
+
+  it('tags (RF-024): a lista vai inteira ao repositório (substitui as anteriores), e a resposta traz as gravadas', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7 }));
+    repo.tagsByServiceIds.mockResolvedValueOnce(new Map([[1, ['logo', 'programação']]]));
+
+    const updated = await servicesService.update(1, 7, { tags: ['programação', 'logo'] });
+    await servicesService.update(1, 7, { tags: [] });
+
+    expect(repo.update.mock.calls).toEqual([
+      [1, {}, ['programação', 'logo']],
+      [1, {}, []],
+    ]);
+    // O que volta é o que ficou no banco (relido, em ordem alfabética).
+    expect(updated.tags).toEqual(['logo', 'programação']);
+    expect(repo.tagsByServiceIds.mock.calls).toEqual([[[1]], [[1]]]);
   });
 
   it('serviço inexistente é 404 e não altera nada', async () => {
@@ -614,7 +794,7 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
   it('o tipo novo é o que vale: preço baixo junto com a troca para por hora passa', async () => {
     repo.findById.mockResolvedValue(fakeRow({ user_id: 7 }));
     await servicesService.update(1, 7, { priceType: 'hourly', price: 5 });
-    expect(repo.update.mock.calls).toEqual([[1, { price_type: 'hourly', price: 5 }]]);
+    expect(repo.update.mock.calls).toEqual([[1, { price_type: 'hourly', price: 5 }, undefined]]);
   });
 
   it('preço fixo igual ao mínimo passa na edição, e o que volta é o serviço relido', async () => {
@@ -625,7 +805,7 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
     const updated = await servicesService.update(1, 7, { price: 10 });
 
     expect(updated).toEqual({ ...landing, ownerId: 7, price: 10 });
-    expect(repo.update.mock.calls).toEqual([[1, { price: 10 }]]);
+    expect(repo.update.mock.calls).toEqual([[1, { price: 10 }, undefined]]);
     expect(settings.minServicePrice).toHaveBeenCalledTimes(1);
   });
 
@@ -646,7 +826,7 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
     const updated = await servicesService.update(1, 7, { title: 'Consultoria' });
 
     expect(updated).toMatchObject({ priceType: 'negotiable', price: null });
-    expect(repo.update.mock.calls).toEqual([[1, { title: 'Consultoria' }]]);
+    expect(repo.update.mock.calls).toEqual([[1, { title: 'Consultoria' }, undefined]]);
     expect(settings.minServicePrice).not.toHaveBeenCalled();
   });
 
@@ -657,8 +837,8 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
     await servicesService.update(1, 7, { priceType: 'negotiable', price: null });
 
     expect(repo.update.mock.calls).toEqual([
-      [1, { delivery_days: null }],
-      [1, { price_type: 'negotiable', price: null }],
+      [1, { delivery_days: null }, undefined],
+      [1, { price_type: 'negotiable', price: null }, undefined],
     ]);
     // A combinar não tem piso (RN-016 é do preço fixo): o mínimo nem é consultado na segunda edição.
     expect(settings.minServicePrice).toHaveBeenCalledTimes(1);
@@ -671,7 +851,7 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
 
     await expect(servicesService.update(1, 7, { title: 'Novo título' })).rejects.toBe(boom);
 
-    expect(repo.update.mock.calls).toEqual([[1, { title: 'Novo título' }]]);
+    expect(repo.update.mock.calls).toEqual([[1, { title: 'Novo título' }, undefined]]);
     expect(repo.findById.mock.calls).toEqual([[1]]);
   });
 
@@ -680,8 +860,8 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
     await servicesService.update(1, 7, { isActive: false });
     await servicesService.update(1, 7, { isActive: true });
     expect(repo.update.mock.calls).toEqual([
-      [1, { is_active: 0 }],
-      [1, { is_active: 1 }],
+      [1, { is_active: 0 }, undefined],
+      [1, { is_active: 1 }, undefined],
     ]);
   });
 
@@ -718,7 +898,7 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
 
     await servicesService.update(1, 7, { priceType: 'fixed', price: 50 });
 
-    expect(repo.update.mock.calls).toEqual([[1, { price_type: 'fixed', price: 50 }]]);
+    expect(repo.update.mock.calls).toEqual([[1, { price_type: 'fixed', price: 50 }, undefined]]);
     expect(settings.minServicePrice).toHaveBeenCalledTimes(1);
   });
 
@@ -727,7 +907,7 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
 
     await servicesService.update(1, 7, { price: null });
 
-    expect(repo.update.mock.calls).toEqual([[1, { price: null }]]);
+    expect(repo.update.mock.calls).toEqual([[1, { price: null }, undefined]]);
   });
 
   it('trocar para uma categoria inexistente ou inativa é 422 invalid_category e nada é gravado', async () => {
@@ -750,7 +930,9 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
     await servicesService.update(1, 7, { categoryId: 10, title: 'Site completo' });
 
     expect(repo.categoryIsActive).not.toHaveBeenCalled();
-    expect(repo.update.mock.calls).toEqual([[1, { category_id: 10, title: 'Site completo' }]]);
+    expect(repo.update.mock.calls).toEqual([
+      [1, { category_id: 10, title: 'Site completo' }, undefined],
+    ]);
   });
 });
 
@@ -939,6 +1121,32 @@ describe('servicesService.list — filtros, paginação e o card da busca', () =
       [1, false],
       [2, true],
     ]);
+  });
+
+  it('as tags dos cards vêm numa consulta só, para a página inteira (sem N+1)', async () => {
+    repo.list.mockResolvedValue([fakeRow({ id: 5 }), fakeRow({ id: 6 }), fakeRow({ id: 7 })]);
+    repo.tagsByServiceIds.mockResolvedValueOnce(
+      new Map([
+        [5, ['figma', 'ui/ux']],
+        [7, ['react']],
+      ]),
+    );
+
+    const { items } = await servicesService.list({
+      page: 1,
+      limit: 20,
+      radiusKm: 25,
+      sort: 'relevance',
+    });
+
+    expect(items.map((i) => [i.id, i.tags])).toEqual([
+      [5, ['figma', 'ui/ux']],
+      [6, []],
+      [7, ['react']],
+    ]);
+    expect(repo.tagsByServiceIds.mock.calls).toEqual([[[5, 6, 7]]]);
+    // A busca pública nunca traz as visualizações.
+    for (const item of items) expect(item).not.toHaveProperty('viewsCount');
   });
 
   it('a falha do banco na busca sobe para quem chamou (não vira página vazia)', async () => {

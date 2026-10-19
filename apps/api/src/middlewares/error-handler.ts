@@ -1,13 +1,42 @@
-import type { ErrorRequestHandler } from 'express';
+import type { ErrorRequestHandler, Request } from 'express';
 import { ZodError } from 'zod';
 import { logger } from '../config/logger';
 import { captureError } from '../config/sentry';
+import { auditService } from '../modules/audit/audit.service';
 import { HttpError } from '../utils/http-error';
+
+/**
+ * Recusas que vão para o audit_logs como `access.denied` (RNF-018): papel, dono ou conta barrada,
+ * e o webhook com segredo errado. Token vencido ou ausente (o app renova sozinho) e as recusas de
+ * regra de negócio (e-mail não confirmado, troca desligada) ficam só no log da requisição, em warn.
+ */
+const AUDITED_DENIALS = new Set([
+  'forbidden',
+  'admin_only',
+  'account_banned',
+  'account_blocked',
+  'account_deleted',
+  'invalid_webhook_secret',
+]);
+
+/** Registra a recusa sem a query string (pode levar token) e sem derrubar a resposta. */
+export function auditDenied(req: Request, err: HttpError): void {
+  if (!err.code || !AUDITED_DENIALS.has(err.code)) return;
+  const path = (req.originalUrl || req.url || '').split('?')[0]!.slice(0, 300);
+  void auditService.log({
+    userId: req.user?.uid ?? null,
+    action: 'access.denied',
+    entityType: 'route',
+    newValue: { method: req.method, path, status: err.statusCode, code: err.code },
+    ip: req.ip ?? null,
+    userAgent: req.headers['user-agent'] ?? null,
+  });
+}
 
 /**
  * Tratamento global de erros (RNF-039): nunca expõe stack trace; resposta sempre em JSON.
  */
-export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof ZodError) {
     const { fieldErrors } = err.flatten();
     // Regra do objeto inteiro (refine sem path) não tem campo para apontar: a mensagem dela é que
@@ -42,7 +71,14 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   }
 
   if (err instanceof HttpError) {
-    const body: { error: string; message: string; opensAt?: string | null; contractId?: number } = {
+    if (err.statusCode === 401 || err.statusCode === 403) auditDenied(req, err);
+    const body: {
+      error: string;
+      message: string;
+      opensAt?: string | null;
+      contractId?: number;
+      returnAt?: string;
+    } = {
       error: err.code ?? 'error',
       message: err.message,
     };
@@ -62,6 +98,16 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
       const contractId = err.publicData.contractId;
       if (typeof contractId === 'number' && Number.isSafeInteger(contractId) && contractId > 0)
         body.contractId = contractId;
+    }
+    // RNF-010: a manutenção com previsão diz a hora da volta, para o app mostrar sem outra chamada.
+    if (err.statusCode === 503 && err.code === 'maintenance' && err.publicData) {
+      const returnAt = err.publicData.returnAt;
+      if (
+        typeof returnAt === 'string' &&
+        Number.isFinite(Date.parse(returnAt)) &&
+        new Date(returnAt).toISOString() === returnAt
+      )
+        body.returnAt = returnAt;
     }
     res.status(err.statusCode).json(body);
     return;
