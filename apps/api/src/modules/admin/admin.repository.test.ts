@@ -98,21 +98,32 @@ describe('adminRepository', () => {
       in_escrow: '850.00',
       pending_withdrawals: 2,
       pending_withdrawals_amount: '300.00',
+      overdue_withdrawals: 1,
       deposits_total: '2000.00',
       users_balance: '700.00',
       pending_deletions: 1,
     };
+    const now = new Date('2026-10-19T15:00:00.000Z');
 
-    it('devolve a linha única do resumo, numa consulta só e sem parâmetros', async () => {
+    it('devolve a linha única do resumo, numa consulta só e só com o agora do fluxo de parâmetro', async () => {
       fakeDb.reply([row]);
-      expect(await adminRepository.metrics()).toBe(row);
+      expect(await adminRepository.metrics(now)).toBe(row);
       expect(fakeDb.calls).toHaveLength(1);
-      expect(fakeDb.calls[0]!.params).toBeUndefined();
+      expect(fakeDb.calls[0]!.params).toEqual({ now });
+    });
+
+    it('saque atrasado é o pendente cujo prazo gravado (RN-035) já passou do agora do fluxo', async () => {
+      fakeDb.reply([row]);
+      await adminRepository.metrics(now);
+
+      expect(fakeDb.calls[0]!.sql).toContain(
+        "(SELECT COUNT(*) FROM withdrawals WHERE status IN ('requested','processing') AND due_at < :now) AS overdue_withdrawals,",
+      );
     });
 
     it('usuários e contratações contam todos, sem filtro de status ou de papel', async () => {
       fakeDb.reply([row]);
-      await adminRepository.metrics();
+      await adminRepository.metrics(now);
       const { sql } = fakeDb.calls[0]!;
 
       expect(sql).toContain('SELECT (SELECT COUNT(*) FROM users) AS users,');
@@ -122,12 +133,12 @@ describe('adminRepository', () => {
     it('a falha do banco sobe para quem chamou', async () => {
       const boom = new Error('ER_QUERY_TIMEOUT');
       fakeDb.reply(boom);
-      await expect(adminRepository.metrics()).rejects.toBe(boom);
+      await expect(adminRepository.metrics(now)).rejects.toBe(boom);
     });
 
     it('conta o que está em aberto: disputas, saques e pedidos de exclusão por status', async () => {
       fakeDb.reply([row]);
-      await adminRepository.metrics();
+      await adminRepository.metrics(now);
       const { sql } = fakeDb.calls[0]!;
 
       expect(sql).toContain(
@@ -152,7 +163,7 @@ describe('adminRepository', () => {
 
     it('a receita é o que some na redistribuição do ledger: fora depósito e saque, com o sinal trocado (ADR 26)', async () => {
       fakeDb.reply([row]);
-      await adminRepository.metrics();
+      await adminRepository.metrics(now);
       const { sql } = fakeDb.calls[0]!;
 
       expect(sql).toContain(

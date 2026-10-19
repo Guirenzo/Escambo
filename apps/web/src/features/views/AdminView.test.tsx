@@ -97,6 +97,7 @@ const metricsOf = (o: Partial<AdminMetrics> = {}): AdminMetrics => ({
   inEscrow: 4200,
   pendingWithdrawals: 3,
   pendingWithdrawalsAmount: 450,
+  overdueWithdrawals: 0,
   depositsTotal: 18000,
   usersBalance: 9100.1,
   pendingDeletions: 0,
@@ -128,6 +129,8 @@ const withdrawalOf = (o: Partial<AdminWithdrawal> & { id: number }): AdminWithdr
   userEmail: 'marina@escambo.test',
   userName: 'Marina Alves',
   destination: 'marina@pix.com',
+  dueAt: '2026-09-19T02:59:59.000Z',
+  overdue: false,
   ...o,
 });
 
@@ -232,6 +235,16 @@ describe('AdminView: números e estados das filas', () => {
     expect(kpi('Em escrow')).toHaveTextContent('R$ 4.200,00');
     expect(kpi('Saldo dos usuários')).toHaveTextContent('R$ 9.100,10');
     expect(kpi('Saques pendentes')).toHaveTextContent('Saques pendentes3R$ 450,00 a pagar');
+    // Sem saque atrasado, a dica não fala em atraso.
+    expect(kpi('Saques pendentes')).not.toHaveTextContent('atrasado');
+  });
+
+  it('saques que passaram do prazo (RN-035) aparecem na dica do indicador', async () => {
+    adminMetrics.mockResolvedValue(metricsOf({ overdueWithdrawals: 2 }));
+    renderView();
+
+    await screen.findByText('37 freelancers');
+    expect(kpi('Saques pendentes')).toHaveTextContent('R$ 450,00 a pagar · 2 atrasado(s)');
   });
 
   it('pedidos de exclusão pendentes ganham um contador no título; sem pendência, nada', async () => {
@@ -549,6 +562,33 @@ describe('AdminView: fila de saques', () => {
     const failed = within(card(WITHDRAWALS)).getByRole('row', { name: /^#6\D/ });
     expect(within(failed).getByText('Falhou')).toBeInTheDocument();
     expect(within(failed).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('cada saque mostra o prazo (dia de Brasília) e o atrasado ganha a marca; sem prazo, um travessão', async () => {
+    adminWithdrawals.mockResolvedValue([
+      withdrawalOf({ id: 9, dueAt: '2026-09-16T02:59:59.000Z', overdue: true }),
+      withdrawalOf({ id: 8, dueAt: '2026-10-21T02:59:59.000Z' }),
+      withdrawalOf({ id: 7, status: 'completed', dueAt: null }),
+    ]);
+    renderView();
+
+    const late = await within(card(WITHDRAWALS)).findByRole('row', { name: /^#9\D/ });
+    expect(
+      within(card(WITHDRAWALS))
+        .getAllByRole('columnheader')
+        .map((h) => h.textContent),
+    ).toEqual(['Saque', 'Prazo', 'Titular', 'Valor', 'Destino', 'Status', 'Ações']);
+    expect(late).toHaveTextContent('até ter, 15/09');
+    expect(within(late).getByText('Atrasado')).toBeInTheDocument();
+
+    const onTime = within(card(WITHDRAWALS)).getByRole('row', { name: /^#8\D/ });
+    expect(onTime).toHaveTextContent('até ter, 20/10');
+    expect(within(onTime).queryByText('Atrasado')).not.toBeInTheDocument();
+
+    const legacy = within(card(WITHDRAWALS)).getByRole('row', { name: /^#7\D/ });
+    expect(legacy).toHaveTextContent('#7pedido em');
+    expect(legacy).not.toHaveTextContent('até');
+    expect(within(card(WITHDRAWALS)).getAllByText('Atrasado')).toHaveLength(1);
   });
 
   it('o filtro "Todos" busca a fila inteira; "Abertos" volta ao que falta pagar', async () => {

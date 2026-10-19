@@ -32,6 +32,7 @@ const api = vi.hoisted(() => ({
   chatHistory: vi.fn(),
   sendMessage: vi.fn(),
   sendAttachment: vi.fn(),
+  markChatRead: vi.fn(),
   attachmentBlob: vi.fn(),
   createReview: vi.fn(),
   respondReview: vi.fn(),
@@ -133,6 +134,7 @@ const message = (o: Partial<ChatMessage> = {}): ChatMessage => ({
   createdAt: '2026-10-01T14:00:00.000Z',
   removedAt: null,
   signals: [],
+  readAt: null,
   ...o,
 });
 
@@ -227,6 +229,7 @@ beforeEach(() => {
   scrollIntoView.mockClear();
   api.contractDetail.mockResolvedValue(contract());
   api.chatHistory.mockResolvedValue(history([]));
+  api.markChatRead.mockResolvedValue({ conversationId: 5, marked: 0, upToId: null, readAt: null });
   api.disputes.mockResolvedValue([]);
   api.publicSettings.mockResolvedValue({ extensionResponseHours: 48 });
   api.wallet.mockResolvedValue({ balance: 500, credits: 500 });
@@ -944,13 +947,10 @@ describe('SalaContratoView: chat', () => {
 
   it('ao sair da Sala, ninguém mais fica ouvindo o socket', async () => {
     const { unmount } = await openSala();
-    expect(
-      ['connect', 'disconnect', 'message:new', 'message:updated'].map((e) => socket.count(e)),
-    ).toEqual([1, 1, 1, 1]);
+    const events = ['connect', 'disconnect', 'message:new', 'message:updated', 'message:read'];
+    expect(events.map((e) => socket.count(e))).toEqual([1, 1, 1, 1, 1]);
     unmount();
-    expect(
-      ['connect', 'disconnect', 'message:new', 'message:updated'].map((e) => socket.count(e)),
-    ).toEqual([0, 0, 0, 0]);
+    expect(events.map((e) => socket.count(e))).toEqual([0, 0, 0, 0, 0]);
   });
 
   it('mensagem com sinal de negociação por fora leva o aviso do escrow', async () => {
@@ -1548,5 +1548,209 @@ describe('SalaContratoView: ações da contratação', () => {
     await openSala(CLIENT);
     expect(screen.queryByRole('heading', { name: 'Disputa' })).toBeNull();
     expect(api.disputes).not.toHaveBeenCalled();
+  });
+});
+
+describe('SalaContratoView: leitura no chat (RF-059)', () => {
+  const READ_1 = '2026-10-01T14:10:00.000Z';
+  const READ_2 = '2026-10-01T14:20:00.000Z';
+  /** O selo de leitura da bolha que tem este texto (null se a bolha não tem selo). */
+  const statusOf = (text: string): HTMLElement | null =>
+    within(screen.getByText(text).closest('.bubble') as HTMLElement).queryByTestId('read-status');
+  const readEvent = (o: Record<string, unknown> = {}) => ({
+    contractId: ID,
+    conversationId: 5,
+    readerId: FREELANCER,
+    upToId: 3,
+    readAt: READ_1,
+    ...o,
+  });
+
+  it('as minhas dizem "Enviada" (✓) ou "Lida" (✓✓) com texto; as recebidas e as removidas não têm selo', async () => {
+    api.chatHistory.mockResolvedValue(
+      history([
+        message({ id: 1, content: 'Bom dia', readAt: '2026-10-01T14:05:00.000Z' }),
+        message({ id: 2, senderId: CLIENT, content: 'Tudo certo?', readAt: READ_1 }),
+        message({ id: 3, senderId: CLIENT, content: 'Sim, começo hoje' }),
+        message({ id: 4, senderId: CLIENT, content: '', removedAt: '2026-10-01T15:00:00.000Z' }),
+      ]),
+    );
+    await openSala();
+
+    expect(within(card('Chat')).getAllByTestId('read-status')).toHaveLength(2);
+    const lida = statusOf('Tudo certo?')!;
+    expect(read(lida)).toBe('Lida');
+    expect(lida).toHaveAttribute('title', `Lida em ${dtm(READ_1)}`);
+    // O ícone é enfeite: quem usa leitor de tela ouve o texto.
+    expect(lida.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(read(statusOf('Sim, começo hoje'))).toBe('Enviada');
+    expect(statusOf('Sim, começo hoje')).not.toHaveAttribute('title');
+    expect(statusOf('Bom dia')).toBeNull();
+    // Nada recebido está por ler: a Sala não chama a API.
+    expect(api.markChatRead).not.toHaveBeenCalled();
+  });
+
+  it('message:read da outra parte troca "Enviada" por "Lida" na hora, até a mensagem avisada', async () => {
+    api.chatHistory.mockResolvedValue(
+      history([
+        message({ id: 2, senderId: CLIENT, content: 'Tudo certo?' }),
+        message({ id: 3, senderId: CLIENT, content: 'Sim, começo hoje' }),
+      ]),
+    );
+    await openSala();
+
+    // De outra contratação, ou a leitura que eu mesmo fiz: as minhas continuam "Enviada".
+    act(() => socket.fire('message:read', readEvent({ contractId: 10 })));
+    act(() => socket.fire('message:read', readEvent({ readerId: CLIENT })));
+    expect(read(statusOf('Tudo certo?'))).toBe('Enviada');
+
+    act(() => socket.fire('message:read', readEvent({ upToId: 2 })));
+    expect(read(statusOf('Tudo certo?'))).toBe('Lida');
+    expect(read(statusOf('Sim, começo hoje'))).toBe('Enviada');
+
+    act(() => socket.fire('message:read', readEvent({ upToId: 3, readAt: READ_2 })));
+    expect(read(statusOf('Sim, começo hoje'))).toBe('Lida');
+    expect(statusOf('Sim, começo hoje')).toHaveAttribute('title', `Lida em ${dtm(READ_2)}`);
+    // A primeira leitura continua com o horário dela.
+    expect(statusOf('Tudo certo?')).toHaveAttribute('title', `Lida em ${dtm(READ_1)}`);
+  });
+
+  it('ao abrir, marca as recebidas até a última não lida, uma vez só', async () => {
+    api.chatHistory.mockResolvedValue(
+      history([
+        message({ id: 1, content: 'Bom dia', readAt: '2026-10-01T14:05:00.000Z' }),
+        message({ id: 2, senderId: CLIENT, content: 'Tudo certo?' }),
+        message({ id: 3, content: 'Sim, começo hoje' }),
+      ]),
+    );
+    await openSala();
+
+    await waitFor(() => expect(api.markChatRead).toHaveBeenCalledWith(ID, 3));
+    // A própria leitura volta pelo socket; nem ela nem a volta à aba pedem de novo.
+    act(() => socket.fire('message:read', readEvent({ readerId: CLIENT })));
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(api.markChatRead).toHaveBeenCalledTimes(1);
+    // Receber "lida" não põe selo na mensagem da outra parte.
+    expect(statusOf('Sim, começo hoje')).toBeNull();
+  });
+
+  it('mensagem nova com a aba visível é marcada; com a aba escondida, só quando ela volta', async () => {
+    api.chatHistory.mockResolvedValue(
+      history([message({ id: 1, content: 'Bom dia', readAt: '2026-10-01T14:05:00.000Z' })]),
+    );
+    await openSala();
+    expect(api.markChatRead).not.toHaveBeenCalled();
+
+    act(() =>
+      socket.fire('message:new', {
+        ...message({ id: 8, content: 'Nova do socket' }),
+        contractId: ID,
+      }),
+    );
+    await waitFor(() => expect(api.markChatRead).toHaveBeenCalledWith(ID, 8));
+
+    const visibility = vi.spyOn(Document.prototype, 'visibilityState', 'get');
+    try {
+      visibility.mockReturnValue('hidden');
+      act(() =>
+        socket.fire('message:new', {
+          ...message({ id: 9, content: 'Chegou escondida' }),
+          contractId: ID,
+        }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(api.markChatRead).toHaveBeenCalledTimes(1);
+
+      visibility.mockReturnValue('visible');
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await waitFor(() => expect(api.markChatRead).toHaveBeenLastCalledWith(ID, 9));
+      expect(api.markChatRead).toHaveBeenCalledTimes(2);
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
+  it('falha ao marcar (rede) não avisa nada e tenta de novo quando a aba volta', async () => {
+    api.markChatRead.mockRejectedValueOnce(new Error('Sem conexão com o servidor.'));
+    api.chatHistory.mockResolvedValue(history([message({ id: 3, content: 'Bom dia' })]));
+    await openSala();
+
+    await waitFor(() => expect(api.markChatRead).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(api.markChatRead).toHaveBeenCalledTimes(2);
+    });
+    expect(api.markChatRead).toHaveBeenLastCalledWith(ID, 3);
+    expect(screen.queryByText('Sem conexão com o servidor.')).toBeNull();
+  });
+
+  it('a leitura que o histórico trouxe vale também para a mensagem que chegou ao vivo', async () => {
+    const user = userEvent.setup({ delay: null });
+    const sent = message({ id: 52, senderId: CLIENT, content: 'Fechado' });
+    api.sendMessage.mockResolvedValue(sent);
+    api.chatHistory
+      .mockResolvedValueOnce(history([]))
+      .mockResolvedValue(history([{ ...sent, readAt: READ_1 }]));
+    await openSala();
+    await user.type(draftInput(), 'Fechado');
+    await user.click(sendButton());
+
+    await waitFor(() => expect(read(statusOf('Fechado'))).toBe('Lida'));
+    // O socket devolvendo a mesma mensagem (sem leitura) não desfaz o "Lida".
+    act(() => socket.fire('message:new', { ...sent, contractId: ID }));
+    expect(read(statusOf('Fechado'))).toBe('Lida');
+  });
+
+  it('conta suspensa também marca como lida: registra a leitura, sem enviar nada (RN-007)', async () => {
+    api.chatHistory.mockResolvedValue(history([message({ id: 3, content: 'Bom dia' })]));
+    renderSala(CLIENT, undefined, 'America/Sao_Paulo', 'suspended');
+    await screen.findByText('Bom dia');
+
+    await waitFor(() => expect(api.markChatRead).toHaveBeenCalledWith(ID, 3));
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(sendButton()).toBeDisabled();
+  });
+
+  it('trocar de contratação sem sair da tela não leva a leitura avisada na outra, e marca a nova', async () => {
+    const OTHER = 11;
+    api.chatHistory.mockImplementation(async (id: number) =>
+      history(
+        id === ID
+          ? [message({ id: 3, senderId: CLIENT, content: 'Daqui' })]
+          : [
+              message({ id: 1, content: 'Recebida de lá' }),
+              message({ id: 2, senderId: CLIENT, content: 'De lá' }),
+            ],
+      ),
+    );
+    auth.user = { id: CLIENT, timezone: 'America/Sao_Paulo' };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (contractId: number) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>
+          <MemoryRouter>
+            <AccountAccessProvider status="active">
+              <SalaContratoView contractId={contractId} onBack={() => undefined} />
+            </AccountAccessProvider>
+          </MemoryRouter>
+        </ToastProvider>
+      </QueryClientProvider>
+    );
+    const view = render(tree(ID));
+    await screen.findByText('Daqui');
+    act(() => socket.fire('message:read', readEvent({ upToId: 3 })));
+    expect(read(statusOf('Daqui'))).toBe('Lida');
+    expect(api.markChatRead).not.toHaveBeenCalled();
+
+    view.rerender(tree(OTHER));
+    await screen.findByText('De lá');
+    expect(read(statusOf('De lá'))).toBe('Enviada');
+    await waitFor(() => expect(api.markChatRead).toHaveBeenCalledWith(OTHER, 1));
   });
 });

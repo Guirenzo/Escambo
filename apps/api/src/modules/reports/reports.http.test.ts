@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '../../config/logger';
-import { bearer, routerApp } from '../../test-support/http';
+import { bearer, routerApp, businessAudits } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
 import { adminRoutes } from '../admin/admin.routes';
 import { reportsRoutes } from './reports.routes';
@@ -222,7 +222,7 @@ describe('moderação pelo admin: borda HTTP', () => {
       expect(moderation.listQueue).not.toHaveBeenCalled();
       expect(moderation.act).not.toHaveBeenCalled();
       expect(recordAction).not.toHaveBeenCalled();
-      expect(audit).not.toHaveBeenCalled();
+      expect(businessAudits(audit)).toEqual([]);
     });
   });
 

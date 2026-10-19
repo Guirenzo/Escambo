@@ -57,13 +57,13 @@
 | ------ | -------------------------------------------------------------------------------------------------- | ---------- | -------- |
 | RF-021 | O sistema deve disponibilizar um catálogo hierárquico de categorias e subcategorias de serviços    | Alta       | Implementado |
 | RF-022 | O freelancer deve poder cadastrar serviços com título, descrição, tipo de preço e prazo de entrega | Alta       | Implementado |
-| RF-023 | O freelancer deve poder marcar um serviço como remoto, presencial ou ambos                         | Alta       | Parcial |
-| RF-024 | O freelancer deve poder adicionar tags ao serviço para facilitar a busca                           | Média      | Não implementado |
+| RF-023 | O freelancer deve poder marcar um serviço como remoto, presencial ou ambos                         | Alta       | Implementado |
+| RF-024 | O freelancer deve poder adicionar tags ao serviço para facilitar a busca                           | Média      | Implementado |
 | RF-025 | O cliente deve poder buscar serviços por categoria, localização e faixa de preço                   | Alta       | Implementado |
 | RF-026 | O sistema deve suportar busca textual por palavras-chave no título e descrição dos serviços        | Alta       | Implementado |
 | RF-027 | O sistema deve permitir filtrar serviços por nota mínima do profissional                           | Média      | Implementado |
 | RF-028 | O sistema deve exibir serviços impulsionados em destaque no topo dos resultados de busca           | Média      | Implementado |
-| RF-029 | O sistema deve registrar e exibir o número de visualizações de cada serviço ao freelancer          | Média      | Não implementado |
+| RF-029 | O sistema deve registrar e exibir o número de visualizações de cada serviço ao freelancer          | Média      | Implementado |
 | RF-030 | O freelancer deve poder ativar e desativar serviços sem excluí-los                                 | Alta       | Implementado |
 ---
 
@@ -98,8 +98,8 @@
 | RF-043 | O sistema deve calcular e exibir a taxa da plataforma de forma transparente antes da confirmação | Alta       | Implementado |
 | RF-044 | O freelancer deve ter uma carteira digital com saldo disponível e saldo pendente separados       | Alta       | Implementado |
 | RF-045 | O freelancer deve poder solicitar saque via PIX ou transferência bancária                        | Alta       | Implementado |
-| RF-046 | O sistema deve processar saques dentro do prazo configurado pelo administrador                   | Alta       | Parcial |
-| RF-047 | O sistema deve exibir histórico detalhado de transações com filtro por período                   | Alta       | Parcial |
+| RF-046 | O sistema deve processar saques dentro do prazo configurado pelo administrador                   | Alta       | Implementado |
+| RF-047 | O sistema deve exibir histórico detalhado de transações com filtro por período                   | Alta       | Implementado |
 | RF-048 | O sistema deve emitir notificação ao receber e ao processar um pagamento                         | Alta       | Implementado |
 | RF-049 | O sistema deve suportar reembolso parcial ou total em casos de cancelamento                      | Média      | Implementado |
 | RF-050 | O sistema deve registrar a resposta completa do gateway para auditoria                           | Alta       | Parcial |
@@ -123,7 +123,7 @@
 | ------ | ------------------------------------------------------------------------------------------ | ---------- | -------- |
 | RF-057 | O sistema deve disponibilizar chat em tempo real entre cliente e freelancer                | Alta       | Implementado |
 | RF-058 | O chat deve suportar envio de texto, imagens e arquivos                                    | Alta       | Implementado |
-| RF-059 | O sistema deve exibir indicador de leitura das mensagens (lido / não lido)                 | Média      | Não implementado |
+| RF-059 | O sistema deve exibir indicador de leitura das mensagens (lido / não lido)                 | Média      | Implementado |
 | RF-060 | O sistema deve notificar o usuário via push ao receber uma nova mensagem                   | Alta       | Fora do escopo |
 | RF-061 | O histórico de mensagens deve ser preservado e acessível mesmo após a conclusão do serviço | Média      | Implementado |
 | RF-062 | O sistema deve impedir o envio de mensagens em contratações canceladas ou encerradas       | Baixa      | Não implementado |
@@ -135,7 +135,7 @@
 | ------ | ---------------------------------------------------------------------------------------------------------------------- | ---------- | -------- |
 | RF-063 | O sistema deve atribuir XP ao freelancer por ações relevantes (serviço concluído, avaliação recebida, missão cumprida) | Alta       | Parcial |
 | RF-064 | O sistema deve calcular o nível do usuário com base no XP total acumulado                                              | Alta       | Implementado |
-| RF-065 | O sistema deve emitir badges automaticamente ao atingir marcos definidos                                               | Alta       | Parcial |
+| RF-065 | O sistema deve emitir badges automaticamente ao atingir marcos definidos                                               | Alta       | Implementado |
 | RF-066 | O sistema deve disponibilizar missões periódicas com recompensas em XP                                                 | Média      | Não implementado |
 | RF-067 | O sistema deve exibir ranking local de freelancers por categoria e nota                                                | Média      | Parcial |
 | RF-068 | O sistema deve exibir no perfil o nível atual, XP acumulado e badges conquistadas                                      | Alta       | Implementado |
@@ -154,7 +154,7 @@
 | RF-075 | Impulsionamento | O sistema deve exibir serviços impulsionados ativos com destaque visual nos resultados                                | Média      | Implementado |
 | RF-076 | Administração   | O painel administrativo deve exibir métricas gerais de usuários, contratos, receita e tickets em tempo real           | Alta       | Parcial |
 | RF-077 | Administração   | O administrador deve poder suspender, banir ou reativar qualquer conta da plataforma                                  | Alta       | Implementado |
-| RF-078 | Administração   | O administrador deve poder configurar parâmetros da plataforma (taxa, prazo de saque, manutenção) sem deploy          | Média      | Parcial |
+| RF-078 | Administração   | O administrador deve poder configurar parâmetros da plataforma (taxa, prazo de saque, manutenção) sem deploy          | Média      | Implementado |
 | RF-079 | LGPD            | O sistema deve registrar o consentimento explícito do usuário nos termos de uso e política de privacidade no cadastro | Alta       | Implementado |
 | RF-080 | LGPD            | O usuário deve poder solicitar a exclusão definitiva de seus dados pessoais da plataforma                             | Alta       | Implementado |
 | RF-081 | Relatórios      | O sistema deve gerar snapshots periódicos (diário, semanal, mensal) de métricas de uso e receita                      | Média      | Parcial |
@@ -209,7 +209,7 @@ Requisitos distribuídos por módulos existentes (Serviços, Contratações, Sup
 | Recursos avançados (RF-086–092)  | 7            | 4      | 3      | 0     |
 | **Total**                        | **92**       | **67** | **23** | **2** |
 
-> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.43.0: **65 implementados, 15 parciais, 10 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
+> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.44.0: **73 implementados, 10 parciais, 7 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
 
 > ℹ️ O total ficou em **92 requisitos funcionais**, superando os 72 planejados inicialmente — resultado do detalhamento granular e da inclusão da **troca de serviços (escambo)** e de recursos avançados de confiança e segurança (v1.1.0), com dois requisitos de desistência e revisão humana acrescentados pelo ADR 61 (v1.2.0).
 

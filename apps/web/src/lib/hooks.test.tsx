@@ -106,13 +106,6 @@ describe('consultas: chave do cache e método da API', () => {
       'attachmentBlob',
       ['/api/messaging/attachments/9', 'foto.png'],
     ],
-    [
-      'useCreditTransactions',
-      () => hooks.useCreditTransactions(),
-      ['creditTransactions'],
-      'creditTransactions',
-      [],
-    ],
     ['useBoostPlans', () => hooks.useBoostPlans(), ['boostPlans'], 'boostPlans', []],
     ['useMyBoosts', () => hooks.useMyBoosts(), ['myBoosts'], 'myBoosts', []],
     ['useFreelancerReviews', () => hooks.useFreelancerReviews(9), ['reviews', 9], 'reviews', [9]],
@@ -616,6 +609,71 @@ describe('extrato de R$ por período ("Carregar mais", RF-047)', () => {
   });
 });
 
+describe('extrato de créditos por período ("Carregar mais", RF-047)', () => {
+  const page = (number: number, ids: number[], hasMore: boolean) => ({
+    items: ids.map((id) => ({ id })),
+    page: number,
+    limit: hooks.WALLET_TX_PAGE,
+    hasMore,
+  });
+
+  it('o mesmo do extrato de R$: 20 por vez, com o período, na chave dos créditos', async () => {
+    mocked('creditTransactions')
+      .mockResolvedValueOnce(page(1, [9, 8], true))
+      .mockResolvedValueOnce(page(2, [7], false));
+    const { client, wrapper } = setup();
+    const period = { from: '2026-10-01', to: '' };
+
+    const { result } = renderHook(() => hooks.useCreditTransactions(period), { wrapper });
+
+    await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+    expect(mocked('creditTransactions')).toHaveBeenLastCalledWith({
+      from: '2026-10-01',
+      to: undefined,
+      page: 1,
+      limit: 20,
+    });
+    expect(result.current.hasNextPage).toBe(true);
+    // A chave começa por ['creditTransactions']: as gravações que a invalidam alcançam todo período.
+    expect(client.getQueryData(['creditTransactions', { from: '2026-10-01' }])).toBeDefined();
+    expect(mocked('walletTransactions')).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.fetchNextPage();
+    });
+    expect(mocked('creditTransactions')).toHaveBeenLastCalledWith({
+      from: '2026-10-01',
+      to: undefined,
+      page: 2,
+      limit: 20,
+    });
+    await waitFor(() => expect(result.current.hasNextPage).toBe(false));
+  });
+
+  it('sem período pede tudo; período invertido não vai para a API', async () => {
+    mocked('creditTransactions').mockResolvedValue(page(1, [3], false));
+    const { wrapper } = setup();
+
+    const all = renderHook(() => hooks.useCreditTransactions(), { wrapper });
+    await waitFor(() => expect(all.result.current.data?.pages).toHaveLength(1));
+    expect(mocked('creditTransactions')).toHaveBeenCalledWith({
+      from: undefined,
+      to: undefined,
+      page: 1,
+      limit: 20,
+    });
+
+    mocked('creditTransactions').mockClear();
+    const inverted = renderHook(
+      () => hooks.useCreditTransactions({ from: '2026-10-15', to: '2026-10-01' }),
+      { wrapper },
+    );
+    await act(async () => undefined);
+    expect(mocked('creditTransactions')).not.toHaveBeenCalled();
+    expect(inverted.result.current.fetchStatus).toBe('idle');
+  });
+});
+
 describe('gravações: o que vai para a API e o que é recarregado depois', () => {
   type MutationLike = { mutateAsync: (variables: never) => Promise<unknown> };
   type MutationCase = [
@@ -815,6 +873,15 @@ describe('gravações: o que vai para a API e o que é recarregado depois', () =
       [7, 'Olá'],
       { id: 1 },
       [['chat', 7]],
+    ],
+    [
+      'useMarkChatRead (não recarrega o histórico: o aviso chega pelo socket)',
+      () => hooks.useMarkChatRead(7),
+      31,
+      'markChatRead',
+      [7, 31],
+      { conversationId: 5, marked: 1, upToId: 31, readAt: '2026-10-19T12:00:00.000Z' },
+      [],
     ],
     [
       'useSendAttachment',

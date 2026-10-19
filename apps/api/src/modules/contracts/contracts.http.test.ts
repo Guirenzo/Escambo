@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { bearer, routerApp } from '../../test-support/http';
+import { bearer, routerApp, businessAudits } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
 import { contractsRoutes } from './contracts.routes';
 
@@ -830,7 +830,7 @@ describe('contratações: borda HTTP', () => {
       );
       await request(app).post(routes[1]!.url).set(bearer(CLIENT)).expect(403);
       expect(service.grantMilestoneRevision).toHaveBeenCalledWith(12, 5, CLIENT);
-      expect(audit).not.toHaveBeenCalled();
+      expect(businessAudits(audit)).toEqual([]);
     });
 
     it('a auditoria pendente não segura a revisão já liberada', async () => {

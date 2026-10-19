@@ -32,6 +32,8 @@ export interface MessageRow extends RowDataPacket {
   removed_at?: Date | null;
   /** Sinais de negociação por fora, "pix,phone" (ADR 45); NULL quando limpa. */
   off_platform?: string | null;
+  /** Quando o destinatário leu (RF-059); NULL enquanto não lida. */
+  read_at?: Date | null;
 }
 
 /** Anexo + quem pode lê-lo (as partes da conversa). */
@@ -57,7 +59,12 @@ export interface NewAttachment {
 }
 
 const MESSAGE_COLUMNS = `id, conversation_id, sender_id, type, content, file_url, file_name, file_mime,
-       file_size_bytes, file_purged_at, file_purged_reason, created_at, removed_at, off_platform`;
+       file_size_bytes, file_purged_at, file_purged_reason, created_at, removed_at, off_platform,
+       read_at`;
+
+/** Resultado de marcar como lidas: quantas mudaram agora, até qual id e com que horário. */
+export type MarkReadResult =
+  { marked: 0; upToId: null; readAt: null } | { marked: number; upToId: number; readAt: Date };
 
 /** Normaliza o par (a<b) para casar com a unique key uq_conversation. */
 function orderPair(x: number, y: number): [number, number] {
@@ -175,6 +182,40 @@ export const messagingRepository = {
       { id },
     );
     return res.affectedRows > 0;
+  },
+
+  /**
+   * Marca como lidas (RF-059) as mensagens que `readerId` RECEBEU na conversa, até `upTo` (a última
+   * que a tela mostrou; null = todas) — nunca as que ele mesmo mandou. Idempotente: a já lida fica
+   * com o horário da primeira leitura. Primeiro acha a maior não lida, numa consulta sem trava que,
+   * no caso comum (nada a marcar), encerra sem escrever; depois grava só até ela, e a mensagem que
+   * chegar entre as duas instruções continua não lida.
+   */
+  async markRead(
+    conversationId: number,
+    readerId: number,
+    upTo: number | null,
+  ): Promise<MarkReadResult> {
+    const bound = upTo === null ? '' : ' AND id <= :upTo';
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT MAX(id) AS last FROM messages
+        WHERE conversation_id = :conversationId AND read_at IS NULL
+          AND sender_id <> :readerId${bound}`,
+      { conversationId, readerId, upTo },
+    );
+    const last = rows[0]?.last == null ? null : Number(rows[0].last);
+    if (last === null) return { marked: 0, upToId: null, readAt: null };
+    // DATETIME sem fração: o horário vai em segundos inteiros, igual ao que o banco devolve depois.
+    const readAt = new Date(Math.floor(Date.now() / 1000) * 1000);
+    const [res] = await pool.query<ResultSetHeader>(
+      `UPDATE messages SET is_read = 1, read_at = :readAt
+        WHERE conversation_id = :conversationId AND read_at IS NULL
+          AND sender_id <> :readerId AND id <= :last`,
+      { conversationId, readerId, readAt, last },
+    );
+    // Outra aba marcou as mesmas no meio do caminho: nada mudou por esta chamada.
+    if (res.affectedRows === 0) return { marked: 0, upToId: null, readAt: null };
+    return { marked: res.affectedRows, upToId: last, readAt };
   },
 
   /** Uma mensagem pelo id (para o aviso em tempo real quando ela muda). */

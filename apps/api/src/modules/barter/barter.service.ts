@@ -3,6 +3,7 @@ import type { BarterAgreement, BarterStatus, Paginated, TornaStatus } from '@esc
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { contractsRepository } from '../contracts/contracts.repository';
+import { gamificationService } from '../gamification/gamification.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { barterRepository, type BarterRow, type TornaHold } from './barter.repository';
 import type { CreateBarterInput, ListBartersInput } from './barter.schema';
@@ -288,6 +289,15 @@ export const barterService = {
         body,
         data: { barterId: agreementId },
       });
+    }
+    // Badges das duas partes (RF-065), depois do commit, como na conclusão do contrato: só a
+    // chamada que concluiu a troca chega aqui, e uma falha não desfaz a troca nem os avisos.
+    for (const uid of [row.proposer_id, row.receiver_id]) {
+      try {
+        await gamificationService.onBarterCompleted(uid);
+      } catch (err) {
+        logger.warn({ err, barterId: agreementId }, 'gamificação (onBarterCompleted) falhou');
+      }
     }
   },
 

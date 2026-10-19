@@ -1,4 +1,5 @@
 import type { BrazilTimezone } from '@escambo/types';
+import { z } from 'zod';
 import { HttpError } from '../../utils/http-error';
 import { addDaysToDay, localInstant } from '../../utils/timezone';
 
@@ -52,4 +53,50 @@ export async function periodRange(
   if (period.from) range.from = startOfDay(zone, period.from);
   if (period.to) range.to = startOfDay(zone, addDaysToDay(period.to, 1));
   return range;
+}
+
+/** Dia do período do extrato: "AAAA-MM-DD" que existe no calendário. */
+const day = z.string().refine(isCalendarDay, 'Informe um dia válido no formato AAAA-MM-DD');
+
+/**
+ * Query dos dois extratos (R$ e créditos, RF-047): página, tamanho da página e o período em dias
+ * no fuso da conta, os dois inclusivos.
+ */
+export const ledgerQuerySchema = z.object({
+  // Teto na página: sem ele, ?page=1e20 vira OFFSET 2e+21 e o MySQL recusa (500).
+  page: z.coerce.number().int().positive().max(10_000).default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+  from: day.optional(),
+  to: day.optional(),
+});
+
+/**
+ * O período como filtro SQL da data do lançamento (`created_at`, em UTC): início inclusivo, fim
+ * exclusivo. Sem período, filtro vazio. Os parâmetros entram nos nomeados da consulta.
+ */
+export function rangeFilter(range: WalletRange): { sql: string; params: WalletRange } {
+  let sql = '';
+  const params: WalletRange = {};
+  if (range.from) {
+    sql += ' AND created_at >= :from';
+    params.from = range.from;
+  }
+  if (range.to) {
+    sql += ' AND created_at < :to';
+    params.to = range.to;
+  }
+  return { sql, params };
+}
+
+/**
+ * Uma página do extrato a partir de até `limit + 1` linhas: a que sobra não aparece, só diz que há
+ * outra página ("Carregar mais").
+ */
+export function ledgerPage<Row, Item>(
+  rows: Row[],
+  page: number,
+  limit: number,
+  map: (row: Row) => Item,
+): { items: Item[]; page: number; limit: number; hasMore: boolean } {
+  return { items: rows.slice(0, limit).map(map), page, limit, hasMore: rows.length > limit };
 }

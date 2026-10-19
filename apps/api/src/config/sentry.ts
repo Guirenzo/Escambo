@@ -60,6 +60,23 @@ export function captureError(err: unknown): void {
   sentry?.captureException(err);
 }
 
+/**
+ * Erro do navegador relatado pelo app (RNF-040). Vira um Error com a mensagem e a pilha que o app
+ * mandou, marcado como do web; passa pelo mesmo scrubEvent (e-mail na mensagem vira "[email]").
+ */
+export function captureClientError(report: {
+  kind: string;
+  message: string;
+  stack?: string;
+  path: string;
+}): void {
+  if (!sentry) return;
+  const err = new Error(report.message);
+  err.name = 'ClientError';
+  err.stack = report.stack ?? `ClientError: ${report.message}`;
+  sentry.captureException(err, { tags: { source: 'web', kind: report.kind, path: report.path } });
+}
+
 /** Espera o envio do que está na fila (encerramento do processo). */
 export async function flushSentry(timeoutMs = 2000): Promise<void> {
   await sentry?.flush(timeoutMs);

@@ -14,7 +14,11 @@ import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider } from './lib/auth';
 import { queryClient } from './lib/query';
+import { installErrorReporting } from './lib/report-error';
 import { ToastProvider } from './lib/toast';
+
+// RNF-040: erro de script e promessa rejeitada sem catch também chegam à API.
+installErrorReporting();
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('Elemento #root não encontrado');

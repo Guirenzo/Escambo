@@ -1,6 +1,6 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
-import type { WalletRange } from './wallet.period';
+import { rangeFilter, type WalletRange } from './wallet.period';
 
 export interface WalletRow extends RowDataPacket {
   id: number;
@@ -50,24 +50,15 @@ export const walletRepository = {
     offset: number,
     range: WalletRange = {},
   ): Promise<WalletTxRow[]> {
-    const params: Record<string, number | Date> = { userId };
-    let period = '';
-    if (range.from) {
-      period += ' AND created_at >= :from';
-      params.from = range.from;
-    }
-    if (range.to) {
-      period += ' AND created_at < :to';
-      params.to = range.to;
-    }
+    const period = rangeFilter(range);
     const [rows] = await pool.query<WalletTxRow[]>(
       `SELECT id, amount, pending_delta, balance_after, pending_after, reason,
               contract_id, payment_id, withdrawal_id, created_at
          FROM wallet_transactions
-        WHERE user_id = :userId${period}
+        WHERE user_id = :userId${period.sql}
         ORDER BY id DESC
         LIMIT ${limit} OFFSET ${offset}`,
-      params,
+      { userId, ...period.params },
     );
     return rows;
   },

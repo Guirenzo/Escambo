@@ -1,4 +1,4 @@
-import type { PlatformSetting, PublicSettings } from '@escambo/types';
+import type { PlatformSetting, PublicSettings, WithdrawalMethod } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
 import { INCLUDED_REVISIONS } from '../contracts/deadline-grace';
 import { DISPUTE_TACIT_MARGIN_MS, DISPUTE_WAIT_MS } from '../contracts/dispute-window';
@@ -15,6 +15,7 @@ import { SETTING_DEFS, SETTING_KEYS, type SettingKey } from './settings.schema';
  */
 const CACHE_TTL_MS = 5_000;
 const cache = new Map<string, { value: string | null; at: number }>();
+let returnAtCache: { value: Date | null; at: number } | null = null;
 
 async function rawValue(key: SettingKey, now = Date.now()): Promise<string | null> {
   const hit = cache.get(key);
@@ -95,6 +96,7 @@ export const settingsService = {
     const stored = validateSettingValue(key, value);
     await settingsRepository.set(key, stored, SETTING_DEFS[key].type, adminId);
     cache.delete(key);
+    returnAtCache = null;
     const rows = await settingsRepository.list([key]);
     return toItem(key, rows[0]);
   },
@@ -118,6 +120,32 @@ export const settingsService = {
   maintenanceMode(): Promise<boolean> {
     return this.flag('maintenance_mode');
   },
+  /**
+   * Hora prevista da volta (RNF-010): os minutos da previsão contados da última mudança do modo ou
+   * da própria previsão. Nula com o modo desligado ou sem previsão (0). Cacheada como as chaves,
+   * porque o 503 de manutenção a consulta a cada requisição.
+   */
+  async maintenanceReturnAt(now = Date.now()): Promise<Date | null> {
+    if (returnAtCache && now - returnAtCache.at < CACHE_TTL_MS) return returnAtCache.value;
+    let value: Date | null = null;
+    const [on, minutes] = await Promise.all([
+      this.flag('maintenance_mode'),
+      this.number('maintenance_return_minutes'),
+    ]);
+    if (on && minutes > 0) {
+      const rows = await settingsRepository.list([
+        'maintenance_mode',
+        'maintenance_return_minutes',
+      ]);
+      const since = Math.max(
+        0,
+        ...rows.map((r) => (r.updated_at ? new Date(r.updated_at).getTime() : 0)),
+      );
+      if (since > 0) value = new Date(since + minutes * 60_000);
+    }
+    returnAtCache = { value, at: now };
+    return value;
+  },
   barterEnabled(): Promise<boolean> {
     return this.flag('barter_enabled');
   },
@@ -126,6 +154,12 @@ export const settingsService = {
   },
   minServicePrice(): Promise<number> {
     return this.number('min_service_price');
+  },
+  /** Prazo do saque em dias úteis, pela forma de recebimento (RN-035), lido na hora do pedido. */
+  withdrawalBusinessDays(method: WithdrawalMethod): Promise<number> {
+    return this.number(
+      method === 'pix' ? 'withdrawal_pix_business_days' : 'withdrawal_bank_business_days',
+    );
   },
 
   /** O que o app precisa saber sem ser admin (taxa, prazos, mínimos, manutenção, trocas). */
@@ -139,6 +173,8 @@ export const settingsService = {
       grace,
       minService,
       minWithdrawal,
+      pixDays,
+      bankDays,
       barter,
       maintenance,
     ] = await Promise.all([
@@ -150,9 +186,12 @@ export const settingsService = {
       this.number('deadline_grace_hours'),
       this.number('min_service_price'),
       this.number('min_withdrawal_amount'),
+      this.withdrawalBusinessDays('pix'),
+      this.withdrawalBusinessDays('bank'),
       this.flag('barter_enabled'),
       this.flag('maintenance_mode'),
     ]);
+    const returnAt = maintenance ? await this.maintenanceReturnAt() : null;
     return {
       platformFeePercentage: fee,
       tacitApprovalDays: tacit,
@@ -171,13 +210,16 @@ export const settingsService = {
       },
       minServicePrice: minService,
       minWithdrawalAmount: minWithdrawal,
+      withdrawalBusinessDays: { pix: pixDays, bank: bankDays },
       barterEnabled: barter,
       maintenanceMode: maintenance,
+      maintenanceReturnAt: returnAt?.toISOString() ?? null,
     };
   },
 
   /** Só para testes: esquece o cache. */
   clearCache(): void {
     cache.clear();
+    returnAtCache = null;
   },
 };

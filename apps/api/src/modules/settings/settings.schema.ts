@@ -21,8 +21,11 @@ export const SETTING_KEYS = [
   'moderation_sla_report_enabled',
   'min_service_price',
   'min_withdrawal_amount',
+  'withdrawal_pix_business_days',
+  'withdrawal_bank_business_days',
   'barter_enabled',
   'maintenance_mode',
+  'maintenance_return_minutes',
 ] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 export type SettingType = 'integer' | 'decimal' | 'boolean';
@@ -188,6 +191,26 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     max: 10000,
     defaultValue: 20,
   },
+  withdrawal_pix_business_days: {
+    type: 'integer',
+    label: 'Prazo do saque por PIX',
+    description:
+      'Saque por PIX é pago em até essa quantidade de dias úteis (RN-035): segunda a sexta no calendário de Brasília, contando a partir do dia seguinte ao pedido, sem descontar feriados. O prazo fica gravado no saque e é dito a quem pede; mudar aqui vale para os saques pedidos depois. A fila do admin marca como atrasado o que passou do prazo.',
+    unit: 'dias úteis',
+    min: 1,
+    max: 10,
+    defaultValue: 1,
+  },
+  withdrawal_bank_business_days: {
+    type: 'integer',
+    label: 'Prazo do saque por transferência',
+    description:
+      'Saque por transferência bancária (TED) é pago em até essa quantidade de dias úteis (RN-035): segunda a sexta no calendário de Brasília, contando a partir do dia seguinte ao pedido, sem descontar feriados. O prazo fica gravado no saque e é dito a quem pede; mudar aqui vale para os saques pedidos depois.',
+    unit: 'dias úteis',
+    min: 1,
+    max: 10,
+    defaultValue: 2,
+  },
   barter_enabled: {
     type: 'boolean',
     label: 'Trocas de serviço',
@@ -207,6 +230,16 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     min: 0,
     max: 1,
     defaultValue: false,
+  },
+  maintenance_return_minutes: {
+    type: 'integer',
+    label: 'Previsão de volta da manutenção',
+    description:
+      'Minutos até a volta, contados da última mudança deste valor ou do modo de manutenção. O app mostra a hora prevista e a API manda no Retry-After. 0 = sem previsão.',
+    unit: 'min',
+    min: 0,
+    max: 1440,
+    defaultValue: 0,
   },
 };
 

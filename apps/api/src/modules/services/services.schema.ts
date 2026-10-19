@@ -1,6 +1,12 @@
 import { z } from 'zod';
+import { tagsSchema } from './service-tags';
 
 const priceType = z.enum(['fixed', 'hourly', 'negotiable']);
+/**
+ * Modalidade (RF-023): remoto, presencial ou os dois. Quem ainda manda só isRemote continua valendo
+ * (true = remoto, false = presencial); com modality junto, vale a modality.
+ */
+const modality = z.enum(['remote', 'onsite', 'both']);
 
 export const createServiceSchema = z
   .object({
@@ -11,6 +17,9 @@ export const createServiceSchema = z
     price: z.number().positive().nullable().optional(),
     deliveryDays: z.number().int().positive().nullable().optional(),
     isRemote: z.boolean().default(false),
+    modality: modality.optional(),
+    // RN-018: até 10, de 2 a 30 caracteres, normalizadas e sem repetir.
+    tags: tagsSchema.optional(),
   })
   .superRefine((data, ctx) => {
     // RN-016: preço fixo exige preço; o mínimo vem de platform_settings e é checado no serviço.
@@ -33,6 +42,9 @@ export const updateServiceSchema = z
     price: z.number().positive().nullable(),
     deliveryDays: z.number().int().positive().nullable(),
     isRemote: z.boolean(),
+    modality,
+    // A lista inteira substitui as tags do serviço; [] tira todas.
+    tags: tagsSchema,
     isActive: z.boolean(),
   })
   .partial();
@@ -49,7 +61,9 @@ export const listServicesSchema = z.object({
   categoryId: queryNumber(z.coerce.number().int().positive().optional()),
   /** Serviços de um freelancer específico (perfil público). */
   ownerId: queryNumber(z.coerce.number().int().positive().optional()),
-  q: z.string().trim().min(1).optional(),
+  // Até 255, como o texto da busca salva. Vai ao FULLTEXT e às tags (service-search.ts).
+  q: z.string().trim().min(1).max(255).optional(),
+  // true = atende remoto, false = atende presencial; quem atende dos dois jeitos entra nos dois.
   isRemote: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')

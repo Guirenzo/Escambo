@@ -36,6 +36,14 @@ export const jobRuns = new Counter({
   registers: [registry],
 });
 
+/** Erros que o app relatou do navegador (RNF-040), por tipo: render, error ou rejection. */
+export const clientErrors = new Counter({
+  name: 'escambo_client_errors_total',
+  help: 'Erros do app no navegador relatados à API, por tipo',
+  labelNames: ['kind'],
+  registers: [registry],
+});
+
 export const jobDuration = new Histogram({
   name: 'escambo_job_duration_seconds',
   help: 'Duração de cada job em background',

@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { env } from '../../config/env';
-import { bearer, routerApp } from '../../test-support/http';
+import { bearer, routerApp, businessAudits } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
 import { webhook } from './payments.controller';
 import { paymentsRoutes } from './payments.routes';
@@ -140,7 +140,7 @@ describe('POST /api/payments/webhook', () => {
       message: 'Assinatura do webhook inválida',
     });
     expect(service.settleFromGateway).not.toHaveBeenCalled();
-    expect(log).not.toHaveBeenCalled();
+    expect(businessAudits(log)).toEqual([]);
   });
 
   it('segredo errado é recusado: do mesmo tamanho, mais curto, mais longo ou vazio', async () => {
@@ -207,7 +207,7 @@ describe('POST /api/payments/webhook', () => {
     expect(res.body.error).toBe('validation_error');
     expect(res.body.details).toHaveProperty('status');
     expect(service.settleFromGateway).not.toHaveBeenCalled();
-    expect(log).not.toHaveBeenCalled();
+    expect(businessAudits(log)).toEqual([]);
   });
 
   it('evento sem a referência da cobrança é recusado na validação', async () => {

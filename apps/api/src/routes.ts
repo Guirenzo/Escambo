@@ -25,6 +25,7 @@ import { withdrawalRoutes } from './modules/withdrawal/withdrawal.routes';
 import { settingsRoutes } from './modules/settings/settings.routes';
 import { mediaRoutes } from './modules/media/media.routes';
 import { supportRoutes, adminSupportRoutes } from './modules/support/support.routes';
+import { clientErrorsRoutes } from './modules/client-errors/client-errors.routes';
 
 /** Monta as rotas de cada módulo sob /api. */
 export const router = Router();
@@ -56,3 +57,4 @@ router.use('/admin/support/tickets', adminSupportRoutes);
 router.use('/admin', adminRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/media', mediaRoutes);
+router.use('/client-errors', clientErrorsRoutes);

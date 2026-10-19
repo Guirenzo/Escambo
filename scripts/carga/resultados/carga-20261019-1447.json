@@ -1,0 +1,1247 @@
+{
+  "iniciadoEm": "2026-10-19T14:47:10.739Z",
+  "maquina": {
+    "cpu": "AMD Ryzen 7 5700X 8-Core Processor",
+    "nucleosLogicos": 16,
+    "nucleosFisicos": 8,
+    "memoriaGB": 31.9,
+    "so": "Windows 11 Pro (10.0.26200)",
+    "node": "v22.14.0",
+    "mysql": {
+      "versao": "8.0.46",
+      "bufferPoolMB": 128,
+      "maxConexoes": 151
+    },
+    "docker": {
+      "versao": "29.5.3",
+      "so": "Docker Desktop",
+      "cpus": 16,
+      "memoriaGB": 16
+    },
+    "versaoApi": "1.43.0"
+  },
+  "config": {
+    "dbPool": 10,
+    "niveis": "10,50,100",
+    "duracaoS": 30,
+    "aquecimentoS": 10,
+    "conexoes": "500,1000",
+    "latenciaS": 30,
+    "volume": {
+      "freelancers": 250,
+      "clientes": 250,
+      "servicos": 10000,
+      "paresWs": 30
+    },
+    "env": "NODE_ENV=production, LOG_LEVEL=info, JOBS_ENABLED=false, MAIL_PROVIDER=simulated, PUSH_PROVIDER=simulated, RATE_LIMIT_MAX alto"
+  },
+  "api": {
+    "commit": "c27ada1",
+    "health": {
+      "status": "ok",
+      "db": "up",
+      "version": "1.43.0",
+      "commit": "c27ada1",
+      "uptime": 3,
+      "timestamp": "2026-10-19T14:47:30.092Z"
+    },
+    "log": "C:\\Users\\GUILHE~1\\AppData\\Local\\Temp\\escambo-carga\\api-1792421247452.log"
+  },
+  "segundosSeed": 320,
+  "volumeAntes": {
+    "users": 500,
+    "services": 10000,
+    "contracts": 30,
+    "payments": 250,
+    "withdrawals": 0,
+    "wallet_transactions": 280,
+    "messages": 0,
+    "notifications": 280,
+    "email_outbox": 780
+  },
+  "escrita": [
+    {
+      "cenario": "escrita",
+      "vus": 10,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 4660,
+      "erros": 0,
+      "vazao": 155.3,
+      "rotas": {
+        "POST /contracts (proposta/contratação)": {
+          "n": 1631,
+          "p50": 83.2,
+          "p95": 134.2,
+          "p99": 196.4,
+          "max": 377.1,
+          "media": 88.3,
+          "requisicoes": 1631,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 54.4
+        },
+        "POST /wallet/deposits (cobrança PIX)": {
+          "n": 1221,
+          "p50": 30.6,
+          "p95": 56,
+          "p99": 95,
+          "max": 242.9,
+          "media": 34,
+          "requisicoes": 1221,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 40.7
+        },
+        "POST /wallet/deposits/:id/simulate (pagamento simulado)": {
+          "n": 624,
+          "p50": 60.9,
+          "p95": 111.5,
+          "p99": 167.1,
+          "max": 314.1,
+          "media": 67.6,
+          "requisicoes": 624,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 20.8
+        },
+        "POST /withdrawals (pedido de saque)": {
+          "n": 1184,
+          "p50": 55.1,
+          "p95": 96.1,
+          "p99": 150.7,
+          "max": 331.4,
+          "media": 59.6,
+          "requisicoes": 1184,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 39.5
+        }
+      },
+      "api": {
+        "cpuNucleos": 0.68,
+        "memoriaMB": 257
+      },
+      "mysql": {
+        "cpu": "82.96%",
+        "mem": "976.2MiB / 15.58GiB"
+      }
+    },
+    {
+      "cenario": "escrita",
+      "vus": 50,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 1337,
+      "erros": 0,
+      "vazao": 44.6,
+      "rotas": {
+        "POST /contracts (proposta/contratação)": {
+          "n": 444,
+          "p50": 434.8,
+          "p95": 5849.3,
+          "p99": 11210.7,
+          "max": 11808.8,
+          "media": 1441,
+          "requisicoes": 444,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 14.8
+        },
+        "POST /wallet/deposits (cobrança PIX)": {
+          "n": 384,
+          "p50": 146.4,
+          "p95": 2053.7,
+          "p99": 5451.3,
+          "max": 6013.9,
+          "media": 497.3,
+          "requisicoes": 384,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 12.8
+        },
+        "POST /wallet/deposits/:id/simulate (pagamento simulado)": {
+          "n": 172,
+          "p50": 288.7,
+          "p95": 3077,
+          "p99": 9033.8,
+          "max": 9052.7,
+          "media": 869.8,
+          "requisicoes": 172,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 5.7
+        },
+        "POST /withdrawals (pedido de saque)": {
+          "n": 337,
+          "p50": 251.4,
+          "p95": 3547.6,
+          "p99": 8135.7,
+          "max": 9229.4,
+          "media": 858.5,
+          "requisicoes": 337,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 11.2
+        }
+      },
+      "api": {
+        "cpuNucleos": 0.17,
+        "memoriaMB": 121
+      },
+      "mysql": {
+        "cpu": "18.45%",
+        "mem": "979.3MiB / 15.58GiB"
+      }
+    },
+    {
+      "cenario": "escrita",
+      "vus": 100,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 645,
+      "erros": 0,
+      "vazao": 21.5,
+      "rotas": {
+        "POST /contracts (proposta/contratação)": {
+          "n": 216,
+          "p50": 5550.7,
+          "p95": 7582.8,
+          "p99": 8971.1,
+          "max": 9033,
+          "media": 5817.7,
+          "requisicoes": 216,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 7.2
+        },
+        "POST /wallet/deposits (cobrança PIX)": {
+          "n": 179,
+          "p50": 1934.7,
+          "p95": 3106.5,
+          "p99": 3356.2,
+          "max": 3431.3,
+          "media": 1980.7,
+          "requisicoes": 179,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 6
+        },
+        "POST /wallet/deposits/:id/simulate (pagamento simulado)": {
+          "n": 84,
+          "p50": 3577.3,
+          "p95": 4681.3,
+          "p99": 5174.5,
+          "max": 5174.5,
+          "media": 3644.4,
+          "requisicoes": 84,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 2.8
+        },
+        "POST /withdrawals (pedido de saque)": {
+          "n": 166,
+          "p50": 3293.6,
+          "p95": 4943.4,
+          "p99": 5151.6,
+          "max": 5172.9,
+          "media": 3449.6,
+          "requisicoes": 166,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 5.5
+        }
+      },
+      "api": {
+        "cpuNucleos": 0.18,
+        "memoriaMB": 157
+      },
+      "mysql": {
+        "cpu": "39.01%",
+        "mem": "978.8MiB / 15.58GiB"
+      }
+    }
+  ],
+  "leitura": [
+    {
+      "cenario": "leitura",
+      "vus": 10,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30.000000000000057,
+      "requisicoes": 6670,
+      "erros": 0,
+      "vazao": 222.3,
+      "rotas": {
+        "GET /categories": {
+          "n": 346,
+          "p50": 4.2,
+          "p95": 16.5,
+          "p99": 43.8,
+          "max": 54.5,
+          "media": 6.1,
+          "requisicoes": 346,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 11.5
+        },
+        "GET /gamification/leaderboard (ranking)": {
+          "n": 346,
+          "p50": 6.2,
+          "p95": 21.4,
+          "p99": 32.2,
+          "max": 105.7,
+          "media": 8.8,
+          "requisicoes": 346,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 11.5
+        },
+        "GET /profiles/freelancer/:ulid (perfil público)": {
+          "n": 671,
+          "p50": 7.3,
+          "p95": 25,
+          "p99": 43.3,
+          "max": 100.5,
+          "media": 9.8,
+          "requisicoes": 671,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 22.4
+        },
+        "GET /services (busca sem texto)": {
+          "n": 1005,
+          "p50": 131.7,
+          "p95": 178.2,
+          "p99": 270.4,
+          "max": 342.3,
+          "media": 136,
+          "requisicoes": 1005,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 33.5
+        },
+        "GET /services (categoria + preço + ordem)": {
+          "n": 697,
+          "p50": 8.1,
+          "p95": 23.4,
+          "p99": 35.1,
+          "max": 74.5,
+          "media": 10.2,
+          "requisicoes": 697,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 23.2
+        },
+        "GET /services (proximidade lat/lng)": {
+          "n": 352,
+          "p50": 79,
+          "p95": 120.5,
+          "p99": 185.9,
+          "max": 200.6,
+          "media": 82.6,
+          "requisicoes": 352,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 11.7
+        },
+        "GET /services/:id (detalhe)": {
+          "n": 948,
+          "p50": 3.2,
+          "p95": 11.3,
+          "p99": 20.1,
+          "max": 59.8,
+          "media": 4.3,
+          "requisicoes": 948,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 31.6
+        },
+        "GET /services?q= (busca com texto)": {
+          "n": 1008,
+          "p50": 66,
+          "p95": 96.3,
+          "p99": 141,
+          "max": 194.4,
+          "media": 68.3,
+          "requisicoes": 1008,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 33.6
+        },
+        "GET /wallet (carteira)": {
+          "n": 644,
+          "p50": 31,
+          "p95": 196.7,
+          "p99": 283.6,
+          "max": 371.6,
+          "media": 53.1,
+          "requisicoes": 644,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 21.5
+        },
+        "GET /wallet/transactions (extrato)": {
+          "n": 653,
+          "p50": 7.5,
+          "p95": 23.3,
+          "p99": 42.4,
+          "max": 55.2,
+          "media": 9.8,
+          "requisicoes": 653,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 21.8
+        }
+      },
+      "api": {
+        "cpuNucleos": 0.57,
+        "memoriaMB": 236
+      },
+      "mysql": {
+        "cpu": "788.95%",
+        "mem": "980MiB / 15.58GiB"
+      }
+    },
+    {
+      "cenario": "leitura",
+      "vus": 50,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 8171,
+      "erros": 0,
+      "vazao": 272.4,
+      "rotas": {
+        "GET /categories": {
+          "n": 436,
+          "p50": 90.3,
+          "p95": 165.2,
+          "p99": 208.3,
+          "max": 244.1,
+          "media": 96.9,
+          "requisicoes": 436,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 14.5
+        },
+        "GET /gamification/leaderboard (ranking)": {
+          "n": 383,
+          "p50": 174.8,
+          "p95": 271.6,
+          "p99": 357.8,
+          "max": 422.8,
+          "media": 183.4,
+          "requisicoes": 383,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 12.8
+        },
+        "GET /profiles/freelancer/:ulid (perfil público)": {
+          "n": 792,
+          "p50": 174,
+          "p95": 291.7,
+          "p99": 335.2,
+          "max": 392.7,
+          "media": 182.7,
+          "requisicoes": 792,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 26.4
+        },
+        "GET /services (busca sem texto)": {
+          "n": 1211,
+          "p50": 206.8,
+          "p95": 296.8,
+          "p99": 331.5,
+          "max": 430.2,
+          "media": 214.2,
+          "requisicoes": 1211,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 40.4
+        },
+        "GET /services (categoria + preço + ordem)": {
+          "n": 876,
+          "p50": 91.6,
+          "p95": 153.6,
+          "p99": 216.9,
+          "max": 266,
+          "media": 97.3,
+          "requisicoes": 876,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 29.2
+        },
+        "GET /services (proximidade lat/lng)": {
+          "n": 407,
+          "p50": 155.6,
+          "p95": 226.6,
+          "p99": 269.8,
+          "max": 324.8,
+          "media": 162.2,
+          "requisicoes": 407,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 13.6
+        },
+        "GET /services/:id (detalhe)": {
+          "n": 1256,
+          "p50": 85.9,
+          "p95": 148.1,
+          "p99": 194.4,
+          "max": 241.7,
+          "media": 91,
+          "requisicoes": 1256,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 41.9
+        },
+        "GET /services?q= (busca com texto)": {
+          "n": 1175,
+          "p50": 148.2,
+          "p95": 226.1,
+          "p99": 268.7,
+          "max": 370.8,
+          "media": 153.1,
+          "requisicoes": 1175,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 39.2
+        },
+        "GET /wallet (carteira)": {
+          "n": 798,
+          "p50": 446.6,
+          "p95": 647.3,
+          "p99": 774.2,
+          "max": 794.4,
+          "media": 462.4,
+          "requisicoes": 798,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 26.6
+        },
+        "GET /wallet/transactions (extrato)": {
+          "n": 837,
+          "p50": 174.6,
+          "p95": 283.2,
+          "p99": 332.8,
+          "max": 431.4,
+          "media": 184.9,
+          "requisicoes": 837,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 27.9
+        }
+      },
+      "api": {
+        "cpuNucleos": 0.6,
+        "memoriaMB": 250
+      },
+      "mysql": {
+        "cpu": "876.44%",
+        "mem": "991.7MiB / 15.58GiB"
+      }
+    },
+    {
+      "cenario": "leitura",
+      "vus": 100,
+      "aquecimentoS": 10,
+      "duracaoS": 30,
+      "segundos": 30,
+      "requisicoes": 6986,
+      "erros": 0,
+      "vazao": 232.9,
+      "rotas": {
+        "GET /categories": {
+          "n": 338,
+          "p50": 227.2,
+          "p95": 342.4,
+          "p99": 432.1,
+          "max": 512.8,
+          "media": 238.2,
+          "requisicoes": 338,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 11.3
+        },
+        "GET /gamification/leaderboard (ranking)": {
+          "n": 360,
+          "p50": 449.2,
+          "p95": 663.9,
+          "p99": 793.5,
+          "max": 871.3,
+          "media": 466.9,
+          "requisicoes": 360,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 12
+        },
+        "GET /profiles/freelancer/:ulid (perfil público)": {
+          "n": 693,
+          "p50": 456.3,
+          "p95": 670.2,
+          "p99": 799,
+          "max": 844.7,
+          "media": 471.1,
+          "requisicoes": 693,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 23.1
+        },
+        "GET /services (busca sem texto)": {
+          "n": 1037,
+          "p50": 364.5,
+          "p95": 505,
+          "p99": 574.7,
+          "max": 659.8,
+          "media": 372,
+          "requisicoes": 1037,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 34.6
+        },
+        "GET /services (categoria + preço + ordem)": {
+          "n": 730,
+          "p50": 232.7,
+          "p95": 351.9,
+          "p99": 435,
+          "max": 506,
+          "media": 240.3,
+          "requisicoes": 730,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 24.3
+        },
+        "GET /services (proximidade lat/lng)": {
+          "n": 383,
+          "p50": 314.3,
+          "p95": 487,
+          "p99": 571.8,
+          "max": 639.8,
+          "media": 329.5,
+          "requisicoes": 383,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 12.8
+        },
+        "GET /services/:id (detalhe)": {
+          "n": 1029,
+          "p50": 229.1,
+          "p95": 350.8,
+          "p99": 419.5,
+          "max": 503.6,
+          "media": 240.4,
+          "requisicoes": 1029,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 34.3
+        },
+        "GET /services?q= (busca com texto)": {
+          "n": 1069,
+          "p50": 291.6,
+          "p95": 432,
+          "p99": 508.5,
+          "max": 575.1,
+          "media": 303.7,
+          "requisicoes": 1069,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 35.6
+        },
+        "GET /wallet (carteira)": {
+          "n": 671,
+          "p50": 1145.8,
+          "p95": 1540.9,
+          "p99": 1700,
+          "max": 1843.3,
+          "media": 1172.1,
+          "requisicoes": 671,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 22.4
+        },
+        "GET /wallet/transactions (extrato)": {
+          "n": 676,
+          "p50": 456.6,
+          "p95": 682.9,
+          "p99": 813,
+          "max": 867.5,
+          "media": 471.5,
+          "requisicoes": 676,
+          "erros": 0,
+          "codigosErro": {},
+          "vazao": 22.5
+        }
+      },
+      "api": {
+        "cpuNucleos": 0.58,
+        "memoriaMB": 265
+      },
+      "mysql": {
+        "cpu": "911.22%",
+        "mem": "1013MiB / 15.58GiB"
+      }
+    }
+  ],
+  "ws": [
+    {
+      "conexoesPedidas": 500,
+      "conectadas": 500,
+      "falhas": 0,
+      "errosConexao": {},
+      "segundosParaAbrir": 0.8,
+      "tempoConexao": {
+        "n": 500,
+        "p50": 66.1,
+        "p95": 85.5,
+        "p99": 86.6,
+        "max": 87.5,
+        "media": 69.8
+      },
+      "segundosDePe": 115,
+      "vivasNoFim": 500,
+      "comPingDoServidor": 500,
+      "quedas": {},
+      "api": {
+        "memoriaAntesMB": 247,
+        "memoriaConectadasMB": 248,
+        "kbPorConexao": 2,
+        "cpuNucleosComFundo": 0.66
+      },
+      "salas": 30,
+      "latencias": [
+        {
+          "fundo": null,
+          "modo": "rest",
+          "segundos": 15,
+          "enviadas": 448,
+          "mensagem": {
+            "n": 448,
+            "p50": 32.7,
+            "p95": 46.2,
+            "p99": 88.9,
+            "max": 187.1,
+            "media": 34.7,
+            "naoEntregues": 0,
+            "pctAte500ms": 100
+          },
+          "aviso": {
+            "n": 448,
+            "p50": 41.2,
+            "p95": 57.8,
+            "p99": 126.2,
+            "max": 205.1,
+            "media": 44.5,
+            "naoEntregues": 0,
+            "pctAte500ms": 100
+          },
+          "respostaEnvio": {
+            "n": 448,
+            "p50": 30.7,
+            "p95": 44.3,
+            "p99": 85.3,
+            "max": 185.6,
+            "media": 33.1
+          }
+        },
+        {
+          "fundo": "leitura 50 VUs",
+          "modo": "rest",
+          "segundos": 30,
+          "enviadas": 868,
+          "mensagem": {
+            "n": 868,
+            "p50": 945.6,
+            "p95": 1439.4,
+            "p99": 1816,
+            "max": 1915.5,
+            "media": 1004.9,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "aviso": {
+            "n": 868,
+            "p50": 1061.5,
+            "p95": 1610.5,
+            "p99": 2004.9,
+            "max": 2082.7,
+            "media": 1136,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "respostaEnvio": {
+            "n": 868,
+            "p50": 833.5,
+            "p95": 1294.2,
+            "p99": 1576,
+            "max": 1793,
+            "media": 883.2
+          }
+        },
+        {
+          "fundo": "leitura 50 VUs",
+          "modo": "socket",
+          "segundos": 30,
+          "enviadas": 895,
+          "mensagem": {
+            "n": 895,
+            "p50": 857.6,
+            "p95": 1113.9,
+            "p99": 1170,
+            "max": 1262.6,
+            "media": 880,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "aviso": {
+            "n": 895,
+            "p50": 963.7,
+            "p95": 1245.9,
+            "p99": 1313.7,
+            "max": 1387.7,
+            "media": 994.4,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "respostaEnvio": {
+            "n": 895,
+            "p50": 754.1,
+            "p95": 988.3,
+            "p99": 1030.8,
+            "max": 1091.6,
+            "media": 774.3
+          }
+        }
+      ],
+      "cargaDeFundo": {
+        "cenario": "leitura",
+        "vus": 50,
+        "segundos": 75.518594,
+        "requisicoes": 17114,
+        "erros": 0,
+        "vazao": 226.6,
+        "rotas": {
+          "GET /categories": {
+            "n": 896,
+            "p50": 110.1,
+            "p95": 183.6,
+            "p99": 257.7,
+            "max": 492.9,
+            "media": 116,
+            "requisicoes": 896,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 11.9
+          },
+          "GET /gamification/leaderboard (ranking)": {
+            "n": 827,
+            "p50": 217.9,
+            "p95": 321,
+            "p99": 454.9,
+            "max": 699.5,
+            "media": 226,
+            "requisicoes": 827,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 11
+          },
+          "GET /profiles/freelancer/:ulid (perfil público)": {
+            "n": 1719,
+            "p50": 216,
+            "p95": 325.6,
+            "p99": 426.3,
+            "max": 523.9,
+            "media": 225.2,
+            "requisicoes": 1719,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 22.8
+          },
+          "GET /services (busca sem texto)": {
+            "n": 2507,
+            "p50": 234.5,
+            "p95": 320.8,
+            "p99": 375.7,
+            "max": 612.2,
+            "media": 241.1,
+            "requisicoes": 2507,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 33.2
+          },
+          "GET /services (categoria + preço + ordem)": {
+            "n": 1679,
+            "p50": 115,
+            "p95": 186,
+            "p99": 227.5,
+            "max": 472.9,
+            "media": 120,
+            "requisicoes": 1679,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 22.2
+          },
+          "GET /services (proximidade lat/lng)": {
+            "n": 866,
+            "p50": 185.1,
+            "p95": 264.7,
+            "p99": 337.4,
+            "max": 499.9,
+            "media": 191.3,
+            "requisicoes": 866,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 11.5
+          },
+          "GET /services/:id (detalhe)": {
+            "n": 2590,
+            "p50": 108.4,
+            "p95": 173.5,
+            "p99": 228.4,
+            "max": 488.5,
+            "media": 113,
+            "requisicoes": 2590,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 34.3
+          },
+          "GET /services?q= (busca com texto)": {
+            "n": 2569,
+            "p50": 169.2,
+            "p95": 242.7,
+            "p99": 295,
+            "max": 530.3,
+            "media": 174.4,
+            "requisicoes": 2569,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 34
+          },
+          "GET /wallet (carteira)": {
+            "n": 1719,
+            "p50": 548.8,
+            "p95": 760.5,
+            "p99": 981.5,
+            "max": 1381,
+            "media": 568.8,
+            "requisicoes": 1719,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 22.8
+          },
+          "GET /wallet/transactions (extrato)": {
+            "n": 1742,
+            "p50": 217.3,
+            "p95": 328.3,
+            "p99": 410.2,
+            "max": 671.1,
+            "media": 225.2,
+            "requisicoes": 1742,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 23.1
+          }
+        }
+      }
+    },
+    {
+      "conexoesPedidas": 1000,
+      "conectadas": 1000,
+      "falhas": 0,
+      "errosConexao": {},
+      "segundosParaAbrir": 1.6,
+      "tempoConexao": {
+        "n": 1000,
+        "p50": 66.9,
+        "p95": 86.8,
+        "p99": 91.2,
+        "max": 93.4,
+        "media": 69.2
+      },
+      "segundosDePe": 116,
+      "vivasNoFim": 1000,
+      "comPingDoServidor": 1000,
+      "quedas": {},
+      "api": {
+        "memoriaAntesMB": 295,
+        "memoriaConectadasMB": 275,
+        "kbPorConexao": -20,
+        "cpuNucleosComFundo": 0.71
+      },
+      "salas": 30,
+      "latencias": [
+        {
+          "fundo": null,
+          "modo": "rest",
+          "segundos": 15,
+          "enviadas": 449,
+          "mensagem": {
+            "n": 448,
+            "p50": 26.6,
+            "p95": 36.4,
+            "p99": 56.8,
+            "max": 58,
+            "media": 27.6,
+            "naoEntregues": 1,
+            "pctAte500ms": 100
+          },
+          "aviso": {
+            "n": 448,
+            "p50": 34.4,
+            "p95": 47,
+            "p99": 64.3,
+            "max": 71.5,
+            "media": 35.8,
+            "naoEntregues": 1,
+            "pctAte500ms": 100
+          },
+          "respostaEnvio": {
+            "n": 448,
+            "p50": 25.4,
+            "p95": 35.3,
+            "p99": 53.1,
+            "max": 57.4,
+            "media": 26.4
+          }
+        },
+        {
+          "fundo": "leitura 50 VUs",
+          "modo": "rest",
+          "segundos": 30,
+          "enviadas": 884,
+          "mensagem": {
+            "n": 884,
+            "p50": 871.8,
+            "p95": 1141.9,
+            "p99": 1394.8,
+            "max": 1484.5,
+            "media": 905,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "aviso": {
+            "n": 884,
+            "p50": 990.1,
+            "p95": 1304.1,
+            "p99": 1538.5,
+            "max": 1595.4,
+            "media": 1020.3,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "respostaEnvio": {
+            "n": 884,
+            "p50": 767.9,
+            "p95": 1019,
+            "p99": 1265.1,
+            "max": 1359.3,
+            "media": 794.8
+          }
+        },
+        {
+          "fundo": "leitura 50 VUs",
+          "modo": "socket",
+          "segundos": 30,
+          "enviadas": 895,
+          "mensagem": {
+            "n": 895,
+            "p50": 807.1,
+            "p95": 1080.4,
+            "p99": 1151.9,
+            "max": 1173.6,
+            "media": 824.8,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "aviso": {
+            "n": 895,
+            "p50": 907.8,
+            "p95": 1219.2,
+            "p99": 1272.3,
+            "max": 1333.7,
+            "media": 931.7,
+            "naoEntregues": 0,
+            "pctAte500ms": 0
+          },
+          "respostaEnvio": {
+            "n": 895,
+            "p50": 710.9,
+            "p95": 953.7,
+            "p99": 1033.8,
+            "max": 1052.1,
+            "media": 724.5
+          }
+        }
+      ],
+      "cargaDeFundo": {
+        "cenario": "leitura",
+        "vus": 50,
+        "segundos": 75.7813244,
+        "requisicoes": 18437,
+        "erros": 0,
+        "vazao": 243.3,
+        "rotas": {
+          "GET /categories": {
+            "n": 980,
+            "p50": 104,
+            "p95": 171,
+            "p99": 218.9,
+            "max": 263.9,
+            "media": 108.4,
+            "requisicoes": 980,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 12.9
+          },
+          "GET /gamification/leaderboard (ranking)": {
+            "n": 892,
+            "p50": 200.5,
+            "p95": 300.3,
+            "p99": 367.7,
+            "max": 475.7,
+            "media": 208.5,
+            "requisicoes": 892,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 11.8
+          },
+          "GET /profiles/freelancer/:ulid (perfil público)": {
+            "n": 1839,
+            "p50": 200.1,
+            "p95": 299.3,
+            "p99": 357.9,
+            "max": 484.5,
+            "media": 208,
+            "requisicoes": 1839,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 24.3
+          },
+          "GET /services (busca sem texto)": {
+            "n": 2699,
+            "p50": 219.2,
+            "p95": 303.5,
+            "p99": 355.1,
+            "max": 428.7,
+            "media": 224.9,
+            "requisicoes": 2699,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 35.6
+          },
+          "GET /services (categoria + preço + ordem)": {
+            "n": 1823,
+            "p50": 106.5,
+            "p95": 173.6,
+            "p99": 215.3,
+            "max": 279,
+            "media": 111.5,
+            "requisicoes": 1823,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 24.1
+          },
+          "GET /services (proximidade lat/lng)": {
+            "n": 931,
+            "p50": 172.1,
+            "p95": 247.1,
+            "p99": 279.9,
+            "max": 313.5,
+            "media": 177.5,
+            "requisicoes": 931,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 12.3
+          },
+          "GET /services/:id (detalhe)": {
+            "n": 2786,
+            "p50": 100.2,
+            "p95": 162.9,
+            "p99": 203.4,
+            "max": 270.8,
+            "media": 105,
+            "requisicoes": 2786,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 36.8
+          },
+          "GET /services?q= (busca com texto)": {
+            "n": 2735,
+            "p50": 158,
+            "p95": 231.2,
+            "p99": 271,
+            "max": 332,
+            "media": 162.8,
+            "requisicoes": 2735,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 36.1
+          },
+          "GET /wallet (carteira)": {
+            "n": 1880,
+            "p50": 508.9,
+            "p95": 715.2,
+            "p99": 813.3,
+            "max": 1011.9,
+            "media": 526.8,
+            "requisicoes": 1880,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 24.8
+          },
+          "GET /wallet/transactions (extrato)": {
+            "n": 1872,
+            "p50": 202.8,
+            "p95": 302.6,
+            "p99": 361.9,
+            "max": 424.4,
+            "media": 209.3,
+            "requisicoes": 1872,
+            "erros": 0,
+            "codigosErro": {},
+            "vazao": 24.7
+          }
+        }
+      }
+    }
+  ],
+  "volumeDepois": {
+    "users": 500,
+    "services": 10000,
+    "contracts": 3726,
+    "payments": 3072,
+    "withdrawals": 2712,
+    "wallet_transactions": 8080,
+    "messages": 4618,
+    "notifications": 9986,
+    "email_outbox": 5868
+  },
+  "diagnosticoBusca": {
+    "semTexto": {
+      "tipoAcesso": "ALL",
+      "indice": null,
+      "linhasEstimadas": 9763,
+      "extra": "Using where; Using filesort",
+      "msMediana": 7.1
+    },
+    "comTextoLike": {
+      "tipoAcesso": "ALL",
+      "indice": null,
+      "linhasEstimadas": 9763,
+      "extra": "Using where; Using filesort",
+      "msMediana": 28.2
+    },
+    "comTextoFulltext": {
+      "tipoAcesso": "fulltext",
+      "indice": "ft_svc_search",
+      "linhasEstimadas": 1,
+      "extra": "Using where; Ft_hints: sorted",
+      "msMediana": 1.3
+    }
+  },
+  "apiDerrubada": true
+}

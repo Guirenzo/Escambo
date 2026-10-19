@@ -119,6 +119,43 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [2] }
 
+      # RNF-040: erros do app no navegador relatados à API (POST /api/client-errors). Uma tela que
+      # quebra para várias pessoas depois de um deploy aparece aqui antes do primeiro chamado.
+      - uid: escambo-erros-no-app
+        title: ErrosNoApp
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: 'O app relatou mais de 10 erros do navegador nos últimos 15 minutos'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: sum(increase(escambo_client_errors_total[15m])) or vector(0)
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [10] }
+
       # Sem tráfego o p95 não é número: o redutor descarta e a regra fica normal.
       - uid: escambo-latencia-alta
         title: LatenciaAlta

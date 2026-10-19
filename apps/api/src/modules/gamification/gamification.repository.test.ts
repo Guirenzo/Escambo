@@ -400,10 +400,93 @@ describe('gamificationRepository', () => {
     expect(await gamificationRepository.getFreelancerStats(8)).toBeUndefined();
 
     const { sql, params } = fakeDb.calls[0]!;
-    expect(sql).toContain('SELECT total_contracts, total_reviews, avg_rating');
-    expect(sql).toContain('FROM profiles_freelancer WHERE user_id = :userId LIMIT 1');
+    expect(sql).toContain('SELECT pf.total_contracts, pf.total_reviews, pf.avg_rating');
+    expect(sql).toContain('FROM profiles_freelancer pf JOIN users u ON u.id = pf.user_id');
+    // Conta fora do ranking (excluída, suspensa, banida) não é avaliada: a mesma regra do ranking.
+    expect(sql).toContain(
+      "WHERE pf.user_id = :userId AND u.deleted_at IS NULL AND u.status NOT IN ('suspended', 'banned') LIMIT 1",
+    );
     expect(params).toEqual({ userId: 7 });
     expect(fakeDb.calls[1]!.params).toEqual({ userId: 8 });
+  });
+
+  describe('contagens das badges por critério (RF-065)', () => {
+    const RANKED = "u.deleted_at IS NULL AND u.status NOT IN ('suspended', 'banned')";
+
+    it('countOnTimeDeliveries conta as concluídas com prazo, de cliente no ranking, entregues até o prazo', async () => {
+      // O COUNT chega como texto ou BigInt conforme o driver: sai como número.
+      fakeDb.reply([{ n: '20' }], []);
+
+      expect(await gamificationRepository.countOnTimeDeliveries(7)).toBe(20);
+      expect(await gamificationRepository.countOnTimeDeliveries(8)).toBe(0);
+
+      const { sql, params } = fakeDb.calls[0]!;
+      expect(sql).toContain('FROM contracts c JOIN users u ON u.id = c.client_id');
+      expect(sql).toContain(
+        "WHERE c.freelancer_id = :userId AND c.status = 'completed' AND c.deadline_at IS NOT NULL",
+      );
+      expect(sql).toContain(`AND ${RANKED} AND (CASE`);
+      // Por marcos: todo marco não cancelado entregue até o prazo; o pedido de revisão é teto da
+      // primeira entrega do marco.
+      expect(sql).toContain(
+        "WHERE m1.contract_id = c.id AND m1.status <> 'cancelled' AND (m1.delivered_at IS NULL OR " +
+          'LEAST(m1.delivered_at, COALESCE(m1.revision_requested_at, m1.delivered_at)) > c.deadline_at)',
+      );
+      // Entrega única: a primeira entrega gravada, ou a primeira da tabela no legado.
+      expect(sql).toContain(
+        'ELSE COALESCE(c.first_delivery_at, (SELECT MIN(d.delivered_at) FROM deliveries d WHERE d.contract_id = c.id)) <= c.deadline_at',
+      );
+      expect(params).toEqual({ userId: 7 });
+      expect(fakeDb.calls[1]!.params).toEqual({ userId: 8 });
+    });
+
+    it('countRepeatClients conta clientes no ranking com 2 ou mais concluídas com o freelancer', async () => {
+      fakeDb.reply([{ n: 5 }], []);
+
+      expect(await gamificationRepository.countRepeatClients(7)).toBe(5);
+      expect(await gamificationRepository.countRepeatClients(8)).toBe(0);
+
+      const { sql, params } = fakeDb.calls[0]!;
+      expect(sql).toBe(
+        'SELECT COUNT(*) AS n FROM (SELECT c.client_id FROM contracts c ' +
+          "WHERE c.freelancer_id = :userId AND c.status = 'completed' " +
+          'GROUP BY c.client_id HAVING COUNT(*) >= 2) rc ' +
+          `JOIN users u ON u.id = rc.client_id WHERE ${RANKED}`,
+      );
+      expect(params).toEqual({ userId: 7 });
+    });
+
+    it('countBartersCompleted soma as concluídas como proponente e como receptor, com a outra parte no ranking', async () => {
+      fakeDb.reply([{ n: '3' }], [{ n: null }]);
+
+      expect(await gamificationRepository.countBartersCompleted(7)).toBe(3);
+      expect(await gamificationRepository.countBartersCompleted(8)).toBe(0);
+
+      const { sql, params } = fakeDb.calls[0]!;
+      expect(sql).toBe(
+        'SELECT COUNT(*) AS n FROM (SELECT b.receiver_id AS partner_id FROM barter_agreements b ' +
+          "WHERE b.proposer_id = :userId AND b.status = 'completed' UNION ALL " +
+          'SELECT b.proposer_id FROM barter_agreements b ' +
+          "WHERE b.receiver_id = :userId AND b.status = 'completed') bc " +
+          `JOIN users u ON u.id = bc.partner_id WHERE ${RANKED}`,
+      );
+      expect(params).toEqual({ userId: 7 });
+    });
+
+    it('listRankedFreelancers devolve os ids depois do cursor, em ordem, no tamanho pedido', async () => {
+      fakeDb.reply([{ user_id: 3 }, { user_id: '5' }], []);
+
+      expect(await gamificationRepository.listRankedFreelancers(0, 2)).toEqual([3, 5]);
+      expect(await gamificationRepository.listRankedFreelancers(5, 2)).toEqual([]);
+
+      const { sql, params } = fakeDb.calls[0]!;
+      expect(sql).toBe(
+        'SELECT pf.user_id FROM profiles_freelancer pf JOIN users u ON u.id = pf.user_id ' +
+          `WHERE pf.user_id > :afterUserId AND ${RANKED} ORDER BY pf.user_id ASC LIMIT 2`,
+      );
+      expect(params).toEqual({ afterUserId: 0 });
+      expect(fakeDb.calls[1]!.params).toEqual({ afterUserId: 5 });
+    });
   });
 
   it('recentEvents traz os últimos ganhos do usuário, do mais novo para o mais antigo, no limite pedido', async () => {

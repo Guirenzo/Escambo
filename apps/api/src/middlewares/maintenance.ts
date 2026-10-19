@@ -24,13 +24,34 @@ function isAdmin(req: Request): boolean {
   }
 }
 
+const brasiliaTime = new Intl.DateTimeFormat('pt-BR', {
+  timeZone: 'America/Sao_Paulo',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
 export const maintenanceGate: RequestHandler = (req, res, next) => {
   settingsService
     .maintenanceMode()
-    .then((on) => {
+    .then(async (on) => {
       if (!on || OPEN_PATHS.some((re) => re.test(req.path)) || isAdmin(req)) return next();
-      res.setHeader('Retry-After', String(RETRY_AFTER_SECONDS));
-      next(new HttpError(503, 'Estamos em manutenção. Voltamos em instantes.', 'maintenance'));
+      // Com previsão de volta (RNF-010), o Retry-After e a mensagem dizem quando; previsão que já
+      // passou (a manutenção atrasou) volta ao padrão, em vez de mandar tentar no passado.
+      const returnAt = await settingsService.maintenanceReturnAt();
+      const left = returnAt ? Math.ceil((returnAt.getTime() - Date.now()) / 1000) : 0;
+      res.setHeader('Retry-After', String(left > 0 ? Math.max(left, 30) : RETRY_AFTER_SECONDS));
+      const message =
+        left > 0
+          ? `Estamos em manutenção. Previsão de volta: ${brasiliaTime.format(returnAt!)} (horário de Brasília).`
+          : 'Estamos em manutenção. Voltamos em instantes.';
+      next(
+        new HttpError(
+          503,
+          message,
+          'maintenance',
+          left > 0 ? { returnAt: returnAt!.toISOString() } : undefined,
+        ),
+      );
     })
     .catch(next);
 };

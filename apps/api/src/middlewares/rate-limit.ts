@@ -26,6 +26,18 @@ export const apiRateLimiter = rateLimit({
   skip: skipInTest,
 });
 
+/**
+ * Relatos de erro do navegador (RNF-040): uma tela quebrada em laço não pode encher o log nem o
+ * Sentry. O app já manda no máximo 5 por página aberta; aqui o teto é por IP.
+ */
+export const clientErrorRateLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: skipInTest,
+});
+
 /** Upload de anexos no chat: mais caro que uma requisição JSON, então tem teto próprio por IP. */
 export const uploadRateLimiter = rateLimit({
   windowMs: 60 * 60_000,

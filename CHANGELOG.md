@@ -5,6 +5,40 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.44.0] — 2026-10-19
+
+Segunda leva da auditoria de requisitos: catálogo e busca, leitura no chat, prazo de saque, badges que faltavam, observabilidade (fora do ar, acesso negado, erros do navegador) e a primeira medição de desempenho.
+
+### Adicionado
+
+- **Leitura no chat (RF-059):** as mensagens que você mandou mostram ✓ Enviada ou ✓✓ Lida, em tempo real. A conversa é marcada como lida quando o destinatário a vê com a aba aberta.
+- **Prazo de saque (RN-035, RF-046, RF-078):** PIX em até 1 dia útil e transferência em até 2, configuráveis no painel. O prazo aparece ao pedir o saque e na lista, e a fila do admin ordena pelo prazo e marca os atrasados.
+- **Extrato de créditos com período e "Carregar mais" (RF-047)**, com o mesmo filtro do extrato em reais.
+- **Tags nos serviços (RF-024, RN-018):** até 10 por serviço, de 2 a 30 caracteres; a busca acha pela tag, e clicar numa tag busca por ela.
+- **Visualizações (RF-029):** a tela de detalhe do serviço (`/servicos/:id`, nova) conta quem abre, sem contar o dono nem a mesma pessoa duas vezes em 30 minutos; o número aparece em Meus serviços.
+- **Remoto e presencial (RF-023):** a terceira opção de modalidade, que aparece nos dois filtros, e o filtro de modalidade na busca.
+- **Badges que nunca saíam (RF-065, RN-053):** Fast Delivery (20 contratações entregues até o prazo), Client Favorite (5 clientes que voltaram) e Bom de Troca (5 trocas concluídas) passam a ser concedidas sozinhas, ao concluir uma contratação ou uma troca. Quem já cumpria antes desta versão ganha na reavaliação (`npm run -w @escambo/api badges:reevaluate`, uma vez depois do deploy).
+- **Página de fora do ar (RNF-010):** com o web parado, o Caddy serve uma página estática que tenta de novo sozinha a cada 30 s; com a API parada, o app troca a tela pela de fora do ar até ela voltar.
+- **Erros do navegador chegam à equipe (RNF-040):** tela quebrada, erro de script e promessa sem `catch` vão à API, que registra, conta na métrica `escambo_client_errors_total` (alerta "ErrosNoApp" no Grafana) e repassa ao Sentry quando ele está ligado.
+- **Chave PIX e dados bancários cifrados (RNF-017):** com a `FIELD_ENCRYPTION_KEY` configurada, os destinos de saque são gravados em AES-256-GCM e lidos de volta só pela aplicação; `fields:encrypt` cifra os antigos. Sem a chave, nada muda e a API avisa na subida.
+- **Acesso negado registrado (RNF-018):** a recusa por papel, dono ou conta barrada, o webhook com segredo errado e o login falho viram linhas no `audit_logs`, com o IP de quem chamou; o log de cada requisição passa a trazer o IP real e põe 401/403 em `warn`.
+
+### Alterado
+
+- **Busca pelo índice FULLTEXT (RNF-004, RNF-022):** com 100 mil serviços, a busca com texto caiu de 290–520 ms para 10–250 ms. Todas as palavras digitadas passam a ser exigidas, e a palavra vale como prefixo ("design" acha "designer", mas não "webdesign").
+- **Manutenção com previsão de volta (RNF-010):** o parâmetro "Previsão de volta da manutenção", em minutos, aparece na tela de manutenção, no `Retry-After` e na mensagem do 503.
+- Login de conta inexistente também passa pelo bcrypt: o tempo de resposta não revela se o e-mail tem conta.
+- O botão de zoom da galeria do portfólio passa a ter o percentual fora de parênteses no nome acessível ("Tamanho inteiro: 100%"), achado pelo axe-core 4.14.
+
+### Desempenho
+
+- **Primeira medição de carga (RNF-001, RNF-002, RNF-005, RNF-023):** `scripts/carga/` (um comando, sem dependência nova) e [desempenho](./docs/desempenho.md), com método, máquina, números e gargalos. Numa máquina de desenvolvimento, até 200 leituras/s e 100 escritas/s o p95 ficou abaixo de 81 ms e 36 ms; 1000 conexões WebSocket ficaram de pé sem queda, com a mensagem da Sala chegando em p95 de até 34 ms. Com o banco saturado, algumas rotas passam das metas: o documento diz quais e por quê.
+- `GET /wallet` deixa de abrir transação com trava em toda leitura para conferir o bônus de boas-vindas: era a leitura mais lenta sob concorrência.
+
+### Para atualizar
+
+Cinco migrations (0035 a 0039). Depois do deploy, rode uma vez `badges:reevaluate` e, com a chave configurada, `fields:encrypt`; a 0035 e a 0039 recriam `services` e `withdrawals` e travam gravações nelas por alguns segundos. Passo a passo no DEPLOY.md ("Atualizar para a 1.44.0") e decisões no ADR 62.
+
 ## [1.43.0] — 2026-10-19
 
 Lacunas de interface e de fluxo achadas na auditoria de requisitos de 19/10/2026: cada RF e RNF conferido no código e nos testes, com a evidência e o que falta em `docs/rastreabilidade.md`.

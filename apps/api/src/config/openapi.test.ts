@@ -881,3 +881,50 @@ describe('documento OpenAPI: lacunas de 19/10', () => {
     expect(schemas.Badge.required).toEqual(['slug', 'name', 'awardedAt']);
   });
 });
+
+/** Leitura no chat (RF-059): a rota, o recibo e o evento Socket.IO message:read. */
+describe('documento OpenAPI: leitura no chat', () => {
+  const { schemas } = openapiDocument.components;
+
+  it('POST /messaging/contracts/{id}/read: protegido, corpo opcional e o recibo na resposta', () => {
+    const read = operation('/messaging/contracts/{id}/read', 'post');
+    expect(read.tags).toEqual(['Chat']);
+    expect(read.security).toEqual([{ bearerAuth: [] }]);
+    expect(read.requestBody).toEqual({
+      required: false,
+      content: { 'application/json': { schema: { $ref: '#/components/schemas/MarkChatRead' } } },
+    });
+    expect(read.responses['200']?.content?.['application/json'].schema).toEqual({
+      $ref: '#/components/schemas/ChatReadReceipt',
+    });
+    expect(Object.keys(read.responses)).toEqual(['200', '403', '404', '422']);
+    expect(read.summary).toContain('message:read');
+    expect(read.summary).toContain('conta suspensa');
+    expect(operation('/messaging/contracts/{id}', 'get').summary).toContain('readAt');
+    expect(openapiDocument.info.description).toContain('registro de leitura do chat');
+  });
+
+  it('os schemas espelham os tipos: upTo positivo, recibo com nulos e evento completo', () => {
+    expect(schemas.MarkChatRead.properties.upTo).toMatchObject({ type: 'integer', minimum: 1 });
+    expect(schemas.MarkChatRead).not.toHaveProperty('required');
+    expect(schemas.ChatReadReceipt.required).toEqual([
+      'conversationId',
+      'marked',
+      'upToId',
+      'readAt',
+    ]);
+    expect(schemas.ChatReadReceipt.properties.readAt).toEqual({
+      type: 'string',
+      format: 'date-time',
+      nullable: true,
+    });
+    expect(schemas.ChatReadEvent.required).toEqual([
+      'contractId',
+      'conversationId',
+      'readerId',
+      'upToId',
+      'readAt',
+    ]);
+    expect(schemas.ChatReadEvent.description).toContain('contract:<id>');
+  });
+});

@@ -5,9 +5,14 @@ import type {
   LevelProgress,
   XpEvent,
 } from '@escambo/types';
+import { logger } from '../../config/logger';
 import { addDaysToDay, dayIn, DEFAULT_TIMEZONE } from '../../utils/timezone';
 import { userZone } from '../auth/user-zone';
-import { gamificationRepository, type FreelancerStatsRow } from './gamification.repository';
+import {
+  gamificationRepository,
+  type BadgeCatalogRow,
+  type FreelancerStatsRow,
+} from './gamification.repository';
 import { LEVELS, levelFor } from './gamification.levels';
 
 /** Janela da sequência de dias: a atividade dos últimos 60 dias (a sequência não passa disso). */
@@ -57,21 +62,44 @@ export function computeStreak(
   return streak;
 }
 
-function criteriaMet(
+/**
+ * Critérios contados no banco (RF-065). Cada um custa uma consulta, feita só quando alguma badge
+ * ainda não conquistada depende dele: quem já tem as badges não paga por elas a cada evento.
+ */
+const COUNTED_CRITERIA = {
+  on_time_deliveries: (userId: number) => gamificationRepository.countOnTimeDeliveries(userId),
+  repeat_clients: (userId: number) => gamificationRepository.countRepeatClients(userId),
+  barters_completed: (userId: number) => gamificationRepository.countBartersCompleted(userId),
+} as const;
+type CountedCriterion = keyof typeof COUNTED_CRITERIA;
+const COUNTED_KEYS = Object.keys(COUNTED_CRITERIA) as CountedCriterion[];
+
+/** Tamanho do lote da reavaliação de todos os freelancers. */
+const REEVALUATE_BATCH = 200;
+
+interface BadgeStats {
+  contractsCompleted: number;
+  totalReviews: number;
+  avgRating: number;
+  /** As contagens consultadas nesta avaliação; a que não foi consultada não atinge critério. */
+  counted: Partial<Record<CountedCriterion, number>>;
+}
+
+function parseCriteria(
   criteria: string | Record<string, number> | null,
-  stats: { contractsCompleted: number; totalReviews: number; avgRating: number },
-): boolean {
-  if (!criteria) return false;
-  let c: Record<string, number>;
+): Record<string, number> | null {
+  if (!criteria) return null;
   try {
-    c = typeof criteria === 'string' ? (JSON.parse(criteria) as Record<string, number>) : criteria;
+    return typeof criteria === 'string'
+      ? (JSON.parse(criteria) as Record<string, number> | null)
+      : criteria;
   } catch {
-    return false;
+    return null;
   }
-  // Critérios ainda não rastreados: não é possível conceder.
-  if (c.on_time_deliveries != null || c.repeat_clients != null || c.barters_completed != null) {
-    return false;
-  }
+}
+
+function criteriaMet(c: Record<string, number> | null, stats: BadgeStats): boolean {
+  if (!c) return false;
   let hasKnown = false;
   if (c.contracts_completed != null) {
     hasKnown = true;
@@ -84,6 +112,11 @@ function criteriaMet(
   if (c.avg_rating_min != null) {
     hasKnown = true;
     if (stats.avgRating < c.avg_rating_min) return false;
+  }
+  for (const key of COUNTED_KEYS) {
+    if (c[key] == null) continue;
+    hasKnown = true;
+    if ((stats.counted[key] ?? 0) < c[key]) return false;
   }
   return hasKnown;
 }
@@ -110,27 +143,43 @@ async function awardXp(
   return { leveledUp: level > previousLevel, level };
 }
 
-/** Avalia e concede badges cujos critérios já foram atingidos (RN-053). */
-async function evaluateBadges(userId: number): Promise<void> {
+/**
+ * Concede a badge e credita a recompensa só se a concessão foi agora: o INSERT IGNORE na chave
+ * única (user_id, badge_id) decide, então o mesmo evento repetido ou em paralelo não duplica nada.
+ */
+async function grantBadge(userId: number, badge: BadgeCatalogRow): Promise<boolean> {
+  const newly = await gamificationRepository.awardBadge(userId, badge.id);
+  if (newly && badge.xp_reward > 0) {
+    await awardXp(userId, badge.xp_reward, 'badge_earned', badge.id);
+  }
+  return newly;
+}
+
+/**
+ * Avalia e concede as badges cujos critérios já foram atingidos (RN-053, RF-065). Devolve quantas
+ * foram concedidas agora.
+ */
+async function evaluateBadges(userId: number): Promise<number> {
   const statsRow: FreelancerStatsRow | undefined =
     await gamificationRepository.getFreelancerStats(userId);
-  if (!statsRow) return;
-  const stats = {
+  if (!statsRow) return 0;
+  const owned = new Set((await gamificationRepository.listBadges(userId)).map((b) => b.slug));
+  const pending = (await gamificationRepository.listActiveBadges())
+    .filter((badge) => !owned.has(badge.slug))
+    .map((badge) => ({ badge, criteria: parseCriteria(badge.criteria) }));
+  const needed = COUNTED_KEYS.filter((key) => pending.some((p) => p.criteria?.[key] != null));
+  const values = await Promise.all(needed.map((key) => COUNTED_CRITERIA[key](userId)));
+  const stats: BadgeStats = {
     contractsCompleted: statsRow.total_contracts,
     totalReviews: statsRow.total_reviews,
     avgRating: Number(statsRow.avg_rating),
+    counted: Object.fromEntries(needed.map((key, i) => [key, values[i]])),
   };
-  const owned = new Set((await gamificationRepository.listBadges(userId)).map((b) => b.slug));
-  const badges = await gamificationRepository.listActiveBadges();
-  for (const badge of badges) {
-    if (owned.has(badge.slug)) continue;
-    if (criteriaMet(badge.criteria, stats)) {
-      const newly = await gamificationRepository.awardBadge(userId, badge.id);
-      if (newly && badge.xp_reward > 0) {
-        await awardXp(userId, badge.xp_reward, 'badge_earned', badge.id);
-      }
-    }
+  let awarded = 0;
+  for (const { badge, criteria } of pending) {
+    if (criteriaMet(criteria, stats) && (await grantBadge(userId, badge))) awarded += 1;
   }
+  return awarded;
 }
 
 export const gamificationService = {
@@ -212,13 +261,45 @@ export const gamificationService = {
     else if (rating === 4) await awardXp(freelancerId, 20, 'review_4_stars', reviewId);
     await evaluateBadges(freelancerId);
   },
+
+  /**
+   * Evento: troca concluída → reavalia as badges de cada parte (RF-065, `barters_completed`). A
+   * troca não dá XP próprio (não está na tabela da RN-051); só a badge, se sair, dá a recompensa.
+   */
+  async onBarterCompleted(userId: number): Promise<void> {
+    await evaluateBadges(userId);
+  },
+
+  /**
+   * Reavalia as badges de todos os freelancers no ranking, em lotes pelo id (RN-053): concede as
+   * que já estavam cumpridas antes de o critério ser acompanhado (1.44.0) ou enquanto a conta
+   * estava suspensa. Idempotente, pela mesma concessão dos eventos; rodar de novo não concede nem
+   * credita nada. A falha de uma pessoa é registrada e não para as outras.
+   */
+  async reevaluateAll(
+    batchSize = REEVALUATE_BATCH,
+  ): Promise<{ evaluated: number; awarded: number; failed: number }> {
+    const result = { evaluated: 0, awarded: 0, failed: 0 };
+    let after = 0;
+    for (;;) {
+      const ids = await gamificationRepository.listRankedFreelancers(after, batchSize);
+      for (const userId of ids) {
+        try {
+          result.awarded += await evaluateBadges(userId);
+          result.evaluated += 1;
+        } catch (err) {
+          result.failed += 1;
+          logger.warn({ err, userId }, 'reavaliação de badges falhou');
+        }
+      }
+      if (ids.length < batchSize) return result;
+      after = ids[ids.length - 1]!;
+    }
+  },
 };
 
 async function awardBadgeBySlug(userId: number, slug: string): Promise<void> {
   const badge = await gamificationRepository.findBadgeBySlug(slug);
   if (!badge) return;
-  const newly = await gamificationRepository.awardBadge(userId, badge.id);
-  if (newly && badge.xp_reward > 0) {
-    await awardXp(userId, badge.xp_reward, 'badge_earned', badge.id);
-  }
+  await grantBadge(userId, badge);
 }

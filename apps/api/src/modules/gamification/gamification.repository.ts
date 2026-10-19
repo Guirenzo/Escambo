@@ -45,6 +45,28 @@ export interface FreelancerStatsRow extends RowDataPacket {
 /** Quem entra no ranking: conta não excluída, nem suspensa ou banida (u = users). */
 const RANKED_USER = `u.deleted_at IS NULL AND u.status NOT IN ('suspended', 'banned')`;
 
+/**
+ * A contratação `c` teve o trabalho entregue até o prazo (`on_time_deliveries`, RF-065), na leitura
+ * do ADR 57: o prazo cobra só o que nunca foi entregue. Na entrega única vale a primeira entrega
+ * (`first_delivery_at`, gravada na entrega e mantida na revisão; no legado sem ela, a primeira da
+ * tabela de entregas). Por marcos, todo marco não cancelado precisa ter sido entregue até o prazo.
+ * O marco guarda só a última entrega (a reentrega sobrescreve `delivered_at`), e um pedido de
+ * revisão só existe depois de uma entrega: o menor dos dois é teto da primeira. Assim nada atrasado
+ * conta como no prazo; o marco entregue no prazo, revisado depois dele e reentregue conta como
+ * atraso. O prazo é o vigente (`deadline_at`, já com a extensão aceita).
+ */
+const DELIVERED_ON_TIME = `(CASE
+  WHEN EXISTS (SELECT 1 FROM contract_milestones m0 WHERE m0.contract_id = c.id)
+  THEN NOT EXISTS (SELECT 1 FROM contract_milestones m1
+                    WHERE m1.contract_id = c.id AND m1.status <> 'cancelled'
+                      AND (m1.delivered_at IS NULL
+                           OR LEAST(m1.delivered_at, COALESCE(m1.revision_requested_at, m1.delivered_at))
+                              > c.deadline_at))
+  ELSE COALESCE(c.first_delivery_at,
+                (SELECT MIN(d.delivered_at) FROM deliveries d WHERE d.contract_id = c.id))
+       <= c.deadline_at
+END)`;
+
 export const gamificationRepository = {
   /** Consulta o total sem inicializar XP (RN-007). */
   async findXp(userId: number): Promise<XpRow | undefined> {
@@ -167,14 +189,86 @@ export const gamificationRepository = {
     return res.affectedRows > 0;
   },
 
-  /** Stats do freelancer para avaliar critérios de badge (undefined se não tem perfil freelancer). */
+  /**
+   * Stats do freelancer para avaliar critérios de badge. undefined se não tem perfil freelancer ou
+   * se a conta está fora do ranking (excluída, suspensa ou banida): ela não ganha badge nova, e a
+   * próxima avaliação depois da reativação concede o que estiver cumprido.
+   */
   async getFreelancerStats(userId: number): Promise<FreelancerStatsRow | undefined> {
     const [rows] = await pool.query<FreelancerStatsRow[]>(
-      `SELECT total_contracts, total_reviews, avg_rating
-         FROM profiles_freelancer WHERE user_id = :userId LIMIT 1`,
+      `SELECT pf.total_contracts, pf.total_reviews, pf.avg_rating
+         FROM profiles_freelancer pf JOIN users u ON u.id = pf.user_id
+        WHERE pf.user_id = :userId AND ${RANKED_USER} LIMIT 1`,
       { userId },
     );
     return rows[0];
+  },
+
+  /**
+   * Contratações concluídas do freelancer entregues até o prazo (`on_time_deliveries`). Sem prazo
+   * não há o que cumprir, e contratação com cliente fora do ranking não conta, como no ranking.
+   */
+  async countOnTimeDeliveries(userId: number): Promise<number> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS n
+         FROM contracts c JOIN users u ON u.id = c.client_id
+        WHERE c.freelancer_id = :userId AND c.status = 'completed' AND c.deadline_at IS NOT NULL
+          AND ${RANKED_USER}
+          AND ${DELIVERED_ON_TIME}`,
+      { userId },
+    );
+    return Number(rows[0]?.n ?? 0);
+  },
+
+  /**
+   * Clientes distintos que concluíram 2 ou mais contratações com o freelancer (`repeat_clients`),
+   * contando os contratos das trocas (o outro lado é o cliente deles). Cliente fora do ranking não
+   * conta. O índice (freelancer_id, status, client_id) da 0038 resolve o agrupamento sem ler a linha.
+   */
+  async countRepeatClients(userId: number): Promise<number> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS n
+         FROM (SELECT c.client_id FROM contracts c
+                WHERE c.freelancer_id = :userId AND c.status = 'completed'
+                GROUP BY c.client_id HAVING COUNT(*) >= 2) rc
+         JOIN users u ON u.id = rc.client_id
+        WHERE ${RANKED_USER}`,
+      { userId },
+    );
+    return Number(rows[0]?.n ?? 0);
+  },
+
+  /**
+   * Trocas concluídas de que a pessoa participou, propondo ou recebendo (`barters_completed`). As
+   * duas metades usam os índices de proponente e de receptor; troca consigo mesmo não existe, então
+   * nenhuma conta duas vezes. Troca com alguém fora do ranking não conta.
+   */
+  async countBartersCompleted(userId: number): Promise<number> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT COUNT(*) AS n
+         FROM (SELECT b.receiver_id AS partner_id FROM barter_agreements b
+                WHERE b.proposer_id = :userId AND b.status = 'completed'
+               UNION ALL
+               SELECT b.proposer_id FROM barter_agreements b
+                WHERE b.receiver_id = :userId AND b.status = 'completed') bc
+         JOIN users u ON u.id = bc.partner_id
+        WHERE ${RANKED_USER}`,
+      { userId },
+    );
+    return Number(rows[0]?.n ?? 0);
+  },
+
+  /** Lote de freelancers no ranking depois de `afterUserId`, em ordem de id (reavaliação, RN-053). */
+  async listRankedFreelancers(afterUserId: number, limit: number): Promise<number[]> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT pf.user_id
+         FROM profiles_freelancer pf JOIN users u ON u.id = pf.user_id
+        WHERE pf.user_id > :afterUserId AND ${RANKED_USER}
+        ORDER BY pf.user_id ASC
+        LIMIT ${limit}`,
+      { afterUserId },
+    );
+    return rows.map((r) => Number(r.user_id));
   },
 
   async recentEvents(userId: number, limit: number): Promise<XpEventRow[]> {

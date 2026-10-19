@@ -30,6 +30,13 @@ export interface SessionContext {
   userAgent?: string | null;
 }
 
+let dummy: Promise<string> | null = null;
+/** Hash de uma senha que ninguém tem, com o mesmo custo das reais; calculado uma vez, sob demanda. */
+function dummyHash(): Promise<string> {
+  dummy ??= bcrypt.hash(`sem-conta-${ulid()}`, env.BCRYPT_SALT_ROUNDS);
+  return dummy;
+}
+
 function signAccessToken(user: { id: number; ulid: string; role: string }): string {
   return jwt.sign({ sub: user.ulid, uid: user.id, role: user.role }, env.JWT_SECRET, {
     expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
@@ -310,12 +317,22 @@ export const authService = {
 
   async login(input: LoginInput, ctx: SessionContext = {}): Promise<AuthResponse> {
     const user = await authRepository.findByEmail(input.email);
-    if (!user || !user.password_hash) {
-      throw new HttpError(401, 'Credenciais inválidas', 'invalid_credentials');
-    }
-
-    const ok = await bcrypt.compare(input.password, user.password_hash);
-    if (!ok) {
+    // Conta inexistente também paga um bcrypt: o tempo de resposta não diz se o e-mail existe.
+    const ok = await bcrypt.compare(input.password, user?.password_hash || (await dummyHash()));
+    if (!user || !user.password_hash || !ok) {
+      // RNF-018: tentativa registrada com IP. O e-mail digitado não é guardado: pode ser o de
+      // outra pessoa, digitado errado. Com conta, fica o id de quem foi o alvo.
+      void auditService.log({
+        userId: user?.id ?? null,
+        action: 'auth.login_failed',
+        entityType: user ? 'user' : null,
+        entityId: user?.id ?? null,
+        newValue: {
+          reason: !user ? 'unknown_account' : user.password_hash ? 'wrong_password' : 'no_password',
+        },
+        ip: ctx.ip ?? null,
+        userAgent: ctx.userAgent ?? null,
+      });
       throw new HttpError(401, 'Credenciais inválidas', 'invalid_credentials');
     }
 

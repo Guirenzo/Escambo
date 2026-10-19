@@ -1,8 +1,11 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
-import { pool } from '../../config/db';
+import type { PoolConnection } from 'mysql2/promise';
+import { inTransaction, pool } from '../../config/db';
 import type { AvailabilityPeriod } from '@escambo/types';
 import type { Slot, ZoneSlots } from '../profiles/availability';
 import { DEFAULT_TIMEZONE } from '../../utils/timezone';
+import { parseTextSearch } from './service-search';
+import { tagSlug } from './service-tags';
 
 export interface ServiceRow extends RowDataPacket {
   id: number;
@@ -14,6 +17,8 @@ export interface ServiceRow extends RowDataPacket {
   price: string | null; // DECIMAL chega como string no mysql2
   delivery_days: number | null;
   is_remote: number;
+  /** Atende presencial (0035). Ausente só em linha montada à mão: vale o inverso de is_remote. */
+  is_onsite?: number;
   is_active: number;
   views_count: number;
   created_at: Date;
@@ -100,6 +105,73 @@ const periodCondition = (path: string, period: string): string =>
 /** O texto da busca como "contém" no LIKE: %, _ e a própria barra valem como texto (ESCAPE '\'). */
 export const likeContains = (text: string): string => `%${text.replace(/[\\%_]/g, '\\$&')}%`;
 
+/** O texto como "começa com" no LIKE (o nome da tag), com os mesmos escapes. */
+export const likePrefix = (text: string): string => `${text.replace(/[\\%_]/g, '\\$&')}%`;
+
+type SqlParams = Record<string, string | number | Date | string[]>;
+
+/** Os serviços com tag que começa com o texto (o UNIQUE de service_tags.name atende o prefixo). */
+const TAG_HITS = String.raw`SELECT stp.service_id FROM service_tags st
+  JOIN service_tag_pivot stp ON stp.tag_id = st.id
+  WHERE st.name LIKE :qTag ESCAPE '\\'`;
+
+/**
+ * Busca de texto (RNF-004/RNF-022, regras em service-search.ts) por título, descrição e tags.
+ *
+ * - Com palavra que o índice guarda: os ids vêm de uma tabela derivada que conduz o JOIN, a união
+ *   do FULLTEXT ft_svc_search (as palavras que o índice não guarda filtram com LIKE só o que o
+ *   MATCH achou) com as tags. Só as linhas achadas são lidas.
+ * - Sem nenhuma (fallback: "ux", "3d", "c++"): LIKE "contém" no WHERE, percorrendo os ativos como a
+ *   busca antiga, ou tag com o prefixo (subconsulta materializada uma vez).
+ *
+ * Texto sem nada para procurar (só espaços) não filtra.
+ */
+function textSearch(q: string, params: SqlParams): { join: string; where?: string } {
+  const search = parseTextSearch(q.trim());
+  const contains = (alias: string) =>
+    search.contains.map((word, i) => {
+      params[`qContains${i}`] = likeContains(word);
+      return String.raw`(${alias}.title LIKE :qContains${i} ESCAPE '\\' OR ${alias}.description LIKE :qContains${i} ESCAPE '\\')`;
+    });
+  if (search.fulltext) {
+    params.qFulltext = search.fulltext;
+    params.qTag = likePrefix(search.tagPrefix);
+    const conditions = [
+      'MATCH(ts.title, ts.description) AGAINST (:qFulltext IN BOOLEAN MODE)',
+      ...contains('ts'),
+    ];
+    return {
+      join: `JOIN (SELECT ts.id FROM services ts WHERE ${conditions.join(' AND ')}
+        UNION ${TAG_HITS}) AS hit ON hit.id = s.id`,
+    };
+  }
+  if (search.contains.length === 0) return { join: '' };
+  params.qTag = likePrefix(search.tagPrefix);
+  return { join: '', where: `((${contains('s').join(' AND ')}) OR s.id IN (${TAG_HITS}))` };
+}
+
+/** Grava as tags do serviço (já validadas e normalizadas): cria as que faltam e liga todas. */
+async function writeTags(conn: PoolConnection, serviceId: number, tags: string[]): Promise<void> {
+  if (tags.length === 0) return;
+  const params: Record<string, string | number> = { serviceId };
+  const values = tags.map((name, i) => {
+    params[`name${i}`] = name;
+    params[`slug${i}`] = tagSlug(name);
+    return `(:name${i}, :slug${i})`;
+  });
+  // A tag que já existe (mesmo nome pela collation, sem caixa e sem acento) é reaproveitada.
+  await conn.query<ResultSetHeader>(
+    `INSERT INTO service_tags (name, slug) VALUES ${values.join(', ')}
+     ON DUPLICATE KEY UPDATE id = id`,
+    params,
+  );
+  await conn.query<ResultSetHeader>(
+    `INSERT INTO service_tag_pivot (service_id, tag_id)
+     SELECT :serviceId, id FROM service_tags WHERE name IN (:names)`,
+    { serviceId, names: tags },
+  );
+}
+
 /** Impulsionamento ativo do serviço (ranqueia no topo e trava o "Impulsionar" do dono). */
 const BOOSTED_EXPR = `EXISTS(SELECT 1 FROM boosts bo
         WHERE bo.service_id = s.id AND bo.status = 'active' AND bo.expires_at > NOW())`;
@@ -117,13 +189,20 @@ export const servicesRepository = {
     price: number | null;
     deliveryDays: number | null;
     isRemote: boolean;
+    isOnsite: boolean;
+    tags: string[];
   }): Promise<number> {
-    const [res] = await pool.query<ResultSetHeader>(
-      `INSERT INTO services (user_id, category_id, title, description, price_type, price, delivery_days, is_remote)
-       VALUES (:userId, :categoryId, :title, :description, :priceType, :price, :deliveryDays, :isRemote)`,
-      { ...data, isRemote: data.isRemote ? 1 : 0 },
-    );
-    return res.insertId;
+    // O serviço e as tags juntos: tag que falha não deixa serviço publicado pela metade.
+    const { tags, ...service } = data;
+    return inTransaction(async (conn) => {
+      const [res] = await conn.query<ResultSetHeader>(
+        `INSERT INTO services (user_id, category_id, title, description, price_type, price, delivery_days, is_remote, is_onsite)
+         VALUES (:userId, :categoryId, :title, :description, :priceType, :price, :deliveryDays, :isRemote, :isOnsite)`,
+        { ...service, isRemote: service.isRemote ? 1 : 0, isOnsite: service.isOnsite ? 1 : 0 },
+      );
+      await writeTags(conn, res.insertId, tags);
+      return res.insertId;
+    });
   },
 
   /** A categoria existe e está ativa: só nela se publica serviço. */
@@ -143,9 +222,56 @@ export const servicesRepository = {
     return rows[0];
   },
 
+  /**
+   * O detalhe público do serviço: o serviço (pausado inclusive, como o findById), o destaque e
+   * quem presta, com as mesmas colunas da busca.
+   */
+  async findPublicById(id: number): Promise<ServiceRow | undefined> {
+    const [rows] = await pool.query<ServiceRow[]>(
+      `SELECT s.*, ${BOOSTED_EXPR} AS boosted, ${OWNER_COLS} FROM services s
+        JOIN users u ON u.id = s.user_id
+        LEFT JOIN profiles_freelancer pf ON pf.user_id = s.user_id
+        WHERE s.id = :id AND s.deleted_at IS NULL
+        LIMIT 1`,
+      { id },
+    );
+    return rows[0];
+  },
+
+  /**
+   * As tags de vários serviços numa consulta só (a busca, "Meus serviços" e o detalhe), em ordem
+   * alfabética. Serviço sem tag não aparece no mapa.
+   */
+  async tagsByServiceIds(ids: number[]): Promise<Map<number, string[]>> {
+    const tags = new Map<number, string[]>();
+    if (ids.length === 0) return tags;
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT stp.service_id, st.name FROM service_tag_pivot stp
+        JOIN service_tags st ON st.id = stp.tag_id
+        WHERE stp.service_id IN (:ids)
+        ORDER BY stp.service_id, st.name`,
+      { ids },
+    );
+    for (const row of rows) {
+      const id = Number(row.service_id);
+      tags.set(id, [...(tags.get(id) ?? []), String(row.name)]);
+    }
+    return tags;
+  },
+
+  /**
+   * Uma visualização a mais (RF-029). updated_at fica como estava: ser visto não é editar.
+   */
+  async incrementViews(id: number): Promise<void> {
+    await pool.query<ResultSetHeader>(
+      `UPDATE services SET views_count = views_count + 1, updated_at = updated_at WHERE id = :id`,
+      { id },
+    );
+  },
+
   async list(filters: ServiceListFilters): Promise<ServiceRow[]> {
     const where: string[] = ['s.deleted_at IS NULL', 's.is_active = 1'];
-    const params: Record<string, string | number | Date | string[]> = {};
+    const params: SqlParams = {};
 
     if (filters.categoryId !== undefined) {
       where.push('s.category_id = :categoryId');
@@ -168,13 +294,12 @@ export const servicesRepository = {
       params.createdBefore = filters.createdBefore;
     }
     if (filters.isRemote !== undefined) {
-      where.push('s.is_remote = :isRemote');
-      params.isRemote = filters.isRemote ? 1 : 0;
+      // RF-023: quem atende dos dois jeitos (is_remote = 1 e is_onsite = 1) entra nos dois filtros.
+      where.push(filters.isRemote ? 's.is_remote = 1' : 's.is_onsite = 1');
     }
-    if (filters.q) {
-      where.push(String.raw`(s.title LIKE :q ESCAPE '\\' OR s.description LIKE :q ESCAPE '\\')`);
-      params.q = likeContains(filters.q);
-    }
+    const text = filters.q ? textSearch(filters.q, params) : { join: '' };
+    if (text.where) where.push(text.where);
+    const textJoin = text.join;
     if (filters.minPrice !== undefined) {
       where.push('s.price >= :minPrice');
       params.minPrice = filters.minPrice;
@@ -245,6 +370,7 @@ export const servicesRepository = {
         `SELECT * FROM (
            SELECT s.*, ${distanceExpr} AS distance_km, ${BOOSTED_EXPR} AS boosted, ${OWNER_COLS}
              FROM services s
+             ${textJoin}
              JOIN users u ON u.id = s.user_id
              JOIN profiles_freelancer pf ON pf.user_id = s.user_id
             WHERE ${where.join(' AND ')}
@@ -261,6 +387,7 @@ export const servicesRepository = {
     // limit/offset são inteiros validados (Zod) — seguros para interpolar.
     const [rows] = await pool.query<ServiceRow[]>(
       `SELECT s.*, ${BOOSTED_EXPR} AS boosted, ${OWNER_COLS} FROM services s
+        ${textJoin}
         JOIN users u ON u.id = s.user_id
         LEFT JOIN profiles_freelancer pf ON pf.user_id = s.user_id
         WHERE ${where.join(' AND ')}
@@ -286,14 +413,30 @@ export const servicesRepository = {
     return rows;
   },
 
-  async update(id: number, fields: Record<string, unknown>): Promise<void> {
+  /** Edita as colunas e, com `tags`, troca a lista de tags inteira (na mesma transação). */
+  async update(id: number, fields: Record<string, unknown>, tags?: string[]): Promise<void> {
     const keys = Object.keys(fields);
-    if (keys.length === 0) return;
+    if (keys.length === 0 && tags === undefined) return;
     // As chaves vêm de um mapeamento fixo no service (nunca do usuário) — sem risco de injeção.
     const setClause = keys.map((k) => `${k} = :${k}`).join(', ');
-    await pool.query<ResultSetHeader>(`UPDATE services SET ${setClause} WHERE id = :id`, {
-      ...fields,
-      id,
+    if (tags === undefined) {
+      await pool.query<ResultSetHeader>(`UPDATE services SET ${setClause} WHERE id = :id`, {
+        ...fields,
+        id,
+      });
+      return;
+    }
+    await inTransaction(async (conn) => {
+      if (keys.length > 0) {
+        await conn.query<ResultSetHeader>(`UPDATE services SET ${setClause} WHERE id = :id`, {
+          ...fields,
+          id,
+        });
+      }
+      await conn.query<ResultSetHeader>(`DELETE FROM service_tag_pivot WHERE service_id = :id`, {
+        id,
+      });
+      await writeTags(conn, id, tags);
     });
   },
 

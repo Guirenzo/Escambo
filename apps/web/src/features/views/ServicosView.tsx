@@ -60,6 +60,8 @@ interface Filters {
   period: '' | AvailabilityPeriod;
   /** Só quem atende agora, no fuso de cada freelancer (ADR 48). */
   now: boolean;
+  /** Modalidade (RF-023): '' = qualquer; "remoto e presencial" entra nas duas. */
+  modality: '' | 'remote' | 'onsite';
   sort: Sort;
 }
 const NO_FILTERS: Filters = {
@@ -70,6 +72,7 @@ const NO_FILTERS: Filters = {
   day: -1,
   period: '',
   now: false,
+  modality: '',
   sort: 'relevance',
 };
 
@@ -99,6 +102,7 @@ export function ServicosView() {
     filters.minRating > 0 ||
     filters.day >= 0 ||
     filters.now ||
+    filters.modality !== '' ||
     filters.sort !== 'relevance';
   const services = useServicesInfinite({
     q: submitted,
@@ -111,6 +115,7 @@ export function ServicosView() {
     ...(filters.day >= 0 ? { day: filters.day } : {}),
     ...(filters.day >= 0 && filters.period ? { period: filters.period } : {}),
     ...(filters.now ? { now: true } : {}),
+    ...(filters.modality ? { isRemote: filters.modality === 'remote' } : {}),
     ...(filters.sort !== 'relevance' ? { sort: filters.sort } : {}),
   });
 
@@ -150,6 +155,7 @@ export function ServicosView() {
     if (filters.maxPrice !== '') f.maxPrice = Number(filters.maxPrice);
     if (filters.maxDeliveryDays) f.maxDeliveryDays = filters.maxDeliveryDays;
     if (filters.minRating) f.minRating = filters.minRating;
+    if (filters.modality) f.isRemote = filters.modality === 'remote';
     if (filters.day >= 0) {
       f.day = filters.day;
       if (filters.period) f.period = filters.period;
@@ -175,6 +181,7 @@ export function ServicosView() {
       minRating: f.minRating ?? 0,
       day: f.day ?? -1,
       period: f.day !== undefined ? (f.period ?? '') : '',
+      modality: f.isRemote === undefined ? '' : f.isRemote ? 'remote' : 'onsite',
     });
   }
 
@@ -189,6 +196,16 @@ export function ServicosView() {
     else toast.error('Essa busca salva não existe mais.');
     setSearchParams({}, { replace: true });
   }, [searchParams, savedList.data]);
+
+  // Tag clicada no card ou no detalhe (/servicos?q=react, RF-024): busca por ela e limpa a URL.
+  useEffect(() => {
+    const text = searchParams.get('q');
+    if (text === null) return;
+    setTab('search');
+    setQ(text);
+    setSubmitted(text.trim() || undefined);
+    setSearchParams({}, { replace: true });
+  }, [searchParams]);
 
   function toggleNearMe(): void {
     if (geo) {
@@ -447,6 +464,19 @@ export function ServicosView() {
                     {PERIOD_LABEL[p]}
                   </option>
                 ))}
+              </Select>
+            </label>
+            <label className="filter">
+              <span>Modalidade</span>
+              <Select
+                aria-label="Filtrar por modalidade"
+                title="Quem atende remoto e presencial aparece nas duas"
+                value={filters.modality}
+                onChange={(e) => setFilter({ modality: e.target.value as Filters['modality'] })}
+              >
+                <option value="">qualquer</option>
+                <option value="remote">remoto</option>
+                <option value="onsite">presencial</option>
               </Select>
             </label>
             <label className="filter">

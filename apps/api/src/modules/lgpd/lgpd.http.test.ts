@@ -7,7 +7,7 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { blocklist } from '../../config/blocklist';
 import { env } from '../../config/env';
-import { bearer, routerApp } from '../../test-support/http';
+import { bearer, routerApp, businessAudits } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
 import { lgpdRoutes } from './lgpd.routes';
 
@@ -122,7 +122,7 @@ describe('LGPD: borda HTTP', () => {
         expect(res.body.error).toBe('account_blocked');
       }
       for (const fn of Object.values(service)) expect(fn).not.toHaveBeenCalled();
-      expect(audit).not.toHaveBeenCalled();
+      expect(businessAudits(audit)).toEqual([]);
       // O bloqueio é de quem foi bloqueado: outra conta segue entrando.
       service.getExportRequests.mockResolvedValueOnce([]);
       await request(app).get('/api/lgpd/export-requests').set(bearer(8)).expect(200);
@@ -550,7 +550,7 @@ describe('LGPD: borda HTTP', () => {
       expect(service.openExport).toHaveBeenCalledWith(12, 8);
       expect(res.body).toEqual({ error: 'forbidden', message: 'Esta exportação não é sua' });
       expect(res.headers['content-disposition']).toBeUndefined();
-      expect(audit).not.toHaveBeenCalled();
+      expect(businessAudits(audit)).toEqual([]);
     });
 
     it('arquivo que some entre a checagem e a leitura (o job de expiração apagou): 410 de exportação vencida, sem cabeçalho de download e sem derrubar a API', async () => {

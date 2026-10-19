@@ -31,7 +31,7 @@ describe('GET /api/credits/transactions', () => {
 
     expect(res.body).toEqual(page);
     expect(service.listTransactions).toHaveBeenCalledTimes(1);
-    expect(service.listTransactions).toHaveBeenCalledWith(7, 1, 20);
+    expect(service.listTransactions).toHaveBeenCalledWith(7, 1, 20, {});
   });
 
   it('converte página e limite da URL para número', async () => {
@@ -39,7 +39,7 @@ describe('GET /api/credits/transactions', () => {
 
     await request(app).get('/api/credits/transactions?page=4&limit=100').set(bearer(7)).expect(200);
 
-    expect(service.listTransactions).toHaveBeenCalledWith(7, 4, 100);
+    expect(service.listTransactions).toHaveBeenCalledWith(7, 4, 100, {});
   });
 
   it('limite acima de 100 ou página zero é erro de validação e não chega ao service', async () => {
@@ -88,7 +88,7 @@ describe('GET /api/credits/transactions', () => {
 
     service.listTransactions.mockResolvedValue({ items: [], page: 10000, limit: 20 });
     await request(app).get('/api/credits/transactions?page=10000').set(bearer(7)).expect(200);
-    expect(service.listTransactions).toHaveBeenCalledWith(7, 10000, 20);
+    expect(service.listTransactions).toHaveBeenCalledWith(7, 10000, 20, {});
   });
 
   it('token adulterado é recusado como inválido, sem consultar o extrato', async () => {
@@ -132,7 +132,42 @@ describe('GET /api/credits/transactions', () => {
     await request(app).get('/api/credits/transactions?page=2&limit=5').set(bearer(31)).expect(200);
 
     expect(service.listTransactions).toHaveBeenCalledTimes(1);
-    expect(service.listTransactions).toHaveBeenCalledWith(31, 2, 5);
+    expect(service.listTransactions).toHaveBeenCalledWith(31, 2, 5, {});
+  });
+
+  it('o período (de/até, RF-047) vai para o service como dias, junto da página, como no extrato de R$', async () => {
+    const page = { items: [], page: 2, limit: 20, hasMore: false };
+    service.listTransactions.mockResolvedValue(page);
+
+    const res = await request(app)
+      .get('/api/credits/transactions?page=2&from=2026-10-01&to=2026-10-15')
+      .set(bearer(7))
+      .expect(200);
+
+    expect(res.body).toEqual(page);
+    expect(service.listTransactions).toHaveBeenCalledWith(7, 2, 20, {
+      from: '2026-10-01',
+      to: '2026-10-15',
+    });
+
+    await request(app).get('/api/credits/transactions?from=2026-10-01').set(bearer(7)).expect(200);
+    expect(service.listTransactions).toHaveBeenLastCalledWith(7, 1, 20, { from: '2026-10-01' });
+  });
+
+  it('dia que não existe ou fora do formato AAAA-MM-DD é erro de validação no campo', async () => {
+    const cases: [string, 'from' | 'to'][] = [
+      ['from=2026-02-30', 'from'],
+      ['from=01/10/2026', 'from'],
+      ['to=2026-13-01', 'to'],
+      ['to=', 'to'],
+    ];
+    for (const [query, field] of cases) {
+      const res = await request(app).get(`/api/credits/transactions?${query}`).set(bearer(7));
+      expect(res.status).toBe(422);
+      expect(res.body.error).toBe('validation_error');
+      expect(res.body.details[field]).toEqual(['Informe um dia válido no formato AAAA-MM-DD']);
+    }
+    expect(service.listTransactions).not.toHaveBeenCalled();
   });
 
   it('se o service falha, a resposta leva o erro dele em JSON (a requisição não fica pendurada)', async () => {

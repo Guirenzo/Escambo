@@ -6,11 +6,29 @@ Prometheus + Grafana) e **o que quebrou?** (logs estruturados e erros no Sentry)
 ## Logs
 
 A API escreve **JSON estruturado** (pino), uma linha por requisição, com o `X-Request-Id` que também volta na
-resposta, e uma linha por job. Senhas, tokens e cabeçalhos de sessão são trocados por `[REDACTED]`.
+resposta, e uma linha por job. Senhas, tokens e cabeçalhos de sessão são trocados por `[REDACTED]`. Cada linha de
+requisição leva o `ip` de quem chamou (o real, atrás do Caddy e do nginx, pelo `TRUST_PROXY`), e as recusas
+(401 e 403) saem em `warn` (nível 40), separadas do tráfego normal.
 
 ```bash
 docker compose -f docker-compose.prod.yml logs -f api
 docker compose -f docker-compose.prod.yml logs api | grep '"level":50'      # só erros
+docker compose -f docker-compose.prod.yml logs api | grep '"level":40'      # recusas e erros do app no navegador
+```
+
+### Tentativas de acesso não autorizado (RNF-018)
+
+Além do log, ficam no `audit_logs`, consultáveis por SQL, com o IP, o navegador e a hora:
+
+- `access.denied`: recusa por papel ou por não ser dono (`forbidden`, `admin_only`), conta barrada (`account_banned`,
+  `account_blocked`, `account_deleted`) e webhook com o segredo errado. Guarda o método, o caminho **sem a query
+  string** e o código. Token vencido ou ausente não entra: é o app renovando a sessão.
+- `auth.login_failed`: senha errada (com o id da conta-alvo), conta inexistente ou sem senha. O e-mail digitado não
+  é guardado.
+
+```sql
+SELECT created_at, action, user_id, ip_address, new_value FROM audit_logs
+ WHERE action IN ('access.denied', 'auth.login_failed') ORDER BY id DESC LIMIT 50;
 ```
 
 ## Saúde
@@ -96,6 +114,7 @@ quando volta ao normal:
 | `ErrosDoServidor` | mais de 2% das requisições com 5xx por 10 min                         |
 | `LatenciaAlta`    | p95 acima de 1 s por 10 min                                           |
 | `JobFalhando`     | algum job falhou nos últimos 30 min (o e-mail diz qual)               |
+| `ErrosNoApp`      | o app relatou mais de 10 erros do navegador em 15 min                 |
 
 O e-mail sai pelo mesmo SMTP dos avisos do sistema (`SMTP_*` e `MAIL_FROM` do `.env`) para `ALERT_EMAIL_TO`
 (padrão: o `ACME_EMAIL`). Sem `SMTP_HOST`, os alertas continuam aparecendo na tela, e só não são enviados. Para
@@ -121,3 +140,21 @@ DSN, o pacote nem é carregado.
 1. Crie um projeto Node.js em [sentry.io](https://sentry.io) (plano gratuito) e copie o DSN.
 2. No `.env` da VPS: `SENTRY_DSN=https://…` (e, se quiser, `SENTRY_ENVIRONMENT=producao`).
 3. `docker compose -f docker-compose.prod.yml up -d api`.
+
+### Erros do app no navegador (RNF-040)
+
+O app relata à API (`POST /api/client-errors`) a tela que quebrou (o `ErrorBoundary`), o erro de script do próprio
+app e a promessa rejeitada sem `catch`. Não vão: a recusa da API (ela já registrou), a falta de rede de quem usa,
+o aviso do `ResizeObserver` e o erro de extensão ou de outro domínio. No máximo 5 relatos por página aberta, cada
+erro uma vez, e 30 por IP a cada 15 minutos. Vai só o tipo, a mensagem, as pilhas e o caminho da tela, **sem a
+query string** (a de `/redefinir-senha` leva o token). A API escreve em `warn`, conta em
+`escambo_client_errors_total` (o alerta `ErrosNoApp`) e, com o DSN, manda ao Sentry como `ClientError`, marcado
+`source: web`, pelo mesmo filtro de dados pessoais.
+
+### Fora do ar (RNF-010)
+
+Se a API para e o web está de pé, o nginx responde às chamadas do app um 503 em JSON (`service_unavailable`), e o
+app troca a tela pela de fora do ar, que tenta de novo a cada 30 s. Se o web para, o Caddy serve
+`deploy/status/fora-do-ar.html`, uma página sem dependências que também se recarrega sozinha. Para uma parada
+planejada, use o modo de manutenção com a **previsão de volta** (`maintenance_return_minutes` no painel): o app
+mostra a hora prevista e a API a manda no `Retry-After`.

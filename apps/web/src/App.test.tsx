@@ -74,6 +74,10 @@ vi.mock('./features/views/SalaContratoView', () => ({
   ),
 }));
 
+vi.mock('./features/views/ServicoView', () => ({
+  ServicoView: ({ serviceId }: { serviceId: number }) => <h1>Serviço {String(serviceId)}</h1>,
+}));
+
 /** Abre o app num endereço, como quem digita a URL (o `state` é o que a guarda de rota guarda). */
 function visit(path: string, state?: unknown) {
   window.history.pushState(state === undefined ? null : { usr: state, key: 'teste' }, '', path);
@@ -236,6 +240,20 @@ describe('App: /admin', () => {
     visit('/admin');
     expect(heading()).toBe('Início');
     expect(here()).toBe('/');
+  });
+});
+
+describe('App: /servicos/:id (detalhe do serviço)', () => {
+  it('abre o detalhe com o id do endereço como número', () => {
+    visit('/servicos/41');
+    expect(heading()).toBe('Serviço 41');
+    expect(here()).toBe('/servicos/41');
+  });
+
+  it.each(['abc', '0', '-3', '1.5'])('id inválido (%s) volta para a busca', (id) => {
+    visit(`/servicos/${id}`);
+    expect(heading()).toBe('Serviços');
+    expect(here()).toBe('/servicos');
   });
 });
 

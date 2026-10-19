@@ -88,3 +88,14 @@ INSERT INTO platform_settings (key_name, value, type, description) VALUES
   ('counter_offer_response_hours', '48', 'integer', 'Horas para responder a uma contraproposta; sem resposta, a negociação se encerra e a reserva volta ao cliente (RN-030, ADR 61)'),
   ('extension_response_hours',     '48', 'integer', 'Horas para o cliente responder a um pedido de extensão; sem resposta, ele expira e vale como recusa (RN-028, ADR 61)')
 ON DUPLICATE KEY UPDATE description = VALUES(description);
+
+-- Prazo de saque (RN-035, migration 0036): grupo próprio para preservar valores do admin.
+INSERT INTO platform_settings (key_name, value, type, description) VALUES
+  ('withdrawal_pix_business_days',  '1', 'integer', 'Dias úteis (seg a sex no calendário de Brasília, sem feriados) para pagar um saque por PIX, gravados no saque no pedido (RN-035)'),
+  ('withdrawal_bank_business_days', '2', 'integer', 'Dias úteis (seg a sex no calendário de Brasília, sem feriados) para pagar um saque por transferência bancária, gravados no saque no pedido (RN-035)')
+ON DUPLICATE KEY UPDATE description = VALUES(description);
+
+-- Previsão de volta da manutenção (RNF-010, ADR 33): 0 = sem previsão.
+INSERT INTO platform_settings (key_name, value, type, description) VALUES
+  ('maintenance_return_minutes', '0', 'integer', 'Minutos até a volta da manutenção, contados da última mudança deste valor ou do modo de manutenção; 0 = sem previsão (RNF-010)')
+ON DUPLICATE KEY UPDATE description = VALUES(description);

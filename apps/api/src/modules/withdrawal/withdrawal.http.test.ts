@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { blocklist } from '../../config/blocklist';
-import { bearer, routerApp } from '../../test-support/http';
+import { bearer, routerApp, businessAudits } from '../../test-support/http';
 import { HttpError } from '../../utils/http-error';
 import { cancelWithdrawal, requestWithdrawal } from './withdrawal.controller';
 import { withdrawalRoutes } from './withdrawal.routes';
@@ -83,7 +83,7 @@ describe('saques: borda HTTP', () => {
       expect(service.request).not.toHaveBeenCalled();
       expect(service.listMine).not.toHaveBeenCalled();
       expect(service.cancelMine).not.toHaveBeenCalled();
-      expect(auditLog).not.toHaveBeenCalled();
+      expect(businessAudits(auditLog)).toEqual([]);
 
       // O bloqueio é da conta, não da rota: outra pessoa continua passando.
       service.listMine.mockResolvedValue({ items: [], page: 1, limit: 20 });
@@ -571,7 +571,7 @@ describe('saques: borda HTTP', () => {
         expect(res.body).toEqual({ error: refusal.code, message: refusal.message });
       }
       expect(service.cancelMine).toHaveBeenCalledWith(42, 99);
-      expect(auditLog).not.toHaveBeenCalled();
+      expect(businessAudits(auditLog)).toEqual([]);
     });
 
     it('cancelar é POST em /:id/cancel: o titular não apaga nem edita o saque por outro caminho', async () => {

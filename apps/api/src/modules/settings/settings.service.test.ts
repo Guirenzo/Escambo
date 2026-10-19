@@ -221,6 +221,43 @@ describe('settingsService (ADR 32/33)', () => {
     },
   );
 
+  it.each([
+    ['withdrawal_pix_business_days', 1, 'pix'],
+    ['withdrawal_bank_business_days', 2, 'bank'],
+  ] as const)(
+    '%s (RN-035) entra no catálogo com %i dia(s) útil(eis) e só aceita inteiros de 1 a 10',
+    async (key, standard, method) => {
+      const items = await settingsService.listForAdmin();
+      expect(items.find((item) => item.key === key)).toMatchObject({
+        type: 'integer',
+        value: standard,
+        defaultValue: standard,
+        min: 1,
+        max: 10,
+        unit: 'dias úteis',
+      });
+      expect(validateSettingValue(key, 1)).toBe('1');
+      expect(validateSettingValue(key, 10)).toBe('10');
+      for (const value of [0, 11, 1.5, -1, true]) {
+        await expect(settingsService.update(key, value, 9)).rejects.toMatchObject({
+          statusCode: 422,
+          code: 'value_out_of_range',
+        });
+      }
+      expect(repo.set).not.toHaveBeenCalled();
+
+      // Dado inválido no banco (escrito fora do painel) não vira prazo: vale o padrão da RN-035.
+      for (const raw of ['0', '11', '1.5', '-2', 'abc', '']) {
+        settingsService.clearCache();
+        repo.get.mockImplementation(async (readKey) => (readKey === key ? raw : null));
+        expect(await settingsService.withdrawalBusinessDays(method)).toBe(standard);
+        expect((await settingsService.publicSettings()).withdrawalBusinessDays[method]).toBe(
+          standard,
+        );
+      }
+    },
+  );
+
   it('update com valor fora dos limites é 422 value_out_of_range e nada é gravado', async () => {
     await expect(settingsService.update('platform_fee_percentage', 51, 9)).rejects.toMatchObject({
       statusCode: 422,
@@ -335,6 +372,8 @@ describe('settingsService (ADR 32/33)', () => {
       deadline_grace_hours: '36',
       min_service_price: '25.50',
       min_withdrawal_amount: '50',
+      withdrawal_pix_business_days: '2',
+      withdrawal_bank_business_days: '5',
       barter_enabled: 'false',
       maintenance_mode: 'true',
     };
@@ -343,6 +382,8 @@ describe('settingsService (ADR 32/33)', () => {
     expect(await settingsService.feeRate()).toBe(0.12);
     expect(await settingsService.minServicePrice()).toBe(25.5);
     expect(await settingsService.minWithdrawal()).toBe(50);
+    expect(await settingsService.withdrawalBusinessDays('pix')).toBe(2);
+    expect(await settingsService.withdrawalBusinessDays('bank')).toBe(5);
     expect(await settingsService.barterEnabled()).toBe(false);
     expect(await settingsService.maintenanceMode()).toBe(true);
     expect(await settingsService.publicSettings()).toEqual({
@@ -355,8 +396,10 @@ describe('settingsService (ADR 32/33)', () => {
       fixedContractRules,
       minServicePrice: 25.5,
       minWithdrawalAmount: 50,
+      withdrawalBusinessDays: { pix: 2, bank: 5 },
       barterEnabled: false,
       maintenanceMode: true,
+      maintenanceReturnAt: null,
     });
   });
 
@@ -371,11 +414,62 @@ describe('settingsService (ADR 32/33)', () => {
     expect(await settingsService.value('strike_upload_block_days')).toBe(7);
   });
 
+  describe('previsão de volta da manutenção (RNF-010)', () => {
+    const at = (iso: string) => ({ updated_at: new Date(iso) }) as never;
+    const keys = (mode: string, minutes: string) =>
+      repo.get.mockImplementation(async (key: string) =>
+        key === 'maintenance_mode' ? mode : key === 'maintenance_return_minutes' ? minutes : null,
+      );
+
+    it('conta os minutos da última mudança, do modo ou da própria previsão', async () => {
+      keys('true', '90');
+      repo.list.mockResolvedValue([at('2026-10-19T14:00:00Z'), at('2026-10-19T14:10:00Z')]);
+      expect((await settingsService.maintenanceReturnAt())?.toISOString()).toBe(
+        '2026-10-19T15:40:00.000Z',
+      );
+      expect(repo.list).toHaveBeenCalledWith(['maintenance_mode', 'maintenance_return_minutes']);
+      const pub = await settingsService.publicSettings();
+      expect(pub.maintenanceReturnAt).toBe('2026-10-19T15:40:00.000Z');
+    });
+
+    it.each([
+      ['modo desligado', 'false', '90'],
+      ['sem previsão (0)', 'true', '0'],
+      ['previsão negativa gravada fora do painel vale o padrão (0)', 'true', '-30'],
+    ])('%s: sem hora prevista e sem ler as datas', async (_caso, mode, minutes) => {
+      keys(mode, minutes);
+      expect(await settingsService.maintenanceReturnAt()).toBeNull();
+      expect(repo.list).not.toHaveBeenCalled();
+    });
+
+    it('sem data de mudança gravada, não inventa hora', async () => {
+      keys('true', '30');
+      repo.list.mockResolvedValue([{ updated_at: null } as never]);
+      expect(await settingsService.maintenanceReturnAt()).toBeNull();
+    });
+
+    it('fica em cache como as chaves, e mudar um parâmetro limpa', async () => {
+      keys('true', '30');
+      repo.list.mockResolvedValue([at('2026-10-19T14:00:00Z')]);
+      await settingsService.maintenanceReturnAt();
+      await settingsService.maintenanceReturnAt();
+      expect(repo.list).toHaveBeenCalledTimes(1);
+      repo.set.mockResolvedValue(undefined as never);
+      await settingsService.update('maintenance_return_minutes', 60, 1);
+      await settingsService.maintenanceReturnAt();
+      expect(repo.list).toHaveBeenCalledWith(['maintenance_mode', 'maintenance_return_minutes']);
+      expect(repo.list.mock.calls.filter((c) => c[0].length === 2)).toHaveLength(2);
+    });
+  });
+
   it('leitores tipados e públicos com padrões quando não há linha', async () => {
     expect(await settingsService.feeRate()).toBe(0.15);
     expect(await settingsService.barterEnabled()).toBe(true);
     expect(await settingsService.minWithdrawal()).toBe(20);
     expect(await settingsService.minServicePrice()).toBe(10);
+    // RN-035: PIX em até 1 dia útil, transferência em até 2.
+    expect(await settingsService.withdrawalBusinessDays('pix')).toBe(1);
+    expect(await settingsService.withdrawalBusinessDays('bank')).toBe(2);
     expect(await settingsService.publicSettings()).toEqual({
       platformFeePercentage: 15,
       tacitApprovalDays: 5,
@@ -386,8 +480,10 @@ describe('settingsService (ADR 32/33)', () => {
       fixedContractRules,
       minServicePrice: 10,
       minWithdrawalAmount: 20,
+      withdrawalBusinessDays: { pix: 1, bank: 2 },
       barterEnabled: true,
       maintenanceMode: false,
+      maintenanceReturnAt: null,
     });
   });
 });

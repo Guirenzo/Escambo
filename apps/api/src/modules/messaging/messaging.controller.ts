@@ -5,6 +5,7 @@ import { uploadsDir } from './attachments.storage';
 import {
   attachmentBodySchema,
   contractIdParamSchema,
+  markReadSchema,
   messageIdParamSchema,
   sendMessageSchema,
 } from './messaging.schema';
@@ -27,6 +28,16 @@ export async function postMessage(req: Request, res: Response): Promise<void> {
   const { content } = sendMessageSchema.parse(req.body);
   const message = await messagingService.send(id, req.user!.uid, content);
   res.status(201).json(message);
+}
+
+/**
+ * POST /api/messaging/contracts/:id/read — marca como lidas as mensagens recebidas (RF-059). A
+ * conta suspensa também pode: registra que leu, sem conteúdo novo (RN-007).
+ */
+export async function postRead(req: Request, res: Response): Promise<void> {
+  const { id } = contractIdParamSchema.parse(req.params);
+  const { upTo } = markReadSchema.parse(req.body);
+  res.json(await messagingService.markRead(id, req.user!.uid, upTo));
 }
 
 /** POST /api/messaging/contracts/:id/attachments — multipart: `file` + `content` (legenda). */

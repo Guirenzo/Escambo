@@ -10,6 +10,11 @@ export const sendMessageSchema = z.object({
 });
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 
+/** Leitura (RF-059): até qual mensagem a tela mostrou; sem `upTo`, todas as recebidas. */
+export const markReadSchema = z.object({
+  upTo: z.number().int().positive().optional(),
+});
+
 /** Campos de texto que acompanham o arquivo no multipart (legenda opcional). */
 export const attachmentBodySchema = z.object({
   content: z.string().trim().max(MESSAGE_MAX_LENGTH).optional(),

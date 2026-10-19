@@ -76,6 +76,14 @@ export function createApp() {
         res.setHeader('X-Request-Id', id);
         return id;
       },
+      // RNF-018: o IP de quem chamou (req.ip respeita o TRUST_PROXY; o remoteAddress é o do
+      // nginx) e a recusa de acesso em warn, separada do tráfego normal.
+      customProps: (req) => ({ ip: (req as express.Request).ip }),
+      customLogLevel: (_req, res, err) => {
+        if (err || res.statusCode >= 500) return 'error';
+        if (res.statusCode === 401 || res.statusCode === 403) return 'warn';
+        return 'info';
+      },
     }),
   );
 

@@ -1,8 +1,15 @@
-import type { Category, CreateServiceRequest, Service, ServicePriceType } from '@escambo/types';
+import type {
+  Category,
+  CreateServiceRequest,
+  Service,
+  ServiceModality,
+  ServicePriceType,
+} from '@escambo/types';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { BusinessForm } from '../../components/BusinessActions';
 import { Button, Field, Input, Select } from '../../components/ui';
 import { brl } from '../../lib/format';
+import { TagsInput } from './TagsInput';
 
 /** Categoria achatada para o <select>: as filhas recuadas com "— " por nível. */
 export interface CategoryOption {
@@ -29,13 +36,25 @@ export const PRICE_TYPE_LABEL: Record<ServicePriceType, string> = {
 };
 const PRICE_TYPES: ServicePriceType[] = ['fixed', 'hourly', 'negotiable'];
 
+/** Modalidade (RF-023) como o formulário mostra. */
+export const MODALITY_LABEL: Record<ServiceModality, string> = {
+  remote: 'Remoto',
+  onsite: 'Presencial',
+  both: 'Remoto e presencial',
+};
+const MODALITIES: ServiceModality[] = ['remote', 'onsite', 'both'];
+
+/** A modalidade do serviço; resposta antiga, sem modality, sai do isRemote. */
+export const modalityOf = (s: Pick<Service, 'modality' | 'isRemote'>): ServiceModality =>
+  s.modality ?? (s.isRemote ? 'remote' : 'onsite');
+
 /** O serviço inteiro, como o cadastro e a edição (PATCH) aceitam. */
 export type ServiceFormBody = Required<CreateServiceRequest>;
 
 /**
- * Cadastro e edição de serviço (RF-022 e RF-023): título, categoria, descrição, tipo de preço,
- * preço, prazo de entrega e modalidade. Preço só fica de fora "a combinar"; o mínimo da
- * plataforma vale para o preço fixo (RN-016), como a API confere.
+ * Cadastro e edição de serviço (RF-022, RF-023 e RF-024): título, categoria, descrição, tipo de
+ * preço, preço, prazo de entrega, modalidade e tags. Preço só fica de fora "a combinar"; o mínimo
+ * da plataforma vale para o preço fixo (RN-016), como a API confere.
  */
 export function ServiceForm({
   heading,
@@ -67,7 +86,10 @@ export function ServiceForm({
   const [deliveryDays, setDeliveryDays] = useState(
     initial?.deliveryDays != null ? String(initial.deliveryDays) : '',
   );
-  const [remote, setRemote] = useState(initial?.isRemote ?? true);
+  const [modality, setModality] = useState<ServiceModality>(
+    initial ? modalityOf(initial) : 'remote',
+  );
+  const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
   const effectiveCategory = categoryId || categories[0]?.id || 0;
 
   async function submit(e: FormEvent): Promise<void> {
@@ -79,7 +101,10 @@ export function ServiceForm({
       priceType,
       price: priceType === 'negotiable' ? null : Number(price),
       deliveryDays: deliveryDays === '' ? null : Number(deliveryDays),
-      isRemote: remote,
+      // isRemote junto, para quem ainda lê só ele; a API usa a modality.
+      isRemote: modality !== 'onsite',
+      modality,
+      tags,
     });
   }
 
@@ -169,15 +194,16 @@ export function ServiceForm({
           />
         </Field>
         <Field label="Modalidade">
-          <Select
-            value={remote ? 'remote' : 'onsite'}
-            onChange={(e) => setRemote(e.target.value === 'remote')}
-          >
-            <option value="remote">Remoto</option>
-            <option value="onsite">Presencial</option>
+          <Select value={modality} onChange={(e) => setModality(e.target.value as ServiceModality)}>
+            {MODALITIES.map((m) => (
+              <option key={m} value={m}>
+                {MODALITY_LABEL[m]}
+              </option>
+            ))}
           </Select>
         </Field>
       </div>
+      <TagsInput value={tags} onChange={setTags} />
       <div className="svc-actions">
         <Button type="submit" disabled={pending}>
           {pending ? 'Salvando…' : submitLabel}

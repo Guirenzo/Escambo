@@ -10,6 +10,10 @@ vi.mock('./gamification.repository', () => ({
     findBadgeBySlug: vi.fn(),
     awardBadge: vi.fn(),
     getFreelancerStats: vi.fn(),
+    countOnTimeDeliveries: vi.fn(),
+    countRepeatClients: vi.fn(),
+    countBartersCompleted: vi.fn(),
+    listRankedFreelancers: vi.fn(),
     recentEvents: vi.fn(),
     activityTimes: vi.fn(),
     rankOf: vi.fn(),
@@ -17,8 +21,12 @@ vi.mock('./gamification.repository', () => ({
   },
 }));
 
-const { zone } = vi.hoisted(() => ({ zone: vi.fn() }));
+const { zone, logger } = vi.hoisted(() => ({
+  zone: vi.fn(),
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
 vi.mock('../auth/user-zone', () => ({ userZone: zone }));
+vi.mock('../../config/logger', () => ({ logger }));
 
 import { computeStreak, gamificationService, levelProgress } from './gamification.service';
 import {
@@ -112,7 +120,7 @@ describe('awardXp', () => {
 });
 
 describe('evaluateBadges (engine por critério)', () => {
-  it('concede badge cujo critério foi atingido e ignora critério não rastreado', async () => {
+  it('concede badge cujo critério foi atingido e não concede a de entregas no prazo abaixo do limite', async () => {
     repo.getFreelancerStats.mockResolvedValue({
       total_contracts: 60,
       total_reviews: 60,
@@ -130,11 +138,13 @@ describe('evaluateBadges (engine por critério)', () => {
     ] as unknown as BadgeCatalogRow[]);
     repo.awardBadge.mockResolvedValue(true);
     repo.applyXp.mockResolvedValue({ previousLevel: 1, level: 1 });
+    repo.countOnTimeDeliveries.mockResolvedValue(19);
 
     await gamificationService.evaluateBadges(1);
 
     expect(repo.awardBadge).toHaveBeenCalledWith(1, 2); // top-rated
-    expect(repo.awardBadge).not.toHaveBeenCalledWith(1, 3); // fast-delivery (não rastreado)
+    expect(repo.awardBadge).not.toHaveBeenCalledWith(1, 3); // fast-delivery: 19 de 20
+    expect(repo.countOnTimeDeliveries).toHaveBeenCalledWith(1);
   });
 
   it('não concede quando as stats são insuficientes', async () => {
@@ -469,8 +479,11 @@ describe('gamificação: regras por evento e por critério', () => {
     });
 
     it('só concede quando TODOS os critérios conhecidos foram atingidos (o limite conta como atingido)', async () => {
-      // 10 contratos, 5 avaliações, média 4,5.
+      // 10 contratos, 5 avaliações, média 4,5; 2 clientes que voltam, nenhuma troca, 19 no prazo.
       repo.getFreelancerStats.mockResolvedValue(stats(10, 5, '4.50'));
+      repo.countRepeatClients.mockResolvedValue(2);
+      repo.countBartersCompleted.mockResolvedValue(0);
+      repo.countOnTimeDeliveries.mockResolvedValue(19);
       repo.listActiveBadges.mockResolvedValue([
         badge({ id: 10, slug: 'contratos-no-limite', criteria: { contracts_completed: 10 } }),
         badge({ id: 11, slug: 'contratos-faltando', criteria: { contracts_completed: 11 } }),
@@ -497,7 +510,7 @@ describe('gamificação: regras por evento e por critério', () => {
           criteria: { contracts_completed: 10, reviews_min: 6 },
         }),
         badge({ id: 22, slug: 'avaliacoes-faltando', criteria: { reviews_min: 6 } }),
-        // Critério ainda não rastreado barra a badge mesmo com os outros critérios atingidos.
+        // Critério contado abaixo do limite barra a badge mesmo com os outros critérios atingidos.
         badge({
           id: 23,
           slug: 'entregas-no-prazo',
@@ -825,6 +838,309 @@ describe('gamificação: regras por evento e por critério', () => {
         [50, 'review_5_stars', 31],
         [200, 'badge_earned', 2],
       ]);
+    });
+  });
+});
+
+/**
+ * As três badges que dependem de contagem no banco (RF-065): entregas no prazo, clientes que voltam
+ * e trocas concluídas. O catálogo é o do seed; o que cada contagem conta é assunto do repository e
+ * da integração. Aqui: abaixo do limite, no limite, idempotência e quando cada contagem é feita.
+ */
+describe('badges por critério contado (RF-065)', () => {
+  const fast = {
+    id: 2,
+    slug: 'fast-delivery',
+    xp_reward: 100,
+    criteria: { on_time_deliveries: 20 },
+  } as unknown as BadgeCatalogRow;
+  const favorite = {
+    id: 4,
+    slug: 'client-favorite',
+    xp_reward: 150,
+    criteria: { repeat_clients: 5 },
+  } as unknown as BadgeCatalogRow;
+  // Como o mysql2 entrega o JSON quando a coluna vem como texto.
+  const barter = {
+    id: 5,
+    slug: 'bom-de-troca',
+    xp_reward: 120,
+    criteria: '{"barters_completed": 5}',
+  } as unknown as BadgeCatalogRow;
+  const firstDeal = {
+    id: 1,
+    slug: 'first-deal',
+    xp_reward: 50,
+    criteria: { contracts_completed: 1 },
+  } as unknown as BadgeCatalogRow;
+  const stats = { total_contracts: 3, total_reviews: 0, avg_rating: '0.00' };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    repo.getFreelancerStats.mockResolvedValue(stats as unknown as FreelancerStatsRow);
+    repo.listBadges.mockResolvedValue([]);
+    repo.listActiveBadges.mockResolvedValue([fast, favorite, barter]);
+    repo.countOnTimeDeliveries.mockResolvedValue(0);
+    repo.countRepeatClients.mockResolvedValue(0);
+    repo.countBartersCompleted.mockResolvedValue(0);
+    repo.applyXp.mockResolvedValue({ previousLevel: 1, level: 1 });
+  });
+
+  const cases = [
+    ['fast-delivery', fast, () => repo.countOnTimeDeliveries, 20],
+    ['client-favorite', favorite, () => repo.countRepeatClients, 5],
+    ['bom-de-troca', barter, () => repo.countBartersCompleted, 5],
+  ] as const;
+
+  describe.each(cases)('%s', (_slug, badge, count, limit) => {
+    it(`abaixo do limite (${limit - 1}) não concede nem credita`, async () => {
+      count().mockResolvedValue(limit - 1);
+
+      expect(await gamificationService.evaluateBadges(7)).toBe(0);
+
+      expect(count()).toHaveBeenCalledWith(7);
+      expect(repo.awardBadge).not.toHaveBeenCalled();
+      expect(repo.applyXp).not.toHaveBeenCalled();
+    });
+
+    it(`no limite (${limit}) concede e credita a recompensa com o id da badge`, async () => {
+      count().mockResolvedValue(limit);
+      repo.awardBadge.mockResolvedValue(true);
+
+      expect(await gamificationService.evaluateBadges(7)).toBe(1);
+
+      expect(repo.awardBadge.mock.calls).toEqual([[7, badge.id]]);
+      expect(repo.applyXp.mock.calls).toEqual([
+        [{ userId: 7, delta: badge.xp_reward, reason: 'badge_earned', referenceId: badge.id }],
+      ]);
+    });
+
+    it('acima do limite também concede', async () => {
+      count().mockResolvedValue(limit + 30);
+      repo.awardBadge.mockResolvedValue(true);
+
+      expect(await gamificationService.evaluateBadges(7)).toBe(1);
+      expect(repo.awardBadge.mock.calls).toEqual([[7, badge.id]]);
+    });
+
+    it('evento repetido ou em paralelo: se o banco diz que a badge já existia, não há segundo crédito', async () => {
+      count().mockResolvedValue(limit);
+      repo.awardBadge.mockResolvedValue(false);
+
+      expect(await gamificationService.evaluateBadges(7)).toBe(0);
+
+      expect(repo.awardBadge.mock.calls).toEqual([[7, badge.id]]);
+      expect(repo.applyXp).not.toHaveBeenCalled();
+    });
+
+    it('badge já conquistada: nem a contagem dela é feita', async () => {
+      count().mockResolvedValue(limit);
+      repo.listActiveBadges.mockResolvedValue([badge]);
+      repo.listBadges.mockResolvedValue([{ slug: badge.slug }] as unknown as UserBadgeRow[]);
+
+      expect(await gamificationService.evaluateBadges(7)).toBe(0);
+
+      expect(count()).not.toHaveBeenCalled();
+      expect(repo.awardBadge).not.toHaveBeenCalled();
+    });
+  });
+
+  it('só consulta a contagem de que alguma badge pendente depende', async () => {
+    repo.listActiveBadges.mockResolvedValue([firstDeal, fast, favorite, barter]);
+    repo.listBadges.mockResolvedValue([
+      { slug: 'fast-delivery' },
+      { slug: 'bom-de-troca' },
+    ] as unknown as UserBadgeRow[]);
+    repo.awardBadge.mockResolvedValue(false);
+
+    await gamificationService.evaluateBadges(7);
+
+    expect(repo.countRepeatClients).toHaveBeenCalledTimes(1);
+    expect(repo.countOnTimeDeliveries).not.toHaveBeenCalled();
+    expect(repo.countBartersCompleted).not.toHaveBeenCalled();
+    // A first-deal (contagem do perfil) é avaliada sem consulta nova.
+    expect(repo.awardBadge.mock.calls).toEqual([[7, 1]]);
+  });
+
+  it('sem badge pendente com critério contado, nenhuma contagem é feita', async () => {
+    repo.listActiveBadges.mockResolvedValue([firstDeal]);
+
+    await gamificationService.evaluateBadges(7);
+
+    expect(repo.countOnTimeDeliveries).not.toHaveBeenCalled();
+    expect(repo.countRepeatClients).not.toHaveBeenCalled();
+    expect(repo.countBartersCompleted).not.toHaveBeenCalled();
+  });
+
+  it('critério contado junto de um do perfil: os dois precisam ser atingidos', async () => {
+    const both = {
+      id: 9,
+      slug: 'veterano-pontual',
+      xp_reward: 0,
+      criteria: { contracts_completed: 4, on_time_deliveries: 2 },
+    } as unknown as BadgeCatalogRow;
+    repo.listActiveBadges.mockResolvedValue([both]);
+    repo.countOnTimeDeliveries.mockResolvedValue(2);
+    repo.awardBadge.mockResolvedValue(true);
+
+    // 3 contratos no perfil: falta um, mesmo com as entregas no prazo atingidas.
+    expect(await gamificationService.evaluateBadges(7)).toBe(0);
+    repo.getFreelancerStats.mockResolvedValue({
+      ...stats,
+      total_contracts: 4,
+    } as unknown as FreelancerStatsRow);
+    // Com os dois atingidos, concede; recompensa zero não vira lançamento de 0 XP.
+    expect(await gamificationService.evaluateBadges(7)).toBe(1);
+    expect(repo.awardBadge.mock.calls).toEqual([[7, 9]]);
+    expect(repo.applyXp).not.toHaveBeenCalled();
+  });
+
+  it('as três no limite na mesma avaliação: cada uma com o seu crédito', async () => {
+    repo.countOnTimeDeliveries.mockResolvedValue(20);
+    repo.countRepeatClients.mockResolvedValue(5);
+    repo.countBartersCompleted.mockResolvedValue(5);
+    repo.awardBadge.mockResolvedValue(true);
+
+    expect(await gamificationService.evaluateBadges(7)).toBe(3);
+
+    expect(repo.applyXp.mock.calls.map(([p]) => [p.delta, p.referenceId])).toEqual([
+      [100, 2],
+      [150, 4],
+      [120, 5],
+    ]);
+  });
+
+  it('conta fora do ranking (sem stats): nada é contado nem concedido', async () => {
+    repo.getFreelancerStats.mockResolvedValue(undefined);
+
+    expect(await gamificationService.evaluateBadges(7)).toBe(0);
+
+    expect(repo.countOnTimeDeliveries).not.toHaveBeenCalled();
+    expect(repo.awardBadge).not.toHaveBeenCalled();
+  });
+
+  describe('onBarterCompleted', () => {
+    it('reavalia as badges de quem participou, sem XP próprio da troca', async () => {
+      repo.countBartersCompleted.mockResolvedValue(5);
+      repo.awardBadge.mockResolvedValue(true);
+
+      await gamificationService.onBarterCompleted(8);
+
+      expect(repo.getFreelancerStats).toHaveBeenCalledWith(8);
+      expect(repo.countBartersCompleted).toHaveBeenCalledWith(8);
+      expect(repo.awardBadge.mock.calls).toEqual([[8, 5]]);
+      // O único crédito é a recompensa da badge.
+      expect(repo.applyXp.mock.calls).toEqual([
+        [{ userId: 8, delta: 120, reason: 'badge_earned', referenceId: 5 }],
+      ]);
+    });
+
+    it('troca abaixo do limite não dá nada', async () => {
+      repo.countBartersCompleted.mockResolvedValue(4);
+
+      await gamificationService.onBarterCompleted(8);
+
+      expect(repo.awardBadge).not.toHaveBeenCalled();
+      expect(repo.applyXp).not.toHaveBeenCalled();
+    });
+  });
+
+  it('onContractCompleted avalia entregas no prazo e clientes que voltam depois de contar o contrato', async () => {
+    repo.findBadgeBySlug.mockResolvedValue(firstDeal);
+    repo.awardBadge.mockResolvedValueOnce(false).mockResolvedValue(true);
+    repo.countOnTimeDeliveries.mockResolvedValue(20);
+    repo.countRepeatClients.mockResolvedValue(5);
+
+    await gamificationService.onContractCompleted(7, 77);
+
+    expect(repo.awardBadge.mock.calls).toEqual([
+      [7, 1],
+      [7, 2],
+      [7, 4],
+    ]);
+    // O crédito do contrato vem antes das contagens.
+    expect(repo.applyXp.mock.invocationCallOrder[0]!).toBeLessThan(
+      repo.countOnTimeDeliveries.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  describe('reevaluateAll', () => {
+    it('percorre os freelancers do ranking em lotes pelo id e soma o que foi concedido', async () => {
+      repo.listRankedFreelancers
+        .mockResolvedValueOnce([3, 5])
+        .mockResolvedValueOnce([8, 9])
+        .mockResolvedValueOnce([12]);
+      repo.countOnTimeDeliveries.mockImplementation(async (id) => (id === 5 ? 20 : 0));
+      repo.countBartersCompleted.mockImplementation(async (id) => (id === 12 ? 6 : 0));
+      repo.awardBadge.mockResolvedValue(true);
+
+      expect(await gamificationService.reevaluateAll(2)).toEqual({
+        evaluated: 5,
+        awarded: 2,
+        failed: 0,
+      });
+
+      expect(repo.listRankedFreelancers.mock.calls).toEqual([
+        [0, 2],
+        [5, 2],
+        [9, 2],
+      ]);
+      expect(repo.awardBadge.mock.calls).toEqual([
+        [5, 2],
+        [12, 5],
+      ]);
+    });
+
+    it('lote cheio seguido de lote vazio termina; sem tamanho informado, o lote é de 200', async () => {
+      repo.listRankedFreelancers.mockResolvedValueOnce([]);
+
+      expect(await gamificationService.reevaluateAll()).toEqual({
+        evaluated: 0,
+        awarded: 0,
+        failed: 0,
+      });
+      expect(repo.listRankedFreelancers.mock.calls).toEqual([[0, 200]]);
+
+      repo.listRankedFreelancers.mockReset();
+      repo.listRankedFreelancers.mockResolvedValueOnce([4]).mockResolvedValueOnce([]);
+      expect((await gamificationService.reevaluateAll(1)).evaluated).toBe(1);
+      expect(repo.listRankedFreelancers.mock.calls).toEqual([
+        [0, 1],
+        [4, 1],
+      ]);
+    });
+
+    it('rodar de novo não concede nem credita: o banco diz que as badges já existem', async () => {
+      repo.listRankedFreelancers.mockResolvedValueOnce([5]);
+      repo.countOnTimeDeliveries.mockResolvedValue(20);
+      repo.awardBadge.mockResolvedValue(false);
+
+      expect(await gamificationService.reevaluateAll()).toEqual({
+        evaluated: 1,
+        awarded: 0,
+        failed: 0,
+      });
+      expect(repo.applyXp).not.toHaveBeenCalled();
+    });
+
+    it('a falha de uma pessoa é registrada e não para as outras', async () => {
+      const boom = new Error('deadlock');
+      repo.listRankedFreelancers.mockResolvedValueOnce([3, 5]);
+      repo.getFreelancerStats
+        .mockRejectedValueOnce(boom)
+        .mockResolvedValue(stats as unknown as FreelancerStatsRow);
+      repo.countRepeatClients.mockResolvedValue(5);
+      repo.awardBadge.mockResolvedValue(true);
+
+      expect(await gamificationService.reevaluateAll()).toEqual({
+        evaluated: 1,
+        awarded: 1,
+        failed: 1,
+      });
+      expect(logger.warn.mock.calls).toEqual([
+        [{ err: boom, userId: 3 }, 'reavaliação de badges falhou'],
+      ]);
+      expect(repo.awardBadge.mock.calls).toEqual([[5, 4]]);
     });
   });
 });

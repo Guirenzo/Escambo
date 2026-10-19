@@ -15,7 +15,13 @@ import { messagingRoutes } from './messaging.routes';
 import { MESSAGE_MAX_LENGTH } from './messaging.schema';
 
 const { service } = vi.hoisted(() => ({
-  service: { history: vi.fn(), send: vi.fn(), sendAttachment: vi.fn(), attachment: vi.fn() },
+  service: {
+    history: vi.fn(),
+    send: vi.fn(),
+    sendAttachment: vi.fn(),
+    attachment: vi.fn(),
+    markRead: vi.fn(),
+  },
 }));
 vi.mock('./messaging.service', () => ({ messagingService: service }));
 
@@ -45,6 +51,7 @@ describe('chat: borda HTTP', () => {
       await request(app).post('/api/messaging/contracts/12').set(bad).send({ content: 'oi' }),
       await request(app).post('/api/messaging/contracts/12/attachments').set(bad),
       await request(app).get('/api/messaging/attachments/7').set(bad),
+      await request(app).post('/api/messaging/contracts/12/read').set(bad).send({ upTo: 0 }),
     ];
 
     for (const res of responses) {
@@ -68,6 +75,7 @@ describe('chat: borda HTTP', () => {
           .set(bearer(7))
           .attach('file', PNG, 'a.png'),
         await request(app).get('/api/messaging/attachments/7').set(bearer(7)),
+        await request(app).post('/api/messaging/contracts/12/read').set(bearer(7)).send({}),
       ];
 
       for (const res of responses) {
@@ -97,6 +105,7 @@ describe('chat: borda HTTP', () => {
         .set(bearer(7))
         .attach('file', PNG, 'a.png'),
       await request(app).get('/api/messaging/attachments/9').set(bearer(7)),
+      await request(app).post('/api/messaging/contracts/12/read').set(bearer(7)).send({ upTo: 3 }),
     ];
 
     for (const res of responses) {
@@ -109,6 +118,7 @@ describe('chat: borda HTTP', () => {
     expect(service.send).toHaveBeenCalledWith(12, 7, 'oi');
     expect(service.sendAttachment).toHaveBeenCalledTimes(1);
     expect(service.attachment).toHaveBeenCalledWith(9, 7);
+    expect(service.markRead).toHaveBeenCalledWith(12, 7, 3);
   });
 
   describe('GET /api/messaging/contracts/:id (histórico)', () => {
@@ -166,6 +176,100 @@ describe('chat: borda HTTP', () => {
         error: 'forbidden',
         message: 'Você não participa desta contratação',
       });
+    });
+  });
+
+  describe('POST /api/messaging/contracts/:id/read (leitura, RF-059)', () => {
+    const receipt = {
+      conversationId: 5,
+      marked: 2,
+      upToId: 9,
+      readAt: '2026-10-19T12:00:00.000Z',
+    };
+
+    it('exige login', async () => {
+      const res = await request(app).post('/api/messaging/contracts/12/read').send({ upTo: 9 });
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('missing_token');
+      expect(service.markRead).not.toHaveBeenCalled();
+    });
+
+    it('marca em nome de quem está logado, até a mensagem pedida, e responde 200 com o recibo', async () => {
+      service.markRead.mockResolvedValue(receipt);
+
+      const res = await request(app)
+        .post('/api/messaging/contracts/12/read')
+        .set(bearer(7))
+        .send({ upTo: 9, readerId: 99 })
+        .expect(200);
+
+      expect(res.body).toEqual(receipt);
+      // O leitor é o do token, nunca um campo do corpo.
+      expect(service.markRead).toHaveBeenCalledWith(12, 7, 9);
+    });
+
+    it('sem corpo, ou sem upTo, marca todas as recebidas', async () => {
+      service.markRead.mockResolvedValue({ ...receipt, marked: 0, upToId: null, readAt: null });
+
+      await request(app).post('/api/messaging/contracts/12/read').set(bearer(7)).expect(200);
+      await request(app)
+        .post('/api/messaging/contracts/12/read')
+        .set(bearer(7))
+        .send({})
+        .expect(200);
+
+      expect(service.markRead.mock.calls).toEqual([
+        [12, 7, undefined],
+        [12, 7, undefined],
+      ]);
+    });
+
+    it('upTo que não é inteiro positivo, ou id inválido, é erro de validação e não chega ao service', async () => {
+      for (const body of [{ upTo: 0 }, { upTo: -1 }, { upTo: 1.5 }, { upTo: '9' }]) {
+        const res = await request(app)
+          .post('/api/messaging/contracts/12/read')
+          .set(bearer(7))
+          .send(body)
+          .expect(422);
+        expect(res.body.error).toBe('validation_error');
+      }
+      await request(app).post('/api/messaging/contracts/abc/read').set(bearer(7)).expect(422);
+      expect(service.markRead).not.toHaveBeenCalled();
+    });
+
+    it('conta suspensa marca como lida (registra a leitura, RN-007), mas continua sem enviar', async () => {
+      blocklist.add(7, 'suspended');
+      try {
+        service.markRead.mockResolvedValue(receipt);
+        await request(app)
+          .post('/api/messaging/contracts/12/read')
+          .set(bearer(7))
+          .send({ upTo: 9 })
+          .expect(200);
+        expect(service.markRead).toHaveBeenCalledWith(12, 7, 9);
+
+        const blocked = await request(app)
+          .post('/api/messaging/contracts/12')
+          .set(bearer(7))
+          .send({ content: 'oi' })
+          .expect(403);
+        expect(blocked.body.error).toBe('account_suspended');
+        expect(service.send).not.toHaveBeenCalled();
+      } finally {
+        blocklist.delete(7);
+      }
+    });
+
+    it('quem não é parte do contrato recebe a recusa do service, com o código dele', async () => {
+      service.markRead.mockRejectedValue(
+        new HttpError(403, 'Você não participa desta contratação', 'forbidden'),
+      );
+      const res = await request(app)
+        .post('/api/messaging/contracts/12/read')
+        .set(bearer(99))
+        .send({ upTo: 9 })
+        .expect(403);
+      expect(res.body.error).toBe('forbidden');
     });
   });
 

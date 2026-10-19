@@ -1,6 +1,6 @@
 {
   "name": "@escambo/api",
-  "version": "1.43.0",
+  "version": "1.44.0",
   "private": true,
   "description": "API backend do Escambo — Node + Express + TypeScript",
   "license": "MIT",
@@ -16,7 +16,9 @@
     "test:int": "vitest run -c vitest.integration.config.ts",
     "test:int:cov": "vitest run -c vitest.integration.config.ts --coverage",
     "db:migrate": "tsx src/scripts/migrate.ts",
-    "jobs:run": "tsx src/scripts/run-jobs.ts"
+    "jobs:run": "tsx src/scripts/run-jobs.ts",
+    "badges:reevaluate": "tsx src/scripts/reevaluate-badges.ts",
+    "fields:encrypt": "tsx src/scripts/encrypt-withdrawal-fields.ts"
   },
   "dependencies": {
     "@escambo/types": "*",

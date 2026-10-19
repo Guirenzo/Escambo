@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { optionalUserId } from '../../middlewares/authenticate';
 import {
   createServiceSchema,
   listServicesSchema,
@@ -24,7 +25,8 @@ export async function listMyServices(req: Request, res: Response): Promise<void>
 
 export async function getService(req: Request, res: Response): Promise<void> {
   const { id } = serviceIdSchema.parse(req.params);
-  res.json(await servicesService.getById(id));
+  // Rota pública: o token, se veio, só diz se quem abre é o dono (que não conta visualização).
+  res.json(await servicesService.getById(id, { userId: optionalUserId(req), ip: req.ip }));
 }
 
 export async function updateService(req: Request, res: Response): Promise<void> {

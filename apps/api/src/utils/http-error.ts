@@ -1,6 +1,7 @@
 export interface HttpErrorPublicData {
   opensAt?: string | null;
   contractId?: number;
+  returnAt?: string;
 }
 
 /**

@@ -27,6 +27,7 @@ import { PerfilView } from './features/views/PerfilView';
 import { RankingView } from './features/views/RankingView';
 import { SalaContratoView } from './features/views/SalaContratoView';
 import { ServicosView } from './features/views/ServicosView';
+import { ServicoView } from './features/views/ServicoView';
 import { TrocasView } from './features/views/TrocasView';
 import { SuporteView } from './features/views/SuporteView';
 import { useAuth } from './lib/auth';
@@ -67,6 +68,13 @@ function SalaContratoRoute() {
   return <SalaContratoView contractId={contractId} onBack={() => navigate(-1)} />;
 }
 
+/** /servicos/:id → detalhe do serviço (RF-024, RF-029). */
+function ServicoRoute() {
+  const serviceId = Number(useParams().id);
+  if (!Number.isInteger(serviceId) || serviceId <= 0) return <Navigate to="/servicos" replace />;
+  return <ServicoView serviceId={serviceId} />;
+}
+
 export function App() {
   return (
     <BrowserRouter>
@@ -83,6 +91,7 @@ export function App() {
             <Route element={<Shell />}>
               <Route index element={<InicioView />} />
               <Route path="servicos" element={<ServicosView />} />
+              <Route path="servicos/:id" element={<ServicoRoute />} />
               <Route path="trocas" element={<TrocasView />} />
               <Route path="ranking" element={<RankingView />} />
               <Route path="carteira" element={<CarteiraView />} />
