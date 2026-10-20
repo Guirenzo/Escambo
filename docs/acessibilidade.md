@@ -34,7 +34,7 @@ A auditoria tem seis camadas. Cada critério da tabela aponta qual delas o prova
    - regiões vivas: a região educada dos avisos existe antes do primeiro aviso, o sucesso entra nela e o erro sai como `role="alert"`, fora dela;
    - movimento reduzido: com `prefers-reduced-motion: reduce`, esqueleto, pulso e aviso não animam (nem em laço), botões não têm transição, e o chat rola até a última mensagem sem animação (sem a preferência, rola suave).
 
-4. **Texto maior e mais espaçado** (`apps/web/e2e/texto.a11y.spec.ts`, desktop e celular, desde a 1.47.0). Em 24 telas e estados (as públicas, as do menu, a sala com anexos de nome comprido, trocas com proposta, o perfil com um trabalho de título e link compridos, o perfil público com a galeria aberta e o admin com dados), duas vezes:
+4. **Texto maior e mais espaçado** (`apps/web/e2e/texto.a11y.spec.ts`, desktop e celular, desde a 1.47.0). Em 24 telas e estados (as públicas, as do menu, a sala com anexos de nome comprido, trocas com proposta, o perfil com um trabalho de título e link compridos, o perfil público com a galeria aberta e o admin com dados e uma denúncia de descrição comprida na fila), duas vezes:
    - 1.4.4: só o texto a 200% (a raiz em 32 px, como o tamanho de fonte do navegador; vale porque o CSS usa `rem`), na largura da tela;
    - 1.4.12: altura da linha 1,5, parágrafo com 2 em depois, letras a 0,12 em e palavras a 0,16 em.
 
@@ -91,6 +91,7 @@ O axe, estendido às telas que faltavam e ao celular, achou três violações, t
 | Tamanho base da fonte fixo em `15px`: o tamanho de fonte escolhido nas configurações do navegador não tinha efeito | 1.4.4 | `93.75%` (16 px a partir de 1440 px de tela): os mesmos 15 px no padrão | Revisão de `styles.css` |
 | E-mail de acesso no perfil invadia o cartão do telefone com o texto a 200% | 1.4.4 | Quebra em qualquer ponto | `texto.a11y` |
 | Nome no pódio do ranking, títulos da troca, nome do anexo, link do portfólio e título da galeria cortados com reticências | 1.4.4, 1.4.12 | Quebram a linha em vez de cortar | `texto.a11y` (a mutação que devolve as reticências reprova) |
+| Admin: descrição da denúncia, trecho denunciado, nota da decisão, descrição da disputa e motivo do pedido de exclusão cortados em duas linhas, sem o texto inteiro em outro lugar | 1.4.4, 1.4.12 (e perda de conteúdo mesmo no tamanho normal) | O corte saiu: o texto aparece inteiro | `texto.a11y` (com uma denúncia de descrição comprida na fila) |
 | Iniciais do avatar no ranking lidas pelo leitor de tela e cortadas no círculo com o texto maior | 1.1.1, 1.4.4 | `aria-hidden`, como no componente `Avatar`: o nome vem ao lado | `texto.a11y` |
 
 ### Itens que o axe deixa para revisão

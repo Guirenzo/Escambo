@@ -24,6 +24,7 @@ Texto maior e mais espaçado sem perder conteúdo, e varredura de segredos no CI
 
 - Com o texto a 200%, os valores dos indicadores (início, carteira, admin) invadiam o cartão vizinho, e o e-mail de acesso no perfil invadia o cartão do telefone.
 - O e-mail longo no aviso de saque bloqueado fazia a carteira rolar na horizontal.
+- No admin, a descrição da denúncia, o trecho denunciado, a nota da decisão, a descrição da disputa e o motivo do pedido de exclusão eram cortados em duas linhas, e o texto inteiro não aparecia em lugar nenhum. Agora aparecem inteiros.
 - As iniciais do avatar no ranking eram lidas pelo leitor de tela, além do nome ao lado.
 
 ### Para atualizar
