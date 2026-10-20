@@ -302,6 +302,8 @@ export const lgpdRepository = {
         `DELETE FROM email_change_requests WHERE user_id = :userId`,
         { userId },
       );
+      // A verificação em duas etapas (ADR 66): o segredo cifrado e os hashes dos códigos saem.
+      await conn.query<ResultSetHeader>(`DELETE FROM user_mfa WHERE user_id = :userId`, { userId });
       await conn.query<ResultSetHeader>(
         `UPDATE user_sessions SET revoked_at = NOW() WHERE user_id = :userId AND revoked_at IS NULL`,
         { userId },

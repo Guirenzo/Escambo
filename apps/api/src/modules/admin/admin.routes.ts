@@ -31,9 +31,11 @@ import {
   listDeletionRequests,
   listEmails,
   listWithdrawals,
+  lookupUser,
   processWithdrawal,
   reactivateUser,
   rejectDeletionRequest,
+  resetUserMfa,
   resolveDispute,
   suspendUser,
 } from './admin.controller';
@@ -65,6 +67,9 @@ adminRoutes.post('/disputes/:id/resolve', asyncHandler(resolveDispute));
 adminRoutes.post('/users/:ulid/suspend', asyncHandler(suspendUser));
 adminRoutes.post('/users/:ulid/ban', asyncHandler(banUser));
 adminRoutes.post('/users/:ulid/reactivate', asyncHandler(reactivateUser));
+// Atendimento (ADR 66): achar a conta pelo e-mail e desativar a 2FA de quem perdeu o acesso.
+adminRoutes.get('/users/lookup', asyncHandler(lookupUser));
+adminRoutes.post('/users/:ulid/mfa/reset', asyncHandler(resetUserMfa));
 adminRoutes.get('/withdrawals', asyncHandler(listWithdrawals));
 adminRoutes.post('/withdrawals/:id/process', asyncHandler(processWithdrawal));
 adminRoutes.post('/withdrawals/:id/complete', asyncHandler(completeWithdrawal));

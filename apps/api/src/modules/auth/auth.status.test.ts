@@ -10,6 +10,10 @@ vi.mock('./auth.repository', () => ({
     updateRole: vi.fn(),
   },
 }));
+// Contas sem a verificação em duas etapas (ADR 66): o login devolve a sessão direto.
+vi.mock('./mfa.repository', () => ({
+  mfaRepository: { isEnabled: vi.fn().mockResolvedValue(false) },
+}));
 vi.mock('./session.repository', () => ({
   sessionRepository: {
     create: vi.fn(),
@@ -21,7 +25,12 @@ vi.mock('./session.repository', () => ({
 
 import { authRepository, type UserRow } from './auth.repository';
 import { sessionRepository, type SessionRow } from './session.repository';
+import type { AuthResponse } from '@escambo/types';
 import { authService } from './auth.service';
+
+/** O login de conta sem 2FA devolve a sessão (e não o MfaChallenge): o tipo diz isso aqui. */
+const loginWithSession = (...args: Parameters<typeof authService.login>) =>
+  authService.login(...args) as Promise<AuthResponse>;
 
 const repo = vi.mocked(authRepository);
 const sessions = vi.mocked(sessionRepository);
@@ -45,7 +54,7 @@ describe('conta suspensa/banida (RN-007)', () => {
 
   it('suspenso entra com sessão de consulta e o status atual na resposta', async () => {
     repo.findByEmail.mockResolvedValue(user('suspended', hash));
-    const result = await authService.login({
+    const result = await loginWithSession({
       email: 'pessoa@escambo.test',
       password: 'senha-forte-123',
     });
@@ -114,7 +123,7 @@ describe('conta suspensa/banida (RN-007)', () => {
   it('suspenso em ADMIN_EMAILS não é promovido no login', async () => {
     const suspended = { ...user('suspended', hash), email: 'root@escambo.test' } as UserRow;
     repo.findByEmail.mockResolvedValue(suspended);
-    const result = await authService.login({ email: suspended.email, password: 'senha-forte-123' });
+    const result = await loginWithSession({ email: suspended.email, password: 'senha-forte-123' });
     expect(result.user).toMatchObject({ role: 'client', status: 'suspended' });
     expect(repo.updateRole).not.toHaveBeenCalled();
   });
@@ -122,7 +131,7 @@ describe('conta suspensa/banida (RN-007)', () => {
   it('conta ativa entra normalmente', async () => {
     repo.findByEmail.mockResolvedValue(user('active', hash));
     sessions.create.mockResolvedValue(undefined as never);
-    const res = await authService.login({
+    const res = await loginWithSession({
       email: 'pessoa@escambo.test',
       password: 'senha-forte-123',
     });

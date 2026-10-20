@@ -9,6 +9,7 @@ import { Stars } from '../../components/Stars';
 import { Button, Field, Input, PageHeader, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
+import { useScrollToHashWhenSettled } from '../../lib/useScrollToHash';
 import { dtm, PERIOD_LABEL, PERIOD_ORDER, WEEKDAY_SHORT } from '../../lib/format';
 import {
   useFreelancerReviews,
@@ -26,6 +27,7 @@ import { PortfolioCard } from '../profile/PortfolioCard';
 import { PushCard } from '../profile/PushCard';
 import { PrivacidadeCard } from '../profile/PrivacidadeCard';
 import { SenhaCard } from '../profile/SenhaCard';
+import { DoisFatoresCard } from '../profile/DoisFatoresCard';
 import { EmailCard } from '../profile/EmailCard';
 import { TelefoneCard } from '../profile/TelefoneCard';
 import { ImageUploadButton } from '../../components/ImageUploadButton';
@@ -111,6 +113,8 @@ function AvaliacoesRecebidas({ userId }: { userId: number }) {
 
 export function PerfilView() {
   usePageTitle('Perfil');
+  // O painel admin manda para /perfil#dois-fatores quando exige a 2FA: rola até o cartão.
+  useScrollToHashWhenSettled();
   const { user } = useAuth();
   const profiles = useProfilesMe();
   const putFreelancer = usePutFreelancerProfile();
@@ -462,6 +466,7 @@ export function PerfilView() {
             <EmailCard />
             <TelefoneCard />
             <SenhaCard />
+            <DoisFatoresCard />
             <PrivacidadeCard />
           </div>
         )}

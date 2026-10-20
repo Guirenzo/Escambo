@@ -29,6 +29,7 @@ vi.mock('./api', async (importOriginal) => {
     api: {
       me: vi.fn(),
       login: vi.fn(),
+      loginMfa: vi.fn(),
       register: vi.fn(),
       logout: vi.fn(),
       pushUnsubscribe: vi.fn(),
@@ -47,7 +48,7 @@ vi.mock('./timezones', async (importOriginal) => {
 });
 
 const apiMock = api as unknown as Record<
-  'me' | 'login' | 'register' | 'logout' | 'pushUnsubscribe',
+  'me' | 'login' | 'loginMfa' | 'register' | 'logout' | 'pushUnsubscribe',
   Mock
 >;
 
@@ -224,6 +225,87 @@ describe('entrar', () => {
       );
     });
     expect(result.current.error).toBe('Erro ao entrar');
+  });
+});
+
+describe('entrar com verificação em duas etapas (RF-090)', () => {
+  const challenge = { mfaRequired: true as const, mfaToken: 'mfa-1', expiresInSeconds: 300 };
+
+  it('senha certa numa conta com 2FA: devolve o pedido do código e ainda não abre a sessão', async () => {
+    apiMock.login.mockResolvedValue(challenge);
+    const { result } = mountHook();
+
+    let returned: unknown;
+    await act(async () => {
+      returned = await result.current.login({ email: 'a@b.com', password: 'certa' });
+    });
+
+    expect(returned).toEqual(challenge);
+    expect(result.current.user).toBeNull();
+    expect(result.current.error).toBeNull();
+    expect(getToken()).toBeNull();
+    expect(getRefreshToken()).toBeNull();
+  });
+
+  it('sem 2FA, o login devolve null (a sessão já abriu)', async () => {
+    apiMock.login.mockResolvedValue({ ...tokens, user: ana });
+    const { result } = mountHook();
+
+    let returned: unknown = 'nada';
+    await act(async () => {
+      returned = await result.current.login({ email: 'a@b.com', password: 'certa' });
+    });
+
+    expect(returned).toBeNull();
+    expect(result.current.user).toEqual(ana);
+  });
+
+  it('o código certo abre a sessão: guarda os dois tokens e mostra o usuário', async () => {
+    apiMock.loginMfa.mockResolvedValue({ ...tokens, user: ana });
+    const { result } = mountHook();
+
+    await act(async () => {
+      await result.current.loginMfa({ mfaToken: 'mfa-1', code: '123456' });
+    });
+
+    expect(apiMock.loginMfa).toHaveBeenCalledWith({ mfaToken: 'mfa-1', code: '123456' });
+    expect(result.current.user).toEqual(ana);
+    expect(getToken()).toBe('acesso-1');
+    expect(getRefreshToken()).toBe('refresh-1');
+  });
+
+  it('código recusado: o erro vai para quem chamou (o passo 2 mostra junto do campo), não para o contexto', async () => {
+    apiMock.loginMfa.mockRejectedValue(new Error('Código inválido.'));
+    const { result } = mountHook();
+
+    await act(async () => {
+      await expect(result.current.loginMfa({ mfaToken: 'mfa-1', code: '000000' })).rejects.toThrow(
+        'Código inválido.',
+      );
+    });
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.user).toBeNull();
+    expect(getToken()).toBeNull();
+  });
+
+  it('saiu enquanto o código era conferido: a resposta que chega depois não abre a sessão', async () => {
+    let resolve!: (v: unknown) => void;
+    apiMock.loginMfa.mockReturnValue(new Promise((r) => (resolve = r)));
+    const { result } = mountHook();
+
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.loginMfa({ mfaToken: 'mfa-1', code: '123456' });
+    });
+    act(() => result.current.logout());
+    await act(async () => {
+      resolve({ ...tokens, user: ana });
+      await pending;
+    });
+
+    expect(result.current.user).toBeNull();
+    expect(getToken()).toBeNull();
   });
 });
 

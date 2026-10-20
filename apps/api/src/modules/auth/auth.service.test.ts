@@ -31,6 +31,10 @@ vi.mock('../notifications/push.repository', () => ({
   pushRepository: { removeAllForUser: vi.fn().mockResolvedValue(0) },
 }));
 
+// Contas sem a verificação em duas etapas (ADR 66): o login devolve a sessão direto.
+vi.mock('./mfa.repository', () => ({
+  mfaRepository: { isEnabled: vi.fn().mockResolvedValue(false) },
+}));
 vi.mock('./session.repository', () => ({
   sessionRepository: {
     create: vi.fn(),
@@ -40,6 +44,7 @@ vi.mock('./session.repository', () => ({
   },
 }));
 
+import type { AuthResponse } from '@escambo/types';
 import { authService } from './auth.service';
 import { authRepository, type UserRow } from './auth.repository';
 import { sessionRepository, type SessionRow } from './session.repository';
@@ -49,6 +54,10 @@ import { lgpdRepository } from '../lgpd/lgpd.repository';
 import { CURRENT_LEGAL_VERSION } from '../lgpd/legal-versions';
 import { auditService } from '../audit/audit.service';
 import { logger } from '../../config/logger';
+
+/** O login de conta sem 2FA devolve a sessão (e não o MfaChallenge): o tipo diz isso aqui. */
+const loginWithSession = (...args: Parameters<typeof authService.login>) =>
+  authService.login(...args) as Promise<AuthResponse>;
 
 const CTX = { ip: '127.0.0.1', userAgent: 'vitest' };
 const repo = vi.mocked(authRepository);
@@ -280,7 +289,7 @@ describe('authService.login', () => {
     sessions.create.mockResolvedValue(undefined);
 
     const before = Date.now();
-    const res = await authService.login(
+    const res = await loginWithSession(
       { email: 'rafael@exemplo.com', password: 'senha12345' },
       { ip: '1.2.3.4', userAgent: 'vitest' },
     );
@@ -327,7 +336,7 @@ describe('authService.login', () => {
   it('sem contexto da requisição, a sessão é gravada com IP e navegador nulos (e não undefined)', async () => {
     repo.findByEmail.mockResolvedValue(fakeUser({ password_hash: KNOWN_HASH }));
 
-    await authService.login({ email: 'rafael@exemplo.com', password: 'senha12345' });
+    await loginWithSession({ email: 'rafael@exemplo.com', password: 'senha12345' });
 
     expect(sessions.create.mock.calls[0]![0]).toStrictEqual({
       userId: 1,
@@ -342,8 +351,8 @@ describe('authService.login', () => {
     repo.findByEmail.mockResolvedValue(fakeUser({ password_hash: KNOWN_HASH }));
     const credentials = { email: 'rafael@exemplo.com', password: 'senha12345' };
 
-    await authService.login(credentials, { ip: '1.2.3.4', userAgent: 'M'.repeat(2000) });
-    await authService.login(credentials, { ip: '1.2.3.4', userAgent: 'N'.repeat(512) });
+    await loginWithSession(credentials, { ip: '1.2.3.4', userAgent: 'M'.repeat(2000) });
+    await loginWithSession(credentials, { ip: '1.2.3.4', userAgent: 'N'.repeat(512) });
 
     expect(sessions.create.mock.calls.map((c) => c[0].userAgent)).toEqual([
       'M'.repeat(512),
@@ -381,7 +390,7 @@ describe('authService.login', () => {
       fakeUser({ email: 'root@escambo.test', role: 'admin', password_hash: KNOWN_HASH }),
     );
 
-    const res = await authService.login({ email: 'root@escambo.test', password: 'senha12345' });
+    const res = await loginWithSession({ email: 'root@escambo.test', password: 'senha12345' });
 
     expect(repo.updateRole).not.toHaveBeenCalled();
     expect(res.user.role).toBe('admin');
@@ -393,7 +402,7 @@ describe('authService.login', () => {
       fakeUser({ id: 5, email: 'root@escambo.test', role: 'client', password_hash: KNOWN_HASH }),
     );
 
-    const res = await authService.login({ email: 'root@escambo.test', password: 'senha12345' });
+    const res = await loginWithSession({ email: 'root@escambo.test', password: 'senha12345' });
 
     expect(repo.updateRole).toHaveBeenCalledTimes(1);
     expect(repo.updateRole).toHaveBeenCalledWith(5, 'admin');
@@ -464,7 +473,7 @@ describe('authService.login', () => {
 
   it('login certo não registra tentativa falha', async () => {
     repo.findByEmail.mockResolvedValue(fakeUser({ password_hash: KNOWN_HASH }));
-    await authService.login({ email: 'rafael@exemplo.com', password: 'senha12345' }, CTX);
+    await loginWithSession({ email: 'rafael@exemplo.com', password: 'senha12345' }, CTX);
     expect(vi.mocked(auditService).log).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: 'auth.login_failed' }),
     );

@@ -265,6 +265,24 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
+### Atualizar para a 1.48.0 (ADR 66)
+
+Uma migration (0050, segura de rodar de novo) e a verificação em duas etapas.
+
+**1. A 2FA depende da `FIELD_ENCRYPTION_KEY`.** O segredo do app autenticador é gravado cifrado com a mesma chave da chave PIX (seção "Atualizar para a 1.44.0"). Sem ela, o cartão do perfil diz que a verificação está indisponível neste servidor, e ninguém consegue ativar. Gere e ponha no `.env` antes de subir:
+
+```bash
+openssl rand -base64 32     # FIELD_ENCRYPTION_KEY no .env
+```
+
+**2. Painel admin com 2FA (recomendado).** Com `ADMIN_MFA_REQUIRED=true` no `.env`, todo `/admin/*` responde 403 para o admin que ainda não ativou a 2FA no perfil, e o painel mostra o caminho. Ligada sem a `FIELD_ENCRYPTION_KEY`, a API não sobe (nenhum admin conseguiria ativar). Ordem segura: chave → deploy → cada admin ativa no perfil → `ADMIN_MFA_REQUIRED=true` → `up -d`.
+
+**3. Guarde a chave.** Perder ou trocar a `FIELD_ENCRYPTION_KEY` sem pôr a antiga em `FIELD_ENCRYPTION_OLD_KEYS` torna os segredos ilegíveis: o código do app passa a ser recusado (a conta não entra sem segundo fator), e só os códigos de recuperação ou o atendimento resolvem.
+
+**4. Quem perdeu o celular e os códigos.** O admin, no painel, em "Atendimento: conta", busca a conta pelo e-mail e desativa a 2FA com um motivo. A ação vai para `admin_actions` e para a auditoria, as sessões da conta caem e o titular recebe um e-mail. Confira a identidade da pessoa antes, por um canal que não seja só o e-mail da conta.
+
+**5. Conferir.** `curl -s https://SEU_DOMINIO/api/health` mostra o commit da 1.48.0; no perfil, o cartão "Verificação em duas etapas" aparece com o botão "Ativar".
+
 ### Atualizar para a 1.46.0 (ADR 64)
 
 Duas migrations (0048 e 0049), seguras de rodar de novo, e o backup passa a ser um serviço do compose.
@@ -604,6 +622,7 @@ docker compose -f docker-compose.prod.yml start api
 - [ ] Serviço `backup` "healthy" (banco **e** arquivos da API, todo dia) **e** cópia fora da VPS (perfil `offsite`); restauração testada uma vez.
 - [ ] Atualizações do sistema (`unattended-upgrades`) e das imagens oficiais (`pull` periódico).
 - [ ] 2FA na conta do GitHub: quem controla `main` controla o que a VPS puxa.
+- [ ] `FIELD_ENCRYPTION_KEY` no `.env` (e guardada fora da VPS), 2FA ativa em cada conta admin e `ADMIN_MFA_REQUIRED=true`.
 
 ## 7. Problemas comuns
 

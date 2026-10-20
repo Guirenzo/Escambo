@@ -29,6 +29,34 @@ export const loginSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
+/**
+ * Segundo fator (ADR 66): 6 dígitos do app autenticador ou um código de recuperação (XXXX-XXXX).
+ * A forma é conferida no service, que conta o erro na trava (código com cara errada também conta).
+ */
+const mfaCodeSchema = z
+  .string()
+  .trim()
+  .min(1, 'Informe o código')
+  .max(32, 'Código inválido: use os 6 dígitos do app ou um código de recuperação');
+
+/** POST /auth/login/mfa: o passe do login com senha e o código. */
+export const loginMfaSchema = z.object({
+  mfaToken: z.string().min(1, 'Token obrigatório').max(2048, 'Token inválido'),
+  code: mfaCodeSchema,
+});
+export type LoginMfaInput = z.infer<typeof loginMfaSchema>;
+/** Começar a ativação pede a senha atual: quem está com a conta aberta não liga a 2FA dos outros. */
+export const mfaSetupSchema = z.object({
+  password: z.string().min(1, 'Informe a senha atual'),
+});
+export const mfaEnableSchema = z.object({ code: mfaCodeSchema });
+/** Desativar e trocar os códigos de recuperação: a senha e um código (do app ou de recuperação). */
+export const mfaConfirmSchema = z.object({
+  password: z.string().min(1, 'Informe a senha atual'),
+  code: mfaCodeSchema,
+});
+export type MfaConfirmInput = z.infer<typeof mfaConfirmSchema>;
+
 export const forgotPasswordSchema = z.object({
   email: z.string().email('E-mail inválido'),
 });

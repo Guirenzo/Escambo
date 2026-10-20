@@ -213,6 +213,68 @@ export interface RefreshResponse {
   refreshToken: string;
 }
 
+// --- Verificação em duas etapas (RF-090, RNF-042, ADR 66) ---
+
+/**
+ * Resposta do login com a senha certa numa conta com 2FA: ainda sem sessão. O `mfaToken` vale
+ * alguns minutos e só serve para POST /auth/login/mfa, com o código do app ou um de recuperação.
+ */
+export interface MfaChallenge {
+  mfaRequired: true;
+  mfaToken: string;
+  expiresInSeconds: number;
+}
+
+/** POST /auth/login: a sessão, ou o pedido do segundo fator. */
+export type LoginResponse = AuthResponse | MfaChallenge;
+
+export interface MfaLoginRequest {
+  mfaToken: string;
+  /** 6 dígitos do app autenticador, ou um código de recuperação (XXXX-XXXX). */
+  code: string;
+}
+
+/** GET /auth/mfa: a situação da 2FA da própria conta. */
+export interface MfaStatus {
+  enabled: boolean;
+  /** Quando foi ativada (ISO), ou null. */
+  confirmedAt: string | null;
+  /** Códigos de recuperação ainda não usados. */
+  recoveryCodesLeft: number;
+  /** O servidor tem a chave que cifra o segredo (FIELD_ENCRYPTION_KEY): sem ela, não dá para ativar. */
+  available: boolean;
+  /** Conta admin num servidor com ADMIN_MFA_REQUIRED: o painel só abre com a 2FA ativa. */
+  required: boolean;
+}
+
+/** POST /auth/mfa/setup: o segredo novo, ainda não ativo, para o app autenticador. */
+export interface MfaSetup {
+  /** Base32, para digitar no app (quem não consegue ler o QR). */
+  secret: string;
+  /** otpauth://totp/... (o conteúdo do QR). */
+  otpauthUrl: string;
+}
+
+/** POST /auth/mfa/enable: a sessão nova desta conta (as outras caem) e os códigos, mostrados uma vez. */
+export interface MfaEnabledResponse extends RefreshResponse {
+  recoveryCodes: string[];
+}
+
+/** POST /auth/mfa/recovery-codes: códigos novos (os anteriores deixam de valer). */
+export interface MfaRecoveryCodesResponse {
+  recoveryCodes: string[];
+}
+
+/** Conta encontrada pelo admin, para o atendimento (GET /admin/users/lookup?email=). */
+export interface AdminAccountLookup {
+  ulid: string;
+  email: string;
+  role: UserRole;
+  status: UserStatus;
+  mfaEnabled: boolean;
+  createdAt: string;
+}
+
 // --- Favoritos ---
 
 export type FavoriteTargetType = 'service' | 'freelancer';

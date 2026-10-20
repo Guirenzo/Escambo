@@ -77,6 +77,14 @@ import type {
   LeaderboardQuery,
   Mission,
   LoginRequest,
+  LoginResponse,
+  MfaChallenge,
+  MfaEnabledResponse,
+  MfaLoginRequest,
+  MfaRecoveryCodesResponse,
+  MfaSetup,
+  MfaStatus,
+  AdminAccountLookup,
   MediaPurpose,
   MediaUpload,
   ModerationHealth,
@@ -266,8 +274,26 @@ function accountErrorResponse(res: Response, token: string | null, data: unknown
   else if (BLOCKED_CODES.has(code)) expireSession();
 }
 
-// Nessas rotas um 401 é resposta legítima (credenciais), não token vencido.
-const NO_REFRESH = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
+// Nessas rotas um 401 é resposta legítima (credenciais), não token vencido. No segundo passo do
+// login (2FA), o 401 é o pedido do segundo fator que venceu: a tela volta para a senha.
+const NO_REFRESH = [
+  '/auth/login',
+  '/auth/login/mfa',
+  '/auth/register',
+  '/auth/refresh',
+  '/auth/logout',
+];
+
+/** A resposta do login é o pedido do segundo fator (conta com 2FA), e não a sessão. */
+export function isMfaChallenge(res: LoginResponse): res is MfaChallenge {
+  return (res as Partial<MfaChallenge>).mfaRequired === true;
+}
+
+/** O que a 2FA pede para mexer nela: a senha da conta e um código do app ou de recuperação. */
+export interface MfaConfirmRequest {
+  password: string;
+  code: string;
+}
 
 /** Falha HTTP com os dados necessários para orientar o próximo passo do usuário. */
 export class ApiRequestError extends Error {
@@ -510,8 +536,37 @@ export const api = {
   // auth
   register: (body: RegisterRequest) =>
     request<PublicUser>('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
+  /** Senha conferida: a sessão, ou (conta com 2FA) o pedido do segundo fator, ainda sem sessão. */
   login: (body: LoginRequest) =>
-    request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+    request<LoginResponse>('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+  /** Segundo passo do login (RF-090): o código do app ou um de recuperação abre a sessão. */
+  loginMfa: (body: MfaLoginRequest) =>
+    request<AuthResponse>('/auth/login/mfa', { method: 'POST', body: JSON.stringify(body) }),
+  // verificação em duas etapas da própria conta (RF-090, ADR 66)
+  mfaStatus: () => request<MfaStatus>('/auth/mfa'),
+  /** Começa a ativação: um segredo novo, ainda inativo, para o app autenticador. */
+  mfaSetup: (password: string) =>
+    request<MfaSetup>('/auth/mfa/setup', { method: 'POST', body: JSON.stringify({ password }) }),
+  /**
+   * Ativa com o primeiro código do app. A API encerra todas as sessões e devolve um par novo só
+   * para esta, como na troca de senha: guardá-lo aqui é o que mantém a pessoa dentro.
+   */
+  mfaEnable: async (code: string): Promise<MfaEnabledResponse> => {
+    const res = await request<MfaEnabledResponse>('/auth/mfa/enable', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+    setSession({ accessToken: res.accessToken, refreshToken: res.refreshToken });
+    return res;
+  },
+  mfaDisable: (body: MfaConfirmRequest) =>
+    request<void>('/auth/mfa/disable', { method: 'POST', body: JSON.stringify(body) }),
+  /** Códigos de recuperação novos; os anteriores deixam de valer. */
+  mfaRecoveryCodes: (body: MfaConfirmRequest) =>
+    request<MfaRecoveryCodesResponse>('/auth/mfa/recovery-codes', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   me: () => request<PublicUser>('/auth/me'),
   logoutAll: () => request<{ revoked: number }>('/auth/logout-all', { method: 'POST' }),
   logout: (refreshToken: string) =>
@@ -903,6 +958,15 @@ export const api = {
     }),
   adminModerateUser: (ulid: string, action: 'suspend' | 'ban' | 'reactivate') =>
     request<void>(`/admin/users/${encodeURIComponent(ulid)}/${action}`, { method: 'POST' }),
+  /** Atendimento: a conta pelo e-mail (404 se não existe). */
+  adminAccountLookup: (email: string) =>
+    request<AdminAccountLookup>(`/admin/users/lookup?email=${encodeURIComponent(email)}`),
+  /** Tira a 2FA de quem perdeu o app e os códigos; o motivo fica no registro do atendimento. */
+  adminResetMfa: (ulid: string, reason: string) =>
+    request<void>(`/admin/users/${encodeURIComponent(ulid)}/mfa/reset`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
   // moderação (ADR 39)
   adminReports: (status: 'pending' | 'resolved' = 'pending') =>
     request<AdminReportGroup[]>(`/admin/reports?status=${status}`),

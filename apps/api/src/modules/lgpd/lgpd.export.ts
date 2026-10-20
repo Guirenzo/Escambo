@@ -7,6 +7,7 @@ import type { RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { env } from '../../config/env';
 import { openDestination } from '../withdrawal/withdrawal.fields';
+import { parseStoredRecoveryCodes, recoveryCodesLeft } from '../auth/recovery-codes';
 
 /**
  * Portabilidade (LGPD, art. 18, V): monta a cópia de tudo que a plataforma guarda sobre o
@@ -25,9 +26,11 @@ import { openDestination } from '../withdrawal/withdrawal.fields';
  * Formato 1.10: cada mensagem do chat traz read_at, quando o destinatário leu (RF-059).
  * Também na 1.10: cada serviço traz is_onsite (atende presencial, RF-023) e as tags (RF-024).
  * Formato 1.11 (1.45.0): os pedidos de troca de e-mail (RF-017), sem o token do link.
+ * Formato 1.12 (1.48.0): a verificação em duas etapas (ADR 66) — se está ativa, desde quando e
+ * quantos códigos de recuperação sobram; nunca o segredo nem os hashes dos códigos.
  */
 
-export const EXPORT_FORMAT_VERSION = '1.11';
+export const EXPORT_FORMAT_VERSION = '1.12';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -236,6 +239,13 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
        FROM email_change_requests WHERE user_id = :userId ORDER BY id`,
     p,
   );
+  // A 2FA (ADR 66): o segredo não é lido; os hashes dos códigos só servem para contar os livres.
+  const [mfa] = await q(
+    `SELECT is_enabled, confirmed_at, recovery_codes
+       FROM user_mfa WHERE user_id = :userId AND method = 'totp'`,
+    p,
+  );
+  const mfaEnabled = Number(mfa?.is_enabled ?? 0) === 1;
   const lgpdRequests = await q(
     `SELECT 'exclusao' AS tipo, id, status, reason AS motivo, created_at
        FROM data_deletion_requests WHERE user_id = :userId
@@ -279,6 +289,14 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     registrosDeSeguranca: securityLog,
     emailsEnviados: emails,
     pedidosDeTrocaDeEmail: emailChanges,
+    mfa: {
+      enabled: mfaEnabled,
+      confirmedAt:
+        mfaEnabled && mfa?.confirmed_at ? new Date(mfa.confirmed_at as Date).toISOString() : null,
+      recoveryCodesLeft: mfaEnabled
+        ? recoveryCodesLeft(parseStoredRecoveryCodes(mfa?.recovery_codes))
+        : 0,
+    },
     solicitacoesLgpd: lgpdRequests,
   };
 }

@@ -8,6 +8,7 @@ import { lgpdService } from '../lgpd/lgpd.service';
 import { mailService } from '../mail/mail.service';
 import { withdrawalService } from '../withdrawal/withdrawal.service';
 import {
+  accountLookupQuerySchema,
   adminDeletionsQuerySchema,
   adminEmailsQuerySchema,
   adminWithdrawalsQuerySchema,
@@ -16,6 +17,7 @@ import {
   disputeIdParamSchema,
   failWithdrawalSchema,
   rejectDeletionSchema,
+  resetMfaSchema,
   resolveDisputeSchema,
   userUlidSchema,
   withdrawalIdParamSchema,
@@ -92,6 +94,29 @@ async function moderate(
     action: `user_${action}`,
     entityType: 'user',
     newValue: { ulid },
+    ...audit(req),
+  });
+  res.status(204).send();
+}
+
+// ---------- Atendimento: conta e verificação em duas etapas (ADR 66) ----------
+
+/** GET /admin/users/lookup?email= — a conta pelo e-mail, com a situação da 2FA. */
+export async function lookupUser(req: Request, res: Response): Promise<void> {
+  const { email } = accountLookupQuerySchema.parse(req.query);
+  res.json(await adminService.lookupAccount(email));
+}
+
+/** POST /admin/users/:ulid/mfa/reset — desativa a 2FA de quem perdeu o acesso (motivo obrigatório). */
+export async function resetUserMfa(req: Request, res: Response): Promise<void> {
+  const { ulid } = userUlidSchema.parse(req.params);
+  const { reason } = resetMfaSchema.parse(req.body ?? {});
+  const { sessionsRevoked } = await adminService.resetMfa(req.user!.uid, ulid, reason);
+  void auditService.log({
+    userId: req.user!.uid,
+    action: 'mfa_reset_by_admin',
+    entityType: 'user',
+    newValue: { ulid, sessionsRevoked },
     ...audit(req),
   });
   res.status(204).send();

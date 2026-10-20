@@ -4438,3 +4438,65 @@ button.support-ticket:hover:not(:disabled) {
 .email-addr {
   overflow-wrap: anywhere;
 }
+
+/* ---------- Verificação em duas etapas (RF-090, ADR 66) ---------- */
+/* Título de cada passo: recebe o foco ao trocar de passo, então é focável (tabIndex -1). */
+.mfa-step-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+/* QR à esquerda e a chave em texto ao lado; em tela estreita, um embaixo do outro. */
+.mfa-qr {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+.mfa-qr > .stack {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.qr-svg {
+  flex: none;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+/* A chave em grupos de 4: quebra entre os grupos, nunca cortada (WCAG 1.4.4, 1.4.10). */
+.mfa-secret {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+.mfa-codes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 6px 16px;
+  margin: 0;
+  padding: 10px 14px;
+  list-style-position: inside;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.95rem;
+}
+/* Alternar o código e voltar, no passo 2 do login: botões-link sozinhos na linha, com 24 px de
+   alvo (WCAG 2.5.8). */
+button.link.mfa-link {
+  min-height: 24px;
+}
+/* Conta achada pelo atendimento (admin): rótulo em cima, valor embaixo, quantos couberem na linha. */
+.lookup-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+}
+.lookup-list dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}

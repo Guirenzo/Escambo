@@ -246,7 +246,7 @@ describe('field-crypto (RNF-017)', () => {
       expect(h.logger.info.mock.calls).toEqual([
         [
           { keyId: ID_B, oldKeys: 1 },
-          'Cifragem de campo ligada (RNF-017): chave PIX e dados bancários dos saques',
+          'Cifragem de campo ligada (RNF-017): chave PIX e dados bancários dos saques, e o segredo da verificação em duas etapas',
         ],
       ]);
       expect(JSON.stringify(h.logger.info.mock.calls)).not.toContain(KEY_B);
@@ -263,6 +263,7 @@ describe('field-crypto (RNF-017)', () => {
       expect(message).toContain('FIELD_ENCRYPTION_KEY não configurada');
       expect(message).toContain('TEXTO PURO');
       expect(message).toContain('fields:encrypt');
+      expect(message).toContain('verificação em duas etapas fica indisponível');
     });
 
     it('sem a chave fora de produção (o padrão daqui): só info', () => {

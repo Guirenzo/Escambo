@@ -13,7 +13,8 @@ import {
   Users,
   XCircle,
 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   AdminDeletionRequest,
@@ -51,7 +52,9 @@ import {
   useAdminMetrics,
   useAdminWithdrawalAction,
   useAdminWithdrawals,
+  useMfaStatus,
   useResolveDispute,
+  qk,
 } from '../../lib/hooks';
 import { usePageTitle } from '../../lib/title';
 import { useScrollToHashWhenSettled } from '../../lib/useScrollToHash';
@@ -62,6 +65,8 @@ import { AppealsSection } from '../admin/AppealsSection';
 import { ModerationHealthSection } from '../admin/ModerationHealthSection';
 import { ReportsSection } from '../admin/ReportsSection';
 import { SupportSection } from '../admin/SupportSection';
+import { AccountSupportSection } from '../admin/AccountSupportSection';
+import { isMfaRequired, MfaRequiredCard } from '../admin/MfaRequiredCard';
 import { useToast } from '../../lib/toast';
 
 const RESOLUTIONS: { value: DisputeResolution; label: string; hint: string }[] = [
@@ -347,11 +352,44 @@ function EmailModal({ email, onClose }: { email: AdminEmail; onClose: () => void
   );
 }
 
-/** Painel do administrador: métricas, fila de mediação, fila de saques, pedidos LGPD e e-mails. */
+const ADMIN_SUBTITLE = 'Métricas da plataforma, mediação de disputas, saques e moderação.';
+
+/**
+ * Painel do administrador. Com ADMIN_MFA_REQUIRED no servidor, uma conta admin sem a verificação
+ * em duas etapas recebe 403 `mfa_required` em toda rota /admin: em vez de um erro em cada fila, o
+ * painel dá lugar a um cartão que leva ao Perfil. A situação da 2FA decide antes; se ela estiver
+ * velha (desativada pelo atendimento com a tela aberta), o 403 dos indicadores decide e a relê.
+ */
 export function AdminView() {
   usePageTitle('Administração');
+  const qc = useQueryClient();
+  const mfa = useMfaStatus();
+  const [blocked, setBlocked] = useState(false);
+  const onMfaRequired = useCallback(() => {
+    setBlocked(true);
+    void qc.invalidateQueries({ queryKey: qk.mfaStatus });
+  }, [qc]);
+  const gated = mfa.data ? mfa.data.required && !mfa.data.enabled : blocked;
+
+  if (gated) {
+    return (
+      <div className="page">
+        <PageHeader title="Administração" subtitle={ADMIN_SUBTITLE} />
+        <MfaRequiredCard />
+      </div>
+    );
+  }
+  return <AdminPanel onMfaRequired={onMfaRequired} />;
+}
+
+/** Métricas, fila de mediação, fila de saques, pedidos LGPD, atendimento e e-mails. */
+function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
   useScrollToHashWhenSettled();
   const metrics = useAdminMetrics();
+  const mfaBlocked = isMfaRequired(metrics.error);
+  useEffect(() => {
+    if (mfaBlocked) onMfaRequired();
+  }, [mfaBlocked, onMfaRequired]);
   const disputes = useAdminDisputes();
   const [scope, setScope] = useState<'open' | 'all'>('open');
   const withdrawals = useAdminWithdrawals(scope);
@@ -383,10 +421,7 @@ export function AdminView() {
 
   return (
     <div className="page">
-      <PageHeader
-        title="Administração"
-        subtitle="Métricas da plataforma, mediação de disputas, saques e moderação."
-      />
+      <PageHeader title="Administração" subtitle={ADMIN_SUBTITLE} />
 
       <div className="kpis">
         <div className="kpi">
@@ -527,6 +562,7 @@ export function AdminView() {
       <ReportsSection />
       <AppealsSection />
       <SupportSection />
+      <AccountSupportSection />
 
       <section className="card">
         <div className="card-head">

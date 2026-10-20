@@ -974,3 +974,68 @@ describe('documento OpenAPI: leitura no chat', () => {
     expect(schemas.ChatReadEvent.description).toContain('contract:<id>');
   });
 });
+
+/** Verificação em duas etapas (RF-090, ADR 66): o login em dois passos e as rotas da conta e do admin. */
+describe('documento OpenAPI: verificação em duas etapas', () => {
+  const { schemas } = openapiDocument.components;
+
+  it('o login documenta as duas respostas: a sessão ou o MfaChallenge', () => {
+    expect(operation('/auth/login', 'post').responses['200']?.content).toEqual({
+      'application/json': {
+        schema: {
+          oneOf: [
+            { $ref: '#/components/schemas/AuthResponse' },
+            { $ref: '#/components/schemas/MfaChallenge' },
+          ],
+        },
+      },
+    });
+    expect(schemas.MfaChallenge.required).toEqual(['mfaRequired', 'mfaToken', 'expiresInSeconds']);
+    expect(schemas.MfaChallenge.additionalProperties).toBe(false);
+  });
+
+  it('o segundo passo é público e lista as recusas próprias', () => {
+    const op = operation('/auth/login/mfa', 'post');
+    expect(op).not.toHaveProperty('security');
+    expect(op.requestBody?.content['application/json'].schema).toEqual({
+      $ref: '#/components/schemas/LoginMfa',
+    });
+    expect(op.responses['401']?.description).toContain('invalid_mfa_token');
+    expect(op.responses['400']?.description).toContain('invalid_mfa_code');
+    expect(op.responses['429']?.description).toContain('mfa_locked');
+  });
+
+  it('as rotas da conta pedem o Bearer e documentam a indisponibilidade sem a chave', () => {
+    for (const [path, method] of [
+      ['/auth/mfa', 'get'],
+      ['/auth/mfa/setup', 'post'],
+      ['/auth/mfa/enable', 'post'],
+      ['/auth/mfa/disable', 'post'],
+      ['/auth/mfa/recovery-codes', 'post'],
+      ['/admin/users/lookup', 'get'],
+      ['/admin/users/{ulid}/mfa/reset', 'post'],
+    ] as const) {
+      expect(operation(path, method).security, `${method} ${path}`).toEqual([{ bearerAuth: [] }]);
+    }
+    expect(operation('/auth/mfa/setup', 'post').responses['503']?.description).toContain(
+      'mfa_unavailable',
+    );
+    expect(operation('/auth/mfa/disable', 'post').responses['204']).toBeDefined();
+    expect(
+      operation('/admin/users/{ulid}/mfa/reset', 'post').responses['400']?.description,
+    ).toContain('cannot_reset_self');
+    expect(schemas.MfaStatus.required).toEqual([
+      'enabled',
+      'confirmedAt',
+      'recoveryCodesLeft',
+      'available',
+      'required',
+    ]);
+    expect(schemas.AdminAccountLookup.properties.mfaEnabled).toEqual({ type: 'boolean' });
+    expect(schemas.ResetMfa.properties.reason).toEqual({
+      type: 'string',
+      minLength: 10,
+      maxLength: 500,
+    });
+  });
+});

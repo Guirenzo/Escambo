@@ -79,6 +79,11 @@ export function suspendedRequestAllowed(method: string, originalUrl: string): bo
         '/api/auth/logout-all',
         // Trocar a senha é segurança da conta (RF-017): vale também durante a suspensão.
         '/api/auth/change-password',
+        // A verificação em duas etapas também (ADR 66): ligar, desligar e trocar os códigos.
+        '/api/auth/mfa/setup',
+        '/api/auth/mfa/enable',
+        '/api/auth/mfa/disable',
+        '/api/auth/mfa/recovery-codes',
         '/api/lgpd/consents',
         '/api/lgpd/deletion-requests',
         '/api/lgpd/export-requests',

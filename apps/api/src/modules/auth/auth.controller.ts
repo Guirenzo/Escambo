@@ -5,7 +5,11 @@ import {
   changePasswordSchema,
   confirmEmailChangeSchema,
   forgotPasswordSchema,
+  loginMfaSchema,
   loginSchema,
+  mfaConfirmSchema,
+  mfaEnableSchema,
+  mfaSetupSchema,
   refreshSchema,
   registerSchema,
   resetPasswordSchema,
@@ -14,6 +18,7 @@ import {
 } from './auth.schema';
 import { authService } from './auth.service';
 import { contactService } from './contact.service';
+import { mfaService } from './mfa.service';
 
 function context(req: Request) {
   return { ip: req.ip ?? null, userAgent: req.headers['user-agent'] ?? null };
@@ -29,6 +34,12 @@ export async function login(req: Request, res: Response): Promise<void> {
   const input = loginSchema.parse(req.body);
   const result = await authService.login(input, context(req));
   res.json(result);
+}
+
+/** Segundo passo do login (ADR 66): o passe do primeiro e o código; devolve a sessão. */
+export async function loginMfa(req: Request, res: Response): Promise<void> {
+  const input = loginMfaSchema.parse(req.body);
+  res.json(await authService.loginMfa(input, context(req)));
 }
 
 export async function refresh(req: Request, res: Response): Promise<void> {
@@ -110,6 +121,38 @@ export async function cancelEmailChange(req: Request, res: Response): Promise<vo
 export async function confirmEmailChange(req: Request, res: Response): Promise<void> {
   const { token } = confirmEmailChangeSchema.parse(req.body);
   res.json(await contactService.confirmEmailChange(token, context(req), optionalUserId(req)));
+}
+
+// ---------- Verificação em duas etapas da própria conta (RF-090, ADR 66) ----------
+
+/** Rota protegida — a situação da 2FA, se o servidor consegue ativá-la e se o painel a exige. */
+export async function mfaStatus(req: Request, res: Response): Promise<void> {
+  res.json(await mfaService.status(req.user!.uid, req.user!.role));
+}
+
+/** Rota protegida — começa a ativação (senha atual): o segredo novo para o app. */
+export async function mfaSetup(req: Request, res: Response): Promise<void> {
+  const { password } = mfaSetupSchema.parse(req.body);
+  res.json(await mfaService.setup(req.user!.uid, password));
+}
+
+/** Rota protegida — ativa com o primeiro código; devolve a sessão nova e os códigos de recuperação. */
+export async function mfaEnable(req: Request, res: Response): Promise<void> {
+  const { code } = mfaEnableSchema.parse(req.body);
+  res.json(await mfaService.enable(req.user!.uid, code, context(req)));
+}
+
+/** Rota protegida — desativa (senha + código do app ou de recuperação). */
+export async function mfaDisable(req: Request, res: Response): Promise<void> {
+  const input = mfaConfirmSchema.parse(req.body);
+  await mfaService.disable(req.user!.uid, input, context(req));
+  res.status(204).send();
+}
+
+/** Rota protegida — troca os códigos de recuperação (senha + código). */
+export async function mfaRecoveryCodes(req: Request, res: Response): Promise<void> {
+  const input = mfaConfirmSchema.parse(req.body);
+  res.json(await mfaService.regenerateRecoveryCodes(req.user!.uid, input, context(req)));
 }
 
 /** Rota protegida — grava ou apaga o telefone da conta (E.164). */

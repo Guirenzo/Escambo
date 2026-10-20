@@ -19,6 +19,8 @@ regexes = [
   '''^senha=segredo-do-banco$''',
   # Parâmetro de consulta do relatório (falso positivo da regra genérica)
   '''^granularity=month$''',
+  # FIELD_ENCRYPTION_KEY de teste da 2FA (integração e e2e): os 32 bytes ASCII de "chave-de-teste-do-escambo-2fa-32"
+  '''^Y2hhdmUtZGUtdGVzdGUtZG8tZXNjYW1iby0yZmEtMzI=$''',
 ]
 
 [[allowlists]]

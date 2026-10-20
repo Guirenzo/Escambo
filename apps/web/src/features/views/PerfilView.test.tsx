@@ -44,6 +44,8 @@ const api = vi.hoisted(() => ({
   changeEmail: vi.fn(),
   cancelEmailChange: vi.fn(),
   updatePhone: vi.fn(),
+  // Verificação em duas etapas (RF-090), no cartão de mesmo nome.
+  mfaStatus: vi.fn(),
 }));
 vi.mock('../../lib/api', () => ({ api }));
 
@@ -116,12 +118,12 @@ const review = (o: Partial<Review> = {}): Review => ({
 
 const reviews = (items: Review[]): Paginated<Review> => ({ items, page: 1, limit: 50 });
 
-function renderView() {
+function renderView(path = '/perfil') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[path]}>
           <PerfilView />
         </MemoryRouter>
       </ToastProvider>
@@ -188,6 +190,13 @@ beforeEach(() => {
     emailVerified: true,
     phone: '+5547999991234',
     pendingEmail: null,
+  });
+  api.mfaStatus.mockResolvedValue({
+    enabled: false,
+    confirmedAt: null,
+    recoveryCodesLeft: 0,
+    available: true,
+    required: false,
   });
 });
 
@@ -745,5 +754,34 @@ describe('PerfilView: e-mail e telefone da conta (RF-017)', () => {
     expect(await within(phone).findByLabelText('Telefone com DDD')).toHaveValue('(47) 99999-1234');
     // Os dois cartões dividem uma consulta só.
     expect(api.accountContact).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PerfilView: verificação em duas etapas (RF-090)', () => {
+  it('o Perfil tem o cartão "Verificação em duas etapas", depois do de senha', async () => {
+    renderView();
+
+    const mfa = (
+      await screen.findByRole('heading', { level: 3, name: 'Verificação em duas etapas' })
+    ).closest('section')!;
+    expect(await within(mfa).findByRole('button', { name: 'Ativar' })).toBeInTheDocument();
+    const senha = screen.getByRole('heading', { level: 3, name: 'Senha' }).closest('section')!;
+    expect(senha.compareDocumentPosition(mfa) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('chegando por /perfil#dois-fatores (o painel admin manda para lá), o foco vai para o cartão', async () => {
+    // O jsdom não rola a página: basta saber que a rolagem foi pedida no cartão certo.
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      renderView('/perfil#dois-fatores');
+
+      const mfa = await screen.findByTestId('dois-fatores');
+      await waitFor(() => expect(mfa).toHaveFocus());
+      expect(mfa).toHaveAttribute('data-hash-target');
+      expect(scroll.mock.contexts[0]).toBe(mfa);
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
   });
 });

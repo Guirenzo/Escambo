@@ -83,6 +83,8 @@ export const qk = {
   deletionRequests: ['deletionRequests'] as const,
   reviews: (freelancerId: number) => ['reviews', freelancerId] as const,
   publicFreelancer: (ulid: string) => ['publicFreelancer', ulid] as const,
+  mfaStatus: ['mfaStatus'] as const,
+  adminAccountLookup: (email: string) => ['adminAccountLookup', email] as const,
 };
 
 // ---------- Queries ----------
@@ -1141,4 +1143,32 @@ export function useSavedSearchMutations() {
     }),
     remove: useMutation({ mutationFn: (id: number) => api.deleteSavedSearch(id), onSuccess: done }),
   };
+}
+
+// ---------- Verificação em duas etapas (RF-090, ADR 66) ----------
+
+/** A 2FA da própria conta: o Perfil mostra o cartão e o painel admin sabe se pode abrir. */
+export const useMfaStatus = () =>
+  useQuery({ queryKey: qk.mfaStatus, queryFn: () => api.mfaStatus() });
+
+/**
+ * Atendimento: a conta de um e-mail (null = nada buscado ainda). O 404 é resposta, não falha
+ * passageira: sem nova tentativa.
+ */
+export const useAdminAccountLookup = (email: string | null) =>
+  useQuery({
+    queryKey: qk.adminAccountLookup(email ?? ''),
+    queryFn: () => api.adminAccountLookup(email!),
+    enabled: !!email,
+    retry: false,
+  });
+
+/** Tira a 2FA de uma conta pelo atendimento; a busca mostra a conta já sem ela. */
+export function useAdminResetMfa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ulid, reason }: { ulid: string; reason: string }) =>
+      api.adminResetMfa(ulid, reason),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['adminAccountLookup'] }),
+  });
 }

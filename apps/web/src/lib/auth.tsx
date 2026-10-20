@@ -7,13 +7,20 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { LoginRequest, PublicUser, RegisterRequest } from '@escambo/types';
+import type {
+  LoginRequest,
+  MfaChallenge,
+  MfaLoginRequest,
+  PublicUser,
+  RegisterRequest,
+} from '@escambo/types';
 import {
   ACCOUNT_STATUS_EVENT,
   api,
   getRefreshToken,
   getToken,
   isAccountStatus,
+  isMfaChallenge,
   SESSION_EXPIRED_EVENT,
   setSession,
 } from './api';
@@ -26,7 +33,13 @@ interface AuthState {
   user: PublicUser | null;
   loading: boolean;
   error: string | null;
-  login: (input: LoginRequest) => Promise<void>;
+  /**
+   * Entra com e-mail e senha. Conta com verificação em duas etapas: devolve o pedido do segundo
+   * fator e ainda não abre a sessão (ela sai de `loginMfa`); sem 2FA, entra e devolve null.
+   */
+  login: (input: LoginRequest) => Promise<MfaChallenge | null>;
+  /** Segundo passo do login (RF-090): o erro fica com quem chama, que o mostra junto do campo. */
+  loginMfa: (input: MfaLoginRequest) => Promise<void>;
   register: (input: RegisterRequest) => Promise<void>;
   logout: () => void;
   /** Recarrega o usuário da sessão (ex.: depois de confirmar o e-mail). */
@@ -144,19 +157,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [userId, refreshUser]);
 
-  async function login(input: LoginRequest): Promise<void> {
+  async function login(input: LoginRequest): Promise<MfaChallenge | null> {
     const session = ++generation.current;
     refreshingUser.current = null;
     setError(null);
     try {
       const res = await api.login(input);
-      if (session !== generation.current) return;
+      if (session !== generation.current) return null;
+      if (isMfaChallenge(res)) return res;
       setSession({ accessToken: res.accessToken, refreshToken: res.refreshToken });
       setUser(res.user);
+      return null;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro ao entrar');
       throw e;
     }
+  }
+
+  /** Com o código certo, a sessão abre como no login sem 2FA. */
+  async function loginMfa(input: MfaLoginRequest): Promise<void> {
+    const session = ++generation.current;
+    refreshingUser.current = null;
+    const res = await api.loginMfa(input);
+    if (session !== generation.current) return;
+    setSession({ accessToken: res.accessToken, refreshToken: res.refreshToken });
+    setUser(res.user);
   }
 
   async function register(input: RegisterRequest): Promise<void> {
@@ -194,7 +219,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, error, login, register, logout, refreshUser }}>
+    <AuthContext.Provider
+      value={{ user, loading, error, login, loginMfa, register, logout, refreshUser }}
+    >
       <AccountAccessProvider status={user?.status}>{children}</AccountAccessProvider>
     </AuthContext.Provider>
   );

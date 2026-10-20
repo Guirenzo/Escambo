@@ -25,6 +25,18 @@ export interface UserRow extends RowDataPacket {
   push_quiet_summary_id?: number | null;
 }
 
+/** A conta como o atendimento a vê (ADR 66): sem senha nem contato além do e-mail buscado. */
+export interface AccountLookupRow extends RowDataPacket {
+  id: number;
+  ulid: string;
+  email: string;
+  role: string;
+  status: string;
+  created_at: Date;
+  /** 1 se a verificação em duas etapas está ativa. */
+  mfa_enabled: number;
+}
+
 /** Camada de acesso a dados da tabela `users`. */
 export const authRepository = {
   async findByEmail(email: string): Promise<UserRow | undefined> {
@@ -161,6 +173,20 @@ export const authRepository = {
         WHERE id = :id`,
       { id, phone },
     );
+  },
+
+  /** Busca do atendimento pelo e-mail exato (a collation já ignora maiúsculas), com a 2FA ativa ou não. */
+  async findAccountByEmail(email: string): Promise<AccountLookupRow | undefined> {
+    const [rows] = await pool.query<AccountLookupRow[]>(
+      `SELECT u.id, u.ulid, u.email, u.role, u.status, u.created_at,
+              EXISTS (SELECT 1 FROM user_mfa m
+                       WHERE m.user_id = u.id AND m.method = 'totp' AND m.is_enabled = 1) AS mfa_enabled
+         FROM users u
+        WHERE u.email = :email
+        LIMIT 1`,
+      { email },
+    );
+    return rows[0];
   },
 
   async updateRole(id: number, role: string): Promise<void> {

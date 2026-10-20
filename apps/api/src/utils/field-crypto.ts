@@ -186,14 +186,15 @@ export function logFieldEncryptionStatus(production = env.NODE_ENV === 'producti
   if (keyring.current) {
     logger.info(
       { keyId: keyring.current.id, oldKeys: keyring.byId.size - 1 },
-      'Cifragem de campo ligada (RNF-017): chave PIX e dados bancários dos saques',
+      'Cifragem de campo ligada (RNF-017): chave PIX e dados bancários dos saques, e o segredo da verificação em duas etapas',
     );
     return;
   }
   const message =
     'FIELD_ENCRYPTION_KEY não configurada: a chave PIX e os dados bancários dos saques são ' +
-    'gravados em TEXTO PURO (RNF-017). Gere com "openssl rand -base64 32", configure e rode o ' +
-    'fields:encrypt para cifrar as linhas antigas';
+    'gravados em TEXTO PURO (RNF-017), e a verificação em duas etapas fica indisponível (ADR 66). ' +
+    'Gere com "openssl rand -base64 32", configure e rode o fields:encrypt para cifrar as linhas ' +
+    'antigas';
   if (production) logger.warn(message);
   else logger.info(message);
 }

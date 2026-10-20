@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import { ulid } from 'ulid';
 import type {
   AuthResponse,
+  LoginResponse,
+  MfaChallenge,
   PublicUser,
   RefreshResponse,
   UserRole,
@@ -10,6 +12,7 @@ import type {
 } from '@escambo/types';
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
+import { clock } from '../../utils/clock';
 import { HttpError } from '../../utils/http-error';
 import { isBrazilTimezone, timezoneOf } from '../../utils/timezone';
 import { notificationsFacade } from '../notifications/notifications.facade';
@@ -23,7 +26,10 @@ import { authRepository, type UserRow } from './auth.repository';
 import { emailChangeRepository } from './email-change.repository';
 import { sessionRepository } from './session.repository';
 import { tokensRepository } from './tokens.repository';
-import type { ChangePasswordInput, LoginInput, RegisterInput } from './auth.schema';
+import { mfaRepository } from './mfa.repository';
+import { MFA_TOKEN_TTL_SECONDS, signMfaToken, verifyMfaToken } from './mfa-token';
+import { enabledMfa, verifySecondFactor } from './mfa.verify';
+import type { ChangePasswordInput, LoginInput, LoginMfaInput, RegisterInput } from './auth.schema';
 import { userAgentOf } from '../../utils/user-agent';
 
 export interface SessionContext {
@@ -160,6 +166,23 @@ function assertSessionAllowed(user: { status: string; deleted_at?: Date | null }
   if (user.status === 'banned') {
     throw new HttpError(403, 'Conta banida. Fale com o suporte.', 'account_banned');
   }
+}
+
+const invalidMfaToken = (): HttpError =>
+  new HttpError(401, 'A verificação expirou. Entre com a senha de novo.', 'invalid_mfa_token');
+
+/**
+ * Fim do login (com ou sem segundo fator): a promoção a admin por ADMIN_EMAILS, que vale também
+ * para contas já existentes, e a sessão. A troca de e-mail (RF-017) nunca leva uma conta comum a
+ * um endereço da lista: não vira caminho para cá.
+ */
+async function openSession(user: UserRow, ctx: SessionContext): Promise<AuthResponse> {
+  if (user.status !== 'suspended' && user.role !== 'admin' && isAdminEmail(user.email)) {
+    await authRepository.updateRole(user.id, 'admin');
+    user.role = 'admin';
+  }
+  const tokens = await issueSession(user, ctx);
+  return { ...tokens, user: toPublic(user) };
 }
 
 /** Regras de negócio de autenticação (RF-001 a RF-004, RNF-013). */
@@ -345,7 +368,12 @@ export const authService = {
     return tokens;
   },
 
-  async login(input: LoginInput, ctx: SessionContext = {}): Promise<AuthResponse> {
+  /**
+   * Login com a senha (RF-002). Conta com a verificação em duas etapas ativa (ADR 66) não leva a
+   * sessão aqui: leva o passe de 5 minutos para POST /auth/login/mfa. As regras da conta (banida,
+   * excluída) valem antes; a promoção a admin por ADMIN_EMAILS só depois do segundo fator.
+   */
+  async login(input: LoginInput, ctx: SessionContext = {}): Promise<LoginResponse> {
     const user = await authRepository.findByEmail(input.email);
     // Conta inexistente também paga um bcrypt: o tempo de resposta não diz se o e-mail existe.
     const ok = await bcrypt.compare(input.password, user?.password_hash || (await dummyHash()));
@@ -368,15 +396,31 @@ export const authService = {
 
     assertSessionAllowed(user);
 
-    // Promoção a admin por ADMIN_EMAILS vale também para contas já existentes. A troca de e-mail
-    // (RF-017) nunca leva uma conta comum a um endereço da lista: não vira caminho para cá.
-    if (user.status !== 'suspended' && user.role !== 'admin' && isAdminEmail(user.email)) {
-      await authRepository.updateRole(user.id, 'admin');
-      user.role = 'admin';
+    if (await mfaRepository.isEnabled(user.id)) {
+      const challenge: MfaChallenge = {
+        mfaRequired: true,
+        mfaToken: signMfaToken(user.ulid),
+        expiresInSeconds: MFA_TOKEN_TTL_SECONDS,
+      };
+      return challenge;
     }
+    return openSession(user, ctx);
+  },
 
-    const tokens = await issueSession(user, ctx);
-    return { ...tokens, user: toPublic(user) };
+  /**
+   * Segundo passo do login (ADR 66): o passe do primeiro e o código do app ou de recuperação. Passe
+   * vencido, adulterado ou de conta que não tem mais a 2FA: 401 invalid_mfa_token (volta à senha).
+   * Conta banida ou excluída entre os dois passos recebe a mesma recusa do login.
+   */
+  async loginMfa(input: LoginMfaInput, ctx: SessionContext = {}): Promise<AuthResponse> {
+    const userUlid = verifyMfaToken(input.mfaToken);
+    const user = userUlid ? await authRepository.findByUlid(userUlid) : undefined;
+    if (!user) throw invalidMfaToken();
+    assertSessionAllowed(user);
+    const row = enabledMfa(await mfaRepository.findByUser(user.id, clock.now()));
+    if (!row) throw invalidMfaToken();
+    await verifySecondFactor(row, input.code, { context: 'login', ctx });
+    return openSession(user, ctx);
   },
 
   /** Rotação de refresh token: valida, revoga o antigo e emite um novo par. */

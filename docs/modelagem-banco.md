@@ -234,6 +234,9 @@ CREATE TABLE password_reset_tokens (
 
 Verificação em duas etapas (2FA). O `secret` do TOTP é cifrado em **AES-256** na aplicação antes
 de persistir; os `recovery_codes` guardam apenas o **hash** de cada código (nunca em texto plano).
+Em uso desde a 1.48.0 (ADR 66), com a linha `totp`; a migration 0050 acrescentou `last_used_step`
+(o último passo de 30 s aceito: o mesmo código não vale duas vezes), `failed_attempts` e
+`locked_until` (5 erros seguidos travam a 2FA da conta por 15 minutos).
 
 ```sql
 CREATE TABLE user_mfa (
@@ -244,6 +247,9 @@ CREATE TABLE user_mfa (
   is_enabled     TINYINT(1)      NOT NULL DEFAULT 0,
   confirmed_at   DATETIME        NULL,
   recovery_codes JSON            NULL,                     -- hashes dos códigos de recuperação
+  last_used_step BIGINT          NULL,                     -- 0050: anti-reuso do código
+  failed_attempts INT UNSIGNED   NOT NULL DEFAULT 0,       -- 0050: erros seguidos
+  locked_until   DATETIME        NULL,                     -- 0050: trava de 15 min
   created_at     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
