@@ -1,7 +1,7 @@
 import { Download, LineChart } from 'lucide-react';
 import { useState } from 'react';
 import type { FinanceBucket, FinanceGranularity } from '@escambo/types';
-import { Button, EmptyState, QueryState } from '../../components/ui';
+import { Button, EmptyState, onTablistKeyDown, QueryState, TableWrap } from '../../components/ui';
 import { api } from '../../lib/api';
 import { saveBlob } from '../../lib/download';
 import { addDays, brl, dateInputValue } from '../../lib/format';
@@ -108,7 +108,12 @@ export function FinanceSection() {
           <LineChart size={16} /> Financeiro
         </h3>
         <div className="fin-controls">
-          <div className="tabs tabs-mini" role="tablist" aria-label="Período do relatório">
+          <div
+            className="tabs tabs-mini"
+            role="tablist"
+            onKeyDown={onTablistKeyDown}
+            aria-label="Período do relatório"
+          >
             {PRESETS.map((p) => (
               <button
                 key={p.key}
@@ -236,7 +241,7 @@ export function FinanceSection() {
                       </div>
                     ))}
                   </div>
-                  <div className="table-wrap">
+                  <TableWrap label="Tabela do relatório financeiro">
                     <table className="table">
                       <thead>
                         <tr>
@@ -263,7 +268,7 @@ export function FinanceSection() {
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                  </TableWrap>
                 </>
               )}
             </>

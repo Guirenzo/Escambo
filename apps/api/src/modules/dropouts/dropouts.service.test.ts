@@ -134,6 +134,8 @@ describe('decisões e privacidade dos avisos', () => {
       now: NOW,
     });
     const result = await dropoutsService.agree(31, 7);
+    // A confirmação é do cliente: a linha do histórico é ação dele (status-history.ts).
+    expect(repo.agree).toHaveBeenCalledWith(31, 7, 'user');
     expect(Object.keys(result).sort()).toEqual(['agreeUntil', 'agreedAt', 'at', 'counts']);
     expect(result.counts).toBe(false);
     expect(notify).toHaveBeenCalledWith(

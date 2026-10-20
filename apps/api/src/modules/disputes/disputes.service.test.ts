@@ -158,14 +158,18 @@ describe('disputesService.open', () => {
 
     expect(contracts.findById).toHaveBeenCalledWith(5);
     expect(disputes.createManual).toHaveBeenCalledTimes(1);
-    // Um argumento só: a guarda (ADR 57) é da disputa automática do job, não da aberta por uma parte.
-    expect(disputes.createManual).toHaveBeenCalledWith({
-      ulid: expect.stringMatching(/^[0-9A-HJKMNP-TV-Z]{26}$/),
-      contractId: 5,
-      openedBy: 2,
-      reason: 'quality',
-      description: 'a entrega veio incompleta',
-    });
+    // Sem guarda: ela (ADR 57) é da disputa automática do job, não da aberta por uma parte; e a
+    // origem é user, porque quem abre é a própria parte.
+    expect(disputes.createManual).toHaveBeenCalledWith(
+      {
+        ulid: expect.stringMatching(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+        contractId: 5,
+        openedBy: 2,
+        reason: 'quality',
+        description: 'a entrega veio incompleta',
+      },
+      'user',
+    );
     expect(disputes.findById).toHaveBeenCalledWith(7);
   });
 

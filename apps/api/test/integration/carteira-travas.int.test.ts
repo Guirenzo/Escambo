@@ -225,6 +225,7 @@ describe('Carteiras em concorrência (I29)', () => {
           barterRepository.accept({
             agreementId: id,
             acceptorId: payer,
+            source: 'user',
             hold: { userId: payer, amount: 200 },
             contractOffered: { ...contract, ulid: ulid(), clientId: payer, freelancerId: proposer },
             contractRequested: {

@@ -21,7 +21,7 @@ import {
   withdrawalIdParamSchema,
 } from './admin.schema';
 import { adminService } from './admin.service';
-import { adminRepository } from './admin.repository';
+import { adminFacade } from './admin.facade';
 import { financeQuerySchema } from './finance.schema';
 import { financeService } from './finance.service';
 import { usageService } from './usage.service';
@@ -49,7 +49,7 @@ export async function getUsage(req: Request, res: Response): Promise<void> {
 export async function exportFinanceCsv(req: Request, res: Response): Promise<void> {
   const q = financeQuerySchema.parse(req.query);
   const { fileName, csv } = await financeService.exportCsv(q);
-  await adminRepository.recordAction(
+  await adminFacade.recordAction(
     req.user!.uid,
     'finance_exported',
     'finance',

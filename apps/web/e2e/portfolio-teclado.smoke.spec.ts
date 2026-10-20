@@ -1,5 +1,5 @@
-import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { expectAccessible } from './a11y.helpers';
 import { createUser, openAs, settled } from './helpers';
 
 /**
@@ -72,15 +72,10 @@ test('portfólio pelo teclado: pega, move sem gravar, solta uma vez; Esc e Tab c
   await expect(row(vitrine)).toHaveClass(/is-grabbed/);
 
   // Com o item na mão, o axe: estado válido, dica existente e a lista continua sendo lista.
-  const grabbed = await new AxeBuilder({ page })
-    .include('[data-testid="portfolio-card"]')
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-    .analyze();
-  expect(
-    grabbed.violations
-      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-      .map((v) => v.id),
-  ).toEqual([]);
+  // Qualquer violação WCAG reprova, de qualquer impacto (a11y.helpers.ts).
+  await expectAccessible(page, 'portfólio com item na mão', {
+    include: '[data-testid="portfolio-card"]',
+  });
 
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowUp');

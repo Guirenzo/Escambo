@@ -1,7 +1,7 @@
 import { Activity, Crosshair, Download, Gavel, Inbox, Timer } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type { ModerationHealth } from '@escambo/types';
-import { Button, QueryState } from '../../components/ui';
+import { Button, onTablistKeyDown, QueryState, TableWrap } from '../../components/ui';
 import { api } from '../../lib/api';
 import { lineSegments, niceMax, scaleY, stackBar, xAt } from '../../lib/chart';
 import { saveBlob } from '../../lib/download';
@@ -340,7 +340,12 @@ export function ModerationHealthSection() {
           <Activity size={16} /> Saúde da moderação
         </h3>
         <div className="fin-controls">
-          <div className="tabs tabs-mini" role="tablist" aria-label="Período">
+          <div
+            className="tabs tabs-mini"
+            role="tablist"
+            onKeyDown={onTablistKeyDown}
+            aria-label="Período"
+          >
             {PERIODS.map((p) => (
               <button
                 key={p}
@@ -466,7 +471,7 @@ export function ModerationHealthSection() {
               </p>
 
               {h.automatic.signals.length > 0 && (
-                <div className="table-wrap">
+                <TableWrap label="Tabela da saúde da moderação">
                   <table className="table health-signals" data-testid="health-signals">
                     <caption className="sr-only">
                       Acerto da sinalização automática por sinal
@@ -499,7 +504,7 @@ export function ModerationHealthSection() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TableWrap>
               )}
             </>
           );

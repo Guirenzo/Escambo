@@ -164,13 +164,16 @@ describe('DeliveriesSection', () => {
     expect(
       within(latest!)
         .getAllByRole('button')
-        .map((b) => b.getAttribute('aria-label')),
-    ).toEqual(['Baixar final.pdf', 'Baixar fontes.zip']);
+        .map((b) => b.textContent),
+    ).toEqual([
+      `Baixar final.pdf ${formatBytes(204_800)}`,
+      `Baixar fontes.zip ${formatBytes(204_800)}`,
+    ]);
     expect(latest).toHaveTextContent(formatBytes(204_800));
     expect(within(first!).getByText('Arquivo da entrega:')).toBeInTheDocument();
-    expect(within(first!).getByRole('button', { name: 'Baixar rascunho.png' })).toBeVisible();
+    expect(within(first!).getByRole('button', { name: /^Baixar rascunho\.png / })).toBeVisible();
 
-    await user.click(within(latest!).getByRole('button', { name: 'Baixar final.pdf' }));
+    await user.click(within(latest!).getByRole('button', { name: /^Baixar final\.pdf / }));
     await waitFor(() => expect(saveBlob).toHaveBeenCalledWith(blob, 'final.pdf'));
     expect(attachmentBlob).toHaveBeenCalledWith('/api/messaging/attachments/41', 'final.pdf');
   });

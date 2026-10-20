@@ -79,8 +79,9 @@ describe('o fluxo de prazos usa um relógio só', () => {
     expect(CLOSE_PENDING_EXTENSION('c')).toContain(':now');
 
     const automatic = src.slice(src.indexOf('async create('), src.indexOf('async createManual('));
-    expect(automatic).toContain(
-      'openInTx(conn, d, oldStatus, opts.now ?? clock.now(), opts.guard)',
+    // A origem (status-history.ts) vem de quem chama: a disputa por prazo é da plataforma.
+    expect(automatic.replace(/\s+/g, ' ')).toContain(
+      'openInTx( conn, d, oldStatus, opts.now ?? clock.now(), opts.source, opts.guard, )',
     );
     expect(automatic).not.toMatch(/\bNOW\(\)/);
     expect(automatic).not.toContain('disputeOpensAt');
@@ -100,7 +101,7 @@ describe('o fluxo de prazos usa um relógio só', () => {
     expect(now).toBeGreaterThan(reread);
     expect(write).toBeGreaterThan(now);
     expect(manual.match(/clock\.now\(\)/g)).toHaveLength(1);
-    expect(manual).toContain('openInTx(conn, d, oldStatus, now)');
+    expect(manual).toContain('openInTx(conn, d, oldStatus, now, source)');
     expect(manual).not.toMatch(/\bNOW\(\)|Date\.now\(\)|new Date\(\)/);
   });
 });

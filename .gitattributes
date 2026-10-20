@@ -2,3 +2,5 @@
 *.sh text eol=lf
 deploy/Caddyfile text eol=lf
 deploy/monitoring/** text eol=lf
+# Migrations e seed: o corpo dos triggers não pode levar o CR de um checkout no Windows (ADR 64).
+*.sql text eol=lf

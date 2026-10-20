@@ -107,7 +107,9 @@ describe('disputesRepository', () => {
       'status %s recusa antes de recuperar ou reler fatos',
       async (status) => {
         fakeDb.reply(status ? [{ status }] : []);
-        expect(await disputesRepository.createManual(data)).toEqual({ refused: 'not_disputable' });
+        expect(await disputesRepository.createManual(data, 'user')).toEqual({
+          refused: 'not_disputable',
+        });
         expect(read).not.toHaveBeenCalled();
         expect(recover).not.toHaveBeenCalled();
         expect(steps()).toEqual(['SELECT status FROM']);
@@ -119,13 +121,21 @@ describe('disputesRepository', () => {
       setClockForTests(NOW, { frozen: true });
       read.mockResolvedValue(facts());
       fakeDb.reply([{ status: 'accepted' }], { affectedRows: 1 }, { insertId: 55 }, {});
-      expect(await disputesRepository.createManual(data)).toEqual({ id: 55 });
+      expect(await disputesRepository.createManual(data, 'user')).toEqual({ id: 55 });
       expect(recover).toHaveBeenCalledWith(fakeDb.conn, 8);
       expect(read).toHaveBeenCalledWith(8, fakeDb.conn);
       expect(orderOf(fakeDb.conn.query)).toBeLessThan(orderOf(recover));
       expect(orderOf(recover)).toBeLessThan(orderOf(read));
       expect(fakeDb.calls[1]!.params).toEqual({ contractId: 8, oldStatus: 'accepted', now: NOW });
       expect(fakeDb.calls[1]!.sql).toMatch(/AND c\.status = :oldStatus$/);
+      // Aberta pela própria parte: a linha do tempo grava a origem user.
+      expect(fakeDb.calls[3]!.sql).toContain('INSERT INTO contract_status_history');
+      expect(fakeDb.calls[3]!.params).toEqual({
+        contractId: 8,
+        openedBy: 7,
+        oldStatus: 'accepted',
+        source: 'user',
+      });
       expectCommitted();
     });
 
@@ -133,7 +143,7 @@ describe('disputesRepository', () => {
       setClockForTests(new Date(NOW.getTime() - 1000), { frozen: true });
       read.mockResolvedValue(facts());
       fakeDb.reply([{ status: 'accepted' }]);
-      expect(await disputesRepository.createManual(data)).toEqual({
+      expect(await disputesRepository.createManual(data, 'user')).toEqual({
         refused: 'too_early',
         opensAt: NOW,
         requesterZone: 'America/Rio_Branco',
@@ -148,7 +158,7 @@ describe('disputesRepository', () => {
         facts({ status: 'delivered', first_delivery_at: NOW, delivery_dispute_opens_at: null }),
       );
       fakeDb.reply([{ status: 'delivered' }]);
-      expect(await disputesRepository.createManual({ ...data, openedBy: 9 })).toEqual({
+      expect(await disputesRepository.createManual({ ...data, openedBy: 9 }, 'user')).toEqual({
         refused: 'too_early',
         opensAt: new Date('2026-10-10T15:00:00Z'),
         requesterZone: 'America/Noronha',
@@ -163,7 +173,7 @@ describe('disputesRepository', () => {
       setClockForTests(NOW, { frozen: true });
       read.mockResolvedValue(facts({ first_delivery_at: NOW, ...snapshot }));
       fakeDb.reply([{ status: snapshot.status }], { affectedRows: 1 }, { insertId: 56 }, {});
-      expect(await disputesRepository.createManual(data)).toEqual({ id: 56 });
+      expect(await disputesRepository.createManual(data, 'user')).toEqual({ id: 56 });
       expectCommitted();
     });
 
@@ -174,7 +184,7 @@ describe('disputesRepository', () => {
         return facts();
       });
       fakeDb.reply([{ status: 'accepted' }], { affectedRows: 1 }, { insertId: 57 }, {});
-      expect(await disputesRepository.createManual(data)).toEqual({ id: 57 });
+      expect(await disputesRepository.createManual(data, 'user')).toEqual({ id: 57 });
       expect(fakeDb.calls[1]!.params).toMatchObject({ now: NOW });
       expectCommitted();
     });
@@ -183,7 +193,7 @@ describe('disputesRepository', () => {
       const boom = new Error('ER_LOCK_WAIT_TIMEOUT');
       recover.mockRejectedValueOnce(boom);
       fakeDb.reply([{ status: 'accepted' }]);
-      await expect(disputesRepository.createManual(data)).rejects.toBe(boom);
+      await expect(disputesRepository.createManual(data, 'user')).rejects.toBe(boom);
       expect(read).not.toHaveBeenCalled();
       expectRolledBack();
     });
@@ -197,6 +207,8 @@ describe('disputesRepository', () => {
       reason: 'quality',
       description: 'A entrega veio incompleta',
     };
+    // Hoje só a disputa automática por prazo (RN-029) abre por aqui: a plataforma, em nome do cliente.
+    const AUTO = { source: 'system' as const };
 
     it('trava a contratação, põe em disputa, grava a disputa e o status anterior, nessa ordem', async () => {
       setClockForTests(new Date('2026-10-02T15:00:00.700Z'), { frozen: true });
@@ -207,7 +219,7 @@ describe('disputesRepository', () => {
         { affectedRows: 1 },
       );
 
-      expect(await disputesRepository.create(data)).toBe(55);
+      expect(await disputesRepository.create(data, AUTO)).toBe(55);
 
       expect(steps()).toEqual([
         'SELECT status FROM',
@@ -239,15 +251,16 @@ describe('disputesRepository', () => {
 
       // Linha do tempo: quem abriu, de que status saiu e para qual foi, cada valor na sua coluna.
       expect(fakeDb.calls[3]!.sql).toContain(
-        'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)',
+        'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source)',
       );
       expect(fakeDb.calls[3]!.sql).toMatch(
-        /VALUES \(:contractId, :openedBy, :oldStatus, 'disputed', 'Disputa aberta'\)$/,
+        /VALUES \(:contractId, :openedBy, :oldStatus, 'disputed', 'Disputa aberta', :source\)$/,
       );
       expect(fakeDb.calls[3]!.params).toEqual({
         contractId: 8,
         openedBy: 7,
         oldStatus: 'in_progress',
+        source: 'system',
       });
       expect(fakeDb.pool.getConnection).toHaveBeenCalledTimes(1);
       expectCommitted();
@@ -255,7 +268,7 @@ describe('disputesRepository', () => {
 
     it('fecha o pedido de extensão pendente no mesmo UPDATE, com a data antes do status (ADR 57)', async () => {
       fakeDb.reply([{ status: 'accepted' }], { affectedRows: 1 }, { insertId: 1 }, {});
-      await disputesRepository.create(data);
+      await disputesRepository.create(data, AUTO);
 
       const { sql } = fakeDb.calls[1]!;
       const resolvedAt =
@@ -274,10 +287,15 @@ describe('disputesRepository', () => {
       async (status) => {
         fakeDb.reply([{ status }], { affectedRows: 1 }, { insertId: 12 }, {});
 
-        expect(await disputesRepository.create(data)).toBe(12);
+        expect(await disputesRepository.create(data, AUTO)).toBe(12);
 
         expect(fakeDb.calls[1]!.params).toMatchObject({ oldStatus: status });
-        expect(fakeDb.calls[3]!.params).toEqual({ contractId: 8, openedBy: 7, oldStatus: status });
+        expect(fakeDb.calls[3]!.params).toEqual({
+          contractId: 8,
+          openedBy: 7,
+          oldStatus: status,
+          source: 'system',
+        });
         expectCommitted();
       },
     );
@@ -287,7 +305,7 @@ describe('disputesRepository', () => {
       async (status) => {
         fakeDb.reply([{ status }]);
 
-        expect(await disputesRepository.create(data)).toBeNull();
+        expect(await disputesRepository.create(data, AUTO)).toBeNull();
 
         expect(steps()).toEqual(['SELECT status FROM']);
         expectRolledBack();
@@ -296,7 +314,7 @@ describe('disputesRepository', () => {
 
     it('contratação que não existe: devolve null e não grava nada', async () => {
       fakeDb.reply([]);
-      expect(await disputesRepository.create(data)).toBeNull();
+      expect(await disputesRepository.create(data, AUTO)).toBeNull();
       expect(fakeDb.calls).toHaveLength(1);
       expectRolledBack();
     });
@@ -307,7 +325,7 @@ describe('disputesRepository', () => {
       const guard = 'AND c.deadline_at < :now AND c.extension_status IS NULL';
       fakeDb.reply([{ status: 'in_progress' }], { affectedRows: 1 }, { insertId: 9 }, {});
 
-      expect(await disputesRepository.create(data, { guard, now })).toBe(9);
+      expect(await disputesRepository.create(data, { guard, now, ...AUTO })).toBe(9);
 
       const update = fakeDb.calls[1]!;
       expect(update.sql).toMatch(
@@ -321,7 +339,7 @@ describe('disputesRepository', () => {
       fakeDb.reply([{ status: 'in_progress' }], { affectedRows: 0 });
 
       expect(
-        await disputesRepository.create(data, { guard: 'AND c.deadline_at < :now' }),
+        await disputesRepository.create(data, { guard: 'AND c.deadline_at < :now', ...AUTO }),
       ).toBeNull();
 
       expect(steps()).toEqual(['SELECT status FROM', 'UPDATE contracts c']);
@@ -332,7 +350,7 @@ describe('disputesRepository', () => {
       const boom = new Error('ER_DUP_ENTRY');
       fakeDb.reply([{ status: 'delivered' }], { affectedRows: 1 }, boom);
 
-      await expect(disputesRepository.create(data)).rejects.toBe(boom);
+      await expect(disputesRepository.create(data, AUTO)).rejects.toBe(boom);
 
       expect(steps()).toEqual(['SELECT status FROM', 'UPDATE contracts c', 'INSERT INTO disputes']);
       expectRolledBack();
@@ -341,7 +359,7 @@ describe('disputesRepository', () => {
     it('se a linha do tempo falha, a disputa já gravada também é desfeita', async () => {
       const boom = new Error('deadlock');
       fakeDb.reply([{ status: 'delivered' }], { affectedRows: 1 }, { insertId: 55 }, boom);
-      await expect(disputesRepository.create(data)).rejects.toBe(boom);
+      await expect(disputesRepository.create(data, AUTO)).rejects.toBe(boom);
       expectRolledBack();
     });
 
@@ -349,7 +367,7 @@ describe('disputesRepository', () => {
       const boom = new Error('ER_LOCK_WAIT_TIMEOUT');
       fakeDb.reply(boom);
 
-      await expect(disputesRepository.create(data)).rejects.toBe(boom);
+      await expect(disputesRepository.create(data, AUTO)).rejects.toBe(boom);
 
       expect(steps()).toEqual(['SELECT status FROM']);
       expectRolledBack();
@@ -357,7 +375,7 @@ describe('disputesRepository', () => {
 
     it('linha de contratação sem status é tratada como não disputável', async () => {
       fakeDb.reply([{ status: null }]);
-      expect(await disputesRepository.create(data)).toBeNull();
+      expect(await disputesRepository.create(data, AUTO)).toBeNull();
       expect(fakeDb.calls).toHaveLength(1);
       expectRolledBack();
     });
@@ -428,6 +446,7 @@ describe('disputesRepository', () => {
       resolution: 'partial_split',
       refundPercentage: 50,
       note: 'Meio a meio',
+      source: 'user' as const,
     };
 
     it('em R$: resolve a disputa, encerra a contratação, move as duas carteiras e registra tudo numa transação', async () => {
@@ -496,16 +515,18 @@ describe('disputesRepository', () => {
 
       // Linha do tempo: sai de 'disputed' para o status final, em nome do admin.
       expect(fakeDb.calls[6]!.sql).toContain(
-        'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)',
+        'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source)',
       );
       expect(fakeDb.calls[6]!.sql).toMatch(
-        /VALUES \(:contractId, :adminId, 'disputed', :status, :note\)$/,
+        /VALUES \(:contractId, :adminId, 'disputed', :status, :note, :source\)$/,
       );
+      // A decisão é de uma pessoa (o admin); o relatório de uso tira admins pelo papel.
       expect(fakeDb.calls[6]!.params).toEqual({
         contractId: 8,
         adminId: 1,
         status: 'completed',
         note: 'Disputa resolvida: partial_split',
+        source: 'user',
       });
       // Trilha das ações de admin: o alvo registrado é a DISPUTA, não a contratação.
       expect(fakeDb.calls[7]!.sql).toContain(
@@ -557,6 +578,7 @@ describe('disputesRepository', () => {
         adminId: 1,
         status: 'cancelled',
         note: 'Disputa resolvida: refund_client',
+        source: 'user',
       });
       expect(fakeDb.calls[7]!.params).toEqual({
         adminId: 1,

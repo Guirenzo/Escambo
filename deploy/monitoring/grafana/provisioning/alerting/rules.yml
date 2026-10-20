@@ -194,6 +194,81 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [1] }
 
+      # RNF-009: backup diário. Uma série por parte (kind: db ou uploads), em horas desde o último
+      # sucesso; 26 h = o horário do dia (BACKUP_HOUR) mais uma folga para a nova tentativa. Sem dado
+      # também alerta: o serviço backup ou o node-exporter parado, ou nenhum backup feito ainda.
+      - uid: escambo-backup-atrasado
+        title: BackupAtrasado
+        condition: C
+        for: 30m
+        noDataState: Alerting
+        execErrState: Alerting
+        labels:
+          severity: critical
+        annotations:
+          summary: 'O último backup ({{ $labels.kind }}) bem-sucedido tem mais de 26 horas, ou o serviço backup parou de informar (docker compose logs backup)'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: (time() - escambo_backup_last_success_timestamp_seconds) / 3600
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [26] }
+
+      # A cópia para fora da VPS (perfil offsite) roda de hora em hora. Sem dado é OK: o perfil é
+      # opcional e, desligado, a métrica não existe.
+      - uid: escambo-backup-fora-da-vps-atrasado
+        title: BackupForaDaVpsAtrasado
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: 'A cópia dos backups para fora da VPS não termina bem há mais de 26 horas (docker compose logs backup-offsite)'
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: (time() - escambo_backup_offsite_last_success_timestamp_seconds) / 3600
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [26] }
+
       # Uma série por job (rótulo job_name): o alerta diz qual falhou.
       - uid: escambo-job-falhando
         title: JobFalhando

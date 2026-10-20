@@ -240,6 +240,8 @@ describe('RN-030: envio de contrapropostas', () => {
         uid: FREELANCER,
         now: NOW,
         message: 'Incluí a ilustração.',
+        // A contraproposta é ação de quem a envia (status-history.ts).
+        source: 'user',
       }),
     );
     expect(wallets.ensure).not.toHaveBeenCalled();
@@ -607,6 +609,9 @@ describe('RN-030: cliente aceita a oferta do freelancer', () => {
     expect(repo.transition).toHaveBeenCalledOnce();
     expect(repo.transition.mock.calls[0]![0]).toMatchObject({
       to: 'accepted',
+      // O aceite da contraproposta é do cliente, e a linha do histórico também.
+      changedBy: CLIENT,
+      source: 'user',
       offerResolution: {
         activeFreelancerId: FREELANCER,
         terms: { price: 650, fee: 97.5, net: 552.5 },

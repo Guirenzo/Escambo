@@ -316,6 +316,7 @@ function transicaoDoCancelamento(
   return {
     id: row.id,
     changedBy,
+    source: 'user',
     from: row.status,
     to: 'cancelled',
     note: `Reembolso: ${terms.refundPercentage}% (gravação com a leitura antiga)`,
@@ -1167,6 +1168,7 @@ describe('Corrida pelo service: a guarda é a que o cancelamento monta', () => {
           message: 'Front-end entregue no meio do cancelamento',
           now: now(),
           approvalDueAt: fromNow(5 * DAY),
+          source: 'user',
         });
         expect(ok).toBe(true);
         return r;

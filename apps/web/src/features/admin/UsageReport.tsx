@@ -1,5 +1,5 @@
 import type { FinanceGranularity, UsageBucket } from '@escambo/types';
-import { QueryState } from '../../components/ui';
+import { QueryState, TableWrap } from '../../components/ui';
 import { useAdminUsage } from '../../lib/hooks';
 import { bucketFullLabel, bucketLabel, GRANULARITY_WORD } from './buckets';
 
@@ -85,7 +85,7 @@ export function UsageReport({
                   </div>
                 ))}
               </div>
-              <div className="table-wrap">
+              <TableWrap label="Tabela de uso da plataforma">
                 <table className="table">
                   <caption id="usage-table-caption" className="sr-only">
                     Uso da plataforma por {per}: os mesmos números do gráfico, em tabela.
@@ -117,7 +117,7 @@ export function UsageReport({
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TableWrap>
             </>
           );
         }}

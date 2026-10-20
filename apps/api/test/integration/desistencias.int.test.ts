@@ -257,6 +257,7 @@ describe('RN-026: reembolso, reputação e revisão durável', () => {
       contractsRepository.transition({
         id,
         changedBy: f.id,
+        source: 'user',
         from: 'accepted',
         to: 'cancelled',
         note: 'Reembolso em rollback',

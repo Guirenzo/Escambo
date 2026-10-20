@@ -84,6 +84,7 @@ const input = (row: ContractRow = contract(), price = 1200) => ({
   pct: row.payment_mode === 'credits' ? 0 : 15,
   uid: row.offer_seq === 2 ? row.client_id : row.freelancer_id,
   now: NOW,
+  source: 'user' as const,
 });
 
 /** Respostas da leitura sob lock, antes de qualquer efeito financeiro. */
@@ -283,10 +284,15 @@ describe('contraproposta atômica', () => {
       respondBy: NEXT_EXPIRES,
       now: NOW,
     });
+    // A contraproposta é ação de quem a enviou: a linha do tempo grava a origem user.
+    expect(fakeDb.calls.at(-1)!.sql).toContain(
+      "VALUES (:id, :uid, 'pending', 'pending', :note, :source, :now)",
+    );
     expect(fakeDb.calls.at(-1)!.params).toEqual({
       id: 31,
       uid: 44,
       note: 'Contraproposta enviada na rodada atual: valor e escopo ajustados',
+      source: 'user',
       now: NOW,
     });
     expect(fakeDb.calls[0]!.sql).toBe('SELECT * FROM contracts WHERE id = :id FOR UPDATE');

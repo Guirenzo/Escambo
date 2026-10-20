@@ -18,6 +18,7 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { displayName } from '../../lib/format';
 import { Avatar } from '../../components/Avatar';
+import { SkipLink } from '../../components/ui';
 import { useConsents, useNotifications, useProfilesMe } from '../../lib/hooks';
 import { useRealtimeNotifications } from '../../lib/realtime';
 import { browserBrazilZone } from '../../lib/timezones';
@@ -95,6 +96,7 @@ export function Shell() {
 
   return (
     <div className="app">
+      <SkipLink target="conteudo" />
       <aside className="sidebar">
         <NavLink to="/" end className="brand">
           <span className="brand-mark">
@@ -135,7 +137,7 @@ export function Shell() {
         </div>
       </aside>
 
-      <main className="main">
+      <main className="main" id="conteudo" tabIndex={-1}>
         {user && banner === 'suspended' && (
           <div className="verify-banner" role="status" data-testid="suspended-banner">
             <ShieldAlert size={16} aria-hidden="true" />

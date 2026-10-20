@@ -11,7 +11,8 @@ import { defineConfig, devices } from '@playwright/test';
  *   desktop      smoke (login, contratar → sala → chat) + acessibilidade (axe) + responsividade
  *                (responsivo.spec.ts: as telas principais a 320 px e a 768 px, RNF-026; a largura
  *                vem do test.use do próprio spec)
- *   mobile       mesmo smoke em um Pixel 7 (barra de navegação inferior, toque)
+ *   mobile       mesmo smoke e a mesma acessibilidade (axe e teclado) em um Pixel 7 (barra de
+ *                navegação inferior, toque)
  *   screenshots  gera os prints de docs/screenshots (precisa dos dados de `npm run demo:seed`)
  */
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
@@ -41,7 +42,9 @@ export default defineConfig({
     },
     {
       name: 'mobile',
-      testMatch: /smoke\.spec\.ts/,
+      // Acessibilidade também no celular: a navegação vira barra inferior e o axe e a auditoria de
+      // teclado (teclado.smoke.spec.ts) olham a marcação desse layout.
+      testMatch: /smoke\.spec\.ts|a11y\.spec\.ts/,
       use: { ...devices['Pixel 7'] },
     },
     {

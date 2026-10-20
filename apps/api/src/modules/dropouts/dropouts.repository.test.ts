@@ -113,7 +113,7 @@ describe('confirmação do cliente', () => {
         OK,
         OK,
       );
-      expect(await dropoutsRepository.agree(31, 7)).toEqual({
+      expect(await dropoutsRepository.agree(31, 7, 'user')).toEqual({
         row: { ...r, client_agreed_at: NOW },
         now: NOW,
       });
@@ -134,6 +134,11 @@ describe('confirmação do cliente', () => {
           .every((s) => !s.includes(' JOIN ')),
       ).toBe(true);
       expect(fakeDb.sqls().at(-1)).toContain('INSERT INTO contract_status_history');
+      // A confirmação é do cliente, gravada como ação dele.
+      expect(fakeDb.sqls().at(-1)).toContain(
+        "VALUES (:contractId, :clientId, 'cancelled', 'cancelled', :note, :source, :now)",
+      );
+      expect(fakeDb.calls.at(-1)!.params).toMatchObject({ clientId: 7, source: 'user' });
       expect(fakeDb.sqls().join(' ')).not.toMatch(/wallet|credits/i);
       expect(fakeDb.conn.commit).toHaveBeenCalledOnce();
     },
@@ -152,12 +157,12 @@ describe('confirmação do cliente', () => {
       [r],
       [r],
     );
-    expect(await dropoutsRepository.agree(31, 7)).toEqual({ refused: 'closed' });
+    expect(await dropoutsRepository.agree(31, 7, 'user')).toEqual({ refused: 'closed' });
     expect(fakeDb.sqls().some((s) => /UPDATE |INSERT /.test(s))).toBe(false);
   });
   it('fora do cliente não descobre o freelancer nem a contestação', async () => {
     fakeDb.reply([{ id: 31, client_id: 7, freelancer_id: 44 }]);
-    expect(await dropoutsRepository.agree(31, 8)).toEqual({ refused: 'not_found' });
+    expect(await dropoutsRepository.agree(31, 8, 'user')).toEqual({ refused: 'not_found' });
     expect(fakeDb.calls).toHaveLength(1);
   });
   it('falha na história reverte também a confirmação', async () => {
@@ -170,7 +175,7 @@ describe('confirmação do cliente', () => {
       OK,
       new Error('history failed'),
     );
-    await expect(dropoutsRepository.agree(31, 7)).rejects.toThrow('history failed');
+    await expect(dropoutsRepository.agree(31, 7, 'user')).rejects.toThrow('history failed');
     expect(fakeDb.conn.rollback).toHaveBeenCalledOnce();
     expect(fakeDb.conn.commit).not.toHaveBeenCalled();
   });

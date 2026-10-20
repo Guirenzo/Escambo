@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { logger } from '../../config/logger';
 import { captureError } from '../../config/sentry';
 import { HttpError } from '../../utils/http-error';
-import { adminRepository } from '../admin/admin.repository';
+import { adminFacade } from '../admin/admin.facade';
 import { auditService } from '../audit/audit.service';
 import { MEDIA_MIME } from '../media/media.paths';
 import { quarantineDir } from '../media/media.storage';
@@ -80,7 +80,7 @@ export async function decideAppeal(req: Request, res: Response): Promise<void> {
   const result = await appealsService.decide(adminId, id, decision, note || null);
   const action = decision === 'uphold' ? 'appeal_upheld' : 'appeal_overturned';
   try {
-    await adminRepository.recordAction(adminId, action, 'image_removal', id, note || null);
+    await adminFacade.recordAction(adminId, action, 'image_removal', id, note || null);
   } catch (err) {
     // A decisão já foi gravada e o dono avisado; a nova tentativa daria 409. A falha do registro
     // vai para o log e o Sentry, a auditoria abaixo ainda guarda a decisão e o admin recebe 200.

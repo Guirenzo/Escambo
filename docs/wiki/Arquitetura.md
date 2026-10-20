@@ -42,7 +42,8 @@ flowchart LR
 | `web`                               | `ghcr.io/guirenzo/escambo-web` | nginx servindo o build do React, cabeçalhos de segurança (CSP em `'self'`), proxy para a API. |
 | `api`                               | `ghcr.io/guirenzo/escambo-api` | Toda a regra de negócio, o chat em tempo real e os jobs em background. Sem porta no host.     |
 | `migrate`                           | a mesma da API                 | Aplica baseline + migrations pendentes e sai; a API só sobe depois dele.                      |
-| `db`                                | `mysql:8.0`                    | Dados; sem porta no host. Backup diário por `scripts/backup-db.sh`.                           |
+| `db`                                | `mysql:8.0`                    | Dados; sem porta no host.                                                                     |
+| `backup`                            | `mysql:8.0`                    | Dump do banco e pacote dos arquivos todo dia, com retenção (ADR 64).                          |
 | `prometheus`, `blackbox`, `grafana` | oficiais                       | Monitoramento (perfil opcional `monitoring`, ver [Observabilidade](Observabilidade)).         |
 
 **Diferenças do desenho-alvo da RFC** (os ADRs estão em [Decisões de Arquitetura](Decisões-de-Arquitetura)):

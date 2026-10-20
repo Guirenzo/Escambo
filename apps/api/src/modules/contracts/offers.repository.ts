@@ -10,6 +10,7 @@ import type { ContractRow } from './contracts.repository';
 import { clientZoneOf, freelancerZoneOf } from './contract-zones';
 import { milestonesRepository } from './milestones.repository';
 import { holdAdjust, madeByOf, type OfferTerms } from './offers';
+import type { StatusChangeSource } from './status-history';
 
 export interface OfferRow extends RowDataPacket {
   id: number;
@@ -153,6 +154,7 @@ export const offersRepository = {
     pct: number;
     uid: number;
     now: Date;
+    source: StatusChangeSource;
   }): Promise<'ok' | 'changed' | 'insufficient'> {
     const { expected, terms, now } = input;
     const seq = Number(expected.offer_seq ?? 1);
@@ -245,9 +247,9 @@ export const offersRepository = {
         now,
       });
       await conn.query<ResultSetHeader>(
-        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, created_at)
-          VALUES (:id, :uid, 'pending', 'pending', :note, :now)`,
-        { id: row.id, uid: input.uid, note: input.note, now },
+        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source, created_at)
+          VALUES (:id, :uid, 'pending', 'pending', :note, :source, :now)`,
+        { id: row.id, uid: input.uid, note: input.note, source: input.source, now },
       );
       await conn.commit();
       return 'ok';

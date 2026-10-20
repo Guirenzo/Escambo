@@ -93,6 +93,10 @@ describe('SenhaCard', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('As senhas não conferem');
     expect(confirm).toHaveFocus();
     expect(confirm).toHaveAttribute('aria-describedby', 'senha-erro');
+    // Só o campo a corrigir fica marcado como inválido, com o erro como descrição.
+    expect(confirm).toHaveAttribute('aria-invalid', 'true');
+    expect(confirm).toHaveAccessibleDescription('As senhas não conferem');
+    expect(current).toHaveAttribute('aria-invalid', 'false');
     expect(changePassword).not.toHaveBeenCalled();
   });
 

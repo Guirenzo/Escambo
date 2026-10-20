@@ -108,6 +108,14 @@ describe('retenção da auditoria e extratos imutáveis no código (RNF-036, RNF
     expect(writesToProtectedTables()).toEqual([
       { file: 'apps/api/src/modules/audit/audit.purge.ts', write: 'DELETE FROM audit_logs' },
       { file: 'apps/api/src/modules/lgpd/lgpd.repository.ts', write: 'UPDATE admin_actions' },
+      // Teste de restauração do backup (RNF-009), só contra um banco descartável: depois de restaurar,
+      // tenta estas 4 escritas como o usuário da aplicação e exige que o banco RECUSE cada uma
+      // (ERROR 1644, os triggers da 0046), sem nenhuma linha mudar. É a prova de que o backup traz
+      // os triggers de volta funcionando; não é expurgo nem correção.
+      { file: 'scripts/test-backup-restore.sh', write: 'DELETE FROM audit_logs' },
+      { file: 'scripts/test-backup-restore.sh', write: 'DELETE FROM credit_transactions' },
+      { file: 'scripts/test-backup-restore.sh', write: 'UPDATE payment_events' },
+      { file: 'scripts/test-backup-restore.sh', write: 'UPDATE wallet_transactions' },
     ]);
   });
 });

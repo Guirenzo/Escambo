@@ -5,6 +5,7 @@ import { applyWalletEffect } from '../wallet/wallet.ledger';
 import { walletRepository } from '../wallet/wallet.repository';
 import { lockWalletRows, lockWalletUsers, lockWallets } from '../wallet/wallet.locks';
 import { INCLUDED_REVISIONS } from '../contracts/deadline-grace';
+import type { StatusChangeSource } from '../contracts/status-history';
 
 export interface BarterRow extends RowDataPacket {
   id: number;
@@ -65,6 +66,7 @@ async function insertBarterContract(
   conn: PoolConnection,
   agreementId: number,
   acceptorId: number,
+  source: StatusChangeSource,
   spec: ContractSpec,
 ): Promise<number> {
   const [res] = await conn.query<ResultSetHeader>(
@@ -76,9 +78,9 @@ async function insertBarterContract(
   );
   const contractId = res.insertId;
   await conn.query<ResultSetHeader>(
-    `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
-     VALUES (:contractId, :acceptorId, NULL, 'accepted', 'Contrato gerado pela troca')`,
-    { contractId, acceptorId },
+    `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source)
+     VALUES (:contractId, :acceptorId, NULL, 'accepted', 'Contrato gerado pela troca', :source)`,
+    { contractId, acceptorId, source },
   );
   return contractId;
 }
@@ -303,6 +305,8 @@ export const barterRepository = {
     contractRequested: ContractSpec;
     /** Reserva a fazer agora (torna ainda 'pending'); null quando já reservada ou sem torna. */
     hold: TornaHold | null;
+    /** Origem das linhas do histórico dos dois contratos gerados (status-history.ts). */
+    source: StatusChangeSource;
   }): Promise<AcceptResult> {
     if (params.hold) await walletRepository.ensure(params.hold.userId);
     const conn = await pool.getConnection();
@@ -337,12 +341,14 @@ export const barterRepository = {
         conn,
         params.agreementId,
         params.acceptorId,
+        params.source,
         params.contractOffered,
       );
       const requestedId = await insertBarterContract(
         conn,
         params.agreementId,
         params.acceptorId,
+        params.source,
         params.contractRequested,
       );
 

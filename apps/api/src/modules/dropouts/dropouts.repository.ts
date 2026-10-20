@@ -3,6 +3,7 @@ import type { PoolConnection } from 'mysql2/promise';
 import { inTransaction, pool } from '../../config/db';
 import { clock } from '../../utils/clock';
 import { lockWalletUsers } from '../wallet/wallet.locks';
+import type { StatusChangeSource } from '../contracts/status-history';
 import { reportsRepository } from '../reports/reports.repository';
 import {
   notificationsService,
@@ -150,7 +151,11 @@ export const dropoutsRepository = {
   },
 
   /** Cliente: contratação → usuário → desistência. Nenhuma carteira é tocada. */
-  async agree(contractId: number, clientId: number): Promise<DropoutMutation> {
+  async agree(
+    contractId: number,
+    clientId: number,
+    source: StatusChangeSource,
+  ): Promise<DropoutMutation> {
     return inTransaction(async (conn) => {
       const [contracts] = await conn.query<RowDataPacket[]>(
         'SELECT id, client_id, freelancer_id FROM contracts WHERE id = :contractId FOR UPDATE',
@@ -177,11 +182,12 @@ export const dropoutsRepository = {
       );
       await conn.query<ResultSetHeader>(
         `INSERT INTO contract_status_history
-          (contract_id, changed_by, old_status, new_status, note, created_at)
-         VALUES (:contractId, :clientId, 'cancelled', 'cancelled', :note, :now)`,
+          (contract_id, changed_by, old_status, new_status, note, source, created_at)
+         VALUES (:contractId, :clientId, 'cancelled', 'cancelled', :note, :source, :now)`,
         {
           contractId,
           clientId,
+          source,
           now,
           note: 'O cliente confirmou que a desistência foi combinada (RN-026)',
         },

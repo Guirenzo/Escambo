@@ -24,6 +24,8 @@ export function EmailCard() {
   const [saving, setSaving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** O campo que precisa de correção: só ele fica marcado como inválido (aria-invalid). */
+  const [badField, setBadField] = useState<HTMLInputElement | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
 
@@ -34,6 +36,7 @@ export function EmailCard() {
   /** Mostra o erro e leva o foco ao campo que precisa ser corrigido. */
   function fail(message: string, field: HTMLInputElement | null): void {
     setError(message);
+    setBadField(field);
     field?.focus();
   }
 
@@ -45,6 +48,7 @@ export function EmailCard() {
     }
     setSaving(true);
     setError(null);
+    setBadField(null);
     try {
       const pending = await api.changeEmail({ currentPassword: password, newEmail: target });
       patch({ pendingEmail: pending });
@@ -133,6 +137,7 @@ export function EmailCard() {
                   autoComplete="email"
                   placeholder="voce@exemplo.com"
                   aria-describedby={invalid ? 'email-erro' : undefined}
+                  aria-invalid={badField !== null && badField === emailRef.current}
                 />
               </Field>
               <Field label="Senha atual">
@@ -144,6 +149,7 @@ export function EmailCard() {
                   required
                   autoComplete="current-password"
                   aria-describedby={invalid ? 'email-erro' : undefined}
+                  aria-invalid={badField !== null && badField === passwordRef.current}
                 />
               </Field>
               {error && (

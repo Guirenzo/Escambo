@@ -53,7 +53,7 @@ Confiabilidade    → integridade de dados, tratamento de erros
 |---|---|---|---|---|
 | RNF-007 | A plataforma deve ter alta disponibilidade em produção | Uptime ≥ 99,5% ao mês (≤ 3,6h de downtime/mês) | Alta | Parcial |
 | RNF-008 | O sistema deve se recuperar automaticamente de falhas transitórias | Health checks com restart automático via processo supervisor | Alta | Implementado |
-| RNF-009 | O banco de dados deve ter backup automático diário | Backups diários com retenção mínima de 7 dias | Alta | Parcial |
+| RNF-009 | O banco de dados deve ter backup automático diário | Backups diários com retenção mínima de 7 dias | Alta | Implementado |
 | RNF-010 | O sistema deve exibir página de manutenção clara quando estiver indisponível | Página estática de status com previsão de retorno | Média | Implementado |
 
 ---
@@ -79,7 +79,7 @@ Confiabilidade    → integridade de dados, tratamento de erros
 
 | ID | Descrição | Métrica | Prioridade | Situação |
 |---|---|---|---|---|
-| RNF-021 | A arquitetura do backend deve ser modular e permitir extração futura de microsserviços | Módulos isolados com responsabilidade única | Alta | Parcial |
+| RNF-021 | A arquitetura do backend deve ser modular e permitir extração futura de microsserviços | Módulos isolados com responsabilidade única | Alta | Implementado |
 | RNF-022 | O banco de dados deve suportar crescimento sem degradação significativa de performance | Índices em todas as FKs e colunas de busca; explain plan validado | Alta | Implementado |
 | RNF-023 | O sistema deve suportar múltiplas conexões simultâneas de WebSocket sem degradação | Pool de conexões configurado; teste com ≥ 500 conexões simultâneas | Média | Implementado |
 | RNF-024 | A infraestrutura deve permitir escalonamento horizontal da API | Deploy stateless; sessões em Redis ou JWT (sem server-side session) | Média | Parcial |

@@ -62,3 +62,12 @@ As cinco conferem o `information_schema` antes de cada mudança e podem rodar de
 | 0047_catalogo_unico.sql                     | Junta missões e planos repetidos (o seed reaplicado duplicava o catálogo e a missão pagava em dobro) e cria as chaves únicas que faltavam              |
 
 Todas podem rodar de novo sem erro. A 0046 cria triggers: com o binlog ligado (padrão do MySQL 8), o usuário das migrations precisa de `log_bin_trust_function_creators=1` no servidor, que os dois compose passam ao `db` a partir da 1.45.0. Passo a passo no DEPLOY.md ("Atualizar para a 1.45.0").
+
+## 1.46.0
+
+| Migration                                   | Efeito                                                                                                                                                |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0048_origem_historico_status.sql            | `contract_status_history.source`: cada mudança de status diz se foi a pessoa (`user`) ou a plataforma (`system`), com backfill das linhas antigas (RF-081) |
+| 0049_triggers_em_bloco.sql                  | Recria os triggers da 0046 em `BEGIN … END`: o `;` final do corpo ia para o dump num lugar que o `mysql` recusa (RNF-009, ADR 64)                      |
+
+As duas podem rodar de novo sem erro. A 0048 preenche a origem das linhas antigas pelo mesmo reconhecimento por texto que o relatório de uso fazia e só então torna a coluna obrigatória; se cair no meio, a próxima execução faz só o que falta. A 0049 apaga e recria cada trigger com o mesmo efeito e as mesmas mensagens, então pede `log_bin_trust_function_creators=1` como a 0046. Os dumps feitos antes dela só voltam pelo `restore-db.sh`, que tira o `;` a mais na importação. Passo a passo no DEPLOY.md ("Atualizar para a 1.46.0").

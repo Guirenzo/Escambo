@@ -8,7 +8,7 @@ import type { RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { env } from '../../config/env';
 import { parseSignals } from '../messaging/off-platform';
-import { settingsRepository } from '../settings/settings.repository';
+import { settingsFacade } from '../settings/settings.facade';
 import { settingsService } from '../settings/settings.service';
 import { DAY_MS, dayKey, startOfTodayBrt } from './moderation.day';
 import { parseState, REPORT_STATE_KEY } from './moderation.sla-state';
@@ -376,7 +376,7 @@ export const moderationHealthService = {
         window,
       ),
       settingsService.flag('moderation_sla_report_enabled'),
-      settingsRepository.get(REPORT_STATE_KEY),
+      settingsFacade.get(REPORT_STATE_KEY),
     ]);
     const aq = appealQueue[0];
     const dismissed = countOf(decisionCounts, 'dismissed');

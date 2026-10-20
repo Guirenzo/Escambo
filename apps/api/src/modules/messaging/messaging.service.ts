@@ -8,10 +8,11 @@ import type {
 } from '@escambo/types';
 import { realtime } from '../../config/realtime';
 import { HttpError } from '../../utils/http-error';
-import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
+import { contractsFacade } from '../contracts/contracts.facade';
+import type { ContractRow } from '../contracts/contracts.repository';
 import { notificationsService } from '../notifications/notifications.service';
-import { profilesRepository } from '../profiles/profiles.repository';
-import { reportsRepository } from '../reports/reports.repository';
+import { profilesFacade } from '../profiles/profiles.facade';
+import { reportsFacade } from '../reports/reports.facade';
 import { logger } from '../../config/logger';
 import {
   attachmentPath,
@@ -166,7 +167,7 @@ async function authorizedContext(
   contractId: number,
   uid: number,
 ): Promise<Omit<ConversationContext, 'conversationId'>> {
-  const contract = await contractsRepository.findById(contractId);
+  const contract = await contractsFacade.findById(contractId);
   if (!contract) throw new HttpError(404, 'Contratação não encontrada', 'contract_not_found');
   if (contract.client_id !== uid && contract.freelancer_id !== uid) {
     throw new HttpError(403, 'Você não participa desta contratação', 'forbidden');
@@ -201,7 +202,7 @@ async function recordResponseTime(ctx: ConversationContext, messageId: number): 
   const previous = await messagingRepository.previousMessage(ctx.conversationId, messageId);
   const hours = responseHours(previous, ctx.contract.client_id);
   if (hours == null) return;
-  await profilesRepository.blendResponseTime(ctx.contract.freelancer_id, hours);
+  await profilesFacade.blendResponseTime(ctx.contract.freelancer_id, hours);
 }
 
 /**
@@ -276,7 +277,7 @@ async function deliver(
 async function flagOffPlatform(messageId: number, signals: OffPlatformSignal[]): Promise<void> {
   if (signals.length === 0) return;
   try {
-    await reportsRepository.create({
+    await reportsFacade.create({
       reporterId: null,
       targetType: 'message',
       targetId: messageId,

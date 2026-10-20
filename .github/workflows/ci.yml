@@ -115,6 +115,51 @@ jobs:
           path: apps/api/coverage/integration
           retention-days: 7
 
+  # RNF-009: o backup volta. Num MySQL descartável, aplica baseline + migrations com o runner da API,
+  # insere dados, faz o backup como o serviço `backup` de produção faz (deploy/backup/agendador.sh),
+  # apaga o banco, restaura com scripts/restore-db.sh e confere que linhas, CHECKSUM, estrutura,
+  # triggers (com DEFINER) e schema_migrations voltaram iguais e que os triggers ainda barram UPDATE e
+  # DELETE no extrato. Também confere a retenção, o last-backup.json, a métrica e o pacote dos arquivos.
+  backup:
+    name: Backup · restauração testada (MySQL)
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: escambo_root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pescambo_root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: ShellCheck dos scripts de backup
+        run: shellcheck -x deploy/backup/*.sh scripts/backup-db.sh scripts/backup-uploads.sh scripts/restore-db.sh scripts/test-backup-restore.sh
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Backup → apaga o banco → restaura → compara
+        run: bash scripts/test-backup-restore.sh
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: '3306'
+          DB_ROOT_PASSWORD: escambo_root
+
   # Meta do backend (75%, Playbook de Web Apps) sobre a união unitários + integração (ADR 59).
   coverage:
     name: Cobertura · meta do backend
@@ -232,6 +277,9 @@ jobs:
       # os testes criam vários usuários por execução; sem isso o rate limit de login derruba a suíte
       LOGIN_RATE_LIMIT_MAX: '1000'
       RATE_LIMIT_MAX: '10000'
+      # cada execução sobe uns 36 anexos (desktop + mobile, com os specs de acessibilidade); o teto
+      # padrão é 60 por hora por IP, e uma repetição de teste passaria dele
+      UPLOAD_RATE_LIMIT_MAX: '1000'
       ADMIN_EMAILS: '@admin.escambo.test'
 
     steps:
@@ -286,13 +334,14 @@ jobs:
           path: apps/web/playwright-report
           retention-days: 7
 
-  # Só em main, com testes, E2E e cobertura verdes: constrói as imagens de produção e publica no GHCR.
+  # Só em main, com testes, E2E, cobertura e restauração do backup verdes: constrói as imagens de
+  # produção e publica no GHCR.
   # Tags: latest · sha curto · versão do package.json. Quem as põe no ar é o workflow Deploy (deploy.yml).
   publish:
     name: Publicar imagens (GHCR)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build-and-test, integration, e2e, coverage]
+    needs: [build-and-test, integration, e2e, coverage, backup]
     permissions:
       contents: read
       packages: write

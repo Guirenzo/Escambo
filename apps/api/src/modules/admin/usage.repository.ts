@@ -11,21 +11,12 @@ import { bucketFormat, bucketOf } from './finance.repository';
  * autor e hora: uma sessão criada (login, cadastro ou renovação do acesso, que o site faz sozinho
  * enquanto é usado), uma mensagem enviada no chat (sem as de sistema) ou uma mudança de status de
  * contratação feita pela pessoa. Administradores ficam de fora: são a equipe, não o uso.
+ *
+ * Mudança "feita pela pessoa" é a linha do histórico com source = 'user' (migration 0048). A
+ * plataforma também grava mudanças em nome do cliente (aprovação tácita, proposta ou oferta
+ * expirada, disputa aberta por prazo), com source = 'system': essas não são atividade de ninguém.
+ * Quem grava declara a origem (status-history.ts); o relatório não lê mais o texto da nota.
  */
-
-/**
- * Mudanças de status que a plataforma grava em nome de alguém e que, portanto, não são atividade
- * da pessoa: aprovação tácita de entrega ou marco (RN-024, nota "Aprovação tácita: ..."), proposta
- * ou oferta expirada (RN-021/RN-030, nota "... expirada: sem resposta ...", em nome do cliente) e
- * a disputa aberta por prazo (RN-029, em nome do cliente; a descrição dela começa sempre por
- * "Aberta automaticamente"). Os textos vêm de contracts.service.ts e deadline-notices.ts; o teste
- * deste arquivo confere que continuam batendo.
- */
-export const HUMAN_STATUS_CHANGE = `COALESCE(h.note, '') NOT LIKE 'Aprovação tácita%'
-  AND COALESCE(h.note, '') NOT LIKE '%expirada: sem resposta%'
-  AND NOT (h.new_status = 'disputed' AND EXISTS (
-    SELECT 1 FROM disputes d
-     WHERE d.contract_id = h.contract_id AND d.description LIKE 'Aberta automaticamente%'))`;
 
 /** Quem agiu e quando, das três fontes; `bucket` agrupa por balde (sem ele, o período inteiro). */
 function actions(granularity?: FinanceGranularity): string {
@@ -38,7 +29,7 @@ function actions(granularity?: FinanceGranularity): string {
            WHERE m.created_at >= :from AND m.created_at < :to AND m.type <> 'system'
           UNION ALL
           SELECT h.changed_by${at('h.created_at')} FROM contract_status_history h
-           WHERE h.created_at >= :from AND h.created_at < :to AND ${HUMAN_STATUS_CHANGE}`;
+           WHERE h.created_at >= :from AND h.created_at < :to AND h.source = 'user'`;
 }
 
 export interface UsageCountsRow extends RowDataPacket {

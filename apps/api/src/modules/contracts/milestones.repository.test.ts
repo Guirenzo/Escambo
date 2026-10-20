@@ -24,7 +24,7 @@ const flat = (sql: string): string => sql.replace(/\s+/g, ' ').trim();
 
 const NOW = new Date('2026-10-06T15:00:00.000Z');
 const HISTORY_INSERT =
-  'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note) VALUES (:contractId, :changedBy, :oldStatus, :newStatus, :note)';
+  'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source) VALUES (:contractId, :changedBy, :oldStatus, :newStatus, :note, :source)';
 /** Encerra o pedido de extensão pendente; a hora vem ANTES do status, que a segunda atribuição muda. */
 const CLOSE_EXTENSION =
   "c.extension_resolved_at = IF(c.extension_status = 'pending', :now, c.extension_resolved_at), " +
@@ -262,6 +262,7 @@ describe('milestonesRepository', () => {
       message: 'Layout no Figma',
       now: NOW,
       approvalDueAt: new Date('2026-10-11T15:00:00.000Z'),
+      source: 'user' as const,
     };
 
     it('com arquivos (RF-035), as mensagens e a ligação com o marco entram na mesma transação', async () => {
@@ -359,11 +360,12 @@ describe('milestonesRepository', () => {
 
       // A linha do tempo diz qual marco foi entregue e com que mensagem.
       expect(fakeDb.calls[6]!.sql).toBe(
-        'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, created_at) VALUES (:contractId, :changedBy, :oldStatus, :newStatus, :note, :at)',
+        'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source, created_at) VALUES (:contractId, :changedBy, :oldStatus, :newStatus, :note, :source, :at)',
       );
       expect(fakeDb.calls[6]!.params).toEqual({
         contractId: 12,
         changedBy: 44,
+        source: 'user',
         oldStatus: 'accepted',
         newStatus: 'in_progress',
         note: 'Marco «Layout» entregue: Layout no Figma',
@@ -454,6 +456,7 @@ describe('milestonesRepository', () => {
       mode: 'cash' as const,
       note: null,
       now: NOW,
+      source: 'user' as const,
     };
     const milestone = {
       id: 5,
@@ -532,6 +535,7 @@ describe('milestonesRepository', () => {
       expect(fakeDb.calls[4]!.params).toEqual({
         contractId: 12,
         changedBy: 7,
+        source: 'user',
         oldStatus: 'accepted',
         newStatus: 'in_progress',
         note: 'Marco «Layout» aprovado: R$ 283,33 liberados',
@@ -621,6 +625,7 @@ describe('milestonesRepository', () => {
         ...p,
         note: 'Aprovação tácita: sem resposta do cliente',
         dueBy: NOW,
+        source: 'system',
       });
 
       const select = fakeDb.calls[1]!;
@@ -628,8 +633,12 @@ describe('milestonesRepository', () => {
         'AND (:dueBy IS NULL OR (approval_due_at IS NOT NULL AND approval_due_at <= :dueBy)) FOR UPDATE',
       );
       expect(select.params).toEqual({ id: 5, contractId: 12, dueBy: NOW });
+      // Em nome do cliente, mas feita pela plataforma: a origem é system (status-history.ts).
+      expect(fakeDb.calls[4]!.sql).toBe(HISTORY_INSERT);
       expect(fakeDb.calls[4]!.params).toMatchObject({
+        changedBy: 7,
         note: 'Aprovação tácita: sem resposta do cliente · Marco «Layout» aprovado: R$ 283,33 liberados',
+        source: 'system',
       });
     });
 
@@ -758,6 +767,7 @@ describe('milestonesRepository', () => {
       expectedRevisionsUsed: 0,
       note: 'Ajustar o topo',
       now: NOW,
+      source: 'user' as const,
     };
 
     it('o marco entregue volta a financiado com a nota, sem hora de aprovação tácita, grava desde quando está em revisão e a linha do tempo registra o pedido', async () => {
@@ -789,11 +799,12 @@ describe('milestonesRepository', () => {
 
       // O status do contrato não muda: a linha do tempo repete o atual.
       expect(fakeDb.calls[3]!.sql).toBe(
-        'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, created_at) VALUES (:contractId, :changedBy, :oldStatus, :newStatus, :note, :at)',
+        'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source, created_at) VALUES (:contractId, :changedBy, :oldStatus, :newStatus, :note, :source, :at)',
       );
       expect(fakeDb.calls[3]!.params).toEqual({
         contractId: 12,
         changedBy: 7,
+        source: 'user',
         oldStatus: 'in_progress',
         newStatus: 'in_progress',
         note: 'Revisão pedida no marco «Layout»: Ajustar o topo',
@@ -824,6 +835,7 @@ describe('milestonesRepository', () => {
       expect(fakeDb.calls[3]!.params).toEqual({
         contractId: 12,
         changedBy: 7,
+        source: 'user',
         oldStatus: 'accepted',
         newStatus: 'accepted',
         note: 'Revisão pedida no marco «Layout»: Ajustar o topo',
@@ -875,6 +887,7 @@ describe('milestonesRepository', () => {
       now: NOW,
       expectedRevisionsUsed: 2,
       expectedRevisionLimit: 2,
+      source: 'user' as const,
     };
     const row = {
       id: 5,
@@ -926,6 +939,7 @@ describe('milestonesRepository', () => {
         expect(fakeDb.calls[3]!.params).toEqual({
           contractId: 12,
           changedBy: 44,
+          source: 'user',
           oldStatus: 'in_progress',
           newStatus: 'in_progress',
           note: `O freelancer liberou mais uma revisão sem custo no marco «Layout» (RN-023): agora são ${limit + 1}`,

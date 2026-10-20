@@ -10,7 +10,7 @@ import {
   type PushSendOptions,
 } from './push.provider';
 import { EMAILED_NOTIFICATION_TYPES } from '../mail/mail.service';
-import { authRepository } from '../auth/auth.repository';
+import { authFacade } from '../auth/auth.facade';
 import { notificationsRepository } from './notifications.repository';
 import { timezoneOf } from '../../utils/timezone';
 import type { QuietPassCategory } from '@escambo/types';
@@ -297,7 +297,7 @@ export const pushService = {
     try {
       if (!PUSHED_NOTIFICATION_TYPES.has(params.type)) return;
       // Avisos opcionais não entregam conteúdo a banidos/excluídos; suspenso mantém consulta.
-      const user = await authRepository.findById(userId);
+      const user = await authFacade.findById(userId);
       if (!user || user.deleted_at || user.status === 'banned') return;
       const zone = timezoneOf(user.timezone);
       const window = quietWindowOf(user.push_quiet_start, user.push_quiet_end);
@@ -352,7 +352,7 @@ export const pushService = {
     userId: number,
     now: Date = new Date(),
   ): Promise<{ sent: number; removed: number; failed: number }> {
-    const user = await authRepository.findById(userId);
+    const user = await authFacade.findById(userId);
     const zone = timezoneOf(user?.timezone);
     const window = quietWindowOf(user?.push_quiet_start, user?.push_quiet_end);
     return this.send(

@@ -267,6 +267,7 @@ export function PerfilView() {
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  autoComplete="name"
                   required
                   minLength={2}
                 />
@@ -304,12 +305,17 @@ export function PerfilView() {
                 <Input value={bio} onChange={(e) => setBio(e.target.value)} />
               </Field>
               <Field label="Cidade">
-                <Input value={city} onChange={(e) => setCity(e.target.value)} />
+                <Input
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  autoComplete="address-level2"
+                />
               </Field>
               <Field label="Estado (UF)">
                 <Input
                   value={stateUf}
                   onChange={(e) => setStateUf(e.target.value)}
+                  autoComplete="address-level1"
                   maxLength={2}
                   placeholder="SC"
                 />
@@ -410,6 +416,7 @@ export function PerfilView() {
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  autoComplete="name"
                   required
                   minLength={2}
                 />
@@ -437,7 +444,11 @@ export function PerfilView() {
                 </div>
               </Field>
               <Field label="Cidade">
-                <Input value={city} onChange={(e) => setCity(e.target.value)} />
+                <Input
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  autoComplete="address-level2"
+                />
               </Field>
               <Button type="submit" disabled={putClient.isPending}>
                 Salvar cliente
