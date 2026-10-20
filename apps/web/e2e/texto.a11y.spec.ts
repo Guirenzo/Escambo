@@ -35,6 +35,8 @@ const PDF = Buffer.from(
 );
 const LONG_FILE = 'manual-da-marca-versao-final-revisada-com-as-cores-novas';
 const WORK_TITLE = 'Identidade visual completa da padaria do bairro com cardápio e sinalização';
+const REPORT_TEXT =
+  'Pediu para pagar fora da plataforma, por Pix, e mandou o telefone para combinar o resto da entrega sem a garantia do Escambo.';
 const WORK_URL = 'https://exemplo.com/portfolio/identidade-visual-completa-da-padaria-do-bairro';
 
 const SPACING_CSS = `
@@ -100,7 +102,7 @@ async function lostContent(page: Page): Promise<string[]> {
     // chat que rolou para fora da lista não está "sob" o campo de texto, está escondida).
     const visiblePart = (el: Element, r: DOMRect): DOMRect | null => {
       let { left, top, right, bottom } = r;
-      for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) {
+      for (let e: Element | null = el; e && e !== document.body; e = e.parentElement) {
         const st = getComputedStyle(e);
         if (st.overflowX === 'visible' && st.overflowY === 'visible') continue;
         const c = e.getBoundingClientRect();
@@ -191,6 +193,22 @@ for (const [criterion, css] of [
       },
     });
     expect(barter.ok(), await barter.text()).toBeTruthy();
+    // Uma denúncia de mensagem com descrição comprida na fila do admin.
+    const message = await request.post(`/api/messaging/contracts/${contractId}`, {
+      headers: h(freelancer.token),
+      data: { content: `Me paga por fora no pix, sai mais barato ${Date.now().toString(36)}` },
+    });
+    expect(message.ok(), await message.text()).toBeTruthy();
+    const report = await request.post('/api/reports', {
+      headers: h(client.token),
+      data: {
+        targetType: 'message',
+        targetId: ((await message.json()) as { id: number }).id,
+        reason: 'off_platform',
+        description: REPORT_TEXT,
+      },
+    });
+    expect(report.ok(), await report.text()).toBeTruthy();
     const { ulid } = (await (
       await request.get('/api/auth/me', { headers: h(freelancer.token) })
     ).json()) as { ulid: string };

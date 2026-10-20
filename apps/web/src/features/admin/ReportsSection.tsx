@@ -263,7 +263,7 @@ export function ReportsSection() {
                                 )}
                               </span>
                             )}
-                            {g.excerpt && <span className="muted tiny clamp">“{g.excerpt}”</span>}
+                            {g.excerpt && <span className="muted tiny">“{g.excerpt}”</span>}
                             {g.imageUrl && !g.imageLive && (
                               <span className="muted tiny">esta imagem já não está no ar</span>
                             )}
@@ -282,9 +282,7 @@ export function ReportsSection() {
                             <span className="reason-tag auto">Sinalização automática</span>
                           )}
                         </div>
-                        {g.descriptions[0] && (
-                          <div className="muted tiny clamp">{g.descriptions[0]}</div>
-                        )}
+                        {g.descriptions[0] && <div className="muted tiny">{g.descriptions[0]}</div>}
                         <div className="muted tiny">
                           {g.reports} denúncia{g.reports > 1 ? 's' : ''} · última em{' '}
                           {dtm(g.lastReportedAt)}
@@ -296,7 +294,7 @@ export function ReportsSection() {
                             {REPORT_STATUS_LABEL[g.status] ?? g.status}
                           </span>
                           {g.resolutionNote && (
-                            <span className="muted tiny clamp">{g.resolutionNote}</span>
+                            <span className="muted tiny">{g.resolutionNote}</span>
                           )}
                           {g.reviewedAt && (
                             <span className="muted tiny">em {dtm(g.reviewedAt)}</span>
@@ -379,7 +377,7 @@ export function ReportsSection() {
                   {deciding.group.owner?.name ? ` · de ${deciding.group.owner.name}` : ''}
                 </span>
                 {deciding.group.excerpt && (
-                  <span className="muted tiny clamp">“{deciding.group.excerpt}”</span>
+                  <span className="muted tiny">“{deciding.group.excerpt}”</span>
                 )}
               </div>
             </div>

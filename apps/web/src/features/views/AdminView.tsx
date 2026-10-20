@@ -566,7 +566,7 @@ export function AdminView() {
                       </td>
                       <td>
                         <strong>{DISPUTE_REASON_LABEL[d.reason] ?? d.reason}</strong>
-                        <div className="muted tiny clamp">{d.description}</div>
+                        <div className="muted tiny">{d.description}</div>
                       </td>
                       <td>
                         <span className="pill status-disputed">
@@ -786,7 +786,7 @@ export function AdminView() {
                           <span className="muted tiny">{r.userEmail}</span>
                         </td>
                         <td>
-                          <div className="muted tiny clamp">{r.reason ?? '—'}</div>
+                          <div className="muted tiny">{r.reason ?? '—'}</div>
                         </td>
                         <td>
                           {blocked ? (
