@@ -92,6 +92,7 @@ O axe, estendido às telas que faltavam e ao celular, achou três violações, t
 | E-mail de acesso no perfil invadia o cartão do telefone com o texto a 200% | 1.4.4 | Quebra em qualquer ponto | `texto.a11y` |
 | Nome no pódio do ranking, títulos da troca, nome do anexo, link do portfólio e título da galeria cortados com reticências | 1.4.4, 1.4.12 | Quebram a linha em vez de cortar | `texto.a11y` (a mutação que devolve as reticências reprova) |
 | Admin: descrição da denúncia, trecho denunciado, nota da decisão, descrição da disputa e motivo do pedido de exclusão cortados em duas linhas, sem o texto inteiro em outro lugar | 1.4.4, 1.4.12 (e perda de conteúdo mesmo no tamanho normal) | O corte saiu: o texto aparece inteiro | `texto.a11y` (com uma denúncia de descrição comprida na fila) |
+| Desistências e remoções no admin: com o texto a 200% no celular, o título passava por cima do botão "Não contar" | 1.4.4 | A linha quebra: o texto fica com pelo menos 14rem e os botões descem | `texto.a11y` (rodado depois da suíte inteira) |
 | Iniciais do avatar no ranking lidas pelo leitor de tela e cortadas no círculo com o texto maior | 1.1.1, 1.4.4 | `aria-hidden`, como no componente `Avatar`: o nome vem ao lado | `texto.a11y` |
 
 ### Itens que o axe deixa para revisão

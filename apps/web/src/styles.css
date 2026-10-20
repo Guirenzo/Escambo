@@ -4106,6 +4106,7 @@ button.gallery-nav:hover:not(:disabled) {
 }
 .removal {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 12px;
   padding: 12px;
@@ -4127,9 +4128,11 @@ button.gallery-nav:hover:not(:disabled) {
   background: var(--green-soft);
   color: var(--green);
 }
+/* O texto fica com pelo menos 14rem: com a tela estreita ou o texto maior (WCAG 1.4.4), os botões
+   descem para a linha de baixo em vez de o título passar por cima deles. */
 .removal-body {
   display: flex;
-  flex: 1;
+  flex: 1 1 14rem;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
