@@ -39,6 +39,12 @@ const envSchema = z.object({
   REFRESH_TOKEN_EXPIRES_DAYS: z.coerce.number().int().positive().default(7),
   // Contas com poderes de admin: e-mails separados por vírgula; "@dominio" vale para o domínio todo.
   ADMIN_EMAILS: z.string().default(''),
+  // Painel admin só com a verificação em duas etapas ativa (ADR 66): sem ela, /admin/* responde 403
+  // mfa_required. Exige FIELD_ENCRYPTION_KEY, que cifra o segredo do app autenticador (RNF-042).
+  ADMIN_MFA_REQUIRED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 
   // --- Hardening HTTP / operacional ---
   // Origens permitidas no CORS: '*' (qualquer) ou lista separada por vírgula.
@@ -148,8 +154,9 @@ const envSchema = z.object({
   SENTRY_ENVIRONMENT: z.string().default(''),
 
   // --- Cifragem de campo (RNF-017) ---
-  // Chave AES-256 da chave PIX e dos dados bancários dos saques. Vazia = grava em texto puro, como
-  // antes, e a API avisa na subida. Fica fora do banco e do repositório: sem ela, o que foi
+  // Chave AES-256 da chave PIX e dos dados bancários dos saques, e do segredo da verificação em duas
+  // etapas (RNF-042, ADR 66). Vazia = os saques gravam em texto puro, como antes, a 2FA fica
+  // indisponível (nunca em texto puro) e a API avisa na subida. Fica fora do banco e do repositório: sem ela, o que foi
   // cifrado não volta. O valor nunca aparece na mensagem de erro.
   FIELD_ENCRYPTION_KEY: z
     .string()
@@ -170,23 +177,33 @@ const envSchema = z.object({
 });
 
 /**
- * Web Push de verdade precisa do par VAPID fixo: sem ele a API subiria e todo push falharia só no
- * uso (gerar um par por processo quebraria as inscrições a cada reinício e entre instâncias).
+ * Combinações que não sobem. Web Push de verdade precisa do par VAPID fixo: sem ele a API subiria e
+ * todo push falharia só no uso (gerar um par por processo quebraria as inscrições a cada reinício e
+ * entre instâncias). E exigir a 2FA no painel sem a chave que cifra o segredo trancaria o painel:
+ * nenhum admin conseguiria ativá-la (ADR 66).
  */
-const envWithPush = envSchema.superRefine((e, ctx) => {
-  if (e.PUSH_PROVIDER !== 'webpush') return;
-  for (const key of ['PUSH_PUBLIC_KEY', 'PUSH_PRIVATE_KEY'] as const) {
-    if (e[key] === '') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: [key],
-        message: `PUSH_PROVIDER=webpush exige ${key} (gere o par com "npx web-push generate-vapid-keys")`,
-      });
+const envChecked = envSchema.superRefine((e, ctx) => {
+  if (e.PUSH_PROVIDER === 'webpush') {
+    for (const key of ['PUSH_PUBLIC_KEY', 'PUSH_PRIVATE_KEY'] as const) {
+      if (e[key] === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `PUSH_PROVIDER=webpush exige ${key} (gere o par com "npx web-push generate-vapid-keys")`,
+        });
+      }
     }
+  }
+  if (e.ADMIN_MFA_REQUIRED && e.FIELD_ENCRYPTION_KEY === '') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ADMIN_MFA_REQUIRED'],
+      message: `ADMIN_MFA_REQUIRED=true exige FIELD_ENCRYPTION_KEY (${FIELD_KEY_HINT}): sem ela a verificação em duas etapas fica indisponível e nenhum admin entraria no painel`,
+    });
   }
 });
 
-const parsed = envWithPush.safeParse(process.env);
+const parsed = envChecked.safeParse(process.env);
 
 if (!parsed.success) {
   console.error('❌ Variáveis de ambiente inválidas:');

@@ -10,10 +10,12 @@ import { LoginForm } from './LoginForm';
  */
 
 const login = vi.fn();
+const loginMfa = vi.fn();
 const register = vi.fn();
 /** O que o AuthProvider entrega à tela; `error` é o texto que ele guarda quando a API recusa. */
 const auth = {
   login: (input: unknown) => login(input),
+  loginMfa: (input: unknown) => loginMfa(input),
   register: (input: unknown) => register(input),
   error: null as string | null,
 };
@@ -58,6 +60,8 @@ function deferred() {
 beforeEach(() => {
   login.mockReset();
   login.mockResolvedValue(undefined);
+  loginMfa.mockReset();
+  loginMfa.mockResolvedValue(undefined);
   register.mockReset();
   register.mockResolvedValue(undefined);
   auth.error = null;
@@ -390,5 +394,214 @@ describe('LoginForm: alternar entre entrar e criar conta', () => {
     expect(screen.getByRole('heading', { name: 'Crie sua conta' })).toBeInTheDocument();
     expect(consentBox()).toBeInTheDocument();
     expect(submitButton()).toHaveTextContent('Criar conta');
+  });
+});
+
+describe('LoginForm: verificação em duas etapas (passo 2)', () => {
+  const challenge = { mfaRequired: true as const, mfaToken: 'mfa-1', expiresInSeconds: 300 };
+  /** Erro da API como o cliente HTTP entrega: mensagem em português e o código. */
+  const apiError = (message: string, code: string) => Object.assign(new Error(message), { code });
+
+  /** Entra com a senha numa conta com 2FA: a tela vai para o passo 2. */
+  async function toStepTwo(user: ReturnType<typeof userEvent.setup>) {
+    login.mockResolvedValue(challenge);
+    renderForm();
+    await user.type(screen.getByLabelText('E-mail'), 'ana@escambo.test');
+    await user.type(screen.getByLabelText('Senha'), 'segredo123');
+    await user.click(submitButton());
+    await screen.findByRole('heading', { name: 'Verificação em duas etapas' });
+  }
+
+  it('senha certa numa conta com 2FA: o passo 2 toma o lugar do formulário, com o foco no campo do código', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+
+    expect(screen.getByRole('form', { name: 'Verificação em duas etapas' })).toBeInTheDocument();
+    expect(screen.getByText('ana@escambo.test')).toBeInTheDocument();
+    const field = screen.getByLabelText('Código do app autenticador');
+    expect(field).toHaveFocus();
+    expect(field).toHaveAttribute('inputmode', 'numeric');
+    expect(field).toHaveAttribute('autocomplete', 'one-time-code');
+    expect(field).toHaveAttribute('maxlength', '7');
+    expect(field).toBeRequired();
+    expect(field).toHaveAccessibleDescription(
+      'Abra o app autenticador no celular e digite o código de 6 dígitos da conta Escambo.',
+    );
+    expect(field).toHaveAttribute('aria-invalid', 'false');
+    // O formulário da senha saiu: nem abas, nem senha.
+    expect(screen.queryByLabelText('Senha')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Entrar ou criar conta' })).not.toBeInTheDocument();
+    expect(loginMfa).not.toHaveBeenCalled();
+  });
+
+  it('confirma com o token do pedido e o código sem o espaço do meio', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+
+    await user.type(screen.getByLabelText('Código do app autenticador'), '123 456');
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+
+    expect(loginMfa).toHaveBeenCalledWith({ mfaToken: 'mfa-1', code: '123456' });
+  });
+
+  it('enquanto confere, o botão mostra "…" desabilitado', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+    const pending = deferred();
+    loginMfa.mockReturnValue(pending.promise);
+
+    await user.type(screen.getByLabelText('Código do app autenticador'), '123456');
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+
+    expect(submitButton()).toHaveTextContent('…');
+    expect(submitButton()).toBeDisabled();
+    pending.resolve();
+  });
+
+  it('código incompleto nem vai à API: erro ligado ao campo, que fica inválido e com o foco', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+    const field = screen.getByLabelText('Código do app autenticador');
+
+    await user.type(field, '12345');
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Digite os 6 dígitos que o app mostra agora.');
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(field.getAttribute('aria-describedby')).toContain(alert.id);
+    expect(field).toHaveFocus();
+    expect(loginMfa).not.toHaveBeenCalled();
+  });
+
+  it('código recusado pela API: a mensagem dela, campo inválido e o foco de volta nele', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+    loginMfa.mockRejectedValue(apiError('Código inválido.', 'invalid_mfa_code'));
+    const field = screen.getByLabelText('Código do app autenticador');
+
+    await user.type(field, '000000');
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Código inválido.');
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    expect(field).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled();
+  });
+
+  it('muitas tentativas: o aviso aparece, mas o campo não é marcado como errado', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+    loginMfa.mockRejectedValue(
+      apiError('Muitas tentativas. Tente de novo em 15 minutos.', 'mfa_locked'),
+    );
+
+    await user.type(screen.getByLabelText('Código do app autenticador'), '123456');
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Muitas tentativas. Tente de novo em 15 minutos.',
+    );
+    expect(screen.getByLabelText('Código do app autenticador')).toHaveAttribute(
+      'aria-invalid',
+      'false',
+    );
+  });
+
+  it('falha técnica sem mensagem útil vira o texto de reserva', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+    loginMfa.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    await user.type(screen.getByLabelText('Código do app autenticador'), '123456');
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível entrar. Tente de novo.',
+    );
+  });
+
+  it('o código de recuperação troca o campo, leva o foco a ele e vai como foi digitado', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+    await user.type(screen.getByLabelText('Código do app autenticador'), '12');
+
+    await user.click(screen.getByRole('button', { name: 'Usar um código de recuperação' }));
+
+    const field = screen.getByLabelText('Código de recuperação');
+    expect(field).toHaveFocus();
+    expect(field).toHaveValue('');
+    expect(field).toHaveAttribute('inputmode', 'text');
+    expect(field).toHaveAttribute('autocomplete', 'off');
+    expect(field).toHaveAttribute('placeholder', 'XXXX-XXXX');
+    expect(field).toHaveAccessibleDescription(
+      'Um dos códigos que você guardou ao ativar a verificação. Cada um vale uma vez só.',
+    );
+    expect(screen.queryByLabelText('Código do app autenticador')).not.toBeInTheDocument();
+
+    await user.type(field, ' ab12-cd34 ');
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    expect(loginMfa).toHaveBeenCalledWith({ mfaToken: 'mfa-1', code: 'ab12-cd34' });
+  });
+
+  it('código de recuperação incompleto: o erro diz o formato', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+    await user.click(screen.getByRole('button', { name: 'Usar um código de recuperação' }));
+
+    await user.type(screen.getByLabelText('Código de recuperação'), 'AB12-CD');
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Digite o código de recuperação inteiro, no formato XXXX-XXXX.',
+    );
+    expect(loginMfa).not.toHaveBeenCalled();
+  });
+
+  it('voltar ao código do app devolve o campo de 6 dígitos, com o foco, e limpa o erro', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+    await user.click(screen.getByRole('button', { name: 'Usar um código de recuperação' }));
+    await user.type(screen.getByLabelText('Código de recuperação'), 'AB');
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Usar o código do app' }));
+
+    expect(screen.getByLabelText('Código do app autenticador')).toHaveFocus();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('"Voltar" leva ao formulário da senha: o e-mail fica, a senha é pedida de novo e recebe o foco', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+
+    await user.click(screen.getByRole('button', { name: 'Voltar' }));
+
+    expect(screen.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
+    expect(screen.getByLabelText('E-mail')).toHaveValue('ana@escambo.test');
+    expect(screen.getByLabelText('Senha')).toHaveValue('');
+    expect(screen.getByLabelText('Senha')).toHaveFocus();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('pedido do código vencido: volta à senha com o aviso, que some ao tentar de novo', async () => {
+    const user = userEvent.setup();
+    await toStepTwo(user);
+    loginMfa.mockRejectedValue(apiError('Pedido vencido.', 'invalid_mfa_token'));
+
+    await user.type(screen.getByLabelText('Código do app autenticador'), '123456');
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'O tempo para digitar o código acabou. Entre de novo com a sua senha.',
+    );
+    expect(screen.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Senha')).toHaveFocus();
+
+    login.mockResolvedValue(null);
+    await user.type(screen.getByLabelText('Senha'), 'segredo123');
+    await user.click(submitButton());
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

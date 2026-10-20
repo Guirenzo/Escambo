@@ -332,4 +332,23 @@ describe('authRepository', () => {
       expect(fakeDb.calls[1]!.params).toEqual({ id: 7, phone: null });
     });
   });
+
+  it('findAccountByEmail (atendimento, ADR 66): a conta pelo e-mail exato e se a 2FA está ativa', async () => {
+    const row = { id: 7, ulid: '01U', email: 'ana@escambo.test', mfa_enabled: 1 };
+    fakeDb.reply([row], []);
+
+    expect(await authRepository.findAccountByEmail('ana@escambo.test')).toBe(row);
+    expect(await authRepository.findAccountByEmail('nada@escambo.test')).toBeUndefined();
+
+    const { sql, params } = fakeDb.calls[0]!;
+    expect(sql).toContain('SELECT u.id, u.ulid, u.email, u.role, u.status, u.created_at,');
+    expect(sql).toContain(
+      "EXISTS (SELECT 1 FROM user_mfa m WHERE m.user_id = u.id AND m.method = 'totp' AND m.is_enabled = 1) AS mfa_enabled",
+    );
+    expect(sql).toContain('FROM users u WHERE u.email = :email LIMIT 1');
+    // Nem senha nem telefone: o atendimento não precisa deles para achar a conta.
+    expect(sql).not.toContain('password_hash');
+    expect(sql).not.toContain('phone');
+    expect(params).toEqual({ email: 'ana@escambo.test' });
+  });
 });

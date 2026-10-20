@@ -17,6 +17,10 @@ vi.mock('../lgpd/lgpd.repository', () => ({
 vi.mock('../audit/audit.service', () => ({
   auditService: { log: vi.fn().mockResolvedValue(undefined) },
 }));
+// Contas sem a verificação em duas etapas (ADR 66): o login devolve a sessão direto.
+vi.mock('./mfa.repository', () => ({
+  mfaRepository: { isEnabled: vi.fn().mockResolvedValue(false) },
+}));
 vi.mock('./session.repository', () => ({
   sessionRepository: {
     create: vi.fn(),
@@ -28,7 +32,12 @@ vi.mock('./session.repository', () => ({
 
 import { env } from '../../config/env';
 import { authRepository, type UserRow } from './auth.repository';
+import type { AuthResponse } from '@escambo/types';
 import { authService, isAdminEmail } from './auth.service';
+
+/** O login de conta sem 2FA devolve a sessão (e não o MfaChallenge): o tipo diz isso aqui. */
+const loginWithSession = (...args: Parameters<typeof authService.login>) =>
+  authService.login(...args) as Promise<AuthResponse>;
 
 const CTX = { ip: '127.0.0.1', userAgent: 'vitest' };
 const repo = vi.mocked(authRepository);
@@ -125,7 +134,7 @@ describe('promoção a admin por ADMIN_EMAILS', () => {
     } as UserRow);
     repo.updateRole.mockResolvedValue(undefined);
 
-    const res = await authService.login({
+    const res = await loginWithSession({
       email: 'root@escambo.test',
       password: 'senha-forte-123',
     });

@@ -1,5 +1,12 @@
-import type { AdminMetrics, Dispute } from '@escambo/types';
+import type {
+  AdminAccountLookup,
+  AdminMetrics,
+  Dispute,
+  UserRole,
+  UserStatus,
+} from '@escambo/types';
 import { blocklist } from '../../config/blocklist';
+import { env } from '../../config/env';
 import { realtime } from '../../config/realtime';
 import { clock } from '../../utils/clock';
 import { HttpError } from '../../utils/http-error';
@@ -8,6 +15,7 @@ import { contractsFacade } from '../contracts/contracts.facade';
 import { cashSettlement } from '../contracts/contracts.service';
 import { disputesFacade } from '../disputes/disputes.facade';
 import { toDispute } from '../disputes/disputes.service';
+import { mailService } from '../mail/mail.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { adminRepository } from './admin.repository';
 import type { ResolveDisputeInput } from './admin.schema';
@@ -162,6 +170,65 @@ export const adminService = {
     await realtime.emitToUser(user.id, 'account:status', { status: statusMap[action] });
     if (action === 'ban') realtime.disconnectUser(user.id);
     await adminRepository.recordAction(adminId, `user_${action}`, 'user', user.id, `ulid=${ulid}`);
+  },
+
+  /** Atendimento (ADR 66): a conta pelo e-mail, com a situação da verificação em duas etapas. */
+  async lookupAccount(email: string): Promise<AdminAccountLookup> {
+    const row = await authFacade.findAccountByEmail(email);
+    if (!row) throw new HttpError(404, 'Nenhuma conta com este e-mail', 'user_not_found');
+    return {
+      ulid: row.ulid,
+      email: row.email,
+      role: row.role as UserRole,
+      status: row.status as UserStatus,
+      mfaEnabled: Number(row.mfa_enabled) === 1,
+      createdAt: new Date(row.created_at).toISOString(),
+    };
+  },
+
+  /**
+   * Recuperação pelo atendimento (ADR 66): quem perdeu o celular e os códigos de recuperação fala
+   * com o suporte, que confere a identidade fora do sistema e desativa a 2FA por aqui. As sessões
+   * da conta caem (quem estiver dentro sai), a ação fica na trilha do admin com o motivo e o
+   * titular é avisado por e-mail. A própria 2FA o admin desativa no perfil, com senha e código.
+   */
+  async resetMfa(
+    adminId: number,
+    ulid: string,
+    reason: string,
+  ): Promise<{ sessionsRevoked: number }> {
+    const user = await authFacade.findByUlid(ulid);
+    if (!user) throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
+    if (user.id === adminId) {
+      throw new HttpError(
+        400,
+        'A sua própria verificação em duas etapas se desativa no seu perfil, com a senha e o código.',
+        'cannot_reset_self',
+      );
+    }
+    const removed = await authFacade.deleteMfa(user.id);
+    if (removed === 0) {
+      throw new HttpError(
+        409,
+        'Esta conta não tem a verificação em duas etapas ativa.',
+        'mfa_not_enabled',
+      );
+    }
+    const sessionsRevoked = await authFacade.revokeAllSessions(user.id);
+    await adminRepository.recordAction(adminId, 'user_mfa_reset', 'user', user.id, reason);
+    // Aviso de segurança ao titular, mesmo com os e-mails de novidades desligados (melhor esforço).
+    await mailService.send({
+      userId: user.id,
+      to: user.email,
+      template: 'notification',
+      vars: {
+        title: 'Verificação em duas etapas desativada pelo atendimento',
+        body: 'A pedido feito ao suporte, a verificação em duas etapas da sua conta do Escambo foi desativada e as sessões abertas foram encerradas. Entre com a senha e ative de novo no seu perfil. Se você não pediu isso, troque a senha agora e fale com o suporte.',
+        link: `${env.APP_URL.replace(/\/$/, '')}/perfil`,
+        cta: 'Abrir o perfil',
+      },
+    });
+    return { sessionsRevoked };
   },
 
   async getMetrics(): Promise<AdminMetrics> {

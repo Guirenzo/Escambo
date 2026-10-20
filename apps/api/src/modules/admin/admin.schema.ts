@@ -57,3 +57,16 @@ export const failWithdrawalSchema = z.object({
   reason: z.string().max(255).nullable().optional(),
 });
 export const userUlidSchema = z.object({ ulid: z.string().length(26) });
+
+/** Atendimento (ADR 66): a conta pelo e-mail exato. */
+export const accountLookupQuerySchema = z.object({
+  email: z.string().trim().toLowerCase().max(255, 'E-mail inválido').email('E-mail inválido'),
+});
+/** Desativar a 2FA de alguém pelo atendimento pede o porquê, que fica na trilha do admin. */
+export const resetMfaSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(10, 'Descreva o motivo (de 10 a 500 caracteres)')
+    .max(500, 'Descreva o motivo (de 10 a 500 caracteres)'),
+});

@@ -33,6 +33,10 @@ export default defineConfig({
       MAIL_PROVIDER: 'simulated',
       PUSH_PROVIDER: 'simulated',
       APP_URL: 'http://app.escambo.test',
+      // Chave de TESTE da cifragem de campo (RNF-017/RNF-042): a verificação em duas etapas só
+      // existe com ela (ADR 66). São os 32 bytes ASCII de "chave-de-teste-do-escambo-2fa-32", sem
+      // uso fora dos testes; o cifra-saque.int.test.ts troca por outra antes de carregar o app.
+      FIELD_ENCRYPTION_KEY: 'Y2hhdmUtZGUtdGVzdGUtZG8tZXNjYW1iby0yZmEtMzI=',
     },
     coverage: {
       provider: 'v8',

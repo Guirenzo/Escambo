@@ -5,6 +5,32 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.48.0] — 2026-10-20
+
+Verificação em duas etapas por app autenticador (ADR 66). RF: 84 implementados, 1 parcial, 5 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Verificação em duas etapas (RF-090, RNF-042):** no Perfil, o cartão "Verificação em duas etapas" ativa o código do app autenticador (Google Authenticator, Microsoft Authenticator, 1Password e outros). Mostra o QR e a chave em texto, confere o primeiro código e entrega 10 códigos de recuperação de uso único, para copiar ou baixar. Depois dá para gerar códigos novos ou desativar, com a senha e um código.
+- **Login em dois passos:** numa conta com a verificação ligada, depois da senha vem o código do app ou um de recuperação. O mesmo código não vale duas vezes, e cinco erros seguidos travam a verificação da conta por 15 minutos.
+- **Atendimento no painel admin:** o cartão "Atendimento: conta" busca a conta pelo e-mail e desativa a verificação de quem perdeu o celular e os códigos, com o motivo registrado; as sessões da conta caem e o titular recebe um e-mail.
+- **`ADMIN_MFA_REQUIRED`:** ligada, o painel admin só abre para quem tem a verificação ativa.
+- Avisos por e-mail ao ativar e ao desativar a verificação.
+
+### Alterado
+
+- `POST /auth/login` pode responder com o pedido do segundo fator (`mfaRequired`, `mfaToken`) em vez da sessão; a sessão sai em `POST /auth/login/mfa`.
+- A cópia de dados (LGPD) passa ao formato 1.12, com a situação da verificação em duas etapas (sem o segredo).
+- A anonimização apaga a verificação em duas etapas da conta.
+
+### Segurança e dados
+
+- O segredo do app é gravado só cifrado (AES-256-GCM, `FIELD_ENCRYPTION_KEY`): sem a chave, a verificação fica indisponível em vez de gravar texto puro. Os códigos de recuperação ficam só como hash.
+
+### Para atualizar
+
+Uma migration (0050). A verificação precisa da `FIELD_ENCRYPTION_KEY` no `.env`; depois de cada admin ativar no perfil, ligue `ADMIN_MFA_REQUIRED=true`. Passo a passo no DEPLOY.md ("Atualizar para a 1.48.0").
+
 ## [1.47.0] — 2026-10-20
 
 Texto maior e mais espaçado sem perder conteúdo, e varredura de segredos no CI (ADR 65). RF: 83 implementados, 2 parciais, 5 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.

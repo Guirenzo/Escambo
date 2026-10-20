@@ -10,9 +10,15 @@ import {
   contact,
   forgotPassword,
   login,
+  loginMfa,
   logout,
   logoutAll,
   me,
+  mfaDisable,
+  mfaEnable,
+  mfaRecoveryCodes,
+  mfaSetup,
+  mfaStatus,
   refresh,
   register,
   resendVerification,
@@ -26,6 +32,9 @@ export const authRoutes = Router();
 // Rotas sensíveis com anti brute-force (RNF-005 / RN-002).
 authRoutes.post('/register', loginRateLimiter, asyncHandler(register));
 authRoutes.post('/login', loginRateLimiter, asyncHandler(login));
+// Segundo passo do login com a verificação em duas etapas (ADR 66): além do limite por IP, a
+// conta trava por 15 minutos depois de 5 códigos errados seguidos.
+authRoutes.post('/login/mfa', loginRateLimiter, asyncHandler(loginMfa));
 authRoutes.post('/refresh', asyncHandler(refresh));
 authRoutes.post('/logout', asyncHandler(logout));
 authRoutes.post('/logout-all', authenticate, asyncHandler(logoutAll));
@@ -51,3 +60,16 @@ authRoutes.put('/phone', authenticate, asyncHandler(updatePhone));
 authRoutes.post('/change-email', authenticate, loginRateLimiter, asyncHandler(changeEmail));
 authRoutes.delete('/change-email', authenticate, asyncHandler(cancelEmailChange));
 authRoutes.post('/confirm-email-change', loginRateLimiter, asyncHandler(confirmEmailChange));
+
+// Verificação em duas etapas da própria conta (RF-090, ADR 66). Tudo que confere senha ou código
+// passa pelo limite do login por IP; o código errado ainda soma na trava da conta.
+authRoutes.get('/mfa', authenticate, asyncHandler(mfaStatus));
+authRoutes.post('/mfa/setup', authenticate, loginRateLimiter, asyncHandler(mfaSetup));
+authRoutes.post('/mfa/enable', authenticate, loginRateLimiter, asyncHandler(mfaEnable));
+authRoutes.post('/mfa/disable', authenticate, loginRateLimiter, asyncHandler(mfaDisable));
+authRoutes.post(
+  '/mfa/recovery-codes',
+  authenticate,
+  loginRateLimiter,
+  asyncHandler(mfaRecoveryCodes),
+);

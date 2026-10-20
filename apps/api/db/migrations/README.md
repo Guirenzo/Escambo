@@ -71,3 +71,11 @@ Todas podem rodar de novo sem erro. A 0046 cria triggers: com o binlog ligado (p
 | 0049_triggers_em_bloco.sql                  | Recria os triggers da 0046 em `BEGIN … END`: o `;` final do corpo ia para o dump num lugar que o `mysql` recusa (RNF-009, ADR 64)                      |
 
 As duas podem rodar de novo sem erro. A 0048 preenche a origem das linhas antigas pelo mesmo reconhecimento por texto que o relatório de uso fazia e só então torna a coluna obrigatória; se cair no meio, a próxima execução faz só o que falta. A 0049 apaga e recria cada trigger com o mesmo efeito e as mesmas mensagens, então pede `log_bin_trust_function_creators=1` como a 0046. Os dumps feitos antes dela só voltam pelo `restore-db.sh`, que tira o `;` a mais na importação. Passo a passo no DEPLOY.md ("Atualizar para a 1.46.0").
+
+## 1.48.0
+
+| Migration                                   | Efeito                                                                                                                                                |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0050_mfa_totp.sql                           | `user_mfa` ganha `last_used_step`, `failed_attempts` e `locked_until`: anti-reuso do código e trava de 15 min (RF-090, ADR 66)                             |
+
+Pode rodar de novo sem erro. A tabela `user_mfa` existe desde o baseline e só passa a ser usada agora; o segredo do TOTP é gravado cifrado pela API (`FIELD_ENCRYPTION_KEY`), e sem a chave a 2FA fica indisponível.

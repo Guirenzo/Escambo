@@ -7,6 +7,7 @@ import type {
   AdminMetrics,
   AdminWithdrawal,
   Dispute,
+  MfaStatus,
 } from '@escambo/types';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,6 +29,8 @@ const adminEmails = vi.fn();
 const adminResolveDispute = vi.fn();
 const adminWithdrawalAction = vi.fn();
 const adminDeletionAction = vi.fn();
+/** A 2FA da conta admin (ADR 66): sem exigência, por padrão, para o painel abrir. */
+const mfaStatus = vi.fn();
 /** As outras seções do painel têm testes próprios: aqui as consultas delas ficam carregando. */
 const pending = () => new Promise(() => undefined);
 vi.mock('../../lib/api', () => ({
@@ -52,8 +55,19 @@ vi.mock('../../lib/api', () => ({
     adminAppeals: () => pending(),
     adminDropouts: () => pending(),
     adminSupportTickets: () => pending(),
+    mfaStatus: () => mfaStatus(),
+    adminAccountLookup: () => pending(),
   },
 }));
+
+const mfaStatusOf = (o: Partial<MfaStatus> = {}): MfaStatus => ({
+  enabled: false,
+  confirmedAt: null,
+  recoveryCodesLeft: 0,
+  available: true,
+  required: false,
+  ...o,
+});
 
 function renderView() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -178,9 +192,11 @@ beforeEach(() => {
     adminResolveDispute,
     adminWithdrawalAction,
     adminDeletionAction,
+    mfaStatus,
   ]) {
     fn.mockReset();
   }
+  mfaStatus.mockResolvedValue(mfaStatusOf());
   adminMetrics.mockResolvedValue(metricsOf());
   adminDisputes.mockResolvedValue([]);
   adminWithdrawals.mockResolvedValue([]);
@@ -1169,5 +1185,62 @@ describe('AdminView: caixa de saída de e-mails', () => {
     expect(plainDialog).toHaveTextContent('· Aviso · console ·');
     expect(plainDialog).toHaveTextContent('Sua proposta foi aceita.');
     expect(within(plainDialog).queryByRole('link')).not.toBeInTheDocument();
+  });
+});
+
+describe('AdminView: verificação em duas etapas obrigatória (ADMIN_MFA_REQUIRED, ADR 66)', () => {
+  const mfaRequiredError = () =>
+    Object.assign(new Error('Ative a verificação em duas etapas no seu perfil.'), {
+      status: 403,
+      code: 'mfa_required',
+    });
+
+  it('conta admin sem a 2FA num servidor que exige: o cartão leva ao Perfil, no lugar das filas', async () => {
+    mfaStatus.mockResolvedValue(mfaStatusOf({ required: true, enabled: false }));
+    renderView();
+
+    const gate = await screen.findByTestId('admin-mfa-required');
+    expect(
+      within(gate).getByRole('heading', { level: 3, name: 'Ative a verificação em duas etapas' }),
+    ).toBeInTheDocument();
+    expect(gate).toHaveTextContent(
+      'Este servidor exige a verificação em duas etapas das contas de administração.',
+    );
+    expect(
+      within(gate).getByRole('link', {
+        name: 'cartão “Verificação em duas etapas” do seu perfil',
+      }),
+    ).toHaveAttribute('href', '/perfil#dois-fatores');
+    expect(screen.getByRole('heading', { level: 1, name: 'Administração' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: DISPUTES })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('kpi-support')).not.toBeInTheDocument();
+    expect(document.title).toBe('Administração · Escambo');
+  });
+
+  it('com a 2FA ativa (ou sem a exigência), o painel abre normalmente', async () => {
+    mfaStatus.mockResolvedValue(mfaStatusOf({ required: true, enabled: true }));
+    renderView();
+
+    expect(await screen.findByText('37 freelancers')).toBeInTheDocument();
+    expect(screen.queryByTestId('admin-mfa-required')).not.toBeInTheDocument();
+  });
+
+  it('o 403 mfa_required dos indicadores (situação velha ou ilegível) troca o painel pelo cartão e relê a 2FA', async () => {
+    mfaStatus.mockRejectedValue(new Error('Não encontramos o que você pediu.'));
+    adminMetrics.mockRejectedValue(mfaRequiredError());
+    renderView();
+
+    expect(await screen.findByTestId('admin-mfa-required')).toBeInTheDocument();
+    await waitFor(() => expect(mfaStatus).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('heading', { name: DISPUTES })).not.toBeInTheDocument();
+  });
+
+  it('o painel tem o cartão "Atendimento: conta", para achar uma conta pelo e-mail', async () => {
+    renderView();
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: 'Atendimento: conta' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('form', { name: 'Buscar conta por e-mail' })).toBeInTheDocument();
   });
 });

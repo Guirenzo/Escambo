@@ -1296,6 +1296,103 @@ export const openapiDocument: Record<string, any> = {
         'accessToken',
         'refreshToken',
       ]),
+      // Verificação em duas etapas (RF-090, RNF-042, ADR 66).
+      MfaChallenge: {
+        ...obj(
+          {
+            mfaRequired: { type: 'boolean', enum: [true] },
+            mfaToken: {
+              type: 'string',
+              description:
+                'Passe de 5 minutos, só para POST /auth/login/mfa: não serve como token de acesso.',
+            },
+            expiresInSeconds: { type: 'integer', minimum: 1 },
+          },
+          ['mfaRequired', 'mfaToken', 'expiresInSeconds'],
+        ),
+        additionalProperties: false,
+      },
+      LoginMfa: obj(
+        {
+          mfaToken: { type: 'string', minLength: 1, maxLength: 2048 },
+          code: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 32,
+            description:
+              '6 dígitos do app autenticador (espaços valem) ou um código de recuperação XXXX-XXXX (sem diferença de maiúsculas; O vale 0, I e L valem 1)',
+          },
+        },
+        ['mfaToken', 'code'],
+      ),
+      MfaStatus: obj(
+        {
+          enabled: { type: 'boolean' },
+          confirmedAt: nullableTimestamp,
+          recoveryCodesLeft: nonnegativeInteger,
+          available: {
+            type: 'boolean',
+            description:
+              'O servidor tem a FIELD_ENCRYPTION_KEY, que cifra o segredo: sem ela, não dá para ativar',
+          },
+          required: {
+            type: 'boolean',
+            description: 'Conta admin num servidor com ADMIN_MFA_REQUIRED: o painel exige a 2FA',
+          },
+        },
+        ['enabled', 'confirmedAt', 'recoveryCodesLeft', 'available', 'required'],
+      ),
+      MfaPassword: obj({ password: { type: 'string', minLength: 1 } }, ['password']),
+      MfaSetup: obj(
+        {
+          secret: {
+            type: 'string',
+            pattern: '^[A-Z2-7]{32}$',
+            description: 'Base32 (RFC 4648, sem o "=" do fim), para digitar no app',
+          },
+          otpauthUrl: {
+            type: 'string',
+            description:
+              'otpauth://totp/Escambo:<e-mail>?secret=<base32>&issuer=Escambo&algorithm=SHA1&digits=6&period=30 (o conteúdo do QR)',
+          },
+        },
+        ['secret', 'otpauthUrl'],
+      ),
+      MfaCode: obj({ code: { type: 'string', minLength: 1, maxLength: 32 } }, ['code']),
+      MfaConfirm: obj(
+        {
+          password: { type: 'string', minLength: 1 },
+          code: { type: 'string', minLength: 1, maxLength: 32 },
+        },
+        ['password', 'code'],
+      ),
+      MfaRecoveryCodesResponse: obj(
+        {
+          recoveryCodes: {
+            type: 'array',
+            minItems: 10,
+            maxItems: 10,
+            items: { type: 'string', pattern: '^[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$' },
+            description: 'Mostrados uma vez: o servidor guarda só o hash de cada um',
+          },
+        },
+        ['recoveryCodes'],
+      ),
+      MfaEnabledResponse: {
+        allOf: [ref('RefreshResponse'), ref('MfaRecoveryCodesResponse')],
+      },
+      AdminAccountLookup: obj(
+        {
+          ulid: { type: 'string' },
+          email: { type: 'string', format: 'email' },
+          role: { type: 'string', enum: ['client', 'freelancer', 'company', 'admin'] },
+          status: ref('UserStatus'),
+          mfaEnabled: { type: 'boolean' },
+          createdAt: timestamp,
+        },
+        ['ulid', 'email', 'role', 'status', 'mfaEnabled', 'createdAt'],
+      ),
+      ResetMfa: obj({ reason: { type: 'string', minLength: 10, maxLength: 500 } }, ['reason']),
       // Contato da conta (RF-017): só o titular vê; o perfil público não traz e-mail nem telefone.
       PendingEmailChange: obj(
         { email: { type: 'string', format: 'email' }, expiresAt: timestamp },
@@ -1625,10 +1722,47 @@ export const openapiDocument: Record<string, any> = {
       }),
     },
     '/auth/login': {
-      post: op('Auth', 'Autentica (accessToken + refreshToken)', {
-        body: { $ref: '#/components/schemas/Login' },
-        responses: jsonResponse('200', 'AuthResponse'),
-      }),
+      post: op(
+        'Auth',
+        'Autentica (accessToken + refreshToken). Conta com a verificação em duas etapas ativa recebe o MfaChallenge, sem sessão, e conclui em POST /auth/login/mfa',
+        {
+          body: { $ref: '#/components/schemas/Login' },
+          responses: {
+            '200': {
+              description: 'OK',
+              content: {
+                'application/json': {
+                  schema: { oneOf: [ref('AuthResponse'), ref('MfaChallenge')] },
+                },
+              },
+            },
+          },
+        },
+      ),
+    },
+    '/auth/login/mfa': {
+      post: op(
+        'Auth',
+        'Segundo passo do login (ADR 66): o passe do MfaChallenge e o código do app ou um de recuperação (uso único). 5 códigos errados seguidos travam a 2FA da conta por 15 minutos',
+        {
+          body: ref('LoginMfa'),
+          responses: {
+            ...jsonResponse('200', 'AuthResponse'),
+            '400': errorResponse('invalid_mfa_code (código errado, já usado ou de outro passo)'),
+            '401': errorResponse(
+              'invalid_mfa_token (passe vencido, inválido, ou a conta não tem mais a 2FA): volte à senha',
+            ),
+            '403': errorResponse('account_banned ou account_deleted (as mesmas do login)'),
+            '422': errorResponse('validation_error: details.mfaToken ou details.code'),
+            '429': errorResponse(
+              'mfa_locked (5 erros seguidos: 15 minutos) ou too_many_requests (o limite do login, por IP)',
+            ),
+            '500': errorResponse(
+              'mfa_unreadable: o segredo gravado não decifra com a chave do servidor (o código de recuperação ainda vale)',
+            ),
+          },
+        },
+      ),
     },
     '/auth/refresh': { post: op('Auth', 'Rotaciona o refresh token') },
     '/auth/logout': { post: op('Auth', 'Revoga a sessão') },
@@ -2229,6 +2363,93 @@ export const openapiDocument: Record<string, any> = {
               'validation_error: details.currentPassword ("Informe a senha atual") ou details.newPassword ("A senha deve ter ao menos 8 caracteres")',
             ),
             '429': errorResponse('too_many_requests (o mesmo limite do login)'),
+          },
+        },
+      ),
+    },
+    '/auth/mfa': {
+      get: op(
+        'Auth',
+        'Situação da verificação em duas etapas da própria conta (RF-090): ativa, desde quando, códigos de recuperação restantes, se o servidor consegue ativar e se o painel a exige. Aceita conta suspensa',
+        {
+          auth: true,
+          responses: {
+            ...jsonResponse('200', 'MfaStatus'),
+            '401': errorResponse('missing_token ou invalid_token'),
+          },
+        },
+      ),
+    },
+    '/auth/mfa/setup': {
+      post: op(
+        'Auth',
+        'Começa a ativação da 2FA com a senha atual: segredo novo (cifrado no banco, RNF-042) e o otpauth para o QR. Troca o pendente anterior. Aceita conta suspensa',
+        {
+          auth: true,
+          body: ref('MfaPassword'),
+          responses: {
+            ...jsonResponse('200', 'MfaSetup'),
+            '400': errorResponse('wrong_password'),
+            '401': errorResponse('missing_token ou invalid_token'),
+            '409': errorResponse('mfa_already_enabled'),
+            '422': errorResponse('validation_error: details.password'),
+            '429': errorResponse('mfa_locked ou too_many_requests'),
+            '503': errorResponse('mfa_unavailable: o servidor não tem a FIELD_ENCRYPTION_KEY'),
+          },
+        },
+      ),
+    },
+    '/auth/mfa/enable': {
+      post: op(
+        'Auth',
+        'Ativa a 2FA com o primeiro código do app: devolve os 10 códigos de recuperação (uma vez) e o par novo desta sessão; todas as outras sessões caem e o titular é avisado por e-mail',
+        {
+          auth: true,
+          body: ref('MfaCode'),
+          responses: {
+            ...jsonResponse('200', 'MfaEnabledResponse'),
+            '400': errorResponse('invalid_mfa_code ou mfa_not_started (sem POST /auth/mfa/setup)'),
+            '401': errorResponse('missing_token ou invalid_token'),
+            '409': errorResponse('mfa_already_enabled'),
+            '422': errorResponse('validation_error: details.code'),
+            '429': errorResponse('mfa_locked ou too_many_requests'),
+            '500': errorResponse('mfa_unreadable'),
+          },
+        },
+      ),
+    },
+    '/auth/mfa/disable': {
+      post: op(
+        'Auth',
+        'Desativa a 2FA com a senha e um código (do app ou de recuperação); o titular é avisado por e-mail',
+        {
+          auth: true,
+          body: ref('MfaConfirm'),
+          responses: {
+            ...res204,
+            '400': errorResponse('wrong_password ou invalid_mfa_code'),
+            '401': errorResponse('missing_token ou invalid_token'),
+            '409': errorResponse('mfa_not_enabled'),
+            '422': errorResponse('validation_error: details.password ou details.code'),
+            '429': errorResponse('mfa_locked ou too_many_requests'),
+          },
+        },
+      ),
+    },
+    '/auth/mfa/recovery-codes': {
+      post: op(
+        'Auth',
+        'Gera 10 códigos de recuperação novos (senha + código); os anteriores deixam de valer',
+        {
+          auth: true,
+          body: ref('MfaConfirm'),
+          responses: {
+            ...jsonResponse('200', 'MfaRecoveryCodesResponse'),
+            '400': errorResponse('wrong_password ou invalid_mfa_code'),
+            '401': errorResponse('missing_token ou invalid_token'),
+            '409': errorResponse('mfa_not_enabled'),
+            '422': errorResponse('validation_error: details.password ou details.code'),
+            '429': errorResponse('mfa_locked ou too_many_requests'),
           },
         },
       ),
@@ -2929,6 +3150,52 @@ export const openapiDocument: Record<string, any> = {
               ...res204,
               '404': errorResponse('user_not_found'),
               '409': errorResponse('cannot_moderate_admin: administradores não são suspensos'),
+            },
+          },
+        ),
+        parameters: [idPathParameter('ulid', { type: 'string' })],
+      },
+    },
+    '/admin/users/lookup': {
+      get: {
+        ...op(
+          'Admin',
+          'Atendimento (ADR 66): a conta pelo e-mail exato, com papel, situação e se a verificação em duas etapas está ativa',
+          {
+            auth: true,
+            responses: {
+              ...jsonResponse('200', 'AdminAccountLookup'),
+              '403': errorResponse('admin_only ou mfa_required (ADMIN_MFA_REQUIRED)'),
+              '404': errorResponse('user_not_found'),
+              '422': errorResponse('validation_error: details.email'),
+            },
+          },
+        ),
+        parameters: [
+          {
+            name: 'email',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'email' },
+          },
+        ],
+      },
+    },
+    '/admin/users/{ulid}/mfa/reset': {
+      post: {
+        ...op(
+          'Admin',
+          'Atendimento (ADR 66): desativa a verificação em duas etapas de quem perdeu o acesso, com o motivo; as sessões da conta caem, a ação fica em admin_actions e o titular é avisado por e-mail',
+          {
+            auth: true,
+            body: ref('ResetMfa'),
+            responses: {
+              ...res204,
+              '400': errorResponse('cannot_reset_self (a própria 2FA se desativa no perfil)'),
+              '403': errorResponse('admin_only ou mfa_required (ADMIN_MFA_REQUIRED)'),
+              '404': errorResponse('user_not_found'),
+              '409': errorResponse('mfa_not_enabled'),
+              '422': errorResponse('validation_error: details.reason (10 a 500 caracteres)'),
             },
           },
         ),

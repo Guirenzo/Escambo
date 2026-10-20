@@ -110,6 +110,11 @@ describe('matriz somente leitura', () => {
   it.each([
     ['POST', '/api/auth/logout-all'],
     ['POST', '/api/auth/change-password'],
+    // A verificação em duas etapas é segurança da conta (ADR 66).
+    ['POST', '/api/auth/mfa/setup'],
+    ['POST', '/api/auth/mfa/enable'],
+    ['POST', '/api/auth/mfa/disable/'],
+    ['POST', '/api/auth/mfa/recovery-codes'],
     ['POST', '/api/lgpd/consents'],
     ['POST', '/api/lgpd/deletion-requests/'],
     ['POST', '/api/lgpd/export-requests'],
@@ -144,6 +149,10 @@ describe('matriz somente leitura', () => {
     ['POST', '/api/lgpd/consents/extra'],
     ['POST', '/api/auth/change-password/extra'],
     ['PUT', '/api/auth/change-password'],
+    ['POST', '/api/auth/mfa'],
+    ['POST', '/api/auth/mfa/setup/extra'],
+    ['DELETE', '/api/auth/mfa/disable'],
+    ['POST', '/api/admin/users/01HZXULIDEXAMPLE0000000000/mfa/reset'],
     ['POST', '/api/moderation/removals/21/appeal/extra'],
     ['POST', '/api/profiles/me/dropouts/12/agree'],
     ['POST', '/api/support/tickets/21/messages/extra'],

@@ -78,8 +78,11 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-escambo}
       DB_NAME: ${DB_NAME:-escambo}
       JWT_SECRET: ${JWT_SECRET:-troque-isto-em-producao-com-no-minimo-32-caracteres}
-      # Cifragem da chave PIX e dos dados bancários dos saques (RNF-017); vazia = texto puro.
+      # Cifragem da chave PIX e dos dados bancários dos saques (RNF-017); vazia = texto puro. Também
+      # cifra o segredo da verificação em duas etapas, que sem ela fica indisponível (ADR 66).
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-}
+      # Painel admin só com a verificação em duas etapas ativa (ADR 66); exige a FIELD_ENCRYPTION_KEY.
+      ADMIN_MFA_REQUIRED: ${ADMIN_MFA_REQUIRED:-false}
       # O web (nginx) fica exatamente 1 salto na frente da API: confia no X-Forwarded-For dele,
       # para que rate limit e logs usem o IP real do usuário, não o do container do nginx.
       TRUST_PROXY: '1'

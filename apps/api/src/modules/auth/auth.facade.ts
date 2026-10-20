@@ -1,4 +1,5 @@
-import { authRepository, type UserRow } from './auth.repository';
+import { authRepository, type AccountLookupRow, type UserRow } from './auth.repository';
+import { mfaRepository } from './mfa.repository';
 import { sessionRepository } from './session.repository';
 
 /**
@@ -24,5 +25,20 @@ export const authFacade = {
   /** Encerra todas as sessões da pessoa (o banimento pelo admin). Devolve quantas fechou. */
   revokeAllSessions(userId: number): Promise<number> {
     return sessionRepository.revokeAllForUser(userId);
+  },
+
+  /** A conta pelo e-mail, para o atendimento do admin (ADR 66). */
+  findAccountByEmail(email: string): Promise<AccountLookupRow | undefined> {
+    return authRepository.findAccountByEmail(email);
+  },
+
+  /** A 2FA da conta está ativa? (a exigência do painel com ADMIN_MFA_REQUIRED, ADR 66) */
+  isMfaEnabled(userId: number): Promise<boolean> {
+    return mfaRepository.isEnabled(userId);
+  },
+
+  /** Apaga a 2FA da conta (o reset pelo atendimento). Devolve quantas linhas saíram. */
+  deleteMfa(userId: number): Promise<number> {
+    return mfaRepository.deleteForUser(userId);
   },
 };

@@ -300,6 +300,9 @@ jobs:
       # padrão é 60 por hora por IP, e uma repetição de teste passaria dele
       UPLOAD_RATE_LIMIT_MAX: '1000'
       ADMIN_EMAILS: '@admin.escambo.test'
+      # Chave de TESTE da cifragem de campo: sem ela a verificação em duas etapas fica indisponível
+      # (ADR 66) e o spec dois-fatores não roda. São os 32 bytes de "chave-de-teste-do-escambo-2fa-32".
+      FIELD_ENCRYPTION_KEY: Y2hhdmUtZGUtdGVzdGUtZG8tZXNjYW1iby0yZmEtMzI=
 
     steps:
       - name: Checkout

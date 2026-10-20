@@ -2,9 +2,17 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 vi.mock('./admin/admin.repository', () => ({ adminRepository: { recordAction: vi.fn() } }));
 vi.mock('./auth/auth.repository', () => ({
-  authRepository: { findById: vi.fn(), findByUlid: vi.fn(), setEmailPreference: vi.fn() },
+  authRepository: {
+    findById: vi.fn(),
+    findByUlid: vi.fn(),
+    setEmailPreference: vi.fn(),
+    findAccountByEmail: vi.fn(),
+  },
 }));
 vi.mock('./auth/session.repository', () => ({ sessionRepository: { revokeAllForUser: vi.fn() } }));
+vi.mock('./auth/mfa.repository', () => ({
+  mfaRepository: { isEnabled: vi.fn(), deleteForUser: vi.fn() },
+}));
 vi.mock('./contracts/contracts.repository', () => ({ contractsRepository: { findById: vi.fn() } }));
 vi.mock('./contracts/milestones.repository', () => ({
   milestonesRepository: { escrowRemaining: vi.fn() },
@@ -38,6 +46,7 @@ import { adminFacade } from './admin/admin.facade';
 import { adminRepository } from './admin/admin.repository';
 import { authFacade } from './auth/auth.facade';
 import { authRepository } from './auth/auth.repository';
+import { mfaRepository } from './auth/mfa.repository';
 import { sessionRepository } from './auth/session.repository';
 import { contractsFacade } from './contracts/contracts.facade';
 import { contractsRepository } from './contracts/contracts.repository';
@@ -111,6 +120,14 @@ const CASES: [string, () => Promise<unknown>, unknown, unknown[]][] = [
     sessionRepository.revokeAllForUser,
     [5],
   ],
+  [
+    'authFacade.findAccountByEmail',
+    () => authFacade.findAccountByEmail('ana@escambo.test'),
+    authRepository.findAccountByEmail,
+    ['ana@escambo.test'],
+  ],
+  ['authFacade.isMfaEnabled', () => authFacade.isMfaEnabled(5), mfaRepository.isEnabled, [5]],
+  ['authFacade.deleteMfa', () => authFacade.deleteMfa(5), mfaRepository.deleteForUser, [5]],
   [
     'contractsFacade.findById',
     () => contractsFacade.findById(9),

@@ -34,11 +34,13 @@ beforeEach(() => {
 
 const sqlSent = (): string[] => query.mock.calls.map((c) => String(c[0]));
 
-describe('cópia de dados 1.11 (ADR 54, 56, 61, RF-059 e RF-017)', () => {
+describe('cópia de dados 1.12 (ADR 54, 56, 61, 66, RF-059 e RF-017)', () => {
   it('declara o formato novo e as seções novas, mesmo vazias', async () => {
     const out = await buildExport(7);
-    expect(EXPORT_FORMAT_VERSION).toBe('1.11');
-    expect(out.formato).toBe('escambo-export/1.11');
+    expect(EXPORT_FORMAT_VERSION).toBe('1.12');
+    expect(out.formato).toBe('escambo-export/1.12');
+    // 1.12: a verificação em duas etapas; sem a linha, desligada e sem códigos.
+    expect(out).toHaveProperty('mfa', { enabled: false, confirmedAt: null, recoveryCodesLeft: 0 });
     expect(out).toHaveProperty('ofertas', []);
     expect(out).toHaveProperty('desistencias', []);
     expect(out.suporte).toEqual({ chamados: [], mensagens: [] });
@@ -84,6 +86,25 @@ describe('cópia de dados 1.11 (ADR 54, 56, 61, RF-059 e RF-017)', () => {
     expect((await titular('deadline')).push_quiet_pass).toEqual(['deadline']);
     expect((await titular('')).push_quiet_pass).toEqual([]);
     expect((await titular(null)).push_quiet_pass).toBeNull();
+  });
+
+  it('a 2FA sai como situação: nunca o segredo (nem é lido); a linha pendente conta como desligada', async () => {
+    await buildExport(7);
+    const mfa = sqlSent().find((s) => s.includes('FROM user_mfa'))!;
+    expect(mfa.replace(/\s+/g, ' ')).toBe(
+      "SELECT is_enabled, confirmed_at, recovery_codes FROM user_mfa WHERE user_id = :userId AND method = 'totp'",
+    );
+    expect(mfa).not.toContain('secret');
+
+    query.mockImplementation((async (sql: string) =>
+      sql.includes('FROM user_mfa')
+        ? [[{ is_enabled: 0, confirmed_at: null, recovery_codes: null }], []]
+        : [[], []]) as never);
+    expect((await buildExport(7)).mfa).toEqual({
+      enabled: false,
+      confirmedAt: null,
+      recoveryCodesLeft: 0,
+    });
   });
 
   it('a assinatura sai com o segredo como impressão, nunca cru, e sem o navegador', async () => {
@@ -379,6 +400,19 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
       ['FROM audit_logs', [{ t: 'securityLog' }]],
       ['FROM email_outbox', [{ t: 'emails' }]],
       ['FROM email_change_requests', [{ t: 'emailChanges' }]],
+      [
+        'FROM user_mfa',
+        [
+          {
+            is_enabled: 1,
+            confirmed_at: new Date('2026-09-30T10:00:00.000Z'),
+            recovery_codes: [
+              { h: 'hash-livre', usedAt: null },
+              { h: 'hash-usado', usedAt: '2026-09-30T11:00:00.000Z' },
+            ],
+          },
+        ],
+      ],
       ['FROM data_deletion_requests', [{ t: 'lgpdRequests' }]],
     ];
     query.mockImplementation((async (sql: string) => {
@@ -396,7 +430,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
     }
 
     expect(out).toEqual({
-      formato: 'escambo-export/1.11',
+      formato: 'escambo-export/1.12',
       exportadoEm: '2026-10-01T12:00:00.000Z',
       titular: { id: 7, ulid: '01USER', email: 'ana@escambo.test', push_quiet_pass: null },
       perfis: { freelancer: { full_name: 'Ana Freela' }, cliente: { full_name: 'Ana Cliente' } },
@@ -428,8 +462,11 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
       registrosDeSeguranca: [{ t: 'securityLog' }],
       emailsEnviados: [{ t: 'emails' }],
       pedidosDeTrocaDeEmail: [{ t: 'emailChanges' }],
+      mfa: { enabled: true, confirmedAt: '2026-09-30T10:00:00.000Z', recoveryCodesLeft: 1 },
       solicitacoesLgpd: [{ t: 'lgpdRequests' }],
     });
+    // Os hashes dos códigos de recuperação só servem para contar: não saem no arquivo.
+    expect(JSON.stringify(out)).not.toContain('hash-livre');
   });
 
   it('os saques saem com o destino decifrado (RNF-017); o legado em texto puro como está e o ilegível como "[indisponível]"', async () => {

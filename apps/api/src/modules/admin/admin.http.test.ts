@@ -27,6 +27,8 @@ const {
     listOpenDisputes: vi.fn(),
     resolveDispute: vi.fn(),
     moderateUser: vi.fn(),
+    lookupAccount: vi.fn(),
+    resetMfa: vi.fn(),
   },
   finance: { report: vi.fn(), exportCsv: vi.fn() },
   usage: { report: vi.fn() },
@@ -138,6 +140,8 @@ describe('admin: quem pode chamar', () => {
     ['post', `/users/${ULID}/suspend`],
     ['post', `/users/${ULID}/ban`],
     ['post', `/users/${ULID}/reactivate`],
+    ['get', '/users/lookup'],
+    ['post', `/users/${ULID}/mfa/reset`],
     ['get', '/withdrawals'],
     ['post', '/withdrawals/8/process'],
     ['post', '/withdrawals/8/complete'],
@@ -914,6 +918,86 @@ describe('admin: moderação de usuários (RN-007)', () => {
     );
     const res = await asAdmin('post', `/users/${ULID}/suspend`).expect(404);
     expect(res.body).toEqual({ error: 'user_not_found', message: 'Usuário não encontrado' });
+    expect(audit).not.toHaveBeenCalled();
+  });
+});
+
+describe('admin: atendimento da verificação em duas etapas (ADR 66)', () => {
+  const LOOKUP = {
+    ulid: ULID,
+    email: 'ana@escambo.test',
+    role: 'client',
+    status: 'active',
+    mfaEnabled: true,
+    createdAt: '2026-10-01T12:00:00.000Z',
+  };
+  const REASON = 'Titular perdeu o celular; identidade conferida pelo suporte.';
+
+  it('GET /users/lookup busca pelo e-mail sem espaços e em minúsculas e devolve a conta', async () => {
+    adminSvc.lookupAccount.mockResolvedValue(LOOKUP);
+
+    const res = await asAdmin('get', '/users/lookup?email=%20Ana@Escambo.TEST%20').expect(200);
+
+    expect(res.body).toEqual(LOOKUP);
+    expect(adminSvc.lookupAccount).toHaveBeenCalledTimes(1);
+    expect(adminSvc.lookupAccount).toHaveBeenCalledWith('ana@escambo.test');
+  });
+
+  it('GET /users/lookup sem e-mail, ou com e-mail inválido, é 422 e nada é buscado', async () => {
+    for (const url of ['/users/lookup', '/users/lookup?email=nao-e-email']) {
+      const res = await asAdmin('get', url).expect(422);
+      expect(res.body.details).toHaveProperty('email');
+    }
+    expect(adminSvc.lookupAccount).not.toHaveBeenCalled();
+  });
+
+  it('GET /users/lookup de e-mail sem conta: o 404 do service', async () => {
+    adminSvc.lookupAccount.mockRejectedValue(
+      new HttpError(404, 'Nenhuma conta com este e-mail', 'user_not_found'),
+    );
+    const res = await asAdmin('get', '/users/lookup?email=x@escambo.test').expect(404);
+    expect(res.body.error).toBe('user_not_found');
+  });
+
+  it('POST /users/:ulid/mfa/reset manda o motivo, em nome do admin, audita e responde 204', async () => {
+    adminSvc.resetMfa.mockResolvedValue({ sessionsRevoked: 2 });
+
+    const res = await asAdmin('post', `/users/${ULID}/mfa/reset`)
+      .send({ reason: `  ${REASON}  ` })
+      .expect(204);
+
+    expect(res.text).toBe('');
+    expect(adminSvc.resetMfa).toHaveBeenCalledTimes(1);
+    expect(adminSvc.resetMfa).toHaveBeenCalledWith(ADMIN_ID, ULID, REASON);
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledWith({
+      userId: ADMIN_ID,
+      action: 'mfa_reset_by_admin',
+      entityType: 'user',
+      newValue: { ulid: ULID, sessionsRevoked: 2 },
+      ...ORIGIN,
+    });
+  });
+
+  it('o motivo é obrigatório, de 10 a 500 caracteres; sem ele nada é desativado', async () => {
+    for (const body of [undefined, {}, { reason: 'curto' }, { reason: 'x'.repeat(501) }]) {
+      const res = await asAdmin('post', `/users/${ULID}/mfa/reset`).send(body).expect(422);
+      expect(res.body.details).toHaveProperty('reason');
+    }
+    const badUlid = await asAdmin('post', '/users/7/mfa/reset')
+      .send({ reason: REASON })
+      .expect(422);
+    expect(badUlid.body.details).toHaveProperty('ulid');
+    expect(adminSvc.resetMfa).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it('a recusa do service chega como veio (a própria conta) e não vai para a auditoria', async () => {
+    adminSvc.resetMfa.mockRejectedValue(new HttpError(400, 'Use o perfil.', 'cannot_reset_self'));
+    const res = await asAdmin('post', `/users/${ULID}/mfa/reset`)
+      .send({ reason: REASON })
+      .expect(400);
+    expect(res.body).toEqual({ error: 'cannot_reset_self', message: 'Use o perfil.' });
     expect(audit).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 # Rastreabilidade dos requisitos — Escambo
 
-> **Versão do código:** 1.47.0
-> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0 e a 1.47.0
+> **Versão do código:** 1.48.0
+> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0 e a 1.48.0
 > **Autor:** Guilherme Renzo
 
 Os documentos de requisitos foram escritos no planejamento, e a coluna de situação ficou para trás conforme o sistema crescia. Esta página registra o que existe **de verdade** em cada requisito: onde está no código, qual teste prova e, quando não está completo, o que falta ou qual decisão registrada (ADR) explica a lacuna. As situações aqui são as mesmas da coluna **Status** de [requisitos funcionais](./requisitos-funcionais.md) e da coluna **Situação** de [requisitos não funcionais](./requisitos-nao-funcionais.md).
@@ -15,7 +15,7 @@ Os documentos de requisitos foram escritos no planejamento, e a coluna de situa�
 
 | | Implementado | Parcial | Não implementado | Fora do escopo | Total |
 |---|---|---|---|---|---|
-| Requisitos funcionais | 83 | 2 | 5 | 2 | 92 |
+| Requisitos funcionais | 84 | 1 | 5 | 2 | 92 |
 | Requisitos não funcionais | 32 | 7 | 1 | 2 | 42 |
 
 As regras de negócio têm a própria matriz de situação, em [regras de negócio](./regras-de-negocio.md), seção 11.
@@ -113,7 +113,7 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 | RF-087 | Implementado | modules/favorites (serviço ou freelancer), modules/saved-searches + jobs/saved-search-alerts.ts (ADR 35/37); favorites.int.test.ts, saved-search-alerts.int.test.ts, e2e buscas.smoke.spec.ts e engajamento.smoke.spec.ts | — |
 | RF-088 | Implementado | contracts/milestones.repository.ts (ADR 19/25), MilestonesSection.tsx; milestones-flow.int.test.ts, e2e marcos.smoke.spec.ts | Todos os marcos são financiados no aceite (decisão do ADR 19); a liberação do dinheiro é por marco. |
 | RF-089 | Implementado | modules/reports (POST /api/reports para user, service, review e outros), fila /api/admin/reports com ações; content-moderation.int.test.ts, moderation-images.int.test.ts, e2e confianca.smoke.spec.ts ('denúncia pelo perfil público'), moderacao-conteudo.smoke.spec.ts | — |
-| RF-090 | Parcial | Exportação: modules/lgpd/lgpd.export.ts; lgpd-flow.int.test.ts ('portabilidade: cópia gerada na hora...'), adr61-export-isolamento.int.test.ts. 2FA: só a tabela user_mfa em db/schema.sql | Falta o 2FA: não há TOTP nem outro segundo fator no código, só a tabela. Não há ADR sobre isso, e o RNF-042 também fica descoberto. |
+| RF-090 | Implementado | Exportação: modules/lgpd/lgpd.export.ts (formato 1.12, com a situação da 2FA); lgpd-flow.int.test.ts, adr61-export-isolamento.int.test.ts. 2FA: POST /auth/mfa/setup, /enable, /disable, /recovery-codes, GET /auth/mfa e POST /auth/login/mfa (login em dois passos com mfaToken de chave derivada); totp.ts (RFC 6238, anti-reuso por last_used_step, migration 0050), recovery-codes.ts (10 códigos de uso único, só o hash), trava de 5 erros por 15 min; reset pelo atendimento (POST /admin/users/:ulid/mfa/reset); web: DoisFatoresCard.tsx, LoginForm.tsx (passo 2), AccountSupportSection.tsx. Testes: totp.test.ts, recovery-codes.test.ts, mfa-token.test.ts, mfa.service.test.ts, mfa.verify.test.ts, auth.mfa-login.test.ts, admin.mfa.test.ts, dois-fatores.int.test.ts, DoisFatoresCard.test.tsx, e2e dois-fatores.smoke.spec.ts | Desde a 1.48.0 (ADR 66), a 2FA por app autenticador. SMS e e-mail como segundo fator ficaram de fora de propósito; a ativação depende da FIELD_ENCRYPTION_KEY no servidor. |
 | RF-091 | Implementado | modules/dropouts, profile/DesistenciasCard.tsx; desistencias-direitos.int.test.ts ('contestação é única, só do titular...', 'janela inclusiva de 60 dias'), e2e desistencias.smoke.spec.ts | Está na 1.42.0 (ADR 61), no ramo feat/regras-pendentes, ainda fora da main. |
 | RF-092 | Implementado | POST /api/admin/dropouts/:id/{excuse,uphold} com nota obrigatória de 10 a 500 caracteres registrada em admin_actions; GET /admin/users/:ulid/dropouts; admin/DropoutsReview.tsx; desistencias-direitos.int.test.ts, moderacao-desistencias.int.test.ts, e2e desistencias.smoke.spec.ts | Mesmo caso do RF-091: ramo feat/regras-pendentes (1.42.0), ainda fora da main. |
 
@@ -162,12 +162,12 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 | RNF-039 | Implementado | apps/api/src/middlewares/error-handler.ts (500 genérico em JSON, sem stack), 404 JSON em app.ts, unhandledRejection/uncaughtException em server.ts; error-handler.test.ts 'falha do servidor responde 500 sem detalhe nenhum...' e os testes *.http.test.ts marcados RNF-039 | — |
 | RNF-040 | Parcial | apps/api/src/config/sentry.ts (servidor e captureClientError); POST /api/client-errors com log, métrica escambo_client_errors_total e alerta ErrosNoApp; report-error.ts e ErrorBoundary.tsx no web. Testes: sentry.test.ts, client-errors.http.test.ts, report-error.test.ts, ErrorBoundary.test.tsx | Os erros do servidor e do navegador chegam ao log, à métrica e ao Sentry. Falta só ligar o SENTRY_DSN no .env da VPS, que depende do dono (ADR 59). |
 | RNF-041 | Implementado | apps/api/src/modules/lgpd/lgpd.export.ts (cópia JSON gerada na hora do pedido, ADR 17); lgpd-flow.int.test.ts 'portabilidade: cópia gerada na hora, download só do titular...'; adr61-export-isolamento.int.test.ts | O prazo fica bem abaixo de 15 dias úteis porque a cópia sai na hora. O RF-090 continua 'Pendente' em requisitos-funcionais.md: a parte de exportação está desatualizada. |
-| RNF-042 | Parcial | A cifragem da chave PIX e dos dados bancários (RNF-017, 1.44.0), com a chave fora do banco, no .env. A tabela user_mfa existe só no schema | Falta o 2FA por TOTP (RF-090, decisão pendente) e, com ele, o segredo de MFA a cifrar. A chave fica no .env da VPS, não num secrets manager. |
+| RNF-042 | Parcial | TOTP (RF-090, ADR 66); segredo do TOTP gravado só cifrado com AES-256-GCM (field-crypto, enc:v1:), 503 mfa_unavailable sem a chave, leitura que falha fechada; códigos de recuperação só como hash; chave PIX e dados bancários cifrados (RNF-017, ADR 62). Testes: dois-fatores.int.test.ts (SELECT direto mostra enc:v1:), mfa.service.test.ts, field-crypto.test.ts | Desde a 1.48.0, MFA via TOTP e os segredos cifrados. Falta o secrets manager: a FIELD_ENCRYPTION_KEY fica no .env da VPS. |
 
 ---
 
 <div align="center">
 
-*rastreabilidade.md — Escambo v1.47.0 — Católica SC — 2026*
+*rastreabilidade.md — Escambo v1.48.0 — Católica SC — 2026*
 
 </div>
