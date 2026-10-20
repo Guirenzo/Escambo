@@ -16,6 +16,7 @@ import { reportsRepository } from '../../src/modules/reports/reports.repository'
 import { openQueue } from '../../src/modules/reports/moderation.health';
 import { walletRepository } from '../../src/modules/wallet/wallet.repository';
 import { setClockForTests } from '../../src/utils/clock';
+import { deleteUsersWithoutLedger } from './helpers/ledger-cleanup';
 
 const app = createApp();
 const NOW = new Date('2026-10-09T15:00:00Z');
@@ -144,20 +145,14 @@ afterEach(async () => {
       "DELETE FROM content_reports WHERE target_type = 'user' AND target_id IN (:ids)",
       { ids: ownedUsers },
     );
-    await pool.query('DELETE FROM wallet_transactions WHERE user_id IN (:ids)', {
-      ids: ownedUsers,
-    });
-    await pool.query('DELETE FROM credit_transactions WHERE user_id IN (:ids)', {
-      ids: ownedUsers,
-    });
     await pool.query('DELETE FROM notifications WHERE user_id IN (:ids)', { ids: ownedUsers });
   }
   if (ownedContracts.length)
     await pool.query('DELETE FROM contracts WHERE id IN (:ids)', { ids: ownedContracts });
   if (ownedBarters.length)
     await pool.query('DELETE FROM barter_agreements WHERE id IN (:ids)', { ids: ownedBarters });
-  if (ownedUsers.length)
-    await pool.query('DELETE FROM users WHERE id IN (:ids)', { ids: ownedUsers });
+  // Extrato imutável (RNF-036): quem tem lançamento fica, com os lançamentos.
+  await deleteUsersWithoutLedger(ownedUsers);
   ownedUsers.length = ownedContracts.length = ownedBarters.length = 0;
 });
 afterAll(async () => {

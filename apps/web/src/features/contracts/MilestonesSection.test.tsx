@@ -24,11 +24,21 @@ import { MilestonesSection } from './MilestonesSection';
  */
 
 const milestoneAction = vi.fn();
+/** Arquivos que foram com a entrega do marco (RF-035), à parte para não mexer nos outros casos. */
+const milestoneFiles = vi.fn();
 const grantMilestoneRevision = vi.fn();
 vi.mock('../../lib/api', () => ({
   api: {
-    milestoneAction: (contractId: number, milestoneId: number, action: string, text?: string) =>
-      milestoneAction(contractId, milestoneId, action, text),
+    milestoneAction: (
+      contractId: number,
+      milestoneId: number,
+      action: string,
+      text?: string,
+      attachments?: File[],
+    ) => {
+      if (attachments?.length) milestoneFiles(attachments.map((f) => f.name));
+      return milestoneAction(contractId, milestoneId, action, text);
+    },
     grantMilestoneRevision: (id: number, milestoneId: number) =>
       grantMilestoneRevision(id, milestoneId),
   },
@@ -120,6 +130,17 @@ const three = (): Milestone[] => [
 ];
 
 const items = (): HTMLElement[] => screen.getAllByRole('listitem');
+
+/** Preenche a mensagem no formulário de entrega aberto e envia. */
+async function deliverInModal(
+  user: ReturnType<typeof userEvent.setup>,
+  title: string,
+  message: string,
+): Promise<void> {
+  const dialog = screen.getByRole('dialog', { name: title });
+  await user.type(within(dialog).getByLabelText('Mensagem da entrega'), message);
+  await user.click(within(dialog).getByRole('button', { name: 'Enviar entrega' }));
+}
 const item = (i: number): HTMLElement => items()[i]!;
 
 let prompt: MockInstance<typeof window.prompt>;
@@ -136,6 +157,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date(NOW));
   auth.user = { id: 1, timezone: 'America/Sao_Paulo' };
   milestoneAction.mockReset();
+  milestoneFiles.mockReset();
   milestoneAction.mockImplementation(async () => contract(three()));
   grantMilestoneRevision.mockReset();
   grantMilestoneRevision.mockResolvedValue(contract(three()));
@@ -589,6 +611,44 @@ describe('MilestonesSection: o que a lista mostra', () => {
 });
 
 describe('MilestonesSection: as ações de cada lado', () => {
+  it('os arquivos das entregas de um marco aparecem na linha dele, com nome e tamanho (RF-035)', () => {
+    render(
+      wrap(
+        <MilestonesSection
+          contract={contract([
+            milestone({
+              id: 2,
+              title: 'Gravação',
+              status: 'delivered',
+              deliveredAt: local(9, 30, 18, 0),
+              deliveryNote: 'Vídeo bruto enviado',
+              attachments: [
+                {
+                  messageId: 77,
+                  name: 'bruto.zip',
+                  mime: 'application/zip',
+                  size: 3_145_728,
+                  url: '/api/messaging/attachments/77',
+                  purgedAt: null,
+                  purgedReason: null,
+                  removedAt: null,
+                  sentAt: local(9, 30, 18, 0),
+                },
+              ],
+            }),
+            milestone({ id: 3, title: 'Edição' }),
+          ])}
+          myId={CLIENT}
+        />,
+      ),
+    );
+    expect(within(item(0)).getByText('Arquivo da entrega:')).toBeInTheDocument();
+    expect(within(item(0)).getByRole('button', { name: 'Baixar bruto.zip' })).toHaveTextContent(
+      '3 MB',
+    );
+    expect(within(item(1)).queryByTestId('delivery-files')).toBeNull();
+  });
+
   it('o freelancer só vê "Entregar marco", e só no marco por entregar', () => {
     render(wrap(<MilestonesSection contract={contract(three())} myId={FREELANCER} />));
     expect(within(item(0)).queryByRole('button')).toBeNull();
@@ -643,26 +703,43 @@ describe('MilestonesSection: as ações de cada lado', () => {
     expect(screen.getByRole('button', { name: 'Entregar marco' })).toBeEnabled();
   });
 
-  it('Entregar marco pergunta a mensagem daquele marco e manda o texto sem espaços nas pontas', async () => {
+  it('Entregar marco abre o formulário daquele marco e manda o texto sem espaços nas pontas', async () => {
     const user = userEvent.setup();
-    prompt.mockReturnValue('  Corte final no Drive  ');
     render(wrap(<MilestonesSection contract={contract(three())} myId={FREELANCER} />));
     await user.click(screen.getByRole('button', { name: 'Entregar marco' }));
-    expect(prompt).toHaveBeenCalledWith('Mensagem da entrega do marco «Edição»:');
+    expect(prompt).not.toHaveBeenCalled();
+    await deliverInModal(user, 'Entregar marco: Edição', '  Corte final no Drive  ');
     expect(milestoneAction).toHaveBeenCalledTimes(1);
     expect(milestoneAction).toHaveBeenCalledWith(9, 3, 'deliver', 'Corte final no Drive');
+    expect(milestoneFiles).not.toHaveBeenCalled();
     expect(await screen.findByText('Marco entregue. O cliente foi avisado.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it.each<[string, string | null]>([
-    ['cancelada', null],
-    ['só com espaços', '   '],
-  ])('entrega com a mensagem %s: nada vai para a API', async (_name, answer) => {
+  it('a entrega do marco leva os arquivos escolhidos (RF-035), e o marco não pede links', async () => {
     const user = userEvent.setup();
-    prompt.mockReturnValue(answer);
     render(wrap(<MilestonesSection contract={contract(three())} myId={FREELANCER} />));
     await user.click(screen.getByRole('button', { name: 'Entregar marco' }));
-    expect(prompt).toHaveBeenCalledTimes(1);
+    const dialog = screen.getByRole('dialog', { name: 'Entregar marco: Edição' });
+    expect(within(dialog).queryByLabelText('Links (opcional, um por linha)')).toBeNull();
+    await user.upload(
+      within(dialog).getByTestId('deliver-file-input'),
+      new File(['%PDF-'], 'corte.pdf', { type: 'application/pdf' }),
+    );
+    await deliverInModal(user, 'Entregar marco: Edição', 'Corte final');
+    expect(milestoneFiles).toHaveBeenCalledWith(['corte.pdf']);
+    expect(milestoneAction).toHaveBeenCalledWith(9, 3, 'deliver', 'Corte final');
+  });
+
+  it('entrega com a mensagem só com espaços ou fechada sem enviar: nada vai para a API', async () => {
+    const user = userEvent.setup();
+    render(wrap(<MilestonesSection contract={contract(three())} myId={FREELANCER} />));
+    await user.click(screen.getByRole('button', { name: 'Entregar marco' }));
+    const dialog = screen.getByRole('dialog', { name: 'Entregar marco: Edição' });
+    await user.type(within(dialog).getByLabelText('Mensagem da entrega'), '   ');
+    expect(within(dialog).getByRole('button', { name: 'Enviar entrega' })).toBeDisabled();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(milestoneAction).not.toHaveBeenCalled();
     expect(screen.queryByText('Marco entregue. O cliente foi avisado.')).toBeNull();
   });
@@ -728,7 +805,6 @@ describe('MilestonesSection: as ações de cada lado', () => {
 
   it('com dois marcos por entregar, cada botão entrega o marco da própria linha', async () => {
     const user = userEvent.setup();
-    prompt.mockReturnValue('Pronto');
     render(
       wrap(
         <MilestonesSection
@@ -741,14 +817,13 @@ describe('MilestonesSection: as ações de cada lado', () => {
       ),
     );
     await user.click(within(item(1)).getByRole('button', { name: 'Entregar marco' }));
-    expect(prompt).toHaveBeenCalledWith('Mensagem da entrega do marco «Gravação»:');
+    await deliverInModal(user, 'Entregar marco: Gravação', 'Pronto');
     expect(milestoneAction).toHaveBeenCalledTimes(1);
     expect(milestoneAction).toHaveBeenCalledWith(9, 12, 'deliver', 'Pronto');
   });
 
   it('enquanto um marco é entregue, o "Entregar marco" dos outros também fica desabilitado', async () => {
     const user = userEvent.setup();
-    prompt.mockReturnValue('Pronto');
     let release!: (c: ContractWithHistory) => void;
     milestoneAction.mockReturnValue(new Promise<ContractWithHistory>((r) => (release = r)));
     const two = [milestone({ id: 11, title: 'Roteiro' }), milestone({ id: 12, title: 'Gravação' })];
@@ -756,6 +831,7 @@ describe('MilestonesSection: as ações de cada lado', () => {
     const first = within(item(0)).getByRole('button', { name: 'Entregar marco' });
     const second = within(item(1)).getByRole('button', { name: 'Entregar marco' });
     await user.click(first);
+    await deliverInModal(user, 'Entregar marco: Roteiro', 'Pronto');
     await waitFor(() => expect(first).toBeDisabled());
     expect(second).toBeDisabled();
     // O aviso de entrega só sai quando a API responde.
@@ -768,16 +844,18 @@ describe('MilestonesSection: as ações de cada lado', () => {
     expect(milestoneAction).toHaveBeenCalledWith(9, 11, 'deliver', 'Pronto');
   });
 
-  it('a API recusa a entrega do marco: o aviso é a mensagem dela e o botão volta a aceitar clique', async () => {
+  it('a API recusa a entrega do marco: o aviso é a mensagem dela e o formulário fica aberto', async () => {
     const user = userEvent.setup();
-    prompt.mockReturnValue('Pronto');
     milestoneAction.mockRejectedValue(new Error('A contratação foi cancelada'));
     render(wrap(<MilestonesSection contract={contract(three())} myId={FREELANCER} />));
-    const deliver = screen.getByRole('button', { name: 'Entregar marco' });
-    await user.click(deliver);
+    await user.click(screen.getByRole('button', { name: 'Entregar marco' }));
+    await deliverInModal(user, 'Entregar marco: Edição', 'Pronto');
     expect(await screen.findByText('A contratação foi cancelada')).toBeInTheDocument();
     expect(screen.queryByText('Marco entregue. O cliente foi avisado.')).toBeNull();
-    await waitFor(() => expect(deliver).toBeEnabled());
+    const dialog = screen.getByRole('dialog', { name: 'Entregar marco: Edição' });
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Enviar entrega' })).toBeEnabled(),
+    );
   });
 
   it('a API recusa: o aviso é a mensagem dela, sem o aviso de sucesso', async () => {

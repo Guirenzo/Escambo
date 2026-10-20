@@ -173,6 +173,58 @@ export const messagingRepository = {
     return rows[0]!;
   },
 
+  /**
+   * Mensagens de anexo, sem legenda, gravadas dentro da transação de quem chama: os arquivos de uma
+   * entrega (RF-035) entram no chat do par junto com a entrega, ou nada entra. Devolve os ids na
+   * ordem dos arquivos.
+   */
+  async insertAttachments(
+    conn: PoolConnection,
+    data: {
+      conversationId: number;
+      senderId: number;
+      files: ReadonlyArray<NewAttachment & { kind: 'image' | 'file' }>;
+    },
+  ): Promise<number[]> {
+    const ids: number[] = [];
+    for (const f of data.files) {
+      const [res] = await conn.query<ResultSetHeader>(
+        `INSERT INTO messages (conversation_id, sender_id, type, content, file_url, file_name, file_mime,
+                               file_size_bytes)
+         VALUES (:conversationId, :senderId, :type, NULL, :fileKey, :fileName, :fileMime, :fileSize)`,
+        {
+          conversationId: data.conversationId,
+          senderId: data.senderId,
+          type: f.kind,
+          fileKey: f.key,
+          fileName: f.name,
+          fileMime: f.mime,
+          fileSize: f.size,
+        },
+      );
+      ids.push(res.insertId);
+    }
+    if (ids.length > 0) {
+      await conn.query<ResultSetHeader>(
+        `UPDATE conversations SET last_message_at = NOW() WHERE id = :conversationId`,
+        { conversationId: data.conversationId },
+      );
+    }
+    return ids;
+  },
+
+  /** Mensagens de anexo da conversa pelas chaves dos arquivos, na ordem em que foram gravadas. */
+  async findByFileKeys(conversationId: number, keys: string[]): Promise<MessageRow[]> {
+    if (keys.length === 0) return [];
+    const [rows] = await pool.query<MessageRow[]>(
+      `SELECT ${MESSAGE_COLUMNS} FROM messages
+        WHERE conversation_id = :conversationId AND file_url IN (:keys)
+        ORDER BY id`,
+      { conversationId, keys },
+    );
+    return rows;
+  },
+
   /** Tira a mensagem do ar pela moderação, ou devolve numa contestação aceita (ADR 44). */
   async setRemoved(conn: PoolConnection, id: number, removed: boolean): Promise<boolean> {
     const [res] = await conn.query<ResultSetHeader>(

@@ -59,6 +59,22 @@ import {
 } from './milestones.repository';
 import { reviewsRepository } from '../reviews/reviews.repository';
 import { REVIEW_WINDOW_DAYS, toReview } from '../reviews/reviews.service';
+import { messagingRepository } from '../messaging/messaging.repository';
+import {
+  discardAttachments,
+  messagingService,
+  storeAttachments,
+  type UploadedFile,
+} from '../messaging/messaging.service';
+import {
+  attachmentsOf,
+  DELIVERY_MAX_FILES,
+  DELIVERY_MAX_TOTAL_BYTES,
+  DELIVERY_MAX_TOTAL_MB,
+  deliveryFilesRepository,
+  type DeliveryFileRow,
+  type DeliveryFilesInput,
+} from './delivery-files';
 import {
   milestonesTacitNotices,
   tacitApprovedNotices,
@@ -285,9 +301,14 @@ function offerGuard(row: ContractRow): { sql: string; params: Record<string, unk
   };
 }
 
-function toMilestone(m: MilestoneRow, row: ContractRow): Milestone {
+function toMilestone(
+  m: MilestoneRow,
+  row: ContractRow,
+  files: readonly DeliveryFileRow[] = [],
+): Milestone {
   return {
     revisions: { used: Number(m.revisions_used ?? 0), limit: m.revision_limit ?? null },
+    attachments: attachmentsOf(files, { milestoneId: m.id }),
     id: m.id,
     title: m.title,
     description: m.description,
@@ -325,13 +346,66 @@ function deliveryFiles(raw: unknown): string[] {
   return Array.isArray(value) ? value.filter((f): f is string => typeof f === 'string') : [];
 }
 
-function toDelivery(d: DeliveryRow): ContractDelivery {
+function toDelivery(d: DeliveryRow, files: readonly DeliveryFileRow[] = []): ContractDelivery {
   return {
     id: d.id,
     message: d.message,
     files: deliveryFiles(d.files),
+    attachments: attachmentsOf(files, { deliveryId: d.id }),
     deliveredAt: new Date(d.delivered_at).toISOString(),
   };
+}
+
+/**
+ * Arquivos de uma entrega (RF-035), antes da transação dela: confere quantidade e soma, acha a
+ * conversa do par e grava os arquivos no disco com as regras do anexo do chat (tipo pelo conteúdo,
+ * vazio recusado). Sem arquivo, não faz nada. Se a entrega não for gravada, quem chama descarta.
+ */
+async function prepareDeliveryFiles(
+  row: ContractRow,
+  uid: number,
+  files: readonly UploadedFile[],
+): Promise<DeliveryFilesInput | null> {
+  if (files.length === 0) return null;
+  if (files.length > DELIVERY_MAX_FILES) {
+    throw new HttpError(
+      422,
+      `Envie no máximo ${DELIVERY_MAX_FILES} arquivos por entrega`,
+      'too_many_files',
+    );
+  }
+  if (files.reduce((sum, f) => sum + f.buffer.length, 0) > DELIVERY_MAX_TOTAL_BYTES) {
+    throw new HttpError(
+      413,
+      `Os arquivos da entrega somam mais de ${DELIVERY_MAX_TOTAL_MB} MB: mande os maiores pelo chat ou por link`,
+      'files_too_large',
+    );
+  }
+  const conversationId = await messagingRepository.getOrCreate(
+    row.client_id,
+    row.freelancer_id,
+    row.id,
+  );
+  return { conversationId, senderId: uid, files: await storeAttachments([...files]) };
+}
+
+/** A entrega não foi gravada: os arquivos que iam com ela saem do disco. */
+async function discardDeliveryFiles(attachments: DeliveryFilesInput | null): Promise<void> {
+  if (attachments) await discardAttachments(attachments.files);
+}
+
+/** Os arquivos da entrega aparecem no chat aberto das duas partes, como mensagens novas. */
+function announceDeliveryFiles(contractId: number, attachments: DeliveryFilesInput | null): void {
+  if (!attachments) return;
+  void messagingService
+    .announceStored(
+      contractId,
+      attachments.conversationId,
+      attachments.files.map((f) => f.key),
+    )
+    .catch((err: unknown) =>
+      logger.warn({ err, contractId }, 'entrega: arquivos não anunciados no chat em tempo real'),
+    );
 }
 
 const hasMilestones = (row: ContractRow): boolean => Boolean(Number(row.has_milestones ?? 0));
@@ -526,6 +600,18 @@ async function afterCompleted(row: ContractRow): Promise<void> {
     } catch (err) {
       logger.warn({ err }, 'troca (onLinkedContractCompleted) falhou');
     }
+  }
+}
+
+/**
+ * O freelancer respondeu a uma oferta (aceite, recusa ou contraproposta): conta para a missão de
+ * resposta rápida (RF-066). Depois do commit e nunca derruba a resposta, como o gancho das badges.
+ */
+async function afterOfferAnswered(freelancerId: number): Promise<void> {
+  try {
+    await gamificationService.onOfferAnswered(freelancerId);
+  } catch (err) {
+    logger.warn({ err }, 'gamificação (onOfferAnswered) falhou');
   }
 }
 
@@ -795,8 +881,12 @@ export const contractsService = {
     }));
     const reviewRow = await reviewsRepository.findByContractIdWithResponse(id);
     const review = reviewRow ? toReview(reviewRow, reviewRow.response) : null;
+    // RF-035: os arquivos de todas as entregas, únicas e de marcos; sem nenhum, nem consulta.
+    const files = Number(row.has_delivery_files ?? 0)
+      ? await deliveryFilesRepository.listForContract(id)
+      : [];
     const milestones = hasMilestones(row)
-      ? (await milestonesRepository.listForContract(id)).map((m) => toMilestone(m, row))
+      ? (await milestonesRepository.listForContract(id)).map((m) => toMilestone(m, row, files))
       : [];
     const cancellable = ['pending', 'accepted', 'in_progress'].includes(row.status);
     const cancellation = cancellable
@@ -805,10 +895,10 @@ export const contractsService = {
     const offers = row.barter_agreement_id
       ? []
       : (await offersRepository.list(id)).map((o) => toOffer(o, row));
-    // RF-035: a mensagem (e os links) de cada entrega única; sem entrega, nem consulta.
+    // RF-035: a mensagem, os links e os arquivos de cada entrega única; sem entrega, nem consulta.
     const deliveries =
       Number(row.deliveries_count ?? 0) > 0
-        ? (await contractsRepository.listDeliveries(id)).map(toDelivery)
+        ? (await contractsRepository.listDeliveries(id)).map((d) => toDelivery(d, files))
         : [];
     const contract = toContract(row, ctx);
     if (contract.negotiation?.seq === 1 && offers.length === 0) {
@@ -1034,6 +1124,7 @@ export const contractsService = {
         message: input.message.trim(),
       }),
     );
+    if (by === 'freelancer') await afterOfferAnswered(uid);
     return this.getById(id, uid);
   },
 
@@ -1139,6 +1230,7 @@ export const contractsService = {
             : null,
         }),
       );
+      await afterOfferAnswered(uid);
       return load(id);
     }
 
@@ -1189,6 +1281,7 @@ export const contractsService = {
           : null,
       }),
     );
+    await afterOfferAnswered(uid);
     return load(id);
   },
 
@@ -1404,6 +1497,7 @@ export const contractsService = {
         heldPrice: Number(row.price),
       }),
     );
+    await afterOfferAnswered(uid);
     return load(id);
   },
 
@@ -1411,7 +1505,12 @@ export const contractsService = {
    * Entrega única: grava a hora da aprovação tácita (RN-024) no fuso do cliente, levada para as
    * 9h se cairia de noite, e o aviso ao cliente já diz até quando ele responde.
    */
-  async deliver(id: number, uid: number, input: DeliverInput): Promise<Contract> {
+  async deliver(
+    id: number,
+    uid: number,
+    input: DeliverInput,
+    uploads: readonly UploadedFile[] = [],
+  ): Promise<Contract> {
     const row = await loadOr404(id);
     assertFreelancer(row, uid); // RF-035
     assertSingleDelivery(row);
@@ -1423,16 +1522,29 @@ export const contractsService = {
       DEFAULT_TACIT_APPROVAL_DAYS,
     );
     const approvalDueAt = floorSecond(humanize(new Date(now.getTime() + days * DAY), cz));
-    const ok = await contractsRepository.deliver({
-      id,
-      changedBy: uid,
-      from: row.status,
-      message: input.message,
-      files: input.files ?? null,
-      now,
-      approvalDueAt,
-    });
-    if (!ok) throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
+    // Os arquivos vão para o disco antes da transação e saem se a entrega não for gravada.
+    const attachments = await prepareDeliveryFiles(row, uid, uploads);
+    let ok: boolean;
+    try {
+      ok = await contractsRepository.deliver({
+        id,
+        changedBy: uid,
+        from: row.status,
+        message: input.message,
+        files: input.files ?? null,
+        now,
+        approvalDueAt,
+        ...(attachments ? { attachments } : {}),
+      });
+    } catch (err) {
+      await discardDeliveryFiles(attachments);
+      throw err;
+    }
+    if (!ok) {
+      await discardDeliveryFiles(attachments);
+      throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
+    }
+    announceDeliveryFiles(id, attachments);
     const delivered = await loadOr404(id);
     const opens = disputeOpensAt(windowFacts(delivered));
     send(
@@ -2171,6 +2283,7 @@ export const contractsService = {
     milestoneId: number,
     uid: number,
     message: string,
+    uploads: readonly UploadedFile[] = [],
   ): Promise<ContractWithHistory> {
     const row = await loadOr404(id);
     assertFreelancer(row, uid);
@@ -2182,16 +2295,28 @@ export const contractsService = {
       DEFAULT_TACIT_APPROVAL_DAYS,
     );
     const approvalDueAt = floorSecond(humanize(new Date(now.getTime() + days * DAY), cz));
-    const ok = await milestonesRepository.deliver({
-      contractId: id,
-      milestoneId,
-      changedBy: uid,
-      message,
-      now,
-      approvalDueAt,
-    });
-    if (!ok)
+    // RF-035 também por marco: os arquivos entram na transação da entrega do marco, ou saem.
+    const attachments = await prepareDeliveryFiles(row, uid, uploads);
+    let ok: boolean;
+    try {
+      ok = await milestonesRepository.deliver({
+        contractId: id,
+        milestoneId,
+        changedBy: uid,
+        message,
+        now,
+        approvalDueAt,
+        ...(attachments ? { attachments } : {}),
+      });
+    } catch (err) {
+      await discardDeliveryFiles(attachments);
+      throw err;
+    }
+    if (!ok) {
+      await discardDeliveryFiles(attachments);
       throw new HttpError(409, 'Este marco não está aguardando entrega', 'invalid_transition');
+    }
+    announceDeliveryFiles(id, attachments);
     const contract = await this.getById(id, uid);
     const m = contract.milestones.find((x) => x.id === milestoneId);
     send(

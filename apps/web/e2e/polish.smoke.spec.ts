@@ -94,7 +94,11 @@ test('freelancer propõe troca a partir do card de outro freelancer', async ({ p
     String(wanted.id),
   );
   await form.getByLabel('Serviço que ofereço').selectOption(String(mine.id));
-  await form.getByLabel('Valor estimado da minha oferta (R$)').fill('300');
+  // RF-084: com preço fechado nos dois serviços, o sistema estima os lados pelo catálogo.
+  await expect(form.getByLabel('Valor estimado da minha oferta (R$)')).toHaveCount(0);
+  await expect(form.getByTestId('barter-estimate')).toContainText(
+    'você oferece R$ 300,00 (preço do catálogo) e quer R$ 400,00 (preço do catálogo)',
+  );
   await expect(
     form.getByText('Você paga R$ 100,00 de torna · reservado da sua carteira agora'),
   ).toBeVisible();

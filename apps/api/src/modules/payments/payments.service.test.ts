@@ -7,6 +7,7 @@ vi.mock('./payments.repository', () => ({
     findByGatewayId: vi.fn(),
     listTopupsForUser: vi.fn(),
     settle: vi.fn(),
+    recordEvent: vi.fn(),
     expirePending: vi.fn(),
   },
 }));
@@ -21,6 +22,11 @@ import { paymentsRepository, type PaymentRow } from './payments.repository';
 import { paymentsService } from './payments.service';
 
 const repo = vi.mocked(paymentsRepository);
+/** O webhook como chega ao service: sem nome de evento, com o corpo inteiro. */
+const RECEIPT = { event: null, body: { gatewayPaymentId: 'sim_X', status: 'paid' } };
+/** O que vai para o histórico (RF-050) junto com a liquidação, pelo webhook e pela simulação. */
+const WEBHOOK_NOTICE = { source: 'webhook', event: null, payload: RECEIPT.body };
+const SIMULATION_NOTICE = { source: 'simulation', event: null, payload: { status: 'paid' } };
 const notify = vi.mocked(notificationsService.notify);
 
 type Fields = Partial<{
@@ -66,7 +72,7 @@ describe('paymentsService.createDeposit', () => {
     const arg = repo.createTopup.mock.calls[0]![0];
     expect(arg).toMatchObject({ payerId: 1, amount: 150, gateway: 'simulado' });
     expect(arg.gatewayPaymentId.startsWith('sim_')).toBe(true);
-    expect(arg.pixCode).toMatch(/^000201.*6304[0-9A-F]{4}$/);
+    expect(arg.response.pixCode).toMatch(/^000201.*6304[0-9A-F]{4}$/);
     expect(d).toMatchObject({
       id: 7,
       status: 'pending',
@@ -83,7 +89,7 @@ describe('paymentsService.simulate', () => {
       .mockResolvedValueOnce(row({ status: 'paid', paid_at: new Date() }));
     repo.settle.mockResolvedValue(true);
     const d = await paymentsService.simulate(7, 1);
-    expect(repo.settle).toHaveBeenCalledWith(7, 'paid');
+    expect(repo.settle).toHaveBeenCalledWith(7, 'paid', SIMULATION_NOTICE);
     expect(d.status).toBe('paid');
     expect(d.pixCode).toBeNull(); // cobrança liquidada não expõe mais o código
     expect(notify).toHaveBeenCalledWith(1, expect.objectContaining({ type: 'deposit_confirmed' }));
@@ -119,8 +125,8 @@ describe('paymentsService.settleFromGateway (webhook)', () => {
     repo.findById.mockResolvedValue(row({ status: 'paid' }));
     repo.settle.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
-    const first = await paymentsService.settleFromGateway('sim_X', 'paid');
-    const again = await paymentsService.settleFromGateway('sim_X', 'paid');
+    const first = await paymentsService.settleFromGateway('sim_X', 'paid', RECEIPT);
+    const again = await paymentsService.settleFromGateway('sim_X', 'paid', RECEIPT);
     expect(first.applied).toBe(true);
     expect(again.applied).toBe(false);
     expect(notify).toHaveBeenCalledTimes(1);
@@ -128,7 +134,7 @@ describe('paymentsService.settleFromGateway (webhook)', () => {
 
   it('404 para cobrança desconhecida', async () => {
     repo.findByGatewayId.mockResolvedValue(undefined);
-    await expect(paymentsService.settleFromGateway('nope', 'paid')).rejects.toMatchObject({
+    await expect(paymentsService.settleFromGateway('nope', 'paid', RECEIPT)).rejects.toMatchObject({
       statusCode: 404,
     });
   });
@@ -288,10 +294,10 @@ describe('paymentsService.settleFromGateway: o que é liquidado e avisado', () =
     repo.findById.mockResolvedValue(row({ amount: '1500.50', status: 'paid' }));
     repo.settle.mockResolvedValue(true);
 
-    const out = await paymentsService.settleFromGateway('sim_X', 'paid');
+    const out = await paymentsService.settleFromGateway('sim_X', 'paid', RECEIPT);
 
     expect(repo.findByGatewayId).toHaveBeenCalledWith('sim_X');
-    expect(repo.settle).toHaveBeenCalledWith(7, 'paid');
+    expect(repo.settle).toHaveBeenCalledWith(7, 'paid', WEBHOOK_NOTICE);
     expect(out.deposit).toMatchObject({ id: 7, status: 'paid', amount: 1500.5 });
     expect(notify).toHaveBeenCalledTimes(1);
     const [userId, payload] = notify.mock.calls[0]!;
@@ -311,10 +317,10 @@ describe('paymentsService.settleFromGateway: o que é liquidado e avisado', () =
     repo.findById.mockResolvedValue(row({ id: 31, payer_id: 44, amount: '19.99', status: 'paid' }));
     repo.settle.mockResolvedValue(true);
 
-    await paymentsService.settleFromGateway('sim_OUTRA', 'paid');
+    await paymentsService.settleFromGateway('sim_OUTRA', 'paid', RECEIPT);
 
     expect(repo.findByGatewayId).toHaveBeenCalledWith('sim_OUTRA');
-    expect(repo.settle).toHaveBeenCalledWith(31, 'paid');
+    expect(repo.settle).toHaveBeenCalledWith(31, 'paid', WEBHOOK_NOTICE);
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith(
       44,
@@ -331,7 +337,7 @@ describe('paymentsService.settleFromGateway: o que é liquidado e avisado', () =
     repo.findByGatewayId.mockResolvedValue(row());
     repo.settle.mockRejectedValueOnce(boom);
 
-    await expect(paymentsService.settleFromGateway('sim_X', 'paid')).rejects.toBe(boom);
+    await expect(paymentsService.settleFromGateway('sim_X', 'paid', RECEIPT)).rejects.toBe(boom);
 
     expect(notify).not.toHaveBeenCalled();
     expect(repo.findById).not.toHaveBeenCalled();
@@ -342,9 +348,9 @@ describe('paymentsService.settleFromGateway: o que é liquidado e avisado', () =
     repo.findById.mockResolvedValue(row({ status: 'failed' }));
     repo.settle.mockResolvedValue(true);
 
-    const out = await paymentsService.settleFromGateway('sim_X', 'failed');
+    const out = await paymentsService.settleFromGateway('sim_X', 'failed', RECEIPT);
 
-    expect(repo.settle).toHaveBeenCalledWith(7, 'failed');
+    expect(repo.settle).toHaveBeenCalledWith(7, 'failed', WEBHOOK_NOTICE);
     expect(out.applied).toBe(true);
     expect(out.deposit.status).toBe('failed');
     expect(notify).not.toHaveBeenCalled();
@@ -353,7 +359,7 @@ describe('paymentsService.settleFromGateway: o que é liquidado e avisado', () =
   it('cobrança desconhecida não tenta liquidar nada', async () => {
     repo.findByGatewayId.mockResolvedValue(undefined);
 
-    await expect(paymentsService.settleFromGateway('nope', 'paid')).rejects.toMatchObject({
+    await expect(paymentsService.settleFromGateway('nope', 'paid', RECEIPT)).rejects.toMatchObject({
       statusCode: 404,
       code: 'payment_not_found',
     });
@@ -378,7 +384,7 @@ describe('paymentsService.createDeposit: o que vai para o banco', () => {
       const arg = repo.createTopup.mock.calls[0]![0];
       expect(arg.payerId).toBe(5);
       expect(arg.amount).toBe(80.5);
-      expect(arg.pixCode).toContain('540580.50');
+      expect(arg.response.pixCode).toContain('540580.50');
       expect(arg.expiresAt).toEqual(new Date('2026-10-02T15:45:00.000Z'));
       expect(repo.findById).toHaveBeenCalledTimes(1);
       expect(repo.findById).toHaveBeenCalledWith(42);
@@ -428,7 +434,11 @@ describe('paymentsService.createDeposit: o que vai para o banco', () => {
         amount: 150,
         gateway: 'simulado',
         gatewayPaymentId: 'gw_777',
-        pixCode: '000201GATEWAY6304FFFF',
+        response: {
+          externalId: 'gw_777',
+          pixCode: '000201GATEWAY6304FFFF',
+          expiresAt: '2026-10-02T16:00:00.000Z',
+        },
         expiresAt,
       });
     } finally {
@@ -450,7 +460,7 @@ describe('paymentsService.createDeposit: o que vai para o banco', () => {
     expect(second.gatewayPaymentId).toMatch(/^sim_[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(second.gatewayPaymentId).not.toBe(first.gatewayPaymentId);
     // O txid do BR Code tem no máximo 25 caracteres: os 25 primeiros da referência.
-    expect(first.pixCode).toContain(`0525${first.gatewayPaymentId.slice(4, 29)}`);
+    expect(first.response.pixCode).toContain(`0525${first.gatewayPaymentId.slice(4, 29)}`);
     expect(first.gateway).toBe('simulado');
   });
 
@@ -514,7 +524,7 @@ describe('paymentsService.simulate: quem é barrado não liquida nem avisa', () 
     });
 
     expect(repo.settle).toHaveBeenCalledTimes(1);
-    expect(repo.settle).toHaveBeenCalledWith(7, 'paid');
+    expect(repo.settle).toHaveBeenCalledWith(7, 'paid', SIMULATION_NOTICE);
     expect(notify).not.toHaveBeenCalled();
   });
 
@@ -543,7 +553,7 @@ describe('paymentsService.simulate: quem é barrado não liquida nem avisa', () 
     const d = await paymentsService.simulate(12, 5);
 
     expect(repo.settle).toHaveBeenCalledTimes(1);
-    expect(repo.settle).toHaveBeenCalledWith(12, 'paid');
+    expect(repo.settle).toHaveBeenCalledWith(12, 'paid', SIMULATION_NOTICE);
     expect(repo.findById).toHaveBeenCalledTimes(2);
     expect(repo.findById).toHaveBeenLastCalledWith(12);
     expect(d).toMatchObject({
@@ -569,9 +579,9 @@ describe('paymentsService.settleFromGateway: a resposta é a cobrança relida', 
     repo.findById.mockResolvedValue(row({ id: 31, status: 'paid' }));
     repo.settle.mockResolvedValue(false);
 
-    const out = await paymentsService.settleFromGateway('sim_X', 'failed');
+    const out = await paymentsService.settleFromGateway('sim_X', 'failed', RECEIPT);
 
-    expect(repo.settle).toHaveBeenCalledWith(31, 'failed');
+    expect(repo.settle).toHaveBeenCalledWith(31, 'failed', WEBHOOK_NOTICE);
     expect(repo.findById).toHaveBeenCalledTimes(1);
     expect(repo.findById).toHaveBeenCalledWith(31);
     expect(out.applied).toBe(false);
@@ -585,7 +595,7 @@ describe('paymentsService.settleFromGateway: a resposta é a cobrança relida', 
     repo.findById.mockResolvedValue(row({ status: 'paid', paid_at: paidAt }));
     repo.settle.mockResolvedValue(true);
 
-    const out = await paymentsService.settleFromGateway('sim_X', 'paid');
+    const out = await paymentsService.settleFromGateway('sim_X', 'paid', RECEIPT);
 
     expect(repo.findById).toHaveBeenCalledWith(7);
     expect(out).toMatchObject({
@@ -618,6 +628,162 @@ describe('toDeposit: o prazo no limite', () => {
       expect(justPast.expiresAt).toBe('2026-10-02T14:59:59.999Z');
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe('paymentsService: histórico do gateway (RF-050)', () => {
+  it('webhook que liquida vai junto com a liquidação, higienizado: nenhuma linha avulsa', async () => {
+    repo.findByGatewayId.mockResolvedValue(row());
+    repo.findById.mockResolvedValue(row({ status: 'paid' }));
+    repo.settle.mockResolvedValue(true);
+    const body = {
+      event: 'payment.updated',
+      gatewayPaymentId: 'sim_X',
+      status: 'paid',
+      payer: { name: 'Maria', cpf: '123.456.789-00' },
+    };
+
+    await paymentsService.settleFromGateway('sim_X', 'paid', { event: 'payment.updated', body });
+
+    expect(repo.settle).toHaveBeenCalledWith(7, 'paid', {
+      source: 'webhook',
+      event: 'payment.updated',
+      payload: {
+        event: 'payment.updated',
+        gatewayPaymentId: 'sim_X',
+        status: 'paid',
+        payer: '[omitido]',
+      },
+    });
+    expect(repo.recordEvent).not.toHaveBeenCalled();
+  });
+
+  it('webhook repetido não liquida de novo, mas fica no histórico como ignored, ligado à cobrança', async () => {
+    repo.findByGatewayId.mockResolvedValue(row({ status: 'paid', gateway: 'simulado' }));
+    repo.findById.mockResolvedValue(row({ status: 'paid' }));
+    repo.settle.mockResolvedValue(false);
+
+    const out = await paymentsService.settleFromGateway('sim_X', 'paid', RECEIPT);
+
+    expect(out.applied).toBe(false);
+    expect(repo.recordEvent).toHaveBeenCalledExactlyOnceWith({
+      paymentId: 7,
+      gateway: 'simulado',
+      gatewayPaymentId: 'sim_X',
+      source: 'webhook',
+      event: null,
+      status: 'paid',
+      outcome: 'ignored',
+      payload: RECEIPT.body,
+    });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('cobrança desconhecida: o corpo fica no histórico sem cobrança (not_found) e a resposta é 404', async () => {
+    repo.findByGatewayId.mockResolvedValue(undefined);
+
+    await expect(
+      paymentsService.settleFromGateway('sim_nada', 'failed', { event: 'x', body: { a: 1 } }),
+    ).rejects.toMatchObject({ statusCode: 404, code: 'payment_not_found' });
+
+    expect(repo.recordEvent).toHaveBeenCalledExactlyOnceWith({
+      paymentId: null,
+      gateway: paymentGateway.name,
+      gatewayPaymentId: 'sim_nada',
+      source: 'webhook',
+      event: 'x',
+      status: 'failed',
+      outcome: 'not_found',
+      payload: { a: 1 },
+    });
+    expect(repo.settle).not.toHaveBeenCalled();
+  });
+
+  it('se o histórico do repetido não grava, o erro sobe (o gateway reenvia, e o efeito segue idempotente)', async () => {
+    const boom = new Error('payment_events');
+    repo.findByGatewayId.mockResolvedValue(row({ status: 'paid' }));
+    repo.settle.mockResolvedValue(false);
+    repo.recordEvent.mockRejectedValueOnce(boom);
+
+    await expect(paymentsService.settleFromGateway('sim_X', 'paid', RECEIPT)).rejects.toBe(boom);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('corpo fora do formato: liga à cobrança quando o id veio e existe, com evento e status curtos', async () => {
+    repo.findByGatewayId.mockResolvedValue(row({ id: 31, gateway: 'pagarme' }));
+
+    await paymentsService.recordInvalidWebhook({
+      gatewayPaymentId: 'sim_X',
+      status: 'x'.repeat(30),
+      event: 7,
+      email: 'quem@pagou.test',
+    });
+
+    expect(repo.findByGatewayId).toHaveBeenCalledWith('sim_X');
+    expect(repo.recordEvent).toHaveBeenCalledExactlyOnceWith({
+      paymentId: 31,
+      gateway: 'pagarme',
+      gatewayPaymentId: 'sim_X',
+      source: 'webhook',
+      event: null,
+      status: 'x'.repeat(20),
+      outcome: 'invalid',
+      payload: { gatewayPaymentId: 'sim_X', status: 'x'.repeat(30), event: 7, email: '[omitido]' },
+    });
+  });
+
+  it('corpo fora do formato sem id (ou que não é objeto) fica sem cobrança, e nem procura', async () => {
+    await paymentsService.recordInvalidWebhook(['lista']);
+    await paymentsService.recordInvalidWebhook(null);
+
+    expect(repo.findByGatewayId).not.toHaveBeenCalled();
+    expect(
+      repo.recordEvent.mock.calls.map(([e]) => [e.paymentId, e.gatewayPaymentId, e.payload]),
+    ).toEqual([
+      [null, null, ['lista']],
+      [null, null, null],
+    ]);
+    expect(repo.recordEvent.mock.calls[0]![0]).toMatchObject({
+      gateway: paymentGateway.name,
+      outcome: 'invalid',
+    });
+  });
+
+  it('id que não existe no corpo inválido: procura, não acha e grava sem cobrança', async () => {
+    repo.findByGatewayId.mockResolvedValue(undefined);
+
+    await paymentsService.recordInvalidWebhook({ gatewayPaymentId: 'sim_Y' });
+
+    expect(repo.recordEvent.mock.calls[0]![0]).toMatchObject({
+      paymentId: null,
+      gatewayPaymentId: 'sim_Y',
+      gateway: paymentGateway.name,
+    });
+  });
+
+  it('a criação guarda o corpo original do provedor, quando há um, higienizado', async () => {
+    const expiresAt = new Date('2026-10-02T16:00:00.000Z');
+    const charge = vi.spyOn(paymentGateway, 'createPixCharge').mockResolvedValueOnce({
+      externalId: 'gw_1',
+      pixCode: '000201X',
+      expiresAt,
+      raw: { id: 'gw_1', status: 'pending', customer: { document: '123' }, qr: { url: 'u' } },
+    });
+    try {
+      repo.createTopup.mockResolvedValue(9);
+      repo.findById.mockResolvedValue(row({ id: 9 }));
+
+      await paymentsService.createDeposit(5, { amount: 150, method: 'pix' });
+
+      expect(repo.createTopup.mock.calls[0]![0].response).toEqual({
+        externalId: 'gw_1',
+        pixCode: '000201X',
+        expiresAt: '2026-10-02T16:00:00.000Z',
+        raw: { id: 'gw_1', status: 'pending', customer: '[omitido]', qr: { url: 'u' } },
+      });
+    } finally {
+      charge.mockRestore();
     }
   });
 });

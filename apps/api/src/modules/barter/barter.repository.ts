@@ -1,3 +1,4 @@
+import type { BarterValueSource } from '@escambo/types';
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { pool } from '../../config/db';
 import { applyWalletEffect } from '../wallet/wallet.ledger';
@@ -18,6 +19,9 @@ export interface BarterRow extends RowDataPacket {
   requested_description: string | null;
   estimated_value_offered: string;
   estimated_value_requested: string;
+  /** RF-084: catálogo ou informado; NULL nas trocas anteriores à 1.45.0 (valores digitados). */
+  offered_value_source?: BarterValueSource | null;
+  requested_value_source?: BarterValueSource | null;
   cash_difference: string;
   cash_payer_id: number | null;
   platform_fee: string;
@@ -44,10 +48,13 @@ export interface TornaHold {
   amount: number;
 }
 
-/** Serviço do catálogo citado na proposta: de quem é e se está no ar. */
+/** Serviço do catálogo citado na proposta: de quem é, se está no ar e o preço (RF-084). */
 export interface CatalogService {
   userId: number;
   isActive: boolean;
+  priceType: 'fixed' | 'hourly' | 'negotiable';
+  /** null quando o serviço não tem preço (a combinar). */
+  price: number | null;
 }
 
 export type AcceptResult =
@@ -152,6 +159,8 @@ export const barterRepository = {
       requestedDescription: string | null;
       estimatedValueOffered: number;
       estimatedValueRequested: number;
+      offeredValueSource: BarterValueSource;
+      requestedValueSource: BarterValueSource;
       cashDifference: number;
       cashPayerId: number | null;
       platformFee: number;
@@ -174,10 +183,12 @@ export const barterRepository = {
         `INSERT INTO barter_agreements
            (ulid, proposer_id, receiver_id, offered_service_id, requested_service_id,
             offered_description, requested_description, estimated_value_offered, estimated_value_requested,
+            offered_value_source, requested_value_source,
             cash_difference, cash_payer_id, platform_fee, torna_status)
          VALUES
            (:ulid, :proposerId, :receiverId, :offeredServiceId, :requestedServiceId,
             :offeredDescription, :requestedDescription, :estimatedValueOffered, :estimatedValueRequested,
+            :offeredValueSource, :requestedValueSource,
             :cashDifference, :cashPayerId, :platformFee, :tornaStatus)`,
         data,
       );
@@ -214,16 +225,24 @@ export const barterRepository = {
   },
 
   /**
-   * Serviço do catálogo, com o dono e se está no ar (pausado não aceita proposta, RN-013), ou
-   * null se ele não existe ou foi removido.
+   * Serviço do catálogo, com o dono, se está no ar (pausado não aceita proposta, RN-013) e o preço
+   * que estima aquele lado da troca (RF-084), ou null se ele não existe ou foi removido.
    */
   async findCatalogService(id: number): Promise<CatalogService | null> {
     const [rows] = await pool.query<RowDataPacket[]>(
-      `SELECT user_id, is_active FROM services WHERE id = :id AND deleted_at IS NULL LIMIT 1`,
+      `SELECT user_id, is_active, price_type, price
+         FROM services WHERE id = :id AND deleted_at IS NULL LIMIT 1`,
       { id },
     );
     const row = rows[0];
-    return row ? { userId: Number(row.user_id), isActive: Boolean(Number(row.is_active)) } : null;
+    return row
+      ? {
+          userId: Number(row.user_id),
+          isActive: Boolean(Number(row.is_active)),
+          priceType: row.price_type as CatalogService['priceType'],
+          price: row.price == null ? null : Number(row.price),
+        }
+      : null;
   },
 
   async findById(id: number): Promise<BarterRow | undefined> {

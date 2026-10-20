@@ -16,6 +16,11 @@ export interface PixCharge {
   /** Payload "copia e cola" (BR Code). */
   pixCode: string;
   expiresAt: Date;
+  /**
+   * Corpo original da resposta do provedor, quando há um (RF-050): guardado higienizado com a
+   * cobrança, para auditoria. O simulado não tem provedor por trás e não preenche.
+   */
+  raw?: Record<string, unknown>;
 }
 
 export interface PaymentGateway {

@@ -1226,6 +1226,48 @@ describe('contractsRepository', () => {
       approvalDueAt: new Date('2026-10-11T15:00:00.000Z'),
     };
 
+    it('com arquivos (RF-035), as mensagens do chat e a ligação com a entrega entram na mesma transação, antes da linha do tempo', async () => {
+      fakeDb.reply(
+        [{ id: 12, status: p.from }],
+        { affectedRows: 1 },
+        { insertId: 88 },
+        { insertId: 300 },
+        {},
+        {},
+        { affectedRows: 1 },
+      );
+
+      expect(
+        await contractsRepository.deliver({
+          ...p,
+          attachments: {
+            conversationId: 5,
+            senderId: 44,
+            files: [{ kind: 'file', key: 'k1', name: 'a.pdf', mime: 'application/pdf', size: 9 }],
+          },
+        }),
+      ).toBe(true);
+
+      expect(fakeDb.calls.map((c) => c.sql.split(' (')[0])).toEqual([
+        'SELECT * FROM contracts WHERE id = :id FOR UPDATE',
+        expect.stringContaining('UPDATE contracts c SET'),
+        'INSERT INTO deliveries',
+        'INSERT INTO messages',
+        'UPDATE conversations SET last_message_at = NOW() WHERE id = :conversationId',
+        'INSERT INTO delivery_files',
+        'INSERT INTO contract_status_history',
+      ]);
+      // A ligação usa o id da entrega recém-gravada.
+      expect(fakeDb.calls[5]!.params).toEqual({
+        contractId: 12,
+        deliveryId: 88,
+        milestoneId: null,
+        m0: 300,
+      });
+      expect(fakeDb.pool.getConnection).toHaveBeenCalledTimes(1);
+      expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
+    });
+
     it('vai para delivered gravando a hora da aprovação tácita (RN-024), encerra o pedido de extensão e registra a entrega e a linha do tempo', async () => {
       fakeDb.reply(
         [{ id: 12, status: p.from }],

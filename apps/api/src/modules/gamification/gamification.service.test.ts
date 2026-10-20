@@ -18,7 +18,14 @@ vi.mock('./gamification.repository', () => ({
     activityTimes: vi.fn(),
     rankOf: vi.fn(),
     leaderboard: vi.fn(),
+    rankedLeaderboard: vi.fn(),
   },
+}));
+vi.mock('./gamification.missions', () => ({
+  missionsService: { evaluate: vi.fn(), list: vi.fn() },
+}));
+vi.mock('../settings/settings.repository', () => ({
+  settingsRepository: { getNumber: vi.fn() },
 }));
 
 const { zone, logger } = vi.hoisted(() => ({
@@ -28,7 +35,14 @@ const { zone, logger } = vi.hoisted(() => ({
 vi.mock('../auth/user-zone', () => ({ userZone: zone }));
 vi.mock('../../config/logger', () => ({ logger }));
 
-import { computeStreak, gamificationService, levelProgress } from './gamification.service';
+import {
+  computeStreak,
+  gamificationService,
+  levelProgress,
+  rankingRadius,
+} from './gamification.service';
+import { missionsService } from './gamification.missions';
+import { settingsRepository } from '../settings/settings.repository';
 import {
   gamificationRepository,
   type BadgeCatalogRow,
@@ -690,8 +704,24 @@ describe('gamificação: regras por evento e por critério', () => {
   describe('getLeaderboard', () => {
     it('a posição é a ordem em que o repository entrega; sem limite informado, são os 10 primeiros', async () => {
       repo.leaderboard.mockResolvedValue([
-        { ulid: '01HXA', name: 'Ana', total_xp: 900, level: 3, level_name: 'Profissional' },
-        { ulid: '01HXB', name: null, total_xp: 100, level: 1, level_name: 'Iniciante' },
+        {
+          ulid: '01HXA',
+          name: 'Ana',
+          total_xp: 900,
+          level: 3,
+          level_name: 'Profissional',
+          avg_rating: '4.75',
+          total_contracts: 12,
+        },
+        {
+          ulid: '01HXB',
+          name: null,
+          total_xp: 100,
+          level: 1,
+          level_name: 'Iniciante',
+          avg_rating: null,
+          total_contracts: null,
+        },
       ] as unknown as LeaderboardRow[]);
 
       expect(await gamificationService.getLeaderboard()).toEqual([
@@ -702,16 +732,133 @@ describe('gamificação: regras por evento e por critério', () => {
           totalXp: 900,
           level: 3,
           levelName: 'Profissional',
+          avgRating: 4.75,
+          completedContracts: 12,
         },
-        { rank: 2, userUlid: '01HXB', name: null, totalXp: 100, level: 1, levelName: 'Iniciante' },
+        {
+          rank: 2,
+          userUlid: '01HXB',
+          name: null,
+          totalXp: 100,
+          level: 1,
+          levelName: 'Iniciante',
+          avgRating: 0,
+          completedContracts: 0,
+        },
       ]);
       expect(repo.leaderboard).toHaveBeenCalledWith(10);
+      expect(repo.rankedLeaderboard).not.toHaveBeenCalled();
+      expect(settingsRepository.getNumber).not.toHaveBeenCalled();
     });
 
     it('respeita o limite pedido', async () => {
       repo.leaderboard.mockResolvedValue([]);
-      expect(await gamificationService.getLeaderboard(3)).toEqual([]);
+      expect(await gamificationService.getLeaderboard({}, 3)).toEqual([]);
       expect(repo.leaderboard).toHaveBeenCalledWith(3);
+    });
+
+    it('por categoria: a RN-056 no repository, sem raio; quem não tem XP entra no nível inicial', async () => {
+      repo.rankedLeaderboard.mockResolvedValue([
+        {
+          ulid: '01HXC',
+          name: 'Caio',
+          total_xp: 0,
+          level: null,
+          level_name: null,
+          avg_rating: '5.00',
+          total_contracts: 1,
+          distance_km: null,
+        },
+      ] as unknown as LeaderboardRow[]);
+
+      expect(await gamificationService.getLeaderboard({ categoryId: 10 })).toEqual([
+        {
+          rank: 1,
+          userUlid: '01HXC',
+          name: 'Caio',
+          totalXp: 0,
+          level: 1,
+          levelName: 'Iniciante',
+          avgRating: 5,
+          completedContracts: 1,
+        },
+      ]);
+      expect(repo.rankedLeaderboard).toHaveBeenCalledWith({ categoryId: 10, limit: 10 });
+      expect(repo.leaderboard).not.toHaveBeenCalled();
+      expect(settingsRepository.getNumber).not.toHaveBeenCalled();
+    });
+
+    it('perto de mim: o raio é o ranking_radius_km da plataforma e a distância sai com uma casa', async () => {
+      vi.mocked(settingsRepository.getNumber).mockResolvedValue(30);
+      repo.rankedLeaderboard.mockResolvedValue([
+        {
+          ulid: '01HXD',
+          name: 'Dora',
+          total_xp: 40,
+          level: 1,
+          level_name: 'Iniciante',
+          avg_rating: '4.00',
+          total_contracts: 3,
+          distance_km: 2.3456,
+        },
+      ] as unknown as LeaderboardRow[]);
+
+      const board = await gamificationService.getLeaderboard({
+        categoryId: 1,
+        lat: -26.3,
+        lng: -48.8,
+      });
+
+      expect(board[0]).toMatchObject({ rank: 1, distanceKm: 2.3, avgRating: 4 });
+      expect(settingsRepository.getNumber).toHaveBeenCalledWith('ranking_radius_km', 50);
+      expect(repo.rankedLeaderboard).toHaveBeenCalledWith({
+        categoryId: 1,
+        near: { lat: -26.3, lng: -48.8, radiusKm: 30 },
+        limit: 10,
+      });
+    });
+
+    it('só lat, sem lng, não é ranking local: cai no geral', async () => {
+      repo.leaderboard.mockResolvedValue([]);
+      await gamificationService.getLeaderboard({ lat: -26.3 });
+      expect(repo.leaderboard).toHaveBeenCalledWith(10);
+      expect(repo.rankedLeaderboard).not.toHaveBeenCalled();
+    });
+
+    it('perto de mim sem categoria: só o raio filtra', async () => {
+      vi.mocked(settingsRepository.getNumber).mockResolvedValue(50);
+      repo.rankedLeaderboard.mockResolvedValue([]);
+      await gamificationService.getLeaderboard({ lat: 1, lng: 2 });
+      expect(repo.rankedLeaderboard).toHaveBeenCalledWith({
+        near: { lat: 1, lng: 2, radiusKm: 50 },
+        limit: 10,
+      });
+    });
+
+    it.each([
+      ['o parâmetro vale', 25, 25],
+      ['zero cai no padrão', 0, 50],
+      ['negativo cai no padrão', -5, 50],
+      ['acima do teto da busca cai no padrão', 501, 50],
+      ['não numérico cai no padrão', Number.NaN, 50],
+    ])('rankingRadius: %s', (_rule, value, expected) => {
+      expect(rankingRadius(value)).toBe(expected);
+    });
+  });
+
+  describe('missões (RF-066)', () => {
+    it('listMissions devolve as missões do service de missões', async () => {
+      const missions = [{ id: 1 }];
+      vi.mocked(missionsService.list).mockResolvedValue(missions as never);
+      expect(await gamificationService.listMissions(7)).toBe(missions);
+      expect(missionsService.list).toHaveBeenCalledWith(7);
+    });
+
+    it('onOfferAnswered conta só a missão de resposta rápida', async () => {
+      await gamificationService.onOfferAnswered(7);
+      expect(missionsService.evaluate).toHaveBeenCalledWith(7, {
+        actions: ['fast_response_hours'],
+      });
     });
   });
 
@@ -745,6 +892,11 @@ describe('gamificação: regras por evento e por critério', () => {
         repo.getFreelancerStats.mock.invocationCallOrder[0]!,
       );
       expect(repo.listActiveBadges).toHaveBeenCalledTimes(1);
+      // Por último, a missão de contratações concluídas do período (RF-066).
+      expect(missionsService.evaluate).toHaveBeenCalledWith(7, { actions: ['complete_contracts'] });
+      expect(repo.getFreelancerStats.mock.invocationCallOrder[0]!).toBeLessThan(
+        vi.mocked(missionsService.evaluate).mock.invocationCallOrder[0]!,
+      );
     });
 
     it('do segundo contrato em diante a first-deal já existe: só o crédito do contrato', async () => {
@@ -1042,6 +1194,14 @@ describe('badges por critério contado (RF-065)', () => {
 
       expect(repo.awardBadge).not.toHaveBeenCalled();
       expect(repo.applyXp).not.toHaveBeenCalled();
+    });
+
+    it('a troca concluída também conta para a missão de troca (RF-066)', async () => {
+      repo.countBartersCompleted.mockResolvedValue(1);
+
+      await gamificationService.onBarterCompleted(8);
+
+      expect(missionsService.evaluate).toHaveBeenCalledWith(8, { actions: ['complete_barter'] });
     });
   });
 

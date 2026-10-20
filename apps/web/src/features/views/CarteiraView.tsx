@@ -39,6 +39,7 @@ import {
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { DepositModal } from '../wallet/DepositModal';
+import { EarningsSection } from '../wallet/EarningsSection';
 import {
   isInvertedPeriod,
   LoadMore,
@@ -339,6 +340,9 @@ export function CarteiraView() {
           </BusinessForm>
         )}
       </div>
+
+      {/* Ganhos por período (RF-082): só leitura do ledger; quem nunca recebeu vê o vazio. */}
+      <EarningsSection />
 
       <div className="two-col">
         <section className="card">

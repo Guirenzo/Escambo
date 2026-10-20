@@ -20,6 +20,7 @@ import { auditService } from '../audit/audit.service';
 import { generateRefreshToken, hashToken } from '../../utils/tokens';
 import { mailService } from '../mail/mail.service';
 import { authRepository, type UserRow } from './auth.repository';
+import { emailChangeRepository } from './email-change.repository';
 import { sessionRepository } from './session.repository';
 import { tokensRepository } from './tokens.repository';
 import type { ChangePasswordInput, LoginInput, RegisterInput } from './auth.schema';
@@ -66,7 +67,7 @@ export interface RequestContext {
   userAgent: string | null;
 }
 
-const appLink = (path: string): string => `${env.APP_URL.replace(/\/$/, '')}${path}`;
+export const appLink = (path: string): string => `${env.APP_URL.replace(/\/$/, '')}${path}`;
 
 /** Gera um token de uso único, guarda só o hash e devolve o valor para ir no link. */
 async function issueOneTimeToken(
@@ -100,7 +101,7 @@ async function sendVerification(user: { id: number; email: string }): Promise<vo
 }
 
 /** Emite um novo par (access token JWT + refresh token opaco) e persiste a sessão. */
-async function issueSession(user: UserRow, ctx: SessionContext): Promise<RefreshResponse> {
+export async function issueSession(user: UserRow, ctx: SessionContext): Promise<RefreshResponse> {
   const refreshToken = generateRefreshToken();
   const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000);
 
@@ -125,6 +126,30 @@ export function isAdminEmail(email: string): boolean {
     .map((x) => x.trim().toLowerCase())
     .filter(Boolean)
     .some((entry) => (entry.startsWith('@') ? e.endsWith(entry) : e === entry));
+}
+
+/**
+ * Cancela os pedidos de troca de e-mail abertos (RF-017) quando a senha muda: quem pediu pode ser
+ * alguém que sabia a senha antiga. Só entra na auditoria se havia pedido aberto.
+ */
+export async function cancelEmailChanges(
+  userId: number,
+  reason: 'password_changed' | 'password_reset' | 'user',
+  ctx: Partial<RequestContext>,
+): Promise<number> {
+  const cancelled = await emailChangeRepository.cancelOpen(userId);
+  if (cancelled > 0) {
+    void auditService.log({
+      userId,
+      action: 'email_change_cancelled',
+      entityType: 'user',
+      entityId: userId,
+      newValue: { reason, cancelled },
+      ip: ctx.ip ?? null,
+      userAgent: userAgentOf(ctx.userAgent),
+    });
+  }
+  return cancelled;
 }
 
 /** Suspenso mantém sessão de consulta; banimento/exclusão continuam sem acesso. */
@@ -263,6 +288,9 @@ export const authService = {
     await sessionRepository.revokeAllForUser(userId);
     // Quem redefine a senha pode estar tirando o acesso de um aparelho perdido: o push vai junto.
     await pushRepository.removeAllForUser(userId);
+    // E pode estar retomando a conta de quem sabia a senha antiga: a troca de e-mail que essa
+    // pessoa pediu (RF-017) deixa de valer, mesmo que o link já esteja na caixa dela.
+    await cancelEmailChanges(userId, 'password_reset', {});
   },
 
   /**
@@ -288,6 +316,8 @@ export const authService = {
     const passwordHash = await bcrypt.hash(input.newPassword, env.BCRYPT_SALT_ROUNDS);
     await authRepository.updatePassword(userId, passwordHash);
     const revoked = await sessionRepository.revokeAllForUser(userId);
+    // Troca de e-mail pendente cai junto (o aviso do pedido manda trocar a senha se não foi você).
+    await cancelEmailChanges(userId, 'password_changed', ctx);
     const tokens = await issueSession(user, ctx);
 
     const userAgent = userAgentOf(ctx.userAgent);
@@ -338,7 +368,8 @@ export const authService = {
 
     assertSessionAllowed(user);
 
-    // Promoção a admin por ADMIN_EMAILS vale também para contas já existentes.
+    // Promoção a admin por ADMIN_EMAILS vale também para contas já existentes. A troca de e-mail
+    // (RF-017) nunca leva uma conta comum a um endereço da lista: não vira caminho para cá.
     if (user.status !== 'suspended' && user.role !== 'admin' && isAdminEmail(user.email)) {
       await authRepository.updateRole(user.id, 'admin');
       user.role = 'admin';

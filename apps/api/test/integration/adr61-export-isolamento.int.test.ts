@@ -166,7 +166,7 @@ describe('ADR 61 / G.6.11: exportação 1.8 preenchida e isolada pelo titular', 
       [bySecond, second],
       [byClient, client],
     ] as const) {
-      expect(exported.data.formato).toBe('escambo-export/1.10');
+      expect(exported.data.formato).toBe('escambo-export/1.11');
       expect(exported.data.titular.email).toBe(owner.email);
     }
 

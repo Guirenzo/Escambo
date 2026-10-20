@@ -634,6 +634,7 @@ describe('revisão por marco', () => {
         // Financiado e já entregue antes: está em revisão, desde o pedido.
         revisionRequestedAt: '2026-10-07T13:00:00.000Z',
         revisions: { used: 0, limit: null },
+        attachments: [],
       },
       {
         id: 8,
@@ -653,6 +654,7 @@ describe('revisão por marco', () => {
         dueZone: 'America/Sao_Paulo',
         revisionRequestedAt: null,
         revisions: { used: 0, limit: null },
+        attachments: [],
       },
       {
         id: 9,
@@ -671,6 +673,7 @@ describe('revisão por marco', () => {
         dueZone: 'America/Sao_Paulo',
         revisionRequestedAt: null,
         revisions: { used: 0, limit: null },
+        attachments: [],
       },
     ]);
   });

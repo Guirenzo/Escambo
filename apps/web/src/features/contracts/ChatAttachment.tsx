@@ -1,4 +1,4 @@
-import { Download, FileArchive, FileText, FileX, Paperclip, X } from 'lucide-react';
+import { Download, FileArchive, FileImage, FileText, FileX, Paperclip, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { AttachmentPurgeReason, ChatAttachment as Attachment } from '@escambo/types';
 import { api } from '../../lib/api';
@@ -115,11 +115,19 @@ export function ImageAttachment({ attachment }: { attachment: Attachment }) {
   );
 }
 
-/** Arquivo (PDF, ZIP) no chat: cartão com nome e tamanho; clicar baixa com o token. */
+/**
+ * Arquivo (PDF, ZIP) no chat, ou qualquer arquivo de uma entrega (RF-035): cartão com nome e
+ * tamanho; clicar baixa com o token.
+ */
 export function FileAttachment({ attachment }: { attachment: Attachment }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const Icon = attachment.mime === 'application/pdf' ? FileText : FileArchive;
+  const Icon =
+    attachment.mime === 'application/pdf'
+      ? FileText
+      : attachment.mime.startsWith('image/')
+        ? FileImage
+        : FileArchive;
 
   async function download(): Promise<void> {
     setBusy(true);

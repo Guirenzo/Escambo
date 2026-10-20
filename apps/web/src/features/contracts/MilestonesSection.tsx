@@ -1,6 +1,7 @@
 import { BusinessButton } from '../../components/BusinessActions';
 import { CalendarClock, CheckCircle2, Flag, PackageCheck, RotateCcw } from 'lucide-react';
 import type { ContractWithHistory, Milestone } from '@escambo/types';
+import { useState } from 'react';
 import { useAuth } from '../../lib/auth';
 import { deadlineInfo, deadlineText, deadlineZoneNote, momentText } from '../../lib/deadline';
 import { brl, dtm, MILESTONE_STATUS_LABEL } from '../../lib/format';
@@ -8,6 +9,8 @@ import { DEFAULT_TIMEZONE } from '../../lib/timezones';
 import { useGrantMilestoneRevision, useMilestoneAction } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { GRANT_REVISION_CONFIRMATION, revisionCount, revisionsExhausted } from './contractRules';
+import { DeliveryFiles } from './DeliveriesSection';
+import { DeliverModal } from './DeliverModal';
 
 const pillOf = (status: Milestone['status']): string =>
   status === 'released'
@@ -36,7 +39,10 @@ export function MilestonesSection({
   const toast = useToast();
   const act = useMilestoneAction(contract.id);
   const grant = useGrantMilestoneRevision(contract.id);
-  const busy = act.isPending || grant.isPending;
+  // A entrega do marco abre o formulário com mensagem e arquivos (RF-035).
+  const [delivering, setDelivering] = useState<Milestone | null>(null);
+  // Uma entrega por vez: com o formulário aberto, os botões dos marcos esperam.
+  const busy = act.isPending || grant.isPending || delivering !== null;
   const list = contract.milestones;
   if (list.length === 0) return null;
 
@@ -55,11 +61,11 @@ export function MilestonesSection({
     action: 'deliver' | 'approve' | 'request-revision',
   ): Promise<void> {
     if (busy || (action === 'request-revision' && revisionsExhausted(m.revisions))) return;
-    let text: string | undefined;
     if (action === 'deliver') {
-      text = (window.prompt(`Mensagem da entrega do marco «${m.title}»:`) ?? '').trim();
-      if (!text) return;
+      setDelivering(m);
+      return;
     }
+    let text: string | undefined;
     if (action === 'request-revision') {
       text = (window.prompt('O que precisa ser ajustado neste marco?') ?? '').trim();
       if (!text) return;
@@ -71,9 +77,7 @@ export function MilestonesSection({
           ? `Marco aprovado: ${
               isCredits ? `${Math.round(m.freelancerNet)} créditos` : brl(m.freelancerNet)
             } liberados para o freelancer.`
-          : action === 'deliver'
-            ? 'Marco entregue. O cliente foi avisado.'
-            : 'Revisão solicitada neste marco.',
+          : 'Revisão solicitada neste marco.',
       );
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Erro na ação');
@@ -161,6 +165,7 @@ export function MilestonesSection({
                     {m.deliveredAt ? ` · ${dtm(m.deliveredAt)}` : ''}
                   </div>
                 )}
+                <DeliveryFiles attachments={m.attachments ?? []} />
                 {m.status === 'delivered' && m.approvalDueAt && (
                   <div className="muted tiny" data-testid={`milestone-approval-${m.id}`}>
                     aprovação automática a partir de {momentText(m.approvalDueAt, user?.timezone)}
@@ -242,6 +247,13 @@ export function MilestonesSection({
           </li>
         ))}
       </ol>
+      {delivering && (
+        <DeliverModal
+          contract={contract}
+          milestone={delivering}
+          onClose={() => setDelivering(null)}
+        />
+      )}
     </section>
   );
 }

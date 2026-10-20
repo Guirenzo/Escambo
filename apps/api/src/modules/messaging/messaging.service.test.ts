@@ -12,6 +12,7 @@ vi.mock('./messaging.repository', () => ({
     pairContractIds: vi.fn(),
     markRead: vi.fn(),
     markPurged: vi.fn().mockResolvedValue(undefined),
+    findByFileKeys: vi.fn(),
   },
 }));
 vi.mock('../contracts/contracts.repository', () => ({
@@ -38,7 +39,12 @@ vi.mock('./attachments.storage', async (importOriginal) => ({
   attachmentSize: vi.fn(),
 }));
 
-import { messagingService, notificationBody } from './messaging.service';
+import {
+  discardAttachments,
+  messagingService,
+  notificationBody,
+  storeAttachments,
+} from './messaging.service';
 import { messagingRepository, type ConversationRow, type MessageRow } from './messaging.repository';
 import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
 import { notificationsService } from '../notifications/notifications.service';
@@ -1416,5 +1422,124 @@ describe('messagingService.history: lida ou não (RF-059)', () => {
       '2026-10-19T12:05:00.000Z',
     ]);
     expect(h.messages[2]!.content).toBe('');
+  });
+});
+
+describe('arquivos de uma entrega (RF-035): as regras do anexo do chat para vários de uma vez', () => {
+  const PDF = Buffer.from('%PDF-1.4 entrega');
+
+  it('confere todos antes de gravar o primeiro e devolve o que a mensagem precisa', async () => {
+    disk.saveAttachment
+      .mockResolvedValueOnce('2026/10/a.png')
+      .mockResolvedValueOnce('2026/10/b.pdf');
+    const stored = await storeAttachments([
+      { buffer: PNG, originalname: 'logo.png' },
+      { buffer: PDF, originalname: 'manual.exe' },
+    ]);
+    expect(stored).toEqual([
+      {
+        kind: 'image',
+        key: '2026/10/a.png',
+        name: 'logo.png',
+        mime: 'image/png',
+        size: PNG.length,
+      },
+      // O nome que mente ganha a extensão do tipo real, como no chat.
+      {
+        kind: 'file',
+        key: '2026/10/b.pdf',
+        name: 'manual.exe.pdf',
+        mime: 'application/pdf',
+        size: PDF.length,
+      },
+    ]);
+  });
+
+  it('um arquivo recusado (tipo ou vazio) para tudo antes de qualquer gravação, e a recusa diz qual', async () => {
+    await expect(
+      storeAttachments([
+        { buffer: PNG, originalname: 'logo.png' },
+        { buffer: Buffer.from('<html>'), originalname: 'pagina.png' },
+      ]),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'unsupported_file_type',
+      message: 'Tipo de arquivo não aceito (pagina.png): envie JPG, PNG, GIF, WebP, PDF ou ZIP',
+    });
+    await expect(
+      storeAttachments([{ buffer: PNG, originalname: 'logo.png' }, { buffer: Buffer.alloc(0) }]),
+    ).rejects.toMatchObject({ code: 'empty_file', message: 'O arquivo está vazio (sem nome)' });
+    // Um só: a mensagem é a do chat, sem o nome.
+    await expect(storeAttachments([{ buffer: Buffer.alloc(0) }])).rejects.toMatchObject({
+      message: 'O arquivo está vazio',
+    });
+    expect(disk.saveAttachment).not.toHaveBeenCalled();
+  });
+
+  it('se a gravação de um falha, os já gravados saem do disco', async () => {
+    const boom = new Error('disco cheio');
+    disk.saveAttachment.mockResolvedValueOnce('2026/10/a.png').mockRejectedValueOnce(boom);
+    await expect(
+      storeAttachments([
+        { buffer: PNG, originalname: 'a.png' },
+        { buffer: PDF, originalname: 'b.pdf' },
+      ]),
+    ).rejects.toBe(boom);
+    expect(disk.removeAttachment.mock.calls).toEqual([['2026/10/a.png']]);
+  });
+
+  it('discardAttachments tira do disco cada arquivo da entrega que não foi gravada', async () => {
+    await discardAttachments([
+      { kind: 'file', key: 'k1', name: 'a.pdf', mime: 'application/pdf', size: 1 },
+      { kind: 'image', key: 'k2', name: 'b.png', mime: 'image/png', size: 1 },
+    ]);
+    expect(disk.removeAttachment.mock.calls).toEqual([['k1'], ['k2']]);
+  });
+
+  it('announceStored: cada mensagem gravada vai para a sala de cada contratação do par, sem aviso de chat', async () => {
+    mRepo.findByFileKeys.mockResolvedValue([
+      fakeMsg({
+        id: 40,
+        sender_id: 20,
+        type: 'image',
+        content: null,
+        file_url: 'k1',
+        file_name: 'a.png',
+        file_mime: 'image/png',
+        file_size_bytes: 10,
+      }),
+      fakeMsg({
+        id: 41,
+        sender_id: 20,
+        type: 'file',
+        content: null,
+        file_url: 'k2',
+        file_name: 'b.pdf',
+        file_mime: 'application/pdf',
+        file_size_bytes: 20,
+      }),
+    ]);
+    mRepo.pairContractIds.mockResolvedValue([1, 2]);
+
+    await messagingService.announceStored(1, 5, ['k1', 'k2']);
+
+    expect(mRepo.findByFileKeys).toHaveBeenCalledWith(5, ['k1', 'k2']);
+    expect(
+      vi
+        .mocked(realtime.emitToContract)
+        .mock.calls.map(([c, e, p]) => [c, e, (p as { id: number }).id]),
+    ).toEqual([
+      [1, 'message:new', 40],
+      [2, 'message:new', 40],
+      [1, 'message:new', 41],
+      [2, 'message:new', 41],
+    ]);
+    expect(notificationsService.notify).not.toHaveBeenCalled();
+
+    vi.mocked(realtime.emitToContract).mockClear();
+    mRepo.findByFileKeys.mockClear();
+    await messagingService.announceStored(1, 5, []);
+    expect(mRepo.findByFileKeys).not.toHaveBeenCalled();
+    expect(realtime.emitToContract).not.toHaveBeenCalled();
   });
 });

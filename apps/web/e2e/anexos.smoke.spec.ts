@@ -6,6 +6,7 @@ import {
   openAs,
   pngFixture,
   settled,
+  topUp,
 } from './helpers';
 
 /**
@@ -98,4 +99,55 @@ test('API: o tipo vem do conteúdo — "foto.png" que é HTML é recusado; só a
   const mine = await request.get(sent.attachment.url, { headers: h(freelancer.token) });
   expect(mine.status()).toBe(200);
   expect(mine.headers()['content-type']).toBe('image/png');
+});
+
+test('entrega com arquivo (RF-035): o freelancer anexa na Sala e o cliente baixa pela seção Entregas', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const client = await createUser(request, 'client');
+  const service = await createService(request, freelancer, 250);
+  await topUp(request, client, 250);
+  const created = await request.post('/api/contracts', {
+    headers: h(client.token),
+    data: {
+      freelancerId: freelancer.id,
+      serviceId: service.id,
+      title: service.title,
+      description: 'Contratação para a entrega com arquivo pela Sala.',
+      price: 250,
+    },
+  });
+  expect(created.ok(), await created.text()).toBeTruthy();
+  const { id: contractId } = (await created.json()) as { id: number };
+  const accepted = await request.post(`/api/contracts/${contractId}/accept`, {
+    headers: h(freelancer.token),
+  });
+  expect(accepted.ok()).toBeTruthy();
+
+  // Freelancer: "Registrar entrega" abre o formulário com mensagem, links e arquivos.
+  await openAs(page, freelancer, `/contratos/${contractId}`);
+  await settled(page);
+  await page.getByRole('button', { name: 'Registrar entrega' }).click();
+  const form = page.getByRole('dialog', { name: 'Registrar entrega' });
+  await form.getByLabel('Mensagem da entrega').fill('Manual da marca em PDF');
+  await form
+    .getByTestId('deliver-file-input')
+    .setInputFiles({ name: 'manual.pdf', mimeType: 'application/pdf', buffer: PDF });
+  await expect(form.getByTestId('attachment-pending')).toContainText('manual.pdf');
+  await form.getByRole('button', { name: 'Enviar entrega' }).click();
+  await expect(page.locator('.toast', { hasText: 'Entrega registrada' })).toBeVisible();
+
+  // Cliente: o arquivo está na entrega, com nome e tamanho, e também no chat.
+  await openAs(page, client, `/contratos/${contractId}`);
+  await settled(page);
+  const delivery = page.getByTestId('deliveries').getByTestId('delivery-1');
+  await expect(delivery).toContainText('Manual da marca em PDF');
+  const downloadButton = delivery.getByRole('button', { name: 'Baixar manual.pdf' });
+  await expect(downloadButton).toBeVisible();
+  const download = page.waitForEvent('download');
+  await downloadButton.click();
+  expect((await download).suggestedFilename()).toBe('manual.pdf');
+  await expect(page.getByTestId('attachment-bubble').first()).toContainText('manual.pdf');
 });

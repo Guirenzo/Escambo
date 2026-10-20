@@ -92,5 +92,12 @@ export function suspendedRequestAllowed(method: string, originalUrl: string): bo
       /^\/api\/support\/tickets\/\d+\/(messages|close)$/.test(path)
     );
   }
-  return method === 'DELETE' && path === '/api/notifications/push';
+  if (method === 'DELETE') {
+    return (
+      path === '/api/notifications/push' ||
+      // Desistir de uma troca de e-mail pendente só protege a conta (RF-017); pedir uma troca, não.
+      path === '/api/auth/change-email'
+    );
+  }
+  return false;
 }

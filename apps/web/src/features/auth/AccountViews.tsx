@@ -172,6 +172,96 @@ export function ResetPasswordView() {
   );
 }
 
+/**
+ * /confirmar-novo-email?token=… — confirma a troca de e-mail (RF-017). Ao contrário de
+ * /verificar-email, pede um clique: um leitor de links do provedor de e-mail que abra a página
+ * sozinho não troca o e-mail de acesso de ninguém. A API encerra todas as sessões; se esta aba
+ * estava logada na mesma conta, recebe o par novo e segue dentro.
+ */
+export function ConfirmEmailChangeView() {
+  usePageTitle('Confirmar novo e-mail');
+  const [params] = useSearchParams();
+  const { user, refreshUser } = useAuth();
+  const token = params.get('token') ?? '';
+  const [state, setState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const [result, setResult] = useState<{ email: string; kept: boolean } | null>(null);
+
+  async function confirm(): Promise<void> {
+    setState('loading');
+    try {
+      // Aba logada: renova o acesso antes, senão a API não reconhece a aba e ela perde a sessão.
+      if (user) await refreshUser();
+      const res = await api.confirmEmailChange(token);
+      setResult({ email: res.email, kept: res.session !== null });
+      setState('ok');
+      if (res.session) await refreshUser();
+    } catch (er) {
+      setState('error');
+      setMessage(er instanceof Error ? er.message : 'Link inválido ou vencido');
+    }
+  }
+
+  if (!token) {
+    return (
+      <PublicCard title="Confirmar novo e-mail">
+        <p className="muted">Link incompleto. Peça a troca de novo no seu Perfil.</p>
+        <Link to={user ? '/perfil' : '/login'}>{user ? 'Ir para o perfil' : 'Entrar'}</Link>
+      </PublicCard>
+    );
+  }
+
+  return (
+    <PublicCard title="Confirmar novo e-mail">
+      {(state === 'idle' || state === 'loading') && (
+        <div className="stack">
+          <p className="muted">
+            Confirme para que este passe a ser o e-mail de acesso da sua conta. Depois da troca, as
+            sessões abertas em outros aparelhos são encerradas.
+          </p>
+          <Button
+            type="button"
+            className="full"
+            disabled={state === 'loading'}
+            onClick={() => void confirm()}
+          >
+            <MailCheck size={16} /> {state === 'loading' ? 'Confirmando…' : 'Confirmar novo e-mail'}
+          </Button>
+        </div>
+      )}
+      {state === 'ok' && result && (
+        <div className="stack center" data-testid="email-change-ok" role="status">
+          <span className="done-ico">
+            <CheckCircle2 size={28} />
+          </span>
+          <p className="muted">
+            E-mail trocado para <strong>{result.email}</strong>.{' '}
+            {result.kept
+              ? 'As outras sessões foram encerradas; esta continua.'
+              : 'Por segurança, as sessões abertas foram encerradas: entre com o novo e-mail.'}
+          </p>
+          <Link to={result.kept ? '/perfil' : '/login'}>
+            {result.kept ? 'Ir para o perfil' : 'Entrar'}
+          </Link>
+        </div>
+      )}
+      {state === 'error' && (
+        <div className="stack center" data-testid="email-change-error">
+          <span className="done-ico err">
+            <XCircle size={28} />
+          </span>
+          <p className="muted" role="alert">
+            {message}
+          </p>
+          <Link to={user ? '/perfil' : '/login'}>
+            {user ? 'Pedir de novo no perfil' : 'Entrar'}
+          </Link>
+        </div>
+      )}
+    </PublicCard>
+  );
+}
+
 /** /verificar-email?token=… — confirma o e-mail assim que abre. */
 export function VerifyEmailView() {
   usePageTitle('Confirmar e-mail');

@@ -45,6 +45,7 @@ const api = vi.hoisted(() => ({
   grantContractRevision: vi.fn(),
   grantMilestoneRevision: vi.fn(),
   publicSettings: vi.fn(),
+  deliverContract: vi.fn(),
 }));
 vi.mock('../../lib/api', () => ({ api }));
 
@@ -713,6 +714,55 @@ describe('SalaContratoView: entregas (RF-035)', () => {
     expect(
       within(section).getByRole('link', { name: /cdn\.escambo\.test\/v1\.mp4/ }),
     ).toHaveAttribute('href', 'https://cdn.escambo.test/v1.mp4');
+  });
+
+  it('os arquivos de cada entrega aparecem com nome e tamanho, e baixam com o token', async () => {
+    const blob = new Blob(['pdf']);
+    api.attachmentBlob.mockResolvedValue({ blob, fileName: 'final.pdf' });
+    const withFiles = withDeliveries();
+    withFiles.deliveries![1]!.attachments = [
+      {
+        messageId: 41,
+        name: 'final.pdf',
+        mime: 'application/pdf',
+        size: 204_800,
+        url: '/api/messaging/attachments/41',
+        purgedAt: null,
+        purgedReason: null,
+        removedAt: null,
+        sentAt: '2026-10-04T18:30:00.000Z',
+      },
+    ];
+    api.contractDetail.mockResolvedValue(withFiles);
+    await openSala(CLIENT);
+
+    const latest = within(card('Entregas')).getByTestId('delivery-2');
+    const download = within(latest).getByRole('button', { name: 'Baixar final.pdf' });
+    expect(download).toHaveTextContent('200 KB');
+    await userEvent.setup().click(download);
+    await waitFor(() =>
+      expect(api.attachmentBlob).toHaveBeenCalledWith('/api/messaging/attachments/41', 'final.pdf'),
+    );
+  });
+
+  it('o freelancer registra a entrega pelo formulário da Sala, com mensagem e arquivo', async () => {
+    const user = userEvent.setup();
+    api.contractDetail.mockResolvedValue(contract({ status: 'in_progress' }));
+    api.deliverContract.mockResolvedValue(contract({ status: 'delivered' }));
+    await openSala(FREELANCER);
+
+    await user.click(screen.getByRole('button', { name: 'Registrar entrega' }));
+    const dialog = screen.getByRole('dialog', { name: 'Registrar entrega' });
+    await user.type(within(dialog).getByLabelText('Mensagem da entrega'), 'Vídeo final');
+    const pdf = new File(['%PDF-'], 'final.pdf', { type: 'application/pdf' });
+    await user.upload(within(dialog).getByTestId('deliver-file-input'), pdf);
+    await user.click(within(dialog).getByRole('button', { name: 'Enviar entrega' }));
+
+    await waitFor(() =>
+      expect(api.deliverContract).toHaveBeenCalledWith(ID, 'Vídeo final', [pdf], []),
+    );
+    expect(await screen.findByText('Entrega registrada. O cliente foi avisado.')).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('sem entrega registrada, a Sala não mostra a seção', async () => {

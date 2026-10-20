@@ -66,6 +66,10 @@ const SIGNATURES: ReadonlyArray<{ match: (b: Buffer) => boolean; type: DetectedT
   },
 ];
 
+/** Rota que serve o anexo de uma mensagem, só para as partes da conversa. */
+export const attachmentUrl = (messageId: number): string =>
+  `/api/messaging/attachments/${messageId}`;
+
 /** MIME types aceitos (para o `accept` do input e a documentação). */
 export const ACCEPTED_MIMES: readonly string[] = SIGNATURES.map((s) => s.type.mime);
 

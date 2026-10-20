@@ -94,6 +94,8 @@ describe('avisos em tempo real', () => {
     ['deadline_extension_requested', CONTRACT],
     ['dispute_opened', CONTRACT],
     ['barter_proposed', [['notifications'], ['barters'], ['contracts']]],
+    // Missão cumprida (RF-066): o cartão, o XP e o ranking.
+    ['mission_completed', [['notifications'], ['missions'], ['gamification'], ['leaderboard']]],
     ['deposit_confirmed', MONEY],
     ['withdrawal_completed', MONEY],
     ['export_ready', LGPD],

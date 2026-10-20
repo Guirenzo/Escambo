@@ -7,6 +7,8 @@ import { saveBlob } from '../../lib/download';
 import { addDays, brl, dateInputValue } from '../../lib/format';
 import { useAdminFinance } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { bucketFullLabel, bucketLabel, GRANULARITY_WORD } from './buckets';
+import { UsageReport } from './UsageReport';
 
 type Preset = '30d' | '6m' | '12m' | 'custom';
 const PRESETS: { key: Preset; label: string }[] = [
@@ -22,44 +24,67 @@ interface Range {
   granularity: FinanceGranularity;
 }
 
+const GRANULARITIES: { key: FinanceGranularity; label: string }[] = [
+  { key: 'day', label: 'Dia' },
+  { key: 'week', label: 'Semana' },
+  { key: 'month', label: 'Mês' },
+];
+
 const DAY_MS = 86_400_000;
 const daysBetween = (a: string, b: string): number =>
   Math.round((new Date(b).getTime() - new Date(a).getTime()) / DAY_MS);
 
-/** Traduz o preset em período + granularidade (o "6 meses" é o padrão da API). */
-function rangeOf(preset: Preset, from: string, to: string): Range {
+/**
+ * Traduz o preset em período + granularidade. Sem escolha explícita (`chosen` null), cada preset
+ * tem a sua: dia nos 30 dias, mês nos 6 e 12 meses, e no "Período" dia até 62 dias e mês acima.
+ * O "6 meses" por mês é o padrão da API (vai sem datas); com outra granularidade, as datas vão.
+ */
+function rangeOf(
+  preset: Preset,
+  from: string,
+  to: string,
+  chosen: FinanceGranularity | null,
+): Range {
   const today = dateInputValue(new Date());
   if (preset === '30d') {
-    return { from: dateInputValue(addDays(new Date(), -29)), to: today, granularity: 'day' };
+    return {
+      from: dateInputValue(addDays(new Date(), -29)),
+      to: today,
+      granularity: chosen ?? 'day',
+    };
   }
   if (preset === '12m') {
     const d = new Date();
     d.setMonth(d.getMonth() - 11, 1);
-    return { from: dateInputValue(d), to: today, granularity: 'month' };
+    return { from: dateInputValue(d), to: today, granularity: chosen ?? 'month' };
   }
   if (preset === 'custom') {
-    return { from, to, granularity: daysBetween(from, to) <= 62 ? 'day' : 'month' };
+    return { from, to, granularity: chosen ?? (daysBetween(from, to) <= 62 ? 'day' : 'month') };
+  }
+  if (chosen && chosen !== 'month') {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 5, 1);
+    return { from: dateInputValue(d), to: today, granularity: chosen };
   }
   return { granularity: 'month' };
 }
 
-/** "2026-09" → "09/2026"; "2026-09-14" → "14/09". */
-const bucketLabel = (b: string): string =>
-  b.length === 7 ? `${b.slice(5)}/${b.slice(0, 4)}` : `${b.slice(8)}/${b.slice(5, 7)}`;
 /** "2026-09-14" → "14/09/2026". */
 const brDay = (s: string): string => `${s.slice(8)}/${s.slice(5, 7)}/${s.slice(0, 4)}`;
 
 /**
  * Financeiro do admin: receita da plataforma derivada do ledger de R$ (taxas retidas, líquidas
- * de estornos), depósitos, saques, reembolsos e GMV por dia ou mês, com o ledger exportável.
+ * de estornos), depósitos, saques, reembolsos e GMV por dia, semana ou mês, com o ledger
+ * exportável; embaixo, o uso da plataforma no mesmo período (RF-081).
  */
 export function FinanceSection() {
   const toast = useToast();
   const [preset, setPreset] = useState<Preset>('6m');
   const [from, setFrom] = useState(dateInputValue(addDays(new Date(), -29)));
   const [to, setTo] = useState(dateInputValue(new Date()));
+  const [chosen, setChosen] = useState<FinanceGranularity | null>(null);
   const [exporting, setExporting] = useState(false);
-  const q = rangeOf(preset, from, to);
+  const q = rangeOf(preset, from, to, chosen);
   const report = useAdminFinance(q);
 
   /** Baixa com o token (a rota é autenticada) e dispara o download no navegador. */
@@ -91,9 +116,25 @@ export function FinanceSection() {
                 role="tab"
                 aria-selected={preset === p.key}
                 className={preset === p.key ? 'active' : ''}
-                onClick={() => setPreset(p.key)}
+                onClick={() => {
+                  setPreset(p.key);
+                  setChosen(null);
+                }}
               >
                 {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="tabs tabs-mini" role="group" aria-label="Agrupar por">
+            {GRANULARITIES.map((g) => (
+              <button
+                key={g.key}
+                type="button"
+                aria-pressed={q.granularity === g.key}
+                className={q.granularity === g.key ? 'active' : ''}
+                onClick={() => setChosen(g.key)}
+              >
+                {g.label}
               </button>
             ))}
           </div>
@@ -167,9 +208,9 @@ export function FinanceSection() {
                 </div>
               </div>
               <p className="muted tiny" data-testid="finance-period">
-                {brDay(r.from)} a {brDay(r.to)} · por {r.granularity === 'day' ? 'dia' : 'mês'} ·
-                agora: {brl(r.now.inEscrow)} em escrow e {brl(r.now.usersBalance)} de saldo dos
-                usuários (passivo com usuários).
+                {brDay(r.from)} a {brDay(r.to)} · por {GRANULARITY_WORD[r.granularity]} · agora:{' '}
+                {brl(r.now.inEscrow)} em escrow e {brl(r.now.usersBalance)} de saldo dos usuários
+                (passivo com usuários).
               </p>
 
               {r.series.length === 0 ? (
@@ -179,13 +220,13 @@ export function FinanceSection() {
                   <div
                     className="fin-chart"
                     role="img"
-                    aria-label={`Receita da plataforma por ${r.granularity === 'day' ? 'dia' : 'mês'}`}
+                    aria-label={`Receita da plataforma por ${GRANULARITY_WORD[r.granularity]}`}
                   >
                     {r.series.map((b: FinanceBucket) => (
                       <div
                         className="fin-bar"
                         key={b.bucket}
-                        title={`${bucketLabel(b.bucket)}: ${brl(b.revenue)}`}
+                        title={`${bucketFullLabel(b.bucket, r.granularity)}: ${brl(b.revenue)}`}
                       >
                         <div
                           className="fin-bar-fill"
@@ -211,7 +252,7 @@ export function FinanceSection() {
                       <tbody>
                         {r.series.map((b) => (
                           <tr key={b.bucket}>
-                            <td>{bucketLabel(b.bucket)}</td>
+                            <td>{bucketFullLabel(b.bucket, r.granularity)}</td>
                             <td className="num">{brl(b.revenue)}</td>
                             <td className="num">{brl(b.deposits)}</td>
                             <td className="num">{brl(b.withdrawals)}</td>
@@ -229,6 +270,8 @@ export function FinanceSection() {
           );
         }}
       </QueryState>
+
+      <UsageReport range={q} />
     </section>
   );
 }

@@ -20,6 +20,8 @@ import type {
   AdminReportGroup,
   AdminMetrics,
   AdminStorage,
+  AdminUsageReport,
+  FinanceGranularity,
   AdminWithdrawal,
   AppealDecision,
   AuthResponse,
@@ -29,6 +31,10 @@ import type {
   BoostPlan,
   Category,
   ChangePasswordRequest,
+  AccountContact,
+  ChangeEmailRequest,
+  ConfirmEmailChangeResponse,
+  PendingEmailChange,
   ChatHistory,
   ChatMessage,
   ChatReadReceipt,
@@ -68,6 +74,8 @@ import type {
   FreelancerProfile,
   GamificationProfile,
   LeaderboardEntry,
+  LeaderboardQuery,
+  Mission,
   LoginRequest,
   MediaPurpose,
   MediaUpload,
@@ -100,6 +108,8 @@ import type {
   UpsertFreelancerProfileRequest,
   UpsertPortfolioItemRequest,
   Wallet,
+  WalletEarnings,
+  WalletEarningsQuery,
   WalletTransactionsPage,
   WalletTransactionsQuery,
   Withdrawal,
@@ -376,6 +386,15 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
   return data as T;
 }
 
+/** Entrega com arquivos (RF-035): mensagem, links (campo repetido) e os arquivos em `attachments`. */
+function deliveryForm(message: string, attachments: File[], links: string[] = []): FormData {
+  const form = new FormData();
+  form.append('message', message);
+  for (const link of links) form.append('files', link);
+  for (const file of attachments) form.append('attachments', file, file.name);
+  return form;
+}
+
 /** Nome de arquivo do Content-Disposition (prefere o UTF-8 do RFC 5987; senão o ASCII). */
 function fileNameFrom(disposition: string, fallback: string): string {
   const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
@@ -523,11 +542,46 @@ export const api = {
     setSession({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
     return tokens;
   },
+  /** Contato da conta (RF-017): e-mail, troca pendente e telefone; só o titular vê. */
+  accountContact: () => request<AccountContact>('/auth/contact'),
+  /** Pede a troca de e-mail; o link vai ao endereço novo e nada muda até a confirmação. */
+  changeEmail: (body: ChangeEmailRequest) =>
+    request<PendingEmailChange>('/auth/change-email', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  cancelEmailChange: () => request<void>('/auth/change-email', { method: 'DELETE' }),
+  /**
+   * Confirma a troca pelo link. A API encerra todas as sessões; se esta aba estava logada na mesma
+   * conta, vem o par novo dela, guardado aqui para a pessoa seguir dentro.
+   */
+  confirmEmailChange: async (token: string): Promise<ConfirmEmailChangeResponse> => {
+    const res = await request<ConfirmEmailChangeResponse>('/auth/confirm-email-change', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+    if (res.session) setSession(res.session);
+    return res;
+  },
+  /** Grava o telefone (a API guarda em E.164) ou apaga, com null. */
+  updatePhone: (phone: string | null) =>
+    request<AccountContact>('/auth/phone', { method: 'PUT', body: JSON.stringify({ phone }) }),
 
   // dashboard
   wallet: () => request<Wallet>('/wallet'),
   gamification: () => request<GamificationProfile>('/gamification/me'),
-  leaderboard: () => request<LeaderboardEntry[]>('/gamification/leaderboard'),
+  /** Ranking (RF-067): sem filtro, o geral por XP; com categoria e/ou lat+lng, a RN-056. */
+  leaderboard: (query: LeaderboardQuery = {}) => {
+    const qs = new URLSearchParams();
+    if (query.categoryId != null) qs.set('categoryId', String(query.categoryId));
+    if (query.lat != null && query.lng != null) {
+      qs.set('lat', String(query.lat));
+      qs.set('lng', String(query.lng));
+    }
+    return request<LeaderboardEntry[]>(`/gamification/leaderboard${qs.size ? `?${qs}` : ''}`);
+  },
+  /** Missões do período vigente (RF-066); abrir conta como o acesso do dia. */
+  missions: () => request<Mission[]>('/gamification/me/missions'),
 
   // categorias & serviços
   categories: () => request<Category[]>('/categories'),
@@ -630,10 +684,13 @@ export const api = {
       `/contracts/${contractId}/milestones/${milestoneId}/revisions/grant`,
       { method: 'POST' },
     ),
-  deliverContract: (id: number, message: string) =>
+  /** Entrega única (RF-035): com arquivos vai em multipart (`attachments`), senão em JSON. */
+  deliverContract: (id: number, message: string, attachments: File[] = [], links: string[] = []) =>
     request<Contract>(`/contracts/${id}/deliver`, {
       method: 'POST',
-      body: JSON.stringify({ message }),
+      body: attachments.length
+        ? deliveryForm(message, attachments, links)
+        : JSON.stringify(links.length ? { message, files: links } : { message }),
     }),
   /** Escrow por marcos: entregar, aprovar (libera só aquele valor) ou pedir revisão de um marco. */
   milestoneAction: (
@@ -641,16 +698,20 @@ export const api = {
     milestoneId: number,
     action: 'deliver' | 'approve' | 'request-revision',
     text?: string,
+    attachments: File[] = [],
   ) =>
     request<ContractWithHistory>(`/contracts/${contractId}/milestones/${milestoneId}/${action}`, {
       method: 'POST',
-      body: JSON.stringify(
-        action === 'deliver'
-          ? { message: text }
-          : action === 'request-revision'
-            ? { note: text }
-            : {},
-      ),
+      body:
+        action === 'deliver' && attachments.length
+          ? deliveryForm(text ?? '', attachments)
+          : JSON.stringify(
+              action === 'deliver'
+                ? { message: text }
+                : action === 'request-revision'
+                  ? { note: text }
+                  : {},
+            ),
     }),
 
   // chat do contrato
@@ -684,6 +745,15 @@ export const api = {
   /** Extrato de R$; `from`/`to` (dias, no fuso da conta) filtram o período (RF-047). */
   walletTransactions: (query: WalletTransactionsQuery = {}) =>
     request<WalletTransactionsPage>(`/wallet/transactions${walletQuery(query)}`),
+  /** Ganhos por período (RF-082): liberações do escrow e tornas recebidas, no fuso da conta. */
+  walletEarnings: (query: WalletEarningsQuery = {}) => {
+    const search = new URLSearchParams();
+    for (const key of ['from', 'to', 'granularity'] as const) {
+      const value = query[key];
+      if (value) search.set(key, value);
+    }
+    return request<WalletEarnings>(`/wallet/earnings${search.size ? `?${search}` : ''}`);
+  },
   deposits: () => request<Paginated<Deposit>>('/wallet/deposits'),
   deposit: (id: number) => request<Deposit>(`/wallet/deposits/${id}`),
   createDeposit: (body: CreateDepositRequest) =>
@@ -806,10 +876,13 @@ export const api = {
   /** Roda o expurgo de anexos agora (retenção + órfãos), sem esperar a hora do job. */
   adminPurgeAttachments: () =>
     request<PurgeAttachmentsResult>('/admin/storage/purge', { method: 'POST' }),
-  adminFinance: (q: { from?: string; to?: string; granularity: 'day' | 'month' }) =>
+  adminFinance: (q: { from?: string; to?: string; granularity: FinanceGranularity }) =>
     request<AdminFinanceReport>(`/admin/finance?${financeQs(q)}`),
+  /** Uso no período (RF-081): cadastros, contratações e ativos, do snapshot ou calculado agora. */
+  adminUsage: (q: { from?: string; to?: string; granularity: FinanceGranularity }) =>
+    request<AdminUsageReport>(`/admin/usage?${financeQs(q)}`),
   /** Baixa o ledger do período em CSV com o token; renova a sessão uma vez num 401. */
-  downloadFinanceCsv: (q: { from?: string; to?: string; granularity: 'day' | 'month' }) =>
+  downloadFinanceCsv: (q: { from?: string; to?: string; granularity: FinanceGranularity }) =>
     fetchBlob(
       `/admin/finance/export.csv?${financeQs(q)}`,
       'escambo-ledger.csv',

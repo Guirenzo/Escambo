@@ -674,8 +674,88 @@ describe('contratações: borda HTTP', () => {
         .expect(200);
 
       expect(res.body).toEqual({ id: 12, status: 'delivered' });
-      expect(service.deliver).toHaveBeenCalledWith(12, FREELANCER, input);
+      // Em JSON não há arquivo: a lista de arquivos enviados vai vazia (RF-035).
+      expect(service.deliver).toHaveBeenCalledWith(12, FREELANCER, input, []);
       expect(notify).not.toHaveBeenCalled();
+    });
+
+    it('com arquivos, a entrega vem em multipart: mensagem, links repetidos e os arquivos chegam ao service (RF-035)', async () => {
+      service.deliver.mockResolvedValue({ id: 12, status: 'delivered' });
+      await request(app)
+        .post('/api/contracts/12/deliver')
+        .set(bearer(FREELANCER))
+        .field('message', 'Logo pronto')
+        .field('files', 'https://drive.escambo.test/logo')
+        .attach('attachments', Buffer.from('%PDF-manual'), 'manual.pdf')
+        .attach('attachments', Buffer.from('%PDF-logo'), 'logo.pdf')
+        .expect(200);
+
+      const [id, who, input, files] = service.deliver.mock.calls[0]!;
+      expect([id, who, input]).toEqual([
+        12,
+        FREELANCER,
+        { message: 'Logo pronto', files: ['https://drive.escambo.test/logo'] },
+      ]);
+      expect(
+        (files as Express.Multer.File[]).map((f) => [f.originalname, f.buffer.toString()]),
+      ).toEqual([
+        ['manual.pdf', '%PDF-manual'],
+        ['logo.pdf', '%PDF-logo'],
+      ]);
+
+      // Multipart só com arquivo: sem links, a entrega não leva files.
+      await request(app)
+        .post('/api/contracts/12/deliver')
+        .set(bearer(FREELANCER))
+        .field('message', 'Só o arquivo')
+        .attach('attachments', Buffer.from('%PDF'), 'a.pdf')
+        .expect(200);
+      expect(service.deliver.mock.calls[1]![2]).toEqual({ message: 'Só o arquivo' });
+    });
+
+    it('multipart: mais de 10 arquivos, arquivo em outro campo ou link que não é URL são recusados antes do service', async () => {
+      const many = request(app)
+        .post('/api/contracts/12/deliver')
+        .set(bearer(FREELANCER))
+        .field('message', 'Muitos');
+      for (let i = 0; i < 11; i++) many.attach('attachments', Buffer.from('%PDF'), `${i}.pdf`);
+      expect((await many.expect(422)).body).toMatchObject({
+        error: 'invalid_upload',
+        message: 'Envie no máximo 10 arquivos de uma vez',
+      });
+
+      const wrongField = await request(app)
+        .post('/api/contracts/12/deliver')
+        .set(bearer(FREELANCER))
+        .field('message', 'Campo errado')
+        .attach('file', Buffer.from('%PDF'), 'a.pdf')
+        .expect(422);
+      expect(wrongField.body.message).toBe(
+        'Envio inválido: os arquivos vão no campo "attachments"',
+      );
+
+      const notUrl = await request(app)
+        .post('/api/contracts/12/deliver')
+        .set(bearer(FREELANCER))
+        .field('message', 'Link torto')
+        .field('files', 'drive.escambo.test/pasta')
+        .attach('attachments', Buffer.from('%PDF'), 'a.pdf')
+        .expect(422);
+      expect(notUrl.body.details).toHaveProperty('files');
+      expect(service.deliver).not.toHaveBeenCalled();
+    });
+
+    it('a entrega do marco também leva arquivos em multipart', async () => {
+      service.deliverMilestone.mockResolvedValue({ id: 12 });
+      await request(app)
+        .post('/api/contracts/12/milestones/5/deliver')
+        .set(bearer(FREELANCER))
+        .field('message', 'Layout')
+        .attach('attachments', Buffer.from('%PDF-layout'), 'layout.pdf')
+        .expect(200);
+      const [id, milestoneId, who, message, files] = service.deliverMilestone.mock.calls[0]!;
+      expect([id, milestoneId, who, message]).toEqual([12, 5, FREELANCER, 'Layout']);
+      expect((files as Express.Multer.File[]).map((f) => f.originalname)).toEqual(['layout.pdf']);
     });
 
     it('entrega sem mensagem, com arquivo que não é URL ou com mais de 20 arquivos é recusada', async () => {
@@ -1066,7 +1146,13 @@ describe('contratações: borda HTTP', () => {
         .expect(200);
 
       expect(res.body).toEqual(contract);
-      expect(service.deliverMilestone).toHaveBeenCalledWith(12, 5, FREELANCER, 'Layout no Figma');
+      expect(service.deliverMilestone).toHaveBeenCalledWith(
+        12,
+        5,
+        FREELANCER,
+        'Layout no Figma',
+        [],
+      );
       // O aviso ao cliente sai do service, com a hora da aprovação automática (ADR 57).
       expect(notify).not.toHaveBeenCalled();
     });
@@ -1087,7 +1173,7 @@ describe('contratações: borda HTTP', () => {
       expect(service.deliverMilestone).not.toHaveBeenCalled();
     });
 
-    it('a entrega do marco não leva arquivos: files é 422 no campo files, em vez de aceito e descartado, e chave desconhecida também é recusada', async () => {
+    it('a entrega do marco não leva links: files é 422 no campo files, em vez de aceito e descartado, e chave desconhecida também é recusada', async () => {
       const withFiles = await request(app)
         .post('/api/contracts/12/milestones/5/deliver')
         .set(bearer(FREELANCER))
@@ -1096,7 +1182,11 @@ describe('contratações: borda HTTP', () => {
       expect(withFiles.body).toEqual({
         error: 'validation_error',
         message: 'Dados de entrada inválidos',
-        details: { files: ['A entrega de um marco não leva arquivos: mande pelo chat'] },
+        details: {
+          files: [
+            'A entrega de um marco não leva links: anexe os arquivos ou escreva o link na mensagem',
+          ],
+        },
       });
 
       const unknownKey = await request(app)

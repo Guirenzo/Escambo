@@ -56,9 +56,14 @@ describe('paymentsRepository', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('createTopup grava o depósito pendente, sem taxa, com o código PIX guardado como JSON, e devolve o id', async () => {
+  it('createTopup grava o depósito pendente, sem taxa, com a resposta completa da criação e a primeira linha do histórico, na mesma transação', async () => {
     const expiresAt = new Date('2026-10-02T15:30:00.000Z');
-    fakeDb.reply({ insertId: 91, affectedRows: 1 });
+    const response = {
+      externalId: 'sim_ABC',
+      pixCode: '000201...6304ABCD',
+      expiresAt: '2026-10-02T15:30:00.000Z',
+    };
+    fakeDb.reply({ insertId: 91, affectedRows: 1 }, { insertId: 5, affectedRows: 1 });
 
     expect(
       await paymentsRepository.createTopup({
@@ -66,13 +71,13 @@ describe('paymentsRepository', () => {
         amount: 150,
         gateway: 'simulado',
         gatewayPaymentId: 'sim_ABC',
-        pixCode: '000201...6304ABCD',
+        response,
         expiresAt,
       }),
     ).toBe(91);
 
     const { sql, params } = fakeDb.calls[0]!;
-    expect(fakeDb.calls).toHaveLength(1);
+    expect(fakeDb.calls).toHaveLength(2);
     // A ordem das colunas é a dos valores logo abaixo: trocar uma sem a outra grava no campo errado.
     expect(sql).toContain(
       'INSERT INTO payments (kind, contract_id, payer_id, payee_id, amount, platform_fee, net_amount, method, status, gateway, gateway_payment_id, gateway_response, expires_at) VALUES',
@@ -86,9 +91,73 @@ describe('paymentsRepository', () => {
       amount: 150,
       gateway: 'simulado',
       gatewayPaymentId: 'sim_ABC',
-      response: '{"pixCode":"000201...6304ABCD"}',
+      response: JSON.stringify(response),
       expiresAt,
     });
+    // O histórico (RF-050) nasce com a cobrança: a resposta da criação, ligada ao id novo.
+    expect(fakeDb.calls[1]!.sql).toContain(
+      'INSERT INTO payment_events (payment_id, gateway, gateway_payment_id, source, event, status, outcome, payload) VALUES (:paymentId, :gateway, :gatewayPaymentId, :source, :event, :status, :outcome, :payload)',
+    );
+    expect(fakeDb.calls[1]!.params).toEqual({
+      paymentId: 91,
+      gateway: 'simulado',
+      gatewayPaymentId: 'sim_ABC',
+      source: 'charge',
+      event: null,
+      status: 'pending',
+      outcome: 'created',
+      payload: JSON.stringify(response),
+    });
+    expect(fakeDb.pool.query.mock.contexts.every((ctx) => ctx === fakeDb.conn)).toBe(true);
+    expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('createTopup: se o histórico não grava, a cobrança também não fica', async () => {
+    const boom = new Error('payment_events');
+    fakeDb.reply({ insertId: 91, affectedRows: 1 }, boom);
+
+    await expect(
+      paymentsRepository.createTopup({
+        payerId: 44,
+        amount: 150,
+        gateway: 'simulado',
+        gatewayPaymentId: 'sim_ABC',
+        response: { pixCode: '000201' },
+        expiresAt: NOW,
+      }),
+    ).rejects.toBe(boom);
+    expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+    expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+  });
+
+  it('recordEvent grava uma linha avulsa do histórico em autocommit, com o corpo em JSON', async () => {
+    fakeDb.reply({ insertId: 3, affectedRows: 1 });
+
+    await paymentsRepository.recordEvent({
+      paymentId: null,
+      gateway: 'simulado',
+      gatewayPaymentId: 'sim_X',
+      source: 'webhook',
+      event: 'payment.updated',
+      status: 'paid',
+      outcome: 'not_found',
+      payload: { gatewayPaymentId: 'sim_X', status: 'paid' },
+    });
+
+    expect(fakeDb.calls).toHaveLength(1);
+    expect(fakeDb.calls[0]!.sql).toMatch(/^INSERT INTO payment_events /);
+    expect(fakeDb.calls[0]!.params).toEqual({
+      paymentId: null,
+      gateway: 'simulado',
+      gatewayPaymentId: 'sim_X',
+      source: 'webhook',
+      event: 'payment.updated',
+      status: 'paid',
+      outcome: 'not_found',
+      payload: '{"gatewayPaymentId":"sim_X","status":"paid"}',
+    });
+    expect(fakeDb.pool.query.mock.contexts[0]).toBe(fakeDb.pool);
+    expect(fakeDb.pool.getConnection).not.toHaveBeenCalled();
   });
 
   it('findById e findByGatewayId devolvem a primeira linha, ou undefined', async () => {
@@ -213,6 +282,55 @@ describe('paymentsRepository', () => {
       );
       expect(fakeDb.conn.rollback).not.toHaveBeenCalled();
       expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('com o aviso do gateway, a linha "applied" do histórico entra na mesma transação, antes do commit', async () => {
+      preparePaid(pending({ gateway: 'simulado', gateway_payment_id: 'sim_ABC' }));
+      fakeDb.reply({ affectedRows: 1 }, [{ balance: '150.00', balance_pending: '0.00' }], {}, {});
+      const notice = {
+        source: 'webhook' as const,
+        event: 'payment.updated',
+        payload: { gatewayPaymentId: 'sim_ABC', status: 'paid' },
+      };
+
+      expect(await paymentsRepository.settle(7, 'paid', notice)).toBe(true);
+
+      const last = fakeDb.calls[fakeDb.calls.length - 1]!;
+      expect(last.sql).toMatch(/^INSERT INTO payment_events /);
+      expect(last.params).toEqual({
+        paymentId: 7,
+        gateway: 'simulado',
+        gatewayPaymentId: 'sim_ABC',
+        source: 'webhook',
+        event: 'payment.updated',
+        status: 'paid',
+        outcome: 'applied',
+        payload: '{"gatewayPaymentId":"sim_ABC","status":"paid"}',
+      });
+      expect(fakeDb.pool.query.mock.contexts.at(-1)).toBe(fakeDb.conn);
+      const inserted = fakeDb.pool.query.mock.invocationCallOrder.at(-1)!;
+      expect(inserted).toBeLessThan(fakeDb.conn.commit.mock.invocationCallOrder[0]!);
+    });
+
+    it('falha informada pelo gateway também fica no histórico, sem mexer em carteira', async () => {
+      fakeDb.reply([pending({ gateway: 'simulado', gateway_payment_id: 'sim_ABC' })], {}, {});
+      const notice = { source: 'webhook' as const, event: null, payload: { status: 'failed' } };
+
+      expect(await paymentsRepository.settle(7, 'failed', notice)).toBe(true);
+
+      expect(fakeDb.calls).toHaveLength(3);
+      expect(fakeDb.calls[2]!.params).toMatchObject({ status: 'failed', outcome: 'applied' });
+      expect(fakeDb.sqls().some((sql) => sql.includes('wallet'))).toBe(false);
+    });
+
+    it('cobrança que já não estava pendente não grava histórico aqui (quem chama registra a repetição)', async () => {
+      fakeDb.reply([pending({ status: 'paid' })]);
+      const notice = { source: 'webhook' as const, event: null, payload: {} };
+
+      expect(await paymentsRepository.settle(7, 'failed', notice)).toBe(false);
+
+      expect(fakeDb.sqls().some((sql) => sql.includes('payment_events'))).toBe(false);
+      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
     });
 
     it('falha de pagamento muda só o status e não cria nem movimenta carteira', async () => {

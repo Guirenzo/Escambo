@@ -10,9 +10,11 @@ import { runExpireProposals } from './expire-proposals';
 import { runModerationSlaReport } from './moderation-sla-report';
 import { runOverdueContracts } from './overdue-contracts';
 import { runPurgeAttachments } from './purge-attachments';
+import { runPurgeAuditLogs } from './purge-audit-logs';
 import { runPurgePushSubscriptions } from './purge-push-subscriptions';
 import { runPurgeQuarantine } from './purge-quarantine';
 import { runQuietPushSummary } from './quiet-push-summary';
+import { runReportSnapshots } from './report-snapshots';
 import { runRepairDeadlines } from './repair-deadlines';
 import { runReconcileDropoutReviews } from './reconcile-dropout-reviews';
 import { runSavedSearchAlerts } from './saved-search-alerts';
@@ -56,6 +58,9 @@ export const JOBS: Job[] = [
   { name: 'purge-quarantine', run: () => runPurgeQuarantine() },
   { name: 'saved-search-alerts', run: () => runSavedSearchAlerts() },
   { name: 'purge-push-subscriptions', run: runPurgePushSubscriptions },
+  { name: 'purge-audit-logs', run: runPurgeAuditLogs },
+  // Por último: a fotografia do dia que fechou vem depois de tudo que a rodada ainda gravou nele.
+  { name: 'report-snapshots', run: () => runReportSnapshots() },
 ];
 
 registerJobMetrics(JOBS.map((j) => j.name));

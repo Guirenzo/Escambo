@@ -37,6 +37,12 @@ export function useRealtimeNotifications(): void {
         void qc.invalidateQueries({ queryKey: qk.wallet });
         void qc.invalidateQueries({ queryKey: qk.gamification });
       }
+      // Missão cumprida (RF-066): o cartão, o XP e a posição no ranking mudam.
+      if (n.type === 'mission_completed') {
+        void qc.invalidateQueries({ queryKey: qk.missions });
+        void qc.invalidateQueries({ queryKey: qk.gamification });
+        void qc.invalidateQueries({ queryKey: qk.leaderboard });
+      }
       if (n.type.startsWith('barter_')) {
         void qc.invalidateQueries({ queryKey: qk.barters });
         void qc.invalidateQueries({ queryKey: qk.contracts });

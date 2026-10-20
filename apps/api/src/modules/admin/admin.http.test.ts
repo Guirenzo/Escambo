@@ -9,6 +9,7 @@ import { adminRoutes } from './admin.routes';
 const {
   adminSvc,
   finance,
+  usage,
   withdrawals,
   lgpd,
   mail,
@@ -28,6 +29,7 @@ const {
     moderateUser: vi.fn(),
   },
   finance: { report: vi.fn(), exportCsv: vi.fn() },
+  usage: { report: vi.fn() },
   withdrawals: { listForAdmin: vi.fn(), process: vi.fn(), complete: vi.fn(), fail: vi.fn() },
   lgpd: {
     listDeletionRequestsForAdmin: vi.fn(),
@@ -49,6 +51,7 @@ const {
 vi.mock('./admin.service', () => ({ adminService: adminSvc }));
 vi.mock('./admin.repository', () => ({ adminRepository: { recordAction } }));
 vi.mock('./finance.service', () => ({ financeService: finance }));
+vi.mock('./usage.service', () => ({ usageService: usage }));
 vi.mock('../withdrawal/withdrawal.service', () => ({ withdrawalService: withdrawals }));
 vi.mock('../lgpd/lgpd.service', () => ({ lgpdService: lgpd }));
 // O resto do módulo de e-mail (a lista de avisos que viram e-mail) é lido na carga de outros módulos.
@@ -86,6 +89,7 @@ const asAdmin = (method: Method, url: string) => call(method, url).set(ADMIN).se
 const everyService = [
   adminSvc,
   finance,
+  usage,
   withdrawals,
   lgpd,
   mail,
@@ -118,6 +122,7 @@ describe('admin: quem pode chamar', () => {
     ['put', '/settings/barter_enabled'],
     ['get', '/finance'],
     ['get', '/finance/export.csv'],
+    ['get', '/usage'],
     ['get', '/moderation/health'],
     ['get', '/moderation/health/export.csv'],
     ['get', '/reports'],
@@ -285,6 +290,7 @@ describe('admin: visão geral', () => {
       ['/storage', storageReport],
       ['/settings', settings.listForAdmin],
       ['/finance', finance.report],
+      ['/usage', usage.report],
       ['/disputes', adminSvc.listOpenDisputes],
       ['/withdrawals', withdrawals.listForAdmin],
       ['/deletion-requests', lgpd.listDeletionRequestsForAdmin],
@@ -461,7 +467,48 @@ describe('admin: parâmetros da plataforma (ADR 32)', () => {
   });
 });
 
+describe('admin: uso por período (RF-081)', () => {
+  it('GET /usage sem filtro pede por mês; com filtro repassa período e semana; só leitura', async () => {
+    const report = { from: '2026-04-01', to: '2026-09-13', granularity: 'month', series: [] };
+    usage.report.mockResolvedValue(report);
+
+    const res = await asAdmin('get', '/usage').expect(200);
+    expect(res.body).toEqual(report);
+    expect(usage.report).toHaveBeenLastCalledWith({ granularity: 'month' });
+
+    await asAdmin('get', '/usage?from=2026-09-01&to=2026-09-30&granularity=week').expect(200);
+    expect(usage.report).toHaveBeenLastCalledWith({
+      from: '2026-09-01',
+      to: '2026-09-30',
+      granularity: 'week',
+    });
+    expect(finance.report).not.toHaveBeenCalled();
+    expect(recordAction).not.toHaveBeenCalled();
+  });
+
+  it('valida como o financeiro: data fora do formato e granularidade desconhecida são 422', async () => {
+    await asAdmin('get', '/usage?from=01/09/2026').expect(422);
+    const gran = await asAdmin('get', '/usage?granularity=year').expect(422);
+    expect(gran.body.details).toHaveProperty('granularity');
+    expect(usage.report).not.toHaveBeenCalled();
+  });
+
+  it('período recusado pelo service é 400 com o código dele', async () => {
+    usage.report.mockRejectedValue(
+      new HttpError(400, 'Período máximo de 400 dias', 'range_too_long'),
+    );
+    const res = await asAdmin('get', '/usage?from=2024-01-01&to=2026-09-01').expect(400);
+    expect(res.body).toEqual({ error: 'range_too_long', message: 'Período máximo de 400 dias' });
+  });
+});
+
 describe('admin: financeiro (ADR 26)', () => {
+  it('GET /finance aceita a granularidade semanal', async () => {
+    finance.report.mockResolvedValue({});
+    await asAdmin('get', '/finance?granularity=week').expect(200);
+    expect(finance.report).toHaveBeenCalledWith({ granularity: 'week' });
+  });
+
   it('GET /finance sem filtro pede o relatório por mês, com o período a cargo do service', async () => {
     const report = { from: '2026-04-01', to: '2026-09-13', granularity: 'month', series: [] };
     finance.report.mockResolvedValue(report);
@@ -516,7 +563,7 @@ describe('admin: financeiro (ADR 26)', () => {
       expect(from.body.details.from).toEqual(['Data no formato AAAA-MM-DD']);
       const to = await asAdmin('get', `${path}?to=2026-9-1`).expect(422);
       expect(to.body.details).toHaveProperty('to');
-      const gran = await asAdmin('get', `${path}?granularity=week`).expect(422);
+      const gran = await asAdmin('get', `${path}?granularity=year`).expect(422);
       expect(gran.body.details).toHaveProperty('granularity');
     }
     expect(finance.report).not.toHaveBeenCalled();

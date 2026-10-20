@@ -48,6 +48,9 @@ vi.mock('./session.repository', () => ({
 vi.mock('./tokens.repository', () => ({
   tokensRepository: { create: vi.fn(), consume: vi.fn(), invalidateOpen: vi.fn() },
 }));
+vi.mock('./email-change.repository', () => ({
+  emailChangeRepository: { cancelOpen: vi.fn().mockResolvedValue(0) },
+}));
 vi.mock('../mail/mail.service', () => ({
   mailService: { send: vi.fn().mockResolvedValue(1), enabled: vi.fn().mockReturnValue(true) },
 }));
@@ -56,6 +59,8 @@ import { authService } from './auth.service';
 import { authRepository, type UserRow } from './auth.repository';
 import { sessionRepository } from './session.repository';
 import { tokensRepository } from './tokens.repository';
+import { emailChangeRepository } from './email-change.repository';
+import { auditService } from '../audit/audit.service';
 import { mailService } from '../mail/mail.service';
 import { pushRepository } from '../notifications/push.repository';
 import { lgpdRepository } from '../lgpd/lgpd.repository';
@@ -352,6 +357,23 @@ describe('esqueci minha senha', () => {
     // Quem redefine pode estar tirando o acesso de um aparelho perdido: o push cai junto.
     expect(push.removeAllForUser).toHaveBeenCalledTimes(1);
     expect(push.removeAllForUser).toHaveBeenCalledWith(7);
+    // Troca de e-mail pendente (RF-017) cai junto: quem pediu pode ter sido quem sabia a senha.
+    expect(vi.mocked(emailChangeRepository).cancelOpen).toHaveBeenCalledWith(7);
+  });
+
+  it('redefinir com troca de e-mail pendente: o pedido é cancelado e isso fica na auditoria (RF-017)', async () => {
+    tokens.consume.mockResolvedValue(7);
+    vi.mocked(emailChangeRepository).cancelOpen.mockResolvedValueOnce(1);
+    await authService.resetPassword('token-valido-0123456789', 'nova-senha-123');
+    expect(vi.mocked(auditService).log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 7,
+        action: 'email_change_cancelled',
+        newValue: { reason: 'password_reset', cancelled: 1 },
+        ip: null,
+        userAgent: null,
+      }),
+    );
   });
 
   it('redefinir com token inválido → 400 e nada muda', async () => {
@@ -366,6 +388,7 @@ describe('esqueci minha senha', () => {
     expect(repo.markEmailVerified).not.toHaveBeenCalled();
     expect(sessions.revokeAllForUser).not.toHaveBeenCalled();
     expect(push.removeAllForUser).not.toHaveBeenCalled();
+    expect(vi.mocked(emailChangeRepository).cancelOpen).not.toHaveBeenCalled();
   });
 
   it('conta ainda sem e-mail confirmado recebe o link, como a ativa: redefinir a senha é também um jeito de provar o e-mail', async () => {

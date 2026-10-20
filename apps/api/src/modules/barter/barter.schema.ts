@@ -17,8 +17,10 @@ export const createBarterSchema = z
     offeredDescription: z.string().min(3).max(1000).nullable().optional(),
     requestedServiceId: z.number().int().positive().nullable().optional(),
     requestedDescription: z.string().min(3).max(1000).nullable().optional(),
-    estimatedValueOffered: estimatedValue,
-    estimatedValueRequested: estimatedValue,
+    // RF-084: com serviço de preço fechado, o valor vem do catálogo e o campo pode faltar; o service
+    // recusa o que diverge dele e exige o valor do lado a combinar, por hora ou descrito.
+    estimatedValueOffered: estimatedValue.optional(),
+    estimatedValueRequested: estimatedValue.optional(),
   })
   .superRefine((d, ctx) => {
     if (!d.offeredServiceId && !d.offeredDescription) {

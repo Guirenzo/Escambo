@@ -123,7 +123,7 @@ describe('financeService.report', () => {
       granularity: 'month',
     });
 
-    expect(repo.ledgerByBucket).toHaveBeenCalledWith(expect.any(Date), expect.any(Date), '%Y-%m');
+    expect(repo.ledgerByBucket).toHaveBeenCalledWith(expect.any(Date), expect.any(Date), 'month');
     expect(r.series.map((b) => b.bucket)).toEqual(['2026-07', '2026-08', '2026-09']);
     expect(r.series[0]).toMatchObject({ revenue: 0, completedContracts: 2, gmv: 900 });
     expect(r.series[2]).toMatchObject({
@@ -164,8 +164,8 @@ describe('financeService.report', () => {
     // Mesmo recorte para o ledger e para as contratações: 01/07 a 30/09 em Brasília, fim exclusivo.
     const fromUtc = new Date('2026-07-01T03:00:00Z');
     const toUtc = new Date('2026-10-01T03:00:00Z');
-    expect(repo.ledgerByBucket).toHaveBeenCalledWith(fromUtc, toUtc, '%Y-%m');
-    expect(repo.contractsByBucket).toHaveBeenCalledWith(fromUtc, toUtc, '%Y-%m');
+    expect(repo.ledgerByBucket).toHaveBeenCalledWith(fromUtc, toUtc, 'month');
+    expect(repo.contractsByBucket).toHaveBeenCalledWith(fromUtc, toUtc, 'month');
   });
 
   it('os valores saem em centavos: a soma dos baldes não carrega resto de ponto flutuante', async () => {
@@ -313,8 +313,8 @@ describe('financeService.report: recorte do período', () => {
 
     const fromUtc = new Date('2026-09-01T03:00:00Z');
     const toUtc = new Date('2026-10-01T03:00:00Z');
-    expect(repo.ledgerByBucket).toHaveBeenCalledWith(fromUtc, toUtc, '%Y-%m-%d');
-    expect(repo.contractsByBucket).toHaveBeenCalledWith(fromUtc, toUtc, '%Y-%m-%d');
+    expect(repo.ledgerByBucket).toHaveBeenCalledWith(fromUtc, toUtc, 'day');
+    expect(repo.contractsByBucket).toHaveBeenCalledWith(fromUtc, toUtc, 'day');
     expect(repo.snapshot).toHaveBeenCalledTimes(1);
     // O relatório diz o recorte que foi aplicado: o período e a granularidade pedidos, não o padrão.
     expect(r).toMatchObject({ from: '2026-09-01', to: '2026-09-30', granularity: 'day' });
@@ -328,6 +328,42 @@ describe('financeService.report: recorte do período', () => {
       refunds: 0,
       completedContracts: 0,
       gmv: 0,
+    });
+  });
+});
+
+describe('financeService.report: por semana', () => {
+  it('pede os baldes semanais e devolve as segundas-feiras como chave, em ordem', async () => {
+    repo.ledgerByBucket.mockResolvedValue([
+      { bucket: '2026-09-14', revenue: '10', deposits: '0', withdrawals: '0', refunds: '0' },
+      { bucket: '2026-09-07', revenue: '5', deposits: '100', withdrawals: '0', refunds: '0' },
+    ] as Awaited<ReturnType<typeof financeRepository.ledgerByBucket>>);
+
+    const r = await financeService.report({
+      from: '2026-09-01',
+      to: '2026-09-20',
+      granularity: 'week',
+    });
+
+    const fromUtc = new Date('2026-09-01T03:00:00Z');
+    const toUtc = new Date('2026-09-21T03:00:00Z');
+    expect(repo.ledgerByBucket).toHaveBeenCalledWith(fromUtc, toUtc, 'week');
+    expect(repo.contractsByBucket).toHaveBeenCalledWith(fromUtc, toUtc, 'week');
+    expect(r.granularity).toBe('week');
+    expect(r.series.map((b) => b.bucket)).toEqual(['2026-09-07', '2026-09-14']);
+    expect(r.totals.revenue).toBe(15);
+  });
+
+  it('sem período, o padrão semanal são 12 semanas contando a atual, da segunda até hoje', () => {
+    // 13/09/2026 (domingo, 22:30 em Brasília): a semana atual começou na segunda 07/09.
+    expect(defaultRange('week', new Date('2026-09-14T01:30:00Z'))).toEqual({
+      from: '2026-06-22',
+      to: '2026-09-13',
+    });
+    // Segunda-feira é o primeiro dia da própria semana.
+    expect(defaultRange('week', new Date('2026-09-14T15:00:00Z'))).toEqual({
+      from: '2026-06-29',
+      to: '2026-09-14',
     });
   });
 });

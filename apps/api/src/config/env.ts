@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { z } from 'zod';
+import { AUDIT_LOG_MIN_RETENTION_DAYS } from '../modules/audit/audit.retention';
 import { JOBS_INTERVAL_MAX_MS } from '../utils/human-hours';
 
 /**
@@ -125,6 +126,18 @@ const envSchema = z.object({
   DIGEST_HOUR: z.coerce.number().int().min(0).max(23).default(8),
   // Hora (Brasília, 0–23) a partir da qual o expurgo diário de anexos do chat roda (ADR 31).
   ATTACHMENT_PURGE_HOUR: z.coerce.number().int().min(0).max(23).default(4),
+  // Expurgo do audit_logs (RNF-037): apaga o que tem mais de N dias. Vazio ou 0 = desligado (padrão:
+  // a auditoria fica no banco). Menos de 90 não sobe: é a retenção mínima, que o banco também
+  // garante (migration 0046). Login com IP é registro de acesso, que o Marco Civil (art. 15) pede
+  // por 6 meses: ligado, prefira 180 ou mais.
+  AUDIT_LOG_PURGE_DAYS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .default(0)
+    .refine((v) => v === 0 || v >= AUDIT_LOG_MIN_RETENTION_DAYS, {
+      message: `AUDIT_LOG_PURGE_DAYS deve ser 0 (desligado) ou pelo menos ${AUDIT_LOG_MIN_RETENTION_DAYS} dias (RNF-037)`,
+    }),
 
   // --- Observabilidade (ADR 59) ---
   // Porta do /metrics (Prometheus), num servidor à parte que só a rede interna alcança; 0 = desligado.

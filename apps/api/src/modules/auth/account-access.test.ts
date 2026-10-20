@@ -122,6 +122,9 @@ describe('matriz somente leitura', () => {
     ['POST', '/api/messaging/contracts/42/read'],
     ['POST', '/api/messaging/contracts/42/read/?source=sala'],
     ['DELETE', '/api/notifications/push'],
+    // Desistir da troca de e-mail pendente só protege a conta (RF-017).
+    ['DELETE', '/api/auth/change-email'],
+    ['DELETE', '/api/auth/change-email/'],
   ])('preserva exceção explícita %s %s', (method, path) => {
     expect(suspendedRequestAllowed(method!, path!)).toBe(true);
   });
@@ -151,6 +154,10 @@ describe('matriz somente leitura', () => {
     ['POST', '/api/messaging/contracts/42/attachments'],
     ['POST', '/api/messaging/contracts/42/read/extra'],
     ['POST', '/api/messaging/contracts/abc/read'],
+    // Pedir a troca de e-mail ou mudar o telefone é alteração de cadastro: fica para depois.
+    ['POST', '/api/auth/change-email'],
+    ['PUT', '/api/auth/phone'],
+    ['DELETE', '/api/auth/change-email/extra'],
   ])('nega ação de negócio ou caminho fora da exceção %s %s', (method, path) => {
     expect(suspendedRequestAllowed(method!, path!)).toBe(false);
   });

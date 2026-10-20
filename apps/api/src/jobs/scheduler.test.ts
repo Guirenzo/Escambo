@@ -49,6 +49,8 @@ describe('agendador de jobs', () => {
       'purge-quarantine',
       'saved-search-alerts',
       'purge-push-subscriptions',
+      'purge-audit-logs',
+      'report-snapshots',
     ]);
   });
 

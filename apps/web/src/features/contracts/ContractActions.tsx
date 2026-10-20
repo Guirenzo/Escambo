@@ -34,6 +34,7 @@ export function ContractActions({
   onCancel,
   onCounter,
   onAcceptCounter,
+  onDeliver,
 }: {
   contract: Contract;
   size?: 'mini' | 'normal';
@@ -42,6 +43,8 @@ export function ContractActions({
   onCancel?: () => void;
   onCounter?: () => void;
   onAcceptCounter?: () => void;
+  /** Na Sala, a entrega abre o formulário com arquivos (RF-035); fora dela, pede só a mensagem. */
+  onDeliver?: () => void;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -78,6 +81,10 @@ export function ContractActions({
     if (a.key === 'cancel') {
       if (onCancel) onCancel();
       else navigate(`/contratos/${contract.id}`);
+      return;
+    }
+    if (a.key === 'deliver' && onDeliver) {
+      onDeliver();
       return;
     }
     if (

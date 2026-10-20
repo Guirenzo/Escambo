@@ -264,6 +264,45 @@ describe('milestonesRepository', () => {
       approvalDueAt: new Date('2026-10-11T15:00:00.000Z'),
     };
 
+    it('com arquivos (RF-035), as mensagens e a ligação com o marco entram na mesma transação', async () => {
+      fakeDb.reply(
+        [{ status: 'in_progress' }],
+        { affectedRows: 1 },
+        { affectedRows: 1 },
+        { insertId: 301 },
+        {},
+        {},
+        [{ title: 'Layout' }],
+      );
+
+      expect(
+        await milestonesRepository.deliver({
+          ...p,
+          attachments: {
+            conversationId: 5,
+            senderId: 44,
+            files: [{ kind: 'image', key: 'k1', name: 'a.png', mime: 'image/png', size: 9 }],
+          },
+        }),
+      ).toBe(true);
+
+      const sqls = fakeDb.calls.map((c) => c.sql);
+      const link = sqls.findIndex((s) => s.startsWith('INSERT INTO delivery_files'));
+      expect(sqls.findIndex((s) => s.startsWith('INSERT INTO messages'))).toBe(link - 2);
+      // Depois de o marco virar entregue, antes da linha do tempo.
+      expect(link).toBeGreaterThan(
+        sqls.findIndex((s) => s.startsWith('UPDATE contract_milestones SET status')),
+      );
+      expect(link).toBeLessThan(sqls.findIndex((s) => s.includes('contract_status_history')));
+      expect(fakeDb.calls[link]!.params).toEqual({
+        contractId: 12,
+        deliveryId: null,
+        milestoneId: 5,
+        m0: 301,
+      });
+      expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
+    });
+
     it('entrega o marco financiado, grava a hora da aprovação tácita e põe o contrato aceito em andamento', async () => {
       fakeDb.reply(
         [{ status: 'accepted' }],

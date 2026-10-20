@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeDb } from '../../test-support/fake-db';
-import { financeRepository } from './finance.repository';
+import { bucketFormat, bucketOf, financeRepository } from './finance.repository';
 
 vi.mock('../../config/db', async () => (await import('../../test-support/fake-db')).dbModule);
 
@@ -22,7 +22,7 @@ describe('financeRepository', () => {
       ];
       fakeDb.reply(rows);
 
-      expect(await financeRepository.ledgerByBucket(FROM, TO, '%Y-%m')).toBe(rows);
+      expect(await financeRepository.ledgerByBucket(FROM, TO, 'month')).toBe(rows);
 
       const { sql, params } = fakeDb.calls[0]!;
       expect(sql).toContain(
@@ -38,7 +38,7 @@ describe('financeRepository', () => {
 
     it('receita é o que some fora de depósito e saque, com o sinal trocado; saque devolvido abate o saque', async () => {
       fakeDb.reply([]);
-      await financeRepository.ledgerByBucket(FROM, TO, '%Y-%m-%d');
+      await financeRepository.ledgerByBucket(FROM, TO, 'day');
       const { sql, params } = fakeDb.calls[0]!;
 
       expect(sql).toContain(
@@ -57,7 +57,7 @@ describe('financeRepository', () => {
     });
 
     it('período sem movimento devolve lista vazia', async () => {
-      expect(await financeRepository.ledgerByBucket(FROM, TO, '%Y-%m')).toEqual([]);
+      expect(await financeRepository.ledgerByBucket(FROM, TO, 'month')).toEqual([]);
     });
   });
 
@@ -66,7 +66,7 @@ describe('financeRepository', () => {
       const rows = [{ bucket: '2026-01', completed: 3, gmv: '900.00' }];
       fakeDb.reply(rows);
 
-      expect(await financeRepository.contractsByBucket(FROM, TO, '%Y-%m')).toBe(rows);
+      expect(await financeRepository.contractsByBucket(FROM, TO, 'month')).toBe(rows);
 
       const { sql, params } = fakeDb.calls[0]!;
       expect(sql).toContain(
@@ -82,9 +82,36 @@ describe('financeRepository', () => {
       expect(fakeDb.calls).toHaveLength(1);
     });
 
-    it('por dia, o formato pedido vai como parâmetro; período sem contratação concluída devolve lista vazia', async () => {
-      expect(await financeRepository.contractsByBucket(FROM, TO, '%Y-%m-%d')).toEqual([]);
+    it('por dia, o formato do dia vai como parâmetro; período sem contratação concluída devolve lista vazia', async () => {
+      expect(await financeRepository.contractsByBucket(FROM, TO, 'day')).toEqual([]);
       expect(fakeDb.calls[0]!.params).toEqual({ format: '%Y-%m-%d', from: FROM, to: TO });
+    });
+  });
+
+  describe('por semana', () => {
+    it('o balde é a segunda-feira da semana de Brasília, no formato do dia', async () => {
+      fakeDb.reply([], []);
+      await financeRepository.ledgerByBucket(FROM, TO, 'week');
+      await financeRepository.contractsByBucket(FROM, TO, 'week');
+
+      const [ledger, contracts] = fakeDb.calls;
+      // WEEKDAY: segunda = 0. A data local de Brasília menos o dia da semana dá a segunda.
+      expect(ledger!.sql).toContain(
+        "SELECT DATE_FORMAT(DATE_SUB(DATE(CONVERT_TZ(created_at, '+00:00', '-03:00')), INTERVAL WEEKDAY(CONVERT_TZ(created_at, '+00:00', '-03:00')) DAY), :format) AS bucket",
+      );
+      expect(contracts!.sql).toContain(
+        "DATE_FORMAT(DATE_SUB(DATE(CONVERT_TZ(completed_at, '+00:00', '-03:00')), INTERVAL WEEKDAY(CONVERT_TZ(completed_at, '+00:00', '-03:00')) DAY), :format) AS bucket",
+      );
+      expect(ledger!.params).toEqual({ format: '%Y-%m-%d', from: FROM, to: TO });
+      expect(contracts!.params).toEqual({ format: '%Y-%m-%d', from: FROM, to: TO });
+    });
+
+    it('bucketOf e bucketFormat: dia e mês sem a conta da semana', () => {
+      expect(bucketOf('x', 'day')).toBe("DATE_FORMAT(CONVERT_TZ(x, '+00:00', '-03:00'), :format)");
+      expect(bucketOf('x', 'month')).toBe(bucketOf('x', 'day'));
+      expect(bucketFormat('day')).toBe('%Y-%m-%d');
+      expect(bucketFormat('week')).toBe('%Y-%m-%d');
+      expect(bucketFormat('month')).toBe('%Y-%m');
     });
   });
 
@@ -112,9 +139,9 @@ describe('financeRepository', () => {
       const boom = new Error('ER_QUERY_TIMEOUT');
 
       fakeDb.reply(boom);
-      await expect(financeRepository.ledgerByBucket(FROM, TO, '%Y-%m')).rejects.toBe(boom);
+      await expect(financeRepository.ledgerByBucket(FROM, TO, 'month')).rejects.toBe(boom);
       fakeDb.reply(boom);
-      await expect(financeRepository.contractsByBucket(FROM, TO, '%Y-%m')).rejects.toBe(boom);
+      await expect(financeRepository.contractsByBucket(FROM, TO, 'month')).rejects.toBe(boom);
       fakeDb.reply(boom);
       await expect(financeRepository.snapshot()).rejects.toBe(boom);
 

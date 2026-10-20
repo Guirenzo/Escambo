@@ -11,6 +11,7 @@ import { backTo, RequireAuth } from './components/RequireAuth';
 import { Spinner } from './components/ui';
 import { NotFoundView } from './features/views/NotFoundView';
 import {
+  ConfirmEmailChangeView,
   ForgotPasswordView,
   ResetPasswordView,
   VerifyEmailView,
@@ -85,6 +86,7 @@ export function App() {
           <Route path="/esqueci-senha" element={<ForgotPasswordView />} />
           <Route path="/redefinir-senha" element={<ResetPasswordView />} />
           <Route path="/verificar-email" element={<VerifyEmailView />} />
+          <Route path="/confirmar-novo-email" element={<ConfirmEmailChangeView />} />
           <Route path="/termos" element={<LegalView kind="termos" />} />
           <Route path="/privacidade" element={<LegalView kind="privacidade" />} />
           <Route element={<RequireAuth />}>

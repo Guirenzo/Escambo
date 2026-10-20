@@ -34,11 +34,11 @@ beforeEach(() => {
 
 const sqlSent = (): string[] => query.mock.calls.map((c) => String(c[0]));
 
-describe('cópia de dados 1.10 (ADR 54, 56, 61 e RF-059)', () => {
+describe('cópia de dados 1.11 (ADR 54, 56, 61, RF-059 e RF-017)', () => {
   it('declara o formato novo e as seções novas, mesmo vazias', async () => {
     const out = await buildExport(7);
-    expect(EXPORT_FORMAT_VERSION).toBe('1.10');
-    expect(out.formato).toBe('escambo-export/1.10');
+    expect(EXPORT_FORMAT_VERSION).toBe('1.11');
+    expect(out.formato).toBe('escambo-export/1.11');
     expect(out).toHaveProperty('ofertas', []);
     expect(out).toHaveProperty('desistencias', []);
     expect(out.suporte).toEqual({ chamados: [], mensagens: [] });
@@ -46,6 +46,20 @@ describe('cópia de dados 1.10 (ADR 54, 56, 61 e RF-059)', () => {
     expect(out).toHaveProperty('sessoes', []);
     expect(out).toHaveProperty('registrosDeSeguranca', []);
     expect(out).toHaveProperty('emailsEnviados', []);
+  });
+
+  it('o titular traz o telefone; os pedidos de troca de e-mail saem sem o token do link (RF-017)', async () => {
+    const out = await buildExport(7);
+    expect(out).toHaveProperty('pedidosDeTrocaDeEmail', []);
+    const sql = sqlSent();
+    expect(sql.find((s) => s.includes('FROM users WHERE id'))).toMatch(
+      /SELECT ulid, email, phone,/,
+    );
+    const changes = sql.find((s) => s.includes('FROM email_change_requests'))!;
+    expect(changes.replace(/\s+/g, ' ')).toContain(
+      'SELECT id, new_email, expires_at, used_at, outcome, created_at FROM email_change_requests WHERE user_id = :userId',
+    );
+    expect(changes).not.toContain('token');
   });
 
   it('o titular traz a janela de silêncio; as notificações trazem a marca de retido', async () => {
@@ -364,6 +378,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
       ['FROM user_sessions', [{ t: 'sessions' }]],
       ['FROM audit_logs', [{ t: 'securityLog' }]],
       ['FROM email_outbox', [{ t: 'emails' }]],
+      ['FROM email_change_requests', [{ t: 'emailChanges' }]],
       ['FROM data_deletion_requests', [{ t: 'lgpdRequests' }]],
     ];
     query.mockImplementation((async (sql: string) => {
@@ -381,7 +396,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
     }
 
     expect(out).toEqual({
-      formato: 'escambo-export/1.10',
+      formato: 'escambo-export/1.11',
       exportadoEm: '2026-10-01T12:00:00.000Z',
       titular: { id: 7, ulid: '01USER', email: 'ana@escambo.test', push_quiet_pass: null },
       perfis: { freelancer: { full_name: 'Ana Freela' }, cliente: { full_name: 'Ana Cliente' } },
@@ -412,6 +427,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
       sessoes: [{ t: 'sessions' }],
       registrosDeSeguranca: [{ t: 'securityLog' }],
       emailsEnviados: [{ t: 'emails' }],
+      pedidosDeTrocaDeEmail: [{ t: 'emailChanges' }],
       solicitacoesLgpd: [{ t: 'lgpdRequests' }],
     });
   });

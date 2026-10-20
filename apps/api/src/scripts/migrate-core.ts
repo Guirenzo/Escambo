@@ -111,6 +111,25 @@ export async function seedReferenceIfEmpty(conn: Connection): Promise<boolean> {
   return true;
 }
 
+/** ER_BINLOG_CREATE_ROUTINE_NEED_SUPER: criar trigger com o binlog ligado, sem SUPER. */
+const ER_TRIGGER_NEEDS_SUPER = 1419;
+
+/**
+ * A 0046 cria triggers (RNF-036). Com o binlog ligado (padrão do MySQL 8), o usuário da aplicação
+ * só consegue com log_bin_trust_function_creators=1: o erro cru do MySQL não diz onde mexer.
+ * Qualquer outro erro sai como veio.
+ */
+function explainFailure(step: MigrationStep, err: unknown): unknown {
+  if ((err as { errno?: unknown } | null)?.errno !== ER_TRIGGER_NEEDS_SUPER) return err;
+  return new Error(
+    `${step.name}: o MySQL recusou criar trigger porque o binlog está ligado e o usuário do banco ` +
+      'não tem SUPER. Suba o MySQL com --log-bin-trust-function-creators=1 (os docker-compose já ' +
+      'sobem assim; recrie o contêiner do banco) ou rode como root ' +
+      '"SET PERSIST log_bin_trust_function_creators = 1", e rode as migrations de novo.',
+    { cause: err },
+  );
+}
+
 /** Aplica todas as migrations pendentes, em ordem. Idempotente. */
 export async function migrate(conn: Connection): Promise<MigrateResult> {
   await ensureMigrationsTable(conn);
@@ -128,7 +147,11 @@ export async function migrate(conn: Connection): Promise<MigrateResult> {
       result.skipped.push(`${step.name} (já presente)`);
       continue;
     }
-    await conn.query(step.sql);
+    try {
+      await conn.query(step.sql);
+    } catch (err) {
+      throw explainFailure(step, err);
+    }
     await record(conn, step);
     result.applied.push(step.name);
   }

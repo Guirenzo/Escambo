@@ -24,6 +24,7 @@ const publicSettings = vi.fn();
 const withdrawals = vi.fn();
 const deposits = vi.fn();
 const walletTransactions = vi.fn();
+const walletEarnings = vi.fn();
 const creditTransactions = vi.fn();
 const requestWithdrawal = vi.fn();
 const cancelWithdrawal = vi.fn();
@@ -36,6 +37,7 @@ vi.mock('../../lib/api', () => ({
     withdrawals: () => withdrawals(),
     deposits: () => deposits(),
     walletTransactions: (query: unknown) => walletTransactions(query),
+    walletEarnings: (query: unknown) => walletEarnings(query),
     creditTransactions: (query: unknown) => creditTransactions(query),
     requestWithdrawal: (body: unknown) => requestWithdrawal(body),
     cancelWithdrawal: (id: number) => cancelWithdrawal(id),
@@ -151,6 +153,7 @@ beforeEach(() => {
     withdrawals,
     deposits,
     walletTransactions,
+    walletEarnings,
     creditTransactions,
     requestWithdrawal,
     cancelWithdrawal,
@@ -164,6 +167,17 @@ beforeEach(() => {
   withdrawals.mockResolvedValue(page([]));
   deposits.mockResolvedValue(page([]));
   walletTransactions.mockResolvedValue(page([]));
+  // Ganhos (RF-082): quem nunca recebeu vê o vazio; a seção tem testes próprios.
+  walletEarnings.mockResolvedValue({
+    from: '2025-11-01',
+    to: '2026-10-19',
+    granularity: 'month',
+    timezone: 'America/Sao_Paulo',
+    hasEarnings: false,
+    totals: { amount: 0, contracts: 0, barters: 0, averageTicket: null },
+    series: [],
+    credits: { total: 0, contracts: 0 },
+  });
   creditTransactions.mockResolvedValue(page([]));
   requestWithdrawal.mockResolvedValue(withdrawalOf({ id: 99 }));
   cancelWithdrawal.mockResolvedValue(withdrawalOf({ id: 99, status: 'cancelled' }));
@@ -171,9 +185,16 @@ beforeEach(() => {
 });
 
 describe('CarteiraView: saldos e estados', () => {
-  it('enquanto nada chegou: saldos com travessão, três esqueletos e o mínimo padrão de R$ 20', () => {
+  it('enquanto nada chegou: saldos com travessão, quatro esqueletos e o mínimo padrão de R$ 20', () => {
     const never = new Promise(() => undefined);
-    for (const fn of [wallet, publicSettings, withdrawals, deposits, walletTransactions]) {
+    for (const fn of [
+      wallet,
+      publicSettings,
+      withdrawals,
+      deposits,
+      walletTransactions,
+      walletEarnings,
+    ]) {
       fn.mockReturnValue(never);
     }
     renderView();
@@ -182,7 +203,8 @@ describe('CarteiraView: saldos e estados', () => {
     expect(kpi('Saldo disponível')).toHaveTextContent('Saldo disponível—para contratar ou sacar');
     expect(kpi('Retido')).toHaveTextContent('Retido—reservado em propostas ou em escrow');
     expect(kpi('Créditos Escambo')).toHaveTextContent('Créditos Escambo—para contratar');
-    expect(screen.getAllByRole('status', { name: 'Carregando' })).toHaveLength(3);
+    // Ganhos, extrato, saques e depósitos.
+    expect(screen.getAllByRole('status', { name: 'Carregando' })).toHaveLength(4);
     expect(screen.getByLabelText('Valor (R$) · mínimo R$ 20,00')).toHaveAttribute('min', '20');
     expect(document.title).toBe('Carteira · Escambo');
   });

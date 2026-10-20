@@ -1,4 +1,5 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
+import type { PoolConnection } from 'mysql2/promise';
 import { pool } from '../../config/db';
 import { levelFor } from './gamification.levels';
 
@@ -32,8 +33,21 @@ export interface LeaderboardRow extends RowDataPacket {
   ulid: string;
   name: string | null;
   total_xp: number;
-  level: number;
-  level_name: string;
+  /** NULL no ranking por categoria/local de quem ainda não tem linha de XP (nível inicial). */
+  level: number | null;
+  level_name: string | null;
+  /** DECIMAL do perfil (string no mysql2); NULL no ranking geral de quem não tem perfil. */
+  avg_rating: string | null;
+  total_contracts: number | null;
+  /** Só no ranking local: a distância (km) ao ponto pesquisado. */
+  distance_km?: number | null;
+}
+
+/** Filtros do ranking por categoria e local (RN-056). */
+export interface RankingFilter {
+  categoryId?: number;
+  near?: { lat: number; lng: number; radiusKm: number };
+  limit: number;
 }
 
 export interface FreelancerStatsRow extends RowDataPacket {
@@ -43,7 +57,52 @@ export interface FreelancerStatsRow extends RowDataPacket {
 }
 
 /** Quem entra no ranking: conta não excluída, nem suspensa ou banida (u = users). */
-const RANKED_USER = `u.deleted_at IS NULL AND u.status NOT IN ('suspended', 'banned')`;
+export const RANKED_USER = `u.deleted_at IS NULL AND u.status NOT IN ('suspended', 'banned')`;
+
+/** Distância (Haversine, km) do perfil `pf` ao ponto :lat/:lng, a mesma conta da busca de serviços. */
+const DISTANCE_KM = `(6371 * ACOS(LEAST(1.0,
+  COS(RADIANS(:lat)) * COS(RADIANS(pf.latitude)) * COS(RADIANS(pf.longitude) - RADIANS(:lng))
+  + SIN(RADIANS(:lat)) * SIN(RADIANS(pf.latitude)))))`;
+
+/**
+ * Credita XP com o total travado, na transação aberta por quem chama: trava o total (FOR UPDATE),
+ * registra o lançamento e grava o total novo com o nível dele. O nível sai do total travado, e não
+ * de uma leitura anterior: dois créditos ao mesmo tempo não deixam o nível abaixo do total (RN-052).
+ * A linha de user_xp tem de existir antes (INSERT IGNORE fora da transação, ver applyXp).
+ */
+export async function creditXpLocked(
+  conn: PoolConnection,
+  params: { userId: number; delta: number; reason: string; referenceId: number | null },
+): Promise<{ previousLevel: number; level: number }> {
+  const [rows] = await conn.query<RowDataPacket[]>(
+    `SELECT total_xp, level FROM user_xp WHERE user_id = :userId FOR UPDATE`,
+    { userId: params.userId },
+  );
+  const previousLevel = Number(rows[0]?.level ?? 1);
+  const next = levelFor(Number(rows[0]?.total_xp ?? 0) + params.delta);
+  await conn.query<ResultSetHeader>(
+    `INSERT INTO xp_transactions (user_id, amount, reason, reference_id)
+     VALUES (:userId, :delta, :reason, :referenceId)`,
+    {
+      userId: params.userId,
+      delta: params.delta,
+      reason: params.reason,
+      referenceId: params.referenceId,
+    },
+  );
+  await conn.query<ResultSetHeader>(
+    `UPDATE user_xp
+        SET total_xp = total_xp + :delta, level = :level, level_name = :levelName
+      WHERE user_id = :userId`,
+    {
+      delta: params.delta,
+      level: next.level,
+      levelName: next.name,
+      userId: params.userId,
+    },
+  );
+  return { previousLevel, level: next.level };
+}
 
 /**
  * A contratação `c` teve o trabalho entregue até o prazo (`on_time_deliveries`, RF-065), na leitura
@@ -110,33 +169,7 @@ export const gamificationRepository = {
         userId: params.userId,
       });
       await conn.beginTransaction();
-      const [rows] = await conn.query<RowDataPacket[]>(
-        `SELECT total_xp, level FROM user_xp WHERE user_id = :userId FOR UPDATE`,
-        { userId: params.userId },
-      );
-      const previousLevel = Number(rows[0]?.level ?? 1);
-      const next = levelFor(Number(rows[0]?.total_xp ?? 0) + params.delta);
-      await conn.query<ResultSetHeader>(
-        `INSERT INTO xp_transactions (user_id, amount, reason, reference_id)
-         VALUES (:userId, :delta, :reason, :referenceId)`,
-        {
-          userId: params.userId,
-          delta: params.delta,
-          reason: params.reason,
-          referenceId: params.referenceId,
-        },
-      );
-      await conn.query<ResultSetHeader>(
-        `UPDATE user_xp
-            SET total_xp = total_xp + :delta, level = :level, level_name = :levelName
-          WHERE user_id = :userId`,
-        {
-          delta: params.delta,
-          level: next.level,
-          levelName: next.name,
-          userId: params.userId,
-        },
-      );
+      const levels = await creditXpLocked(conn, params);
       if (params.countContract) {
         await conn.query<ResultSetHeader>(
           `UPDATE profiles_freelancer SET total_contracts = total_contracts + 1 WHERE user_id = :userId`,
@@ -144,7 +177,7 @@ export const gamificationRepository = {
         );
       }
       await conn.commit();
-      return { previousLevel, level: next.level };
+      return levels;
     } catch (err) {
       // Um rollback que falha não pode trocar o erro original pelo dele.
       await conn.rollback().catch(() => undefined);
@@ -307,13 +340,59 @@ export const gamificationRepository = {
 
   async leaderboard(limit: number): Promise<LeaderboardRow[]> {
     const [rows] = await pool.query<LeaderboardRow[]>(
-      `SELECT u.ulid, pf.full_name AS name, ux.total_xp, ux.level, ux.level_name
+      `SELECT u.ulid, pf.full_name AS name, ux.total_xp, ux.level, ux.level_name,
+              pf.avg_rating, pf.total_contracts
          FROM user_xp ux
          JOIN users u ON u.id = ux.user_id
          LEFT JOIN profiles_freelancer pf ON pf.user_id = ux.user_id
         WHERE ${RANKED_USER}
         ORDER BY ux.total_xp DESC, ux.user_id ASC
         LIMIT ${limit}`,
+    );
+    return rows;
+  },
+
+  /**
+   * Ranking por categoria e/ou local (RF-067, RN-056): freelancers com perfil, na regra do ranking
+   * (sem conta excluída, suspensa ou banida), ordenados por nota média, depois contratações
+   * concluídas, depois XP (desempate final pelo id, para a ordem não mudar entre chamadas). Na
+   * categoria, quem tem serviço ativo nela ou numa subcategoria dela; no local, quem marcou a
+   * localização no perfil e está a até `radiusKm` do ponto. Quem ainda não tem XP entra com zero.
+   */
+  async rankedLeaderboard(filter: RankingFilter): Promise<LeaderboardRow[]> {
+    const where = [RANKED_USER];
+    const params: Record<string, number> = {};
+    if (filter.categoryId !== undefined) {
+      params.categoryId = filter.categoryId;
+      where.push(`EXISTS (SELECT 1 FROM services s
+                           WHERE s.user_id = pf.user_id AND s.deleted_at IS NULL AND s.is_active = 1
+                             AND s.category_id IN (SELECT sc.id FROM service_categories sc
+                                                    WHERE sc.id = :categoryId OR sc.parent_id = :categoryId))`);
+    }
+    if (filter.near) {
+      Object.assign(params, {
+        lat: filter.near.lat,
+        lng: filter.near.lng,
+        radius: filter.near.radiusKm,
+      });
+      where.push('pf.latitude IS NOT NULL AND pf.longitude IS NOT NULL');
+    }
+    // Tabela derivada: a distância é calculada no interno e filtrada pelo alias no externo, como na
+    // busca de serviços (HAVING sem GROUP BY é problemático no MySQL 8). limit é inteiro do service.
+    const [rows] = await pool.query<LeaderboardRow[]>(
+      `SELECT r.ulid, r.name, r.total_xp, r.level, r.level_name, r.avg_rating, r.total_contracts,
+              r.distance_km
+         FROM (SELECT pf.user_id, u.ulid, pf.full_name AS name, COALESCE(ux.total_xp, 0) AS total_xp,
+                      ux.level, ux.level_name, pf.avg_rating, pf.total_contracts,
+                      ${filter.near ? DISTANCE_KM : 'NULL'} AS distance_km
+                 FROM profiles_freelancer pf
+                 JOIN users u ON u.id = pf.user_id
+                 LEFT JOIN user_xp ux ON ux.user_id = pf.user_id
+                WHERE ${where.join(' AND ')}) r
+        ${filter.near ? 'WHERE r.distance_km <= :radius' : ''}
+        ORDER BY r.avg_rating DESC, r.total_contracts DESC, r.total_xp DESC, r.user_id ASC
+        LIMIT ${filter.limit}`,
+      params,
     );
     return rows;
   },

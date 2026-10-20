@@ -182,14 +182,30 @@ export const deliverSchema = z.object({
 export type DeliverInput = z.infer<typeof deliverSchema>;
 
 /**
- * Entrega de um marco: só a mensagem (o marco guarda delivery_note); arquivo vai pelo chat da
- * contratação. files ou outra chave qualquer é 422, em vez de aceito e descartado em silêncio.
+ * A mesma entrega em multipart, quando leva arquivos (RF-035): os arquivos vêm no campo
+ * `attachments` (req.files) e os links, se houver, em `files` repetido, que chega como texto ou
+ * lista de textos.
+ */
+export const deliverFormSchema = deliverSchema.extend({
+  files: z.preprocess(
+    (v) => (typeof v === 'string' ? [v] : v),
+    z.array(z.string().url()).max(20).optional(),
+  ),
+});
+
+/**
+ * Entrega de um marco: a mensagem (o marco guarda delivery_note) e, em multipart, os arquivos no
+ * campo `attachments` (RF-035). Links não têm onde ficar no marco: `files` ou outra chave qualquer
+ * é 422, em vez de aceito e descartado em silêncio.
  */
 export const deliverMilestoneSchema = z
   .object({
     message: z.string().min(1),
     files: z
-      .never({ invalid_type_error: 'A entrega de um marco não leva arquivos: mande pelo chat' })
+      .never({
+        invalid_type_error:
+          'A entrega de um marco não leva links: anexe os arquivos ou escreva o link na mensagem',
+      })
       .optional(),
   })
   .strict();

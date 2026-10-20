@@ -17,13 +17,39 @@ name: escambo
 
 x-api-image: &api-image ${API_IMAGE:-ghcr.io/guirenzo/escambo-api}:${IMAGE_TAG:-latest}
 
+# Rotação do log dos contêineres (RNF-037). O json-file padrão não apaga nada e cresce até encher o
+# disco; aqui cada serviço guarda até max-file arquivos de max-size, os antigos comprimidos (gzip).
+# A API grava uma linha JSON por requisição, ~1,7 KB (healthcheck) a ~2,4 KB (navegador) já no
+# formato do Docker: healthcheck + sonda de uptime dão ~10 MB/dia e 10 mil requisições de usuários
+# por dia, mais ~24 MB. 40 × 100 MB = 4 GB de log cru: ~115 dias nesse ritmo (≥ 90 até ~13 mil
+# requisições por dia), ~0,6 GB no disco com os antigos comprimidos. A rotação é por tamanho, não
+# por data: com mais tráfego a janela encurta. A retenção mínima de 90 dias da auditoria fica no
+# banco (audit_logs, admin_actions e os extratos), garantida pela migration 0046, não neste log.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '100m'
+    max-file: '40'
+    compress: 'true'
+# Banco, migrations, Caddy (sem log de acesso) e monitoramento escrevem pouco: teto de 100 MB.
+x-logging-small: &logging-small
+  driver: json-file
+  options:
+    max-size: '20m'
+    max-file: '5'
+    compress: 'true'
+
 services:
   db:
     image: mysql:8.0
     restart: unless-stopped
+    logging: *logging-small
+    # log-bin-trust-function-creators: com o binlog ligado (padrão do MySQL 8), sem isto só quem tem
+    # SUPER cria trigger, e o job migrate (usuário da aplicação) falharia na 0046 (RNF-036).
     command: >
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
+      --log-bin-trust-function-creators=1
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?defina DB_ROOT_PASSWORD no .env}
       MYSQL_DATABASE: ${DB_NAME:-escambo}
@@ -43,6 +69,7 @@ services:
   migrate:
     image: *api-image
     restart: 'no'
+    logging: *logging-small
     command: ['node', 'dist/scripts/migrate.js']
     depends_on:
       db:
@@ -90,6 +117,8 @@ services:
       PUSH_SUBJECT: ${PUSH_SUBJECT:-mailto:nao-responda@${DOMAIN}}
       DIGEST_HOUR: ${DIGEST_HOUR:-8}
       ATTACHMENT_PURGE_HOUR: ${ATTACHMENT_PURGE_HOUR:-4}
+      # Expurgo do audit_logs com mais de N dias (RNF-037): vazio = desligado; N ≥ 90, prefira ≥ 180.
+      AUDIT_LOG_PURGE_DAYS: ${AUDIT_LOG_PURGE_DAYS:-}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
       LOGIN_RATE_LIMIT_MAX: ${LOGIN_RATE_LIMIT_MAX:-10}
       # Observabilidade (ADR 59): /metrics na porta 9464, só na rede interna (o Prometheus lê);
@@ -101,6 +130,7 @@ services:
   api:
     image: *api-image
     restart: unless-stopped
+    logging: *logging
     depends_on:
       db:
         condition: service_healthy
@@ -114,6 +144,8 @@ services:
   web:
     image: ${WEB_IMAGE:-ghcr.io/guirenzo/escambo-web}:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    # O nginx registra cada requisição (assets e /api) no stdout: o mesmo teto da API.
+    logging: *logging
     depends_on:
       api:
         condition: service_healthy
@@ -123,6 +155,7 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    logging: *logging-small
     depends_on:
       web:
         condition: service_healthy
@@ -150,6 +183,7 @@ services:
     image: prom/prometheus:v3.5.0
     profiles: [monitoring]
     restart: unless-stopped
+    logging: *logging-small
     # O prometheus.yml não lê variável de ambiente: o endereço da sonda entra por substituição na subida.
     entrypoint: ['/bin/sh', '-c']
     command:
@@ -176,6 +210,7 @@ services:
     image: prom/blackbox-exporter:v0.27.0
     profiles: [monitoring]
     restart: unless-stopped
+    logging: *logging-small
     volumes:
       - type: bind
         source: ./deploy/monitoring/blackbox.yml
@@ -188,6 +223,7 @@ services:
     image: grafana/grafana-oss:12.1.1
     profiles: [monitoring]
     restart: unless-stopped
+    logging: *logging-small
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       # Sem senha o Grafana não sobe (grafana/entrypoint.sh). Um `:?` aqui barraria também quem não

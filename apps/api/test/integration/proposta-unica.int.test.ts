@@ -11,6 +11,7 @@ import { env } from '../../src/config/env';
 import { walletRepository } from '../../src/modules/wallet/wallet.repository';
 import { setClockForTests } from '../../src/utils/clock';
 import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
+import { deleteUsersWithoutLedger } from './helpers/ledger-cleanup';
 
 const app = createApp();
 const NOW = new Date('2026-10-16T15:00:00Z');
@@ -136,10 +137,10 @@ afterEach(() => setClockForTests(null));
 afterAll(async () => {
   try {
     if (users.length) {
-      await pool.query('DELETE FROM wallet_transactions WHERE user_id IN (:ids)', { ids: users });
       await pool.query('DELETE FROM contracts WHERE client_id IN (:ids)', { ids: users });
       await pool.query('DELETE FROM barter_agreements WHERE proposer_id IN (:ids)', { ids: users });
-      await pool.query('DELETE FROM users WHERE id IN (:ids)', { ids: users });
+      // Extrato imutável (RNF-036): quem tem lançamento fica, com os lançamentos.
+      await deleteUsersWithoutLedger(users);
     }
   } finally {
     setClockForTests(null);

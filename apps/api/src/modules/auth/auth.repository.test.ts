@@ -304,4 +304,32 @@ describe('authRepository', () => {
     expect(fakeDb.calls[0]!.sql).toBe('UPDATE users SET role = :role WHERE id = :id');
     expect(fakeDb.calls[0]!.params).toEqual({ id: 5, role: 'admin' });
   });
+
+  describe('contato da conta (RF-017)', () => {
+    it('findContact lê só e-mail, confirmação e telefone daquela conta', async () => {
+      const row = { email: 'ana@escambo.test', email_verified_at: null, phone: '+5547999991234' };
+      fakeDb.reply([row], []);
+      expect(await authRepository.findContact(7)).toBe(row);
+      expect(selectedColumns(fakeDb.calls[0]!.sql)).toEqual([
+        'email',
+        'email_verified_at',
+        'phone',
+      ]);
+      expect(fakeDb.calls[0]!.sql).toContain('FROM users WHERE id = :id LIMIT 1');
+      expect(fakeDb.calls[0]!.params).toEqual({ id: 7 });
+      expect(await authRepository.findContact(8)).toBeUndefined();
+    });
+
+    it('updatePhone grava (ou apaga) o telefone e só conserva a confirmação se o número não mudou', async () => {
+      fakeDb.reply({ affectedRows: 1 });
+      await authRepository.updatePhone(7, '+5547999991234');
+      // A confirmação é calculada antes de phone mudar: o MySQL aplica o SET da esquerda para a direita.
+      expect(fakeDb.calls[0]!.sql).toBe(
+        'UPDATE users SET phone_verified_at = IF(phone <=> :phone, phone_verified_at, NULL), phone = :phone WHERE id = :id',
+      );
+      expect(fakeDb.calls[0]!.params).toEqual({ id: 7, phone: '+5547999991234' });
+      await authRepository.updatePhone(7, null);
+      expect(fakeDb.calls[1]!.params).toEqual({ id: 7, phone: null });
+    });
+  });
 });

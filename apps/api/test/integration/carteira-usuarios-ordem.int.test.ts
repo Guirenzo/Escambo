@@ -11,6 +11,7 @@ import { env } from '../../src/config/env';
 import { walletRepository } from '../../src/modules/wallet/wallet.repository';
 import { setClockForTests } from '../../src/utils/clock';
 import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
+import { deleteUsersWithoutLedger } from './helpers/ledger-cleanup';
 
 const app = createApp();
 const NOW = new Date('2026-10-12T15:00:00Z');
@@ -290,12 +291,6 @@ beforeAll(() => setClockForTests(NOW, { frozen: true }));
 afterEach(async () => {
   vi.restoreAllMocks();
   if (ownedUsers.length) {
-    await pool.query('DELETE FROM wallet_transactions WHERE user_id IN (:ids)', {
-      ids: ownedUsers,
-    });
-    await pool.query('DELETE FROM credit_transactions WHERE user_id IN (:ids)', {
-      ids: ownedUsers,
-    });
     await pool.query('DELETE FROM notifications WHERE user_id IN (:ids)', { ids: ownedUsers });
     await pool.query(
       "DELETE FROM content_reports WHERE target_type='user' AND target_id IN (:ids)",
@@ -304,8 +299,8 @@ afterEach(async () => {
   }
   if (ownedContracts.length)
     await pool.query('DELETE FROM contracts WHERE id IN (:ids)', { ids: ownedContracts });
-  if (ownedUsers.length)
-    await pool.query('DELETE FROM users WHERE id IN (:ids)', { ids: ownedUsers });
+  // Extrato imutável (RNF-036): quem tem lançamento fica, com os lançamentos.
+  await deleteUsersWithoutLedger(ownedUsers);
   ownedUsers.length = ownedContracts.length = 0;
 });
 afterAll(async () => {

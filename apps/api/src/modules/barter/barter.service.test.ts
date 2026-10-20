@@ -35,9 +35,9 @@ vi.mock('../gamification/gamification.service', () => ({
   gamificationService: { onBarterCompleted: vi.fn() },
 }));
 
-import { barterService } from './barter.service';
+import { barterService, catalogValue } from './barter.service';
 import { gamificationService } from '../gamification/gamification.service';
-import { barterRepository, type BarterRow } from './barter.repository';
+import { barterRepository, type BarterRow, type CatalogService } from './barter.repository';
 import { contractsRepository, type ContractRow } from '../contracts/contracts.repository';
 import { notificationsService } from '../notifications/notifications.service';
 import { settingsService } from '../settings/settings.service';
@@ -85,10 +85,21 @@ function fakeBarter(o: FakeBarterFields = {}): BarterRow {
 
 const contractStatus = (status: string): ContractRow => ({ status }) as unknown as ContractRow;
 
-/** Serviços do catálogo nos testes, no ar: o 31 é do proponente (1), o 32 do receptor (2). */
-const CATALOG: Record<number, { userId: number; isActive: boolean }> = {
-  31: { userId: 1, isActive: true },
-  32: { userId: 2, isActive: true },
+/** Serviço do catálogo; a combinar (sem preço) quando o preço não importa ao teste. */
+const svc = (
+  userId: number,
+  isActive: boolean,
+  priceType: CatalogService['priceType'] = 'negotiable',
+  price: number | null = null,
+): CatalogService => ({ userId, isActive, priceType, price });
+
+/**
+ * Serviços do catálogo nos testes, no ar e a combinar (vale o valor informado, RF-084): o 31 é do
+ * proponente (1), o 32 do receptor (2).
+ */
+const CATALOG: Record<number, CatalogService> = {
+  31: svc(1, true),
+  32: svc(2, true),
 };
 
 beforeEach(() => {
@@ -341,6 +352,9 @@ const barterDto = {
   requestedDescription: 'landing page',
   estimatedValueOffered: 1000,
   estimatedValueRequested: 800,
+  // Acordo sem a origem gravada (anterior à 1.45.0): os valores foram digitados.
+  offeredValueSource: 'informed',
+  requestedValueSource: 'informed',
   cashDifference: 200,
   cashPayerId: 2,
   platformFee: 30,
@@ -409,6 +423,8 @@ describe('propose: configurações e o que é gravado', () => {
         requestedDescription: 'landing page',
         estimatedValueOffered: 1000,
         estimatedValueRequested: 800,
+        offeredValueSource: 'informed',
+        requestedValueSource: 'informed',
         cashDifference: 200,
         cashPayerId: 2,
         platformFee: 30,
@@ -1067,8 +1083,7 @@ describe('propose: destinatário e serviços do catálogo', () => {
     // 404: não existe ou removido (o repository devolve null); 32: é do receptor; 77: de um
     // terceiro, mesmo pausado (não conta a quem não é dono que ele está pausado).
     repo.findCatalogService.mockImplementation(
-      async (id: number) =>
-        ({ 32: { userId: 2, isActive: true }, 77: { userId: 5, isActive: false } })[id] ?? null,
+      async (id: number) => ({ 32: svc(2, true), 77: svc(5, false) })[id] ?? null,
     );
     for (const offeredServiceId of [404, 32, 77]) {
       await expect(
@@ -1087,8 +1102,7 @@ describe('propose: destinatário e serviços do catálogo', () => {
   it('serviço pedido que não existe, foi removido ou não é do receptor é 422 invalid_requested_service', async () => {
     // 404: não existe ou removido; 31: é do próprio proponente; 78: de um terceiro, pausado.
     repo.findCatalogService.mockImplementation(
-      async (id: number) =>
-        ({ 31: { userId: 1, isActive: true }, 78: { userId: 5, isActive: false } })[id] ?? null,
+      async (id: number) => ({ 31: svc(1, true), 78: svc(5, false) })[id] ?? null,
     );
     for (const requestedServiceId of [404, 31, 78]) {
       await expect(
@@ -1106,7 +1120,7 @@ describe('propose: destinatário e serviços do catálogo', () => {
 
   it('serviço pedido pausado pelo receptor: 409 service_inactive com a mensagem da contratação (RN-013), nada gravado', async () => {
     repo.findCatalogService.mockImplementation(async (id: number) =>
-      id === 32 ? { userId: 2, isActive: false } : (CATALOG[id] ?? null),
+      id === 32 ? svc(2, false) : (CATALOG[id] ?? null),
     );
     await expect(
       barterService.propose(1, { ...proposal, offeredServiceId: 31, requestedServiceId: 32 }),
@@ -1122,7 +1136,7 @@ describe('propose: destinatário e serviços do catálogo', () => {
 
   it('serviço oferecido pausado pelo próprio proponente: 409 service_inactive, e o pedido nem é consultado', async () => {
     repo.findCatalogService.mockImplementation(async (id: number) =>
-      id === 31 ? { userId: 1, isActive: false } : (CATALOG[id] ?? null),
+      id === 31 ? svc(1, false) : (CATALOG[id] ?? null),
     );
     await expect(
       barterService.propose(1, { ...proposal, offeredServiceId: 31, requestedServiceId: 32 }),
@@ -1467,5 +1481,193 @@ describe('valores em centavos', () => {
       ],
       [2, expect.stringMatching(/^Torna de R\$\s49,90 paga ao outro lado\.$/)],
     ]);
+  });
+});
+
+describe('estimativa dos lados pelo catálogo (RF-084)', () => {
+  /** 31: serviço do proponente; 32: do receptor. Sem preço, o serviço é a combinar. */
+  const priced = (offered: number | null, requested: number | null) =>
+    repo.findCatalogService.mockImplementation(
+      async (id: number) =>
+        ({
+          31: svc(1, true, offered == null ? 'negotiable' : 'fixed', offered),
+          32: svc(2, true, requested == null ? 'negotiable' : 'fixed', requested),
+        })[id] ?? null,
+    );
+  const both = { receiverId: 2, offeredServiceId: 31, requestedServiceId: 32 };
+
+  beforeEach(() => {
+    repo.create.mockResolvedValue(1);
+    repo.findById.mockResolvedValue(fakeBarter());
+  });
+
+  it('com preço fechado dos dois lados, os valores podem faltar: o sistema usa o catálogo e calcula a torna', async () => {
+    priced(200, 300);
+    await barterService.propose(1, both);
+    const [data, hold] = repo.create.mock.calls[0]!;
+    expect(data).toMatchObject({
+      estimatedValueOffered: 200,
+      estimatedValueRequested: 300,
+      offeredValueSource: 'catalog',
+      requestedValueSource: 'catalog',
+      cashDifference: 100,
+      cashPayerId: 1,
+      platformFee: 15,
+      tornaStatus: 'none',
+    });
+    // Quem recebe o serviço mais valioso (o proponente) paga a torna, reservada já na proposta.
+    expect(hold).toEqual({ userId: 1, amount: 100 });
+  });
+
+  it('o valor informado igual ao catálogo, ao centavo, passa', async () => {
+    priced(199.9, 300);
+    await barterService.propose(1, {
+      ...both,
+      estimatedValueOffered: 199.9,
+      estimatedValueRequested: 300,
+    });
+    expect(repo.create.mock.calls[0]![0]).toMatchObject({
+      estimatedValueOffered: 199.9,
+      estimatedValueRequested: 300,
+      cashDifference: 100.1,
+      offeredValueSource: 'catalog',
+      requestedValueSource: 'catalog',
+    });
+  });
+
+  it('valor do serviço pedido diferente do catálogo: 422 estimate_mismatch com o preço, nada gravado nem reservado', async () => {
+    priced(200, 300);
+    await expect(
+      barterService.propose(1, { ...both, estimatedValueRequested: 150 }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'estimate_mismatch',
+      message: expect.stringMatching(
+        /^O serviço pedido custa R\$\s300,00 no catálogo, e a troca usa esse valor \(RN-066\)\. Atualize a tela/,
+      ),
+    });
+    expect(settings.feeRate).not.toHaveBeenCalled();
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('valor do próprio serviço oferecido diferente do catálogo: 422 estimate_mismatch, com o caminho para outro valor', async () => {
+    priced(200, 300);
+    await expect(
+      barterService.propose(1, { ...both, estimatedValueOffered: 200.01 }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'estimate_mismatch',
+      message: expect.stringMatching(
+        /^O serviço que você oferece custa R\$\s200,00 no catálogo.*mude o preço do serviço ou descreva a oferta\.$/,
+      ),
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a combinar', 'negotiable', null],
+    ['por hora (o preço é da hora, não do trabalho)', 'hourly', 80],
+    ['de preço fixo sem preço gravado', 'fixed', null],
+  ] as const)(
+    'serviço pedido %s: o valor informado vale e é obrigatório (422 estimate_required)',
+    async (_name, priceType, price) => {
+      repo.findCatalogService.mockImplementation(
+        async (id: number) =>
+          ({ 31: svc(1, true, 'fixed', 200), 32: svc(2, true, priceType, price) })[id] ?? null,
+      );
+      await expect(barterService.propose(1, both)).rejects.toMatchObject({
+        statusCode: 422,
+        code: 'estimate_required',
+        message:
+          'O serviço pedido não tem preço fechado no catálogo (a combinar ou por hora): informe quanto ele vale nesta troca.',
+      });
+      expect(repo.create).not.toHaveBeenCalled();
+
+      await barterService.propose(1, { ...both, estimatedValueRequested: 250 });
+      expect(repo.create.mock.calls[0]![0]).toMatchObject({
+        estimatedValueOffered: 200,
+        estimatedValueRequested: 250,
+        offeredValueSource: 'catalog',
+        requestedValueSource: 'informed',
+        cashDifference: 50,
+        cashPayerId: 1,
+      });
+    },
+  );
+
+  it('serviço oferecido sem preço fechado também exige o valor', async () => {
+    priced(null, 300);
+    await expect(barterService.propose(1, both)).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'estimate_required',
+      message:
+        'O serviço que você oferece não tem preço fechado no catálogo (a combinar ou por hora): informe quanto ele vale nesta troca.',
+    });
+  });
+
+  it('oferta ou pedido descritos não têm catálogo: o valor é obrigatório', async () => {
+    priced(200, 300);
+    await expect(
+      barterService.propose(1, {
+        receiverId: 2,
+        offeredDescription: 'Fotos do cardápio',
+        requestedServiceId: 32,
+      }),
+    ).rejects.toMatchObject({
+      code: 'estimate_required',
+      message: 'Informe quanto vale o que você oferece.',
+    });
+    await expect(
+      barterService.propose(1, {
+        receiverId: 2,
+        offeredServiceId: 31,
+        requestedDescription: 'Uma landing page',
+      }),
+    ).rejects.toMatchObject({
+      code: 'estimate_required',
+      message: 'Informe quanto vale o que você pede.',
+    });
+
+    await barterService.propose(1, {
+      receiverId: 2,
+      offeredDescription: 'Fotos do cardápio',
+      estimatedValueOffered: 450,
+      requestedServiceId: 32,
+    });
+    expect(repo.create.mock.calls[0]![0]).toMatchObject({
+      estimatedValueOffered: 450,
+      estimatedValueRequested: 300,
+      offeredValueSource: 'informed',
+      requestedValueSource: 'catalog',
+      cashDifference: 150,
+      cashPayerId: 2,
+      tornaStatus: 'pending',
+    });
+  });
+
+  it('a origem gravada de cada lado sai no acordo; sem origem (antes da 1.45.0), "informed"', async () => {
+    repo.findById.mockResolvedValue({
+      ...fakeBarter(),
+      offered_value_source: 'catalog',
+      requested_value_source: 'informed',
+    } as BarterRow);
+    expect(await barterService.getById(1, 1)).toMatchObject({
+      offeredValueSource: 'catalog',
+      requestedValueSource: 'informed',
+    });
+    repo.findById.mockResolvedValue(fakeBarter());
+    expect(await barterService.getById(1, 2)).toMatchObject({
+      offeredValueSource: 'informed',
+      requestedValueSource: 'informed',
+    });
+  });
+
+  it('catalogValue: só preço fechado e positivo estima um lado', () => {
+    expect(catalogValue(svc(1, true, 'fixed', 120.5))).toBe(120.5);
+    expect(catalogValue(svc(1, true, 'hourly', 80))).toBeNull();
+    expect(catalogValue(svc(1, true, 'negotiable', 300))).toBeNull();
+    expect(catalogValue(svc(1, true, 'fixed', null))).toBeNull();
+    expect(catalogValue(svc(1, true, 'fixed', 0))).toBeNull();
+    expect(catalogValue(null)).toBeNull();
   });
 });

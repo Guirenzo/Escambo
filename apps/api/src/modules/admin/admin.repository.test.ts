@@ -161,6 +161,27 @@ describe('adminRepository', () => {
       );
     });
 
+    it('chamados de suporte (RF-076): em aberto, aguardando a equipe e SLA vencido, só de conta viva', async () => {
+      fakeDb.reply([row]);
+      await adminRepository.metrics(now);
+      const { sql, params } = fakeDb.calls[0]!;
+
+      const live =
+        '(SELECT COUNT(*) FROM support_tickets t JOIN users o ON o.id = t.user_id AND o.deleted_at IS NULL';
+      expect(sql).toContain(
+        `${live} WHERE t.status IN ('open','in_progress','waiting_user')) AS support_open,`,
+      );
+      expect(sql).toContain(
+        `${live} WHERE t.status IN ('open','in_progress')) AS support_awaiting_reply,`,
+      );
+      // SLA de primeira resposta (0034): vencido é o que não teve resposta pública até o prazo,
+      // medido no agora do fluxo, o mesmo dos saques atrasados.
+      expect(sql).toContain(
+        `${live} WHERE t.status IN ('open','in_progress','waiting_user') AND t.first_response_at IS NULL AND t.sla_due_at <= :now) AS support_sla_overdue`,
+      );
+      expect(params).toEqual({ now });
+    });
+
     it('a receita é o que some na redistribuição do ledger: fora depósito e saque, com o sinal trocado (ADR 26)', async () => {
       fakeDb.reply([row]);
       await adminRepository.metrics(now);

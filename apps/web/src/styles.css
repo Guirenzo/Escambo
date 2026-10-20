@@ -901,6 +901,10 @@ button.toggle.on {
   border-radius: 999px;
   transition: width 0.5s var(--ease);
 }
+/* Missões (RF-066): a barra de cada missão fica entre o título e o prazo. */
+.missions .bar {
+  margin: 6px 0 4px;
+}
 .streak {
   font-weight: 600;
 }
@@ -2915,6 +2919,51 @@ body.is-dragging-list {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Uso por período (RF-081): mesmas barras, outra cor, para não confundir com a receita. */
+.fin-bar-fill.usage {
+  background: var(--blue);
+}
+.fin-usage {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.fin-usage h4 {
+  margin: 0 0 6px;
+}
+
+/* ---------- Admin: indicador de suporte (RF-076), a linha inteira com três números ---------- */
+.kpi-wide {
+  grid-column: 1 / -1;
+}
+.kpi-link {
+  margin-left: auto;
+}
+.kpi-split {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0;
+}
+.kpi-split > div {
+  display: flex;
+  flex-direction: column-reverse; /* o número em cima, o rótulo (dt, lido antes) embaixo */
+  gap: 2px;
+}
+.kpi-split dd {
+  margin: 0;
+}
+.kpi-late .kpi-value {
+  color: var(--red);
+}
+@media (max-width: 560px) {
+  .kpi-split {
+    grid-template-columns: 1fr;
+  }
+}
+.kpis-note {
+  margin: 0;
 }
 
 /* ---------- Carteira: depósito PIX, extrato e saques ---------- */

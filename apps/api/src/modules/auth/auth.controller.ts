@@ -1,14 +1,19 @@
 import type { Request, Response } from 'express';
+import { optionalUserId } from '../../middlewares/authenticate';
 import {
+  changeEmailSchema,
   changePasswordSchema,
+  confirmEmailChangeSchema,
   forgotPasswordSchema,
   loginSchema,
   refreshSchema,
   registerSchema,
   resetPasswordSchema,
+  updatePhoneSchema,
   verifyEmailSchema,
 } from './auth.schema';
 import { authService } from './auth.service';
+import { contactService } from './contact.service';
 
 function context(req: Request) {
   return { ip: req.ip ?? null, userAgent: req.headers['user-agent'] ?? null };
@@ -79,4 +84,36 @@ export async function resetPassword(req: Request, res: Response): Promise<void> 
 export async function changePassword(req: Request, res: Response): Promise<void> {
   const input = changePasswordSchema.parse(req.body);
   res.json(await authService.changePassword(req.user!.uid, input, context(req)));
+}
+
+/** Rota protegida — contato da conta (RF-017): e-mail, troca pendente e telefone, só do titular. */
+export async function contact(req: Request, res: Response): Promise<void> {
+  res.json(await contactService.get(req.user!.uid));
+}
+
+/** Rota protegida — pede a troca de e-mail; o link vai ao endereço novo (202: falta confirmar). */
+export async function changeEmail(req: Request, res: Response): Promise<void> {
+  const input = changeEmailSchema.parse(req.body);
+  res.status(202).json(await contactService.requestEmailChange(req.user!.uid, input, context(req)));
+}
+
+/** Rota protegida — desiste da troca de e-mail pendente. */
+export async function cancelEmailChange(req: Request, res: Response): Promise<void> {
+  await contactService.cancelEmailChange(req.user!.uid, context(req));
+  res.status(204).send();
+}
+
+/**
+ * Confirma a troca pelo token do link. Pública (o link pode abrir em outro aparelho); se vier o
+ * token de acesso da mesma conta, essa sessão é renovada e as outras caem.
+ */
+export async function confirmEmailChange(req: Request, res: Response): Promise<void> {
+  const { token } = confirmEmailChangeSchema.parse(req.body);
+  res.json(await contactService.confirmEmailChange(token, context(req), optionalUserId(req)));
+}
+
+/** Rota protegida — grava ou apaga o telefone da conta (E.164). */
+export async function updatePhone(req: Request, res: Response): Promise<void> {
+  const { phone } = updatePhoneSchema.parse(req.body);
+  res.json(await contactService.updatePhone(req.user!.uid, phone, context(req)));
 }

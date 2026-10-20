@@ -16,6 +16,7 @@ import { CLOSE_PENDING_EXTENSION, rn029Eligible, zoneOf } from './deadline-sql';
 import { milestonesRepository, type MilestoneSpec } from './milestones.repository';
 import { offerLiveAt, offersRepository, updateOfferMilestones } from './offers.repository';
 import { feePctOf, type OfferTerms } from './offers';
+import { deliveryFilesRepository, type DeliveryFilesInput } from './delivery-files';
 
 export interface ContractRow extends RowDataPacket {
   id: number;
@@ -71,6 +72,8 @@ export interface ContractRow extends RowDataPacket {
   /** Marcos entregues que voltaram para revisão. */
   in_revision?: number;
   deliveries_count?: number;
+  /** Alguma entrega, única ou de marco, levou arquivo (RF-035). */
+  has_delivery_files?: number;
   first_delivered_at?: Date | null;
   next_milestone_approval_at?: Date | null;
   next_milestone_dispute_opens_at?: Date | null;
@@ -108,6 +111,7 @@ const CONTRACT_COLS = `c.*,
   (SELECT COUNT(*) FROM contract_milestones mr WHERE mr.contract_id = c.id
       AND mr.status = 'funded' AND mr.delivered_at IS NOT NULL) AS in_revision,
   (SELECT COUNT(*) FROM deliveries dc WHERE dc.contract_id = c.id) AS deliveries_count,
+  EXISTS(SELECT 1 FROM delivery_files dfc WHERE dfc.contract_id = c.id) AS has_delivery_files,
   CAST(COALESCE(c.first_delivery_at,
            NULLIF(LEAST(
              COALESCE((SELECT MIN(dd.created_at) FROM deliveries dd WHERE dd.contract_id = c.id), CAST('9999-12-31 23:59:59' AS DATETIME)),
@@ -893,6 +897,8 @@ export const contractsRepository = {
     files: string[] | null;
     now: Date;
     approvalDueAt: Date;
+    /** Arquivos já no disco (RF-035): viram mensagens do chat ligadas a esta entrega. */
+    attachments?: DeliveryFilesInput;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -934,7 +940,7 @@ export const contractsRepository = {
         return false;
       }
 
-      await conn.query<ResultSetHeader>(
+      const [delivery] = await conn.query<ResultSetHeader>(
         `INSERT INTO deliveries (contract_id, message, files, delivered_at, created_at)
          VALUES (:id, :message, :files, :now, :now)`,
         {
@@ -944,6 +950,13 @@ export const contractsRepository = {
           now: params.now,
         },
       );
+      if (params.attachments) {
+        await deliveryFilesRepository.attach(
+          conn,
+          { contractId: params.id, deliveryId: delivery.insertId },
+          params.attachments,
+        );
+      }
       await conn.query<ResultSetHeader>(
         `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, created_at)
          VALUES (:id, :changedBy, :from, 'delivered', NULL, :now)`,

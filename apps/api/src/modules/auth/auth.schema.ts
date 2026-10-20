@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BRAZIL_TIMEZONES } from '../../utils/timezone';
+import { normalizeBrazilPhone } from './phone';
 
 /** Validação de entrada (RNF-015: schema em 100% das rotas). */
 
@@ -43,6 +44,38 @@ export const changePasswordSchema = z.object({
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export const verifyEmailSchema = z.object({
   token: z.string().min(16).max(255),
+});
+
+/**
+ * Pedido de troca de e-mail (RF-017): a senha atual confirma o titular. O endereço novo vai sem
+ * espaços e em minúsculas (o login compara sem diferenciar maiúsculas, pela collation).
+ */
+export const changeEmailSchema = z.object({
+  currentPassword: z.string().min(1, 'Informe a senha atual'),
+  newEmail: z.string().trim().toLowerCase().max(255, 'E-mail inválido').email('E-mail inválido'),
+});
+export type ChangeEmailInput = z.infer<typeof changeEmailSchema>;
+/** Confirmação da troca pelo token do link enviado ao endereço novo (uso único). */
+export const confirmEmailChangeSchema = z.object({
+  token: z.string().min(16).max(255),
+});
+
+export const PHONE_INVALID_MESSAGE =
+  'Telefone inválido: use um número do Brasil com DDD, como (47) 99999-1234';
+
+/** Telefone da conta (RF-017): opcional; vazio ou null apaga; o que vier é guardado em E.164. */
+export const updatePhoneSchema = z.object({
+  phone: z
+    .string()
+    .max(30, PHONE_INVALID_MESSAGE)
+    .nullable()
+    .transform((value, ctx) => {
+      if (value === null || value.trim() === '') return null;
+      const phone = normalizeBrazilPhone(value);
+      if (phone) return phone;
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: PHONE_INVALID_MESSAGE });
+      return z.NEVER;
+    }),
 });
 
 export const refreshSchema = z.object({

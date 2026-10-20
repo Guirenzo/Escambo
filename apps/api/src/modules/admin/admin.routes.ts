@@ -24,6 +24,7 @@ import {
   getMetrics,
   getSettings,
   getStorage,
+  getUsage,
   purgeStorage,
   updateSetting,
   listOpenDisputes,
@@ -48,6 +49,7 @@ adminRoutes.get('/settings', asyncHandler(getSettings));
 adminRoutes.put('/settings/:key', asyncHandler(updateSetting));
 adminRoutes.get('/finance', asyncHandler(getFinance));
 adminRoutes.get('/finance/export.csv', asyncHandler(exportFinanceCsv));
+adminRoutes.get('/usage', asyncHandler(getUsage));
 adminRoutes.get('/moderation/health', asyncHandler(getModerationHealth));
 adminRoutes.get('/moderation/health/export.csv', asyncHandler(exportModerationHealthCsv));
 adminRoutes.get('/reports', asyncHandler(listReports));

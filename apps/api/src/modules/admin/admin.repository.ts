@@ -15,6 +15,9 @@ export interface MetricsRow extends RowDataPacket {
   deposits_total: string;
   users_balance: string;
   pending_deletions: number;
+  support_open: number;
+  support_awaiting_reply: number;
+  support_sla_overdue: number;
 }
 
 export const adminRepository = {
@@ -59,7 +62,17 @@ export const adminRepository = {
          (SELECT COUNT(*) FROM withdrawals WHERE status IN ('requested','processing') AND due_at < :now) AS overdue_withdrawals,
          (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE kind = 'topup' AND status = 'paid') AS deposits_total,
          (SELECT COALESCE(SUM(balance), 0) FROM wallets) AS users_balance,
-         (SELECT COUNT(*) FROM data_deletion_requests WHERE status IN ('pending','processing')) AS pending_deletions`,
+         (SELECT COUNT(*) FROM data_deletion_requests WHERE status IN ('pending','processing')) AS pending_deletions,
+         -- Suporte (RF-076), só de conta viva: o chamado de conta anonimizada fica congelado.
+         -- Em aberto = ainda não resolvido; aguardando resposta = a vez é da equipe (ninguém
+         -- respondeu ou o titular voltou); SLA vencido = sem primeira resposta pública e prazo passado.
+         (SELECT COUNT(*) FROM support_tickets t JOIN users o ON o.id = t.user_id AND o.deleted_at IS NULL
+           WHERE t.status IN ('open','in_progress','waiting_user')) AS support_open,
+         (SELECT COUNT(*) FROM support_tickets t JOIN users o ON o.id = t.user_id AND o.deleted_at IS NULL
+           WHERE t.status IN ('open','in_progress')) AS support_awaiting_reply,
+         (SELECT COUNT(*) FROM support_tickets t JOIN users o ON o.id = t.user_id AND o.deleted_at IS NULL
+           WHERE t.status IN ('open','in_progress','waiting_user')
+             AND t.first_response_at IS NULL AND t.sla_due_at <= :now) AS support_sla_overdue`,
       { now },
     );
     return rows[0]!;

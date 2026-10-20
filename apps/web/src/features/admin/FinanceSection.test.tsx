@@ -18,6 +18,14 @@ const saveBlob = vi.fn();
 vi.mock('../../lib/download', () => ({
   saveBlob: (blob: Blob, name: string) => saveBlob(blob, name),
 }));
+// O uso por período tem o próprio teste (UsageReport.test): aqui importa o recorte que ele recebe.
+const usageRange = vi.fn();
+vi.mock('./UsageReport', () => ({
+  UsageReport: ({ range }: { range: unknown }) => {
+    usageRange(range);
+    return null;
+  },
+}));
 
 import { FinanceSection } from './FinanceSection';
 
@@ -87,6 +95,7 @@ beforeEach(() => {
   adminFinance.mockReset();
   downloadFinanceCsv.mockReset();
   saveBlob.mockReset();
+  usageRange.mockReset();
   adminFinance.mockResolvedValue(report());
   downloadFinanceCsv.mockResolvedValue({
     blob: new Blob(['data;valor']),
@@ -362,6 +371,101 @@ describe('FinanceSection', () => {
     expect(saveBlob).not.toHaveBeenCalled();
     expect(screen.queryByText('CSV do ledger baixado.')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Exportar CSV' })).toBeEnabled();
+  });
+
+  it('agrupar por: cada preset traz a sua granularidade, e Dia/Semana/Mês trocam só ela', async () => {
+    const user = userEvent.setup();
+    render(wrap(<FinanceSection />));
+    await loaded();
+    const group = screen.getByRole('group', { name: 'Agrupar por' });
+    const pressed = (name: string) =>
+      within(group).getByRole('button', { name }).getAttribute('aria-pressed');
+
+    // "6 meses" é por mês; o uso recebe o mesmo recorte do financeiro.
+    expect([pressed('Dia'), pressed('Semana'), pressed('Mês')]).toEqual(['false', 'false', 'true']);
+    expect(usageRange).toHaveBeenLastCalledWith({ granularity: 'month' });
+
+    // Por semana nos 6 meses: as datas vão explícitas (do dia 1º de cinco meses atrás até hoje).
+    await user.click(within(group).getByRole('button', { name: 'Semana' }));
+    await waitFor(() =>
+      expect(adminFinance).toHaveBeenLastCalledWith({
+        from: '2026-04-01',
+        to: '2026-09-24',
+        granularity: 'week',
+      }),
+    );
+    expect(pressed('Semana')).toBe('true');
+    expect(usageRange).toHaveBeenLastCalledWith({
+      from: '2026-04-01',
+      to: '2026-09-24',
+      granularity: 'week',
+    });
+    // "6 meses" por dia também vai com as datas.
+    await user.click(within(group).getByRole('button', { name: 'Dia' }));
+    await waitFor(() =>
+      expect(adminFinance).toHaveBeenLastCalledWith({
+        from: '2026-04-01',
+        to: '2026-09-24',
+        granularity: 'day',
+      }),
+    );
+
+    // Trocar de preset volta à granularidade dele; a escolha vale de novo por cima.
+    await user.click(screen.getByRole('tab', { name: 'Últimos 30 dias' }));
+    await waitFor(() =>
+      expect(adminFinance).toHaveBeenLastCalledWith({
+        from: '2026-08-26',
+        to: '2026-09-24',
+        granularity: 'day',
+      }),
+    );
+    await user.click(within(group).getByRole('button', { name: 'Mês' }));
+    await waitFor(() =>
+      expect(adminFinance).toHaveBeenLastCalledWith({
+        from: '2026-08-26',
+        to: '2026-09-24',
+        granularity: 'month',
+      }),
+    );
+    await user.click(screen.getByRole('tab', { name: 'Período' }));
+    await user.click(within(group).getByRole('button', { name: 'Semana' }));
+    await waitFor(() =>
+      expect(adminFinance).toHaveBeenLastCalledWith({
+        from: '2026-08-26',
+        to: '2026-09-24',
+        granularity: 'week',
+      }),
+    );
+    await user.click(screen.getByRole('tab', { name: '12 meses' }));
+    await user.click(within(group).getByRole('button', { name: 'Semana' }));
+    await waitFor(() =>
+      expect(adminFinance).toHaveBeenLastCalledWith({
+        from: '2025-10-01',
+        to: '2026-09-24',
+        granularity: 'week',
+      }),
+    );
+  });
+
+  it('por semana: o eixo mostra a segunda-feira e a tabela e a dica, de segunda a domingo', async () => {
+    adminFinance.mockResolvedValue(
+      report({
+        from: '2026-08-31',
+        to: '2026-09-24',
+        granularity: 'week',
+        series: [bucket({ bucket: '2026-09-07', revenue: 12 })],
+      }),
+    );
+    render(wrap(<FinanceSection />));
+
+    const chart = await screen.findByRole('img', { name: 'Receita da plataforma por semana' });
+    expect(plain(within(chart).getByText('07/09').parentElement?.getAttribute('title'))).toBe(
+      '07/09 a 13/09: R$ 12,00',
+    );
+    expect(
+      within(screen.getByRole('table')).getByRole('cell', { name: '07/09 a 13/09' }),
+    ).toBeVisible();
+    expect(period()).toContain('31/08/2026 a 24/09/2026 · por semana · agora:');
   });
 
   it('falha sem mensagem na exportação cai no aviso genérico', async () => {

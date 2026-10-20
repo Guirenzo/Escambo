@@ -34,6 +34,9 @@ vi.mock('../audit/audit.service', () => ({
 vi.mock('../notifications/push.repository', () => ({
   pushRepository: { removeAllForUser: vi.fn().mockResolvedValue(0) },
 }));
+vi.mock('./email-change.repository', () => ({
+  emailChangeRepository: { cancelOpen: vi.fn().mockResolvedValue(0) },
+}));
 vi.mock('../mail/mail.service', () => ({
   mailService: { send: vi.fn().mockResolvedValue(1), enabled: vi.fn().mockReturnValue(true) },
 }));
@@ -41,6 +44,7 @@ vi.mock('../mail/mail.service', () => ({
 import { authService } from './auth.service';
 import { authRepository, type UserRow } from './auth.repository';
 import { sessionRepository } from './session.repository';
+import { emailChangeRepository } from './email-change.repository';
 import { auditService } from '../audit/audit.service';
 import { mailService } from '../mail/mail.service';
 import { pushRepository } from '../notifications/push.repository';
@@ -62,6 +66,7 @@ const sessions = vi.mocked(sessionRepository);
 const audit = vi.mocked(auditService);
 const mail = vi.mocked(mailService);
 const push = vi.mocked(pushRepository);
+const changes = vi.mocked(emailChangeRepository);
 
 /** Em que posição da sequência de chamadas o mock foi chamado (para conferir a ordem). */
 const order = (fn: { mock: { invocationCallOrder: number[] } }): number =>
@@ -85,6 +90,7 @@ function expectNothingChanged(): void {
   expect(sessions.create).not.toHaveBeenCalled();
   expect(audit.log).not.toHaveBeenCalled();
   expect(mail.send).not.toHaveBeenCalled();
+  expect(changes.cancelOpen).not.toHaveBeenCalled();
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -153,6 +159,28 @@ describe('authService.changePassword', () => {
     const logged = JSON.stringify(audit.log.mock.calls[0]![0]);
     expect(logged).not.toContain(CURRENT);
     expect(logged).not.toContain(NEXT);
+  });
+
+  it('cancela a troca de e-mail pendente (RF-017) e audita o cancelamento à parte', async () => {
+    repo.findById.mockResolvedValue(user());
+    changes.cancelOpen.mockResolvedValueOnce(1);
+
+    await authService.changePassword(7, { currentPassword: CURRENT, newPassword: NEXT }, CTX);
+
+    expect(changes.cancelOpen).toHaveBeenCalledWith(7);
+    // Depois de derrubar as sessões e antes de abrir a desta troca.
+    expect(order(sessions.revokeAllForUser)).toBeLessThan(order(changes.cancelOpen));
+    expect(order(changes.cancelOpen)).toBeLessThan(order(sessions.create));
+    expect(audit.log).toHaveBeenCalledTimes(2);
+    expect(audit.log).toHaveBeenCalledWith({
+      userId: 7,
+      action: 'email_change_cancelled',
+      entityType: 'user',
+      entityId: 7,
+      newValue: { reason: 'password_changed', cancelled: 1 },
+      ip: '10.0.0.9',
+      userAgent: 'vitest-navegador',
+    });
   });
 
   it('avisa o titular por e-mail, com o caminho para redefinir se não foi ele', async () => {

@@ -3,7 +3,11 @@ import { authenticate } from '../../middlewares/authenticate';
 import { loginRateLimiter } from '../../middlewares/rate-limit';
 import { asyncHandler } from '../../utils/async-handler';
 import {
+  cancelEmailChange,
+  changeEmail,
   changePassword,
+  confirmEmailChange,
+  contact,
   forgotPassword,
   login,
   logout,
@@ -13,6 +17,7 @@ import {
   register,
   resendVerification,
   resetPassword,
+  updatePhone,
   verifyEmail,
 } from './auth.controller';
 
@@ -37,3 +42,12 @@ authRoutes.post('/forgot-password', loginRateLimiter, asyncHandler(forgotPasswor
 authRoutes.post('/reset-password', loginRateLimiter, asyncHandler(resetPassword));
 // Troca com login (RF-017): o login é conferido antes, e errar a senha atual gasta tentativa.
 authRoutes.post('/change-password', authenticate, loginRateLimiter, asyncHandler(changePassword));
+
+// Contato da conta (RF-017), visível só ao titular. A troca de e-mail pede a senha atual (com o
+// limite do login por IP, além do teto diário por conta) e só vale pelo link enviado ao endereço
+// novo; a confirmação é pública porque o link pode abrir em outro aparelho.
+authRoutes.get('/contact', authenticate, asyncHandler(contact));
+authRoutes.put('/phone', authenticate, asyncHandler(updatePhone));
+authRoutes.post('/change-email', authenticate, loginRateLimiter, asyncHandler(changeEmail));
+authRoutes.delete('/change-email', authenticate, asyncHandler(cancelEmailChange));
+authRoutes.post('/confirm-email-change', loginRateLimiter, asyncHandler(confirmEmailChange));

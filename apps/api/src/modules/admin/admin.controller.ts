@@ -24,6 +24,7 @@ import { adminService } from './admin.service';
 import { adminRepository } from './admin.repository';
 import { financeQuerySchema } from './finance.schema';
 import { financeService } from './finance.service';
+import { usageService } from './usage.service';
 
 const audit = (req: Request) => ({
   ip: req.ip ?? null,
@@ -37,6 +38,11 @@ export async function getMetrics(_req: Request, res: Response): Promise<void> {
 /** GET /admin/finance — receita, depósitos, saques, reembolsos e GMV por período. */
 export async function getFinance(req: Request, res: Response): Promise<void> {
   res.json(await financeService.report(financeQuerySchema.parse(req.query)));
+}
+
+/** GET /admin/usage — cadastros, contratações e usuários ativos por período (snapshots + agora). */
+export async function getUsage(req: Request, res: Response): Promise<void> {
+  res.json(await usageService.report(financeQuerySchema.parse(req.query)));
 }
 
 /** GET /admin/finance/export.csv — ledger de R$ do período (registrado como ação do admin). */
