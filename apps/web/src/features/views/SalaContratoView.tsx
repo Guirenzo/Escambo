@@ -67,6 +67,7 @@ import { MilestonesSection } from '../contracts/MilestonesSection';
 import { describeSignals, offPlatformSignals } from '../../lib/offPlatform';
 import { deadlineText, deadlineZoneNote, momentText, untilLabel } from '../../lib/deadline';
 import { DEFAULT_TIMEZONE } from '../../lib/timezones';
+import { scrollBehavior } from '../../lib/motion';
 import { useToast } from '../../lib/toast';
 
 /** Valor da contratação na unidade dela ("R$ 200,00" ou "30 créditos"). */
@@ -327,7 +328,8 @@ export function SalaContratoView({
   const myId = user?.id ?? -1;
   const toast = useToast();
   const contract = useContractDetail(contractId);
-  usePageTitle(contract.data ? contract.data.title : 'Contratação');
+  // "Contratação: …" separa a Sala do detalhe do serviço, que costuma ter o mesmo título (WCAG 2.4.2).
+  usePageTitle(contract.data ? `Contratação: ${contract.data.title}` : 'Contratação');
   const history = useChatHistory(contractId);
   const send = useSendMessage(contractId);
   const sendFile = useSendAttachment(contractId);
@@ -344,7 +346,7 @@ export function SalaContratoView({
   const [deliverOpen, setDeliverOpen] = useState(false);
   const [pending, setPending] = useState<File | null>(null); // anexo escolhido, ainda não enviado
   const [dragging, setDragging] = useState(false);
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const logRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -448,8 +450,12 @@ export function SalaContratoView({
     return () => document.removeEventListener('visibilitychange', mark);
   }, [contractId, lastUnread, markReadUpTo]);
 
+  // Só a lista do chat rola até a última mensagem. O scrollIntoView de antes rolava também a
+  // página: ao abrir a Sala, a tela pulava para o chat e o Tab começava no campo de mensagem, longe
+  // do "pular para o conteúdo" e do topo da contratação (WCAG 2.4.3).
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const log = logRef.current;
+    log?.scrollTo?.({ top: log.scrollHeight, behavior: scrollBehavior() });
   }, [messages.length]);
 
   /** Escolhe um arquivo (clipe, colar ou arrastar); a API confere o tipo pelo conteúdo. */
@@ -631,7 +637,7 @@ export function SalaContratoView({
               <span className="pill">offline</span>
             )}
           </div>
-          <div className="chat-log">
+          <div className="chat-log" ref={logRef}>
             {history.isLoading ? (
               <p className="muted">Carregando…</p>
             ) : messages.length === 0 ? (
@@ -668,7 +674,6 @@ export function SalaContratoView({
                 </div>
               ))
             )}
-            <div ref={endRef} />
           </div>
           {pending && <PendingAttachment file={pending} onRemove={() => setPending(null)} />}
           {hints.length > 0 && (

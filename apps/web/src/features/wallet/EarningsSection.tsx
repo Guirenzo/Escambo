@@ -1,7 +1,7 @@
 import { TrendingUp } from 'lucide-react';
 import { useState } from 'react';
 import type { EarningsGranularity, WalletEarnings } from '@escambo/types';
-import { EmptyState, QueryState } from '../../components/ui';
+import { EmptyState, onTablistKeyDown, QueryState, TableWrap } from '../../components/ui';
 import { brl } from '../../lib/format';
 import { useWalletEarnings } from '../../lib/hooks';
 import { timezoneLabel } from '../../lib/timezones';
@@ -123,7 +123,7 @@ function Body({ e }: { e: WalletEarnings }) {
           </div>
           <details>
             <summary>Ver os valores em tabela</summary>
-            <div className="table-wrap">
+            <TableWrap label="Tabela de ganhos por período">
               <table className="table">
                 <caption className="sr-only">Ganhos por {UNIT[e.granularity]}</caption>
                 <thead>
@@ -151,7 +151,7 @@ function Body({ e }: { e: WalletEarnings }) {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           </details>
         </>
       )}
@@ -175,7 +175,12 @@ export function EarningsSection() {
           <TrendingUp size={16} /> Meus ganhos
         </h3>
         {earnings.data?.hasEarnings && (
-          <div className="tabs tabs-mini" role="tablist" aria-label="Período dos ganhos">
+          <div
+            className="tabs tabs-mini"
+            role="tablist"
+            onKeyDown={onTablistKeyDown}
+            aria-label="Período dos ganhos"
+          >
             {PRESETS.map((p) => (
               <button
                 key={p.key}

@@ -613,6 +613,8 @@ describe('accept: o que vai para o repository e as recusas', () => {
         price: 800,
       },
       hold: { userId: 2, amount: 200 },
+      // Quem aceita a troca age: os dois contratos nascem no histórico com a origem user.
+      source: 'user',
     });
     const arg = repo.accept.mock.calls[0]![0];
     expect(arg.contractOffered.ulid).not.toBe(arg.contractRequested.ulid);

@@ -13,7 +13,7 @@ import { HttpError } from '../../utils/http-error';
 import { timezoneOf } from '../../utils/timezone';
 import { pushService } from './push.service';
 import { quietPassOf, quietWindowOf } from './quiet-hours';
-import { authRepository } from '../auth/auth.repository';
+import { authFacade } from '../auth/auth.facade';
 import { EMAILED_NOTIFICATION_TYPES, mailService, notificationLink } from '../mail/mail.service';
 import { DEADLINE_FIRST_TYPES } from './deadline-types';
 import { notificationsRepository, type NotificationRow } from './notifications.repository';
@@ -44,7 +44,7 @@ async function emailNotification(
   },
 ): Promise<void> {
   if (!EMAILED_NOTIFICATION_TYPES.has(params.type) || !mailService.enabled()) return;
-  const user = await authRepository.findById(userId);
+  const user = await authFacade.findById(userId);
   // Avisos opcionais não entregam conteúdo à conta banida; suspenso mantém a consulta (RN-007).
   if (!user || user.deleted_at || user.status === 'banned') return;
   // Resumo diário (job) ou só e-mails essenciais: nada de e-mail por evento (ADR 27).
@@ -188,7 +188,7 @@ export const notificationsService = {
   // ---------- Preferência de e-mail (ADR 27) ----------
 
   async getEmailPreference(userId: number): Promise<EmailPreference> {
-    const user = await authRepository.findById(userId);
+    const user = await authFacade.findById(userId);
     return {
       emailFrequency: user?.email_frequency ?? 'instant',
       digestHour: user?.digest_hour ?? env.DIGEST_HOUR,
@@ -203,7 +203,7 @@ export const notificationsService = {
     userId: number,
     change: UpdateEmailPreferenceRequest,
   ): Promise<EmailPreference> {
-    await authRepository.setEmailPreference(userId, change);
+    await authFacade.setEmailPreference(userId, change);
     return this.getEmailPreference(userId);
   },
 

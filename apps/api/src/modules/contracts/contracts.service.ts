@@ -31,8 +31,8 @@ import {
   timezoneOf,
 } from '../../utils/timezone';
 import { barterService } from '../barter/barter.service';
-import { disputesRepository } from '../disputes/disputes.repository';
-import { dropoutsRepository } from '../dropouts/dropouts.repository';
+import { disputesFacade } from '../disputes/disputes.facade';
+import { dropoutsFacade } from '../dropouts/dropouts.facade';
 import { dropoutsService } from '../dropouts/dropouts.service';
 import {
   agreeUntil,
@@ -57,9 +57,9 @@ import {
   type MilestoneRow,
   type OverdueMilestoneRow,
 } from './milestones.repository';
-import { reviewsRepository } from '../reviews/reviews.repository';
+import { reviewsFacade } from '../reviews/reviews.facade';
 import { REVIEW_WINDOW_DAYS, toReview } from '../reviews/reviews.service';
-import { messagingRepository } from '../messaging/messaging.repository';
+import { messagingFacade } from '../messaging/messaging.facade';
 import {
   discardAttachments,
   messagingService,
@@ -81,11 +81,11 @@ import {
   type ApprovedMilestone,
 } from './approval-notices';
 import { settingsService } from '../settings/settings.service';
-import { settingsRepository } from '../settings/settings.repository';
-import { authRepository } from '../auth/auth.repository';
+import { settingsFacade } from '../settings/settings.facade';
+import { authFacade } from '../auth/auth.facade';
 import { userZone } from '../auth/user-zone';
-import { profilesRepository } from '../profiles/profiles.repository';
-import { servicesRepository } from '../services/services.repository';
+import { profilesFacade } from '../profiles/profiles.facade';
+import { servicesFacade } from '../services/services.facade';
 import { cancelTerms, money, type CancelInput } from './cancel-policy';
 import { clientZoneOf, dayZoneOf, freelancerZoneOf } from './contract-zones';
 import {
@@ -159,6 +159,7 @@ import type {
   ExtensionInput,
   ListContractsInput,
 } from './contracts.schema';
+import type { StatusChangeSource } from './status-history';
 
 export { cashSettlement } from './cancel-policy';
 
@@ -381,7 +382,7 @@ async function prepareDeliveryFiles(
       'files_too_large',
     );
   }
-  const conversationId = await messagingRepository.getOrCreate(
+  const conversationId = await messagingFacade.getOrCreate(
     row.client_id,
     row.freelancer_id,
     row.id,
@@ -549,7 +550,7 @@ async function completeDelivered(
   row: ContractRow,
   changedBy: number,
   note: string | null,
-  opts: { now: Date; guard?: { sql: string } },
+  opts: { now: Date; source: StatusChangeSource; guard?: { sql: string } },
 ): Promise<void> {
   const isBarter = row.payment_mode === 'barter';
   const isCredits = row.payment_mode === 'credits';
@@ -576,6 +577,7 @@ async function completeDelivered(
   await applyTransition({
     id: row.id,
     changedBy,
+    source: opts.source,
     from: row.status,
     to: 'completed',
     note,
@@ -647,7 +649,7 @@ async function quote(
   const terms = cancelTerms(input);
   if (terms.allowed && by === 'freelancer' && ['withdrawal', 'barter'].includes(terms.stage!)) {
     const preview = withdrawalPreview(
-      await dropoutsRepository.listCounting(row.freelancer_id, now),
+      await dropoutsFacade.listCounting(row.freelancer_id, now),
       now,
     );
     terms.dropout = {
@@ -684,7 +686,7 @@ async function workOf(row: ContractRow): Promise<{
 /** Onde o prazo está depois de decidido um pedido, no fuso de quem entrega, para o aviso. */
 async function decisionFacts(row: ContractRow, now: Date): Promise<DecisionFacts> {
   const fz = freelancerZoneOf(row);
-  const graceHours = await settingsRepository.getNumber(
+  const graceHours = await settingsFacade.getNumber(
     'deadline_grace_hours',
     DEFAULT_DEADLINE_GRACE_HOURS,
   );
@@ -716,7 +718,7 @@ export const contractsService = {
     // dele e está no ar: pausado não aceita proposta (RN-013). Sem isso, um id inexistente virava
     // 500 pela FK, e qualquer conta (cliente, admin) recebia proposta direta (ADR 60).
     const notFound = () => new HttpError(404, 'Freelancer não encontrado', 'freelancer_not_found');
-    const freelancer = await authRepository.findById(input.freelancerId);
+    const freelancer = await authFacade.findById(input.freelancerId);
     if (
       !freelancer ||
       freelancer.deleted_at ||
@@ -729,7 +731,7 @@ export const contractsService = {
     }
     if (input.serviceId != null) {
       // Pelo serviço (o caminho do web): ser dono dele basta. Publicar serviço não exige perfil.
-      const service = await servicesRepository.findById(input.serviceId);
+      const service = await servicesFacade.findById(input.serviceId);
       if (!service || service.user_id !== input.freelancerId) {
         throw new HttpError(404, 'Serviço não encontrado', 'service_not_found');
       }
@@ -744,7 +746,7 @@ export const contractsService = {
       // Direta (sem serviço): só para quem se cadastrou como freelancer ou criou o perfil de
       // freelancer (a conta de cliente pode ter os dois, RN-006).
       freelancer.role !== 'freelancer' &&
-      !(await profilesRepository.findFreelancerByUserId(input.freelancerId))
+      !(await profilesFacade.findFreelancerByUserId(input.freelancerId))
     ) {
       throw notFound();
     }
@@ -762,7 +764,7 @@ export const contractsService = {
     // nunca depois do último instante de dia antes do prazo de entrega.
     const fz = await userZone(input.freelancerId);
     const cz = await userZone(clientId);
-    const expiryHours = await settingsRepository.getNumber(
+    const expiryHours = await settingsFacade.getNumber(
       'proposal_expiry_hours',
       DEFAULT_PROPOSAL_EXPIRY_HOURS,
     );
@@ -824,6 +826,7 @@ export const contractsService = {
       createdAt: now,
       hold: isCredits ? null : { userId: clientId, amount: input.price },
       milestones,
+      source: 'user',
     });
     if (id === null) {
       throw new HttpError(
@@ -879,7 +882,7 @@ export const contractsService = {
       note: h.note,
       at: new Date(h.created_at).toISOString(),
     }));
-    const reviewRow = await reviewsRepository.findByContractIdWithResponse(id);
+    const reviewRow = await reviewsFacade.findByContractIdWithResponse(id);
     const review = reviewRow ? toReview(reviewRow, reviewRow.response) : null;
     // RF-035: os arquivos de todas as entregas, únicas e de marcos; sem nenhum, nem consulta.
     const files = Number(row.has_delivery_files ?? 0)
@@ -931,7 +934,7 @@ export const contractsService = {
       contract.negotiation.current =
         offers.find((o) => o.seq === contract.negotiation!.seq) ?? null;
     const dropoutRow =
-      row.status === 'cancelled' ? await dropoutsRepository.findByContractId(id) : undefined;
+      row.status === 'cancelled' ? await dropoutsFacade.findByContractId(id) : undefined;
     const dropout = dropoutRow
       ? {
           at: iso(dropoutRow.dropped_at)!,
@@ -1063,7 +1066,7 @@ export const contractsService = {
       );
     const recipient = by === 'client' ? row.freelancer_id : row.client_id;
     const zone = by === 'client' ? fz : clientZoneOf(row);
-    const hours = await settingsRepository.getNumber('counter_offer_response_hours', 48);
+    const hours = await settingsFacade.getNumber('counter_offer_response_hours', 48);
     const respondBy = offerRespondBy({ now, hours, zone, deadline });
     if (!respondBy)
       throw new HttpError(
@@ -1094,6 +1097,7 @@ export const contractsService = {
       pct,
       uid,
       now,
+      source: 'user',
     });
     if (result !== 'ok') {
       if (result === 'insufficient')
@@ -1187,6 +1191,7 @@ export const contractsService = {
       const ok = await contractsRepository.transition({
         id,
         changedBy: uid,
+        source: 'user',
         from: row.status,
         to: 'accepted',
         note,
@@ -1240,6 +1245,7 @@ export const contractsService = {
     await applyTransition({
       id,
       changedBy: uid,
+      source: 'user',
       from: row.status,
       to: 'accepted',
       note,
@@ -1307,7 +1313,7 @@ export const contractsService = {
         'Esta oferta expirou: o prazo para responder acabou.',
         'proposal_expired',
       );
-    const freelancer = await authRepository.findById(row.freelancer_id);
+    const freelancer = await authFacade.findById(row.freelancer_id);
     if (
       !freelancer ||
       freelancer.deleted_at ||
@@ -1340,6 +1346,7 @@ export const contractsService = {
     const ok = await contractsRepository.transition({
       id,
       changedBy: uid,
+      source: 'user',
       from: 'pending',
       to: 'accepted',
       note: offerAcceptedHistoryNote({
@@ -1424,7 +1431,7 @@ export const contractsService = {
           'Esta oferta expirou: o prazo para responder acabou.',
           'proposal_expired',
         );
-      const available = await authRepository.findById(row.freelancer_id);
+      const available = await authFacade.findById(row.freelancer_id);
       if (
         !available ||
         available.deleted_at ||
@@ -1477,6 +1484,7 @@ export const contractsService = {
     await applyTransition({
       id,
       changedBy: uid,
+      source: 'user',
       from: row.status,
       to: 'rejected',
       note: null,
@@ -1517,10 +1525,7 @@ export const contractsService = {
     assertStatus(row, ['accepted', 'in_progress', 'revision_requested']);
     const now = clock.now();
     const cz = clientZoneOf(row);
-    const days = await settingsRepository.getNumber(
-      'tacit_approval_days',
-      DEFAULT_TACIT_APPROVAL_DAYS,
-    );
+    const days = await settingsFacade.getNumber('tacit_approval_days', DEFAULT_TACIT_APPROVAL_DAYS);
     const approvalDueAt = floorSecond(humanize(new Date(now.getTime() + days * DAY), cz));
     // Os arquivos vão para o disco antes da transação e saem se a entrega não for gravada.
     const attachments = await prepareDeliveryFiles(row, uid, uploads);
@@ -1529,6 +1534,7 @@ export const contractsService = {
       ok = await contractsRepository.deliver({
         id,
         changedBy: uid,
+        source: 'user',
         from: row.status,
         message: input.message,
         files: input.files ?? null,
@@ -1567,7 +1573,7 @@ export const contractsService = {
     assertClient(row, uid); // RF-036/037: só o cliente aprova
     assertSingleDelivery(row);
     assertStatus(row, ['delivered']);
-    await completeDelivered(row, uid, null, { now: clock.now() });
+    await completeDelivered(row, uid, null, { now: clock.now(), source: 'user' });
     return load(id);
   },
 
@@ -1586,6 +1592,7 @@ export const contractsService = {
       `Aprovação tácita: sem resposta do cliente até ${formatDateTime(due, DEFAULT_TIMEZONE)} (horário de Brasília, RN-024)`,
       {
         now,
+        source: 'system',
         guard: { sql: 'AND c.approval_due_at IS NOT NULL AND c.approval_due_at <= :now' },
       },
     );
@@ -1619,6 +1626,7 @@ export const contractsService = {
     const ok = await contractsRepository.transition({
       id,
       changedBy: uid,
+      source: 'user',
       from: row.status,
       to: 'revision_requested',
       note,
@@ -1658,6 +1666,7 @@ export const contractsService = {
     const ok = await contractsRepository.grantRevision({
       id,
       changedBy: uid,
+      source: 'user',
       now: clock.now(),
       expectedRevisionsUsed: Number(row.revisions_used ?? 0),
       expectedRevisionLimit: row.revision_limit!,
@@ -1777,6 +1786,7 @@ export const contractsService = {
     await applyTransition({
       id,
       changedBy: uid,
+      source: 'user',
       from: row.status,
       to: 'cancelled',
       note: `Reembolso: ${terms.refundPercentage}% (${CANCEL_NOTE[stage]})`,
@@ -1823,7 +1833,7 @@ export const contractsService = {
         logger.warn({ err, contractId: id }, 'revisão de desistências pendente de reconciliação');
       }
       try {
-        const registered = await dropoutsRepository.findByContractId(id);
+        const registered = await dropoutsFacade.findByContractId(id);
         if (registered)
           dropoutAgreementUntil = formatDateTime(
             agreeUntil(registered.dropped_at),
@@ -2027,6 +2037,7 @@ export const contractsService = {
         seq,
         now,
         changedBy: uid,
+        source: 'user',
         status: row.status,
         note: `Prazo estendido de ${formatDeadlineDay(new Date(row.deadline_at!), dayZoneOf(row, row.deadline_at))} para ${formatDeadline(new Date(row.extension_deadline_at), dayZoneOf(row, row.extension_deadline_at))} (RN-028): ${row.extension_reason ?? ''}`,
       });
@@ -2049,7 +2060,7 @@ export const contractsService = {
       );
       return load(id);
     }
-    const graceHours = await settingsRepository.getNumber(
+    const graceHours = await settingsFacade.getNumber(
       'deadline_grace_hours',
       DEFAULT_DEADLINE_GRACE_HOURS,
     );
@@ -2134,6 +2145,7 @@ export const contractsService = {
     await applyTransition({
       id,
       changedBy: row.client_id,
+      source: 'system',
       from: 'pending',
       to: 'cancelled',
       note: `${seq === 1 ? 'Proposta' : `Oferta ${seq}`} expirada: sem resposta ${seq % 2 === 0 ? 'do cliente' : 'do freelancer'} até ${formatDateTime(expiresAt, DEFAULT_TIMEZONE)} (horário de Brasília, ${seq === 1 ? 'RN-021' : 'RN-030'})`,
@@ -2215,7 +2227,7 @@ export const contractsService = {
   async openOverdueDispute(row: ContractRow, now: Date = clock.now()): Promise<number | null> {
     const work = await workOf(row);
     const graceEndsAt = new Date(row.grace_ends_at!);
-    const disputeId = await disputesRepository.create(
+    const disputeId = await disputesFacade.create(
       {
         ulid: ulid(),
         contractId: row.id,
@@ -2229,7 +2241,7 @@ export const contractsService = {
           missing: work.byMilestones ? work.missing : null,
         }),
       },
-      { guard: OVERDUE_DISPUTE_GUARD, now },
+      { guard: OVERDUE_DISPUTE_GUARD, now, source: 'system' },
     );
     if (disputeId === null) return null;
     for (const [userId, zone] of [
@@ -2290,10 +2302,7 @@ export const contractsService = {
     assertStatus(row, ['accepted', 'in_progress']);
     const now = clock.now();
     const cz = clientZoneOf(row);
-    const days = await settingsRepository.getNumber(
-      'tacit_approval_days',
-      DEFAULT_TACIT_APPROVAL_DAYS,
-    );
+    const days = await settingsFacade.getNumber('tacit_approval_days', DEFAULT_TACIT_APPROVAL_DAYS);
     const approvalDueAt = floorSecond(humanize(new Date(now.getTime() + days * DAY), cz));
     // RF-035 também por marco: os arquivos entram na transação da entrega do marco, ou saem.
     const attachments = await prepareDeliveryFiles(row, uid, uploads);
@@ -2303,6 +2312,7 @@ export const contractsService = {
         contractId: id,
         milestoneId,
         changedBy: uid,
+        source: 'user',
         message,
         now,
         approvalDueAt,
@@ -2357,6 +2367,7 @@ export const contractsService = {
       contractId: id,
       milestoneId,
       changedBy: uid,
+      source: 'user',
       freelancerId: row.freelancer_id,
       mode: row.payment_mode === 'credits' ? 'credits' : 'cash',
       note: null,
@@ -2398,6 +2409,7 @@ export const contractsService = {
           contractId,
           milestoneId: m.id,
           changedBy: row.client_id,
+          source: 'system',
           freelancerId: row.freelancer_id,
           mode,
           note: `Aprovação tácita: sem resposta do cliente até ${formatDateTime(dueAt, DEFAULT_TIMEZONE)} (horário de Brasília)`,
@@ -2451,6 +2463,7 @@ export const contractsService = {
       contractId: id,
       milestoneId,
       changedBy: uid,
+      source: 'user',
       expectedRevisionsUsed: Number(m.revisions_used ?? 0),
       note,
       now: clock.now(),
@@ -2491,6 +2504,7 @@ export const contractsService = {
       contractId: id,
       milestoneId,
       changedBy: uid,
+      source: 'user',
       now: clock.now(),
       expectedRevisionsUsed: Number(m.revisions_used ?? 0),
       expectedRevisionLimit: m.revision_limit!,

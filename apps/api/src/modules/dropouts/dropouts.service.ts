@@ -115,7 +115,7 @@ export const dropoutsService = {
 
   async agree(contractId: number, clientId: number): Promise<ContractDropout> {
     const { row, now } = success(
-      await dropoutsRepository.agree(contractId, clientId),
+      await dropoutsRepository.agree(contractId, clientId, 'user'),
       'dropout_agree_closed',
       'A confirmação vale até 7 dias depois da desistência e só uma vez',
     );

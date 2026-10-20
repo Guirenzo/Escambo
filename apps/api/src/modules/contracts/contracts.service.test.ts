@@ -1120,6 +1120,7 @@ describe('requestRevision (entrega única)', () => {
     expect(repo.transition).toHaveBeenCalledWith({
       id: 1,
       changedBy: 1,
+      source: 'user',
       from: 'delivered',
       to: 'revision_requested',
       note: 'Trocar a cor do botão',
@@ -1224,6 +1225,7 @@ describe('quem age, quem paga e quem é avisado', () => {
     expect(repo.transition).toHaveBeenCalledWith({
       id: 31,
       changedBy: 44,
+      source: 'user',
       from: 'pending',
       to: 'accepted',
       note: null,
@@ -1256,6 +1258,7 @@ describe('quem age, quem paga e quem é avisado', () => {
     expect(repo.transition).toHaveBeenCalledWith({
       id: 31,
       changedBy: 44,
+      source: 'user',
       from: 'pending',
       to: 'rejected',
       note: null,
@@ -1281,6 +1284,7 @@ describe('quem age, quem paga e quem é avisado', () => {
     expect(repo.transition).toHaveBeenCalledWith({
       id: 31,
       changedBy: 7,
+      source: 'user',
       from: 'delivered',
       to: 'completed',
       note: null,
@@ -1314,6 +1318,7 @@ describe('quem age, quem paga e quem é avisado', () => {
     expect(repo.transition).toHaveBeenCalledWith({
       id: 31,
       changedBy: 7,
+      source: 'user',
       from: 'pending',
       to: 'cancelled',
       note: 'Reembolso: 100% (proposta cancelada antes do aceite)',

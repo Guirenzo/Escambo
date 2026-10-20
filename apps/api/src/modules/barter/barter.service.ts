@@ -8,7 +8,7 @@ import type {
 } from '@escambo/types';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
-import { contractsRepository } from '../contracts/contracts.repository';
+import { contractsFacade } from '../contracts/contracts.facade';
 import { gamificationService } from '../gamification/gamification.service';
 import { notificationsService } from '../notifications/notifications.service';
 import {
@@ -303,6 +303,7 @@ export const barterService = {
       contractOffered,
       contractRequested,
       hold,
+      source: 'user',
     });
     if (!result.ok) {
       if (result.reason === 'insufficient_balance') {
@@ -343,8 +344,8 @@ export const barterService = {
     if (!row || row.status !== 'active') return;
     if (!row.contract_offered_id || !row.contract_requested_id) return;
     const [a, b] = await Promise.all([
-      contractsRepository.findById(row.contract_offered_id),
-      contractsRepository.findById(row.contract_requested_id),
+      contractsFacade.findById(row.contract_offered_id),
+      contractsFacade.findById(row.contract_requested_id),
     ]);
     if (a?.status !== 'completed' || b?.status !== 'completed') return;
 

@@ -126,6 +126,10 @@ describe('EmailCard', () => {
 
     expect(await f.findByRole('alert')).toHaveTextContent('Senha atual incorreta');
     expect(f.getByLabelText('Senha atual')).toHaveFocus();
+    // O campo errado é o marcado como inválido, com o erro como descrição.
+    expect(f.getByLabelText('Senha atual')).toHaveAttribute('aria-invalid', 'true');
+    expect(f.getByLabelText('Senha atual')).toHaveAccessibleDescription('Senha atual incorreta');
+    expect(f.getByLabelText('Novo e-mail')).toHaveAttribute('aria-invalid', 'false');
     expect(screen.queryByTestId('email-pendente')).toBeNull();
 
     api.changeEmail.mockRejectedValueOnce(

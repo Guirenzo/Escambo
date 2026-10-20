@@ -2,7 +2,7 @@ import { Gavel, ImageOff, MessageSquareOff, RotateCcw, ShieldX, StarOff } from '
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type { AdminAppeal, AppealDecision } from '@escambo/types';
-import { Button, Field, Modal, QueryState } from '../../components/ui';
+import { Button, Field, Modal, onTablistKeyDown, QueryState } from '../../components/ui';
 import { APPEAL_STATUS_LABEL, dtm, REPORT_REASON_LABEL } from '../../lib/format';
 import { useAdminAppealDecision, useAdminAppeals, useAppealImage } from '../../lib/hooks';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
@@ -163,7 +163,12 @@ export function AppealsSection() {
         <h3 id="appeals-title">
           <Gavel size={16} /> Contestações
         </h3>
-        <div className="tabs tabs-mini" role="tablist" aria-label="Filtro de contestações">
+        <div
+          className="tabs tabs-mini"
+          role="tablist"
+          onKeyDown={onTablistKeyDown}
+          aria-label="Filtro de contestações"
+        >
           <button
             type="button"
             role="tab"

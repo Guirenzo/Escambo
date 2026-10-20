@@ -22,7 +22,16 @@ import type {
   Dispute,
   DisputeResolution,
 } from '@escambo/types';
-import { Button, Field, Input, Modal, PageHeader, QueryState } from '../../components/ui';
+import {
+  Button,
+  Field,
+  Input,
+  Modal,
+  onTablistKeyDown,
+  PageHeader,
+  QueryState,
+  TableWrap,
+} from '../../components/ui';
 import { dueDayText } from '../../lib/business-days';
 import {
   brl,
@@ -534,7 +543,7 @@ export function AdminView() {
           onRetry={() => void disputes.refetch()}
         >
           {(list) => (
-            <div className="table-wrap">
+            <TableWrap label="Tabela de disputas">
               <table className="table">
                 <thead>
                   <tr>
@@ -575,7 +584,7 @@ export function AdminView() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           )}
         </QueryState>
       </section>
@@ -585,7 +594,12 @@ export function AdminView() {
           <h3>
             <Banknote size={16} /> Fila de saques
           </h3>
-          <div className="tabs tabs-mini" role="tablist" aria-label="Filtro de saques">
+          <div
+            className="tabs tabs-mini"
+            role="tablist"
+            onKeyDown={onTablistKeyDown}
+            aria-label="Filtro de saques"
+          >
             <button
               type="button"
               role="tab"
@@ -614,7 +628,7 @@ export function AdminView() {
           onRetry={() => void withdrawals.refetch()}
         >
           {(list) => (
-            <div className="table-wrap">
+            <TableWrap label="Tabela de saques">
               <table className="table">
                 <thead>
                   <tr>
@@ -698,7 +712,7 @@ export function AdminView() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           )}
         </QueryState>
       </section>
@@ -711,7 +725,12 @@ export function AdminView() {
               <span className="chip level tiny">{m.pendingDeletions} pendente(s)</span>
             )}
           </h3>
-          <div className="tabs tabs-mini" role="tablist" aria-label="Filtro de exclusões">
+          <div
+            className="tabs tabs-mini"
+            role="tablist"
+            onKeyDown={onTablistKeyDown}
+            aria-label="Filtro de exclusões"
+          >
             <button
               type="button"
               role="tab"
@@ -740,7 +759,7 @@ export function AdminView() {
           onRetry={() => void deletions.refetch()}
         >
           {(list) => (
-            <div className="table-wrap">
+            <TableWrap label="Tabela de pedidos de exclusão">
               <table className="table">
                 <thead>
                   <tr>
@@ -817,7 +836,7 @@ export function AdminView() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           )}
         </QueryState>
       </section>
@@ -841,7 +860,7 @@ export function AdminView() {
           onRetry={() => void emails.refetch()}
         >
           {(list) => (
-            <div className="table-wrap">
+            <TableWrap label="Tabela de e-mails enviados">
               <table className="table">
                 <thead>
                   <tr>
@@ -894,7 +913,7 @@ export function AdminView() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           )}
         </QueryState>
       </section>

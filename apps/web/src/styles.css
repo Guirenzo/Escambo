@@ -12,6 +12,11 @@
   --muted: #566860; /* 5.5:1 sobre --bg (AA) */
   --border: #e4e9e6;
   --border-strong: #cfd8d3;
+  /* Contorno de campo e de interruptor: é o que mostra onde o controle está, então precisa de 3:1
+     sobre as superfícies claras (WCAG 1.4.11; 3.6:1 sobre --surface, 3.2:1 sobre --green-soft). */
+  --border-input: #7a8a82;
+  /* Anel de foco de teclado: sólido, 7:1 sobre as superfícies claras (WCAG 2.4.7 e 1.4.11). */
+  --focus: #0d5c3a;
 
   /* marca */
   --green: #0d5c3a;
@@ -145,12 +150,43 @@ p {
   color: var(--muted);
 }
 @media (prefers-reduced-motion: reduce) {
+  /* Quem pede menos movimento não vê animação nem transição: as infinitas (esqueleto, pulso)
+     param na primeira volta e a rolagem por âncora é instantânea. */
+  html {
+    scroll-behavior: auto !important;
+  }
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Pular para o conteúdo (WCAG 2.4.1): primeiro Tab de qualquer tela do app; fora da tela até
+   receber o foco, e aí aparece no canto, por cima de tudo. */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 2000;
+  padding: 10px 16px;
+  border-radius: var(--r-sm);
+  background: var(--green);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip-link:focus {
+  transform: none;
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* O <main> recebe o foco do "pular" só para o próximo Tab começar nele: não é controle, sem anel. */
+.main:focus {
+  outline: none;
 }
 
 /* ---------- Marca ---------- */
@@ -328,6 +364,10 @@ p {
   }
 }
 @media (max-width: 720px) {
+  /* O foco que o Tab leva para o fim da tela não para escondido atrás da barra inferior fixa. */
+  html {
+    scroll-padding-bottom: 72px;
+  }
   .app {
     grid-template-columns: 1fr;
   }
@@ -419,8 +459,10 @@ p {
   font-weight: 600;
   font-size: 0.95rem;
 }
+/* Sobre o ponto mais claro do degradê (#11704a) e o fundo do cartão, 80% dava 4,0:1; 95% dá 4,9:1.
+   O axe não mede texto sobre degradê ("revisar à mão"): a conta está em docs/acessibilidade.md. */
 .highlights span:not(.hl-ico) {
-  opacity: 0.8;
+  opacity: 0.95;
   font-size: 0.9rem;
 }
 .hl-ico {
@@ -446,6 +488,11 @@ p {
 }
 .auth-card h2 {
   margin-top: 4px;
+}
+/* Nas páginas públicas simples o título do cartão é o h1 da página, no tamanho de um h2. */
+.auth-simple .auth-card h1 {
+  margin-top: 4px;
+  font-size: 1.25rem;
 }
 button.link {
   background: none;
@@ -535,7 +582,7 @@ label {
 input,
 select {
   padding: 10px 12px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-input);
   border-radius: var(--r-sm);
   font-size: 0.95rem;
   font-family: var(--font-body);
@@ -548,11 +595,12 @@ select {
 input::placeholder {
   color: var(--muted);
 }
+/* Foco de campo: anel sólido (o halo verde-claro de antes ficava em 1,6:1, abaixo dos 3:1). */
 input:focus,
 select:focus {
-  outline: none;
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
   border-color: var(--green);
-  box-shadow: 0 0 0 3px rgba(13, 92, 58, 0.15);
 }
 button {
   display: inline-flex;
@@ -576,8 +624,9 @@ button {
 button:hover:not(:disabled) {
   background: var(--green-hover);
 }
+/* Anel de foco de teclado: sólido. O verde a 30% de antes dava 1,6:1 contra o fundo (WCAG 1.4.11). */
 button:focus-visible {
-  outline: 3px solid rgba(13, 92, 58, 0.3);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 /* Destino de âncora que recebe foco pelo link (ADR 55): é título, não controle — sem anel, e com
@@ -769,6 +818,12 @@ button.toggle.on {
   overflow-x: auto;
   margin: 0 -22px -20px;
   padding: 0 22px 4px;
+}
+/* A região da tabela entra no Tab para rolar pelo teclado (TableWrap): anel por dentro, que a
+   borda do cartão não corta. */
+.table-wrap:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 .table {
   width: 100%;
@@ -1379,8 +1434,9 @@ button.toggle.on {
   border-color: rgba(255, 255, 255, 0.35);
   color: #fff;
 }
+/* O fundo do cartão clareia o verde: o tamanho a 75% ficava em 4,0:1; a 90%, 4,8:1 (WCAG 1.4.3). */
 .bubble.mine .attachment-file .muted {
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(255, 255, 255, 0.9);
 }
 .attachment-pending {
   display: flex;
@@ -1432,6 +1488,10 @@ button.toggle.on {
 }
 .lightbox-bar .icon-btn {
   color: #fff;
+}
+/* Sobre o fundo escuro, o anel verde some (2,3:1): branco, como na galeria. */
+.lightbox-bar .icon-btn:focus-visible {
+  outline-color: #fff;
 }
 
 /* ---------- Ranking / pódio ---------- */
@@ -1796,6 +1856,13 @@ button.toggle.on {
   z-index: 1000;
   max-width: 360px;
 }
+/* Região viva dos avisos de sucesso e informação (os de erro ficam fora, como alerta). Vazia,
+   continua na página: região viva que aparece junto com o texto pode não ser lida. */
+.toast-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .toast {
   padding: 11px 14px 11px 16px;
   border-radius: var(--r-sm);
@@ -1807,6 +1874,32 @@ button.toggle.on {
   border: 1px solid var(--border);
   border-left: 4px solid var(--blue);
   animation: toast-in 0.2s var(--ease);
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.toast-msg {
+  flex: 1;
+}
+/* Fechar o aviso (WCAG 2.2.1): alvo de 24 px, foco com o anel do sistema. */
+.toast-close {
+  flex: none;
+  min-width: 24px;
+  min-height: 24px;
+  margin: -3px -6px -3px 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.toast-close:hover {
+  color: var(--text);
 }
 .toast-success {
   border-left-color: var(--green);
@@ -1941,14 +2034,14 @@ button.toggle.on {
   font: inherit;
   color: var(--text);
   background: var(--surface);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border-input);
   border-radius: var(--r-sm);
   padding: 10px 12px;
 }
 .textarea:focus {
-  outline: none;
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
   border-color: var(--green);
-  box-shadow: 0 0 0 3px var(--green-soft);
 }
 .review-list {
   list-style: none;
@@ -3521,7 +3614,8 @@ body.is-dragging-list {
   height: 22px;
   appearance: none;
   border-radius: 999px;
-  background: var(--border);
+  /* Desligado também precisa aparecer: trilho com 3:1 sobre o cartão (era 1,2:1). */
+  background: var(--border-input);
   position: relative;
   cursor: pointer;
   transition: background 0.15s;

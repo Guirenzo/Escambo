@@ -17,7 +17,7 @@ function PublicCard({ title, children }: { title: string; children: ReactNode })
         <span className="brand-name">Escambo</span>
       </Link>
       <section className="card auth-card">
-        <h2>{title}</h2>
+        <h1>{title}</h1>
         {children}
       </section>
     </main>
@@ -49,7 +49,7 @@ export function ForgotPasswordView() {
   return (
     <PublicCard title="Esqueci minha senha">
       {sent ? (
-        <div className="stack center" data-testid="forgot-sent">
+        <div className="stack center" data-testid="forgot-sent" role="status">
           <span className="done-ico">
             <MailCheck size={28} />
           </span>
@@ -74,7 +74,11 @@ export function ForgotPasswordView() {
               placeholder="voce@exemplo.com"
             />
           </Field>
-          {error && <p className="error">{error}</p>}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
           <Button type="submit" className="full" disabled={loading}>
             {loading ? '…' : 'Enviar link'}
           </Button>
@@ -97,10 +101,12 @@ export function ResetPasswordView() {
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mismatch, setMismatch] = useState(false);
   const [done, setDone] = useState(false);
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
+    setMismatch(password !== confirm);
     if (password !== confirm) {
       setError('As senhas não conferem');
       return;
@@ -130,7 +136,7 @@ export function ResetPasswordView() {
   return (
     <PublicCard title="Redefinir senha">
       {done ? (
-        <div className="stack center" data-testid="reset-done">
+        <div className="stack center" data-testid="reset-done" role="status">
           <span className="done-ico">
             <CheckCircle2 size={28} />
           </span>
@@ -150,6 +156,7 @@ export function ResetPasswordView() {
               minLength={8}
               autoComplete="new-password"
               placeholder="mínimo 8 caracteres"
+              aria-describedby={error ? 'reset-erro' : undefined}
             />
           </Field>
           <Field label="Confirmar nova senha">
@@ -160,9 +167,15 @@ export function ResetPasswordView() {
               required
               minLength={8}
               autoComplete="new-password"
+              aria-describedby={error ? 'reset-erro' : undefined}
+              aria-invalid={mismatch}
             />
           </Field>
-          {error && <p className="error">{error}</p>}
+          {error && (
+            <p className="error" id="reset-erro" role="alert">
+              {error}
+            </p>
+          )}
           <Button type="submit" className="full" disabled={loading}>
             <KeyRound size={16} /> {loading ? '…' : 'Salvar nova senha'}
           </Button>
@@ -289,9 +302,13 @@ export function VerifyEmailView() {
 
   return (
     <PublicCard title="Confirmação de e-mail">
-      {state === 'loading' && <p className="muted">Confirmando…</p>}
+      {state === 'loading' && (
+        <p className="muted" role="status">
+          Confirmando…
+        </p>
+      )}
       {state === 'ok' && (
-        <div className="stack center" data-testid="verify-ok">
+        <div className="stack center" data-testid="verify-ok" role="status">
           <span className="done-ico">
             <CheckCircle2 size={28} />
           </span>
@@ -304,7 +321,9 @@ export function VerifyEmailView() {
           <span className="done-ico err">
             <XCircle size={28} />
           </span>
-          <p className="muted">{message}</p>
+          <p className="muted" role="alert">
+            {message}
+          </p>
           <Link to={user ? '/perfil' : '/login'}>{user ? 'Reenviar pelo app' : 'Entrar'}</Link>
         </div>
       )}

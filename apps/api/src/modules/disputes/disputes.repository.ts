@@ -8,6 +8,7 @@ import { contractsRepository } from '../contracts/contracts.repository';
 import { clientZoneOf, freelancerZoneOf } from '../contracts/contract-zones';
 import { recoverDeliveryRules } from '../contracts/delivery-snapshots';
 import { disputeOpensAt, windowFacts } from '../contracts/dispute-window';
+import type { StatusChangeSource } from '../contracts/status-history';
 import { applyWalletEffect } from '../wallet/wallet.ledger';
 import { lockWallets } from '../wallet/wallet.locks';
 
@@ -45,6 +46,7 @@ async function openInTx(
   d: DisputeDraft,
   oldStatus: string,
   now: Date,
+  source: StatusChangeSource,
   guard = '',
 ): Promise<number | null> {
   const [upd] = await conn.query<ResultSetHeader>(
@@ -59,9 +61,9 @@ async function openInTx(
     { ...d },
   );
   await conn.query<ResultSetHeader>(
-    `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
-     VALUES (:contractId, :openedBy, :oldStatus, 'disputed', 'Disputa aberta')`,
-    { contractId: d.contractId, openedBy: d.openedBy, oldStatus },
+    `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source)
+     VALUES (:contractId, :openedBy, :oldStatus, 'disputed', 'Disputa aberta', :source)`,
+    { contractId: d.contractId, openedBy: d.openedBy, oldStatus, source },
   );
   return res.insertId;
 }
@@ -70,9 +72,13 @@ export const disputesRepository = {
   /**
    * Abre a disputa e coloca o contrato em 'disputed' (bloqueia o escrow — RN-038), atômico. O
    * status anterior vai para a linha do tempo, e um pedido de extensão pendente se encerra. A
-   * disputa automática (RN-029) passa `guard`: a gravação repete o que o job leu (ADR 57).
+   * disputa automática (RN-029) passa `guard`: a gravação repete o que o job leu (ADR 57), e
+   * `source: 'system'`: a plataforma abre em nome do cliente.
    */
-  async create(d: DisputeDraft, opts: { guard?: string; now?: Date } = {}): Promise<number | null> {
+  async create(
+    d: DisputeDraft,
+    opts: { guard?: string; now?: Date; source: StatusChangeSource },
+  ): Promise<number | null> {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -85,7 +91,14 @@ export const disputesRepository = {
         await conn.rollback();
         return null;
       }
-      const id = await openInTx(conn, d, oldStatus, opts.now ?? clock.now(), opts.guard);
+      const id = await openInTx(
+        conn,
+        d,
+        oldStatus,
+        opts.now ?? clock.now(),
+        opts.source,
+        opts.guard,
+      );
       if (id === null) {
         await conn.rollback();
         return null;
@@ -101,7 +114,7 @@ export const disputesRepository = {
   },
 
   /** RN-062: o relógio e a janela vêm da leitura feita depois da espera pela contratação. */
-  async createManual(d: DisputeDraft): Promise<ManualDisputeResult> {
+  async createManual(d: DisputeDraft, source: StatusChangeSource): Promise<ManualDisputeResult> {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -130,7 +143,7 @@ export const disputesRepository = {
           requesterZone: row.client_id === d.openedBy ? clientZoneOf(row) : freelancerZoneOf(row),
         };
       }
-      const id = await openInTx(conn, d, oldStatus, now);
+      const id = await openInTx(conn, d, oldStatus, now, source);
       if (id === null) {
         await conn.rollback();
         return { refused: 'not_disputable' };
@@ -191,6 +204,8 @@ export const disputesRepository = {
     resolution: string;
     refundPercentage: number | null;
     note: string | null;
+    /** A decisão do admin é ação de pessoa (`user`); o relatório de uso tira admins pelo papel. */
+    source: StatusChangeSource;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -302,13 +317,14 @@ export const disputesRepository = {
       }
 
       await conn.query<ResultSetHeader>(
-        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
-         VALUES (:contractId, :adminId, 'disputed', :status, :note)`,
+        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source)
+         VALUES (:contractId, :adminId, 'disputed', :status, :note, :source)`,
         {
           contractId: p.contractId,
           adminId: p.adminId,
           status: p.contractFinalStatus,
           note: `Disputa resolvida: ${p.resolution}`,
+          source: p.source,
         },
       );
 

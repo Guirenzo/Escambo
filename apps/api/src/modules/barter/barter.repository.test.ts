@@ -452,7 +452,13 @@ describe('barterRepository', () => {
       description: 'Landing page',
       price: 800,
     };
-    const params = { agreementId: 5, acceptorId: 2, contractOffered, contractRequested };
+    const params = {
+      agreementId: 5,
+      acceptorId: 2,
+      contractOffered,
+      contractRequested,
+      source: 'user' as const,
+    };
 
     const replyAccept = (withHold: boolean): void => {
       if (withHold) fakeDb.reply({});
@@ -480,8 +486,12 @@ describe('barterRepository', () => {
         agreementId: 5,
         revisionLimit: 2,
       });
-      expect(fakeDb.calls[2]!.params).toEqual({ contractId: 101, acceptorId: 2 });
-      expect(fakeDb.calls[4]!.params).toEqual({ contractId: 102, acceptorId: 2 });
+      // Os dois contratos nascem no histórico em nome de quem aceitou, como ação dele.
+      expect(fakeDb.calls[2]!.sql).toContain(
+        "VALUES (:contractId, :acceptorId, NULL, 'accepted', 'Contrato gerado pela troca', :source)",
+      );
+      expect(fakeDb.calls[2]!.params).toEqual({ contractId: 101, acceptorId: 2, source: 'user' });
+      expect(fakeDb.calls[4]!.params).toEqual({ contractId: 102, acceptorId: 2, source: 'user' });
       expect(fakeDb.calls[5]!.params).toEqual({ offeredId: 101, requestedId: 102, id: 5 });
       expect(applyWalletEffect).not.toHaveBeenCalled();
       expectCommitted();

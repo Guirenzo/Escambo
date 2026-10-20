@@ -89,7 +89,10 @@ describe('contractsRepository', () => {
       proposalExpiresAt: new Date('2026-10-09T15:00:00.000Z'),
       // O relógio do fluxo, não o do banco: o lembrete da proposta conta a idade daqui (ADR 58).
       createdAt: NOW,
+      source: 'user' as const,
     };
+    // A origem vai só para o histórico: não é coluna de contracts.
+    const { source: _source, ...columns } = data;
     const milestones = [
       {
         title: 'Layout',
@@ -159,16 +162,19 @@ describe('contractsRepository', () => {
       );
       expect(fakeDb.calls[1]!.sql).toContain(':deadlineAt, :proposalExpiresAt, :createdAt)');
       expect(fakeDb.calls[1]!.params).toEqual({
-        ...data,
+        ...columns,
         feePercentage: 15,
         revisionLimit: 2,
         deadlineAt: new Date('2026-10-20T02:59:59.000Z'),
       });
-      // RN-022: a linha do tempo começa em NULL -> pending, em nome do cliente.
+      // RN-022: a linha do tempo começa em NULL -> pending, em nome do cliente e feita por ele.
       expect(fakeDb.calls[2]!.sql).toContain(
-        "VALUES (:id, :changedBy, NULL, 'pending', 'Proposta enviada')",
+        'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source)',
       );
-      expect(fakeDb.calls[2]!.params).toEqual({ id: 31, changedBy: 7 });
+      expect(fakeDb.calls[2]!.sql).toContain(
+        "VALUES (:id, :changedBy, NULL, 'pending', 'Proposta enviada', :source)",
+      );
+      expect(fakeDb.calls[2]!.params).toEqual({ id: 31, changedBy: 7, source: 'user' });
       // O valor sai do saldo disponível e fica reservado, ligado à contratação criada.
       expect(applyWalletEffect).toHaveBeenCalledTimes(1);
       expect(applyWalletEffect).toHaveBeenCalledWith(fakeDb.conn, {
@@ -689,6 +695,7 @@ describe('contractsRepository', () => {
         changedBy: 7,
         status: 'accepted',
         note: 'Prazo estendido de 09/10/2026 para 16/10/2026 (RN-028): material atrasou',
+        source: 'user' as const,
       };
 
       it('o prazo muda de uma vez, zera o aviso e a carência e deixa a mudança na linha do tempo', async () => {
@@ -710,12 +717,15 @@ describe('contractsRepository', () => {
 
         // A linha do tempo registra a mudança sem trocar o status.
         expect(fakeDb.calls[1]!.sql).toContain('INSERT INTO contract_status_history');
-        expect(fakeDb.calls[1]!.sql).toContain('VALUES (:id, :changedBy, :status, :status, :note)');
+        expect(fakeDb.calls[1]!.sql).toContain(
+          'VALUES (:id, :changedBy, :status, :status, :note, :source)',
+        );
         expect(fakeDb.calls[1]!.params).toEqual({
           id: 12,
           changedBy: 7,
           status: 'accepted',
           note: p.note,
+          source: 'user',
         });
         expectCommitted();
       });
@@ -809,7 +819,14 @@ describe('contractsRepository', () => {
   });
 
   describe('transition', () => {
-    const base = { id: 12, changedBy: 44, from: 'pending', to: 'accepted', note: null };
+    const base = {
+      id: 12,
+      changedBy: 44,
+      from: 'pending',
+      to: 'accepted',
+      note: null,
+      source: 'user' as const,
+    };
 
     it('troca o status só se ele ainda for o que foi lido e grava a linha do tempo na mesma transação (RN-022)', async () => {
       fakeDb.reply({ affectedRows: 1 }, { affectedRows: 1 });
@@ -828,10 +845,37 @@ describe('contractsRepository', () => {
         now: NOW,
       });
       expect(fakeDb.calls[1]!.sql).toContain(
-        'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)',
+        'INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source)',
       );
-      expect(fakeDb.calls[1]!.sql).toContain('VALUES (:id, :changedBy, :from, :to, :note)');
+      expect(fakeDb.calls[1]!.sql).toContain(
+        'VALUES (:id, :changedBy, :from, :to, :note, :source)',
+      );
       expect(fakeDb.calls[1]!.params).toEqual(base);
+      expectCommitted();
+    });
+
+    it('grava a origem que quem chama declarou: a plataforma agindo em nome do cliente é system', async () => {
+      fakeDb.reply({ affectedRows: 1 }, { affectedRows: 1 });
+
+      const tacit = {
+        ...base,
+        changedBy: 7,
+        from: 'delivered',
+        to: 'completed',
+        note: 'Aprovação tácita: sem resposta do cliente até 06/10/2026 às 11:00',
+        source: 'system' as const,
+      };
+      expect(await contractsRepository.transition(tacit)).toBe(true);
+
+      expect(fakeDb.calls[1]!.sql).toContain('INSERT INTO contract_status_history');
+      expect(fakeDb.calls[1]!.params).toEqual({
+        id: 12,
+        changedBy: 7,
+        from: 'delivered',
+        to: 'completed',
+        note: tacit.note,
+        source: 'system',
+      });
       expectCommitted();
     });
 
@@ -1131,6 +1175,7 @@ describe('contractsRepository', () => {
       now: NOW,
       expectedRevisionsUsed: 2,
       expectedRevisionLimit: 2,
+      source: 'user' as const,
     };
     const row = { id: 12, status: 'delivered', revisions_used: 2, revision_limit: 2 };
 
@@ -1166,10 +1211,14 @@ describe('contractsRepository', () => {
           expectedRevisionsUsed: limit,
           expectedRevisionLimit: limit,
         });
+        expect(fakeDb.calls[2]!.sql).toContain(
+          "VALUES (:id, :changedBy, 'delivered', 'delivered', :note, :source, :now)",
+        );
         expect(fakeDb.calls[2]!.params).toMatchObject({
           changedBy: 44,
           now: NOW,
           note: `O freelancer liberou mais uma revisão sem custo (RN-023): agora são ${limit + 1}`,
+          source: 'user',
         });
         expect(recoverDeliveryRules).not.toHaveBeenCalled();
         expect(applyWalletEffect).not.toHaveBeenCalled();
@@ -1224,6 +1273,7 @@ describe('contractsRepository', () => {
       files: ['https://cdn.escambo.test/entrega.zip'],
       now: NOW,
       approvalDueAt: new Date('2026-10-11T15:00:00.000Z'),
+      source: 'user' as const,
     };
 
     it('com arquivos (RF-035), as mensagens do chat e a ligação com a entrega entram na mesma transação, antes da linha do tempo', async () => {
@@ -1311,13 +1361,14 @@ describe('contractsRepository', () => {
       });
 
       expect(fakeDb.calls[3]!.sql).toContain(
-        "VALUES (:id, :changedBy, :from, 'delivered', NULL, :now)",
+        "VALUES (:id, :changedBy, :from, 'delivered', NULL, :source, :now)",
       );
       expect(fakeDb.calls[3]!.params).toEqual({
         id: 12,
         changedBy: 44,
         from: 'in_progress',
         now: NOW,
+        source: 'user',
       });
       expectCommitted();
     });

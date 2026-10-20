@@ -1,9 +1,11 @@
 import { AlertTriangle, ArrowLeftRight, Inbox, X } from 'lucide-react';
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
+  KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
+  RefObject,
   SelectHTMLAttributes,
 } from 'react';
 import { errorMessage } from '../../lib/errors';
@@ -64,6 +66,19 @@ export function Chip({
   children: ReactNode;
 }) {
   return <span className={`chip ${kind}`}>{children}</span>;
+}
+
+/**
+ * Contêiner de tabela larga: em tela estreita a tabela rola na horizontal dentro dele. Para quem usa
+ * teclado conseguir rolar (WCAG 2.1.1; regra `scrollable-region-focusable` do axe), ele entra no
+ * Tab como uma região com nome, e as setas rolam.
+ */
+export function TableWrap({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="table-wrap" role="region" aria-label={label} tabIndex={0}>
+      {children}
+    </div>
+  );
 }
 
 /** Cabeçalho de página: título, subtítulo de contexto e ações à direita. */
@@ -168,22 +183,69 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * Diálogo modal (fecha no backdrop, no ✕ ou com Esc). Ao abrir, o foco vai para o diálogo (o
- * leitor de tela anuncia o título), a menos que um campo dele já tenha pedido o foco; o Tab fica
- * dentro dele; ao fechar, o foco volta para quem abriu, se ele ainda estiver na tela.
+ * "Pular para o conteúdo" (WCAG 2.4.1): o primeiro Tab da tela. Leva o foco ao alvo (que precisa
+ * de tabIndex={-1}) sem mexer na URL: um "#conteudo" no endereço trocaria a âncora que algumas
+ * telas usam (ADR 55) e criaria uma entrada no histórico.
  */
-export function Modal({
-  title,
-  onClose,
-  children,
+export function SkipLink({
+  target,
+  label = 'Pular para o conteúdo',
 }: {
-  title: ReactNode;
-  onClose: () => void;
-  children: ReactNode;
+  target: string;
+  label?: string;
 }) {
-  // O título dá nome ao diálogo para leitores de tela (e para getByRole('dialog', { name })).
-  const titleId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
+  return (
+    <a
+      className="skip-link"
+      href={`#${target}`}
+      onClick={(e) => {
+        const el = document.getElementById(target);
+        if (!el) return;
+        e.preventDefault();
+        el.focus();
+      }}
+    >
+      {label}
+    </a>
+  );
+}
+
+/**
+ * Setas, Home e End entre as abas de um `role="tablist"` (padrão de abas do ARIA, com ativação
+ * automática): a aba de destino recebe o foco e é acionada. Tab e Shift+Tab seguem normais.
+ */
+export function onTablistKeyDown(e: ReactKeyboardEvent<HTMLElement>): void {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+  const tabs = Array.from(
+    e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]:not([disabled])'),
+  );
+  const at = tabs.indexOf(document.activeElement as HTMLElement);
+  if (at < 0) return;
+  e.preventDefault();
+  const last = tabs.length - 1;
+  const to =
+    e.key === 'Home'
+      ? 0
+      : e.key === 'End'
+        ? last
+        : (at + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  const tab = tabs[to]!;
+  tab.focus();
+  if (to !== at) tab.click();
+}
+
+/**
+ * Foco de um diálogo modal (WCAG 2.1.2, 2.4.3): ao abrir, o foco vai para o diálogo (o leitor de
+ * tela anuncia o título), a menos que algo dentro dele já tenha pedido o foco; o Tab fica dentro
+ * dele; Esc fecha; ao fechar, o foco volta para quem abriu, se ele ainda estiver na tela. Quem
+ * abriu é lido no primeiro render, antes de um `autoFocus` de dentro do diálogo roubar o foco.
+ */
+export function useDialogFocus(dialogRef: RefObject<HTMLElement>, onClose: () => void): void {
+  const [opener] = useState(() =>
+    document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+      ? document.activeElement
+      : null,
+  );
   const closeRef = useRef(onClose);
   useEffect(() => {
     closeRef.current = onClose;
@@ -191,7 +253,6 @@ export function Modal({
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return undefined;
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!dialog.contains(document.activeElement)) dialog.focus();
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
@@ -224,7 +285,23 @@ export function Modal({
       document.removeEventListener('keydown', onKey);
       if (opener && document.contains(opener)) opener.focus();
     };
-  }, []);
+  }, [dialogRef, opener]);
+}
+
+/** Diálogo modal (fecha no backdrop, no ✕ ou com Esc), com o foco de `useDialogFocus`. */
+export function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  // O título dá nome ao diálogo para leitores de tela (e para getByRole('dialog', { name })).
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, onClose);
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <div

@@ -11,11 +11,14 @@ import {
   Field,
   Input,
   Modal,
+  onTablistKeyDown,
   PageHeader,
   Pill,
   QueryState,
   Select,
   Skeleton,
+  SkipLink,
+  TableWrap,
   Spinner,
 } from './index';
 
@@ -417,5 +420,140 @@ describe('Modal', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(document.body).toHaveFocus();
+  });
+});
+
+describe('Modal: quem abriu, com campo de foco automático', () => {
+  it('o foco volta para quem abriu mesmo quando um campo do diálogo pediu o foco ao abrir', async () => {
+    const user = userEvent.setup();
+    render(<Opener withField />);
+    const opener = screen.getByRole('button', { name: 'Abrir' });
+    await user.click(opener);
+    expect(screen.getByRole('textbox', { name: 'Título' })).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+  });
+});
+
+describe('TableWrap', () => {
+  it('é uma região com nome que entra no Tab, para a tabela larga rolar pelo teclado', async () => {
+    const user = userEvent.setup();
+    render(
+      <TableWrap label="Tabela de saques">
+        <table>
+          <tbody>
+            <tr>
+              <td>R$ 10,00</td>
+            </tr>
+          </tbody>
+        </table>
+      </TableWrap>,
+    );
+    const region = screen.getByRole('region', { name: 'Tabela de saques' });
+    expect(region).toHaveClass('table-wrap');
+    expect(within(region).getByRole('table')).toBeInTheDocument();
+    await user.tab();
+    expect(region).toHaveFocus();
+  });
+});
+
+describe('SkipLink', () => {
+  it('é um link para a âncora e leva o foco ao alvo sem mudar a URL', async () => {
+    const user = userEvent.setup();
+    const before = window.location.href;
+    render(
+      <>
+        <SkipLink target="conteudo" />
+        <button type="button">Menu</button>
+        <main id="conteudo" tabIndex={-1}>
+          <button type="button">Primeiro do conteúdo</button>
+        </main>
+      </>,
+    );
+    const link = screen.getByRole('link', { name: 'Pular para o conteúdo' });
+    expect(link).toHaveAttribute('href', '#conteudo');
+    await user.tab();
+    expect(link).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('main')).toHaveFocus();
+    expect(window.location.href).toBe(before);
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Primeiro do conteúdo' })).toHaveFocus();
+  });
+
+  it('aceita outro rótulo e, sem o alvo na tela, segue o link normalmente', () => {
+    render(<SkipLink target="nao-existe" label="Ir para a lista" />);
+    const link = screen.getByRole('link', { name: 'Ir para a lista' });
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+    link.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(false);
+  });
+});
+
+describe('onTablistKeyDown', () => {
+  function Tabs({ disabledLast = false }: { disabledLast?: boolean }) {
+    const [tab, setTab] = useState('a');
+    return (
+      <>
+        <div role="tablist" aria-label="Período" onKeyDown={onTablistKeyDown}>
+          {['a', 'b', 'c'].map((t) => (
+            <button
+              key={t}
+              type="button"
+              role="tab"
+              aria-selected={tab === t}
+              disabled={disabledLast && t === 'c'}
+              onClick={() => setTab(t)}
+            >
+              {t.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <p>escolhida: {tab}</p>
+      </>
+    );
+  }
+  const tab = (name: string) => screen.getByRole('tab', { name });
+
+  it('setas andam em círculo e acionam a aba; Home e End vão às pontas', async () => {
+    const user = userEvent.setup();
+    render(<Tabs />);
+    tab('A').focus();
+    await user.keyboard('{ArrowRight}');
+    expect(tab('B')).toHaveFocus();
+    expect(tab('B')).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{ArrowRight}{ArrowRight}');
+    expect(tab('A')).toHaveFocus();
+    await user.keyboard('{ArrowLeft}');
+    expect(tab('C')).toHaveFocus();
+    expect(screen.getByText('escolhida: c')).toBeInTheDocument();
+    await user.keyboard('{Home}');
+    expect(tab('A')).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{End}');
+    expect(tab('C')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('aba desabilitada fica fora; End na última não aciona de novo; outras teclas passam', async () => {
+    const user = userEvent.setup();
+    render(<Tabs disabledLast />);
+    tab('B').focus();
+    await user.keyboard('{End}');
+    expect(tab('B')).toHaveFocus();
+    expect(screen.getByText('escolhida: a')).toBeInTheDocument();
+    await user.keyboard('{ArrowRight}');
+    expect(tab('A')).toHaveFocus();
+    await user.keyboard('x');
+    expect(tab('A')).toHaveFocus();
+  });
+
+  it('com o foco fora das abas (no próprio tablist), não faz nada', () => {
+    render(<Tabs />);
+    const list = screen.getByRole('tablist');
+    list.tabIndex = -1;
+    list.focus();
+    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    expect(list).toHaveFocus();
+    expect(screen.getByText('escolhida: a')).toBeInTheDocument();
   });
 });

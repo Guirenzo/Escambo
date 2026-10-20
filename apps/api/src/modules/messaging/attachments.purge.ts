@@ -2,7 +2,7 @@ import { unlink } from 'node:fs/promises';
 import type { AdminStorage } from '@escambo/types';
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
-import { settingsRepository } from '../settings/settings.repository';
+import { settingsFacade } from '../settings/settings.facade';
 import { dataDirUsage, listUploadedFiles, removeAttachment } from './attachments.storage';
 import { messagingRepository } from './messaging.repository';
 import { mediaUsage, removeMediaOrphans } from '../media/media.storage';
@@ -34,7 +34,7 @@ export interface PurgeSummary {
 export type LastPurge = NonNullable<AdminStorage['lastPurge']>;
 
 export const retentionDays = (): Promise<number> =>
-  settingsRepository.getNumber('attachment_retention_days', DEFAULT_RETENTION_DAYS);
+  settingsFacade.getNumber('attachment_retention_days', DEFAULT_RETENTION_DAYS);
 
 /** Anexos vencidos pela retenção: arquivo apagado, linha marcada; falha em um não para os outros. */
 export async function purgeByRetention(now: Date = new Date()): Promise<PurgeSummary> {
@@ -83,7 +83,7 @@ export async function removeOrphans(now: Date = new Date()): Promise<number> {
 }
 
 export async function lastPurge(): Promise<LastPurge | null> {
-  const raw = await settingsRepository.get(LAST_PURGE_KEY);
+  const raw = await settingsFacade.get(LAST_PURGE_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw) as LastPurge;
@@ -93,7 +93,7 @@ export async function lastPurge(): Promise<LastPurge | null> {
 }
 
 export async function recordPurge(entry: LastPurge): Promise<void> {
-  await settingsRepository.set(LAST_PURGE_KEY, JSON.stringify(entry), 'json');
+  await settingsFacade.setJson(LAST_PURGE_KEY, JSON.stringify(entry));
 }
 
 /** Uso do volume e saúde dos anexos, para o painel admin. */

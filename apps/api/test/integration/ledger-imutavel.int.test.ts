@@ -311,3 +311,25 @@ describe('audit_logs: só INSERT, e DELETE só depois da retenção mínima (RNF
     );
   });
 });
+
+describe('migration 0049: triggers em bloco, para o backup restaurar (ADR 64)', () => {
+  it('os sete de uma instrução viram bloco, e a 0049 roda de novo sem erro', async () => {
+    // O teste da 0046 acima a reaplica, voltando à forma antiga: a 0049 vale depois dela.
+    const sql = readFileSync(
+      join(__dirname, '../../db/migrations/0049_triggers_em_bloco.sql'),
+      'utf8',
+    );
+    await raw.query(sql);
+    await raw.query(sql);
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT trigger_name AS name, action_statement AS body FROM information_schema.triggers
+        WHERE trigger_schema = DATABASE() ORDER BY trigger_name`,
+    );
+    expect(rows).toHaveLength(8);
+    for (const r of rows) {
+      const body = String(r.body).trim();
+      // Os sete de uma instrução viraram bloco; o da retenção já era composto (IF ... END IF).
+      expect(body.startsWith('BEGIN') || body.startsWith('IF '), r.name).toBe(true);
+    }
+  });
+});

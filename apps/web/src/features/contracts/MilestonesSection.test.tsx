@@ -643,7 +643,7 @@ describe('MilestonesSection: as ações de cada lado', () => {
       ),
     );
     expect(within(item(0)).getByText('Arquivo da entrega:')).toBeInTheDocument();
-    expect(within(item(0)).getByRole('button', { name: 'Baixar bruto.zip' })).toHaveTextContent(
+    expect(within(item(0)).getByRole('button', { name: /^Baixar bruto\.zip / })).toHaveTextContent(
       '3 MB',
     );
     expect(within(item(1)).queryByTestId('delivery-files')).toBeNull();

@@ -19,7 +19,7 @@ import type {
   AdminReportGroup,
   ReportTargetType,
 } from '@escambo/types';
-import { Button, Field, Modal, QueryState } from '../../components/ui';
+import { Button, Field, Modal, onTablistKeyDown, QueryState, TableWrap } from '../../components/ui';
 import { dtm, REPORT_REASON_LABEL, REPORT_STATUS_LABEL } from '../../lib/format';
 import { useAdminReportAction, useAdminReports } from '../../lib/hooks';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
@@ -195,7 +195,12 @@ export function ReportsSection() {
         <h3 id="reports-title">
           <Flag size={16} /> Denúncias
         </h3>
-        <div className="tabs tabs-mini" role="tablist" aria-label="Filtro de denúncias">
+        <div
+          className="tabs tabs-mini"
+          role="tablist"
+          onKeyDown={onTablistKeyDown}
+          aria-label="Filtro de denúncias"
+        >
           <button
             type="button"
             role="tab"
@@ -228,7 +233,7 @@ export function ReportsSection() {
         onRetry={() => void reports.refetch()}
       >
         {(list) => (
-          <div className="table-wrap">
+          <TableWrap label="Tabela de denúncias">
             <table className="table">
               <thead>
                 <tr>
@@ -355,7 +360,7 @@ export function ReportsSection() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         )}
       </QueryState>
 

@@ -259,6 +259,8 @@ describe('adminService.resolveDispute (RN-063): o que é aplicado e quem é avis
       resolution: 'release_freelancer',
       refundPercentage: 0,
       note: null,
+      // A decisão é do admin, uma pessoa: o histórico grava a origem user.
+      source: 'user',
     });
 
     await adminService.resolveDispute(10, 7, {

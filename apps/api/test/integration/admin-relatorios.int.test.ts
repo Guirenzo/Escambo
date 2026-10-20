@@ -93,17 +93,19 @@ async function message(from: Actor, to: Actor, at: Date, type: 'text' | 'system'
   );
 }
 
+/** Mudança de status com a origem que a API grava (migration 0048): 'system' é a plataforma. */
 async function statusChange(
   contractId: number,
   by: Actor,
   at: Date,
   note: string | null,
   newStatus = 'in_progress',
+  source: 'user' | 'system' = 'user',
 ): Promise<void> {
   await pool.query(
-    `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, created_at)
-     VALUES (:contractId, :by, 'accepted', :newStatus, :note, :at)`,
-    { contractId, by: by.id, newStatus, note, at },
+    `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source, created_at)
+     VALUES (:contractId, :by, 'accepted', :newStatus, :note, :source, :at)`,
+    { contractId, by: by.id, newStatus, note, source, at },
   );
 }
 
@@ -262,12 +264,16 @@ describe('RF-081: uso por período e snapshot', () => {
       tacit!,
       noon,
       'Aprovação tácita: sem resposta do cliente até 13/11/2024 12:00',
+      'in_progress',
+      'system',
     );
     await statusChange(
       gone,
       expired!,
       noon,
       'Proposta expirada: sem resposta do freelancer até 13/11/2024',
+      'in_progress',
+      'system',
     );
     const disputed = await contract(autoDispute!, freelancer);
     await pool.query(
@@ -280,7 +286,7 @@ describe('RF-081: uso por período e snapshot', () => {
         description: 'Aberta automaticamente pela plataforma (RN-029): o prazo venceu sem entrega.',
       },
     );
-    await statusChange(disputed, autoDispute!, noon, 'Disputa aberta', 'disputed');
+    await statusChange(disputed, autoDispute!, noon, 'Disputa aberta', 'disputed', 'system');
 
     const r = await usage(admin, `from=${DAY}&to=${DAY}&granularity=day`);
     expect(r.series).toEqual([

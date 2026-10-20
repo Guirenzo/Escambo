@@ -17,6 +17,7 @@ import { milestonesRepository, type MilestoneSpec } from './milestones.repositor
 import { offerLiveAt, offersRepository, updateOfferMilestones } from './offers.repository';
 import { feePctOf, type OfferTerms } from './offers';
 import { deliveryFilesRepository, type DeliveryFilesInput } from './delivery-files';
+import type { StatusChangeSource } from './status-history';
 
 export interface ContractRow extends RowDataPacket {
   id: number;
@@ -162,9 +163,11 @@ export const contractsRepository = {
     hold?: { userId: number; amount: number } | null;
     /** Marcos (RN-069) criados na mesma transação, ainda 'pending' até o aceite. */
     milestones?: MilestoneSpec[] | null;
+    /** Origem da primeira linha do histórico (status-history.ts). */
+    source: StatusChangeSource;
   }): Promise<number | null> {
     // DATETIME recebe Date (o driver serializa em UTC); string ISO com "T"/"Z" o MySQL recusa.
-    const { hold, milestones, deadlineAt, ...rest } = data;
+    const { hold, milestones, deadlineAt, source, ...rest } = data;
     const row = {
       ...rest,
       feePercentage:
@@ -207,9 +210,9 @@ export const contractsRepository = {
       const id = res.insertId;
       // status inicial no histórico (RN-022): NULL -> pending
       await conn.query<ResultSetHeader>(
-        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
-         VALUES (:id, :changedBy, NULL, 'pending', 'Proposta enviada')`,
-        { id, changedBy: data.clientId },
+        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source)
+         VALUES (:id, :changedBy, NULL, 'pending', 'Proposta enviada', :source)`,
+        { id, changedBy: data.clientId, source },
       );
       if (hold) {
         await lockWalletRows(conn, [hold.userId]);
@@ -469,6 +472,7 @@ export const contractsRepository = {
     changedBy: number;
     status: string;
     note: string;
+    source: StatusChangeSource;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -494,9 +498,9 @@ export const contractsRepository = {
         return false;
       }
       await conn.query<ResultSetHeader>(
-        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
-         VALUES (:id, :changedBy, :status, :status, :note)`,
-        { id: p.id, changedBy: p.changedBy, status: p.status, note: p.note },
+        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source)
+         VALUES (:id, :changedBy, :status, :status, :note, :source)`,
+        { id: p.id, changedBy: p.changedBy, status: p.status, note: p.note, source: p.source },
       );
       await conn.commit();
       return true;
@@ -561,6 +565,8 @@ export const contractsRepository = {
     from: string;
     to: string;
     note: string | null;
+    /** A pessoa agiu ou a plataforma agiu em nome de `changedBy` (status-history.ts). */
+    source: StatusChangeSource;
     timestampColumn?: 'accepted_at' | 'completed_at' | 'cancelled_at' | 'revision_requested_at';
     /** Incremento e limite conferidos sob a mesma trava da entrega (RN-023). */
     countRevision?: boolean;
@@ -782,14 +788,15 @@ export const contractsRepository = {
       }
 
       await conn.query<ResultSetHeader>(
-        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note)
-         VALUES (:id, :changedBy, :from, :to, :note)`,
+        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source)
+         VALUES (:id, :changedBy, :from, :to, :note, :source)`,
         {
           id: params.id,
           changedBy: params.changedBy,
           from: params.from,
           to: params.to,
           note: params.note,
+          source: params.source,
         },
       );
 
@@ -899,6 +906,7 @@ export const contractsRepository = {
     approvalDueAt: Date;
     /** Arquivos já no disco (RF-035): viram mensagens do chat ligadas a esta entrega. */
     attachments?: DeliveryFilesInput;
+    source: StatusChangeSource;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -958,9 +966,15 @@ export const contractsRepository = {
         );
       }
       await conn.query<ResultSetHeader>(
-        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, created_at)
-         VALUES (:id, :changedBy, :from, 'delivered', NULL, :now)`,
-        { id: params.id, changedBy: params.changedBy, from: params.from, now: params.now },
+        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source, created_at)
+         VALUES (:id, :changedBy, :from, 'delivered', NULL, :source, :now)`,
+        {
+          id: params.id,
+          changedBy: params.changedBy,
+          from: params.from,
+          now: params.now,
+          source: params.source,
+        },
       );
 
       await conn.commit();
@@ -980,6 +994,7 @@ export const contractsRepository = {
     now: Date;
     expectedRevisionsUsed: number;
     expectedRevisionLimit: number;
+    source: StatusChangeSource;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -1017,8 +1032,8 @@ export const contractsRepository = {
         return false;
       }
       await conn.query<ResultSetHeader>(
-        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, created_at)
-         VALUES (:id, :changedBy, 'delivered', 'delivered', :note, :now)`,
+        `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source, created_at)
+         VALUES (:id, :changedBy, 'delivered', 'delivered', :note, :source, :now)`,
         {
           ...p,
           note: `O freelancer liberou mais uma revisão sem custo (RN-023): agora são ${row.revision_limit + 1}`,

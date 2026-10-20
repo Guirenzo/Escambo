@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import { apiBoundaries } from './apps/api/eslint.boundaries.mjs';
 
 export default tseslint.config(
   {
@@ -40,4 +41,6 @@ export default tseslint.config(
       globals: { process: 'readonly', console: 'readonly', fetch: 'readonly', URL: 'readonly' },
     },
   },
+  // Fronteiras entre os módulos da API (RNF-021): repository alheio, camadas e fachadas.
+  ...apiBoundaries,
 );

@@ -9,7 +9,15 @@ import type {
   Withdrawal,
   WithdrawalMethod,
 } from '@escambo/types';
-import { Button, Field, Input, PageHeader, QueryState, Select } from '../../components/ui';
+import {
+  Button,
+  Field,
+  Input,
+  onTablistKeyDown,
+  PageHeader,
+  QueryState,
+  Select,
+} from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import {
@@ -350,7 +358,12 @@ export function CarteiraView() {
             <h3>
               <ArrowDownToLine size={16} /> Extrato
             </h3>
-            <div className="tabs tabs-mini" role="tablist" aria-label="Moeda do extrato">
+            <div
+              className="tabs tabs-mini"
+              role="tablist"
+              onKeyDown={onTablistKeyDown}
+              aria-label="Moeda do extrato"
+            >
               <button
                 type="button"
                 role="tab"

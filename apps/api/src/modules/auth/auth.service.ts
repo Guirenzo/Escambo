@@ -12,9 +12,9 @@ import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { isBrazilTimezone, timezoneOf } from '../../utils/timezone';
-import { pushRepository } from '../notifications/push.repository';
+import { notificationsFacade } from '../notifications/notifications.facade';
 import { quietPassOf, quietWindowOf } from '../notifications/quiet-hours';
-import { lgpdRepository } from '../lgpd/lgpd.repository';
+import { lgpdFacade } from '../lgpd/lgpd.facade';
 import { CURRENT_LEGAL_VERSION } from '../lgpd/legal-versions';
 import { auditService } from '../audit/audit.service';
 import { generateRefreshToken, hashToken } from '../../utils/tokens';
@@ -190,7 +190,7 @@ export const authService = {
     for (const type of ['terms_of_use', 'privacy_policy'] as const) {
       const version = CURRENT_LEGAL_VERSION[type];
       try {
-        await lgpdRepository.recordConsent({
+        await lgpdFacade.recordConsent({
           userId: id,
           type,
           version,
@@ -287,7 +287,7 @@ export const authService = {
     await authRepository.markEmailVerified(userId); // quem redefine provou controlar o e-mail
     await sessionRepository.revokeAllForUser(userId);
     // Quem redefine a senha pode estar tirando o acesso de um aparelho perdido: o push vai junto.
-    await pushRepository.removeAllForUser(userId);
+    await notificationsFacade.removeAllPushSubscriptions(userId);
     // E pode estar retomando a conta de quem sabia a senha antiga: a troca de e-mail que essa
     // pessoa pediu (RF-017) deixa de valer, mesmo que o link já esteja na caixa dela.
     await cancelEmailChanges(userId, 'password_reset', {});
@@ -412,7 +412,7 @@ export const authService = {
       throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
     }
     // O aparelho perdido para de receber os avisos junto com a sessão.
-    await pushRepository.removeAllForUser(user.id);
+    await notificationsFacade.removeAllPushSubscriptions(user.id);
     return sessionRepository.revokeAllForUser(user.id);
   },
 

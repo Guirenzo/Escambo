@@ -170,6 +170,20 @@ afterEach(() => {
 });
 
 describe('Shell: navegação', () => {
+  it('o primeiro Tab é o "pular para o conteúdo", que leva o foco ao <main> (WCAG 2.4.1)', async () => {
+    const user = userEvent.setup();
+    auth.user = account();
+    renderShell('/carteira');
+    await user.tab();
+    const skip = screen.getByRole('link', { name: 'Pular para o conteúdo' });
+    expect(skip).toHaveFocus();
+    await user.keyboard('{Enter}');
+    const main = screen.getByRole('main');
+    expect(main).toHaveAttribute('id', 'conteudo');
+    expect(main).toHaveFocus();
+    expect(main).toHaveTextContent('conteúdo da carteira');
+  });
+
   it('administrador suspenso acessa suporte e não recebe link de administração', () => {
     auth.user = account({ role: 'admin', status: 'suspended' });
     renderShell();

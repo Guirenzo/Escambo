@@ -1,32 +1,13 @@
 #!/usr/bin/env bash
-# Restaura um backup gerado por backup-db.sh no MySQL do Escambo. SOBRESCREVE os dados atuais.
+# Restaura um backup gerado por backup-db.sh. APAGA o banco atual e põe no lugar o do arquivo.
+# A implementação mora em deploy/backup/restore-db.sh (a pasta que o workflow Deploy leva para a VPS);
+# este atalho só a chama, a partir da pasta da stack:
 #
 #   scripts/restore-db.sh backups/escambo-20260910-030000.sql.gz
 #   COMPOSE_FILE=docker-compose.prod.yml scripts/restore-db.sh backups/escambo-....sql.gz --yes
 #
-# Passos: para a API (ninguém escreve durante a restauração) → importa o dump → roda o job de
-# migrations (o dump pode ser de uma versão anterior) → sobe a API de novo.
-set -euo pipefail
-cd "$(dirname "$0")/.."
-
-file="${1:?uso: scripts/restore-db.sh <backups/escambo-....sql.gz> [--yes]}"
-[ -f "$file" ] || { echo "arquivo não encontrado: $file" >&2; exit 1; }
-
-if [ "${2:-}" != "--yes" ]; then
-  read -r -p "Isto SOBRESCREVE o banco atual com $file. Continuar? [s/N] " ok
-  case "${ok:-}" in s|S) ;; *) echo "cancelado"; exit 1 ;; esac
-fi
-
-echo "→ parando a API"
-docker compose stop api >/dev/null
-
-echo "→ importando $file"
-gunzip -c "$file" | docker compose exec -T db sh -c \
-  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot "$MYSQL_DATABASE"'
-
-echo "→ migrations pendentes (o dump pode ser de uma versão anterior)"
-docker compose run --rm migrate >/dev/null
-
-echo "→ subindo a API"
-docker compose up -d api >/dev/null
-echo "restaurado: $file"
+# Passos: confere o arquivo (checksum, gzip, fim do dump) → para a API e o agendador de backup →
+# recria o banco vazio → importa como root (os triggers da 0046 voltam com o DEFINER original) →
+# roda o job de migrations (o dump pode ser de uma versão anterior) → sobe tudo de novo.
+# Testado no CI a cada push: scripts/test-backup-restore.sh.
+exec bash "$(dirname "$0")/../deploy/backup/restore-db.sh" "$@"

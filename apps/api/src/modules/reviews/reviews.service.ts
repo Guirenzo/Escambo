@@ -2,7 +2,7 @@ import { clock } from '../../utils/clock';
 import type { Paginated, Review } from '@escambo/types';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
-import { contractsRepository } from '../contracts/contracts.repository';
+import { contractsFacade } from '../contracts/contracts.facade';
 import { gamificationService } from '../gamification/gamification.service';
 import { reviewsRepository, type ReviewListRow, type ReviewRow } from './reviews.repository';
 import type { CreateReviewInput, ListReviewsInput } from './reviews.schema';
@@ -26,7 +26,7 @@ export function toReview(row: ReviewRow, response: string | null): Review {
 
 export const reviewsService = {
   async create(reviewerId: number, input: CreateReviewInput): Promise<Review> {
-    const contract = await contractsRepository.findById(input.contractId);
+    const contract = await contractsFacade.findById(input.contractId);
     if (!contract) {
       throw new HttpError(404, 'Contratação não encontrada', 'contract_not_found');
     }

@@ -1,6 +1,7 @@
 import { Download, FileArchive, FileImage, FileText, FileX, Paperclip, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AttachmentPurgeReason, ChatAttachment as Attachment } from '@escambo/types';
+import { useDialogFocus } from '../../components/ui';
 import { api } from '../../lib/api';
 import { saveBlob } from '../../lib/download';
 import { formatBytes } from '../../lib/format';
@@ -55,15 +56,6 @@ export function ImageAttachment({ attachment }: { attachment: Attachment }) {
   const src = useObjectUrl(q.data?.blob);
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
-
   if (purged) return <PurgedAttachment attachment={attachment} />;
   if (q.isError) return <span className="attachment-error">Imagem indisponível</span>;
   if (!src)
@@ -79,39 +71,57 @@ export function ImageAttachment({ attachment }: { attachment: Attachment }) {
         <img src={src} alt={attachment.name} loading="lazy" />
       </button>
       {open && (
-        <div
-          className="lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label={attachment.name}
-          onClick={() => setOpen(false)}
-        >
-          <img src={src} alt={attachment.name} onClick={(e) => e.stopPropagation()} />
-          <div className="lightbox-bar" onClick={(e) => e.stopPropagation()}>
-            <span>
-              {attachment.name} · {formatBytes(attachment.size)}
-            </span>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => q.data && saveBlob(q.data.blob, attachment.name)}
-              aria-label="Baixar imagem"
-            >
-              <Download size={16} />
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => setOpen(false)}
-              aria-label="Fechar"
-              autoFocus
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
+        <Lightbox
+          src={src}
+          attachment={attachment}
+          onDownload={() => q.data && saveBlob(q.data.blob, attachment.name)}
+          onClose={() => setOpen(false)}
+        />
       )}
     </>
+  );
+}
+
+/**
+ * A imagem em tamanho real: diálogo modal que começa no "Fechar", prende o Tab, fecha com Esc ou
+ * clicando fora e devolve o foco à miniatura que abriu (useDialogFocus).
+ */
+function Lightbox({
+  src,
+  attachment,
+  onDownload,
+  onClose,
+}: {
+  src: string;
+  attachment: Attachment;
+  onDownload: () => void;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, onClose);
+  return (
+    <div
+      ref={dialogRef}
+      className="lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label={attachment.name}
+      tabIndex={-1}
+      onClick={onClose}
+    >
+      <img src={src} alt={attachment.name} onClick={(e) => e.stopPropagation()} />
+      <div className="lightbox-bar" onClick={(e) => e.stopPropagation()}>
+        <span>
+          {attachment.name} · {formatBytes(attachment.size)}
+        </span>
+        <button type="button" className="icon-btn" onClick={onDownload} aria-label="Baixar imagem">
+          <Download size={16} />
+        </button>
+        <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar" autoFocus>
+          <X size={16} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -142,17 +152,20 @@ export function FileAttachment({ attachment }: { attachment: Attachment }) {
   }
 
   if (attachment.purgedAt) return <PurgedAttachment attachment={attachment} />;
+  // O nome acessível vem do próprio texto do cartão ("Baixar arquivo.pdf 120 KB"), então contém
+  // tudo o que está escrito nele (WCAG 2.5.3); o "Baixar" só o leitor de tela ouve.
   return (
     <button
       type="button"
       className="attachment-file"
       onClick={() => void download()}
       disabled={busy}
-      aria-label={`Baixar ${attachment.name}`}
     >
       <Icon size={20} aria-hidden="true" />
       <span className="attachment-text">
-        <span className="attachment-name">{attachment.name}</span>
+        <span className="attachment-name">
+          <span className="sr-only">Baixar</span> {attachment.name}
+        </span>{' '}
         <span className="muted tiny">
           {formatBytes(attachment.size)}
           {busy ? ' · baixando…' : ''}

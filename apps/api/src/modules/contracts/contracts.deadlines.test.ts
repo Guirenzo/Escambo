@@ -660,7 +660,7 @@ describe('prazo estourado (RN-029, ADR 57)', () => {
         description:
           'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, sex, 02/10/2026, até 23:59 (horário de Brasília), venceu sem entrega, o aviso saiu em 03/10/2026 às 09:03 e, até 04/10/2026 às 09:03, não houve entrega nem extensão aceita. O aviso e o limite estão em horário de Brasília.',
       }),
-      { guard: 'AND guarda_da_disputa', now: NOW },
+      { guard: 'AND guarda_da_disputa', now: NOW, source: 'system' },
     );
     expect(notify).toHaveBeenCalledTimes(2);
     expect(notify).toHaveBeenCalledWith(
@@ -696,7 +696,7 @@ describe('prazo estourado (RN-029, ADR 57)', () => {
         description:
           'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, sex, 02/10/2026, até 23:59 (horário de Brasília), venceu com marcos nunca entregues, o aviso saiu em 03/10/2026 às 09:03 e, até 04/10/2026 às 09:03, eles não foram entregues nem houve extensão aceita. O aviso e o limite estão em horário de Brasília. Marcos entregues: «Layout»; sem entrega: «Publicação».',
       }),
-      { guard: 'AND guarda_da_disputa', now: NOW },
+      { guard: 'AND guarda_da_disputa', now: NOW, source: 'system' },
     );
     // Cada parte lê a hora-limite no próprio fuso (o cliente está em Manaus, uma hora a menos).
     expect(notify).toHaveBeenCalledWith(
@@ -748,6 +748,7 @@ describe('entrega única (RN-024, ADR 57)', () => {
     expect(repo.deliver).toHaveBeenCalledWith({
       id: 1,
       changedBy: 2,
+      source: 'user',
       from: 'accepted',
       message: 'Pronto para revisar',
       files: null,
@@ -919,6 +920,7 @@ describe('aprovação tácita da entrega única (RN-024, job)', () => {
     expect(repo.transition).toHaveBeenCalledWith({
       id: 1,
       changedBy: 1,
+      source: 'system',
       from: 'delivered',
       to: 'completed',
       note: 'Aprovação tácita: sem resposta do cliente até 06/10/2026 às 11:00 (horário de Brasília, RN-024)',
@@ -1271,6 +1273,7 @@ describe('resolveExtension: quem decide, quem é avisado e em que fuso (RN-028, 
       seq: null,
       now: NOW,
       changedBy: 7,
+      source: 'user',
       // O status não muda: a linha do tempo repete o atual.
       status: 'in_progress',
       // O histórico não tem leitor: cada prazo é dito no fuso em que é um dia, com a nota do fuso.
@@ -1443,6 +1446,7 @@ describe('expireProposal: o que volta e o que cada parte lê (RN-021)', () => {
     expect(repo.transition).toHaveBeenCalledWith({
       id: 31,
       changedBy: 7,
+      source: 'system',
       from: 'pending',
       to: 'cancelled',
       note: 'Proposta expirada: sem resposta do freelancer até 06/10/2026 às 11:00 (horário de Brasília, RN-021)',
@@ -1673,7 +1677,7 @@ describe('quem age e quem é avisado nos prazos', () => {
         description:
           'Aberta automaticamente pela plataforma (RN-029): o prazo de entrega, sex, 02/10/2026, até 23:59 (horário de Brasília), venceu sem entrega, o aviso saiu em 03/10/2026 às 09:03 e, até 04/10/2026 às 09:03, não houve entrega nem extensão aceita. O aviso e o limite estão em horário de Brasília.',
       },
-      { guard: 'AND guarda_da_disputa', now: NOW },
+      { guard: 'AND guarda_da_disputa', now: NOW, source: 'system' },
     );
     const notice = {
       type: 'dispute_opened',
@@ -1767,6 +1771,8 @@ describe('create: o que é gravado e quem é avisado (RN-021, RN-031)', () => {
       createdAt: NOW,
       hold: { userId: 7, amount: 199.99 },
       milestones: null,
+      // A proposta é do cliente: a primeira linha do histórico é ação dele.
+      source: 'user',
     });
     // A resposta é a contratação relida pelo id que o repository devolveu.
     expect(repo.findById).toHaveBeenCalledWith(31);
@@ -2041,6 +2047,7 @@ describe('cancelamento: a conta e a guarda usam o que a leitura viu (RN-025, ADR
     expect(call).toEqual({
       id: 31,
       changedBy: 7,
+      source: 'user',
       from: 'accepted',
       to: 'cancelled',
       note: 'Reembolso: 100% (prazo vencido sem entrega)',
@@ -2487,6 +2494,7 @@ describe('o dia do prazo quando as partes estão em relógios diferentes (ADR 58
       seq: 1,
       now: NOW,
       changedBy: 7,
+      source: 'user',
       status: 'in_progress',
       // Em Brasília seriam sáb, 10/10 e sáb, 17/10: os dois dias são os de Manaus.
       note: 'Prazo estendido de sex, 09/10 para sex, 16/10/2026, até 23:59 (horário de Manaus) (RN-028): Atraso do material',

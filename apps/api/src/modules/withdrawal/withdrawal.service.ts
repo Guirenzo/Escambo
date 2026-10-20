@@ -9,8 +9,8 @@ import { businessDueAt } from '../../utils/business-days';
 import { clock } from '../../utils/clock';
 import { FIELD_UNAVAILABLE } from '../../utils/field-crypto';
 import { HttpError } from '../../utils/http-error';
-import { adminRepository } from '../admin/admin.repository';
-import { authRepository } from '../auth/auth.repository';
+import { adminFacade } from '../admin/admin.facade';
+import { authFacade } from '../auth/auth.facade';
 import { notificationsService } from '../notifications/notifications.service';
 import {
   withdrawalRepository,
@@ -89,7 +89,7 @@ export const withdrawalService = {
     }
     // Saque é a única ação que tira dinheiro da plataforma: exige e-mail confirmado (ADR 20),
     // para que uma sessão roubada não mande o saldo para uma chave PIX de terceiro sem aviso.
-    const user = await authRepository.findById(userId);
+    const user = await authFacade.findById(userId);
     if (!user?.email_verified_at) {
       throw new HttpError(403, 'Confirme seu e-mail para sacar', 'email_not_verified');
     }
@@ -156,7 +156,7 @@ export const withdrawalService = {
     const ok = await withdrawalRepository.advance(id, ['requested'], 'processing', null);
     if (!ok)
       throw new HttpError(409, 'Saque não está aguardando processamento', 'invalid_transition');
-    await adminRepository.recordAction(adminId, 'withdrawal_processing', 'withdrawal', id, null);
+    await adminFacade.recordAction(adminId, 'withdrawal_processing', 'withdrawal', id, null);
     return this.adminView(id);
   },
 
@@ -165,7 +165,7 @@ export const withdrawalService = {
     const row = await loadOr404(id);
     const ok = await withdrawalRepository.advance(id, OPEN, 'completed', gatewayRef);
     if (!ok) throw new HttpError(409, 'Saque já encerrado', 'invalid_transition');
-    await adminRepository.recordAction(
+    await adminFacade.recordAction(
       adminId,
       'withdrawal_completed',
       'withdrawal',
@@ -186,7 +186,7 @@ export const withdrawalService = {
     const row = await loadOr404(id);
     const ok = await withdrawalRepository.closeAndRefund(id, OPEN, 'failed');
     if (!ok) throw new HttpError(409, 'Saque já encerrado', 'invalid_transition');
-    await adminRepository.recordAction(adminId, 'withdrawal_failed', 'withdrawal', id, reason);
+    await adminFacade.recordAction(adminId, 'withdrawal_failed', 'withdrawal', id, reason);
     void notificationsService.notify(row.user_id, {
       type: 'withdrawal_failed',
       title: `Saque de ${brl(Number(row.amount))} não pôde ser feito`,

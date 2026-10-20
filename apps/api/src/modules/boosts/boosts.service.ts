@@ -2,7 +2,7 @@ import type { Boost, BoostPlan, BoostStatus } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
 import { formatDateTime } from '../../utils/timezone';
 import { userZone } from '../auth/user-zone';
-import { servicesRepository } from '../services/services.repository';
+import { servicesFacade } from '../services/services.facade';
 import { boostsRepository, type BoostPlanRow, type BoostRow } from './boosts.repository';
 
 /** Custo do boost em créditos Escambo (1 crédito ≈ R$1 do plano), nunca de graça: no mínimo 1. */
@@ -53,7 +53,7 @@ export const boostsService = {
 
   /** Compra um impulsionamento para um serviço do próprio usuário, pago em créditos. */
   async buy(userId: number, serviceId: number, planId: number): Promise<Boost> {
-    const service = await servicesRepository.findById(serviceId);
+    const service = await servicesFacade.findById(serviceId);
     if (!service) throw new HttpError(404, 'Serviço não encontrado', 'service_not_found');
     if (service.user_id !== userId) {
       throw new HttpError(403, 'Você só pode impulsionar os seus serviços', 'forbidden');

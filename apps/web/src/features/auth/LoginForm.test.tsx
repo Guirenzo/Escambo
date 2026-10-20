@@ -186,6 +186,8 @@ describe('LoginForm: entrar', () => {
     await user.click(submitButton());
 
     expect(await screen.findByText('E-mail ou senha incorretos')).toBeInTheDocument();
+    // Anunciado na hora pelo leitor de tela (WCAG 4.1.3), não só mostrado em vermelho.
+    expect(screen.getByRole('alert')).toHaveTextContent('E-mail ou senha incorretos');
     expect(submitButton()).toBeEnabled();
     expect(submitButton()).toHaveTextContent('Entrar');
     // O que foi digitado continua lá: é só corrigir a senha.
@@ -378,8 +380,13 @@ describe('LoginForm: alternar entre entrar e criar conta', () => {
     expect(screen.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
 
+    expect(tab('Entrar')).toHaveAttribute('aria-pressed', 'true');
+    expect(tab('Criar conta')).toHaveAttribute('aria-pressed', 'false');
     await user.click(tab('Criar conta'));
     await user.click(tab('Criar conta'));
+    // O modo escolhido não é só a cor da aba: o leitor de tela ouve "pressionado".
+    expect(tab('Criar conta')).toHaveAttribute('aria-pressed', 'true');
+    expect(tab('Entrar')).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('heading', { name: 'Crie sua conta' })).toBeInTheDocument();
     expect(consentBox()).toBeInTheDocument();
     expect(submitButton()).toHaveTextContent('Criar conta');

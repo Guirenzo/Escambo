@@ -170,6 +170,42 @@ services:
       - ./scripts/demo-seed.mjs:/demo-seed.mjs:ro
     command: ['node', '/demo-seed.mjs']
 
+  # Backup diário da demo (RNF-009), o mesmo agendador da produção (deploy/backup): às 03:00 de
+  # Brasília, e na hora se o último tem mais de 24 h. Arquivos em ./backups/auto (fora do git).
+  backup:
+    image: mysql:8.0
+    container_name: escambo-backup
+    restart: unless-stopped
+    entrypoint: ['bash', '/opt/escambo/deploy/backup/agendador.sh']
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      TZ: America/Sao_Paulo
+      BACKUP_MODE: direto
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: escambo
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-escambo_root}
+      BACKUP_HOUR: ${BACKUP_HOUR:-03:00}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      BACKUP_DIR: /backups
+      UPLOADS_DIR: /dados
+      BACKUP_METRICS_DIR: /metricas
+    volumes:
+      - ./deploy/backup:/opt/escambo/deploy/backup:ro
+      - ./backups/auto:/backups
+      - api_data:/dados:ro
+      - backup_metrics:/metricas
+    healthcheck:
+      test: ['CMD', 'bash', '/opt/escambo/deploy/backup/agendador.sh', 'saude']
+      interval: 5m
+      timeout: 10s
+      retries: 1
+      start_period: 30m
+
   # --- Monitoramento (ADR 59), opcional:  docker compose --profile monitoring up -d ---
   # A mesma configuração da produção (deploy/monitoring), com a sonda apontada para o web local.
   # Grafana em http://localhost:3030 (painel "Escambo"; na demo abre sem login, só para leitura).
@@ -201,6 +237,20 @@ services:
     restart: unless-stopped
     volumes:
       - ./deploy/monitoring/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+
+  # Lê as métricas que o serviço backup grava em arquivo (escambo_backup_*), para o alerta BackupAtrasado.
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: escambo-node-exporter
+    profiles: [monitoring]
+    restart: unless-stopped
+    command:
+      - --collector.disable-defaults
+      - --collector.textfile
+      - --collector.textfile.directory=/metricas
+      - --web.disable-exporter-metrics
+    volumes:
+      - backup_metrics:/metricas:ro
 
   grafana:
     image: grafana/grafana-oss:12.1.1
@@ -235,6 +285,7 @@ services:
 
 volumes:
   api_data:
+  backup_metrics:
   prometheus_data:
   grafana_data:
   escambo_db_data:

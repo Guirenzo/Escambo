@@ -10,7 +10,7 @@ import type {
 import { logger } from '../../config/logger';
 import { addDaysToDay, dayIn, DEFAULT_TIMEZONE } from '../../utils/timezone';
 import { userZone } from '../auth/user-zone';
-import { settingsRepository } from '../settings/settings.repository';
+import { settingsFacade } from '../settings/settings.facade';
 import {
   gamificationRepository,
   type BadgeCatalogRow,
@@ -290,7 +290,7 @@ export const gamificationService = {
           lat: query.lat!,
           lng: query.lng!,
           radiusKm: rankingRadius(
-            await settingsRepository.getNumber('ranking_radius_km', DEFAULT_RANKING_RADIUS_KM),
+            await settingsFacade.getNumber('ranking_radius_km', DEFAULT_RANKING_RADIUS_KM),
           ),
         }
       : undefined;

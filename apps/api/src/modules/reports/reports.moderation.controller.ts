@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { logger } from '../../config/logger';
 import { captureError } from '../../config/sentry';
-import { adminRepository } from '../admin/admin.repository';
+import { adminFacade } from '../admin/admin.facade';
 import { auditService } from '../audit/audit.service';
 import { moderationCsvFileName, moderationHistoryCsv } from './moderation.csv';
 import { moderationHealthService } from './moderation.health';
@@ -37,7 +37,7 @@ export async function exportModerationHealthCsv(req: Request, res: Response): Pr
   const fileName = moderationCsvFileName(series.history);
   const first = series.history[0]?.day ?? '';
   const last = series.history[series.history.length - 1]?.day ?? '';
-  await adminRepository.recordAction(
+  await adminFacade.recordAction(
     req.user!.uid,
     'moderation_health_exported',
     'moderation',
@@ -65,7 +65,7 @@ export async function actOnReport(req: Request, res: Response): Promise<void> {
   const adminId = req.user!.uid;
   const { result, target } = await moderationService.act(adminId, id, action, note || null);
   try {
-    await adminRepository.recordAction(
+    await adminFacade.recordAction(
       adminId,
       RECORDED_AS[action],
       target.type,

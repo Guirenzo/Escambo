@@ -215,11 +215,12 @@ async function openSala(as: number = CLIENT, timezone: string | null = 'America/
   return view;
 }
 
-const scrollIntoView = vi.fn();
+const scrollTo = vi.fn();
 
 beforeAll(() => {
-  // O jsdom não rola a tela: a Sala pede para rolar o chat até a última mensagem.
-  window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
+  // O jsdom não rola a tela: a Sala pede para a lista do chat (só ela, não a página) rolar até a
+  // última mensagem.
+  window.HTMLElement.prototype.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
 });
 
 beforeEach(() => {
@@ -227,7 +228,7 @@ beforeEach(() => {
   socket.emit.mockReset();
   socket.listeners.clear();
   socket.connected = false;
-  scrollIntoView.mockClear();
+  scrollTo.mockClear();
   api.contractDetail.mockResolvedValue(contract());
   api.chatHistory.mockResolvedValue(history([]));
   api.markChatRead.mockResolvedValue({ conversationId: 5, marked: 0, upToId: null, readAt: null });
@@ -451,7 +452,7 @@ describe('SalaContratoView: valores e linha do tempo', () => {
     expect(screen.getByText(`Dinheiro · criado em ${dtm(CREATED)}`)).toBeInTheDocument();
     // O status atual no topo (a linha do tempo deste exemplo ainda não tem "Entregue").
     expect(screen.getByText('Entregue')).toBeInTheDocument();
-    await waitFor(() => expect(document.title).toBe('Vídeo institucional · Escambo'));
+    await waitFor(() => expect(document.title).toBe('Contratação: Vídeo institucional · Escambo'));
 
     const timeline = within(card('Linha do tempo'));
     // Rótulo e valor, par a par, como estão na tela.
@@ -737,7 +738,7 @@ describe('SalaContratoView: entregas (RF-035)', () => {
     await openSala(CLIENT);
 
     const latest = within(card('Entregas')).getByTestId('delivery-2');
-    const download = within(latest).getByRole('button', { name: 'Baixar final.pdf' });
+    const download = within(latest).getByRole('button', { name: /^Baixar final\.pdf / });
     expect(download).toHaveTextContent('200 KB');
     await userEvent.setup().click(download);
     await waitFor(() =>
@@ -940,12 +941,14 @@ describe('SalaContratoView: chat', () => {
   it('mensagem que chega pelo socket entra no fim, sem duplicar, e rola o chat até ela', async () => {
     api.chatHistory.mockResolvedValue(history([message({ id: 1, content: 'Bom dia' })]));
     await openSala();
-    scrollIntoView.mockClear();
+    scrollTo.mockClear();
     const incoming = { ...message({ id: 8, content: 'Nova do socket' }), contractId: ID };
     act(() => socket.fire('message:new', incoming));
     expect(texts()).toEqual(['Bom dia', 'Nova do socket']);
-    expect(scrollIntoView).toHaveBeenCalledTimes(1);
-    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth' });
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith({ top: expect.any(Number), behavior: 'smooth' });
+    // Quem rola é a lista do chat, não a página.
+    expect(scrollTo.mock.contexts[0]).toHaveClass('chat-log');
 
     // A mesma mensagem de novo (reconexão) não vira uma segunda bolha.
     act(() => socket.fire('message:new', incoming));
@@ -1046,7 +1049,7 @@ describe('SalaContratoView: chat', () => {
       ]),
     );
     await openSala();
-    const file = screen.getByRole('button', { name: 'Baixar briefing.pdf' });
+    const file = screen.getByRole('button', { name: /^Baixar briefing\.pdf / });
     expect(file).toHaveTextContent('2 KB');
     expect(screen.getByText('Segue o briefing')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Carregando imagem' })).toBeInTheDocument();
@@ -1179,7 +1182,7 @@ describe('SalaContratoView: enviar anexo', () => {
     await user.click(sendButton());
     expect(api.sendAttachment).toHaveBeenCalledWith(ID, file, undefined);
     expect(api.sendMessage).not.toHaveBeenCalled();
-    expect(await screen.findByRole('button', { name: 'Baixar roteiro.pdf' })).toBeVisible();
+    expect(await screen.findByRole('button', { name: /^Baixar roteiro\.pdf / })).toBeVisible();
     // O anexo pendente sai e o campo volta a ser de mensagem.
     expect(screen.queryByRole('button', { name: 'Remover anexo' })).toBeNull();
     expect(screen.getByPlaceholderText('Escreva uma mensagem…')).toBeInTheDocument();
@@ -1293,7 +1296,7 @@ describe('SalaContratoView: enviar anexo', () => {
         }),
       ),
     );
-    expect(await screen.findByRole('button', { name: 'Baixar roteiro.pdf' })).toBeVisible();
+    expect(await screen.findByRole('button', { name: /^Baixar roteiro\.pdf / })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Anexar arquivo' })).toBeEnabled();
     expect(api.sendAttachment).toHaveBeenCalledTimes(1);
   });

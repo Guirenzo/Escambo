@@ -41,21 +41,24 @@ sudo ufw allow OpenSSH && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp && sud
 
 ## 2. Primeira subida
 
-Poucos arquivos vão para a VPS: o compose de produção, o `Caddyfile` e a página de fora do ar, o `.env` e (opcional) os
-scripts de backup. Não precisa clonar o repositório. A configuração do monitoramento (`deploy/monitoring/`,
+Poucos arquivos vão para a VPS: o compose de produção, o `Caddyfile` e a página de fora do ar, o `.env` e os
+scripts do backup automático (`deploy/backup/`, que o serviço `backup` monta: sem eles o compose não sobe). Não precisa clonar o repositório. A configuração do monitoramento (`deploy/monitoring/`,
 opcional) chega sozinha no primeiro deploy pelo workflow Deploy (seção 3).
 
 ```bash
 sudo mkdir -p /opt/escambo && sudo chown "$USER" /opt/escambo && cd /opt/escambo
 base=https://raw.githubusercontent.com/Guirenzo/Escambo/main
 curl -fsSLO "$base/docker-compose.prod.yml"
-mkdir -p deploy/status scripts
+mkdir -p deploy/status deploy/backup scripts backups
 curl -fsSL "$base/deploy/Caddyfile" -o deploy/Caddyfile
 curl -fsSL "$base/deploy/status/fora-do-ar.html" -o deploy/status/fora-do-ar.html
-curl -fsSL "$base/scripts/backup-db.sh"  -o scripts/backup-db.sh
-curl -fsSL "$base/scripts/backup-uploads.sh" -o scripts/backup-uploads.sh
-curl -fsSL "$base/scripts/restore-db.sh" -o scripts/restore-db.sh
-chmod +x scripts/*.sh
+for f in comum agendador backup-db backup-uploads restore-db fora-da-vps; do
+  curl -fsSL "$base/deploy/backup/$f.sh" -o "deploy/backup/$f.sh"
+done
+for f in backup-db backup-uploads restore-db; do
+  curl -fsSL "$base/scripts/$f.sh" -o "scripts/$f.sh"
+done
+chmod +x deploy/backup/*.sh scripts/*.sh
 curl -fsSL "$base/.env.prod.example" -o .env
 ```
 
@@ -80,12 +83,12 @@ Suba:
 ```bash
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml ps          # db, api, web, caddy "healthy"; migrate "exited (0)"
+docker compose -f docker-compose.prod.yml ps          # db, api, web, caddy, backup "healthy"; migrate "exited (0)"
 curl -s https://SEU_DOMINIO/api/health                # {"status":"ok","db":"up","version":"…","commit":"…"}
 ```
 
 A ordem é `db` (healthy) → `migrate` (baseline + migrations + seed do catálogo, e sai) → `api` → `web` →
-`caddy`. O Caddy emite o certificado no primeiro acesso (alguns segundos; a porta 80 precisa estar aberta).
+`caddy`, com o `backup` ao lado (faz o primeiro backup na hora, porque ainda não existe nenhum). O Caddy emite o certificado no primeiro acesso (alguns segundos; a porta 80 precisa estar aberta).
 
 **Primeiro admin:** cadastre-se no app com um e-mail que esteja em `ADMIN_EMAILS` — a conta já nasce admin
 (painel `/admin`: métricas, mediação, fila de saques, caixa de saída de e-mails, pedidos LGPD).
@@ -261,6 +264,36 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
+
+### Atualizar para a 1.46.0 (ADR 64)
+
+Duas migrations (0048 e 0049), seguras de rodar de novo, e o backup passa a ser um serviço do compose.
+
+**1. Backup antes**, ainda pelo cron (seção 4). Guarde esse arquivo: um dump feito antes da 1.46.0 só volta pelo `restore-db.sh` novo (passo 4).
+
+**2. Tirar o cron do backup.** O serviço `backup` faz o dump do banco e o pacote dos arquivos todo dia às `BACKUP_HOUR` (03:00 de Brasília), com retenção. Rodar os dois juntos só gasta disco. Apague as linhas de `scripts/backup-db.sh` e `scripts/backup-uploads.sh` do `crontab -e` e crie a pasta dos backups (os arquivos ficam com o dono dela, com permissão 600):
+
+```bash
+cd /opt/escambo && mkdir -p backups
+```
+
+Os scripts (`deploy/backup/`) chegam pelo workflow Deploy, junto com o compose. Num deploy à mão, baixe-os antes do `up -d` como na seção 2: o compose não sobe sem eles. `BACKUP_HOUR`, `BACKUP_KEEP` (7) e `BACKUP_PATH` (`./backups`) são opcionais no `.env`.
+
+**3. Migrations.**
+- `0048`: cada linha do histórico de status do contrato passa a dizer quem fez a mudança (`origem`: a pessoa, o admin ou um job). As linhas antigas ficam sem origem.
+- `0049`: recria os oito triggers do extrato imutável e da auditoria no formato que o `mysqldump` devolve inteiro. Antes dela, cada trigger ia para o dump com um `;` a mais, e a importação direta (`mysql < dump`) falhava. Os triggers continuam fazendo a mesma coisa.
+
+**4. Dumps antigos.** O `deploy/backup/restore-db.sh` (e o atalho `scripts/restore-db.sh`) conserta na importação o corte dos dumps feitos antes da 1.46.0. Os feitos depois importam até com o `mysql` puro.
+
+**5. Conferir.**
+
+```bash
+docker compose -f docker-compose.prod.yml ps backup       # "healthy" depois do primeiro backup
+docker compose -f docker-compose.prod.yml logs backup     # "backup concluído em N s"
+cat backups/last-backup.json                              # status, horários, arquivo, tamanho e sha256
+```
+
+O primeiro backup sai na subida do serviço, porque o último tem mais de 24 h para ele. Com o perfil `monitoring`, o `node-exporter` novo expõe a idade do último backup e o Grafana ganha os alertas `BackupAtrasado` e `BackupForaDaVpsAtrasado`.
 
 ### Atualizar para a 1.45.0 (ADR 63)
 
@@ -469,27 +502,52 @@ deploy); as revisões com a hora certa não são tocadas, e o aviso de revisão 
 
 ## 4. Backup e restauração
 
-`scripts/backup-db.sh` faz um `mysqldump --single-transaction` **dentro** do container do banco (não expõe
-senha), comprime em `backups/` e mantém os 14 mais recentes (`BACKUP_KEEP`). Agende no cron e copie a
-pasta para fora da VPS (rclone, scp, S3…) — backup na mesma máquina não é backup.
+O serviço `backup` do `docker-compose.prod.yml` (ADR 64, RNF-009) faz o backup sozinho, sem cron na VPS. Todo dia às
+`BACKUP_HOUR` (padrão 03:00, horário de Brasília) ele roda:
+
+- o dump do banco: `mysqldump --single-transaction --triggers`, como root, em `backups/escambo-AAAAMMDD-HHMMSS.sql.gz`;
+- o pacote dos arquivos da API (anexos, fotos, quarentena), em `backups/uploads-AAAAMMDD-HHMMSS.tgz`.
+
+Cada arquivo sai com um `.sha256` ao lado e permissão 600. A retenção guarda as `BACKUP_KEEP` (7) cópias mais
+recentes e tudo com menos de `BACKUP_KEEP` dias. Ao subir, se o último backup bem-sucedido tem mais de 24 h (ou
+não existe), o serviço faz um na hora. Uma falha não derruba nada: fica no log e no status, e ele tenta de novo
+em uma hora. O resultado aparece em quatro lugares:
+
+- `backups/last-backup.json`: status, horários e, de cada parte, o último sucesso com o arquivo, o tamanho e o sha256;
+- o log: `docker compose -f docker-compose.prod.yml logs backup`;
+- o healthcheck: `ps` mostra `unhealthy` quando o último sucesso passa de 26 h;
+- com o perfil `monitoring`, a métrica do `node-exporter` e o alerta `BackupAtrasado` no Grafana (por e-mail).
 
 ```bash
-COMPOSE_FILE=docker-compose.prod.yml scripts/backup-db.sh
-crontab -e
-# 0 3 * * * cd /opt/escambo && COMPOSE_FILE=docker-compose.prod.yml scripts/backup-db.sh >> backups/backup.log 2>&1
-# 10 3 * * * cd /opt/escambo && COMPOSE_FILE=docker-compose.prod.yml scripts/backup-uploads.sh >> backups/backup.log 2>&1
+cd /opt/escambo
+b="docker compose -f docker-compose.prod.yml exec backup bash /opt/escambo/deploy/backup/agendador.sh"
+$b agora      # um backup agora, fora do horário (antes de uma atualização, por exemplo)
+$b status     # o last-backup.json
+$b proximo    # quando roda o próximo
 ```
 
-Restaurar (para a API, importa, roda migrations pendentes e sobe de novo):
+**Fora da VPS.** Backup só na mesma máquina não sobrevive a um disco perdido nem a um Droplet apagado. O perfil
+`offsite` sobe o `backup-offsite` (rclone), que a cada hora copia para um bucket S3 compatível (DigitalOcean
+Spaces, AWS S3, Backblaze B2) o que ainda não está lá, com os `.sha256`. Ligue com `COMPOSE_PROFILES=offsite` (ou
+`monitoring,offsite`) e as `OFFSITE_S3_*` no `.env` (modelo em `.env.prod.example`). Use uma chave só de escrita
+e uma regra de ciclo de vida no bucket para a retenção: quem invadir a VPS não apaga as cópias de fora. O alerta
+`BackupForaDaVpsAtrasado` avisa quando a última cópia passa de 26 h.
+
+**Restaurar** (confere o checksum e o fim do dump antes de tocar no banco; para a API e o backup, recria o banco,
+importa, roda as migrations pendentes e sobe de novo):
 
 ```bash
 COMPOSE_FILE=docker-compose.prod.yml scripts/restore-db.sh backups/escambo-20260910-030000.sql.gz
 ```
 
+Use sempre o `restore-db.sh`: ele importa como root (os triggers voltam com o DEFINER original) e conserta os
+dumps feitos antes da 1.46.0. O CI ensaia a restauração a cada push (job `backup`: dump, restauração num banco
+vazio, linhas, estrutura e triggers iguais aos de antes). Ensaie também na VPS uma vez, num banco descartável.
+
 O volume `escambo_api_data` guarda os **anexos do chat** (`uploads/`) e as **fotos de perfil e imagens do portfólio** (`media/`, com as miniaturas geradas ao lado de cada original) e as **imagens removidas pela moderação** em quarentena (`quarantine/`, nunca servidas em público e apagadas quando não cabe mais contestação), permanentes — o banco só tem a
 chave de cada arquivo) e as cópias de dados LGPD (temporárias, `EXPORT_TTL_DAYS`). Os anexos precisam
-de backup tanto quanto o banco: `scripts/backup-uploads.sh` empacota a pasta de dentro do container
-(`backups/uploads-*.tgz`, mesma retenção) — agende no mesmo cron. Os certificados ficam em
+de backup tanto quanto o banco: o serviço `backup` empacota a pasta junto com o dump (`backups/uploads-*.tgz`,
+mesma retenção); à mão, `scripts/backup-uploads.sh`. Os certificados ficam em
 `caddy_data` e são reemitidos se sumirem. As imagens são processadas pela sharp, que já traz o binário
 da libvips para Alpine: a imagem da API não precisa de pacote extra nem de compilador.
 
@@ -518,6 +576,7 @@ docker compose -f docker-compose.prod.yml start api
 | Console do MySQL        | `docker compose -f docker-compose.prod.yml exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'` |
 | Atualizar MySQL/Caddy   | `docker compose -f docker-compose.prod.yml pull && up -d` (imagens oficiais, mesmas majors)                         |
 | Painel de monitoramento | `ssh -L 3000:127.0.0.1:3000 usuario@vps` e abra `http://localhost:3000` (perfil `monitoring`)                       |
+| Último backup           | `cat backups/last-backup.json` (ou `docker compose -f docker-compose.prod.yml logs backup`)                         |
 
 - **Monitoramento (ADR 59):** com `COMPOSE_PROFILES=monitoring` e `GRAFANA_ADMIN_PASSWORD` no `.env`, sobem o
   Prometheus (lê o `/metrics` da API na rede interna), uma sonda de uptime (o `/api/health` pelo domínio, como um
@@ -542,7 +601,7 @@ docker compose -f docker-compose.prod.yml start api
 - [ ] `PAYMENTS_SIMULATE=false` (ou piloto explicitamente sem dinheiro real).
 - [ ] `ADMIN_EMAILS` só com endereços seus; confirme o e-mail da conta admin.
 - [ ] Firewall: só 22, 80 e 443. Banco e API não publicam porta (o compose de produção já não publica).
-- [ ] Backup diário no cron (banco **e** anexos do chat) **e** cópia fora da VPS; restauração testada uma vez.
+- [ ] Serviço `backup` "healthy" (banco **e** arquivos da API, todo dia) **e** cópia fora da VPS (perfil `offsite`); restauração testada uma vez.
 - [ ] Atualizações do sistema (`unattended-upgrades`) e das imagens oficiais (`pull` periódico).
 - [ ] 2FA na conta do GitHub: quem controla `main` controla o que a VPS puxa.
 

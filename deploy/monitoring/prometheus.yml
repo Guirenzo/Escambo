@@ -26,6 +26,12 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox:9115
 
+  # Backup (RNF-009): o serviço backup grava escambo_backup_* em arquivo, e o node-exporter (só o
+  # coletor textfile) expõe. A regra BackupAtrasado avisa quando o último sucesso fica velho.
+  - job_name: backup
+    static_configs:
+      - targets: ['node-exporter:9100']
+
   - job_name: prometheus
     static_configs:
       - targets: ['localhost:9090']

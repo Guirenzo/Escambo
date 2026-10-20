@@ -431,6 +431,7 @@ describe('RN-023: revisões incluídas e liberação na mesma transação', () =
       const financial = await money(client, freelancer, id);
       const budget = {
         changedBy: freelancer.id,
+        source: 'user' as const,
         now: NOW,
         expectedRevisionsUsed: Number(stale.revisions_used),
         expectedRevisionLimit: Number(stale.revision_limit),
@@ -463,6 +464,7 @@ describe('RN-023: revisões incluídas e liberação na mesma transação', () =
         contractId: id,
         milestoneId: mid,
         changedBy: client.id,
+        source: 'user',
         note: 'Pedido feito antes da primeira revisão',
         now: NOW,
         expectedRevisionsUsed: Number(stale.revisions_used),

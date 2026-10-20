@@ -13,7 +13,7 @@ import { realtime } from '../../config/realtime';
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
-import { authRepository } from '../auth/auth.repository';
+import { authFacade } from '../auth/auth.facade';
 import { purgeForUser } from '../messaging/attachments.purge';
 import { notificationsService } from '../notifications/notifications.service';
 import { appealsService } from '../reports/appeals.service';
@@ -277,7 +277,7 @@ export const lgpdService = {
     const id = await lgpdRepository.createExport(userId);
     let fileName: string | null = null;
     try {
-      const user = await authRepository.findById(userId);
+      const user = await authFacade.findById(userId);
       const data = await buildExport(userId);
       fileName = `${user?.ulid ?? userId}-${id}.json`;
       await writeExportFile(fileName, data);

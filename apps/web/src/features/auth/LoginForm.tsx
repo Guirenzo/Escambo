@@ -80,10 +80,12 @@ export function LoginForm() {
 
       <section className="auth-panel">
         <form className="card auth-card" onSubmit={handleSubmit}>
-          <div className="tabs">
+          {/* Os dois modos são botões de alternância: o estado sai em aria-pressed, não só na cor. */}
+          <div className="tabs" role="group" aria-label="Entrar ou criar conta">
             <button
               type="button"
               className={mode === 'login' ? 'active' : ''}
+              aria-pressed={mode === 'login'}
               onClick={() => setMode('login')}
             >
               Entrar
@@ -91,6 +93,7 @@ export function LoginForm() {
             <button
               type="button"
               className={mode === 'register' ? 'active' : ''}
+              aria-pressed={mode === 'register'}
               onClick={() => setMode('register')}
             >
               Criar conta
@@ -154,7 +157,11 @@ export function LoginForm() {
               <Link to="/esqueci-senha">Esqueci minha senha</Link>
             </p>
           )}
-          {error && <p className="error">{error}</p>}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
           <Button
             type="submit"
             disabled={loading || (mode === 'register' && !accepted)}

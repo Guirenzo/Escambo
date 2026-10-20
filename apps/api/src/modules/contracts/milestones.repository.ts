@@ -8,6 +8,7 @@ import { INCLUDED_REVISIONS } from './deadline-grace';
 import { recoverDeliveryRules } from './delivery-snapshots';
 import { deliveryDisputeOpensAt, firstDeliveryAt } from './dispute-window';
 import { deliveryFilesRepository, type DeliveryFilesInput } from './delivery-files';
+import type { StatusChangeSource } from './status-history';
 
 /**
  * Escrow por marcos (RN-069): o valor inteiro fica retido no aceite; cada marco aprovado
@@ -115,15 +116,16 @@ async function history(
   conn: PoolConnection,
   contractId: number,
   changedBy: number,
+  source: StatusChangeSource,
   oldStatus: string | null,
   newStatus: string,
   note: string | null,
   at?: Date,
 ): Promise<void> {
   await conn.query<ResultSetHeader>(
-    `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note${at ? ', created_at' : ''})
-     VALUES (:contractId, :changedBy, :oldStatus, :newStatus, :note${at ? ', :at' : ''})`,
-    { contractId, changedBy, oldStatus, newStatus, note, ...(at ? { at } : {}) },
+    `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source${at ? ', created_at' : ''})
+     VALUES (:contractId, :changedBy, :oldStatus, :newStatus, :note, :source${at ? ', :at' : ''})`,
+    { contractId, changedBy, oldStatus, newStatus, note, source, ...(at ? { at } : {}) },
   );
 }
 
@@ -206,6 +208,7 @@ export const milestonesRepository = {
     approvalDueAt: Date;
     /** Arquivos já no disco (RF-035): viram mensagens do chat ligadas a este marco. */
     attachments?: DeliveryFilesInput;
+    source: StatusChangeSource;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -271,6 +274,7 @@ export const milestonesRepository = {
         conn,
         p.contractId,
         p.changedBy,
+        p.source,
         status,
         'in_progress',
         `Marco «${String(m[0]?.title ?? '')}» entregue: ${p.message}`,
@@ -301,6 +305,8 @@ export const milestonesRepository = {
     now: Date;
     /** Aprovação tácita: só se a hora gravada no marco já passou deste instante. */
     dueBy?: Date | null;
+    /** `system` na aprovação tácita (job), `user` na aprovação do cliente. */
+    source: StatusChangeSource;
   }): Promise<{ ok: boolean; completed: boolean; net: number; title: string; amount: number }> {
     const conn = await pool.getConnection();
     try {
@@ -353,6 +359,7 @@ export const milestonesRepository = {
         conn,
         p.contractId,
         p.changedBy,
+        p.source,
         status,
         completed ? 'completed' : 'in_progress',
         `${p.note ? `${p.note} · ` : ''}Marco «${m.title}» aprovado: ${
@@ -389,6 +396,7 @@ export const milestonesRepository = {
     expectedRevisionsUsed: number;
     note: string | null;
     now: Date;
+    source: StatusChangeSource;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -426,6 +434,7 @@ export const milestonesRepository = {
         conn,
         p.contractId,
         p.changedBy,
+        p.source,
         status,
         status,
         `Revisão pedida no marco «${String(m[0]?.title ?? '')}»${p.note ? `: ${p.note}` : ''}`,
@@ -448,6 +457,7 @@ export const milestonesRepository = {
     now: Date;
     expectedRevisionsUsed: number;
     expectedRevisionLimit: number;
+    source: StatusChangeSource;
   }): Promise<boolean> {
     const conn = await pool.getConnection();
     try {
@@ -495,6 +505,7 @@ export const milestonesRepository = {
         conn,
         p.contractId,
         p.changedBy,
+        p.source,
         status,
         status,
         `O freelancer liberou mais uma revisão sem custo no marco «${row.title}» (RN-023): agora são ${row.revision_limit + 1}`,

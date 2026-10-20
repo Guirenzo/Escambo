@@ -1,7 +1,7 @@
 import { MessageSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { Contract } from '@escambo/types';
-import { Button, Pill } from '../../components/ui';
+import { Button, Pill, TableWrap } from '../../components/ui';
 import { deadlinePill } from '../../lib/deadline';
 import { statusLabel, brl, dt } from '../../lib/format';
 import { ContractActions } from '../contracts/ContractActions';
@@ -22,7 +22,7 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
   const navigate = useNavigate();
 
   return (
-    <div className="table-wrap">
+    <TableWrap label="Tabela de contratações">
       <table className="table">
         <thead>
           <tr>
@@ -73,6 +73,6 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }

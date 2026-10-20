@@ -10,7 +10,8 @@
 #   - banco e API NÃO publicam porta no host: só o Caddy escuta (80/443) e fala com o web (nginx) pela rede interna;
 #   - segredos obrigatórios (`${VAR:?}`): o compose se recusa a subir com senha padrão;
 #   - gateway simulado desligado, e-mail via SMTP, TRUST_PROXY=2 (Caddy → nginx → API);
-#   - schema, migrations e seed de referência entram pelo job `migrate` (a API só sobe depois dele).
+#   - schema, migrations e seed de referência entram pelo job `migrate` (a API só sobe depois dele);
+#   - backup diário do banco e dos arquivos da API pelo serviço `backup`, sem cron na VPS (RNF-009).
 # Guia completo (VPS, DNS, atualização, rollback, backup): DEPLOY.md
 
 name: escambo
@@ -173,6 +174,96 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+  # Backup diário (RNF-009), sem cron na VPS: dorme até BACKUP_HOUR (Brasília), faz o dump do banco
+  # (mysqldump com --triggers, snapshot consistente) e o pacote dos arquivos da API, com .sha256 ao
+  # lado, e aplica a retenção: as BACKUP_KEEP cópias mais recentes e tudo com menos de BACKUP_KEEP dias.
+  # Ao subir, se o último backup tem mais de 24 h (ou não existe), faz um na hora. Os arquivos ficam em
+  # BACKUP_PATH (padrão ./backups, ao lado deste compose); o resultado, em last-backup.json lá dentro,
+  # no log (`logs backup`), no healthcheck (`ps`: unhealthy com o último sucesso > 26 h) e na métrica
+  # que o node-exporter do perfil monitoring expõe (alerta BackupAtrasado). Uma falha não derruba
+  # nada: ninguém depende deste serviço, e ele tenta de novo em uma hora.
+  # Os scripts (deploy/backup/) chegam pelo workflow Deploy; à mão: `exec backup bash
+  # /opt/escambo/deploy/backup/agendador.sh agora` faz um backup fora do horário.
+  backup:
+    image: mysql:8.0
+    restart: unless-stopped
+    logging: *logging-small
+    entrypoint: ['bash', '/opt/escambo/deploy/backup/agendador.sh']
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      TZ: America/Sao_Paulo
+      BACKUP_MODE: direto
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-escambo}
+      # Root: o dump leva os triggers com o DEFINER original, e a restauração (como root) os recria.
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?defina DB_ROOT_PASSWORD no .env}
+      BACKUP_HOUR: ${BACKUP_HOUR:-03:00}
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
+      BACKUP_DIR: /backups
+      UPLOADS_DIR: /dados
+      BACKUP_METRICS_DIR: /metricas
+    volumes:
+      - type: bind
+        source: ./deploy/backup
+        target: /opt/escambo/deploy/backup
+        read_only: true
+        bind:
+          create_host_path: false
+      # Crie a pasta antes (mkdir backups): os arquivos ficam com o dono dela, com permissão 600.
+      - ${BACKUP_PATH:-./backups}:/backups
+      - api_data:/dados:ro
+      - backup_metrics:/metricas
+    healthcheck:
+      test: ['CMD', 'bash', '/opt/escambo/deploy/backup/agendador.sh', 'saude']
+      interval: 5m
+      timeout: 10s
+      retries: 1
+      start_period: 30m
+
+  # Cópia dos backups para fora da VPS (RNF-009), perfil opcional: COMPOSE_PROFILES=offsite no .env e
+  # as OFFSITE_S3_* preenchidas (DigitalOcean Spaces ou outro S3). A cada hora manda o que falta; não
+  # apaga nada no destino sem OFFSITE_KEEP_DAYS. Detalhes em deploy/backup/fora-da-vps.sh.
+  backup-offsite:
+    image: rclone/rclone:1.71.1
+    profiles: [offsite]
+    restart: unless-stopped
+    logging: *logging-small
+    entrypoint: ['/bin/sh', '/opt/escambo/deploy/backup/fora-da-vps.sh']
+    environment:
+      # Sem arquivo de configuração: o destino vem todo das variáveis abaixo.
+      RCLONE_CONFIG: /dev/null
+      RCLONE_CONFIG_OFFSITE_TYPE: s3
+      RCLONE_CONFIG_OFFSITE_PROVIDER: ${OFFSITE_S3_PROVIDER:-DigitalOcean}
+      RCLONE_CONFIG_OFFSITE_ENDPOINT: ${OFFSITE_S3_ENDPOINT:-}
+      RCLONE_CONFIG_OFFSITE_REGION: ${OFFSITE_S3_REGION:-}
+      RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID: ${OFFSITE_S3_ACCESS_KEY:-}
+      RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY: ${OFFSITE_S3_SECRET_KEY:-}
+      RCLONE_CONFIG_OFFSITE_ACL: private
+      # A chave pode (e deve) ser só de escrita no bucket: sem listar nem criar buckets.
+      RCLONE_CONFIG_OFFSITE_NO_CHECK_BUCKET: 'true'
+      OFFSITE_S3_BUCKET: ${OFFSITE_S3_BUCKET:-}
+      OFFSITE_S3_PREFIX: ${OFFSITE_S3_PREFIX:-escambo}
+      OFFSITE_KEEP_DAYS: ${OFFSITE_KEEP_DAYS:-}
+      OFFSITE_INTERVAL_MINUTES: ${OFFSITE_INTERVAL_MINUTES:-60}
+      BACKUP_DIR: /backups
+      BACKUP_METRICS_DIR: /metricas
+    volumes:
+      - type: bind
+        source: ./deploy/backup
+        target: /opt/escambo/deploy/backup
+        read_only: true
+        bind:
+          create_host_path: false
+      - ${BACKUP_PATH:-./backups}:/backups:ro
+      - backup_metrics:/metricas
+    depends_on:
+      - backup
+
   # --- Monitoramento (ADR 59), perfil opcional: COMPOSE_PROFILES=monitoring no .env ---
   # O Prometheus lê o /metrics da API e a sonda externa; o Grafana mostra o painel "Escambo", avalia os
   # alertas e os manda por e-mail (pelo SMTP do sistema), e só escuta no 127.0.0.1 da VPS
@@ -218,6 +309,21 @@ services:
         read_only: true
         bind:
           create_host_path: false
+
+  # Expõe ao Prometheus as métricas que o serviço backup (e o backup-offsite) gravam em arquivo
+  # (escambo_backup_*): só o coletor textfile, nada da máquina. Alerta BackupAtrasado no Grafana.
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    profiles: [monitoring]
+    restart: unless-stopped
+    logging: *logging-small
+    command:
+      - --collector.disable-defaults
+      - --collector.textfile
+      - --collector.textfile.directory=/metricas
+      - --web.disable-exporter-metrics
+    volumes:
+      - backup_metrics:/metricas:ro
 
   grafana:
     image: grafana/grafana-oss:12.1.1
@@ -273,3 +379,5 @@ volumes:
   caddy_config:
   prometheus_data:
   grafana_data:
+  # Arquivos .prom do backup (textfile do node-exporter): pequenos, recriados a cada rodada.
+  backup_metrics:

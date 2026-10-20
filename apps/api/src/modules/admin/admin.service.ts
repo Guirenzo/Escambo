@@ -3,12 +3,10 @@ import { blocklist } from '../../config/blocklist';
 import { realtime } from '../../config/realtime';
 import { clock } from '../../utils/clock';
 import { HttpError } from '../../utils/http-error';
-import { authRepository } from '../auth/auth.repository';
-import { sessionRepository } from '../auth/session.repository';
-import { contractsRepository } from '../contracts/contracts.repository';
+import { authFacade } from '../auth/auth.facade';
+import { contractsFacade } from '../contracts/contracts.facade';
 import { cashSettlement } from '../contracts/contracts.service';
-import { milestonesRepository } from '../contracts/milestones.repository';
-import { disputesRepository } from '../disputes/disputes.repository';
+import { disputesFacade } from '../disputes/disputes.facade';
 import { toDispute } from '../disputes/disputes.service';
 import { notificationsService } from '../notifications/notifications.service';
 import { adminRepository } from './admin.repository';
@@ -16,7 +14,7 @@ import type { ResolveDisputeInput } from './admin.schema';
 
 export const adminService = {
   async listOpenDisputes(): Promise<Dispute[]> {
-    return (await disputesRepository.listOpen()).map(toDispute);
+    return (await disputesFacade.listOpen()).map(toDispute);
   },
 
   /** Resolve a disputa aplicando a decisão de escrow (RN-063). */
@@ -25,19 +23,19 @@ export const adminService = {
     disputeId: number,
     input: ResolveDisputeInput,
   ): Promise<Dispute> {
-    const dispute = await disputesRepository.findById(disputeId);
+    const dispute = await disputesFacade.findById(disputeId);
     if (!dispute) throw new HttpError(404, 'Disputa não encontrada', 'dispute_not_found');
     if (dispute.status === 'resolved')
       throw new HttpError(409, 'Disputa já resolvida', 'already_resolved');
 
-    const contract = await contractsRepository.findById(dispute.contract_id);
+    const contract = await contractsFacade.findById(dispute.contract_id);
     if (!contract) throw new HttpError(404, 'Contratação não encontrada', 'contract_not_found');
     const paymentMode = contract.payment_mode ?? 'cash';
     const isCredits = paymentMode === 'credits';
     const isBarter = paymentMode === 'barter';
     // Retido para o freelancer: líquido em R$ ou créditos (inteiros); troca não tem escrow.
     // Por marcos, conta só o que ainda não foi liberado.
-    const remaining = isBarter ? null : await milestonesRepository.escrowRemaining(contract.id);
+    const remaining = isBarter ? null : await contractsFacade.escrowRemaining(contract.id);
     const escrowNet = isBarter
       ? 0
       : isCredits
@@ -97,7 +95,7 @@ export const adminService = {
       }
     }
 
-    const ok = await disputesRepository.resolve({
+    const ok = await disputesFacade.resolve({
       disputeId,
       adminId,
       contractId: contract.id,
@@ -111,6 +109,7 @@ export const adminService = {
       resolution: input.resolution,
       refundPercentage,
       note: input.note ?? null,
+      source: 'user',
     });
     if (!ok) throw new HttpError(409, 'Não foi possível resolver a disputa', 'conflict');
 
@@ -129,7 +128,7 @@ export const adminService = {
       });
     }
 
-    return toDispute((await disputesRepository.findById(disputeId))!);
+    return toDispute((await disputesFacade.findById(disputeId))!);
   },
 
   /** Suspende / bane / reativa um usuário (RN-007). */
@@ -139,7 +138,7 @@ export const adminService = {
     action: 'suspend' | 'ban' | 'reactivate',
   ): Promise<void> {
     const statusMap = { suspend: 'suspended', ban: 'banned', reactivate: 'active' } as const;
-    const user = await authRepository.findByUlid(ulid);
+    const user = await authFacade.findByUlid(ulid);
     if (!user) throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
     // Admin (inclusive o próprio) não é suspenso nem banido por aqui: sem essa trava, um clique
     // tira o único admin do painel e a saída é mexer no banco. Reativar continua valendo.
@@ -158,7 +157,7 @@ export const adminService = {
       blocklist.delete(user.id);
     } else {
       blocklist.add(user.id, statusMap[action]);
-      if (action === 'ban') await sessionRepository.revokeAllForUser(user.id);
+      if (action === 'ban') await authFacade.revokeAllSessions(user.id);
     }
     await realtime.emitToUser(user.id, 'account:status', { status: statusMap[action] });
     if (action === 'ban') realtime.disconnectUser(user.id);

@@ -160,6 +160,7 @@ describe('liberar mais uma revisão', () => {
       expect(repo.grantRevision).toHaveBeenCalledExactlyOnceWith({
         id: 31,
         changedBy: 44,
+        source: 'user',
         now: NOW,
         expectedRevisionsUsed: limit,
         expectedRevisionLimit: limit,
@@ -254,6 +255,7 @@ describe('pedido de revisão', () => {
       expect(repo.transition).toHaveBeenCalledExactlyOnceWith({
         id: 31,
         changedBy: 7,
+        source: 'user',
         from: 'delivered',
         to: 'revision_requested',
         note: 'Ajustar',
@@ -320,6 +322,7 @@ describe('revisões por marco', () => {
       contractId: 31,
       milestoneId: 81,
       changedBy: 44,
+      source: 'user',
       now: NOW,
       expectedRevisionsUsed: 2,
       expectedRevisionLimit: 2,
@@ -345,6 +348,7 @@ describe('revisões por marco', () => {
       contractId: 31,
       milestoneId: 81,
       changedBy: 7,
+      source: 'user',
       note: 'Ajustar',
       now: NOW,
       expectedRevisionsUsed: 1,

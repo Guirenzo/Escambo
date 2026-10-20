@@ -8,6 +8,7 @@ import {
   EmptyState,
   ErrorState,
   Input,
+  onTablistKeyDown,
   PageHeader,
   Select,
   Skeleton,
@@ -268,7 +269,13 @@ export function ServicosView() {
         />
       )}
 
-      <div className="tabs" role="tablist" aria-label="Serviços" style={{ maxWidth: 420 }}>
+      <div
+        className="tabs"
+        role="tablist"
+        onKeyDown={onTablistKeyDown}
+        aria-label="Serviços"
+        style={{ maxWidth: 420 }}
+      >
         <button
           type="button"
           role="tab"

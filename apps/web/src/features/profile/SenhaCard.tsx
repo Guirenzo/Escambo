@@ -16,6 +16,8 @@ export function SenhaCard() {
   const [confirm, setConfirm] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** O campo que precisa de correção: só ele fica marcado como inválido (aria-invalid). */
+  const [badField, setBadField] = useState<HTMLInputElement | null>(null);
   const currentRef = useRef<HTMLInputElement>(null);
   const nextRef = useRef<HTMLInputElement>(null);
   const confirmRef = useRef<HTMLInputElement>(null);
@@ -23,6 +25,7 @@ export function SenhaCard() {
   /** Mostra o erro e leva o foco ao campo que precisa ser corrigido. */
   function fail(message: string, field: HTMLInputElement | null): void {
     setError(message);
+    setBadField(field);
     field?.focus();
   }
 
@@ -34,6 +37,7 @@ export function SenhaCard() {
     }
     setSaving(true);
     setError(null);
+    setBadField(null);
     try {
       await api.changePassword({ currentPassword: current, newPassword: next });
       setCurrent('');
@@ -73,6 +77,7 @@ export function SenhaCard() {
             required
             autoComplete="current-password"
             aria-describedby={invalid ? 'senha-erro' : undefined}
+            aria-invalid={badField !== null && badField === currentRef.current}
           />
         </Field>
         <Field label="Nova senha">
@@ -86,6 +91,7 @@ export function SenhaCard() {
             autoComplete="new-password"
             placeholder="mínimo 8 caracteres"
             aria-describedby={invalid ? 'senha-erro' : undefined}
+            aria-invalid={badField !== null && badField === nextRef.current}
           />
         </Field>
         <Field label="Confirmar nova senha">
@@ -98,6 +104,7 @@ export function SenhaCard() {
             minLength={8}
             autoComplete="new-password"
             aria-describedby={invalid ? 'senha-erro' : undefined}
+            aria-invalid={badField !== null && badField === confirmRef.current}
           />
         </Field>
         {error && (

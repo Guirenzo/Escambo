@@ -5,6 +5,38 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.46.0] — 2026-10-20
+
+Backup automático que volta, fronteiras entre módulos conferidas pelo lint e acessibilidade auditada critério a critério (ADR 64). RF: 83 implementados, 2 parciais, 5 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Backup automático (RNF-009):** o serviço `backup` do compose faz, todo dia às 03:00 de Brasília, o dump do banco e o pacote dos arquivos da API, com `.sha256`, retenção de 7 dias e o resultado em `last-backup.json`, no log, no healthcheck e no alerta `BackupAtrasado` do Grafana. Sem cron na VPS.
+- **Cópia fora da VPS (RNF-009):** o perfil opcional `offsite` manda os backups para um bucket S3 (DigitalOcean Spaces, AWS S3, B2) a cada hora, sem apagar nada no destino, com o alerta `BackupForaDaVpsAtrasado`.
+- **Restauração testada no CI:** o job `backup` faz o backup como a produção, apaga o banco, restaura e confere linhas, estrutura e triggers. As imagens só são publicadas com ele verde.
+- **Fronteiras entre módulos (RNF-021):** o lint reprova um módulo que importa o repository de outro, ou controller e routes que importam repository. Quem é de fora usa o service ou a fachada do módulo dono (13 fachadas). As 15 exceções ficam listadas com o motivo; eram 47 imports assim.
+- **Auditoria de acessibilidade (RNF-029):** [docs/acessibilidade.md](./docs/acessibilidade.md) com os 50 critérios WCAG 2.1 A e AA, como cada um é atendido e provado, e o roteiro da verificação com leitor de tela. Novos testes de teclado de ponta a ponta e de estados no navegador.
+- "Pular para o conteúdo" no início de toda tela.
+
+### Alterado
+
+- **Avisos (toasts) com tempo ajustável (WCAG 2.2.1):** o de erro fica até a pessoa fechar; os outros saem em 6 s, com o relógio parado enquanto o mouse está em cima ou o foco está dentro. Todos têm o botão de fechar, e no máximo cinco ficam na tela.
+- O axe roda em todas as telas, no computador e no celular, e qualquer violação de critério WCAG reprova (antes, só `serious` e `critical`).
+- Anel de foco sólido de 2 px com contraste de 3:1 ou mais em botões, campos e áreas de texto; contorno dos campos e trilho do interruptor com 3:1.
+- O relatório de uso conta como atividade só as mudanças de status feitas pela pessoa, pela origem gravada no histórico (migration 0048), e não mais pelo texto da nota.
+
+### Corrigido
+
+- Nenhum backup feito desde a 1.45.0 voltava com um `mysql < dump` comum: os triggers da 0046 iam para o dump com um `;` a mais. A 0049 os recria em `BEGIN … END`, e o `restore-db.sh` conserta os dumps antigos na importação.
+- A imagem ampliada do chat deixava o Tab sair para a página de trás e, ao fechar, o foco ia para o início do documento.
+- No celular, as tabelas que rolam na horizontal não recebiam foco: sem mouse, as colunas da direita ficavam fora de alcance.
+- Erros do login, de "esqueci a senha" e de "redefinir senha" só visuais, sem aviso ao leitor de tela; erro de campo sem `aria-invalid`.
+- Ao abrir a Sala, a página inteira rolava até o chat.
+
+### Para atualizar
+
+Duas migrations (0048 e 0049), seguras de rodar de novo. Tire do cron as linhas de backup e crie a pasta `backups/`; os scripts de `deploy/backup/` chegam pelo workflow Deploy. Um dump de antes da 1.46.0 só volta pelo `restore-db.sh`. Passo a passo no DEPLOY.md ("Atualizar para a 1.46.0").
+
 ## [1.45.0] — 2026-10-19
 
 Terceira leva da auditoria de requisitos (ADR 63): sobram só os requisitos que dependem de decisão do dono ou da VPS. RF: 83 implementados, 2 parciais, 5 não implementados e 2 fora do escopo; RNF: 30, 9, 1 e 2.

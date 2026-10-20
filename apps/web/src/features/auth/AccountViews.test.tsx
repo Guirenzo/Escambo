@@ -254,6 +254,12 @@ describe('ResetPasswordView (/redefinir-senha)', () => {
     await user.click(screen.getByRole('button', { name: 'Salvar nova senha' }));
 
     expect(screen.getByText('As senhas não conferem')).toBeInTheDocument();
+    // Anunciado e ligado aos campos; a confirmação é a que fica marcada como inválida.
+    expect(screen.getByRole('alert')).toHaveTextContent('As senhas não conferem');
+    expect(screen.getByLabelText('Confirmar nova senha')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('Confirmar nova senha')).toHaveAccessibleDescription(
+      'As senhas não conferem',
+    );
     expect(resetPassword).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Salvar nova senha' })).toBeEnabled();
   });

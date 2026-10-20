@@ -243,6 +243,24 @@ describe('ImageAttachment', () => {
     expect(saveBlob).not.toHaveBeenCalled();
   });
 
+  it('aberta, o Tab fica dentro da imagem e, ao fechar, o foco volta para a miniatura', async () => {
+    const user = userEvent.setup();
+    attachmentBlob.mockResolvedValue({ blob: new Blob(['png']), fileName: 'foto.png' });
+    render(wrap(<ImageAttachment attachment={attachment()} />));
+    const thumb = await screen.findByRole('button', { name: 'Abrir imagem foto.png' });
+    await user.click(thumb);
+    const dialog = screen.getByRole('dialog', { name: 'foto.png' });
+    const close = within(dialog).getByRole('button', { name: 'Fechar' });
+    expect(close).toHaveFocus();
+    await user.tab();
+    expect(within(dialog).getByRole('button', { name: 'Baixar imagem' })).toHaveFocus();
+    await user.tab();
+    expect(close).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(thumb).toHaveFocus();
+  });
+
   it('pelo teclado só o Esc fecha: outra tecla deixa a imagem aberta', async () => {
     const user = userEvent.setup();
     attachmentBlob.mockResolvedValue({ blob: new Blob(['png']), fileName: 'foto.png' });
@@ -273,7 +291,7 @@ describe('FileAttachment', () => {
     );
     render(wrap(<FileAttachment attachment={pdf()} />));
 
-    const button = screen.getByRole('button', { name: 'Baixar contrato.pdf' });
+    const button = screen.getByRole('button', { name: /^Baixar contrato\.pdf / });
     expect(within(button).getByText('contrato.pdf')).toBeInTheDocument();
     expect(within(button).getByText('1,5 MB')).toBeInTheDocument();
     expect(attachmentBlob).not.toHaveBeenCalled();
@@ -291,6 +309,8 @@ describe('FileAttachment', () => {
     expect(saveBlob).toHaveBeenCalledTimes(1);
     expect(saveBlob).toHaveBeenCalledWith(blob, 'contrato-assinado.pdf');
     expect(within(button).getByText('1,5 MB')).toBeInTheDocument();
+    // O nome acessível contém tudo o que está escrito no cartão (WCAG 2.5.3), com o "Baixar" antes.
+    expect(button).toHaveAccessibleName('Baixar contrato.pdf 1,5 MB');
   });
 
   it('a API recusa o download: avisa com a mensagem dela, não salva nada e libera o botão', async () => {
@@ -299,7 +319,7 @@ describe('FileAttachment', () => {
     render(
       wrap(<FileAttachment attachment={pdf({ name: 'fontes.zip', mime: 'application/zip' })} />),
     );
-    const button = screen.getByRole('button', { name: 'Baixar fontes.zip' });
+    const button = screen.getByRole('button', { name: /^Baixar fontes\.zip / });
     await user.click(button);
     expect(await screen.findByText('Você não participa desta conversa')).toBeInTheDocument();
     expect(saveBlob).not.toHaveBeenCalled();
@@ -315,7 +335,7 @@ describe('FileAttachment', () => {
       .mockResolvedValueOnce({ blob: first, fileName: 'contrato.pdf' })
       .mockResolvedValueOnce({ blob: second, fileName: 'contrato.pdf' });
     render(wrap(<FileAttachment attachment={pdf()} />));
-    const button = screen.getByRole('button', { name: 'Baixar contrato.pdf' });
+    const button = screen.getByRole('button', { name: /^Baixar contrato\.pdf / });
 
     await user.click(button);
     await waitFor(() => expect(saveBlob).toHaveBeenCalledTimes(1));
@@ -333,7 +353,7 @@ describe('FileAttachment', () => {
     const user = userEvent.setup();
     attachmentBlob.mockRejectedValue('offline');
     render(wrap(<FileAttachment attachment={pdf()} />));
-    await user.click(screen.getByRole('button', { name: 'Baixar contrato.pdf' }));
+    await user.click(screen.getByRole('button', { name: /^Baixar contrato\.pdf / }));
     expect(await screen.findByText('Não foi possível baixar o arquivo')).toBeInTheDocument();
   });
 

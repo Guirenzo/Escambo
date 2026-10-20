@@ -1,15 +1,11 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeDb } from '../../test-support/fake-db';
-import { autoDisputeDescription } from '../contracts/deadline-notices';
-import { HUMAN_STATUS_CHANGE, usageRepository } from './usage.repository';
+import { usageRepository } from './usage.repository';
 
 vi.mock('../../config/db', async () => (await import('../../test-support/fake-db')).dbModule);
 
 const FROM = new Date('2025-08-25T03:00:00Z');
 const TO = new Date('2025-09-01T03:00:00Z');
-const flat = (sql: string): string => sql.replace(/\s+/g, ' ').trim();
 
 /**
  * Repository do uso (RF-081) sem banco: de onde sai cada contagem, quem conta como ativo e como o
@@ -57,7 +53,7 @@ describe('usageRepository', () => {
       "FROM messages m WHERE m.created_at >= :from AND m.created_at < :to AND m.type <> 'system'",
     );
     expect(sql).toContain(
-      `FROM contract_status_history h WHERE h.created_at >= :from AND h.created_at < :to AND ${flat(HUMAN_STATUS_CHANGE)}`,
+      "FROM contract_status_history h WHERE h.created_at >= :from AND h.created_at < :to AND h.source = 'user'",
     );
     expect(sql).toContain("JOIN users u ON u.id = a.user_id AND u.role <> 'admin'");
     expect(params).toEqual({ format: '%Y-%m', from: FROM, to: TO });
@@ -76,27 +72,19 @@ describe('usageRepository', () => {
     expect(params).toEqual({ from: FROM, to: TO });
   });
 
-  it('as mudanças automáticas ficam de fora pelos textos que a plataforma grava', () => {
-    const rule = flat(HUMAN_STATUS_CHANGE);
-    expect(rule).toContain("COALESCE(h.note, '') NOT LIKE 'Aprovação tácita%'");
-    expect(rule).toContain("COALESCE(h.note, '') NOT LIKE '%expirada: sem resposta%'");
-    expect(rule).toContain(
-      "NOT (h.new_status = 'disputed' AND EXISTS ( SELECT 1 FROM disputes d WHERE d.contract_id = h.contract_id AND d.description LIKE 'Aberta automaticamente%'))",
-    );
+  it('as mudanças automáticas ficam de fora pela origem gravada, não pelo texto da nota', async () => {
+    fakeDb.reply([], [{ active_users: '0' }]);
+    await usageRepository.activeByBucket(FROM, TO, 'day');
+    await usageRepository.activeTotal(FROM, TO);
 
-    // Os textos continuam os que contracts.service.ts grava (aprovação tácita e expiração) e o que
-    // deadline-notices.ts escreve na disputa por prazo: se mudarem lá, este teste avisa aqui.
-    const contracts = readFileSync(join(__dirname, '../contracts/contracts.service.ts'), 'utf8');
-    expect(contracts.match(/`Aprovação tácita: sem resposta do cliente até /g)).toHaveLength(2);
-    expect(contracts).toContain("} expirada: sem resposta ${seq % 2 === 0 ? 'do cliente'");
-    const description = autoDisputeDescription({
-      deadline: '10/09/2025',
-      noticeAt: '10/09/2025 18:00',
-      limit: '11/09/2025 18:00',
-      delivered: null,
-      missing: null,
-    });
-    expect(description.startsWith('Aberta automaticamente')).toBe(true);
+    expect(fakeDb.calls).toHaveLength(2);
+    for (const { sql } of fakeDb.calls) {
+      // Só a linha que a própria pessoa gravou (source = 'user', migration 0048) é atividade.
+      expect(sql).toContain('FROM contract_status_history h WHERE h.created_at >= :from');
+      expect(sql).toContain("AND h.source = 'user'");
+      // Nem a nota, nem a descrição da disputa: a origem não é mais adivinhada pelo texto.
+      expect(sql).not.toMatch(/h\.note|LIKE|FROM disputes/);
+    }
   });
 
   it('reviews: quantas e a média; sem avaliação, zero', async () => {
