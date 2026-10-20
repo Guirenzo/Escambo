@@ -5,6 +5,33 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.47.0] — 2026-10-20
+
+Texto maior e mais espaçado sem perder conteúdo, e varredura de segredos no CI (ADR 65). RF: 83 implementados, 2 parciais, 5 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Teste de texto a 200% e de espaçamento (WCAG 1.4.4 e 1.4.12):** `texto.a11y.spec.ts` abre 24 telas no computador e no celular e reprova texto cortado, texto sobre texto e rolagem lateral da página. Os dois critérios deixam de depender de conferência manual.
+- **Varredura de segredos (RNF-020):** o job `segredos` confere que o `.gitignore` cobre `.env`, chaves, backups e dados da API, que nada disso está versionado, e roda o gitleaks em todos os commits. As exceções são por valor, em `.gitleaks.toml`. À mão: `bash scripts/segredos.sh`.
+
+### Alterado
+
+- Nomes, títulos, e-mails e nomes de arquivo quebram a linha em vez de serem cortados com reticências: nome da conta no menu, pódio do ranking, troca, anexo, link do portfólio e título da galeria.
+- As grades de cartões têm a largura mínima da coluna em `rem`: com o texto maior, cabem menos colunas por linha. Os indicadores vão até 4 colunas, nenhuma abaixo de 13rem: 4 por linha a partir de 1280 px de tela, 3 um pouco abaixo disso (antes eram 2) e uma no celular.
+- O tamanho base da fonte passa de `15px` fixo para `93.75%`: no padrão do navegador é o mesmo, e quem aumenta a fonte nas configurações do navegador passa a ver o site maior.
+
+### Corrigido
+
+- Com o texto a 200%, os valores dos indicadores (início, carteira, admin) invadiam o cartão vizinho, e o e-mail de acesso no perfil invadia o cartão do telefone.
+- O e-mail longo no aviso de saque bloqueado fazia a carteira rolar na horizontal.
+- No admin, a descrição da denúncia, o trecho denunciado, a nota da decisão, a descrição da disputa e o motivo do pedido de exclusão eram cortados em duas linhas, e o texto inteiro não aparecia em lugar nenhum. Agora aparecem inteiros.
+- Nas listas de desistências e de remoções, com a tela estreita e o texto maior, o título passava por cima do botão: os botões descem para a linha de baixo.
+- As iniciais do avatar no ranking eram lidas pelo leitor de tela, além do nome ao lado.
+
+### Para atualizar
+
+Nada a fazer na VPS: sem migration nem variável nova.
+
 ## [1.46.0] — 2026-10-20
 
 Backup automático que volta, fronteiras entre módulos conferidas pelo lint e acessibilidade auditada critério a critério (ADR 64). RF: 83 implementados, 2 parciais, 5 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.

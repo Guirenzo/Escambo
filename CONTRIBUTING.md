@@ -108,7 +108,7 @@ Descrição clara e objetiva da mudança.
 - [ ] Testes novos ou alterados cobrem a mudança (`npm test`; integração se mexeu em SQL)
 - [ ] Código segue os padrões do projeto (ESLint/Prettier) e o `tsc` passa
 - [ ] Nenhum `console.log` esquecido
-- [ ] Variáveis de ambiente sensíveis não foram commitadas
+- [ ] Variáveis de ambiente sensíveis não foram commitadas (`bash scripts/segredos.sh` confere o `.gitignore` e roda o gitleaks no histórico, como o CI)
 - [ ] Documentação atualizada se necessário (ADR em `docs/decisoes.md` para decisão nova)
 ```
 

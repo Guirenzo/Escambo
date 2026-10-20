@@ -132,7 +132,10 @@ export function ServiceCard({
           )}
         </div>
       )}
-      <p className="muted clamp">{s.description}</p>
+      {/* Resumo em duas linhas: o texto inteiro está na página do serviço (WCAG 1.4.12). */}
+      <p className="muted clamp" data-resumo>
+        {s.description}
+      </p>
       <ServiceTags tags={s.tags} />
       {mine && s.viewsCount !== undefined && (
         <p className="muted tiny svc-views" data-testid="views-count">

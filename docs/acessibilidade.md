@@ -6,7 +6,7 @@ Este documento diz como o Escambo web é auditado para a WCAG 2.1 AA, o que cada
 
 ## Método
 
-A auditoria tem cinco camadas. Cada critério da tabela aponta qual delas o prova.
+A auditoria tem seis camadas. Cada critério da tabela aponta qual delas o prova.
 
 1. **axe-core em todas as telas** (`apps/web/e2e/a11y.spec.ts` e `perfil.a11y.spec.ts`, com a regra em `a11y.helpers.ts`). Regras com etiqueta `wcag2a`, `wcag2aa`, `wcag21a` e `wcag21aa`, mais as de boa prática do axe só para relatório. Telas e estados cobertos:
    - públicas: login, login com erro, cadastro, esqueci a senha (formulário e enviado), redefinir senha (sem link, com link inválido, com link válido e com erro), confirmar e-mail (link válido e inválido), confirmar novo e-mail (antes e depois de confirmar), termos, privacidade e 404 (fora e dentro do app);
@@ -34,15 +34,21 @@ A auditoria tem cinco camadas. Cada critério da tabela aponta qual delas o prov
    - regiões vivas: a região educada dos avisos existe antes do primeiro aviso, o sucesso entra nela e o erro sai como `role="alert"`, fora dela;
    - movimento reduzido: com `prefers-reduced-motion: reduce`, esqueleto, pulso e aviso não animam (nem em laço), botões não têm transição, e o chat rola até a última mensagem sem animação (sem a preferência, rola suave).
 
-4. **Testes de unidade** (Vitest, `npm run test:cov --workspace @escambo/web`): "pular para o conteúdo" (`components/ui/index.test.tsx` e `Shell.test.tsx`), setas nas abas, foco do diálogo com campo de foco automático, avisos em região educada e alerta (`lib/toast.test.tsx`), imagem do chat que prende o Tab e devolve o foco (`ChatAttachment.test.tsx`), `aria-pressed` e alerta no login, `aria-invalid` e descrição nos erros de senha, e-mail e redefinição, movimento reduzido (`lib/motion.test.ts`).
+4. **Texto maior e mais espaçado** (`apps/web/e2e/texto.a11y.spec.ts`, desktop e celular, desde a 1.47.0). Em 24 telas e estados (as públicas, as do menu, a sala com anexos de nome comprido, trocas com proposta, o perfil com um trabalho de título e link compridos, o perfil público com a galeria aberta e o admin com dados e uma denúncia de descrição comprida na fila), duas vezes:
+   - 1.4.4: só o texto a 200% (a raiz em 32 px, como o tamanho de fonte do navegador; vale porque o CSS usa `rem`), na largura da tela;
+   - 1.4.12: altura da linha 1,5, parágrafo com 2 em depois, letras a 0,12 em e palavras a 0,16 em.
 
-5. **Revisão de código**, para o que não tem como ser medido: textos de instrução, mensagens de erro com sugestão, confirmações antes de mexer em dinheiro, ausência de áudio, vídeo, piscadas e atalhos de uma tecla. Cada item está na tabela.
+   Reprova se a página rolar na horizontal, se uma caixa que corta (`overflow` hidden ou clip, reticências, corte de linhas) ficar menor que o texto dela, ou se a linha de um texto cruzar a de outro (cada linha medida pelo `Range`, só a parte que aparece, e com um diálogo aberto só o que está nele). Não contam como perda: a rolagem dentro de um contêiner (tabela, chat), o resumo marcado com `data-resumo` (a descrição do card de serviço, com o texto inteiro na página do serviço), o rótulo dentro de um gráfico `role="img"` (os números estão na tabela logo abaixo) e as iniciais decorativas do avatar.
+
+5. **Testes de unidade** (Vitest, `npm run test:cov --workspace @escambo/web`): "pular para o conteúdo" (`components/ui/index.test.tsx` e `Shell.test.tsx`), setas nas abas, foco do diálogo com campo de foco automático, avisos em região educada e alerta (`lib/toast.test.tsx`), imagem do chat que prende o Tab e devolve o foco (`ChatAttachment.test.tsx`), `aria-pressed` e alerta no login, `aria-invalid` e descrição nos erros de senha, e-mail e redefinição, movimento reduzido (`lib/motion.test.ts`).
+
+6. **Revisão de código**, para o que não tem como ser medido: textos de instrução, mensagens de erro com sugestão, confirmações antes de mexer em dinheiro, ausência de áudio, vídeo, piscadas e atalhos de uma tecla. Cada item está na tabela.
 
 Para rodar a parte automática (com a API, o banco e o web no ar, ver `playwright.config.ts`):
 
 ```bash
 cd apps/web
-npx playwright test --project=desktop --project=mobile e2e/a11y.spec.ts e2e/perfil.a11y.spec.ts e2e/estados.a11y.spec.ts e2e/teclado.smoke.spec.ts e2e/portfolio-teclado.smoke.spec.ts
+npx playwright test --project=desktop --project=mobile e2e/a11y.spec.ts e2e/perfil.a11y.spec.ts e2e/estados.a11y.spec.ts e2e/texto.a11y.spec.ts e2e/teclado.smoke.spec.ts e2e/portfolio-teclado.smoke.spec.ts
 ```
 
 No CI esses arquivos já rodam no `npm run e2e` (projetos desktop e mobile).
@@ -75,6 +81,20 @@ No CI esses arquivos já rodam no `npm run e2e` (projetos desktop e mobile).
 
 O axe, estendido às telas que faltavam e ao celular, achou três violações, todas `serious`: duas na sala com entrega e anexos (nome do cartão de arquivo e contraste do tamanho) e uma só no celular (tabelas que rolam sem foco). Nenhuma `moderate` ou `minor`. As demais linhas da tabela vieram da auditoria de teclado, das medições no navegador e da revisão.
 
+### Corrigido na 1.47.0 (texto maior e mais espaçado)
+
+| Problema | Critério | Correção | Prova |
+|---|---|---|---|
+| Nome da conta no menu cortado com reticências a 125 px em toda tela (o e-mail, para quem não tem nome) | 1.4.4, 1.4.12 | O nome quebra a linha, e o e-mail quebra em qualquer ponto | `texto.a11y` |
+| Aviso de saque bloqueado na carteira: o e-mail longo alargava o cartão e a página rolava na horizontal | 1.4.4, 1.4.12 | O texto encolhe com o cartão e quebra em qualquer ponto | `texto.a11y` |
+| Valores dos indicadores (início, carteira, admin) e do resumo financeiro e de uso invadiam o cartão vizinho com o texto a 200% | 1.4.4 | Colunas com mínimo em `rem` (13rem nos indicadores, até 4 por linha): com o texto maior cabem menos por linha. As demais grades de cartões também passaram de px para rem (o mesmo mínimo com a raiz de 16 px; 6% menor abaixo de 1440 px de tela, onde a raiz é de 15 px). O valor do indicador quebra a linha em último caso | `texto.a11y` |
+| Tamanho base da fonte fixo em `15px`: o tamanho de fonte escolhido nas configurações do navegador não tinha efeito | 1.4.4 | `93.75%` (16 px a partir de 1440 px de tela): os mesmos 15 px no padrão | Revisão de `styles.css` |
+| E-mail de acesso no perfil invadia o cartão do telefone com o texto a 200% | 1.4.4 | Quebra em qualquer ponto | `texto.a11y` |
+| Nome no pódio do ranking, títulos da troca, nome do anexo, link do portfólio e título da galeria cortados com reticências | 1.4.4, 1.4.12 | Quebram a linha em vez de cortar | `texto.a11y` (a mutação que devolve as reticências reprova) |
+| Admin: descrição da denúncia, trecho denunciado, nota da decisão, descrição da disputa e motivo do pedido de exclusão cortados em duas linhas, sem o texto inteiro em outro lugar | 1.4.4, 1.4.12 (e perda de conteúdo mesmo no tamanho normal) | O corte saiu: o texto aparece inteiro | `texto.a11y` (com uma denúncia de descrição comprida na fila) |
+| Desistências e remoções no admin: com o texto a 200% no celular, o título passava por cima do botão "Não contar" | 1.4.4 | A linha quebra: o texto fica com pelo menos 14rem e os botões descem | `texto.a11y` (rodado depois da suíte inteira) |
+| Iniciais do avatar no ranking lidas pelo leitor de tela e cortadas no círculo com o texto maior | 1.1.1, 1.4.4 | `aria-hidden`, como no componente `Avatar`: o nome vem ao lado | `texto.a11y` |
+
 ### Itens que o axe deixa para revisão
 
 O axe marca como `incomplete` o que não consegue medir. Foram revistos assim:
@@ -105,11 +125,11 @@ Situação: **Atende (teste)** quando há teste automático que reprova se o cri
 | 1.4.1 Uso de cor | A | Atende (teste e revisão) | Links dentro de texto sublinhados; status com texto (pílulas), erro com ícone e texto, aba e alternância com estado em ARIA | axe `link-in-text-block`; revisão |
 | 1.4.2 Controle de áudio | A | Não se aplica | Nada toca sozinho | — |
 | 1.4.3 Contraste (mínimo) | AA | Atende (teste) | Tokens com 4,5:1 nos pares usados; texto sobre degradê conferido à mão | axe `color-contrast`; `estados.a11y` (tokens e estados); contas da seção anterior |
-| 1.4.4 Redimensionar texto | AA | Manual pendente | Tamanhos em `rem`, layout fluido; nada fixa altura de texto | Indício: `responsivo.spec.ts` a 320 px (equivale a 400% de zoom em 1280 px). Falta conferir 200% de zoom no navegador (roteiro) |
+| 1.4.4 Redimensionar texto | AA | Atende (teste) | Tamanhos em `rem`, layout fluido, grades com mínimo em `rem`; nada corta texto com reticências fora dos resumos com o texto inteiro em outra página | `texto.a11y` (texto a 200% em 24 telas, desktop e celular); `responsivo.spec.ts` a 320 px (o zoom da página inteira) |
 | 1.4.5 Imagens de texto | AA | Atende (revisão) | A marca é texto; não há texto em imagem gerada pelo app | Revisão |
 | 1.4.10 Refluxo | AA | Atende (teste) | Uma coluna a 320 px, sem rolagem horizontal da página; tabelas largas rolam no próprio contêiner | `responsivo.spec.ts` |
 | 1.4.11 Contraste não textual | AA | Atende (teste) | Contorno de campo, trilho do interruptor e anel de foco com 3:1 ou mais | `estados.a11y` (tokens e amostra), `teclado.smoke` (anel de cada parada) |
-| 1.4.12 Espaçamento de texto | AA | Manual pendente | Sem altura fixa em caixas de texto; nenhum espaçamento inline com `!important` | axe `avoid-inline-spacing` só cobre o inline; falta aplicar o espaçamento do critério (roteiro) |
+| 1.4.12 Espaçamento de texto | AA | Atende (teste) | Sem altura fixa em caixas de texto; nenhum espaçamento inline com `!important` | `texto.a11y` (o espaçamento do critério em 24 telas, desktop e celular); axe `avoid-inline-spacing` |
 | 1.4.13 Conteúdo em hover ou foco | AA | Atende (revisão) | O app não cria conteúdo que aparece no hover ou foco; as dicas são o `title` nativo do navegador | Revisão (sem tooltip próprio no código) |
 | 2.1.1 Teclado | A | Atende (teste) | Tudo é botão, link ou campo nativo; os controles próprios (recorte, galeria, ordenar portfólio, abas) têm teclas; tabela que rola na horizontal recebe foco | `teclado.smoke`, `portfolio-teclado.smoke`, axe `scrollable-region-focusable`, testes de unidade do recorte e da galeria |
 | 2.1.2 Sem armadilha de teclado | A | Atende (teste) | O Tab chega ao fim de cada tela; diálogos prendem o foco de propósito e fecham com Esc | `teclado.smoke` |
@@ -142,14 +162,14 @@ Situação: **Atende (teste)** quando há teste automático que reprova se o cri
 | 4.1.2 Nome, função, valor | A | Atende (teste) e manual pendente | Controles nativos; estados em `aria-pressed`, `aria-selected`, `aria-checked`, `aria-invalid`; diálogos com `aria-modal` e nome | axe `aria-*`, `button-name`, `nested-interactive`; testes de unidade; o que o leitor anuncia é do roteiro |
 | 4.1.3 Mensagens de status | AA | Atende (teste) e manual pendente | Avisos em região viva educada ou alerta; troca de tela anunciada; carregamento com `role="status"` | `estados.a11y`, `toast.test`, `title.test`; se o NVDA lê cada um é do roteiro |
 
-Resumo: 50 critérios (30 de nível A e 20 de nível AA). Sete não se aplicam (áudio, vídeo e movimento do aparelho). Dos 43 que se aplicam, 26 têm prova automática (cinco deles com um complemento manual: 1.1.1, 1.3.1, 2.4.4, 4.1.2 e 4.1.3), 15 têm prova por revisão de código (três com complemento manual: 2.2.2, 2.4.6 e 3.3.4) e 2 dependem de verificação manual ainda não feita (1.4.4 e 1.4.12).
+Resumo: 50 critérios (30 de nível A e 20 de nível AA). Sete não se aplicam (áudio, vídeo e movimento do aparelho). Dos 43 que se aplicam, 28 têm prova automática (cinco deles com um complemento manual: 1.1.1, 1.3.1, 2.4.4, 4.1.2 e 4.1.3) e 15 têm prova por revisão de código (três com complemento manual: 2.2.2, 2.4.6 e 3.3.4). Nenhum depende só de verificação manual desde a 1.47.0; os oito complementos com leitor de tela seguem no roteiro.
 
 ## O que fica fora
 
 - **Leitor de tela de verdade.** Nenhum teste automático garante o que o NVDA, o JAWS ou o VoiceOver anunciam. O roteiro abaixo é o aceite que falta; até ele ser feito, os critérios marcados com "manual pendente" não estão provados por inteiro.
 - **Hierarquia dos títulos.** As telas têm `h1` e os cartões usam `h3` (o componente `Card`), pulando o `h2`. Não é violação de critério (o axe registra como boa prática, `heading-order`), mas atrapalha um pouco quem navega por títulos. Corrigir pede passar os cartões para `h2` em todas as telas, com os testes que dependem do nível.
 - **Avisos que somem.** Resolvido na 1.46.0 (2.2.1): o aviso de erro fica até ser fechado, e o de sucesso para o relógio com o mouse em cima ou o foco dentro.
-- **Zoom e espaçamento de texto** (1.4.4 e 1.4.12): só há o indício dos 320 px; falta a conferência manual.
+- **Zoom e espaçamento de texto** (1.4.4 e 1.4.12): resolvido na 1.47.0, com teste. O teste mede corte, sobreposição e rolagem; a legibilidade (uma palavra quebrada no meio, por exemplo) fica para o roteiro.
 - **Conteúdo enviado pelas pessoas**: PDFs e imagens de entregas e anexos, e o texto alternativo das fotos (que é o nome ou o título) não são auditados.
 - **E-mails transacionais**: o HTML dos e-mails não passa pelo axe.
 - **Estados desabilitados**: isentos de contraste pela 1.4.3; medidos e registrados no teste (texto entre 2,1:1 e 3,4:1 com a opacidade de 50%).
@@ -169,8 +189,8 @@ Quem for fazer: NVDA atualizado com Chrome e com Firefox, a stack de demonstraç
 8. **Nota da avaliação (4.1.2).** Em contratação concluída, "Nota, agrupamento", e as setas escolhem "3 estrelas", etc.
 9. **Pegar e soltar do portfólio (ADR 53).** Em modo de foco, Espaço pega, setas movem com anúncio da posição, Espaço solta; em modo de navegação, nada fica preso.
 10. **Gráficos (1.1.1).** Na carteira e no admin, o gráfico deve ser lido como imagem com o resumo em texto.
-11. **Zoom de 200% (1.4.4).** Chrome em 1280 × 800, Ctrl e + até 200%: nenhum texto cortado ou sobreposto, nada some, tudo continua acessível.
-12. **Espaçamento de texto (1.4.12).** Aplique o CSS do critério (altura de linha 1,5; parágrafo 2× a fonte; letras 0,12×; palavras 0,16×) por extensão ou snippet no DevTools: nenhum texto cortado nos botões, pílulas, abas e cartões.
+11. **Zoom de 200% (1.4.4).** Coberto pelo `texto.a11y` desde a 1.47.0. Na passada manual, Chrome em 1280 × 800, Ctrl e + até 200%: confira se a leitura continua confortável.
+12. **Espaçamento de texto (1.4.12).** Coberto pelo `texto.a11y` desde a 1.47.0. Na passada manual, aplique o CSS do critério por extensão e confira os botões, pílulas e abas de telas que o teste não abre.
 13. **Tempo (2.2.1, 2.2.2).** Confira com o NVDA que o aviso é lido inteiro antes de sair e que "Fechar aviso" é anunciado. Veja se o "expira em" das missões incomoda a leitura.
 14. **Dinheiro (3.3.4).** Contratar, cancelar, sair da negociação, sacar e cancelar o saque: em todos deve haver revisão antes ou como desfazer depois.
 

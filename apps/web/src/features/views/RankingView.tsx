@@ -134,7 +134,9 @@ export function RankingView() {
                 {podiumOrder.map((e) => (
                   <div key={e.userUlid} className={`podium-col p${e.rank} ${isMe(e) ? 'me' : ''}`}>
                     <span className="medal">{e.rank}</span>
-                    <div className="avatar">{initials(e.name)}</div>
+                    <div className="avatar" aria-hidden="true">
+                      {initials(e.name)}
+                    </div>
                     <strong className="pname">{e.name ?? 'Anônimo'}</strong>
                     <Chip>{e.levelName}</Chip>
                     <span className="xp">{filtered ? criteria(e) : `${e.totalXp} XP`}</span>
@@ -150,7 +152,9 @@ export function RankingView() {
                       <li key={e.userUlid} className={isMe(e) ? 'me-row' : ''}>
                         <div className="rank-left">
                           <span className="pos">{e.rank}º</span>
-                          <div className="avatar sm">{initials(e.name)}</div>
+                          <div className="avatar sm" aria-hidden="true">
+                            {initials(e.name)}
+                          </div>
                           <div>
                             <strong>{e.name ?? 'Anônimo'}</strong>
                             {isMe(e) && <span className="chip level tiny">você</span>}

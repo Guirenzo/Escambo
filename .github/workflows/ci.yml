@@ -115,6 +115,25 @@ jobs:
           path: apps/api/coverage/integration
           retention-days: 7
 
+  # RNF-020: nenhum segredo no repositório. Confere que o .gitignore cobre os .env, chaves, backups
+  # e dados da API, que nada disso está versionado, e roda o gitleaks em todos os commits (o
+  # histórico inteiro: segredo apagado depois continua vazado). Exceções só por valor, em .gitleaks.toml.
+  segredos:
+    name: Segredos · .gitignore e histórico (gitleaks)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (histórico inteiro)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ShellCheck do script
+        run: shellcheck scripts/segredos.sh
+
+      - name: Varredura
+        run: bash scripts/segredos.sh
+
   # RNF-009: o backup volta. Num MySQL descartável, aplica baseline + migrations com o runner da API,
   # insere dados, faz o backup como o serviço `backup` de produção faz (deploy/backup/agendador.sh),
   # apaga o banco, restaura com scripts/restore-db.sh e confere que linhas, CHECKSUM, estrutura,
@@ -334,14 +353,14 @@ jobs:
           path: apps/web/playwright-report
           retention-days: 7
 
-  # Só em main, com testes, E2E, cobertura e restauração do backup verdes: constrói as imagens de
-  # produção e publica no GHCR.
+  # Só em main, com testes, E2E, cobertura, restauração do backup e varredura de segredos verdes:
+  # constrói as imagens de produção e publica no GHCR.
   # Tags: latest · sha curto · versão do package.json. Quem as põe no ar é o workflow Deploy (deploy.yml).
   publish:
     name: Publicar imagens (GHCR)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [build-and-test, integration, e2e, coverage, backup]
+    needs: [build-and-test, integration, e2e, coverage, backup, segredos]
     permissions:
       contents: read
       packages: write
