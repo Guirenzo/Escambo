@@ -96,14 +96,14 @@ export function EmailCard() {
         {(c) => (
           <div className="stack">
             <p className="muted tiny" data-testid="email-atual">
-              E-mail de acesso: <strong>{c.email}</strong>{' '}
+              E-mail de acesso: <strong className="email-addr">{c.email}</strong>{' '}
               {c.emailVerified ? '(confirmado)' : '(ainda não confirmado)'}
             </p>
             {c.pendingEmail && (
               <div className="notice" role="status" data-testid="email-pendente">
                 <span>
                   Confirme no novo endereço: enviamos um link para{' '}
-                  <strong>{c.pendingEmail.email}</strong>, válido até{' '}
+                  <strong className="email-addr">{c.pendingEmail.email}</strong>, válido até{' '}
                   {dtm(c.pendingEmail.expiresAt)}. Até lá, você entra com o e-mail atual.
                 </span>
                 <Button

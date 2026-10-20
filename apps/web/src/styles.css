@@ -51,12 +51,14 @@
   --sidebar-w: 256px;
 
   font-family: var(--font-body);
-  font-size: 15px;
+  /* Em porcentagem, não em px: o tamanho de fonte escolhido no navegador vale (WCAG 1.4.4). No
+     padrão (16 px) são 15 px, e 16 px a partir de 1440 px de tela. */
+  font-size: 93.75%;
   color-scheme: light;
 }
 @media (min-width: 1440px) {
   :root {
-    font-size: 16px;
+    font-size: 100%;
   }
 }
 
@@ -292,11 +294,11 @@ p {
   flex: 1;
   line-height: 1.2;
 }
+/* Nome inteiro, quebrando a linha (e o e-mail em qualquer ponto) em vez de cortar com reticências:
+   com o texto maior ou mais espaçado, a pessoa continua lendo quem está logado (WCAG 1.4.4, 1.4.12). */
 .side-user-info strong {
   font-size: 0.9rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .main {
   min-width: 0;
@@ -713,20 +715,16 @@ button.toggle.on {
 }
 
 /* ---------- Dashboard: KPIs ---------- */
+/* Até 4 colunas, nenhuma mais estreita que 13rem. Os mínimos das grades ficam em rem: com o texto
+   maior (WCAG 1.4.4), cabem menos colunas por linha em vez de o valor invadir o cartão vizinho. No
+   tamanho padrão do navegador são 4 colunas a partir de 1280 px de tela, e uma só no celular. */
 .kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(min(100%, 13rem), calc((100% - 3 * 16px) / 4)), 1fr)
+  );
   gap: 16px;
-}
-@media (max-width: 1200px) {
-  .kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 560px) {
-  .kpis {
-    grid-template-columns: 1fr;
-  }
 }
 .kpi {
   background: var(--surface);
@@ -770,6 +768,9 @@ button.toggle.on {
   font-weight: 700;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
+  /* "R$ 18.750,00" vem do Intl com espaço inseparável: num cartão estreito, quebra em vez de
+     invadir o vizinho. */
+  overflow-wrap: anywhere;
 }
 .two-col {
   display: grid;
@@ -784,7 +785,7 @@ button.toggle.on {
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18.75rem), 1fr));
   gap: 16px;
   align-items: start;
 }
@@ -1065,7 +1066,7 @@ button.toggle.on {
 }
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17.5rem), 1fr));
   gap: 16px;
 }
 .card.service {
@@ -1201,10 +1202,9 @@ button.toggle.on {
   gap: 2px;
   min-width: 0;
 }
+/* Quebra a linha em vez de cortar com reticências (WCAG 1.4.4, 1.4.12). */
 .swap-side strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .arrow {
   color: var(--green);
@@ -1422,11 +1422,10 @@ button.toggle.on {
   flex-direction: column;
   min-width: 0;
 }
+/* Quebra a linha em vez de cortar com reticências (WCAG 1.4.4, 1.4.12). */
 .attachment-name {
   font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   max-width: 220px;
 }
 .bubble.mine .attachment-file {
@@ -1555,13 +1554,12 @@ button.toggle.on {
   height: 32px;
   font-size: 0.8rem;
 }
+/* Nome inteiro no pódio, quebrando a linha em vez de cortar (WCAG 1.4.4, 1.4.12). */
 .pname {
   text-align: center;
   font-size: 0.92rem;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .podium-col .xp {
   font-weight: 700;
@@ -1964,7 +1962,7 @@ button.toggle.on {
 
 /* Trocas: o par "oferece ⇄ recebe" precisa de largura pra não truncar títulos. */
 .cards-grid.swaps {
-  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 30rem), 1fr));
 }
 @media (max-width: 720px) {
   .cards-grid.swaps {
@@ -2569,10 +2567,9 @@ button.toggle.on {
   min-width: 0;
   flex: 1;
 }
+/* Quebra a linha em vez de cortar com reticências (WCAG 1.4.4, 1.4.12). */
 .portfolio-text a {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 /* Ordem do portfólio (ADR 43): a posição e as setas de subir e descer. */
 .portfolio-pos {
@@ -2667,7 +2664,7 @@ body.is-dragging-list {
 }
 .portfolio-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13.75rem), 1fr));
   gap: 14px;
 }
 .portfolio-item {
@@ -2813,7 +2810,7 @@ body.is-dragging-list {
 }
 .health-bars {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14.375rem), 1fr));
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -2911,7 +2908,7 @@ body.is-dragging-list {
 /* Série por dia (ADR 50): dois gráficos pequenos com a mesma paleta de estado do painel. */
 .health-history {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17.5rem), 1fr));
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -2959,7 +2956,7 @@ body.is-dragging-list {
 }
 .fin-kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.375rem), 1fr));
   gap: 12px;
   margin: 4px 0 12px;
 }
@@ -3345,6 +3342,11 @@ body.is-dragging-list {
   flex: none;
   margin-top: 2px;
 }
+/* O e-mail no aviso não pode alargar a página: o texto encolhe com o cartão e quebra em qualquer ponto. */
+.withdraw-locked-msg span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .done-ico.err {
   background: var(--red-soft);
   color: var(--red);
@@ -3491,7 +3493,7 @@ body.is-dragging-list {
 }
 .storage-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.625rem), 1fr));
   gap: 10px 16px;
   margin: 0 0 10px;
 }
@@ -3773,15 +3775,14 @@ body.is-dragging-list {
   color: rgba(255, 255, 255, 0.72);
   font-variant-numeric: tabular-nums;
 }
+/* Quebra a linha em vez de cortar com reticências (WCAG 1.4.4, 1.4.12). */
 .gallery-title {
   flex: 1;
   min-width: 0;
   margin: 0;
-  overflow: hidden;
   font-size: 1rem;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .gallery-tools {
   display: flex;
@@ -4428,4 +4429,9 @@ button.support-ticket:hover:not(:disabled) {
   .support-layout {
     grid-template-columns: 1fr;
   }
+}
+
+/* E-mail no meio do texto: quebra em qualquer ponto em vez de alargar o cartão (WCAG 1.4.4). */
+.email-addr {
+  overflow-wrap: anywhere;
 }

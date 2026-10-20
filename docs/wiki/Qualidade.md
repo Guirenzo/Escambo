@@ -21,11 +21,12 @@ flowchart LR
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Lint · Typecheck · Test · Build | `npm audit` sem vulnerabilidade alta, ESLint, `tsc` nos três pacotes, testes de unidade da API (piso de 90%) e de componente do Web (piso de 90%), build, compose de produção válido |
 | Integração                      | App Express real contra MySQL 8 (banco `escambo_test` recriado a cada rodada)                                                                                         |
-| E2E                             | Fluxos inteiros no navegador (Chromium desktop e mobile), acessibilidade com axe e teclado de ponta a ponta                                                           |
+| E2E                             | Fluxos inteiros no navegador (Chromium desktop e mobile), acessibilidade com axe, teclado e texto a 200%                                                              |
 | Cobertura                       | Meta de **75%** no backend também sobre a união unitários + integração                                                                                                |
 | Backup                          | Backup como a produção, banco apagado, restauração e comparação de linhas, estrutura e triggers (ADR 64)                                                              |
+| Segredos                        | `.gitignore` cobrindo `.env`, chaves e backups; nada disso versionado; gitleaks em todos os commits (ADR 65)                                                          |
 | SonarCloud                      | Não barra: registra bugs, vulnerabilidades, _security hotspots_, duplicação e a cobertura do backend no painel do projeto e no PR                                     |
-| Publicar imagens                | Só em `main`, com os testes, o E2E, a cobertura e a restauração do backup verdes                                                                                      |
+| Publicar imagens                | Só em `main`, com testes, E2E, cobertura, restauração do backup e varredura de segredos verdes                                                                        |
 
 ## Cobertura
 

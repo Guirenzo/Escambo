@@ -1,0 +1,28 @@
+# Varredura de segredos (RNF-020): regras padrão do gitleaks no histórico inteiro, no CI (job
+# `segredos`) e à mão (scripts/segredos.sh). As exceções são por VALOR, nunca por pasta: uma chave
+# de verdade colada num teste ainda é pega. Cada valor abaixo é dado de teste conhecido, sem uso
+# fora dos testes, do CI ou dos documentos de validação.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Senhas e segredos de teste (unitários, integração, e2e e CI)"
+regexTarget = "secret"
+regexes = [
+  # senha-integracao-123, senha-forte-123, senha-trocada-456, nova-senha-forte-456, outra-senha-789
+  '''^(nova-|outra-)?senha(-[a-z]+)*-\d{3}$''',
+  # JWT_SECRET dos jobs do CI: segredo-de-validacao-do-compose-…, segredo-de-e2e-no-ci-…
+  '''^segredo-de-[a-z0-9-]+-caracteres$''',
+  '''^integration-test-secret-key-0123456789$''',
+  '''^segredoDoAparelho123$''',
+  # Teste do filtro de dados pessoais do log (a senha na string de conexão some)
+  '''^senha=segredo-do-banco$''',
+  # Parâmetro de consulta do relatório (falso positivo da regra genérica)
+  '''^granularity=month$''',
+]
+
+[[allowlists]]
+description = "SHA-256 da imagem da API citado na validação da entrega (ADR 61)"
+regexTarget = "secret"
+paths = ['''^docs/validacao-entrega-adr61\.md$''']
+regexes = ['''^[0-9a-f]{64}$''']
