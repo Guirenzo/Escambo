@@ -174,6 +174,8 @@ fotografar() { # arquivo
 # A imagem mysql:8.0 (onde o teste roda no modo --docker) não tem diff nem cmp: compara por sha256 e,
 # na diferença, mostra as linhas que só existem de um lado (comm).
 iguais() { [ "$(sha256sum <"$1" | cut -c1-64)" = "$(sha256sum <"$2" | cut -c1-64)" ]; }
+# A foto sem a seção dos triggers (do "## triggers" até o cabeçalho seguinte).
+sem_triggers() { awk '/^## / { fora = ($0 == "## triggers") } !fora' "$1"; }
 mostrar_diferenca() {
   echo "--- só em $1 / +++ só em $2:" >&2
   comm -3 <(sort "$1") <(sort "$2") | awk '{ if (sub(/^\t/, "")) print "+++ " $0; else print "--- " $0 }' | cut -c1-400 >&2
@@ -188,13 +190,20 @@ backup_falso() { # nome idade_em_minutos
 
 # Tentativa de escrita que o banco TEM de recusar (ERROR 1644, o SIGNAL dos triggers da 0046): prova
 # que os triggers voltaram funcionando, com o DEFINER existente e os grants do usuário da aplicação
-# intactos (sem grant o erro seria 1142). Nenhuma linha muda. Estas 4 tentativas são a exceção
+# intactos (sem grant o erro seria 1142). Nenhuma linha muda. As 4 tentativas (recusas) são a exceção
 # declarada em apps/api/src/modules/audit/audit.retention.test.ts.
 espera_recusa() { # sql
   local saida
   if saida="$(app_sql -e "$1" 2>&1)"; then falha "o banco aceitou: $1"; fi
   grep -q 'ERROR 1644' <<<"$saida" || falha "erro inesperado em '$1': $saida"
   ok "recusado pelo trigger: $1"
+}
+# As 4 escritas que os triggers barram: no extrato em R$, no de créditos, no gateway e na auditoria recente.
+recusas() {
+  espera_recusa "UPDATE wallet_transactions SET amount = amount"
+  espera_recusa "DELETE FROM credit_transactions"
+  espera_recusa "UPDATE payment_events SET status = 'x'"
+  espera_recusa "DELETE FROM audit_logs WHERE created_at > NOW() - INTERVAL 1 DAY"
 }
 
 verificar() {
@@ -292,19 +301,32 @@ verificar() {
     "CREATE DATABASE \`$TEST_DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" | root_sql
   [ "$(q "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")" = 0 ] || falha "o banco devia estar vazio"
   ok "banco vazio"
-  # Os backups feitos desde a 1.45.0 (mysqldump puro) têm o ";" dentro do comentário dos triggers.
+  # Os backups feitos entre a 1.45.0 e a 1.46.0 (mysqldump puro) têm os 7 triggers de uma instrução
+  # só da 0046, com o ";" dentro do comentário. O dump novo tem esses triggers em BEGIN ... END (0049):
+  # o formato antigo é refeito tirando o BEGIN e levando o " */;;" do END para a linha do ";".
   mkdir -p "$work/antigo"
-  gunzip -c "$bk/$arquivo" | sed -e "s/' \*\/;;\$/'; *\/;;/" | gzip >"$work/antigo/escambo-formato-antigo.sql.gz"
+  gunzip -c "$bk/$arquivo" | awk '
+    / FOR EACH ROW BEGIN$/ { sub(/ BEGIN$/, "") }
+    /^ *END \*\/;;$/ && tem && anterior ~ /;$/ { anterior = anterior " */;;"; next }
+    { if (tem) print anterior; anterior = $0; tem = 1 }
+    END { if (tem) print anterior }
+  ' | gzip >"$work/antigo/escambo-formato-antigo.sql.gz"
   [ "$(gunzip -c "$work/antigo/escambo-formato-antigo.sql.gz" | grep -c '; \*/;;$')" -ge 7 ] ||
     falha "o dump no formato antigo devia ter os 7 triggers com ';' antes do ' */;;'"
   bash scripts/restore-db.sh "$work/antigo/escambo-formato-antigo.sql.gz" --yes | sed 's/^/   /' ||
     falha "a restauração do dump no formato antigo falhou"
+  # Os triggers voltam na forma da 0046 (é o que o dump antigo guardava; o job migrate da produção
+  # roda a 0049 depois da restauração): aqui eles são conferidos por contagem e pela recusa, e o resto
+  # do banco tem de voltar idêntico.
   fotografar "$work/depois-do-antigo.txt"
-  if ! iguais "$work/antes.txt" "$work/depois-do-antigo.txt"; then
+  if ! iguais <(sem_triggers "$work/antes.txt") <(sem_triggers "$work/depois-do-antigo.txt"); then
     mostrar_diferenca "$work/antes.txt" "$work/depois-do-antigo.txt"
     falha "o dump no formato antigo voltou diferente do original (linhas acima)"
   fi
-  ok "dump antigo restaurado igual ao original"
+  [ "$(q "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema = DATABASE()")" = "$triggers" ] ||
+    falha "o dump no formato antigo não trouxe os $triggers triggers"
+  recusas
+  ok "dump antigo restaurado: dados e estrutura iguais ao original, $triggers triggers funcionando"
 
   passo "7. restaura o backup novo (scripts/restore-db.sh) e compara com a foto de antes"
   bash scripts/restore-db.sh "$bk/$arquivo" --yes | sed 's/^/   /' || falha "a restauração falhou"
@@ -314,10 +336,7 @@ verificar() {
     falha "o banco restaurado é diferente do original (linhas acima)"
   fi
   ok "$tabelas tabelas com as mesmas linhas, CHECKSUM e estrutura; $triggers triggers e $migrations migrations iguais"
-  espera_recusa "UPDATE wallet_transactions SET amount = amount"
-  espera_recusa "DELETE FROM credit_transactions"
-  espera_recusa "UPDATE payment_events SET status = 'x'"
-  espera_recusa "DELETE FROM audit_logs WHERE created_at > NOW() - INTERVAL 1 DAY"
+  recusas
   fotografar "$work/depois-das-recusas.txt"
   iguais "$work/antes.txt" "$work/depois-das-recusas.txt" || falha "uma tentativa recusada mudou o banco"
   ok "nenhuma linha mudou com as tentativas"
