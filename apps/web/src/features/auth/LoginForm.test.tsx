@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { LoginForm } from './LoginForm';
+import { LoginForm, type AuthMode, type SignupRole } from './LoginForm';
 
 /**
  * A porta de entrada: o mesmo formulário entra e cadastra. O que vai para o contexto de sessão em
@@ -71,8 +71,12 @@ describe('LoginForm: entrar', () => {
   it('abre no modo entrar, sem os campos do cadastro e com o caminho para a senha esquecida', () => {
     renderForm();
     expect(document.title).toBe('Entrar · Escambo');
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Troque. Contrate.Evolua.');
-    expect(screen.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
+    // Um h1 só: o título do formulário (o painel ao lado tem frase, não título).
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Bem-vindo de volta');
+    expect(
+      screen.getByText('Entre para contratar, trocar e acompanhar as suas contratações.'),
+    ).toBeInTheDocument();
     expect(submitButton()).toHaveTextContent('Entrar');
     expect(submitButton()).toBeEnabled();
     expect(screen.queryByLabelText('Eu sou')).not.toBeInTheDocument();
@@ -94,18 +98,29 @@ describe('LoginForm: entrar', () => {
     expect(screen.queryByText('Já tem conta?')).not.toBeInTheDocument();
   });
 
-  it('os três destaques da marca aparecem ao lado do formulário', () => {
+  it('o painel ao lado: a frase, as três garantias e os recortes do app só como ilustração', () => {
     renderForm();
-    expect(screen.getByText('Escambo')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Escambo' })).toHaveAttribute('href', '/');
+    const quote = screen.getByText(/Contrate com o pagamento guardado/);
+    expect(quote).toHaveTextContent(
+      'Contrate com o pagamento guardado. Ou pague com o seu trabalho.',
+    );
+    const panel = quote.closest('.au-panel') as HTMLElement;
     expect(
-      screen.getByText('O iFood dos serviços — do mecânico ao dev, com a confiança que faltava.'),
-    ).toBeInTheDocument();
-    const items = screen.getAllByRole('listitem').map((li) => li.textContent);
-    expect(items).toEqual([
-      'Troque serviço por serviçoO escambo que dá nome ao app — com torna justa e escrow.',
-      'Créditos EscamboTrabalhe, ganhe créditos e gaste em qualquer serviço.',
-      'Confiança de verdadeEscambo Score, pagamento protegido e chat em tempo real.',
+      within(panel)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual([
+      'Pagamento guardado até você aprovar',
+      'Torna calculada pelo app',
+      'Disputa com mediação da equipe',
     ]);
+    const collage = panel.querySelector('.au-collage')!;
+    expect(collage).toHaveAttribute('aria-hidden', 'true');
+    expect(collage.textContent?.replace(/\s/g, ' ')).toContain('Torna: você completa R$ 400');
+    expect(collage.querySelector('img')).toHaveAttribute('alt', '');
+    // Nada no painel recebe foco: ele não atrapalha o caminho até o formulário.
+    expect(within(panel).queryAllByRole('link')).toHaveLength(0);
   });
 
   it('entrar manda só e-mail e senha para o login, e não cadastra', async () => {
@@ -196,6 +211,69 @@ describe('LoginForm: entrar', () => {
     expect(submitButton()).toHaveTextContent('Entrar');
     // O que foi digitado continua lá: é só corrigir a senha.
     expect(screen.getByLabelText('E-mail')).toHaveValue('ana@escambo.test');
+  });
+});
+
+/** /login e /cadastro no mesmo formulário, como no App: o endereço acompanha o modo. */
+function Where() {
+  const { pathname, state } = useLocation();
+  return (
+    <p data-testid="where">
+      {pathname} {JSON.stringify(state)}
+    </p>
+  );
+}
+function renderRoutes(entry: string, state?: unknown) {
+  const at = (mode: AuthMode, role: SignupRole = 'client') => (
+    <>
+      <LoginForm initialMode={mode} initialRole={role} />
+      <Where />
+    </>
+  );
+  return render(
+    <MemoryRouter initialEntries={[{ pathname: entry, state }]}>
+      <Routes>
+        <Route path="/login" element={at('login')} />
+        <Route path="/cadastro" element={at('register', 'freelancer')} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe('LoginForm: /cadastro', () => {
+  it('abre em "Criar conta", com título próprio e o "Eu sou" que veio do endereço', () => {
+    render(
+      <MemoryRouter>
+        <LoginForm initialMode="register" initialRole="freelancer" />
+      </MemoryRouter>,
+    );
+    expect(document.title).toBe('Criar conta · Escambo');
+    expect(screen.getByRole('heading', { name: 'Crie sua conta' })).toBeInTheDocument();
+    expect(tab('Criar conta')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('combobox', { name: 'Eu sou' })).toHaveValue('freelancer');
+    expect(submitButton()).toHaveTextContent('Criar conta');
+  });
+
+  it('trocar de modo troca o endereço (sem empilhar), guarda o destino e o que foi digitado', async () => {
+    const user = userEvent.setup();
+    renderRoutes('/login', { from: '/carteira' });
+    expect(document.title).toBe('Entrar · Escambo');
+    await user.type(screen.getByLabelText('E-mail'), 'ana@escambo.test');
+    await user.click(tab('Criar conta'));
+    expect(screen.getByTestId('where')).toHaveTextContent('/cadastro {"from":"/carteira"}');
+    expect(document.title).toBe('Criar conta · Escambo');
+    expect(screen.getByLabelText('E-mail')).toHaveValue('ana@escambo.test');
+    expect(tab('Criar conta')).toHaveFocus();
+    await user.click(tab('Entrar'));
+    expect(screen.getByTestId('where')).toHaveTextContent('/login {"from":"/carteira"}');
+    expect(screen.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
+  });
+
+  it('no modo em que já está, o endereço não muda', async () => {
+    const user = userEvent.setup();
+    renderRoutes('/cadastro');
+    await user.click(tab('Criar conta'));
+    expect(screen.getByTestId('where')).toHaveTextContent('/cadastro');
   });
 });
 
@@ -417,6 +495,10 @@ describe('LoginForm: verificação em duas etapas (passo 2)', () => {
     await toStepTwo(user);
 
     expect(screen.getByRole('form', { name: 'Verificação em duas etapas' })).toBeInTheDocument();
+    // O título do passo 2 vira o h1 da tela (o do formulário da senha saiu).
+    expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent)).toEqual([
+      'Verificação em duas etapas',
+    ]);
     expect(screen.getByText('ana@escambo.test')).toBeInTheDocument();
     const field = screen.getByLabelText('Código do app autenticador');
     expect(field).toHaveFocus();

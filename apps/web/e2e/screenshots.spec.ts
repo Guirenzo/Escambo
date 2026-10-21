@@ -51,6 +51,13 @@ test.skip(!!process.env.CI, 'utilitário de documentação; não roda no CI');
 test('gera os prints do README', async ({ page, request, browser }) => {
   test.setTimeout(120_000);
 
+  // 0. Página inicial pública (sem sessão): a primeira dobra, com a taxa e as categorias da API.
+  await page.goto('/');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect(page.locator('#categorias')).toBeAttached();
+  await page.waitForTimeout(400); // fontes
+  await snap(page, '00-landing');
+
   // 1. Login (tela pública)
   await page.goto('/login');
   await page.getByLabel('E-mail').fill('bruno@escambo.demo');
@@ -59,7 +66,9 @@ test('gera os prints do README', async ({ page, request, browser }) => {
   await snap(page, '01-login');
 
   await page.locator('form button[type="submit"]').click();
-  await expect(page.getByRole('heading', { name: /^Olá,/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /^(Bom dia|Boa tarde|Boa noite),/ }),
+  ).toBeVisible();
   await settled(page);
   await page.waitForTimeout(400);
   await snap(page, '02-inicio');
@@ -229,11 +238,19 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     await snap(p, '14-contratar');
     await ctx.close();
   }
-  const disputes = await request.get('/api/disputes', {
-    headers: { Authorization: `Bearer ${anaTok}` },
-  });
-  const first = ((await disputes.json()) as { contractId: number }[])[0];
-  if (first) await shotAs(anaTok, `/contratos/${first.contractId}`, '12-sala-disputa');
+  // A disputa da demo pode estar com a Ana ou com a cliente alternativa (proposta única por par), e
+  // só abre depois do prazo: numa demo recém-semeada ela ainda não existe, e o print fica como está.
+  for (const email of ['cliente@escambo.demo', 'caio@escambo.demo', 'beatriz@escambo.demo']) {
+    const tok = email === 'cliente@escambo.demo' ? anaTok : await login(email);
+    const disputes = await request.get('/api/disputes', {
+      headers: { Authorization: `Bearer ${tok}` },
+    });
+    const first = ((await disputes.json()) as { contractId: number }[])[0];
+    if (first) {
+      await shotAs(tok, `/contratos/${first.contractId}`, '12-sala-disputa');
+      break;
+    }
+  }
 
   // 17. Prazo de entrega: pedido de extensão do freelancer aguardando a decisão da cliente (RN-028).
   const mine = await request.get('/api/contracts?limit=100', {
@@ -342,7 +359,8 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     await ctx.close();
   }
 
-  // 22. Cancelar mostra o valor antes (ADR 57): a cliente abre "Cancelar" numa contratação aceita.
+  // 22. Cancelar mostra o valor antes (ADR 57): a cliente abre "Cancelar" numa contratação aceita
+  // (qualquer uma: a demo distribui os cenários entre as clientes desde a proposta única).
   {
     const anaToken = await login('cliente@escambo.demo');
     const list = await request.get('/api/contracts?limit=100', {
@@ -350,7 +368,7 @@ test('gera os prints do README', async ({ page, request, browser }) => {
     });
     const aceita = (
       (await list.json()) as { items: { id: number; title: string; status: string }[] }
-    ).items.find((c) => c.title === 'Motion graphics 15s' && c.status === 'accepted');
+    ).items.find((c) => c.status === 'accepted');
     if (aceita) {
       const ctx = await browser.newContext({
         viewport: { width: 1440, height: 900 },
@@ -441,8 +459,11 @@ test('gera os prints da ADR 61 com dados fictícios próprios', async ({ request
   });
 
   // 24. Três desistências reais em contas fictícias: o perfil público mostra só número e alerta.
+  // Outro cliente: a proposta do print 23 continua aberta, e só vale uma por par (proposta única).
+  const dropoutClient = await createUser(request, 'client');
+  await topUp(request, dropoutClient, 1000);
   for (const title of ['Identidade visual', 'Revisão de layout', 'Protótipo navegável']) {
-    const id = await acceptContract(request, client, freelancer, {
+    const id = await acceptContract(request, dropoutClient, freelancer, {
       serviceId: service.id,
       title,
       description: 'Contratação fictícia para demonstrar o histórico de desistências.',
@@ -483,7 +504,8 @@ test('gera os prints da ADR 61 com dados fictícios próprios', async ({ request
   await captureAs(freelancer, '/', async (page) => {
     const banner = page.getByRole('region', { name: 'Atualização da Política de Privacidade' });
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText('versão 1.5');
+    // A versão vigente muda a cada atualização da política; o print só precisa da faixa.
+    await expect(banner).toContainText(/versão \d+\.\d+/);
     await expect(banner).toContainText('últimos 60 dias');
     await expect(banner.getByRole('button', { name: 'Não aceito' })).toBeVisible();
     await snap(page, '26-politica-adr61', true);

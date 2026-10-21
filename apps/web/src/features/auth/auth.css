@@ -1,0 +1,325 @@
+/* =====================================================================
+   Escambo — entrar e criar conta (v2)
+   Importado só pelo LoginForm. Tela dividida: o formulário limpo de um lado e, do outro, um painel
+   escuro com uma frase, a foto e dois recortes do app. No celular, só o formulário, com a marca
+   numa faixa escura no topo. Seletores com `.au` na frente: o styles.css do app vem depois na
+   cascata, e as regras de lá (de uma classe só) ganhariam no empate.
+   Cores só dos tokens do primeiro :root de styles.css; texto sempre sobre cor sólida.
+   ===================================================================== */
+
+.au {
+  display: grid;
+  min-height: 100vh;
+  background: var(--surface);
+  color: var(--text);
+}
+@media (min-width: 60rem) {
+  .au {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  }
+}
+
+/* ---------- Lado do formulário ---------- */
+.au-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.au-top {
+  padding: 24px clamp(20px, 4vw, 48px);
+}
+.au .au-brand {
+  border-radius: var(--r-sm);
+  color: var(--text);
+}
+.au .au-brand:hover {
+  color: var(--text);
+}
+.au .au-brand .brand-mark {
+  background: var(--amber-bright);
+  color: var(--green-deep);
+}
+.au .au-brand:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.au-body {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: 16px clamp(16px, 4vw, 48px) 56px;
+}
+.au .au-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  max-width: 25rem;
+}
+.au-head {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+.au .au-title {
+  font-size: clamp(1.75rem, 1.5rem + 0.8vw, 2.125rem);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+.au .au-sub {
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+.au .au-card label {
+  font-size: 0.875rem;
+}
+
+/* Entrar | Criar conta: controle segmentado (o estado vai em aria-pressed). */
+.au .au-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.au .au-switch button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.au .au-switch button:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+}
+.au .au-switch button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--green-ink);
+  box-shadow: var(--sh-sm);
+}
+
+.au .au-forgot {
+  margin-top: -8px;
+  font-size: 0.875rem;
+  text-align: right;
+}
+.au .au-forgot a {
+  font-weight: 600;
+}
+.au .au-submit {
+  min-height: 48px;
+  margin-top: 4px;
+  border-radius: 12px;
+  font-size: 1rem;
+}
+.au .au-alt {
+  color: var(--muted);
+  font-size: 0.9375rem;
+  text-align: center;
+}
+
+/* ---------- Painel escuro ---------- */
+.au-panel {
+  display: none;
+}
+@media (min-width: 60rem) {
+  .au-panel {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 40px;
+    margin: 16px;
+    padding: clamp(40px, 4vw, 64px);
+    border-radius: 28px;
+    background: var(--green-deep);
+    color: var(--on-dark);
+  }
+}
+/* Brilho decorativo à parte, no alto à direita; a frase fica sobre o fundo sólido. */
+.au-panel-glow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+.au-panel-glow::before {
+  content: '';
+  position: absolute;
+  top: -14rem;
+  right: -16rem;
+  width: 52rem;
+  height: 44rem;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(17, 112, 74, 0.55), rgba(17, 112, 74, 0));
+}
+.au .au-quote {
+  max-width: 19ch;
+  font-family: var(--font-display);
+  font-size: clamp(1.875rem, 1.1rem + 1.5vw, 2.625rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.au-quote span {
+  color: var(--amber-bright);
+}
+.au-collage {
+  position: relative;
+  max-width: 34rem;
+  margin: 0 24px 24px 0;
+}
+.au-collage img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 24px;
+  box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.7);
+}
+/* Os recortes do app: cartões brancos com o texto escuro (contraste do app). */
+.au-mock {
+  position: absolute;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #0f1a14;
+  box-shadow: 0 24px 48px -16px rgba(0, 0, 0, 0.6);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+.au-mock-trade {
+  bottom: -28px;
+  left: -20px;
+  display: grid;
+  gap: 8px;
+  width: min(62%, 19rem);
+  padding: 14px;
+}
+.au-mock-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+.au-mock-title svg {
+  color: #0d5c3a;
+}
+.au-mock-title span {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #e7f3ec;
+  color: #0d5c3a;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.au-mock-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e4e9e6;
+  border-radius: 10px;
+  background: #f8faf9;
+}
+.au-mock-row span {
+  grid-column: 1 / -1;
+  color: #566860;
+  font-size: 0.75rem;
+}
+.au-mock-row b {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+.au-mock-torna {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fdf3e0;
+  color: #7c4a03;
+  font-weight: 600;
+}
+.au-mock-toast {
+  top: 20px;
+  right: -24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 10px 10px;
+}
+.au-mock-toast p {
+  display: grid;
+  color: #566860;
+}
+.au-mock-toast strong {
+  color: #0f1a14;
+  font-family: var(--font-display);
+}
+.au-mock-ico {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #e7f3ec;
+  color: #0d5c3a;
+}
+.au-assure {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.au-assure li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--on-dark);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+.au-assure svg {
+  flex-shrink: 0;
+  color: var(--amber-bright);
+}
+
+/* ---------- Celular e tablet: só o formulário, com a marca numa faixa escura ---------- */
+@media (max-width: 59.99rem) {
+  .au-top {
+    padding: 14px 16px;
+    background: var(--green-deep);
+  }
+  .au .au-brand,
+  .au .au-brand:hover {
+    color: var(--on-dark);
+  }
+  .au .au-brand:focus-visible {
+    outline-color: var(--focus-on-dark);
+  }
+  .au-body {
+    align-items: start;
+    padding-top: 28px;
+  }
+}

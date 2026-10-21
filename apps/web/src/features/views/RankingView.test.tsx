@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../lib/toast';
-import { RankingView } from './RankingView';
+import { avatarTone, RankingView } from './RankingView';
 
 vi.mock('../../lib/auth', () => ({
   useAuth: () => ({ user: { id: 2, ulid: 'u-rafael', email: 'r@e.com', role: 'freelancer' } }),
@@ -199,5 +199,27 @@ describe('RankingView', () => {
 
     await user.selectOptions(screen.getByLabelText('Categoria do ranking'), '1');
     expect(await screen.findByText('Ninguém nesse filtro ainda.')).toBeInTheDocument();
+  });
+});
+
+describe('RankingView: pódio', () => {
+  it('o pódio fica num palco com nome, na ordem 2º, 1º e 3º, com a posição escrita em cada um', async () => {
+    render(wrap(<RankingView />));
+    const stage = await screen.findByRole('region', { name: 'Pódio' });
+    const cols = Array.from(stage.querySelectorAll('.podium-col'));
+    expect(cols.map((c) => c.querySelector('.medal')?.textContent)).toEqual(['2º', '1º', '3º']);
+    expect(cols[1]!.querySelector('.podium-crown')).not.toBeNull();
+    expect(cols[0]!.querySelector('.podium-crown')).toBeNull();
+    // O degrau repete a posição só para os olhos.
+    expect(cols[1]!.querySelector('.stand')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('a cor do avatar de iniciais é a mesma para a mesma pessoa, e uma das seis do sistema', () => {
+    const tones = ['a-green', 'a-blue', 'a-violet', 'a-amber', 'a-red', 'a-teal'];
+    expect(avatarTone('01MARINA')).toBe(avatarTone('01MARINA'));
+    expect(tones).toContain(avatarTone('01MARINA'));
+    expect(new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(avatarTone)).size).toBeGreaterThan(
+      1,
+    );
   });
 });

@@ -986,6 +986,22 @@ export const openapiDocument: Record<string, any> = {
         'awardedAt',
       ]),
       PublicFreelancerProfile: obj({
+        latitude: {
+          type: 'number',
+          nullable: true,
+          minimum: -90,
+          maximum: 90,
+          description:
+            'Arredondada para 2 casas (~1 km) para quem não é o dono, logado ou não; o dono (com token) vê a exata, como em /profiles/me.',
+        },
+        longitude: {
+          type: 'number',
+          nullable: true,
+          minimum: -180,
+          maximum: 180,
+          description:
+            'Arredondada para 2 casas (~1 km) para quem não é o dono, logado ou não; o dono (com token) vê a exata, como em /profiles/me.',
+        },
         dropouts: ref('DropoutSummary'),
         totalXp: { ...nonnegativeInteger, description: 'XP acumulado (0 sem XP registrado).' },
         badges: {
@@ -1843,7 +1859,7 @@ export const openapiDocument: Record<string, any> = {
       get: {
         ...op(
           'Perfis',
-          'Perfil público do freelancer (nota, nível, XP, badges com até 3 em destaque e resumo de desistências sem datas ou textos privados)',
+          'Perfil público do freelancer (nota, nível, XP, badges com até 3 em destaque e resumo de desistências sem datas ou textos privados). Latitude e longitude saem arredondadas para ~1 km para quem não é o dono; o token é opcional e só serve para reconhecer o dono, que vê o valor exato',
           { responses: jsonResponse('200', 'PublicFreelancerProfile') },
         ),
         parameters: [{ name: 'ulid', in: 'path', required: true, schema: { type: 'string' } }],

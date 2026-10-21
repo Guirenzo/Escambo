@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createService, createUser, openAs, settled, topUp } from './helpers';
+import { createService, createUser, navTo, openAs, openFilters, settled, topUp } from './helpers';
 
 /**
  * Engajamento: notificações ao vivo (socket → badge + toast), favoritos, filtro por categoria
@@ -16,8 +16,17 @@ test('notificação chega ao vivo: badge no menu, toast e lista atualizada sem r
   const client = await createUser(request, 'client');
   await topUp(request, client, 120);
 
+  // A tela aberta de verdade: o Início na tela, as não lidas já lidas da API e o socket conectado.
+  // Sem esperar, a contratação podia nascer antes da primeira leitura e chegar pela lista, não ao vivo.
+  const socketOpen = page.waitForEvent('websocket');
+  const firstUnread = page.waitForResponse((r) => r.url().includes('/api/notifications'));
   await openAs(page, freelancer, '/');
+  await expect(
+    page.getByRole('heading', { level: 1, name: /^(Bom dia|Boa tarde|Boa noite),/ }),
+  ).toBeVisible();
   await settled(page);
+  await firstUnread;
+  await socketOpen;
   await expect(page.getByTestId('nav-badge')).toHaveCount(0);
 
   // Outro usuário age pela API → o freelancer, com a tela aberta, recebe pelo socket.
@@ -34,9 +43,9 @@ test('notificação chega ao vivo: badge no menu, toast e lista atualizada sem r
 
   await expect(page.getByTestId('nav-badge')).toHaveText('1');
   await expect(page.locator('.toast', { hasText: 'Nova proposta de contratação' })).toBeVisible();
-  await expect(page.getByRole('row', { name: /Proposta ao vivo/ })).toBeVisible();
+  await expect(page.getByRole('article', { name: 'Proposta ao vivo' })).toBeVisible();
 
-  await page.getByRole('link', { name: 'Notificações' }).click();
+  await navTo(page, 'Notificações');
   await expect(page.locator('.list li', { hasText: 'Nova proposta de contratação' })).toBeVisible();
   await page.getByRole('button', { name: 'Marcar todas como lidas' }).click();
   await expect(page.getByTestId('nav-badge')).toHaveCount(0);
@@ -61,7 +70,7 @@ test('favoritar um serviço e filtrar "Só favoritos"', async ({ page, request }
   // Persiste e o filtro mostra só o favorito.
   await page.reload();
   await settled(page);
-  await page.getByRole('button', { name: /Só favoritos/ }).click();
+  await (await openFilters(page)).getByRole('button', { name: /Só favoritos/ }).click();
   await expect(page.locator('.card.service')).toHaveCount(1);
   await expect(page.locator('.card.service', { hasText: service.title })).toBeVisible();
 });
@@ -75,7 +84,8 @@ test('filtrar serviços por categoria', async ({ page, request }) => {
 
   await openAs(page, client, '/servicos');
   await settled(page);
-  await page.getByLabel('Categoria').selectOption(String(b.categoryId));
+  // Nome exato: a fileira de pílulas acima da busca se chama "Categorias".
+  await page.getByLabel('Categoria', { exact: true }).selectOption(String(b.categoryId));
   await expect(page.locator('.card.service', { hasText: b.title })).toBeVisible();
   await expect(page.locator('.card.service', { hasText: a.title })).toHaveCount(0);
 });
@@ -104,7 +114,7 @@ test('onboarding: freelancer sem perfil vê o aviso, define localização e o av
   await form.getByRole('button', { name: 'Salvar freelancer' }).click();
   await expect(page.locator('.toast', { hasText: 'Perfil de freelancer salvo' })).toBeVisible();
 
-  await page.getByRole('link', { name: 'Início' }).click();
+  await navTo(page, 'Início');
   await settled(page);
   await expect(page.getByTestId('onboarding-notice')).toHaveCount(0);
 });

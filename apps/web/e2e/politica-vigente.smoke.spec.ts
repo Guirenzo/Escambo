@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { createUser, openAs, settled } from './helpers';
+import { createUser, navTo, openAs, settled } from './helpers';
 
 /** A versão vigente da Política e a data dela: mudou a política, muda aqui (ADR 54, 56 e 61). */
 const VIGENTE = '1.6';
@@ -74,7 +74,7 @@ test('política vigente: faixa para quem está na versão anterior, aceite regis
   await page.reload();
   await settled(page);
   await expect(page.getByTestId('legal-banner')).toHaveCount(0);
-  await page.getByRole('link', { name: 'Perfil', exact: true }).click();
+  await navTo(page, 'Perfil');
   await settled(page);
   const consents = page.getByLabel('Consentimentos');
   await expect(consents.locator('li').first()).toContainText(
@@ -186,7 +186,7 @@ test('política vigente: "Não aceito" também registra e encerra a faixa', asyn
   ).toBeVisible();
   await expect(page.getByTestId('legal-banner')).toHaveCount(0);
 
-  await page.getByRole('link', { name: 'Perfil', exact: true }).click();
+  await navTo(page, 'Perfil');
   await settled(page);
   await expect(page.getByLabel('Consentimentos').locator('li').first()).toContainText(
     'recusado em',

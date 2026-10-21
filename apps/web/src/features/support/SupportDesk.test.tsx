@@ -113,6 +113,7 @@ describe('suporte do titular', () => {
   it('abre durante suspensão, normaliza texto e seleciona o protocolo criado', async () => {
     const user = mount({ selected: false, suspended: true });
     expect(screen.getByRole('heading', { name: 'Suporte', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Como podemos ajudar?', level: 2 })).toBeVisible();
     const dialog = await fillOpen(user);
     expect(dialog.getByText(/Até 3 chamados/)).toBeInTheDocument();
     expect(dialog.getByText(/não abre disputa financeira/)).toBeInTheDocument();

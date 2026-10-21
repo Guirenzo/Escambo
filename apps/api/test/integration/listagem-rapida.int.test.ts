@@ -43,8 +43,8 @@ const OLD_BOOSTED = `EXISTS(SELECT 1 FROM boosts bo
   WHERE bo.service_id = s.id AND bo.status = 'active' AND bo.expires_at > NOW())`;
 
 const DISTANCE = `(6371 * ACOS(LEAST(1.0,
-  COS(RADIANS(:lat)) * COS(RADIANS(pf.latitude)) * COS(RADIANS(pf.longitude) - RADIANS(:lng))
-  + SIN(RADIANS(:lat)) * SIN(RADIANS(pf.latitude)))))`;
+  COS(RADIANS(:lat)) * COS(RADIANS(ROUND(pf.latitude, 2))) * COS(RADIANS(ROUND(pf.longitude, 2)) - RADIANS(:lng))
+  + SIN(RADIANS(:lat)) * SIN(RADIANS(ROUND(pf.latitude, 2))))))`;
 
 /**
  * O ORDER BY da consulta antiga. Ela não desempatava a distância (a ordem dos empates dependia do

@@ -1,5 +1,5 @@
 import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
-import { ArrowLeftRight, Plus, QrCode } from 'lucide-react';
+import { ArrowLeftRight, Coins, Plus, QrCode } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { BarterAgreement, BarterValueSource, Service } from '@escambo/types';
@@ -175,13 +175,7 @@ export function TrocasView() {
     <div className="page">
       <PageHeader
         title="Trocas"
-        subtitle={
-          <>
-            Troque serviço por serviço. Quem recebe o serviço mais valioso paga a <b>torna</b>,
-            reservada na carteira até os dois lados concluírem; a plataforma retém{' '}
-            {Math.round(feeRate * 100)}% só sobre a torna.
-          </>
-        }
+        subtitle="Serviço por serviço, com a diferença em dinheiro protegida até o fim."
         action={
           barterEnabled ? (
             <BusinessButton
@@ -194,6 +188,44 @@ export function TrocasView() {
           ) : null
         }
       />
+
+      {/* Como a troca funciona: texto sobre o verde sólido; a foto (pessoas fictícias) é ilustração
+          numa coluna própria, com o selo num cartão branco sólido. */}
+      <section className="trade-hero" aria-labelledby="trade-hero-title">
+        <div className="trade-hero-text">
+          <h2 id="trade-hero-title">Como funciona a troca</h2>
+          <p>
+            Troque serviço por serviço. Quem recebe o serviço mais valioso paga a <b>torna</b>,
+            reservada na carteira até os dois lados concluírem; a plataforma retém{' '}
+            {Math.round(feeRate * 100)}% só sobre a torna.
+          </p>
+          <ol className="trade-steps">
+            <li>
+              <span aria-hidden="true">1</span> Você escolhe o serviço que quer e oferece um seu
+            </li>
+            <li>
+              <span aria-hidden="true">2</span> A diferença de valor vira a torna, guardada em
+              escrow
+            </li>
+            <li>
+              <span aria-hidden="true">3</span> Aceita a troca, nascem os dois contratos
+            </li>
+          </ol>
+        </div>
+        <div className="trade-hero-art" aria-hidden="true">
+          <img
+            src="/img/pessoas/dupla-troca-400.webp"
+            srcSet="/img/pessoas/dupla-troca-400.webp 400w, /img/pessoas/dupla-troca.webp 800w"
+            sizes="20rem"
+            alt=""
+            width={800}
+            height={533}
+          />
+          <span className="trade-hero-badge">
+            <ArrowLeftRight size={16} /> serviço por serviço
+          </span>
+        </div>
+      </section>
 
       {!barterEnabled && (
         <EmptyState>
@@ -352,7 +384,7 @@ export function TrocasView() {
         onRetry={() => void barters.refetch()}
       >
         {(d) => (
-          <div className="cards-grid swaps">
+          <div className="trade-grid">
             {d.items.map((b: BarterAgreement) => {
               const iAmProposer = b.proposerId === myId;
               const iAmReceiver = b.receiverId === myId;
@@ -372,63 +404,124 @@ export function TrocasView() {
                 b.tornaStatus === 'pending' &&
                 balance < b.cashDifference;
               return (
-                <div key={b.id} className="card service" data-testid={`barter-${b.id}`}>
-                  <div className="svc-top">
+                <article
+                  key={b.id}
+                  className={`trade-card${b.status === 'proposed' ? ' is-open' : ''}`}
+                  data-testid={`barter-${b.id}`}
+                  aria-label={`Troca de ${dt(b.createdAt)}`}
+                >
+                  <div className="trade-top">
                     <span className="chip rank">{iAmProposer ? 'Você propôs' : 'Recebida'}</span>
                     <span className={`pill ${pillClass(b.status)}`}>
                       {BARTER_STATUS_LABEL[b.status] ?? b.status}
                     </span>
+                    <span className="muted tiny trade-date">{dt(b.createdAt)}</span>
                   </div>
-                  <div className="swap">
-                    <div className="swap-side">
-                      <span className="muted tiny">
-                        {iAmProposer ? 'Você oferece' : 'Oferecem'}
-                      </span>
-                      <strong>
-                        {svcLabel(b.offeredServiceId, b.offeredServiceTitle, b.offeredDescription)}
-                      </strong>
-                      <span className="price">{brl(b.estimatedValueOffered)}</span>
-                      {b.offeredValueSource && (
-                        <span className="muted tiny" data-testid="offered-source">
-                          {SOURCE_LABEL[b.offeredValueSource]}
+                  {/* Sempre do ponto de vista de quem lê: primeiro o que você oferece, depois o que
+                      recebe. Para quem recebeu a proposta, o lado oferecido é o que ele recebe. */}
+                  <div className="trade-swap">
+                    {iAmProposer ? (
+                      <div className="trade-side">
+                        <span className="trade-label">
+                          {iAmProposer ? 'Você oferece' : 'Você recebe'}
                         </span>
-                      )}
-                    </div>
-                    <span className="arrow">
-                      <ArrowLeftRight size={18} />
-                    </span>
-                    <div className="swap-side">
-                      <span className="muted tiny">{iAmProposer ? 'Você recebe' : 'Querem'}</span>
-                      <strong>
-                        {svcLabel(
-                          b.requestedServiceId,
-                          b.requestedServiceTitle,
-                          b.requestedDescription,
+                        <strong className="trade-title">
+                          {svcLabel(
+                            b.offeredServiceId,
+                            b.offeredServiceTitle,
+                            b.offeredDescription,
+                          )}
+                        </strong>
+                        <span className="price">{brl(b.estimatedValueOffered)}</span>
+                        {b.offeredValueSource && (
+                          <span className="muted tiny" data-testid="offered-source">
+                            {SOURCE_LABEL[b.offeredValueSource]}
+                          </span>
                         )}
-                      </strong>
-                      <span className="price">{brl(b.estimatedValueRequested)}</span>
-                      {b.requestedValueSource && (
-                        <span className="muted tiny" data-testid="requested-source">
-                          {SOURCE_LABEL[b.requestedValueSource]}
+                      </div>
+                    ) : (
+                      <div className="trade-side">
+                        <span className="trade-label">
+                          {iAmProposer ? 'Você recebe' : 'Você oferece'}
                         </span>
-                      )}
-                    </div>
+                        <strong className="trade-title">
+                          {svcLabel(
+                            b.requestedServiceId,
+                            b.requestedServiceTitle,
+                            b.requestedDescription,
+                          )}
+                        </strong>
+                        <span className="price">{brl(b.estimatedValueRequested)}</span>
+                        {b.requestedValueSource && (
+                          <span className="muted tiny" data-testid="requested-source">
+                            {SOURCE_LABEL[b.requestedValueSource]}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <span className="trade-arrow" aria-hidden="true">
+                      <ArrowLeftRight size={20} />
+                    </span>
+                    {iAmProposer ? (
+                      <div className="trade-side">
+                        <span className="trade-label">
+                          {iAmProposer ? 'Você recebe' : 'Você oferece'}
+                        </span>
+                        <strong className="trade-title">
+                          {svcLabel(
+                            b.requestedServiceId,
+                            b.requestedServiceTitle,
+                            b.requestedDescription,
+                          )}
+                        </strong>
+                        <span className="price">{brl(b.estimatedValueRequested)}</span>
+                        {b.requestedValueSource && (
+                          <span className="muted tiny" data-testid="requested-source">
+                            {SOURCE_LABEL[b.requestedValueSource]}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="trade-side">
+                        <span className="trade-label">
+                          {iAmProposer ? 'Você oferece' : 'Você recebe'}
+                        </span>
+                        <strong className="trade-title">
+                          {svcLabel(
+                            b.offeredServiceId,
+                            b.offeredServiceTitle,
+                            b.offeredDescription,
+                          )}
+                        </strong>
+                        <span className="price">{brl(b.estimatedValueOffered)}</span>
+                        {b.offeredValueSource && (
+                          <span className="muted tiny" data-testid="offered-source">
+                            {SOURCE_LABEL[b.offeredValueSource]}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="svc-foot">
-                    <span className="muted tiny">
+                  <p
+                    className={`trade-torna${b.cashDifference <= 0 ? ' even' : iPayTorna ? ' pay' : ' get'}`}
+                  >
+                    <span className="trade-torna-ico" aria-hidden="true">
+                      <Coins size={16} />
+                    </span>
+                    <span>
                       {tornaLine}
                       {tornaState ? ` · ${tornaState}` : ''}
                     </span>
-                    <span className="muted tiny">{dt(b.createdAt)}</span>
-                  </div>
+                  </p>
                   {b.status === 'active' && (
-                    <p className="ok">2 contratos recíprocos gerados — acompanhe em Início</p>
+                    <p className="ok trade-note">
+                      2 contratos recíprocos gerados — acompanhe em Início
+                    </p>
                   )}
                   {b.status === 'proposed' && (
-                    <div className="svc-actions">
+                    <div className="trade-actions">
                       {iAmReceiver && mustFund && (
                         <BusinessButton
-                          variant="mini"
                           onClick={() => setDepositFor(round2(b.cashDifference - balance))}
                         >
                           <QrCode size={14} /> Depositar {brl(round2(b.cashDifference - balance))}{' '}
@@ -437,7 +530,6 @@ export function TrocasView() {
                       )}
                       {iAmReceiver && !mustFund && (
                         <BusinessButton
-                          variant="mini"
                           disabled={act.isPending}
                           onClick={() => void run(b.id, 'accept')}
                         >
@@ -446,7 +538,7 @@ export function TrocasView() {
                       )}
                       {iAmReceiver && (
                         <BusinessButton
-                          variant="mini"
+                          variant="secondary"
                           disabled={act.isPending}
                           onClick={() => void run(b.id, 'reject')}
                         >
@@ -455,7 +547,7 @@ export function TrocasView() {
                       )}
                       {iAmProposer && (
                         <BusinessButton
-                          variant="mini"
+                          variant="secondary"
                           disabled={act.isPending}
                           onClick={() => void run(b.id, 'cancel')}
                         >
@@ -464,7 +556,7 @@ export function TrocasView() {
                       )}
                     </div>
                   )}
-                </div>
+                </article>
               );
             })}
           </div>

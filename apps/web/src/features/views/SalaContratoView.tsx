@@ -13,6 +13,7 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -28,10 +29,10 @@ import type {
   ContractWithHistory,
 } from '@escambo/types';
 import { StarInput, Stars } from '../../components/Stars';
-import { Button, Input, QueryState } from '../../components/ui';
+import { Breadcrumbs, Button, Input, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
-import { brl, dtm, hm, statusLabel, STATUS_LABEL } from '../../lib/format';
+import { brl, dt, dtm, hm, statusLabel, STATUS_LABEL } from '../../lib/format';
 import {
   useChatHistory,
   useContractDetail,
@@ -164,6 +165,88 @@ const MODE_LABEL: Record<string, string> = {
   credits: 'Créditos Escambo',
   barter: 'Troca',
 };
+
+/** As quatro etapas do caminho de uma contratação e os status que contam como cada uma. */
+const STEPS: { label: string; statuses: string[] }[] = [
+  { label: 'Proposta', statuses: ['pending'] },
+  { label: 'Aceita', statuses: ['accepted', 'in_progress', 'revision_requested'] },
+  { label: 'Entregue', statuses: ['delivered'] },
+  { label: 'Concluída', statuses: ['completed'] },
+];
+
+/** Fim fora do caminho: a etapa final em vermelho, no lugar das que não vão acontecer. */
+const OFF_PATH: Record<string, string> = {
+  cancelled: 'Cancelada',
+  rejected: 'Recusada',
+  disputed: 'Em disputa',
+};
+
+/**
+ * As etapas da contratação na horizontal (proposta, aceita, entregue, concluída), com o dia em que
+ * cada uma aconteceu, tirado do histórico. Cancelada, recusada ou em disputa entram como a última
+ * etapa, em vermelho. Para o leitor de tela, cada etapa diz se já foi, se é a atual ou se vem depois.
+ */
+export function ContractStepper({ contract: c }: { contract: ContractWithHistory }) {
+  const firstAt = (statuses: string[]): string | null =>
+    c.history.find((h) => statuses.includes(h.status))?.at ?? null;
+  const reachedIndex = (status: string): number =>
+    STEPS.findIndex((st) => st.statuses.includes(status));
+  const off = OFF_PATH[c.status];
+  // Até onde chegou: a etapa do status atual ou, fora do caminho, a mais avançada do histórico.
+  const reached = off
+    ? Math.max(-1, ...c.history.map((h) => reachedIndex(h.status)))
+    : reachedIndex(c.status);
+  const steps = off
+    ? [
+        ...STEPS.slice(0, reached + 1).map((st) => ({ label: st.label, at: firstAt(st.statuses) })),
+        { label: off, at: firstAt([c.status]) },
+      ]
+    : STEPS.map((st) => ({ label: st.label, at: firstAt(st.statuses) }));
+  const current = off ? steps.length - 1 : reached;
+  return (
+    <ol className={`stepper${off ? ' off-path' : ''}`} aria-label="Etapas da contratação">
+      {steps.map((st, i) => {
+        // Concluída: a última etapa é a atual e também já foi (a marca acesa, com o visto).
+        const finished = c.status === 'completed' && i === current;
+        const state = i < current || finished ? 'done' : i === current ? 'current' : 'next';
+        return (
+          <li
+            key={st.label}
+            className={`step ${state}`}
+            aria-current={i === current ? 'step' : undefined}
+          >
+            <span className="step-mark" aria-hidden="true">
+              {state === 'done' ? <Check size={14} strokeWidth={3} /> : i + 1}
+            </span>
+            <span className="step-text">
+              <strong>{st.label}</strong>
+              <span className="step-at">
+                {st.at ? dt(st.at) : state === 'next' ? 'a seguir' : ''}
+              </span>
+              <span className="sr-only">
+                {state === 'done' ? ' (concluída)' : state === 'current' ? ' (etapa atual)' : ''}
+              </span>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** "Hoje", "Ontem" ou "20 de outubro": o separador de dia no chat. */
+export function chatDayLabel(iso: string, now: Date = new Date()): string {
+  const day = new Date(iso);
+  const start = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diff = Math.round((start(now) - start(day)) / 86_400_000);
+  if (diff === 0) return 'Hoje';
+  if (diff === 1) return 'Ontem';
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: 'numeric',
+    month: 'long',
+    ...(day.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
+  }).format(day);
+}
 
 /** Onde o dinheiro (ou os créditos) está neste momento do contrato. */
 function paymentState(
@@ -509,23 +592,30 @@ export function SalaContratoView({
 
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
+      <section className="sala-header" aria-labelledby="sala-title">
+        {/* Migalhas: a sala é uma das contratações listadas no Início. */}
+        <div className="sala-crumbs">
           <Button variant="ghost" className="mini" onClick={onBack}>
             <ArrowLeft size={14} /> Voltar
           </Button>
-          <h1 style={{ marginTop: 8 }}>{c?.title ?? `Contrato #${contractId}`}</h1>
-          {c && (
-            <p className="muted">
-              {MODE_LABEL[c.paymentMode] ?? c.paymentMode} · criado em {dtm(c.createdAt)}
-            </p>
-          )}
+          <Breadcrumbs
+            items={[{ label: 'Início', to: '/' }, { label: c?.title ?? `Contrato #${contractId}` }]}
+          />
         </div>
-        {c && (
-          <div className="stack">
-            <DisputeWindowNotice contract={c} myId={myId} />
+        <div className="sala-head-row">
+          <div className="sala-head-text">
+            <h1 id="sala-title">{c?.title ?? `Contrato #${contractId}`}</h1>
+            {c && (
+              <p className="sala-head-meta">
+                <span className={`pill status-${c.status}`}>{statusLabel(c)}</span>
+                <span className="muted">
+                  {MODE_LABEL[c.paymentMode] ?? c.paymentMode} · criado em {dtm(c.createdAt)}
+                </span>
+              </p>
+            )}
+          </div>
+          {c && (
             <div className="sala-head-right">
-              <span className={`pill status-${c.status}`}>{statusLabel(c)}</span>
               <ContractActions
                 contract={c}
                 exclude={['review']}
@@ -536,9 +626,11 @@ export function SalaContratoView({
                 onDeliver={() => setDeliverOpen(true)}
               />
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+        {c && <ContractStepper contract={c} />}
+        {c && <DisputeWindowNotice contract={c} myId={myId} />}
+      </section>
 
       {c && <DueNotice contract={c} myId={myId} zone={user?.timezone} />}
       {c && <RevisionSummary contract={c} myId={myId} />}
@@ -627,12 +719,18 @@ export function SalaContratoView({
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
         >
-          <div className="card-head">
-            <h3>
-              <MessageSquare size={16} /> Chat
-            </h3>
+          <div className="card-head chat-head">
+            <span className="chat-head-ico" aria-hidden="true">
+              <MessageSquare size={18} />
+            </span>
+            <div className="chat-head-text">
+              <h3>Chat</h3>
+              <p className="card-sub">
+                Tudo o que for combinado aqui fica registrado na contratação.
+              </p>
+            </div>
             {connected ? (
-              <span className="chip rank">ao vivo</span>
+              <span className="chat-live">ao vivo</span>
             ) : (
               <span className="pill">offline</span>
             )}
@@ -643,35 +741,47 @@ export function SalaContratoView({
             ) : messages.length === 0 ? (
               <p className="muted">Nenhuma mensagem ainda. Diga oi!</p>
             ) : (
-              messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`bubble ${m.senderId === myId ? 'mine' : 'theirs'}${m.attachment ? ' with-attachment' : ''}${m.removedAt ? ' removed' : ''}`}
-                  data-testid={
-                    m.removedAt ? 'removed-message' : m.attachment ? 'attachment-bubble' : undefined
-                  }
-                >
-                  {m.removedAt && (
-                    <span className="bubble-removed">Mensagem removida pela moderação</span>
+              messages.map((m, i) => (
+                <Fragment key={m.id}>
+                  {(i === 0 ||
+                    new Date(messages[i - 1]!.createdAt).toDateString() !==
+                      new Date(m.createdAt).toDateString()) && (
+                    <p className="chat-day">
+                      <span>{chatDayLabel(m.createdAt)}</span>
+                    </p>
                   )}
-                  {m.type === 'image' && m.attachment && (
-                    <ImageAttachment attachment={m.attachment} />
-                  )}
-                  {m.type === 'file' && m.attachment && (
-                    <FileAttachment attachment={m.attachment} />
-                  )}
-                  {m.content && <span>{m.content}</span>}
-                  {m.signals.length > 0 && (
-                    <span className="bubble-flag" data-testid="off-platform-warning">
-                      <TriangleAlert size={12} aria-hidden="true" /> Fora do Escambo não há proteção
-                      do escrow
+                  <div
+                    className={`bubble ${m.senderId === myId ? 'mine' : 'theirs'}${m.attachment ? ' with-attachment' : ''}${m.removedAt ? ' removed' : ''}`}
+                    data-testid={
+                      m.removedAt
+                        ? 'removed-message'
+                        : m.attachment
+                          ? 'attachment-bubble'
+                          : undefined
+                    }
+                  >
+                    {m.removedAt && (
+                      <span className="bubble-removed">Mensagem removida pela moderação</span>
+                    )}
+                    {m.type === 'image' && m.attachment && (
+                      <ImageAttachment attachment={m.attachment} />
+                    )}
+                    {m.type === 'file' && m.attachment && (
+                      <FileAttachment attachment={m.attachment} />
+                    )}
+                    {m.content && <span>{m.content}</span>}
+                    {m.signals.length > 0 && (
+                      <span className="bubble-flag" data-testid="off-platform-warning">
+                        <TriangleAlert size={12} aria-hidden="true" /> Fora do Escambo não há
+                        proteção do escrow
+                      </span>
+                    )}
+                    <span className="bubble-meta">
+                      <span className="muted tiny">{hm(m.createdAt)}</span>
+                      {m.senderId === myId && !m.removedAt && <ReadStatus readAt={m.readAt} />}
                     </span>
-                  )}
-                  <span className="bubble-meta">
-                    <span className="muted tiny">{hm(m.createdAt)}</span>
-                    {m.senderId === myId && !m.removedAt && <ReadStatus readAt={m.readAt} />}
-                  </span>
-                </div>
+                  </div>
+                </Fragment>
               ))
             )}
           </div>

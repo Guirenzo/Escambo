@@ -1118,6 +1118,10 @@ export interface Service {
   ownerAvailableNow?: boolean;
   /** Fuso em que a agenda do prestador vale (ADR 48). */
   ownerTimezone?: BrazilTimezone;
+  /** Cidade do perfil público de quem presta (null = não informou). */
+  ownerCity?: string | null;
+  /** Capa do card: a primeira imagem do portfólio de quem presta (null = sem imagem). */
+  ownerCoverUrl?: string | null;
 }
 
 // --- Impulsionamento (Boosts) ---

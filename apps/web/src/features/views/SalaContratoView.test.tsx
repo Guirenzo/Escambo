@@ -14,9 +14,9 @@ import type {
 } from '@escambo/types';
 import { MemoryRouter } from 'react-router-dom';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { dtm } from '../../lib/format';
+import { dt, dtm } from '../../lib/format';
 import { ToastProvider } from '../../lib/toast';
-import { SalaContratoView } from './SalaContratoView';
+import { chatDayLabel, SalaContratoView } from './SalaContratoView';
 import { AccountAccessProvider } from '../../lib/account-access';
 
 /**
@@ -445,13 +445,99 @@ describe('SalaContratoView: carregamento', () => {
   });
 });
 
+describe('SalaContratoView: etapas no cabeçalho', () => {
+  /** Cada etapa como o leitor de tela ouve: rótulo, dia e se já foi, é a atual ou vem depois. */
+  const steps = (): string[] =>
+    within(screen.getByRole('list', { name: 'Etapas da contratação' }))
+      .getAllByRole('listitem')
+      .map((li) => (li.querySelector('.step-text')?.textContent ?? '').replace(/\s+/g, ' ').trim());
+
+  it('no caminho: as feitas com o dia, a atual marcada e as próximas "a seguir"', async () => {
+    api.contractDetail.mockResolvedValue(contract({ status: 'delivered' }));
+    await openSala();
+    expect(steps()).toEqual([
+      `Proposta${dt(CREATED)} (concluída)`,
+      `Aceita${dt('2026-09-29T09:00:00.000Z')} (concluída)`,
+      'Entregue (etapa atual)',
+      'Concluídaa seguir',
+    ]);
+    const current = screen
+      .getByRole('list', { name: 'Etapas da contratação' })
+      .querySelector('[aria-current="step"]');
+    expect(current).toHaveTextContent('Entregue');
+    expect(screen.getByRole('list', { name: 'Etapas da contratação' })).not.toHaveClass('off-path');
+  });
+
+  it('concluída: a última etapa é a atual e já aparece feita, com o dia', async () => {
+    api.contractDetail.mockResolvedValue(
+      contract({
+        status: 'completed',
+        history: [
+          ...contract().history,
+          {
+            previousStatus: 'accepted',
+            status: 'delivered',
+            note: null,
+            at: '2026-09-30T10:00:00.000Z',
+          },
+          {
+            previousStatus: 'delivered',
+            status: 'completed',
+            note: null,
+            at: '2026-10-01T10:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    await openSala();
+    expect(steps().at(-1)).toBe(`Concluída${dt('2026-10-01T10:00:00.000Z')} (concluída)`);
+    const last = screen.getByRole('list', { name: 'Etapas da contratação' }).lastElementChild!;
+    expect(last).toHaveClass('step', 'done');
+    expect(last).toHaveAttribute('aria-current', 'step');
+  });
+
+  it('fora do caminho (cancelada depois do aceite): as etapas que houve e o fim em vermelho', async () => {
+    api.contractDetail.mockResolvedValue(
+      contract({
+        status: 'cancelled',
+        history: [
+          ...contract().history,
+          {
+            previousStatus: 'accepted',
+            status: 'cancelled',
+            note: null,
+            at: '2026-09-30T10:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    await openSala();
+    expect(steps()).toEqual([
+      `Proposta${dt(CREATED)} (concluída)`,
+      `Aceita${dt('2026-09-29T09:00:00.000Z')} (concluída)`,
+      `Cancelada${dt('2026-09-30T10:00:00.000Z')} (etapa atual)`,
+    ]);
+    expect(screen.getByRole('list', { name: 'Etapas da contratação' })).toHaveClass('off-path');
+  });
+
+  it('o dia do separador do chat: hoje, ontem, o dia por extenso e o ano quando é outro', () => {
+    const now = new Date(2026, 9, 21, 10, 0);
+    expect(chatDayLabel(new Date(2026, 9, 21, 8, 0).toISOString(), now)).toBe('Hoje');
+    expect(chatDayLabel(new Date(2026, 9, 20, 23, 0).toISOString(), now)).toBe('Ontem');
+    expect(chatDayLabel(new Date(2026, 9, 2, 12, 0).toISOString(), now)).toBe('2 de outubro');
+    expect(chatDayLabel(new Date(2025, 11, 31, 12, 0).toISOString(), now)).toBe(
+      '31 de dezembro de 2025',
+    );
+  });
+});
+
 describe('SalaContratoView: valores e linha do tempo', () => {
   it('em dinheiro: valor, taxa, líquido, onde o dinheiro está e a linha do tempo com as notas', async () => {
     api.contractDetail.mockResolvedValue(contract({ status: 'delivered' }));
     await openSala();
     expect(screen.getByText(`Dinheiro · criado em ${dtm(CREATED)}`)).toBeInTheDocument();
     // O status atual no topo (a linha do tempo deste exemplo ainda não tem "Entregue").
-    expect(screen.getByText('Entregue')).toBeInTheDocument();
+    expect(screen.getByText('Entregue', { selector: '.pill' })).toBeInTheDocument();
     await waitFor(() => expect(document.title).toBe('Contratação: Vídeo institucional · Escambo'));
 
     const timeline = within(card('Linha do tempo'));

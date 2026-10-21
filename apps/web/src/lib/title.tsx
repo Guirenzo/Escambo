@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
 const BRAND = 'Escambo';
-const HOME_TITLE = `${BRAND} — o iFood dos serviços`;
+const HOME_TITLE = `${BRAND}: contrate ou troque serviços com pagamento protegido`;
 
 /** Título completo da aba: "Carteira · Escambo". Sem argumento, o título da marca. */
 export const pageTitle = (title?: string | null): string =>

@@ -263,10 +263,11 @@ describe('TrocasView: lista de trocas', () => {
 
     const card = await screen.findByTestId('barter-2');
     expect(within(card).getByText('Recebida')).toBeInTheDocument();
-    // Sem título gravado, a oferta descrita aparece como foi escrita.
-    expect(plain(card)).toContain('OferecemFotos do cardápioR$ 150,00');
-    // Sem título gravado, o serviço pedido vem do catálogo, pelo id.
-    await waitFor(() => expect(plain(card)).toContain('QueremEdição de vídeoR$ 200,00'));
+    // Do ponto de vista de quem recebeu: primeiro o que ele oferece (o serviço pedido, que sem título
+    // gravado vem do catálogo, pelo id), depois o que recebe (a oferta descrita, como foi escrita).
+    await waitFor(() => expect(plain(card)).toContain('Você ofereceEdição de vídeoR$ 200,00'));
+    expect(plain(card)).toContain('Você recebeFotos do cardápioR$ 150,00');
+    expect(plain(card).indexOf('Você oferece')).toBeLessThan(plain(card).indexOf('Você recebe'));
     expect(
       within(card).getByText('Você recebe R$ 42,50 de torna (taxa R$ 7,50) · torna reservada'),
     ).toBeVisible();
@@ -275,6 +276,12 @@ describe('TrocasView: lista de trocas', () => {
         .getAllByRole('button')
         .map((b) => b.textContent),
     ).toEqual(['Aceitar', 'Recusar']);
+    // Aceitar em destaque; recusar ao lado, secundário.
+    expect(within(card).getByRole('button', { name: 'Aceitar' })).not.toHaveClass('secondary');
+    expect(within(card).getByRole('button', { name: 'Recusar' })).toHaveClass('secondary');
+    // A torna que recebo vem na faixa verde; o cartão aberto fica marcado.
+    expect(card.querySelector('.trade-torna')).toHaveClass('get');
+    expect(card).toHaveClass('trade-card', 'is-open');
   });
 
   it('serviço fora do catálogo aparece pelo número; sem serviço nem descrição, um travessão', async () => {

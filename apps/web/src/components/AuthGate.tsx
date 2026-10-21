@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { Spinner } from './ui';
@@ -12,10 +13,12 @@ export const backTo = (state: unknown): string => {
 };
 
 /**
- * Guarda de rota: sem sessão → /login (lembrando de onde veio, com busca e âncora: o link do
- * relatório da moderação aponta para /admin#health-title); carregando → spinner.
+ * Guarda das rotas do app. Carregando → spinner. Com sessão → a tela pedida (dentro do Shell).
+ * Sem sessão: na raiz `/`, a página pública (`home`, a landing); em qualquer outra rota, o login,
+ * lembrando de onde veio, com busca e âncora (o link do relatório da moderação aponta para
+ * /admin#health-title). Um Shell só para todas as telas: nada remonta ao navegar.
  */
-export function RequireAuth() {
+export function AuthGate({ home }: { home?: ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
   if (loading)
@@ -24,7 +27,8 @@ export function RequireAuth() {
         <Spinner />
       </div>
     );
-  if (!user)
+  if (!user) {
+    if (home !== undefined && location.pathname === '/') return <>{home}</>;
     return (
       <Navigate
         to="/login"
@@ -32,5 +36,6 @@ export function RequireAuth() {
         state={{ from: location.pathname + location.search + location.hash }}
       />
     );
+  }
   return <Outlet />;
 }

@@ -117,7 +117,5 @@ test('contratar com prazo, pedir extensão duas vezes (recusa, depois aceite): o
   await expect(page.getByRole('button', { name: 'Pedir extensão de prazo' })).toHaveCount(0);
   await page.goto('/');
   await settled(page);
-  await expect(page.getByRole('row', { name: new RegExp(service.title) })).toContainText(
-    'faltam 12 dias',
-  );
+  await expect(page.getByRole('article', { name: service.title })).toContainText('faltam 12 dias');
 });

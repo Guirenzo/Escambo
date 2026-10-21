@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';
-import { createService, createUser, openAs, settled, type TestUser } from './helpers';
+import { createService, createUser, openAs, openFilters, settled, type TestUser } from './helpers';
 
 /**
  * Horário de atendimento no fuso do freelancer (ADR 48): quem está em Rio Branco (UTC−5) marca a
@@ -84,7 +84,7 @@ test('agenda no fuso do freelancer: card e perfil dizem o fuso; "Atende agora" u
   await expect(card.getByTestId('owner-days')).toContainText('(horário de Rio Branco)');
   await expect(card.getByTestId('owner-now')).toHaveCount(acre.period ? 1 : 0);
 
-  await page.getByRole('button', { name: 'Atende agora' }).click();
+  await (await openFilters(page)).getByRole('button', { name: 'Atende agora' }).click();
   await expect(page.getByRole('button', { name: 'Atende agora' })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -103,7 +103,7 @@ test('agenda no fuso do freelancer: card e perfil dizem o fuso; "Atende agora" u
   await settled(page);
   await page.getByPlaceholder('Buscar serviços…').fill(tag);
   await page.getByRole('button', { name: 'Buscar' }).click();
-  await page.getByRole('button', { name: 'Atende agora' }).click();
+  await (await openFilters(page)).getByRole('button', { name: 'Atende agora' }).click();
   await expect(page.getByText('Nenhum serviço com esses filtros')).toBeVisible();
 
   // Perfil público: a agenda vem com o fuso para quem está em Brasília.

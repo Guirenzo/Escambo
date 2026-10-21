@@ -8,6 +8,7 @@ import {
   PASSWORD,
   settled,
   pngFixture,
+  navTo,
 } from './helpers';
 
 /**
@@ -34,8 +35,10 @@ test('cadastro pelo formulário exige aceitar os termos e registra o consentimen
   await expect(submit).toBeEnabled();
   await submit.click();
 
-  await expect(page.getByRole('heading', { name: /^Olá,/ })).toBeVisible();
-  await page.getByRole('link', { name: 'Perfil', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: /^(Bom dia|Boa tarde|Boa noite),/ }),
+  ).toBeVisible();
+  await navTo(page, 'Perfil');
   await settled(page);
   const consents = page.getByLabel('Consentimentos');
   await expect(consents.locator('li')).toHaveCount(2);
@@ -64,7 +67,9 @@ test('confirmação de e-mail: banner no app, link do e-mail confirma e o banner
   await page.goto(new URL(link).pathname + new URL(link).search);
   await expect(page.getByTestId('verify-ok')).toBeVisible();
   await page.getByRole('link', { name: 'Ir para o app' }).click();
-  await expect(page.getByRole('heading', { name: /^Olá,/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /^(Bom dia|Boa tarde|Boa noite),/ }),
+  ).toBeVisible();
   await expect(page.getByTestId('verify-banner')).toHaveCount(0);
 });
 
@@ -107,7 +112,9 @@ test('esqueci minha senha: link por e-mail redefine a senha e encerra as sessõe
   await page.getByLabel('E-mail').fill(user.email);
   await page.getByLabel('Senha').fill('NovaSenha@456');
   await page.locator('form button[type="submit"]').click();
-  await expect(page.getByRole('heading', { name: /^Olá,/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /^(Bom dia|Boa tarde|Boa noite),/ }),
+  ).toBeVisible();
 });
 
 test('Termos e Privacidade são páginas públicas', async ({ page }) => {
@@ -132,7 +139,9 @@ test('conta suspensa mantém a sessão para consulta e bloqueia movimentações'
 
   await openAs(page, target, '/');
   await settled(page);
-  await expect(page.getByRole('heading', { name: /^Olá,/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /^(Bom dia|Boa tarde|Boa noite),/ }),
+  ).toBeVisible();
 
   const susp = await request.post(`/api/admin/users/${ulid}/suspend`, {
     headers: { Authorization: `Bearer ${admin.token}` },
@@ -140,7 +149,7 @@ test('conta suspensa mantém a sessão para consulta e bloqueia movimentações'
   expect(susp.ok()).toBeTruthy();
 
   // Suspensão conserva a sessão; o estado atual aparece na faixa e desativa negócios.
-  await page.getByRole('link', { name: 'Serviços' }).click();
+  await navTo(page, 'Serviços');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(page).toHaveURL(/\/servicos/);
   await expect(page.getByTestId('suspended-banner')).toContainText('acesso somente para consulta');
@@ -292,9 +301,10 @@ test('foto de perfil e imagem do portfólio enviadas do aparelho aparecem no per
   const { ulid } = (await me.json()) as { ulid: string };
   await openAs(page, client, `/freelancers/${ulid}`);
   await settled(page);
-  // Avatar e imagem do portfólio vêm da API de mídia, sem token, e carregam de verdade.
+  // Avatar, imagem do portfólio e a capa do perfil (o mesmo trabalho, maior) vêm da API de mídia,
+  // sem token, e carregam de verdade.
   const images = page.locator('img[src^="/api/media/"]');
-  await expect(images).toHaveCount(2);
+  await expect(images).toHaveCount(3);
   for (const img of await images.all()) {
     await expect
       .poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth))
@@ -309,4 +319,6 @@ test('foto de perfil e imagem do portfólio enviadas do aparelho aparecem no per
   ]);
   expect(w).toBe(h);
   await expect(page.locator('.portfolio-item img')).toHaveAttribute('src', /\?w=480$/);
+  // A capa usa a miniatura de 960 px do primeiro trabalho.
+  await expect(page.locator('.profile-cover img')).toHaveAttribute('src', /\?w=960$/);
 });
