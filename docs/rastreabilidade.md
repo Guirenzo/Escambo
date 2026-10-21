@@ -1,7 +1,7 @@
 # Rastreabilidade dos requisitos — Escambo
 
-> **Versão do código:** 1.48.0
-> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0 e a 1.48.0
+> **Versão do código:** 1.49.0
+> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0, a 1.48.0 e a 1.49.0
 > **Autor:** Guilherme Renzo
 
 Os documentos de requisitos foram escritos no planejamento, e a coluna de situação ficou para trás conforme o sistema crescia. Esta página registra o que existe **de verdade** em cada requisito: onde está no código, qual teste prova e, quando não está completo, o que falta ou qual decisão registrada (ADR) explica a lacuna. As situações aqui são as mesmas da coluna **Status** de [requisitos funcionais](./requisitos-funcionais.md) e da coluna **Situação** de [requisitos não funcionais](./requisitos-nao-funcionais.md).
@@ -48,7 +48,7 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 | RF-022 | Implementado | ServiceForm.tsx (tipo de preço fixo, por hora ou a combinar; preço; prazo em dias; modalidade) e edição em MyServices.tsx pelo PATCH /services/:id. Testes: ServiceForm/MyServices tests, meus-servicos.int.test.ts | Desde a 1.43.0. |
 | RF-023 | Implementado | Migration 0035 (is_onsite, "os dois" = remoto e presencial); modality remote\|onsite\|both na API, com isRemote compatível; filtro de modalidade na busca do web, também na busca salva. Testes: catalogo-busca.int.test.ts, services.service.test.ts, ServicosView.test.tsx | Desde a 1.44.0. "Os dois" aparece no filtro remoto e no presencial. |
 | RF-024 | Implementado | service-tags.ts (até 10, de 2 a 30 caracteres, sem repetida, normalizadas; vocabulário global service_tags), tags no detalhe, nos cards e em /services/mine, lidas em lote; a busca acha pela tag; TagsInput.tsx no formulário. Testes: service-tags.test.ts, catalogo-busca.int.test.ts, TagsInput.test.tsx | Desde a 1.44.0, com a RN-018. A tag casa pelo texto inteiro digitado. |
-| RF-025 | Implementado | Filtros categoryId, lat/lng+radiusKm (Haversine, ADR 11) e minPrice/maxPrice em services.repository.ts list; web ServicosView.tsx com categoria, "perto de mim" com raio e preço. Testes: services-search.int.test.ts:80/116, geo-discovery.int.test.ts:61, services.repository.test.ts:197 | O filtro de categoria é exato: escolher uma categoria-raiz não traz os serviços das subcategorias. A localização é só por coordenadas do navegador; não há busca por cidade. |
+| RF-025 | Implementado | Filtros categoryId, lat/lng+radiusKm (Haversine, ADR 11) e minPrice/maxPrice em services.repository.ts list; desde a 1.49.0 a distância, o raio e a ordem usam a coordenada do prestador arredondada a ~1 km (utils/coarse-coord.ts, ADR 67); web ServicosView.tsx com categoria (também por ?categoria=), "perto de mim" com raio e preço, e a vitrine pública da página inicial. Testes: services-search.int.test.ts, geo-discovery.int.test.ts, localizacao-privacidade.int.test.ts, services.repository.test.ts, landing.smoke.spec.ts | O filtro de categoria é exato: escolher uma categoria-raiz não traz os serviços das subcategorias. A localização é só por coordenadas do navegador ou do perfil; não há busca por cidade. A precisão da distância é de ~1 km, de propósito (privacidade). |
 | RF-026 | Implementado | q usa LIKE com escape em title e description (services.repository.ts:170-173). Testes: services-search.int.test.ts:167, services.repository.test.ts:258 | Usa LIKE '%…%' e não o índice FULLTEXT ft_svc_search do baseline, então o custo cresce com a base. |
 | RF-027 | Implementado | minRating de 0 a 5 aplicado como COALESCE(pf.avg_rating,0) >= :minRating (services.repository.ts:186); select "Nota mínima" com 3, 4 e 4,5 em ServicosView.tsx:391. Teste: services-search.int.test.ts:121 | — |
 | RF-028 | Implementado | boosted = EXISTS de boost ativo e não vencido, com ORDER BY boosted DESC na relevância, que é o padrão (services.repository.ts:65-90, 229); chip "Destaque" em ServiceCard.tsx:41. Testes: boosts-flow.int.test.ts:142, services.repository.test.ts:162, ServiceCard.test.tsx:223 | Nas ordenações por preço, nota e recência o destaque não sobe ao topo. É decisão comentada no código, sem ADR. |
@@ -168,6 +168,6 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 
 <div align="center">
 
-*rastreabilidade.md — Escambo v1.48.0 — Católica SC — 2026*
+*rastreabilidade.md — Escambo v1.49.0 — Católica SC — 2026*
 
 </div>

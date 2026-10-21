@@ -23,6 +23,7 @@ import {
 } from './profiles.schema';
 import { isAvailableNow, normalizePeriods, parsePeriods } from './availability';
 import { timezoneOf } from '../../utils/timezone';
+import { coarseCoord } from '../../utils/coarse-coord';
 import { dropoutsService } from '../dropouts/dropouts.service';
 
 /** available_days chega como array (mysql2 parseia JSON) ou string; qualquer outra coisa vira null. */
@@ -210,10 +211,18 @@ export const profilesService = {
     return { freelancer: f ? toFreelancer(f) : null, client: c ? toClient(c) : null };
   },
 
-  async getPublicFreelancer(ulid: string): Promise<PublicFreelancerProfile> {
+  /**
+   * Perfil público. `viewerId` é quem abre (token opcional, que não dá acesso a nada): o próprio
+   * dono vê a localização exata, como no /me; qualquer outra pessoa, ou quem não está logado, vê
+   * latitude e longitude arredondadas para ~1 km (coarseCoord). A busca e o ranking seguem
+   * calculando a distância no banco com o valor exato.
+   */
+  async getPublicFreelancer(ulid: string, viewerId?: number): Promise<PublicFreelancerProfile> {
     const r: PublicFreelancerRow | undefined =
       await profilesRepository.findPublicFreelancerByUlid(ulid);
     if (!r) throw new HttpError(404, 'Perfil não encontrado', 'profile_not_found');
+    const profile = toFreelancer(r);
+    const isOwner = viewerId !== undefined && viewerId === r.user_id;
     const [portfolio, summary, badgeRows] = await Promise.all([
       profilesRepository.listPortfolio(r.user_id),
       dropoutsService.publicSummary(r.user_id),
@@ -225,7 +234,10 @@ export const profilesService = {
       awardedAt: new Date(b.awarded_at).toISOString(),
     }));
     return {
-      ...toFreelancer(r),
+      ...profile,
+      ...(isOwner
+        ? {}
+        : { latitude: coarseCoord(profile.latitude), longitude: coarseCoord(profile.longitude) }),
       userId: r.user_id,
       userUlid: r.ulid,
       level: r.level,

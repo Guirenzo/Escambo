@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createService, createUser, openAs, settled } from './helpers';
+import { createService, createUser, openAs, openFilters, settled } from './helpers';
 
 /**
  * Buscas salvas (ADR 35 e 37): salvar a busca atual com alerta diário, reaplicar pelo chip e pelo
@@ -27,7 +27,7 @@ test('busca salva: salvar com alerta diário, reaplicar, editar a frequência, d
   await page.getByRole('button', { name: 'Buscar' }).click();
   const cards = page.locator('.card.service', { hasText: tag });
   await expect(cards).toHaveCount(2);
-  await page.getByTestId('filters').getByLabel('Preço máximo').fill('500');
+  await (await openFilters(page)).getByLabel('Preço máximo').fill('500');
   await expect(cards).toHaveCount(1);
 
   await page.getByRole('button', { name: 'Salvar busca' }).click();
@@ -53,7 +53,7 @@ test('busca salva: salvar com alerta diário, reaplicar, editar a frequência, d
   await page.getByRole('button', { name: 'Buscar' }).click();
   await bar.getByRole('button', { name, exact: true }).click();
   await expect(page.getByPlaceholder('Buscar serviços…')).toHaveValue(tag);
-  await expect(page.getByTestId('filters').getByLabel('Preço máximo')).toHaveValue('500');
+  await expect((await openFilters(page)).getByLabel('Preço máximo')).toHaveValue('500');
   await expect(cards).toHaveCount(1);
 
   // Link do aviso: /servicos?busca=ID aplica a mesma busca numa visita nova e limpa a URL.

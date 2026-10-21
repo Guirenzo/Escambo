@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
+import { Inbox, Wallet } from 'lucide-react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  Breadcrumbs,
   Button,
   Card,
   Chip,
@@ -18,6 +21,7 @@ import {
   Select,
   Skeleton,
   SkipLink,
+  Stat,
   TableWrap,
   Spinner,
 } from './index';
@@ -555,5 +559,136 @@ describe('onTablistKeyDown', () => {
     fireEvent.keyDown(list, { key: 'ArrowRight' });
     expect(list).toHaveFocus();
     expect(screen.getByText('escolhida: a')).toBeInTheDocument();
+  });
+});
+
+describe('kit v2: tamanhos, carregando, cabeçalhos e indicadores', () => {
+  it('o botão leva o tamanho na classe; carregando, trava e avisa (aria-busy)', async () => {
+    const onClick = vi.fn();
+    render(
+      <>
+        <Button size="sm">Pequeno</Button>
+        <Button variant="secondary" size="lg" loading onClick={onClick}>
+          Salvando
+        </Button>
+      </>,
+    );
+    expect(screen.getByRole('button', { name: 'Pequeno' })).toHaveAttribute('class', 'sm');
+    expect(screen.getByRole('button', { name: 'Pequeno' })).not.toHaveAttribute('aria-busy');
+    const busy = screen.getByRole('button', { name: 'Salvando' });
+    expect(busy).toHaveAttribute('class', 'secondary lg');
+    expect(busy).toHaveAttribute('aria-busy', 'true');
+    expect(busy).toBeDisabled();
+    expect(busy.querySelector('.btn-spin')).not.toBeNull();
+    await userEvent.click(busy);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('o cartão com linha de apoio e ação monta o cabeçalho; interativo leva a classe', () => {
+    const { container } = render(
+      <Card
+        title="Atalhos"
+        subtitle="O que mais se faz"
+        action={<button type="button">Ver tudo</button>}
+        interactive
+      >
+        <p>conteúdo</p>
+      </Card>,
+    );
+    const head = container.querySelector('.card-head')!;
+    expect(
+      within(head as HTMLElement).getByRole('heading', { level: 3, name: 'Atalhos' }),
+    ).toBeInTheDocument();
+    expect(within(head as HTMLElement).getByText('O que mais se faz')).toHaveClass('card-sub');
+    expect(
+      within(head as HTMLElement).getByRole('button', { name: 'Ver tudo' }),
+    ).toBeInTheDocument();
+    expect(container.querySelector('section')).toHaveClass('card', 'interactive');
+  });
+
+  it('o cartão só com ação (sem linha de apoio) também ganha o cabeçalho', () => {
+    const { container } = render(
+      <Card title="Saques" action={<span>3</span>}>
+        <p>lista</p>
+      </Card>,
+    );
+    expect(container.querySelector('.card-head h3')).toHaveTextContent('Saques');
+    expect(container.querySelector('.card-sub')).toBeNull();
+  });
+
+  it('o indicador junta rótulo, número, legenda e a barra com nome', () => {
+    const { container } = render(
+      <Stat
+        Icon={Wallet}
+        label="Saldo"
+        value="R$ 10,00"
+        hint="para saque"
+        tone="amber"
+        progress={41.6}
+        progressLabel="Progresso de nível"
+      />,
+    );
+    const kpi = container.querySelector('.kpi')!;
+    expect(kpi).toHaveClass('kpi', 'amber');
+    expect(kpi).toHaveTextContent('SaldoR$ 10,00para saque');
+    expect(screen.getByRole('progressbar', { name: 'Progresso de nível' })).toHaveAttribute(
+      'aria-valuenow',
+      '42',
+    );
+  });
+
+  it('o indicador sem tom, legenda nem barra fica só com rótulo e número', () => {
+    const { container } = render(<Stat Icon={Wallet} label="Créditos" value="40" />);
+    expect(container.querySelector('.kpi')).toHaveAttribute('class', 'kpi');
+    expect(container.querySelector('.kpi')).toHaveTextContent(/^Créditos40$/);
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
+  it('o cabeçalho de página aceita migalhas, linha de contexto e algo antes do texto', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <PageHeader
+          leading={<span data-testid="avatar">A</span>}
+          eyebrow="Terça-feira, 20 de outubro"
+          breadcrumbs={[{ label: 'Início', to: '/' }, { label: 'Contrato' }]}
+          title="Boa tarde, Ana"
+        />
+      </MemoryRouter>,
+    );
+    expect(container.querySelector('.page-head')).toHaveClass('has-leading');
+    expect(screen.getByTestId('avatar')).toBeInTheDocument();
+    expect(screen.getByText('Terça-feira, 20 de outubro')).toHaveClass('page-eyebrow');
+    const crumbs = screen.getByRole('list', { name: 'Você está em' });
+    expect(within(crumbs).getByRole('link', { name: 'Início' })).toHaveAttribute('href', '/');
+    expect(within(crumbs).getByText('Contrato')).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('heading', { level: 1, name: 'Boa tarde, Ana' })).toBeInTheDocument();
+  });
+
+  it('migalhas sozinhas: a página atual sem link, as anteriores com link', () => {
+    render(
+      <MemoryRouter>
+        <Breadcrumbs items={[{ label: 'Serviços', to: '/servicos' }, { label: 'Logo' }]} />
+      </MemoryRouter>,
+    );
+    expect(screen.getAllByRole('link').map((a) => a.textContent)).toEqual(['Serviços']);
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('o estado vazio aceita título, ícone e ação', () => {
+    const { container } = render(
+      <EmptyState icon={Inbox} title="Nenhum depósito ainda" action={<button>Depositar</button>}>
+        Os depósitos via PIX aparecem aqui.
+      </EmptyState>,
+    );
+    expect(screen.getByText('Nenhum depósito ainda')).toHaveClass('empty-title');
+    expect(screen.getByText('Os depósitos via PIX aparecem aqui.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Depositar' })).toBeInTheDocument();
+    expect(container.querySelector('.empty-ico')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('o estado vazio sem frase nem ação fica só com o título', () => {
+    const { container } = render(<EmptyState title="Nada aqui" />);
+    expect(container.querySelector('p.muted')).toBeNull();
+    expect(container.querySelector('.empty-action')).toBeNull();
   });
 });

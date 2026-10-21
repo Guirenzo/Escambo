@@ -9,6 +9,7 @@ import {
   latestEmail,
   linkIn,
   openAs,
+  openLanding,
   pngFixture,
   settled,
   topUp,
@@ -59,10 +60,24 @@ async function tokenFrom(
   return `${link.pathname}${link.search}`;
 }
 
-test('páginas públicas (login, cadastro, senha, e-mail, termos, privacidade e 404)', async ({
+test('páginas públicas (início, login, cadastro, senha, e-mail, termos, privacidade e 404)', async ({
   page,
 }) => {
   const { check, done } = collector();
+
+  // Página inicial sem sessão (landing), e de novo com as dúvidas abertas.
+  await openLanding(page);
+  await check(page, 'página inicial');
+  await page
+    .locator('details')
+    .evaluateAll((all) => all.forEach((d) => ((d as HTMLDetailsElement).open = true)));
+  await check(page, 'página inicial com as dúvidas abertas');
+
+  // Cadastro pelo endereço, com o perfil escolhido na página inicial.
+  await page.goto('/cadastro?perfil=freelancer');
+  await expect(page.getByRole('heading', { name: 'Crie sua conta' })).toBeVisible();
+  await expect(page.getByLabel('Eu sou')).toHaveValue('freelancer');
+  await check(page, 'cadastro pelo endereço');
 
   await page.goto('/login');
   await expect(page.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeVisible();

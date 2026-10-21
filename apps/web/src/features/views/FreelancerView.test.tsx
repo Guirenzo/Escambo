@@ -749,3 +749,31 @@ describe('FreelancerView: XP e conquistas (RF-015, RF-068, RN-058)', () => {
     expect(card.queryByRole('list')).toBeNull();
   });
 });
+
+describe('FreelancerView: capa', () => {
+  it('a capa é o primeiro trabalho com imagem do portfólio, decorativa', async () => {
+    api.publicFreelancer.mockResolvedValue(
+      profile({
+        portfolio: [
+          work({ id: 1, imageUrl: null, title: 'Só link' }),
+          work({ id: 2, imageUrl: 'https://img.test/capa.jpg', title: 'Com foto' }),
+        ],
+      }),
+    );
+    renderAt();
+    await screen.findByRole('heading', { level: 1 });
+    const cover = document.querySelector('.profile-cover')!;
+    expect(cover).toHaveClass('with-image');
+    expect(cover).toHaveAttribute('aria-hidden', 'true');
+    expect(cover.querySelector('img')).toHaveAttribute('src', 'https://img.test/capa.jpg');
+  });
+
+  it('sem trabalho com imagem, a capa é o verde da marca, sem foto', async () => {
+    api.publicFreelancer.mockResolvedValue(profile({ portfolio: [] }));
+    renderAt();
+    await screen.findByRole('heading', { level: 1 });
+    const cover = document.querySelector('.profile-cover')!;
+    expect(cover).not.toHaveClass('with-image');
+    expect(cover.querySelector('img')).toBeNull();
+  });
+});

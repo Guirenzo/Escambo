@@ -1,30 +1,14 @@
-import { ArrowLeftRight, Coins, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { MfaChallenge } from '@escambo/types';
 import { Button, Field, Input, Select } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { errorMessage } from '../../lib/errors';
 import { normalizeRecoveryCode, normalizeTotp } from '../../lib/mfa';
 import { usePageTitle } from '../../lib/title';
-
-const HIGHLIGHTS: { Icon: LucideIcon; title: string; text: string }[] = [
-  {
-    Icon: ArrowLeftRight,
-    title: 'Troque serviço por serviço',
-    text: 'O escambo que dá nome ao app — com torna justa e escrow.',
-  },
-  {
-    Icon: Coins,
-    title: 'Créditos Escambo',
-    text: 'Trabalhe, ganhe créditos e gaste em qualquer serviço.',
-  },
-  {
-    Icon: ShieldCheck,
-    title: 'Confiança de verdade',
-    text: 'Escambo Score, pagamento protegido e chat em tempo real.',
-  },
-];
+import { AuthPanel } from './AuthPanel';
+import './auth.css';
 
 /**
  * Passo 2 do login numa conta com verificação em duas etapas (RF-090): a senha já foi conferida e
@@ -100,9 +84,11 @@ function MfaStep({
   }
 
   return (
-    <form className="card auth-card" onSubmit={(e) => void submit(e)} aria-labelledby={titleId}>
-      <h2 id={titleId}>Verificação em duas etapas</h2>
-      <p className="muted tiny">
+    <form className="au-card" onSubmit={(e) => void submit(e)} aria-labelledby={titleId}>
+      <h1 id={titleId} className="au-title">
+        Verificação em duas etapas
+      </h1>
+      <p className="au-sub">
         Entrando como <strong className="email-addr">{email}</strong>.
       </p>
       <Field label={recovery ? 'Código de recuperação' : 'Código do app autenticador'}>
@@ -132,7 +118,7 @@ function MfaStep({
           {error}
         </p>
       )}
-      <Button type="submit" disabled={loading} className="full">
+      <Button type="submit" disabled={loading} className="full au-submit">
         {loading ? '…' : 'Confirmar'}
       </Button>
       <p className="muted tiny center">
@@ -149,13 +135,29 @@ function MfaStep({
   );
 }
 
-export function LoginForm() {
-  usePageTitle('Entrar');
+export type AuthMode = 'login' | 'register';
+export type SignupRole = 'client' | 'freelancer';
+
+/**
+ * Entrar e criar conta no mesmo formulário. /login abre em "Entrar"; /cadastro, em "Criar conta",
+ * com o "Eu sou" já escolhido por ?perfil= (ver App). Trocar de modo troca o endereço junto (sem
+ * empilhar no histórico e guardando para onde voltar depois), e o título da aba acompanha.
+ */
+export function LoginForm({
+  initialMode = 'login',
+  initialRole = 'client',
+}: {
+  initialMode?: AuthMode;
+  initialRole?: SignupRole;
+} = {}) {
   const { login, register, error } = useAuth();
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [mode, setMode] = useState<AuthMode>(initialMode);
+  usePageTitle(mode === 'login' ? 'Entrar' : 'Criar conta');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'client' | 'freelancer'>('client');
+  const [role, setRole] = useState<SignupRole>(initialRole);
   const [loading, setLoading] = useState(false);
   const [accepted, setAccepted] = useState(false);
   /** Senha certa numa conta com 2FA: o passo 2 toma o lugar do formulário. */
@@ -188,6 +190,12 @@ export function LoginForm() {
     }
   }
 
+  function switchMode(next: AuthMode): void {
+    setMode(next);
+    const path = next === 'login' ? '/login' : '/cadastro';
+    if (location.pathname !== path) navigate(path, { replace: true, state: location.state });
+  }
+
   /** Sai do passo 2: a senha é pedida de novo (o pedido do código não vale mais para nada). */
   function leaveMfa(message: string | null): void {
     setChallenge(null);
@@ -197,157 +205,144 @@ export function LoginForm() {
   }
 
   return (
-    <main className="auth">
-      <section className="auth-hero">
-        <div className="brand brand-light">
-          <span className="brand-mark">
-            <ArrowLeftRight size={18} strokeWidth={2.5} />
-          </span>
-          <span className="brand-name">Escambo</span>
+    <main className="au">
+      <div className="au-side">
+        <div className="au-top">
+          <Link to="/" className="brand au-brand">
+            <span className="brand-mark">
+              <ArrowLeftRight size={18} strokeWidth={2.5} />
+            </span>
+            <span className="brand-name">Escambo</span>
+          </Link>
         </div>
-        <h1>
-          Troque. Contrate.
-          <br />
-          <span className="accent">Evolua.</span>
-        </h1>
-        <p className="lead">
-          O iFood dos serviços — do mecânico ao dev, com a confiança que faltava.
-        </p>
-        <ul className="highlights">
-          {HIGHLIGHTS.map(({ Icon, title, text }) => (
-            <li key={title}>
-              <span className="hl-ico">
-                <Icon size={18} />
-              </span>
-              <div>
-                <strong>{title}</strong>
-                <span>{text}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="auth-panel">
-        {challenge ? (
-          <MfaStep
-            email={email}
-            challenge={challenge}
-            onBack={() => leaveMfa(null)}
-            onExpired={() =>
-              leaveMfa('O tempo para digitar o código acabou. Entre de novo com a sua senha.')
-            }
-          />
-        ) : (
-          <form className="card auth-card" onSubmit={handleSubmit}>
-            {/* Os dois modos são botões de alternância: o estado sai em aria-pressed, não só na cor. */}
-            <div className="tabs" role="group" aria-label="Entrar ou criar conta">
-              <button
-                type="button"
-                className={mode === 'login' ? 'active' : ''}
-                aria-pressed={mode === 'login'}
-                onClick={() => setMode('login')}
-              >
-                Entrar
-              </button>
-              <button
-                type="button"
-                className={mode === 'register' ? 'active' : ''}
-                aria-pressed={mode === 'register'}
-                onClick={() => setMode('register')}
-              >
-                Criar conta
-              </button>
-            </div>
-            <h2>{mode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}</h2>
-            <Field label="E-mail">
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                placeholder="voce@exemplo.com"
-                autoComplete="email"
-              />
-            </Field>
-            <Field label="Senha">
-              <input
-                ref={passwordRef}
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                placeholder="••••••••"
-                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-              />
-            </Field>
-            {mode === 'register' && (
-              <Field label="Eu sou">
-                <Select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as 'client' | 'freelancer')}
+        <div className="au-body">
+          {challenge ? (
+            <MfaStep
+              email={email}
+              challenge={challenge}
+              onBack={() => leaveMfa(null)}
+              onExpired={() =>
+                leaveMfa('O tempo para digitar o código acabou. Entre de novo com a sua senha.')
+              }
+            />
+          ) : (
+            <form className="au-card" onSubmit={handleSubmit}>
+              {/* Os dois modos são botões de alternância: o estado sai em aria-pressed, não só na cor. */}
+              <div className="au-switch" role="group" aria-label="Entrar ou criar conta">
+                <button
+                  type="button"
+                  className={mode === 'login' ? 'active' : ''}
+                  aria-pressed={mode === 'login'}
+                  onClick={() => switchMode('login')}
                 >
-                  <option value="client">Cliente — quero contratar</option>
-                  <option value="freelancer">Freelancer — quero oferecer</option>
-                </Select>
-              </Field>
-            )}
-            {mode === 'register' && (
-              <label className="consent">
-                <input
-                  type="checkbox"
-                  checked={accepted}
-                  onChange={(e) => setAccepted(e.target.checked)}
+                  Entrar
+                </button>
+                <button
+                  type="button"
+                  className={mode === 'register' ? 'active' : ''}
+                  aria-pressed={mode === 'register'}
+                  onClick={() => switchMode('register')}
+                >
+                  Criar conta
+                </button>
+              </div>
+              <div className="au-head">
+                <h1 className="au-title">
+                  {mode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}
+                </h1>
+                <p className="au-sub">
+                  {mode === 'login'
+                    ? 'Entre para contratar, trocar e acompanhar as suas contratações.'
+                    : 'É grátis. Com a mesma conta você contrata e oferece serviços.'}
+                </p>
+              </div>
+              <Field label="E-mail">
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
+                  placeholder="voce@exemplo.com"
+                  autoComplete="email"
                 />
-                <span>
-                  Li e aceito os{' '}
-                  <a href="/termos" target="_blank" rel="noreferrer">
-                    Termos de Uso
-                  </a>{' '}
-                  e a{' '}
-                  <a href="/privacidade" target="_blank" rel="noreferrer">
-                    Política de Privacidade
-                  </a>
-                  .
-                </span>
-              </label>
-            )}
-            {mode === 'login' && (
-              <p className="muted tiny" style={{ marginTop: -6 }}>
-                <Link to="/esqueci-senha">Esqueci minha senha</Link>
-              </p>
-            )}
-            {notice && (
-              <p className="error" role="alert">
-                {notice}
-              </p>
-            )}
-            {error && (
-              <p className="error" role="alert">
-                {error}
-              </p>
-            )}
-            <Button
-              type="submit"
-              disabled={loading || (mode === 'register' && !accepted)}
-              className="full"
-            >
-              {loading ? '…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
-            </Button>
-            <p className="muted tiny center">
-              {mode === 'login' ? 'Novo por aqui? ' : 'Já tem conta? '}
-              <button
-                type="button"
-                className="link"
-                onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+              </Field>
+              <Field label="Senha">
+                <input
+                  ref={passwordRef}
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                />
+              </Field>
+              {mode === 'register' && (
+                <Field label="Eu sou">
+                  <Select value={role} onChange={(e) => setRole(e.target.value as SignupRole)}>
+                    <option value="client">Cliente — quero contratar</option>
+                    <option value="freelancer">Freelancer — quero oferecer</option>
+                  </Select>
+                </Field>
+              )}
+              {mode === 'register' && (
+                <label className="consent">
+                  <input
+                    type="checkbox"
+                    checked={accepted}
+                    onChange={(e) => setAccepted(e.target.checked)}
+                    required
+                  />
+                  <span>
+                    Li e aceito os{' '}
+                    <a href="/termos" target="_blank" rel="noreferrer">
+                      Termos de Uso
+                    </a>{' '}
+                    e a{' '}
+                    <a href="/privacidade" target="_blank" rel="noreferrer">
+                      Política de Privacidade
+                    </a>
+                    .
+                  </span>
+                </label>
+              )}
+              {mode === 'login' && (
+                <p className="au-forgot">
+                  <Link to="/esqueci-senha">Esqueci minha senha</Link>
+                </p>
+              )}
+              {notice && (
+                <p className="error" role="alert">
+                  {notice}
+                </p>
+              )}
+              {error && (
+                <p className="error" role="alert">
+                  {error}
+                </p>
+              )}
+              <Button
+                type="submit"
+                disabled={loading || (mode === 'register' && !accepted)}
+                className="full au-submit"
               >
-                {mode === 'login' ? 'Crie sua conta' : 'Entrar'}
-              </button>
-            </p>
-          </form>
-        )}
-      </section>
+                {loading ? '…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
+              </Button>
+              <p className="au-alt">
+                {mode === 'login' ? 'Novo por aqui? ' : 'Já tem conta? '}
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => switchMode(mode === 'login' ? 'register' : 'login')}
+                >
+                  {mode === 'login' ? 'Crie sua conta' : 'Entrar'}
+                </button>
+              </p>
+            </form>
+          )}
+        </div>
+      </div>
+      <AuthPanel />
     </main>
   );
 }

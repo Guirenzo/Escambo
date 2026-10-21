@@ -90,7 +90,7 @@ describe('perfis: borda HTTP', () => {
         blocklist.add(7);
         service.getPublicFreelancer.mockResolvedValue({ userUlid: ULID });
         await request(app).get(`/api/profiles/freelancer/${ULID}`).expect(200);
-        expect(service.getPublicFreelancer).toHaveBeenCalledWith(ULID);
+        expect(service.getPublicFreelancer).toHaveBeenCalledWith(ULID, undefined);
       });
     });
   });
@@ -103,7 +103,27 @@ describe('perfis: borda HTTP', () => {
       const res = await request(app).get(`/api/profiles/freelancer/${ULID}`).expect(200);
 
       expect(res.body).toEqual(profile);
-      expect(service.getPublicFreelancer).toHaveBeenCalledWith(ULID);
+      // Sem token, ninguém é o dono: o service devolve a localização arredondada.
+      expect(service.getPublicFreelancer).toHaveBeenCalledWith(ULID, undefined);
+    });
+
+    it('com token, o service recebe quem abre (só para reconhecer o dono, que vê a localização exata)', async () => {
+      service.getPublicFreelancer.mockResolvedValue({ userUlid: ULID });
+
+      await request(app).get(`/api/profiles/freelancer/${ULID}`).set(bearer(7)).expect(200);
+
+      expect(service.getPublicFreelancer).toHaveBeenCalledWith(ULID, 7);
+    });
+
+    it('token inválido não barra a rota pública: segue anônimo, como sem login', async () => {
+      service.getPublicFreelancer.mockResolvedValue({ userUlid: ULID });
+
+      await request(app)
+        .get(`/api/profiles/freelancer/${ULID}`)
+        .set({ Authorization: 'Bearer nao.e.um-jwt' })
+        .expect(200);
+
+      expect(service.getPublicFreelancer).toHaveBeenCalledWith(ULID, undefined);
     });
 
     it('ulid que não tem 26 caracteres é erro de validação e não chega ao service', async () => {

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Service } from '@escambo/types';
 import type { ComponentProps } from 'react';
@@ -412,5 +412,154 @@ describe('ServiceCard', () => {
       expect(screen.queryByRole('button', { name: 'Propor troca' })).not.toBeInTheDocument(),
     );
     expect(screen.getByRole('button', { name: 'Contratar' })).toBeInTheDocument();
+  });
+});
+
+describe('ServiceCard: visual de marketplace', () => {
+  it('a capa é a primeira imagem do portfólio, decorativa e carregada sob demanda', () => {
+    renderCard({ service: service({ ownerCoverUrl: 'https://fotos.test/capa.png' }) });
+    const img = document.body.querySelector('.svc-cover img');
+    expect(img).toHaveAttribute('src', 'https://fotos.test/capa.png');
+    expect(img).toHaveAttribute('alt', '');
+    expect(img).toHaveAttribute('loading', 'lazy');
+    expect(img!.closest('.svc-cover')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('imagem enviada ao Escambo usa a miniatura do cartão; se falhar, vira a foto da categoria', () => {
+    const url = '/api/media/2026/10/01J0000000000000000000CAPA.webp';
+    renderCard({
+      service: service({ ownerCoverUrl: url }),
+      categorySlug: 'design',
+      categoryName: 'Design',
+    });
+    const cover = document.body.querySelector('.svc-cover')!;
+    expect(cover).toHaveAttribute('data-cover', 'portfolio');
+    const img = cover.querySelector('img')!;
+    expect(img).toHaveAttribute('src', `${url}?w=480`);
+    fireEvent.error(img);
+    expect(cover).toHaveAttribute('data-cover', 'category');
+    expect(cover).toHaveClass('cover-violet', 'with-photo');
+    expect(cover.querySelector('img')).toHaveClass('svc-cover-photo');
+  });
+
+  it('sem capa, a foto da categoria (alternando pelo id do serviço) com o nome dela num selo', () => {
+    renderCard({
+      service: service({ id: 3, ownerCoverUrl: null }),
+      categorySlug: 'design',
+      categoryName: 'Design',
+    });
+    const cover = document.body.querySelector('.svc-cover')!;
+    expect(cover).toHaveAttribute('data-cover', 'category');
+    // Decorativa: sem texto alternativo e fora da leitura (o selo diz que é da categoria).
+    expect(cover).toHaveAttribute('aria-hidden', 'true');
+    const img = cover.querySelector('img')!;
+    expect(img).toHaveAttribute('alt', '');
+    expect(img).toHaveAttribute('loading', 'lazy');
+    expect(img).toHaveAttribute('src', '/img/pessoas/fotografa-400.webp');
+    expect(img.getAttribute('srcset')).toContain('/img/pessoas/fotografa.webp 800w');
+    expect(cover.querySelector('.svc-cover-cat')).toHaveTextContent('Design');
+  });
+
+  it('sem o nome da categoria, a foto vai sem selo', () => {
+    renderCard({ service: service({ id: 1, ownerCoverUrl: null }), categorySlug: 'marketing' });
+    const cover = document.body.querySelector('.svc-cover')!;
+    expect(cover.querySelector('img')).toHaveAttribute('src', '/img/pessoas/social-media-400.webp');
+    expect(cover.querySelector('.svc-cover-cat')).toBeNull();
+  });
+
+  it('sem capa nem categoria conhecida, o desenho neutro', () => {
+    renderCard({ categorySlug: 'categoria-nova' });
+    expect(document.body.querySelector('.svc-cover')).toHaveClass('cover-neutral');
+    expect(document.body.querySelector('.svc-cover')).toHaveAttribute('data-cover', 'icon');
+    expect(document.body.querySelector('.svc-cover img')).toBeNull();
+  });
+
+  it('no perfil de quem presta (sem o nome no card), a capa continua sendo o portfólio dele', () => {
+    renderCard({
+      showOwner: false,
+      service: service({ ownerCoverUrl: 'https://fotos.test/capa.png' }),
+      categorySlug: 'design',
+    });
+    expect(document.body.querySelector('.svc-cover img')).toHaveAttribute(
+      'src',
+      'https://fotos.test/capa.png',
+    );
+  });
+
+  it('a cidade de quem presta aparece ao lado do nome, com o prazo nos detalhes', () => {
+    renderCard({ service: service({ ownerCity: 'Joinville' }) });
+    expect(screen.getByText('Joinville')).toBeInTheDocument();
+    expect(screen.getByText('5 dias')).toBeInTheDocument();
+  });
+
+  it('na busca por proximidade, a distância toma o lugar da cidade', () => {
+    renderCard({ service: service({ ownerCity: 'Joinville', distanceKm: 0.6 }) });
+    expect(screen.getByText('0.6 km de você')).toBeInTheDocument();
+    expect(screen.queryByText('Joinville')).not.toBeInTheDocument();
+  });
+
+  it('"a partir de" antes do preço; "a combinar" sozinho', () => {
+    renderCard();
+    expect(screen.getByText('a partir de')).toBeInTheDocument();
+    expect(screen.getByText('R$ 150,00')).toBeInTheDocument();
+  });
+
+  it('"a combinar" não leva "a partir de"', () => {
+    renderCard({ service: service({ priceType: 'negotiable', price: null }) });
+    expect(screen.getByText('a combinar')).toBeInTheDocument();
+    expect(screen.queryByText('a partir de')).not.toBeInTheDocument();
+  });
+
+  it('quem ainda não tem avaliação aparece como "Novo", com a nota zero para o leitor de tela', () => {
+    renderCard({ service: service({ ownerRating: 0, ownerReviews: 0 }) });
+    expect(screen.getByRole('img', { name: '0.0 de 5, 0 avaliações' })).toHaveTextContent('Novo');
+  });
+
+  it('"Aceita troca" nos serviços dos outros, no ar e com a troca ligada', async () => {
+    renderCard();
+    expect(await screen.findByText('Aceita troca')).toBeInTheDocument();
+  });
+
+  it('meu serviço e serviço pausado não levam "Aceita troca"', async () => {
+    renderCard({ mine: true });
+    await waitFor(() => expect(publicSettings).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Aceita troca')).not.toBeInTheDocument();
+  });
+
+  it('serviço dos outros, mas pausado, também não', async () => {
+    renderCard({ service: service({ isActive: false }) });
+    await waitFor(() => expect(publicSettings).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Aceita troca')).not.toBeInTheDocument();
+    expect(screen.getByText('Pausado')).toBeInTheDocument();
+  });
+
+  it('com a troca desligada, nada de "Aceita troca"', async () => {
+    publicSettings.mockResolvedValue({ barterEnabled: false });
+    renderCard();
+    await waitFor(() => expect(screen.queryByText('Aceita troca')).not.toBeInTheDocument());
+    expect(publicSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('compacto (carrossel): sem descrição, tags nem botões; o título continua sendo o link', () => {
+    renderCard({
+      compact: true,
+      service: service({ tags: ['figma'] }),
+      onToggleFavorite: vi.fn(),
+      onProposeBarter: vi.fn(),
+    });
+    expect(screen.getByRole('link', { name: 'Logo profissional' })).toHaveAttribute(
+      'href',
+      '/servicos/5',
+    );
+    expect(screen.queryByText('Crio a identidade visual da sua marca.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Tags' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Contratar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Propor troca' })).not.toBeInTheDocument();
+  });
+
+  it('o card é um artigo com o título como cabeçalho de nível 3', () => {
+    renderCard();
+    const heading = screen.getByRole('heading', { level: 3, name: 'Logo profissional' });
+    expect(heading.closest('article')).toHaveClass('card', 'service', 'svc-card');
   });
 });

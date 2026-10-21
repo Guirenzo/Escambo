@@ -1,5 +1,16 @@
 import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
-import { ArrowDownToLine, Coins, Landmark, Lock, MailWarning, QrCode, Wallet } from 'lucide-react';
+import {
+  ArrowDownLeft,
+  ArrowDownToLine,
+  ArrowLeftRight,
+  ArrowUpRight,
+  Coins,
+  Landmark,
+  Lock,
+  MailWarning,
+  QrCode,
+  Wallet,
+} from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
 import type {
   CreateWithdrawalRequest,
@@ -27,8 +38,10 @@ import {
   withdrawalDueAt,
 } from '../../lib/business-days';
 import { usePageTitle } from '../../lib/title';
+import { scrollBehavior } from '../../lib/motion';
 import {
   brl,
+  displayName,
   DEPOSIT_STATUS_LABEL,
   dtm,
   WALLET_REASON_LABEL,
@@ -39,6 +52,7 @@ import {
   useCancelWithdrawal,
   useCreditTransactions,
   useDeposits,
+  useProfilesMe,
   usePublicSettings,
   useRequestWithdrawal,
   useWallet,
@@ -93,9 +107,16 @@ function LedgerRow({ t }: { t: WalletTransaction }) {
         : t.paymentId != null
           ? ` · depósito #${t.paymentId}`
           : '';
+  const Icon = heldOnly ? Lock : value >= 0 ? ArrowDownLeft : ArrowUpRight;
   return (
     <li>
-      <div>
+      <span
+        className={`tx-ico ${heldOnly ? 'held' : value >= 0 ? 'in' : 'out'}`}
+        aria-hidden="true"
+      >
+        <Icon size={16} />
+      </span>
+      <div className="tx-text">
         <strong>{WALLET_REASON_LABEL[t.reason] ?? t.reason}</strong>
         <div className="muted tiny">
           {dtm(t.createdAt)}
@@ -193,160 +214,89 @@ export function CarteiraView() {
   }
 
   const w = wallet.data;
+  const profiles = useProfilesMe();
+  const owner = displayName(
+    profiles.data?.freelancer?.fullName ?? profiles.data?.client?.fullName,
+    user?.email,
+  );
+
+  /** "Pedir saque" leva ao formulário (o foco vai ao valor) ou, sem e-mail confirmado, ao aviso. */
+  function goToWithdraw(): void {
+    const target = document.getElementById('saque-valor') ?? document.getElementById('saque');
+    target?.scrollIntoView?.({ behavior: scrollBehavior(), block: 'center' });
+    target?.focus({ preventScroll: true });
+  }
 
   return (
     <div className="page">
       <PageHeader
         title="Carteira"
         subtitle="Saldo em reais, créditos Escambo, depósitos, extrato e saques."
-        action={
-          <BusinessButton type="button" onClick={() => setDepositing({})}>
-            <QrCode size={16} /> Depositar
-          </BusinessButton>
-        }
       />
 
-      <div className="kpis">
-        <div className="kpi">
-          <div className="kpi-top">
-            <span className="kpi-ico">
+      <div className="wallet-top">
+        {/* O saldo como um cartão de banco: texto branco sobre o verde sólido; os círculos do fundo
+            são enfeite claro de opacidade baixa (o contraste continua acima de 12:1). */}
+        <section className="bank-card" aria-labelledby="bank-card-label">
+          <span className="bank-deco" aria-hidden="true" />
+          <div className="bank-card-top">
+            <span className="bank-brand">
+              <span className="bank-brand-mark" aria-hidden="true">
+                <ArrowLeftRight size={16} strokeWidth={2.5} />
+              </span>
+              Escambo
+            </span>
+            <span className="bank-chip" aria-hidden="true">
               <Wallet size={18} />
             </span>
-            <span className="kpi-label">Saldo disponível</span>
           </div>
-          <strong className="kpi-value" data-testid="wallet-balance">
-            {w ? brl(w.balance) : '—'}
-          </strong>
-          <span className="muted tiny">para contratar ou sacar (PIX ou transferência)</span>
-        </div>
-        <div className="kpi amber">
-          <div className="kpi-top">
-            <span className="kpi-ico">
-              <Lock size={18} />
+          <div className="bank-balance">
+            <span className="bank-label" id="bank-card-label">
+              Saldo disponível
             </span>
-            <span className="kpi-label">Retido</span>
+            <strong className="bank-value" data-testid="wallet-balance">
+              {w ? brl(w.balance) : '—'}
+            </strong>
+            <span className="bank-hint">para contratar ou sacar (PIX ou transferência)</span>
           </div>
-          <strong className="kpi-value">{w ? brl(w.balancePending) : '—'}</strong>
-          <span className="muted tiny">reservado em propostas ou em escrow</span>
-        </div>
-        <div className="kpi">
-          <div className="kpi-top">
-            <span className="kpi-ico">
-              <Coins size={18} />
-            </span>
-            <span className="kpi-label">Créditos Escambo</span>
+          <div className="bank-card-foot">
+            <span className="bank-owner">{owner}</span>
+            <div className="bank-actions">
+              <BusinessButton type="button" className="amber" onClick={() => setDepositing({})}>
+                <QrCode size={16} /> Depositar
+              </BusinessButton>
+              <button type="button" className="on-dark" onClick={goToWithdraw}>
+                <Landmark size={16} aria-hidden="true" /> Pedir saque
+              </button>
+            </div>
           </div>
-          <strong className="kpi-value">{w ? String(w.credits) : '—'}</strong>
-          <span className="muted tiny">
-            {w && w.creditsPending > 0 ? `${w.creditsPending} em escrow · ` : ''}para contratar ou
-            impulsionar
-          </span>
-        </div>
-        {!canWithdraw && (
-          <div className="kpi withdraw-locked" data-testid="withdraw-locked">
+        </section>
+
+        <div className="wallet-side">
+          <div className="kpi amber">
             <div className="kpi-top">
               <span className="kpi-ico">
-                <Landmark size={18} />
+                <Lock size={18} />
               </span>
-              <span className="kpi-label">Solicitar saque</span>
+              <span className="kpi-label">Retido</span>
             </div>
-            <p className="withdraw-locked-msg">
-              <MailWarning size={16} />
-              <span>
-                Confirme seu e-mail para sacar. Enviamos um link para <strong>{user?.email}</strong>
-                .
+            <strong className="kpi-value">{w ? brl(w.balancePending) : '—'}</strong>
+            <span className="muted tiny">reservado em propostas ou em escrow</span>
+          </div>
+          <div className="kpi">
+            <div className="kpi-top">
+              <span className="kpi-ico">
+                <Coins size={18} />
               </span>
-            </p>
+              <span className="kpi-label">Créditos Escambo</span>
+            </div>
+            <strong className="kpi-value">{w ? String(w.credits) : '—'}</strong>
             <span className="muted tiny">
-              Segurança: o saque é a única ação que tira dinheiro da plataforma.
+              {w && w.creditsPending > 0 ? `${w.creditsPending} em escrow · ` : ''}para contratar ou
+              impulsionar
             </span>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void resend()}
-              disabled={resending}
-            >
-              {resending ? 'Reenviando…' : 'Reenviar e-mail de confirmação'}
-            </Button>
           </div>
-        )}
-        {canWithdraw && (
-          <BusinessForm className="kpi" onSubmit={submit}>
-            <div className="kpi-top">
-              <span className="kpi-ico">
-                <Landmark size={18} />
-              </span>
-              <span className="kpi-label">Solicitar saque</span>
-            </div>
-            <Field label={`Valor (R$) · mínimo ${brl(minWithdrawal)}`}>
-              <Input
-                type="number"
-                min={minWithdrawal}
-                step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                required
-              />
-            </Field>
-            <Field label="Receber por">
-              <Select
-                value={method}
-                onChange={(e) => setMethod(e.target.value as WithdrawalMethod)}
-              >
-                <option value="pix">PIX</option>
-                <option value="bank">Transferência bancária</option>
-              </Select>
-            </Field>
-            <p className="muted tiny" data-testid="withdraw-due">
-              Em até {businessDaysLabel(businessDays)} (seg. a sex.): cai até{' '}
-              {dueDayText(withdrawalDueAt(businessDays))}.
-            </p>
-            {method === 'pix' ? (
-              <Field label="Chave PIX">
-                <Input
-                  value={pixKey}
-                  onChange={(e) => setPixKey(e.target.value)}
-                  required
-                  maxLength={255}
-                  placeholder="e-mail / telefone / aleatória"
-                />
-              </Field>
-            ) : (
-              <>
-                <Field label="Banco">
-                  <Input
-                    value={bankName}
-                    onChange={(e) => setBankName(e.target.value)}
-                    required
-                    maxLength={100}
-                    placeholder="nome ou código do banco"
-                  />
-                </Field>
-                <Field label="Agência">
-                  <Input
-                    value={bankAgency}
-                    onChange={(e) => setBankAgency(e.target.value)}
-                    required
-                    maxLength={10}
-                    placeholder="sem o dígito"
-                  />
-                </Field>
-                <Field label="Conta">
-                  <Input
-                    value={bankAccount}
-                    onChange={(e) => setBankAccount(e.target.value)}
-                    required
-                    maxLength={20}
-                    placeholder="com o dígito"
-                  />
-                </Field>
-              </>
-            )}
-            <Button type="submit" variant="secondary" disabled={request.isPending}>
-              {request.isPending ? '…' : `Sacar (mín. ${brl(minWithdrawal)})`}
-            </Button>
-          </BusinessForm>
-        )}
+        </div>
       </div>
 
       {/* Ganhos por período (RF-082): só leitura do ledger; quem nunca recebeu vê o vazio. */}
@@ -402,7 +352,7 @@ export function CarteiraView() {
             >
               {(items) => (
                 <>
-                  <ul className="list credit-tx" data-testid="ledger">
+                  <ul className="list credit-tx tx-list" data-testid="ledger">
                     {items.map((t) => (
                       <LedgerRow key={t.id} t={t} />
                     ))}
@@ -426,10 +376,16 @@ export function CarteiraView() {
             >
               {(items) => (
                 <>
-                  <ul className="list credit-tx" data-testid="credit-ledger">
+                  <ul className="list credit-tx tx-list" data-testid="credit-ledger">
                     {items.map((t) => (
                       <li key={t.id}>
-                        <div>
+                        <span
+                          className={`tx-ico ${t.amount >= 0 ? 'in' : 'out'}`}
+                          aria-hidden="true"
+                        >
+                          {t.amount >= 0 ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}
+                        </span>
+                        <div className="tx-text">
                           <strong>{REASON_LABEL[t.reason] ?? t.reason}</strong>
                           <div className="muted tiny">
                             {dtm(t.createdAt)}
@@ -452,6 +408,117 @@ export function CarteiraView() {
         </section>
 
         <div className="stack">
+          {/* Saque num cartão próprio, fora da fileira de indicadores (o formulário ficava espremido). */}
+          {!canWithdraw && (
+            <section
+              className="card withdraw-locked"
+              data-testid="withdraw-locked"
+              id="saque"
+              tabIndex={-1}
+              data-hash-target
+            >
+              <div className="card-head">
+                <h3>
+                  <Landmark size={16} /> Solicitar saque
+                </h3>
+              </div>
+              <p className="withdraw-locked-msg">
+                <MailWarning size={16} />
+                <span>
+                  Confirme seu e-mail para sacar. Enviamos um link para{' '}
+                  <strong>{user?.email}</strong>.
+                </span>
+              </p>
+              <span className="muted tiny">
+                Segurança: o saque é a única ação que tira dinheiro da plataforma.
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void resend()}
+                disabled={resending}
+              >
+                {resending ? 'Reenviando…' : 'Reenviar e-mail de confirmação'}
+              </Button>
+            </section>
+          )}
+          {canWithdraw && (
+            <BusinessForm className="card withdraw-form" onSubmit={submit} id="saque">
+              <div className="card-head">
+                <h3>
+                  <Landmark size={16} /> Solicitar saque
+                </h3>
+              </div>
+              <Field label={`Valor (R$) · mínimo ${brl(minWithdrawal)}`}>
+                <Input
+                  id="saque-valor"
+                  type="number"
+                  min={minWithdrawal}
+                  step="0.01"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="Receber por">
+                <Select
+                  value={method}
+                  onChange={(e) => setMethod(e.target.value as WithdrawalMethod)}
+                >
+                  <option value="pix">PIX</option>
+                  <option value="bank">Transferência bancária</option>
+                </Select>
+              </Field>
+              <p className="muted tiny" data-testid="withdraw-due">
+                Em até {businessDaysLabel(businessDays)} (seg. a sex.): cai até{' '}
+                {dueDayText(withdrawalDueAt(businessDays))}.
+              </p>
+              {method === 'pix' ? (
+                <Field label="Chave PIX">
+                  <Input
+                    value={pixKey}
+                    onChange={(e) => setPixKey(e.target.value)}
+                    required
+                    maxLength={255}
+                    placeholder="e-mail / telefone / aleatória"
+                  />
+                </Field>
+              ) : (
+                <>
+                  <Field label="Banco">
+                    <Input
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      required
+                      maxLength={100}
+                      placeholder="nome ou código do banco"
+                    />
+                  </Field>
+                  <Field label="Agência">
+                    <Input
+                      value={bankAgency}
+                      onChange={(e) => setBankAgency(e.target.value)}
+                      required
+                      maxLength={10}
+                      placeholder="sem o dígito"
+                    />
+                  </Field>
+                  <Field label="Conta">
+                    <Input
+                      value={bankAccount}
+                      onChange={(e) => setBankAccount(e.target.value)}
+                      required
+                      maxLength={20}
+                      placeholder="com o dígito"
+                    />
+                  </Field>
+                </>
+              )}
+              <Button type="submit" variant="secondary" disabled={request.isPending}>
+                {request.isPending ? '…' : `Sacar (mín. ${brl(minWithdrawal)})`}
+              </Button>
+            </BusinessForm>
+          )}
           <section className="card">
             <div className="card-head">
               <h3>

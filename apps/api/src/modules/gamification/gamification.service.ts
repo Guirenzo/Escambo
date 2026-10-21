@@ -109,6 +109,7 @@ function toLeaderboardEntry(r: LeaderboardRow, i: number): LeaderboardEntry {
     avgRating: Number(r.avg_rating ?? 0),
     completedContracts: Number(r.total_contracts ?? 0),
   };
+  // A 100 m (1 casa), como na busca de serviços: o Haversine cru, ao metro, entregaria a casa.
   if (r.distance_km != null) entry.distanceKm = Math.round(Number(r.distance_km) * 10) / 10;
   return entry;
 }

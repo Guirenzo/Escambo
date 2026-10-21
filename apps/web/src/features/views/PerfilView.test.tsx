@@ -12,7 +12,7 @@ import type {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dtm } from '../../lib/format';
 import { ToastProvider } from '../../lib/toast';
-import { PerfilView } from './PerfilView';
+import { PerfilView, profileSections } from './PerfilView';
 
 /**
  * Tela de Perfil: o formulário do freelancer (dados, agenda, localização), o do cliente, as
@@ -783,5 +783,40 @@ describe('PerfilView: verificação em duas etapas (RF-090)', () => {
     } finally {
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
     }
+  });
+});
+
+describe('PerfilView: topo e navegação das seções', () => {
+  it('o topo mostra nome, linha de apresentação e o atalho para o perfil público do freelancer', async () => {
+    renderView();
+    const top = (
+      await screen.findByRole('heading', { level: 2, name: freelancer().fullName })
+    ).closest('section')!;
+    expect(top).toHaveAttribute('id', 'perfil-publico');
+    expect(within(top).getByText('Freelancer')).toBeInTheDocument();
+    expect(within(top).getByRole('link', { name: 'Ver meu perfil público' })).toHaveAttribute(
+      'href',
+      expect.stringMatching(/^\/freelancers\//),
+    );
+  });
+
+  it('cada link da navegação aponta para uma seção que existe na página', async () => {
+    renderView();
+    const nav = await screen.findByRole('list', { name: 'Seções do perfil' });
+    await screen.findByRole('button', { name: 'Salvar freelancer' });
+    const hashes = within(nav)
+      .getAllByRole('link')
+      .map((a) => a.getAttribute('href')!.slice(1));
+    expect(hashes).toEqual(profileSections(true).map(([h]) => h));
+    await waitFor(() => {
+      for (const h of hashes) expect(document.getElementById(h), h).not.toBeNull();
+    });
+  });
+
+  it('quem é só cliente não vê as seções de freelancer na navegação', () => {
+    const labels = profileSections(false).map(([, l]) => l);
+    expect(labels).not.toContain('Escambo Score');
+    expect(labels).not.toContain('Portfólio');
+    expect(labels).toContain('Dados de cliente');
   });
 });

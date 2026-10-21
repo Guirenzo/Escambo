@@ -80,7 +80,7 @@ function renderList() {
   );
 }
 
-const rows = (): number => screen.getAllByRole('row').length - 1; // menos o cabeçalho
+const rows = (): number => screen.queryAllByRole('article').length; // um cartão por contratação
 
 beforeEach(() => {
   contracts.mockReset();
@@ -167,7 +167,7 @@ describe('MyContracts', () => {
 
     await waitFor(() => expect(contracts).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(rows()).toBe(21));
-    expect(screen.getAllByRole('row', { name: /Contratação 20/ })).toHaveLength(1);
+    expect(screen.getAllByRole('article', { name: /Contratação 20$/ })).toHaveLength(1);
   });
 
   it('as opções do filtro cobrem todos os status da contratação', () => {

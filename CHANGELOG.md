@@ -5,6 +5,36 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.49.0] — 2026-10-21
+
+Visual novo: página inicial pública, login e cadastro, e o app logado inteiro (ADR 67). A localização dos freelancers passa a sair a ~1 km em toda resposta pública. RF: 84 implementados, 1 parcial, 5 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Página inicial pública** em `/` para quem não tem conta: topo com a busca "O que você precisa?" e as telas do app em perspectiva; vitrine de serviços reais, que a busca filtra sem login e que ordena por distância com "Usar minha localização" (a permissão só é pedida no clique); categorias com foto; "Como funciona" em abas (Contratar, Oferecer, Trocar); calculadora da torna com a taxa vigente; garantias, dúvidas e rodapé completo. Sem números, logos ou depoimentos inventados.
+- **`/cadastro`**, que abre o formulário já em "Criar conta" (`?perfil=freelancer|cliente`), e busca por categoria em Serviços (`?categoria=`).
+- Fotos próprias de profissionais (geradas para o projeto, pessoas fictícias) nas categorias, na página inicial, no login e no Início, só como ilustração: nunca com nome, nota ou depoimento.
+
+### Alterado
+
+- **Login e cadastro**: tela dividida, com o formulário de um lado e um painel com a proposta de troca do outro; sem o slogan com marca de terceiro.
+- **App logado**: barra lateral escura agrupada, barra superior com busca, barra inferior com 5 itens e "Mais" no celular; Início com faixa de boas-vindas, atalhos, categorias com foto, contratações em cartões com o prazo e a etapa; Serviços com filtros num painel e cartões com capa, avatar, nota e selo "Aceita troca"; Sala com etapas na horizontal, recibo e chat de aplicativo; Trocas com o cartão "Você oferece ⇄ Você recebe"; Carteira com o saldo em cartão de banco; Perfil e perfil público com capa e portfólio em grade; Notificações por dia; Ranking com pódio; Suporte e Admin com o mesmo acabamento.
+- Botões, cartões, indicadores, etiquetas, campos de 44 px, tabelas e telas vazias padronizados; fonte base em porcentagem, links verdes no app todo.
+- A listagem e o detalhe de serviços levam a cidade do prestador e a primeira imagem do portfólio dele (a capa do cartão).
+
+### Segurança e privacidade
+
+- **Localização a ~1 km**: o perfil público do freelancer mostra latitude e longitude com 2 casas para quem não é o dono (o dono continua vendo o valor exato). A busca de serviços e o ranking "perto de mim" calculam a distância, o raio e a ordem sobre essa mesma coordenada arredondada: mexer no ponto da busca de metro em metro não revela mais que o perfil.
+
+### Corrigido
+
+- A regra da torna (RN-066) dizia "15% fixos"; a taxa é a comissão da plataforma (RN-031), ajustável no painel, como o código já fazia.
+- O utilitário dos prints do README voltou a rodar: a desistência usa outro cliente (proposta única por par) e a faixa da política não depende do número da versão.
+
+### Para atualizar
+
+Nada a fazer na VPS: sem migration nem variável nova.
+
 ## [1.48.0] — 2026-10-20
 
 Verificação em duas etapas por app autenticador (ADR 66). RF: 84 implementados, 1 parcial, 5 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.

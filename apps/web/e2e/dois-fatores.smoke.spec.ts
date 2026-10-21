@@ -95,7 +95,9 @@ test('ativar no Perfil, sair, entrar com senha + código do app e com um código
   // Sem 2FA, o login abre a sessão direto. O teste entra pelo formulário (e não com o token no
   // armazenamento, como o openAs): sair precisa apagar uma sessão de verdade.
   await passwordStep(page, user.email);
-  await expect(page.getByRole('heading', { name: /^Olá,/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /^(Bom dia|Boa tarde|Boa noite),/ }),
+  ).toBeVisible();
   await page.goto('/perfil');
   await settled(page);
 

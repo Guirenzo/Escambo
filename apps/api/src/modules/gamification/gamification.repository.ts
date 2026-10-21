@@ -1,4 +1,5 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
+import { coarseCoordSql } from '../../utils/coarse-coord';
 import type { PoolConnection } from 'mysql2/promise';
 import { pool } from '../../config/db';
 import { levelFor } from './gamification.levels';
@@ -61,8 +62,8 @@ export const RANKED_USER = `u.deleted_at IS NULL AND u.status NOT IN ('suspended
 
 /** Distância (Haversine, km) do perfil `pf` ao ponto :lat/:lng, a mesma conta da busca de serviços. */
 const DISTANCE_KM = `(6371 * ACOS(LEAST(1.0,
-  COS(RADIANS(:lat)) * COS(RADIANS(pf.latitude)) * COS(RADIANS(pf.longitude) - RADIANS(:lng))
-  + SIN(RADIANS(:lat)) * SIN(RADIANS(pf.latitude)))))`;
+  COS(RADIANS(:lat)) * COS(RADIANS(${coarseCoordSql('pf.latitude')})) * COS(RADIANS(${coarseCoordSql('pf.longitude')}) - RADIANS(:lng))
+  + SIN(RADIANS(:lat)) * SIN(RADIANS(${coarseCoordSql('pf.latitude')})))))`;
 
 /**
  * Credita XP com o total travado, na transação aberta por quem chama: trava o total (FOR UPDATE),

@@ -8,9 +8,9 @@ import { ToastProvider } from '../../lib/toast';
 import { ContractsCard } from './ContractsCard';
 
 /**
- * Tabela de contratações do Início: uma linha por contratação, com a modalidade e o prazo na
- * linha de apoio, o acesso à Sala e só as ações que avançam o contrato. Recusar, cancelar, pedir
- * revisão e abrir disputa ficam na Sala.
+ * Contratações do Início em cartões (como uma agenda): o bloco de data, valor, modalidade e etapa,
+ * o prazo quando ele cobra, o botão largo para a Sala e só as ações que avançam o contrato.
+ * Recusar, cancelar, pedir revisão e abrir disputa ficam na Sala.
  */
 
 const contractAction = vi.fn();
@@ -67,7 +67,7 @@ const contract = (o: Partial<Contract> = {}): Contract => ({
   ...o,
 });
 
-/** Onde /contratos/:id mostra a sala que a tabela abriu. */
+/** Onde /contratos/:id mostra a sala que o cartão abriu. */
 function SalaProbe() {
   const { id } = useParams();
   return <p>Sala da contratação {id}</p>;
@@ -95,14 +95,17 @@ function show(contracts: Contract[]) {
   );
 }
 
-/** A linha da tabela de uma contratação, pelo título. */
-const rowOf = (title: string): HTMLElement => screen.getByRole('row', { name: new RegExp(title) });
+/** O cartão de uma contratação, pelo título (o artigo leva o título como nome). */
+const cardOf = (title: string): HTMLElement => screen.getByRole('article', { name: title });
 const buttonsOf = (title: string): string[] =>
-  within(rowOf(title))
+  within(cardOf(title))
     .getAllByRole('button')
     .map((b) => b.textContent?.trim() ?? '');
 /** R$ com espaço normal (o Intl usa espaço não separável). */
 const plain = (s: string | null): string => (s ?? '').replace(/\u00a0/g, ' ');
+/** O valor de um item da lista de definições do cartão ("Valor", "Pagamento"). */
+const meta = (title: string, label: string): string =>
+  plain(within(cardOf(title)).getByText(label).nextElementSibling?.textContent ?? null);
 
 /**
  * A data é de mentira (o prazo é contado em dias de calendário a partir de agora), e o relógio dos
@@ -130,35 +133,87 @@ beforeEach(() => {
 });
 
 describe('ContractsCard', () => {
-  it('a tabela tem as quatro colunas: contratação, valor, status e ações', () => {
-    show([contract()]);
-    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
-      'Contratação',
-      'Valor',
-      'Status',
-      'Ações',
-    ]);
+  it('é uma lista de contratações: um artigo por contratação, com o título como nome', () => {
+    show([contract({ id: 1, title: 'Logo' }), contract({ id: 2, title: 'Aula de violão' })]);
+    const list = screen.getByRole('list', { name: 'Contratações' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    expect(
+      within(list)
+        .getAllByRole('article')
+        .map((a) => a.getAttribute('aria-labelledby')),
+    ).toEqual(['deal-1', 'deal-2']);
+    expect(screen.getByRole('heading', { level: 3, name: 'Aula de violão' })).toBeInTheDocument();
   });
 
-  it('lista vazia: só o cabeçalho, nenhuma linha de contratação', () => {
+  it('lista vazia: a lista sem nenhum cartão', () => {
     show([]);
-    expect(screen.getAllByRole('row')).toHaveLength(1);
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
   });
 
-  it('cada linha mostra título, data de criação, modalidade, valor em R$ e o status por extenso', () => {
+  it('no caminho da contratação, o cartão mostra a etapa de 1 a 4; fora dele, nenhuma', () => {
+    show([
+      contract({ id: 1, title: 'Proposta', status: 'pending' }),
+      contract({ id: 2, title: 'Aceita', status: 'accepted' }),
+      contract({ id: 3, title: 'Revisão', status: 'revision_requested' }),
+      contract({ id: 4, title: 'Entregue', status: 'delivered' }),
+      contract({ id: 5, title: 'Concluída', status: 'completed' }),
+      contract({ id: 6, title: 'Cancelada', status: 'cancelled' }),
+    ]);
+    const stage = (title: string) =>
+      within(cardOf(title)).queryByText(/^Etapa \d de 4$/)?.textContent;
+    expect(['Proposta', 'Aceita', 'Revisão', 'Entregue', 'Concluída'].map(stage)).toEqual([
+      'Etapa 1 de 4',
+      'Etapa 2 de 4',
+      'Etapa 2 de 4',
+      'Etapa 3 de 4',
+      'Etapa 4 de 4',
+    ]);
+    expect(stage('Cancelada')).toBeUndefined();
+    // Os traços acesos são os da etapa (decorativos: o texto ao lado é que diz a etapa).
+    expect(cardOf('Entregue').querySelectorAll('.stage-dot.on')).toHaveLength(3);
+    expect(cardOf('Entregue').querySelector('.stage')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('cada cartão mostra o título, o status por extenso, o valor em R$ e a modalidade', () => {
     show([contract({ status: 'in_progress' })]);
-    const cells = within(rowOf('Logo para padaria')).getAllByRole('cell');
-    expect(cells[0]).toHaveTextContent('Logo para padaria');
-    expect(cells[0]).toHaveTextContent('criada em 10/09/2026 · Dinheiro');
-    expect(plain(cells[1]!.textContent)).toBe('R$ 200,00');
-    expect(cells[2]).toHaveTextContent(/^Em andamento$/);
+    const card = cardOf('Logo para padaria');
+    expect(within(card).getByText('Em andamento')).toHaveClass('pill', 'status-in_progress');
+    expect(meta('Logo para padaria', 'Valor')).toBe('R$ 200,00');
+    expect(meta('Logo para padaria', 'Pagamento')).toBe('Dinheiro');
+  });
+
+  it('sem prazo, o bloco de data é o dia da criação: mês curto e dia grande, e a data por extenso para o leitor', () => {
+    show([contract()]);
+    const block = cardOf('Logo para padaria').querySelector('.deal-date')!;
+    expect(block).not.toHaveClass('is-deadline');
+    expect(within(block as HTMLElement).getByText('Criada')).toBeInTheDocument();
+    expect(block.querySelector('.deal-date-month')).toHaveTextContent('set');
+    expect(block.querySelector('.deal-date-day')).toHaveTextContent('10');
+    expect(block.querySelector('.deal-date-month')).toHaveAttribute('aria-hidden', 'true');
+    expect(within(block as HTMLElement).getByText('10 de setembro')).toHaveClass('sr-only');
+  });
+
+  it('com prazo, o bloco mostra o dia do prazo no fuso dele (ADR 58)', () => {
+    // 23:59:59 de 05/11 em Manaus já é 06/11 em Brasília: o dia que vale é o do fuso do prazo.
+    show([
+      contract({
+        deadlineAt: '2026-11-06T03:59:59.000Z',
+        deadlineZone: 'America/Manaus',
+        deadline: deadline({ state: 'running' }),
+      }),
+    ]);
+    const block = cardOf('Logo para padaria').querySelector('.deal-date') as HTMLElement;
+    expect(block).toHaveClass('is-deadline');
+    expect(within(block).getByText('Prazo')).toBeInTheDocument();
+    expect(within(block).getByText('5 de novembro')).toBeInTheDocument();
+    expect(block.querySelector('.deal-date-day')).toHaveTextContent('05');
   });
 
   it('contratação em créditos mostra o valor inteiro em "cr", sem R$', () => {
     show([contract({ paymentMode: 'credits', price: 29.6 })]);
-    const cells = within(rowOf('Logo para padaria')).getAllByRole('cell');
-    expect(cells[1]).toHaveTextContent(/^30 cr$/);
-    expect(cells[0]).toHaveTextContent('· Créditos');
+    expect(meta('Logo para padaria', 'Valor')).toBe('30 cr');
+    expect(meta('Logo para padaria', 'Pagamento')).toBe('Créditos');
   });
 
   it('troca aparece como "Troca"; modalidade e status desconhecidos aparecem como vieram', () => {
@@ -171,21 +226,20 @@ describe('ContractsCard', () => {
         status: 'archived' as Contract['status'],
       }),
     ]);
-    expect(rowOf('Aula de violão')).toHaveTextContent('· Troca');
-    const cells = within(rowOf('Edição de vídeo')).getAllByRole('cell');
-    expect(cells[0]).toHaveTextContent('· pix');
-    expect(cells[2]).toHaveTextContent(/^archived$/);
+    expect(meta('Aula de violão', 'Pagamento')).toBe('Troca');
+    expect(meta('Edição de vídeo', 'Pagamento')).toBe('pix');
+    expect(within(cardOf('Edição de vídeo')).getByText('archived')).toHaveClass('pill');
   });
 
-  it('prazo correndo entra na linha de apoio com quanto falta', () => {
+  it('prazo correndo aparece no cartão com quanto falta', () => {
     show([
       contract({
         deadlineAt: '2026-10-06T15:00:00.000Z',
         deadline: deadline({ state: 'running' }),
       }),
     ]);
-    expect(within(rowOf('Logo para padaria')).getAllByRole('cell')[0]).toHaveTextContent(
-      'criada em 10/09/2026 · Dinheiro · faltam 5 dias',
+    expect(within(cardOf('Logo para padaria')).getByText('faltam 5 dias')).toHaveClass(
+      'deal-deadline',
     );
   });
 
@@ -195,9 +249,11 @@ describe('ContractsCard', () => {
       contract({ id: 2, title: 'Edição de vídeo', deadline: deadline({ state: 'paused' }) }),
       contract({ id: 3, title: 'Cartão de visita', deadline: deadline({ state: 'due' }) }),
     ]);
-    expect(rowOf('Aula de violão')).toHaveTextContent('· Dinheiro · vencido');
-    expect(rowOf('Edição de vídeo')).toHaveTextContent('· Dinheiro · extensão pedida');
-    expect(rowOf('Cartão de visita')).toHaveTextContent('· Dinheiro · venceu');
+    expect(within(cardOf('Aula de violão')).getByText('vencido')).toHaveClass('deadline-text-late');
+    expect(within(cardOf('Edição de vídeo')).getByText('extensão pedida')).toHaveClass(
+      'deadline-text-paused',
+    );
+    expect(within(cardOf('Cartão de visita')).getByText('venceu')).toBeInTheDocument();
   });
 
   it('prazo já cumprido (houve entrega) e contratação sem prazo não mostram nada de prazo', () => {
@@ -205,35 +261,33 @@ describe('ContractsCard', () => {
       contract({ id: 1, title: 'Aula de violão', deadline: deadline({ state: 'met' }) }),
       contract({ id: 2, title: 'Edição de vídeo', deadline: deadline({ state: 'none' }) }),
     ]);
-    for (const title of ['Aula de violão', 'Edição de vídeo']) {
-      const cell = within(rowOf(title)).getAllByRole('cell')[0]!;
-      expect(cell.textContent).toMatch(/criada em 10\/09\/2026 · Dinheiro$/);
-    }
+    for (const title of ['Aula de violão', 'Edição de vídeo'])
+      expect(cardOf(title).querySelector('.deal-deadline')).toBeNull();
     expect(screen.queryByText('entregue')).not.toBeInTheDocument();
   });
 
-  it('Sala abre a sala da contratação daquela linha', async () => {
+  it('"Abrir sala" abre a sala da contratação daquele cartão', async () => {
     const user = setup();
     show([contract({ id: 7 }), contract({ id: 12, title: 'Aula de violão' })]);
-    await user.click(within(rowOf('Aula de violão')).getByRole('button', { name: 'Sala' }));
+    await user.click(within(cardOf('Aula de violão')).getByRole('button', { name: 'Abrir sala' }));
     expect(screen.getByText('Sala da contratação 12')).toBeInTheDocument();
   });
 
-  it('na tabela os botões são os compactos', () => {
+  it('no cartão os botões têm o tamanho normal: a ação que avança o contrato em destaque', () => {
     show([contract({ status: 'delivered' })]);
-    expect(screen.getByRole('button', { name: 'Sala' })).toHaveClass('mini');
-    expect(screen.getByRole('button', { name: 'Aprovar entrega' })).toHaveClass('mini');
+    expect(screen.getByRole('button', { name: 'Abrir sala' })).toHaveClass('deal-open');
+    expect(screen.getByRole('button', { name: 'Aprovar entrega' })).not.toHaveClass('mini');
   });
 
   it('cliente com contratação aceita: só a Sala (cancelar e disputa ficam lá)', () => {
     show([contract({ status: 'accepted' })]);
-    expect(buttonsOf('Logo para padaria')).toEqual(['Sala']);
+    expect(buttonsOf('Logo para padaria')).toEqual(['Abrir sala']);
   });
 
-  it('cliente com entrega feita: aprova pela tabela; pedir revisão e disputa ficam na Sala', async () => {
+  it('cliente com entrega feita: aprova pelo cartão; pedir revisão e disputa ficam na Sala', async () => {
     const user = setup();
     show([contract({ status: 'delivered' })]);
-    expect(buttonsOf('Logo para padaria')).toEqual(['Sala', 'Aprovar entrega']);
+    expect(buttonsOf('Logo para padaria')).toEqual(['Abrir sala', 'Aprovar entrega']);
     await user.click(screen.getByRole('button', { name: 'Aprovar entrega' }));
     expect(contractAction).toHaveBeenCalledWith(7, 'approve');
     expect(
@@ -241,17 +295,17 @@ describe('ContractsCard', () => {
     ).toBeInTheDocument();
   });
 
-  it('freelancer com proposta pendente: aceita pela tabela; recusar fica na Sala', async () => {
+  it('freelancer com proposta pendente: aceita pelo cartão; recusar fica na Sala', async () => {
     const user = setup();
     auth.user = { id: FREELANCER, timezone: 'America/Sao_Paulo' };
     show([contract({ status: 'pending' })]);
-    expect(buttonsOf('Logo para padaria')).toEqual(['Sala', 'Aceitar']);
+    expect(buttonsOf('Logo para padaria')).toEqual(['Abrir sala', 'Aceitar']);
     await user.click(screen.getByRole('button', { name: 'Aceitar' }));
     expect(contractAction).toHaveBeenCalledWith(7, 'accept');
     expect(await screen.findByText('Contratação atualizada')).toBeInTheDocument();
   });
 
-  it('API recusa o aceite: mostra a mensagem dela e a linha continua lá', async () => {
+  it('API recusa o aceite: mostra a mensagem dela e o cartão continua lá', async () => {
     const user = setup();
     auth.user = { id: FREELANCER, timezone: 'America/Sao_Paulo' };
     contractAction.mockRejectedValue(new Error('A proposta expirou.'));
@@ -259,7 +313,7 @@ describe('ContractsCard', () => {
     await user.click(screen.getByRole('button', { name: 'Aceitar' }));
     expect(await screen.findByText('A proposta expirou.')).toBeInTheDocument();
     expect(screen.queryByText('Contratação atualizada')).not.toBeInTheDocument();
-    expect(rowOf('Logo para padaria')).toBeInTheDocument();
+    expect(cardOf('Logo para padaria')).toBeInTheDocument();
   });
 
   it('freelancer em andamento: registra a entrega com a mensagem digitada; desistir e disputa ficam na Sala', async () => {
@@ -267,7 +321,7 @@ describe('ContractsCard', () => {
     auth.user = { id: FREELANCER, timezone: 'America/Sao_Paulo' };
     const prompt = vi.spyOn(window, 'prompt').mockReturnValue('  Arquivos na pasta  ');
     show([contract({ status: 'in_progress' })]);
-    expect(buttonsOf('Logo para padaria')).toEqual(['Sala', 'Registrar entrega']);
+    expect(buttonsOf('Logo para padaria')).toEqual(['Abrir sala', 'Registrar entrega']);
     await user.click(screen.getByRole('button', { name: 'Registrar entrega' }));
     expect(prompt).toHaveBeenCalledWith('Mensagem da entrega (o que foi feito, onde está):');
     expect(deliverContract).toHaveBeenCalledTimes(1);
@@ -297,6 +351,6 @@ describe('ContractsCard', () => {
   it('quem não é parte da contratação só tem a Sala', () => {
     auth.user = { id: 99, timezone: 'America/Sao_Paulo' };
     show([contract({ status: 'delivered' })]);
-    expect(buttonsOf('Logo para padaria')).toEqual(['Sala']);
+    expect(buttonsOf('Logo para padaria')).toEqual(['Abrir sala']);
   });
 });

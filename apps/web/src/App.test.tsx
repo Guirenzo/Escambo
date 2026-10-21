@@ -10,6 +10,7 @@ import { MAINTENANCE_EVENT } from './lib/api';
  * admin e quando o endereço da sala é válido. As telas grandes têm os próprios testes; aqui elas
  * são substituídas por marcadores, porque a regra em teste é QUAL tela cada endereço abre. A
  * guarda de rota, o modo de manutenção, as páginas legais e a tela de "não existe" são as reais.
+ * A página inicial pública (landing) tem os próprios testes; aqui é um marcador.
  */
 
 const auth = {
@@ -37,7 +38,18 @@ vi.mock('./features/shell/Shell', async () => {
     ),
   };
 });
-vi.mock('./features/auth/LoginForm', () => ({ LoginForm: () => <h1>Entrar</h1> }));
+vi.mock('./features/auth/LoginForm', () => ({
+  LoginForm: ({
+    initialMode = 'login',
+    initialRole = 'client',
+  }: {
+    initialMode?: string;
+    initialRole?: string;
+  }) => <h1>{initialMode === 'register' ? `Criar conta (${initialRole})` : 'Entrar'}</h1>,
+}));
+vi.mock('./features/landing/LandingView', () => ({
+  LandingView: () => <h1>Página inicial</h1>,
+}));
 vi.mock('./features/auth/AccountViews', () => ({
   ForgotPasswordView: () => <h1>Esqueci a senha</h1>,
   ResetPasswordView: () => <h1>Redefinir senha</h1>,
@@ -132,6 +144,56 @@ describe('App: rotas públicas', () => {
     visit('/nao-existe');
     expect(heading()).toBe('Esta página não existe');
     expect(here()).toBe('/nao-existe');
+  });
+});
+
+describe('App: / (página inicial)', () => {
+  it('sem sessão, a raiz mostra a página pública, fora do menu do app e sem trocar o endereço', () => {
+    auth.user = null;
+    visit('/');
+    expect(heading()).toBe('Página inicial');
+    expect(here()).toBe('/');
+    expect(screen.queryByRole('navigation', { name: 'Principal' })).not.toBeInTheDocument();
+  });
+
+  it('enquanto a sessão é conferida, a raiz mostra o carregando (nem landing nem início)', () => {
+    auth.user = null;
+    auth.loading = true;
+    visit('/');
+    expect(screen.getByRole('status', { name: 'Carregando…' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument();
+  });
+
+  it('ao sair na raiz, a página pública toma o lugar do início; ao entrar, volta o início', () => {
+    const { sessionChanged } = visit('/');
+    expect(heading()).toBe('Início');
+    auth.user = null;
+    sessionChanged();
+    expect(heading()).toBe('Página inicial');
+    auth.user = { id: 1, role: 'client' };
+    sessionChanged();
+    expect(heading()).toBe('Início');
+    expect(here()).toBe('/');
+  });
+});
+
+describe('App: /cadastro', () => {
+  it.each([
+    ['/cadastro', 'Criar conta (client)'],
+    ['/cadastro?perfil=cliente', 'Criar conta (client)'],
+    ['/cadastro?perfil=freelancer', 'Criar conta (freelancer)'],
+    ['/cadastro?perfil=outro', 'Criar conta (client)'],
+  ])('%s abre o formulário em "Criar conta" com o perfil do endereço', (path, title) => {
+    auth.user = null;
+    visit(path);
+    expect(heading()).toBe(title);
+    expect(here()).toBe(path);
+  });
+
+  it('já com sessão, vai para a home', () => {
+    visit('/cadastro?perfil=freelancer');
+    expect(heading()).toBe('Início');
+    expect(here()).toBe('/');
   });
 });
 

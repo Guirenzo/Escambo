@@ -1,4 +1,5 @@
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
+import { coarseCoordSql } from '../../utils/coarse-coord';
 import type { PoolConnection } from 'mysql2/promise';
 import { inTransaction, pool } from '../../config/db';
 import type { AvailabilityPeriod } from '@escambo/types';
@@ -34,6 +35,10 @@ export interface ServiceRow extends RowDataPacket {
   owner_available_periods?: unknown;
   owner_is_available?: number | null;
   owner_timezone?: string | null;
+  /** Cidade do perfil público de quem presta (a mesma do GET /profiles/freelancer/:ulid). */
+  owner_city?: string | null;
+  /** Primeira imagem do portfólio de quem presta, na ordem do portfólio: a capa do card. */
+  owner_cover_url?: string | null;
 }
 
 export type ServiceSort =
@@ -222,8 +227,17 @@ async function writeTags(conn: PoolConnection, serviceId: number, tags: string[]
 const BOOSTED_EXPR = `EXISTS(SELECT 1 FROM boosts bo
         WHERE bo.service_id = s.id AND bo.status = 'active' AND bo.expires_at > NOW())`;
 
+/**
+ * A capa do card (o visual de marketplace): a primeira imagem do portfólio de quem presta, na
+ * ordem que ele escolheu. O portfólio já é público no perfil; aqui sai só o endereço da imagem, e
+ * só para as linhas da página (o índice idx_portfolio_freelancer acha os itens do prestador).
+ */
+const COVER_EXPR = `(SELECT i.image_url FROM freelancer_portfolio_items i
+        WHERE i.freelancer_id = pf.id AND i.image_url IS NOT NULL
+        ORDER BY i.sort_order ASC, i.id ASC LIMIT 1)`;
+
 /** Quem presta o serviço: nome e reputação (avg_rating/total_reviews são mantidos pelo módulo de reviews). */
-const OWNER_COLS = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, pf.available_days AS owner_available_days, pf.available_periods AS owner_available_periods, pf.is_available AS owner_is_available, u.timezone AS owner_timezone`;
+const OWNER_COLS = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, pf.available_days AS owner_available_days, pf.available_periods AS owner_available_periods, pf.is_available AS owner_is_available, u.timezone AS owner_timezone, pf.city AS owner_city, ${COVER_EXPR} AS owner_cover_url`;
 
 export const servicesRepository = {
   async create(data: {
@@ -443,8 +457,8 @@ export const servicesRepository = {
       params.lng = filters.lng!;
       params.radius = filters.radiusKm ?? 25;
       const distanceExpr = `(6371 * ACOS(LEAST(1.0,
-        COS(RADIANS(:lat)) * COS(RADIANS(pf.latitude)) * COS(RADIANS(pf.longitude) - RADIANS(:lng))
-        + SIN(RADIANS(:lat)) * SIN(RADIANS(pf.latitude)))))`;
+        COS(RADIANS(:lat)) * COS(RADIANS(${coarseCoordSql('pf.latitude')})) * COS(RADIANS(${coarseCoordSql('pf.longitude')}) - RADIANS(:lng))
+        + SIN(RADIANS(:lat)) * SIN(RADIANS(${coarseCoordSql('pf.latitude')})))))`;
       // Tabela derivada: calcula a distância no interno e filtra pelo alias no externo
       // (evita HAVING sem GROUP BY, que é problemático no MySQL 8).
       const [rows] = await pool.query<ServiceRow[]>(

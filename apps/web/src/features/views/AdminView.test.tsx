@@ -1244,3 +1244,32 @@ describe('AdminView: verificação em duas etapas obrigatória (ADMIN_MFA_REQUIR
     expect(screen.getByRole('form', { name: 'Buscar conta por e-mail' })).toBeInTheDocument();
   });
 });
+
+describe('AdminView: navegação das seções', () => {
+  it('a navegação do topo leva a cada seção do painel, e toda âncora existe na página', async () => {
+    renderView();
+    const nav = await screen.findByRole('list', { name: 'Seções da administração' });
+    const links = within(nav).getAllByRole('link');
+    expect(links.map((a) => a.textContent)).toEqual([
+      'Indicadores',
+      'Financeiro',
+      'Armazenamento',
+      'Parâmetros',
+      'Moderação',
+      'Denúncias',
+      'Contestações',
+      'Suporte',
+      'Atendimento de conta',
+      'Mediação',
+      'Saques',
+      'Exclusões (LGPD)',
+      'E-mails',
+    ]);
+    await waitFor(() => {
+      for (const a of links) {
+        const id = a.getAttribute('href')!.slice(1);
+        expect(document.getElementById(id), id).not.toBeNull();
+      }
+    });
+  });
+});

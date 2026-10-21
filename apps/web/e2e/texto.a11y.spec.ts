@@ -5,6 +5,7 @@ import {
   createUser,
   deliveredContract,
   openAs,
+  openLanding,
   pngFixture,
   settled,
   uploadImage,
@@ -230,7 +231,15 @@ for (const [criterion, css] of [
       await expect(page.locator('h1').first()).toBeVisible();
       await check(path);
     };
+    // Página inicial sem sessão: como abre, e com as dúvidas abertas (o texto dos <details>).
+    await openLanding(page);
+    await check('/');
+    await page
+      .locator('details')
+      .evaluateAll((all) => all.forEach((d) => ((d as HTMLDetailsElement).open = true)));
+    await check('/ com as dúvidas abertas');
     for (const path of [
+      '/cadastro?perfil=freelancer',
       '/login',
       '/esqueci-senha',
       '/redefinir-senha?token=x',

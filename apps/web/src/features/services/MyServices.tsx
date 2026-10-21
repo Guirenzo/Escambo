@@ -1,9 +1,10 @@
 import type { Service } from '@escambo/types';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { BusinessModal } from '../../components/BusinessActions';
 import { QueryState } from '../../components/ui';
 import { useCategories, useMyServices, usePublicSettings, useUpdateService } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { rootsById } from './categoryArt';
 import { ServiceCard } from './ServiceCard';
 import { flattenCategories, ServiceForm, type ServiceFormBody } from './ServiceForm';
 
@@ -17,6 +18,7 @@ export function MyServices({ onBoost }: { onBoost: (s: Service) => void }) {
   const update = useUpdateService();
   const toast = useToast();
   const categories = useCategories();
+  const roots = useMemo(() => rootsById(categories.data ?? []), [categories.data]);
   const minPrice = usePublicSettings().data?.minServicePrice ?? 10;
   const [editing, setEditing] = useState<Service | null>(null);
   const togglingId = update.isPending && !editing ? update.variables?.id : undefined;
@@ -72,6 +74,8 @@ export function MyServices({ onBoost }: { onBoost: (s: Service) => void }) {
                     service={s}
                     mine
                     showOwner={false}
+                    categorySlug={roots.get(s.categoryId)?.slug}
+                    categoryName={roots.get(s.categoryId)?.name}
                     onContratar={() => undefined}
                     onBoost={onBoost}
                     onEdit={setEditing}

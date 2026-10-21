@@ -70,17 +70,17 @@ export function MyContracts() {
   const filtered = current.status.length > 0;
 
   return (
-    <section className="card" aria-labelledby="my-contracts-title">
-      <div className="card-head">
-        <h3 id="my-contracts-title">Minhas contratações</h3>
-        {total !== undefined && (
-          <span className="muted tiny" data-testid="contracts-total">
-            {filtered ? `${total} com este status` : `${total} no total`}
-          </span>
-        )}
-      </div>
-      <div className="filters-bar">
-        <label className="filter">
+    <section className="section" aria-labelledby="my-contracts-title">
+      <div className="section-head">
+        <div>
+          <h2 id="my-contracts-title">Minhas contratações</h2>
+          {total !== undefined && (
+            <p data-testid="contracts-total">
+              {filtered ? `${total} com este status` : `${total} no total`}
+            </p>
+          )}
+        </div>
+        <label className="filter inline-filter">
           <span>Status</span>
           <Select value={filter} onChange={(e) => setFilter(e.target.value)}>
             {CONTRACT_FILTERS.map((f) => (
@@ -103,7 +103,7 @@ export function MyContracts() {
           <>
             <ContractsCard contracts={items} />
             {total !== undefined && total > items.length && (
-              <div className="center" style={{ marginTop: 12 }}>
+              <div className="center load-more">
                 <p className="muted tiny" data-testid="contracts-shown">
                   Mostrando {items.length} de {total}
                 </p>

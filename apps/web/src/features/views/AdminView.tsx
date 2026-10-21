@@ -382,6 +382,23 @@ export function AdminView() {
   return <AdminPanel onMfaRequired={onMfaRequired} />;
 }
 
+/** As seções do painel, na ordem da página: [âncora, rótulo] da navegação do topo. */
+const ADMIN_SECTIONS: [string, string][] = [
+  ['indicadores', 'Indicadores'],
+  ['finance-title', 'Financeiro'],
+  ['storage-title', 'Armazenamento'],
+  ['settings-title', 'Parâmetros'],
+  ['health-title', 'Moderação'],
+  ['reports-title', 'Denúncias'],
+  ['appeals-title', 'Contestações'],
+  ['suporte', 'Suporte'],
+  ['atendimento-conta', 'Atendimento de conta'],
+  ['mediacao', 'Mediação'],
+  ['saques', 'Saques'],
+  ['exclusoes', 'Exclusões (LGPD)'],
+  ['emails', 'E-mails'],
+];
+
 /** Métricas, fila de mediação, fila de saques, pedidos LGPD, atendimento e e-mails. */
 function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
   useScrollToHashWhenSettled();
@@ -420,10 +437,23 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
   }
 
   return (
-    <div className="page">
+    <div className="page page-wide admin-page">
       <PageHeader title="Administração" subtitle={ADMIN_SUBTITLE} />
 
-      <div className="kpis">
+      {/* Atalhos para as seções desta página longa: âncoras comuns (o Tab e o "voltar" seguem).
+          Lista com nome, e não <nav>: um marco de navegação no meio do conteúdo embaralharia a ordem
+          "menu antes do conteúdo" de quem anda pelos marcos (como nas migalhas). */}
+      <div className="section-nav">
+        <ul aria-label="Seções da administração">
+          {ADMIN_SECTIONS.map(([hash, label]) => (
+            <li key={hash}>
+              <a href={`#${hash}`}>{label}</a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="kpis" id="indicadores">
         <div className="kpi">
           <div className="kpi-top">
             <span className="kpi-ico">
@@ -564,7 +594,7 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
       <SupportSection />
       <AccountSupportSection />
 
-      <section className="card">
+      <section className="card" id="mediacao">
         <div className="card-head">
           <h3>
             <ShieldAlert size={16} /> Fila de mediação
@@ -625,7 +655,7 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
         </QueryState>
       </section>
 
-      <section className="card">
+      <section className="card" id="saques">
         <div className="card-head">
           <h3>
             <Banknote size={16} /> Fila de saques
@@ -753,7 +783,7 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
         </QueryState>
       </section>
 
-      <section className="card">
+      <section className="card" id="exclusoes">
         <div className="card-head">
           <h3>
             <Trash2 size={16} /> Exclusões de conta (LGPD)
@@ -877,7 +907,7 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
         </QueryState>
       </section>
 
-      <section className="card">
+      <section className="card" id="emails">
         <div className="card-head">
           <h3>
             <Mail size={16} /> Caixa de saída de e-mails

@@ -1,5 +1,5 @@
 import { BusinessForm } from '../../components/BusinessActions';
-import { Briefcase, MapPin, ShieldCheck, Star, User } from 'lucide-react';
+import { Briefcase, Eye, MapPin, ShieldCheck, Star, User } from 'lucide-react';
 import type { AvailabilityPeriod, AvailablePeriods } from '@escambo/types';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
@@ -51,7 +51,7 @@ function AvaliacoesRecebidas({ userId }: { userId: number }) {
   }
 
   return (
-    <section className="card wide">
+    <section className="card wide" id="avaliacoes">
       <div className="card-head">
         <h3>
           <Star size={16} /> Avaliações recebidas
@@ -109,6 +109,29 @@ function AvaliacoesRecebidas({ userId }: { userId: number }) {
       </QueryState>
     </section>
   );
+}
+
+/** As seções da página, na ordem em que aparecem: [âncora, rótulo] da navegação lateral. */
+export function profileSections(freelancer: boolean): [string, string][] {
+  return [
+    ['perfil-publico', 'Seu perfil'],
+    ...(freelancer
+      ? ([
+          ['score', 'Escambo Score'],
+          ['avaliacoes', 'Avaliações'],
+          ['dados-freelancer', 'Dados de freelancer'],
+        ] as [string, string][])
+      : []),
+    ['dados-cliente', 'Dados de cliente'],
+    ...(freelancer ? ([['portfolio', 'Portfólio']] as [string, string][]) : []),
+    ['email-pref-title', 'E-mails do Escambo'],
+    ['push-title', 'Avisos no navegador'],
+    ['email-title', 'E-mail da conta'],
+    ['telefone-title', 'Telefone'],
+    ['senha', 'Senha'],
+    ['dois-fatores', 'Verificação em duas etapas'],
+    ['privacidade', 'Privacidade e dados'],
+  ];
 }
 
 export function PerfilView() {
@@ -234,240 +257,310 @@ export function PerfilView() {
         onRetry={() => void profiles.refetch()}
       >
         {(p) => (
-          <div className="grid">
-            {/* Escambo Score (diferencial #3) — reputação multifator explicável */}
-            {p.freelancer && (
-              <section className="card wide">
-                <div className="card-head">
-                  <h3>
-                    <ShieldCheck size={16} /> Escambo Score
-                  </h3>
-                  <span className="muted tiny">
-                    <Stars
-                      value={p.freelancer.avgRating}
-                      count={p.freelancer.totalReviews}
-                      size={12}
-                    />{' '}
-                    · {p.freelancer.totalContracts} contratos
-                  </span>
+          <div className="settings-layout">
+            {/* Atalhos para as seções desta página longa (âncoras comuns): no desktop uma coluna
+                presa à esquerda; no celular, uma fileira que rola de lado. Lista com nome, e não
+                <nav>, como as migalhas: nada de marco de navegação no meio do conteúdo. */}
+            <div className="settings-nav">
+              <ul aria-label="Seções do perfil">
+                {profileSections(!!p.freelancer).map(([hash, label]) => (
+                  <li key={hash}>
+                    <a href={`#${hash}`}>{label}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="settings-main">
+              {/* Como os outros te veem: a capa, a foto grande, o nome, a linha de apresentação e,
+                para quem é freelancer, o atalho para o perfil público. */}
+              <section
+                className="card wide profile-card own"
+                id="perfil-publico"
+                aria-labelledby="me-name"
+              >
+                <div className="profile-cover" aria-hidden="true" />
+                <div className="profile-hero">
+                  <Avatar
+                    url={(p.freelancer ?? p.client)?.avatarUrl ?? null}
+                    name={(p.freelancer ?? p.client)?.fullName ?? user?.email ?? '?'}
+                    size="lg"
+                  />
+                  <div className="profile-names">
+                    <h2 id="me-name">
+                      {(p.freelancer ?? p.client)?.fullName ?? user?.email ?? 'Seu perfil'}
+                    </h2>
+                    <p className="profile-headline">
+                      {p.freelancer?.headline ||
+                        (p.freelancer ? 'Freelancer no Escambo' : 'Cliente no Escambo')}
+                    </p>
+                    <div className="profile-meta">
+                      {(p.freelancer ?? p.client)?.city && (
+                        <span className="muted tiny">
+                          <MapPin size={12} aria-hidden="true" /> {(p.freelancer ?? p.client)?.city}
+                          {p.freelancer?.state ? `, ${p.freelancer.state}` : ''}
+                        </span>
+                      )}
+                      {p.freelancer && <span className="chip rank">Freelancer</span>}
+                      {p.client && <span className="chip level">Cliente</span>}
+                      {user?.email && <span className="muted tiny">{user.email}</span>}
+                    </div>
+                  </div>
+                  {p.freelancer && user?.ulid && (
+                    <div className="stack profile-actions">
+                      <Link to={`/freelancers/${user.ulid}`} className="btn secondary">
+                        <Eye size={16} aria-hidden="true" /> Ver meu perfil público
+                      </Link>
+                    </div>
+                  )}
                 </div>
-                <ScoreBadge score={p.freelancer.escamboScore} detailed />
-                <p className="muted tiny">
-                  Qualidade (nota), experiência (contratos), prova social (avaliações) e
-                  responsividade (tempo de resposta), ponderadas em um índice de confiança de 0 a
-                  100.
-                </p>
               </section>
-            )}
-
-            {p.freelancer && user && <AvaliacoesRecebidas userId={user.id} />}
-            {p.freelancer && <DesistenciasCard />}
-
-            <BusinessForm className="card" onSubmit={saveFreelancer}>
-              <h3>
-                <Briefcase size={16} /> Freelancer
-              </h3>
-              <Field label="Nome">
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                  required
-                  minLength={2}
-                />
-              </Field>
-              <Field label="Foto (URL da imagem)">
-                <div className="loc-row">
-                  <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
-                  <Input
-                    type="text"
-                    inputMode="url"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    placeholder="https://…/sua-foto.jpg ou envie do aparelho"
-                    maxLength={512}
-                  />
-                  <ImageUploadButton
-                    purpose="avatar"
-                    label="Enviar foto"
-                    testId="avatar-upload"
-                    onUploaded={(url) => {
-                      setAvatarUrl(url);
-                      toast.success('Foto enviada. Salve o perfil para aplicar.');
-                    }}
-                  />
-                </div>
-              </Field>
-              <Field label="Headline">
-                <Input
-                  value={headline}
-                  onChange={(e) => setHeadline(e.target.value)}
-                  placeholder="Dev Full Stack | 5 anos"
-                />
-              </Field>
-              <Field label="Bio">
-                <Input value={bio} onChange={(e) => setBio(e.target.value)} />
-              </Field>
-              <Field label="Cidade">
-                <Input
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  autoComplete="address-level2"
-                />
-              </Field>
-              <Field label="Estado (UF)">
-                <Input
-                  value={stateUf}
-                  onChange={(e) => setStateUf(e.target.value)}
-                  autoComplete="address-level1"
-                  maxLength={2}
-                  placeholder="SC"
-                />
-              </Field>
-              <div className="stack">
-                <span className="muted tiny" id="days-label">
-                  Dias em que você atende
-                </span>
-                <div className="days-row" role="group" aria-labelledby="days-label">
-                  {WEEKDAY_SHORT.map((label, d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      className={`day-chip ${availableDays.includes(d) ? 'on' : ''}`}
-                      aria-pressed={availableDays.includes(d)}
-                      onClick={() => toggleDay(d)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {availableDays.length === 0 && (
-                  <span className="muted tiny" data-testid="days-hint">
-                    Sem dias marcados, você fica fora do filtro "atende no dia" da busca.
-                  </span>
-                )}
-                {availableDays.length > 0 && (
-                  <div className="periods-grid" data-testid="periods-grid">
-                    {[...availableDays]
-                      .sort((a, b) => a - b)
-                      .map((d) => (
-                        <div key={d} className="periods-row">
-                          <span className="periods-day">{WEEKDAY_SHORT[d]}</span>
-                          {PERIOD_ORDER.map((p) => {
-                            const on = (availablePeriods[String(d)] ?? []).includes(p);
-                            return (
-                              <button
-                                key={p}
-                                type="button"
-                                className={`day-chip period ${on ? 'on' : ''}`}
-                                aria-pressed={on}
-                                aria-label={`${WEEKDAY_SHORT[d]} ${PERIOD_LABEL[p]}`}
-                                onClick={() => togglePeriod(d, p)}
-                              >
-                                {PERIOD_LABEL[p]}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ))}
+              {/* Escambo Score (diferencial #3) — reputação multifator explicável */}
+              {p.freelancer && (
+                <section className="card wide" id="score">
+                  <div className="card-head">
+                    <h3>
+                      <ShieldCheck size={16} /> Escambo Score
+                    </h3>
                     <span className="muted tiny">
-                      Sem período marcado, vale o dia todo. Manhã 6h–12h, tarde 12h–18h, noite
-                      18h–24h no horário de {timezoneLabel(user?.timezone)}, o fuso da sua conta
-                      (muda em "E-mails do Escambo").
+                      <Stars
+                        value={p.freelancer.avgRating}
+                        count={p.freelancer.totalReviews}
+                        size={12}
+                      />{' '}
+                      · {p.freelancer.totalContracts} contratos
                     </span>
                   </div>
-                )}
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    aria-label="Aceitando novos pedidos"
-                    checked={isAvailable}
-                    onChange={(e) => setIsAvailable(e.target.checked)}
-                  />
-                  <span>
-                    {isAvailable
-                      ? 'Aceitando novos pedidos'
-                      : 'Agenda pausada: você não aparece em "atende agora"'}
-                  </span>
-                </label>
-              </div>
-              <div className="stack">
-                <span className="muted tiny">
-                  Localização (é o que faz "Perto de mim" te encontrar)
-                </span>
-                <div className="loc-row">
-                  <Button type="button" variant="secondary" onClick={locateMe} disabled={locating}>
-                    <MapPin size={14} /> {locating ? 'Localizando…' : 'Usar minha localização'}
-                  </Button>
-                  <span className="muted tiny" aria-live="polite">
-                    {lat != null && lng != null
-                      ? `Definida (${lat.toFixed(4)}, ${lng.toFixed(4)})`
-                      : 'Não definida'}
-                  </span>
-                </div>
-              </div>
-              <Button type="submit" disabled={putFreelancer.isPending}>
-                Salvar freelancer
-              </Button>
-            </BusinessForm>
+                  <ScoreBadge score={p.freelancer.escamboScore} detailed />
+                  <p className="muted tiny">
+                    Qualidade (nota), experiência (contratos), prova social (avaliações) e
+                    responsividade (tempo de resposta), ponderadas em um índice de confiança de 0 a
+                    100.
+                  </p>
+                </section>
+              )}
 
-            <BusinessForm className="card" onSubmit={saveClient}>
-              <h3>
-                <User size={16} /> Cliente {p.client && <span className="chip rank">ativo</span>}
-              </h3>
-              <Field label="Nome">
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                  required
-                  minLength={2}
-                />
-              </Field>
-              <Field label="Foto (URL da imagem)">
-                <div className="loc-row">
-                  <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
+              {p.freelancer && user && <AvaliacoesRecebidas userId={user.id} />}
+              {p.freelancer && <DesistenciasCard />}
+
+              <BusinessForm className="card" id="dados-freelancer" onSubmit={saveFreelancer}>
+                <h3>
+                  <Briefcase size={16} /> Freelancer
+                </h3>
+                <Field label="Nome">
                   <Input
-                    type="text"
-                    inputMode="url"
-                    value={avatarUrl}
-                    onChange={(e) => setAvatarUrl(e.target.value)}
-                    placeholder="https://…/sua-foto.jpg ou envie do aparelho"
-                    maxLength={512}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    autoComplete="name"
+                    required
+                    minLength={2}
                   />
-                  <ImageUploadButton
-                    purpose="avatar"
-                    label="Enviar foto"
-                    testId="avatar-upload"
-                    onUploaded={(url) => {
-                      setAvatarUrl(url);
-                      toast.success('Foto enviada. Salve o perfil para aplicar.');
-                    }}
+                </Field>
+                <Field label="Foto (URL da imagem)">
+                  <div className="loc-row">
+                    <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
+                    <Input
+                      type="text"
+                      inputMode="url"
+                      value={avatarUrl}
+                      onChange={(e) => setAvatarUrl(e.target.value)}
+                      placeholder="https://…/sua-foto.jpg ou envie do aparelho"
+                      maxLength={512}
+                    />
+                    <ImageUploadButton
+                      purpose="avatar"
+                      label="Enviar foto"
+                      testId="avatar-upload"
+                      onUploaded={(url) => {
+                        setAvatarUrl(url);
+                        toast.success('Foto enviada. Salve o perfil para aplicar.');
+                      }}
+                    />
+                  </div>
+                </Field>
+                <Field label="Headline">
+                  <Input
+                    value={headline}
+                    onChange={(e) => setHeadline(e.target.value)}
+                    placeholder="Dev Full Stack | 5 anos"
                   />
+                </Field>
+                <Field label="Bio">
+                  <Input value={bio} onChange={(e) => setBio(e.target.value)} />
+                </Field>
+                <Field label="Cidade">
+                  <Input
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    autoComplete="address-level2"
+                  />
+                </Field>
+                <Field label="Estado (UF)">
+                  <Input
+                    value={stateUf}
+                    onChange={(e) => setStateUf(e.target.value)}
+                    autoComplete="address-level1"
+                    maxLength={2}
+                    placeholder="SC"
+                  />
+                </Field>
+                <div className="stack">
+                  <span className="muted tiny" id="days-label">
+                    Dias em que você atende
+                  </span>
+                  <div className="days-row" role="group" aria-labelledby="days-label">
+                    {WEEKDAY_SHORT.map((label, d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        className={`day-chip ${availableDays.includes(d) ? 'on' : ''}`}
+                        aria-pressed={availableDays.includes(d)}
+                        onClick={() => toggleDay(d)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {availableDays.length === 0 && (
+                    <span className="muted tiny" data-testid="days-hint">
+                      Sem dias marcados, você fica fora do filtro "atende no dia" da busca.
+                    </span>
+                  )}
+                  {availableDays.length > 0 && (
+                    <div className="periods-grid" data-testid="periods-grid">
+                      {[...availableDays]
+                        .sort((a, b) => a - b)
+                        .map((d) => (
+                          <div key={d} className="periods-row">
+                            <span className="periods-day">{WEEKDAY_SHORT[d]}</span>
+                            {PERIOD_ORDER.map((p) => {
+                              const on = (availablePeriods[String(d)] ?? []).includes(p);
+                              return (
+                                <button
+                                  key={p}
+                                  type="button"
+                                  className={`day-chip period ${on ? 'on' : ''}`}
+                                  aria-pressed={on}
+                                  aria-label={`${WEEKDAY_SHORT[d]} ${PERIOD_LABEL[p]}`}
+                                  onClick={() => togglePeriod(d, p)}
+                                >
+                                  {PERIOD_LABEL[p]}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      <span className="muted tiny">
+                        Sem período marcado, vale o dia todo. Manhã 6h–12h, tarde 12h–18h, noite
+                        18h–24h no horário de {timezoneLabel(user?.timezone)}, o fuso da sua conta
+                        (muda em "E-mails do Escambo").
+                      </span>
+                    </div>
+                  )}
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      aria-label="Aceitando novos pedidos"
+                      checked={isAvailable}
+                      onChange={(e) => setIsAvailable(e.target.checked)}
+                    />
+                    <span>
+                      {isAvailable
+                        ? 'Aceitando novos pedidos'
+                        : 'Agenda pausada: você não aparece em "atende agora"'}
+                    </span>
+                  </label>
                 </div>
-              </Field>
-              <Field label="Cidade">
-                <Input
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  autoComplete="address-level2"
-                />
-              </Field>
-              <Button type="submit" disabled={putClient.isPending}>
-                Salvar cliente
-              </Button>
-            </BusinessForm>
+                <div className="stack">
+                  <span className="muted tiny">
+                    Localização (é o que faz "Perto de mim" te encontrar)
+                  </span>
+                  <div className="loc-row">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={locateMe}
+                      disabled={locating}
+                    >
+                      <MapPin size={14} /> {locating ? 'Localizando…' : 'Usar minha localização'}
+                    </Button>
+                    <span className="muted tiny" aria-live="polite">
+                      {lat != null && lng != null
+                        ? `Definida (${lat.toFixed(4)}, ${lng.toFixed(4)})`
+                        : 'Não definida'}
+                    </span>
+                  </div>
+                </div>
+                <Button type="submit" disabled={putFreelancer.isPending}>
+                  Salvar freelancer
+                </Button>
+              </BusinessForm>
 
-            <ModeracaoCard />
-            {p.freelancer && <PortfolioCard />}
-            <EmailPreferencesCard />
-            <PushCard />
-            <EmailCard />
-            <TelefoneCard />
-            <SenhaCard />
-            <DoisFatoresCard />
-            <PrivacidadeCard />
+              <BusinessForm className="card" id="dados-cliente" onSubmit={saveClient}>
+                <h3>
+                  <User size={16} /> Cliente {p.client && <span className="chip rank">ativo</span>}
+                </h3>
+                <Field label="Nome">
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    autoComplete="name"
+                    required
+                    minLength={2}
+                  />
+                </Field>
+                <Field label="Foto (URL da imagem)">
+                  <div className="loc-row">
+                    <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
+                    <Input
+                      type="text"
+                      inputMode="url"
+                      value={avatarUrl}
+                      onChange={(e) => setAvatarUrl(e.target.value)}
+                      placeholder="https://…/sua-foto.jpg ou envie do aparelho"
+                      maxLength={512}
+                    />
+                    <ImageUploadButton
+                      purpose="avatar"
+                      label="Enviar foto"
+                      testId="avatar-upload"
+                      onUploaded={(url) => {
+                        setAvatarUrl(url);
+                        toast.success('Foto enviada. Salve o perfil para aplicar.');
+                      }}
+                    />
+                  </div>
+                </Field>
+                <Field label="Cidade">
+                  <Input
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    autoComplete="address-level2"
+                  />
+                </Field>
+                <Button type="submit" disabled={putClient.isPending}>
+                  Salvar cliente
+                </Button>
+              </BusinessForm>
+
+              <ModeracaoCard />
+              {p.freelancer && (
+                <div id="portfolio" className="settings-anchor">
+                  <PortfolioCard />
+                </div>
+              )}
+              <EmailPreferencesCard />
+              <PushCard />
+              <EmailCard />
+              <TelefoneCard />
+              <div id="senha" className="settings-anchor">
+                <SenhaCard />
+              </div>
+              <DoisFatoresCard />
+              <div id="privacidade" className="settings-anchor">
+                <PrivacidadeCard />
+              </div>
+            </div>
           </div>
         )}
       </QueryState>

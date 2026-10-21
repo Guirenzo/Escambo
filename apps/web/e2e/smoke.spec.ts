@@ -3,7 +3,9 @@ import {
   completeContract,
   createService,
   createUser,
+  navTo,
   openAs,
+  openLanding,
   PASSWORD,
   settled,
   topUp,
@@ -23,11 +25,44 @@ test('login pelo formulário leva ao dashboard', async ({ page, request }) => {
   await page.locator('form button[type="submit"]').click();
 
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole('heading', { name: /^Olá,/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /^(Bom dia|Boa tarde|Boa noite),/ }),
+  ).toBeVisible();
   await settled(page);
   // KPIs do dashboard renderizados
   await expect(page.getByText('Saldo disponível')).toBeVisible();
   await expect(page.getByText('Créditos Escambo').first()).toBeVisible();
+});
+
+test('página inicial: criar conta pelo lado escolhido, e a categoria volta filtrada depois do login', async ({
+  page,
+  request,
+}) => {
+  await openLanding(page);
+  await expect(page).toHaveTitle('Contrate ou troque serviços · Escambo');
+  await page.getByRole('link', { name: /Criar conta de freelancer/ }).click();
+  await expect(page).toHaveURL(/\/cadastro\?perfil=freelancer$/);
+  await expect(page.getByRole('heading', { name: 'Crie sua conta' })).toBeVisible();
+  await expect(page.getByLabel('Eu sou')).toHaveValue('freelancer');
+  await expect(page).toHaveTitle('Criar conta · Escambo');
+  // A marca volta à página inicial.
+  await page.getByRole('link', { name: 'Escambo' }).click();
+  await expect(page).toHaveURL(/\/$/);
+
+  // Categoria sem sessão: pede o login e, depois de entrar, abre a busca já filtrada por ela.
+  const user = await createUser(request, 'client');
+  await expect(page.locator('#categorias')).toBeVisible();
+  const chip = page.locator('#categorias .lp-chip').first();
+  const href = (await chip.getAttribute('href')) ?? '';
+  const id = new URL(href, 'http://localhost').searchParams.get('categoria') ?? '';
+  expect(id, 'a categoria vai no endereço').toMatch(/^\d+$/);
+  await chip.click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.getByLabel('E-mail').fill(user.email);
+  await page.getByLabel('Senha').fill(PASSWORD);
+  await page.locator('form button[type="submit"]').click();
+  await expect(page).toHaveURL(/\/servicos$/);
+  await expect(page.getByRole('combobox', { name: 'Categoria' })).toHaveValue(id);
 });
 
 test('rota protegida sem sessão redireciona para o login', async ({ page }) => {
@@ -62,7 +97,7 @@ test('cliente contrata um serviço, cai na sala do contrato e conversa no chat',
 
   // sala do contrato
   await expect(page).toHaveURL(/\/contratos\/\d+$/);
-  await expect(page.getByRole('heading', { name: service.title })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: service.title })).toBeVisible();
   await expect(page.locator('.pill', { hasText: 'Pendente' })).toBeVisible();
   await expect(page.getByText('Linha do tempo')).toBeVisible();
 
@@ -72,13 +107,13 @@ test('cliente contrata um serviço, cai na sala do contrato e conversa no chat',
   await page.getByRole('button', { name: 'Enviar', exact: true }).click();
   await expect(page.locator('.bubble.mine', { hasText: msg })).toBeVisible();
 
-  // o contrato aparece na lista do cliente
+  // o contrato aparece na lista do cliente (um cartão por contratação, com o título como nome)
   await page.goto('/');
   await settled(page);
-  await expect(page.getByRole('row', { name: new RegExp(service.title) })).toBeVisible();
+  await expect(page.getByRole('article', { name: service.title })).toBeVisible();
 });
 
-test('navegação principal funciona (sidebar / barra inferior no mobile)', async ({
+test('navegação principal funciona (lateral / barra inferior com "Mais" no mobile)', async ({
   page,
   request,
 }, testInfo) => {
@@ -95,6 +130,12 @@ test('navegação principal funciona (sidebar / barra inferior no mobile)', asyn
     expect(box, 'sidebar deve ter caixa').not.toBeNull();
     expect(box!.y + box!.height).toBeGreaterThan(viewport.height - 2);
     expect(box!.height).toBeLessThan(120);
+    // Cinco itens com rótulo: Início, Serviços, Trocas, Carteira e "Mais" (o resto fica nele).
+    const principal = page.getByRole('navigation', { name: 'Principal' });
+    for (const name of ['Início', 'Serviços', 'Trocas', 'Carteira'])
+      await expect(principal.getByRole('link', { name, exact: true })).toBeVisible();
+    await expect(principal.getByRole('button', { name: 'Mais' })).toBeVisible();
+    await expect(principal.getByRole('link', { name: 'Ranking', exact: true })).toBeHidden();
   }
 
   const noHorizontalScroll = async (where: string): Promise<void> => {
@@ -111,7 +152,7 @@ test('navegação principal funciona (sidebar / barra inferior no mobile)', asyn
     ['Carteira', '/carteira', 'Carteira'],
     ['Perfil', '/perfil', 'Perfil'],
   ] as const) {
-    await nav.getByRole('link', { name: label }).click();
+    await navTo(page, label);
     await expect(page).toHaveURL(new RegExp(`${path}$`));
     await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
     await settled(page);
@@ -132,7 +173,7 @@ test('cliente avalia a contratação concluída e a nota aparece no perfil do fr
   // Dashboard do cliente oferece "Avaliar" na contratação concluída → sala com o formulário.
   await openAs(page, client, '/');
   await settled(page);
-  const row = page.getByRole('row', { name: new RegExp(service.title) });
+  const row = page.getByRole('article', { name: service.title });
   await row.getByRole('button', { name: 'Avaliar' }).click();
   await expect(page).toHaveURL(new RegExp(`/contratos/${contractId}$`));
 

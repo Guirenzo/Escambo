@@ -61,9 +61,12 @@ const BOOSTED_EXISTS =
 const BOOST_JOIN =
   "LEFT JOIN (SELECT DISTINCT service_id FROM boosts WHERE status = 'active' AND expires_at > NOW()) AS ab ON ab.service_id = s.id";
 
+/** A capa do card: a primeira imagem do portfólio de quem presta (só na linha devolvida). */
+const COVER =
+  '(SELECT i.image_url FROM freelancer_portfolio_items i WHERE i.freelancer_id = pf.id AND i.image_url IS NOT NULL ORDER BY i.sort_order ASC, i.id ASC LIMIT 1) AS owner_cover_url';
+
 /** Quem presta o serviço, nas colunas da linha devolvida. */
-const OWNER =
-  'u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, pf.available_days AS owner_available_days, pf.available_periods AS owner_available_periods, pf.is_available AS owner_is_available, u.timezone AS owner_timezone';
+const OWNER = `u.ulid AS owner_ulid, pf.full_name AS owner_name, pf.avatar_url AS owner_avatar_url, pf.avg_rating AS owner_avg_rating, pf.total_reviews AS owner_total_reviews, pf.available_days AS owner_available_days, pf.available_periods AS owner_available_periods, pf.is_available AS owner_is_available, u.timezone AS owner_timezone, pf.city AS owner_city, ${COVER}`;
 
 const PROFILE_JOIN = 'LEFT JOIN profiles_freelancer pf ON pf.user_id = s.user_id';
 
@@ -344,9 +347,18 @@ describe('servicesRepository', () => {
         'pf.available_periods AS owner_available_periods',
         'pf.is_available AS owner_is_available',
         'u.timezone AS owner_timezone',
+        'pf.city AS owner_city',
       ]) {
         expect(sql).toContain(column);
       }
+    });
+
+    it('a capa do card é a primeira imagem do portfólio de quem presta, na ordem dele, e só a imagem', async () => {
+      const { sql } = await runList();
+      expect(sql).toContain(`, ${COVER} FROM (`);
+      expect(sql.split('freelancer_portfolio_items')).toHaveLength(2);
+      // A capa só sai na linha devolvida: a página de ids não lê o portfólio.
+      expect(pageKeysOf(sql)).not.toContain('portfolio');
     });
 
     it('a paginação entra como LIMIT e OFFSET na página de ids; a consulta de fora só reordena a página', async () => {
@@ -354,7 +366,8 @@ describe('servicesRepository', () => {
       expect(pageOrderOf(sql)).toBe(
         'boosted DESC, s.created_at DESC, s.id DESC LIMIT 50 OFFSET 100',
       );
-      expect(sql.match(/ LIMIT /g)).toHaveLength(1);
+      // O LIMIT 1 da capa é da subconsulta de cada linha, não da paginação.
+      expect(sql.replace(COVER, '').match(/ LIMIT /g)).toHaveLength(1);
       expect(fromLast(sql, ') AS page ')).not.toContain('LIMIT');
       expect(params).toEqual({});
     });
@@ -738,7 +751,7 @@ describe('servicesRepository', () => {
     const geo = { lat: -26.3, lng: -48.85 };
     /** Haversine em km (raio da Terra 6371), com o LEAST que protege o ACOS de passar de 1. */
     const DISTANCE =
-      '(6371 * ACOS(LEAST(1.0, COS(RADIANS(:lat)) * COS(RADIANS(pf.latitude)) * COS(RADIANS(pf.longitude) - RADIANS(:lng)) + SIN(RADIANS(:lat)) * SIN(RADIANS(pf.latitude)))))';
+      '(6371 * ACOS(LEAST(1.0, COS(RADIANS(:lat)) * COS(RADIANS(ROUND(pf.latitude, 2))) * COS(RADIANS(ROUND(pf.longitude, 2)) - RADIANS(:lng)) + SIN(RADIANS(:lat)) * SIN(RADIANS(ROUND(pf.latitude, 2))))))';
 
     it('calcula a distância do prestador ao ponto, corta pelo raio e ordena por destaque e proximidade', async () => {
       const rows = [{ id: 1, distance_km: '1.2' }];
