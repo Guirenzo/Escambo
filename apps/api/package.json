@@ -34,7 +34,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.4.0",
     "mysql2": "^3.24.6",
-    "nodemailer": "^10.1.2",
+    "nodemailer": "^10.2.0",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
     "sharp": "^0.35.5",
