@@ -1,4 +1,10 @@
-import type { Paginated, Service, ServiceModality, ServicePriceType } from '@escambo/types';
+import type {
+  Paginated,
+  Service,
+  ServiceModality,
+  ServicePackage,
+  ServicePriceType,
+} from '@escambo/types';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { servicesRepository, type ServiceRow } from './services.repository';
@@ -8,6 +14,12 @@ import { settingsService } from '../settings/settings.service';
 import { isAvailableNow, parsePeriods, slotsByZone } from '../profiles/availability';
 import { timezoneOf } from '../../utils/timezone';
 import { serviceViews, viewKey, type Viewer } from './service-views';
+import {
+  derivePackageListing,
+  MIN_CONTRACT_PRICE,
+  PACKAGE_TIER_LABEL,
+  PACKAGE_TIERS,
+} from './service-packages';
 
 /**
  * Modalidade (RF-023) a partir das duas colunas: is_remote = atende remoto, is_onsite = atende
@@ -39,7 +51,7 @@ function requestedModality(input: {
   return input.isRemote ? 'remote' : 'onsite';
 }
 
-function toService(row: ServiceRow, tags: string[] = []): Service {
+function toService(row: ServiceRow, tags: string[] = [], packages: ServicePackage[] = []): Service {
   return {
     id: row.id,
     categoryId: row.category_id,
@@ -52,6 +64,7 @@ function toService(row: ServiceRow, tags: string[] = []): Service {
     isRemote: Boolean(row.is_remote),
     modality: modalityOf(row),
     tags,
+    packages,
     isActive: Boolean(row.is_active),
     createdAt:
       row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
@@ -99,6 +112,64 @@ async function assertMinPrice(priceType: string, price: number | null | undefine
   }
 }
 
+const brl = (value: number): string => `R$ ${value.toFixed(2).replace('.', ',')}`;
+
+/**
+ * RN-068 com RN-016 e RN-027: cada pacote custa pelo menos o maior entre o mínimo do serviço
+ * (painel) e o da contratação (R$ 10,00), e o preço não desce do Básico ao Premium.
+ */
+async function assertPackagePrices(packages: readonly ServicePackage[]): Promise<void> {
+  const min = Math.max(MIN_CONTRACT_PRICE, await settingsService.minServicePrice());
+  for (const pkg of packages) {
+    if (pkg.price < min) {
+      throw new HttpError(
+        422,
+        `O pacote ${PACKAGE_TIER_LABEL[pkg.tier]} custa menos que o mínimo de ${brl(min)} (RN-016)`,
+        'price_below_minimum',
+      );
+    }
+  }
+  const ordered = [...packages].sort(
+    (a, b) => PACKAGE_TIERS.indexOf(a.tier) - PACKAGE_TIERS.indexOf(b.tier),
+  );
+  for (let i = 1; i < ordered.length; i++) {
+    const lower = ordered[i - 1]!;
+    const pkg = ordered[i]!;
+    if (Math.round(pkg.price * 100) < Math.round(lower.price * 100)) {
+      throw new HttpError(
+        422,
+        `O preço sobe do Básico ao Premium: o ${PACKAGE_TIER_LABEL[pkg.tier]} não pode custar menos que o ${PACKAGE_TIER_LABEL[lower.tier]} (RN-068)`,
+        'package_price_order',
+      );
+    }
+  }
+}
+
+/** Pacote só existe no preço fixo (ADR 69): por hora ou a combinar não tem preço de nível. */
+function assertPackagesFixed(priceType: string): void {
+  if (priceType !== 'fixed') {
+    throw new HttpError(
+      422,
+      'Pacotes só no preço fixo: mude o tipo de preço ou tire os pacotes',
+      'packages_require_fixed_price',
+    );
+  }
+}
+
+/** Com pacotes, o preço e o prazo do anúncio são os do Básico: mandar outro junto é 422. */
+function assertNoListingWithPackages(input: {
+  price?: number | null;
+  deliveryDays?: number | null;
+}): void {
+  if (input.price != null || input.deliveryDays != null) {
+    throw new HttpError(
+      422,
+      'Com pacotes, o preço e o prazo do serviço são os do Básico: não envie price nem deliveryDays',
+      'price_from_packages',
+    );
+  }
+}
+
 /** Só se publica em categoria que existe e está ativa (a inexistente estouraria a FK em 500). */
 async function assertCategory(categoryId: number): Promise<void> {
   if (!(await servicesRepository.categoryIsActive(categoryId))) {
@@ -106,16 +177,29 @@ async function assertCategory(categoryId: number): Promise<void> {
   }
 }
 
-/** As linhas com as tags de cada uma, lidas numa consulta só (RF-024; sem uma consulta por card). */
-async function withTags(rows: ServiceRow[]): Promise<Array<{ row: ServiceRow; tags: string[] }>> {
-  const tags = await servicesRepository.tagsByServiceIds(rows.map((r) => r.id));
-  return rows.map((row) => ({ row, tags: tags.get(row.id) ?? [] }));
+/**
+ * As linhas com as tags e os pacotes de cada uma: uma consulta para as tags e outra para os
+ * pacotes, da página inteira (RF-024, RF-086; nunca uma consulta por card).
+ */
+async function withTags(
+  rows: ServiceRow[],
+): Promise<Array<{ row: ServiceRow; tags: string[]; packages: ServicePackage[] }>> {
+  const ids = rows.map((r) => r.id);
+  const [tags, packages] = await Promise.all([
+    servicesRepository.tagsByServiceIds(ids),
+    servicesRepository.packagesByServiceIds(ids),
+  ]);
+  return rows.map((row) => ({
+    row,
+    tags: tags.get(row.id) ?? [],
+    packages: packages.get(row.id) ?? [],
+  }));
 }
 
-/** Um serviço com as tags dele, como a API devolve. */
+/** Um serviço com as tags e os pacotes dele, como a API devolve. */
 async function serviceWithTags(row: ServiceRow): Promise<Service> {
   const [item] = await withTags([row]);
-  return toService(item!.row, item!.tags);
+  return toService(item!.row, item!.tags, item!.packages);
 }
 
 /**
@@ -134,7 +218,18 @@ async function countView(row: ServiceRow, viewer: Viewer): Promise<void> {
 
 export const servicesService = {
   async create(ownerId: number, input: CreateServiceInput): Promise<Service> {
-    await assertMinPrice(input.priceType, input.price);
+    const packages = input.packages ?? [];
+    // RF-086: com pacotes, preço fixo, e o preço e o prazo do anúncio são os do Básico.
+    if (packages.length > 0) {
+      assertPackagesFixed(input.priceType);
+      assertNoListingWithPackages(input);
+      await assertPackagePrices(packages);
+    }
+    const listing =
+      packages.length > 0
+        ? derivePackageListing(packages)
+        : { price: input.price ?? null, deliveryDays: input.deliveryDays ?? null };
+    await assertMinPrice(input.priceType, listing.price);
     await assertCategory(input.categoryId);
     const id = await servicesRepository.create({
       userId: ownerId,
@@ -142,10 +237,11 @@ export const servicesService = {
       title: input.title,
       description: input.description,
       priceType: input.priceType,
-      price: input.price ?? null,
-      deliveryDays: input.deliveryDays ?? null,
+      price: listing.price,
+      deliveryDays: listing.deliveryDays,
       ...modalityColumns(requestedModality(input) ?? 'onsite'),
       tags: input.tags ?? [],
+      packages,
     });
     const row = await servicesRepository.findById(id);
     if (!row) throw new HttpError(500, 'Falha ao criar serviço', 'create_failed');
@@ -175,7 +271,9 @@ export const servicesService = {
       limit: input.limit,
       offset: (input.page - 1) * input.limit,
     });
-    const items = (await withTags(rows)).map(({ row, tags }) => toService(row, tags));
+    const items = (await withTags(rows)).map(({ row, tags, packages }) =>
+      toService(row, tags, packages),
+    );
     return { items, page: input.page, limit: input.limit };
   },
 
@@ -185,8 +283,8 @@ export const servicesService = {
    */
   async listMine(ownerId: number): Promise<Service[]> {
     const rows = await servicesRepository.listByOwner(ownerId);
-    return (await withTags(rows)).map(({ row, tags }) => ({
-      ...toService(row, tags),
+    return (await withTags(rows)).map(({ row, tags, packages }) => ({
+      ...toService(row, tags, packages),
       viewsCount: Number(row.views_count ?? 0),
     }));
   },
@@ -207,8 +305,25 @@ export const servicesService = {
     }
     // RN-016 vale para o serviço como fica depois da edição: price null é tirar o preço.
     const priceType = input.priceType ?? row.price_type;
-    const price =
-      input.price !== undefined ? input.price : row.price == null ? null : Number(row.price);
+    // RF-086: os pacotes como ficam depois da edição. Sem `packages` no corpo, ficam os de agora.
+    const packages =
+      input.packages ?? (await servicesRepository.packagesByServiceIds([id])).get(id) ?? [];
+    const listing = packages.length > 0 ? derivePackageListing(packages) : null;
+    if (listing) {
+      // Pacotes novos, ou o tipo de preço mudando com os pacotes de agora: só no preço fixo.
+      if (input.packages !== undefined || input.priceType !== undefined) {
+        assertPackagesFixed(priceType);
+      }
+      assertNoListingWithPackages(input);
+      if (input.packages !== undefined) await assertPackagePrices(packages);
+    }
+    const price = listing
+      ? listing.price
+      : input.price !== undefined
+        ? input.price
+        : row.price == null
+          ? null
+          : Number(row.price);
     if (priceType === 'fixed' && price == null) {
       throw new HttpError(422, 'Preço obrigatório para preço fixo (RN-016)', 'price_required');
     }
@@ -223,8 +338,9 @@ export const servicesService = {
     if (input.title !== undefined) fields.title = input.title;
     if (input.description !== undefined) fields.description = input.description;
     if (input.priceType !== undefined) fields.price_type = input.priceType;
-    if (input.price !== undefined) fields.price = input.price;
-    if (input.deliveryDays !== undefined) fields.delivery_days = input.deliveryDays;
+    // Com pacotes, price e deliveryDays nulos no corpo não tiram o "a partir de" do Básico.
+    if (input.price !== undefined && !listing) fields.price = input.price;
+    if (input.deliveryDays !== undefined && !listing) fields.delivery_days = input.deliveryDays;
     const modality = requestedModality(input);
     if (modality !== undefined) {
       const { isRemote, isOnsite } = modalityColumns(modality);
@@ -232,8 +348,14 @@ export const servicesService = {
       fields.is_onsite = isOnsite ? 1 : 0;
     }
     if (input.isActive !== undefined) fields.is_active = input.isActive ? 1 : 0;
+    // Com pacotes novos, o anúncio guarda o preço e o prazo do Básico (busca, ordem e troca leem
+    // dali), na mesma transação que grava os pacotes.
+    if (listing && input.packages !== undefined) {
+      fields.price = listing.price;
+      fields.delivery_days = listing.deliveryDays;
+    }
 
-    await servicesRepository.update(id, fields, input.tags);
+    await servicesRepository.update(id, fields, input.tags, input.packages);
     const updated = await servicesRepository.findById(id);
     return serviceWithTags(updated!);
   },

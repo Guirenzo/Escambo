@@ -8,6 +8,7 @@ import {
   openLanding,
   pngFixture,
   settled,
+  topUp,
   uploadImage,
   type TestUser,
 } from './helpers';
@@ -210,6 +211,35 @@ for (const [criterion, css] of [
       },
     });
     expect(report.ok(), await report.text()).toBeTruthy();
+    // Um serviço com pacotes de nomes e itens compridos (RF-086) e a contratação do Premium.
+    const packaged = await createService(request, other, 0, 0, {
+      packages: (['basic', 'standard', 'premium'] as const).map((tier, i) => ({
+        tier,
+        name: `${['Essencial', 'Completo', 'Identidade visual completa'][i]} da padaria do bairro`,
+        description: 'Arquivos prontos para impressão e para as redes sociais da marca.',
+        price: 150 * (i + 1),
+        deliveryDays: 3 + i * 4,
+        revisions: 2 + i,
+        features: ['Manual da marca com as cores e as fontes', 'Kit para as redes sociais'].slice(
+          0,
+          i + 1,
+        ),
+      })),
+    });
+    await topUp(request, client, 450);
+    const packageContract = await request.post('/api/contracts', {
+      headers: h(client.token),
+      data: {
+        freelancerId: other.id,
+        serviceId: packaged.id,
+        title: 'Identidade visual completa da padaria',
+        description: 'Contratação do pacote Premium para a padaria do bairro.',
+        price: 450,
+        packageTier: 'premium',
+      },
+    });
+    expect(packageContract.ok(), await packageContract.text()).toBeTruthy();
+    const packageContractId = ((await packageContract.json()) as { id: number }).id;
     const { ulid } = (await (
       await request.get('/api/auth/me', { headers: h(freelancer.token) })
     ).json()) as { ulid: string };
@@ -259,6 +289,8 @@ for (const [criterion, css] of [
       '/perfil',
       '/suporte',
       `/contratos/${contractId}`,
+      `/servicos/${packaged.id}`,
+      `/contratos/${packageContractId}`,
     ])
       await visit(client, path);
     await visit(freelancer, '/');

@@ -37,8 +37,8 @@ const sqlSent = (): string[] => query.mock.calls.map((c) => String(c[0]));
 describe('cópia de dados 1.12 (ADR 54, 56, 61, 66, RF-059 e RF-017)', () => {
   it('declara o formato novo e as seções novas, mesmo vazias', async () => {
     const out = await buildExport(7);
-    expect(EXPORT_FORMAT_VERSION).toBe('1.12');
-    expect(out.formato).toBe('escambo-export/1.12');
+    expect(EXPORT_FORMAT_VERSION).toBe('1.13');
+    expect(out.formato).toBe('escambo-export/1.13');
     // 1.12: a verificação em duas etapas; sem a linha, desligada e sem códigos.
     expect(out).toHaveProperty('mfa', { enabled: false, confirmedAt: null, recoveryCodesLeft: 0 });
     expect(out).toHaveProperty('ofertas', []);
@@ -430,7 +430,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
     }
 
     expect(out).toEqual({
-      formato: 'escambo-export/1.12',
+      formato: 'escambo-export/1.13',
       exportadoEm: '2026-10-01T12:00:00.000Z',
       titular: { id: 7, ulid: '01USER', email: 'ana@escambo.test', push_quiet_pass: null },
       perfis: { freelancer: { full_name: 'Ana Freela' }, cliente: { full_name: 'Ana Cliente' } },
@@ -617,5 +617,17 @@ describe('arquivos da exportação (DATA_DIR/exports)', () => {
     expect(err!.code).toMatch(/^E[A-Z]+$/);
     expect(err!.code).not.toBe('ENOENT');
     expect(existsSync(path.join(exportsDir(), 'presa.json'))).toBe(true);
+  });
+});
+
+describe('cópia de dados 1.13: pacotes (RF-086)', () => {
+  it('cada serviço traz os pacotes dele e cada contratação, o pacote contratado', async () => {
+    await buildExport(7);
+    const services = sqlSent().find((s) => s.includes('FROM services WHERE'))!;
+    expect(services).toContain('FROM service_packages sp');
+    expect(services).toContain('WHERE sp.service_id = services.id) AS packages');
+    expect(services).toContain("'revisions', sp.revisions");
+    const contracts = sqlSent().find((s) => s.includes('FROM contracts WHERE'))!;
+    expect(contracts).toContain('package_tier, package_snapshot');
   });
 });

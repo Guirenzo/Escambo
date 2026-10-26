@@ -66,7 +66,10 @@ vi.mock('../settings/settings.repository', () => ({
 // O create confere quem é contratado e o serviço da proposta antes de gravar (ADR 60).
 vi.mock('../auth/auth.repository', () => ({ authRepository: { findById: vi.fn() } }));
 vi.mock('../services/services.repository', () => ({
-  servicesRepository: { findById: vi.fn() },
+  servicesRepository: {
+    findById: vi.fn(),
+    packagesByServiceIds: vi.fn().mockResolvedValue(new Map()),
+  },
 }));
 
 import { setClockForTests } from '../../utils/clock';
@@ -1902,6 +1905,7 @@ describe('a contratação como a API devolve (ADR 57)', () => {
       approvalDueAt: null,
       proposalExpiresAt: null,
       revisionRequestedAt: null,
+      package: null,
       history: [],
       review: null,
       milestones: [],

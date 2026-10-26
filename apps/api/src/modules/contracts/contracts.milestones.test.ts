@@ -63,7 +63,10 @@ vi.mock('../reviews/reviews.repository', () => ({
 // O create confere quem é contratado antes de gravar (ADR 60); as propostas daqui vêm sem serviço.
 vi.mock('../auth/auth.repository', () => ({ authRepository: { findById: vi.fn() } }));
 vi.mock('../services/services.repository', () => ({
-  servicesRepository: { findById: vi.fn() },
+  servicesRepository: {
+    findById: vi.fn(),
+    packagesByServiceIds: vi.fn().mockResolvedValue(new Map()),
+  },
 }));
 
 import { logger } from '../../config/logger';

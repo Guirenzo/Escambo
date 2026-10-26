@@ -1,4 +1,4 @@
-import type { BrazilTimezone, OfferOutcome } from '@escambo/types';
+import type { BrazilTimezone, OfferOutcome, PackageTier, ServicePackage } from '@escambo/types';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import type { PoolConnection } from 'mysql2/promise';
 import { pool } from '../../config/db';
@@ -80,6 +80,10 @@ export interface ContractRow extends RowDataPacket {
   next_milestone_dispute_opens_at?: Date | null;
   freelancer_timezone?: string | null;
   client_timezone?: string | null;
+  /** RF-086 (0051): o nível contratado; NULL sem pacote. */
+  package_tier?: PackageTier | null;
+  /** A cópia do pacote como estava publicado (JSON; o driver pode devolver texto). */
+  package_snapshot?: unknown;
 }
 
 export interface DeliveryRow extends RowDataPacket {
@@ -165,15 +169,34 @@ export const contractsRepository = {
     milestones?: MilestoneSpec[] | null;
     /** Origem da primeira linha do histórico (status-history.ts). */
     source: StatusChangeSource;
+    /** Revisões sem custo por entrega e por marco (RN-023): as do pacote, ou 2. */
+    revisionLimit?: number;
+    /** RF-086: o nível e a cópia do pacote, sempre juntos (ou nenhum dos dois). */
+    packageTier?: PackageTier | null;
+    packageSnapshot?: ServicePackage | null;
   }): Promise<number | null> {
     // DATETIME recebe Date (o driver serializa em UTC); string ISO com "T"/"Z" o MySQL recusa.
-    const { hold, milestones, deadlineAt, source, ...rest } = data;
+    const {
+      hold,
+      milestones,
+      deadlineAt,
+      source,
+      revisionLimit = INCLUDED_REVISIONS,
+      packageTier,
+      packageSnapshot,
+      ...rest
+    } = data;
+    if (Boolean(packageTier) !== Boolean(packageSnapshot)) {
+      throw new Error('contracts.create: package_tier e package_snapshot andam juntos');
+    }
     const row = {
       ...rest,
       feePercentage:
         data.feePercentage ??
         feePctOf({ fee_percentage: null, price: data.price, platform_fee: data.platformFee }),
-      revisionLimit: INCLUDED_REVISIONS,
+      revisionLimit,
+      packageTier: packageTier ?? null,
+      packageSnapshot: packageSnapshot ? JSON.stringify(packageSnapshot) : null,
       deadlineAt: deadlineAt ? new Date(deadlineAt) : null,
     };
     const conn = await pool.getConnection();
@@ -202,9 +225,9 @@ export const contractsRepository = {
       }
       const [res] = await conn.query<ResultSetHeader>(
         `INSERT INTO contracts
-           (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, fee_percentage, revision_limit, payment_mode, deadline_at, proposal_expires_at, created_at)
+           (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, fee_percentage, revision_limit, payment_mode, deadline_at, proposal_expires_at, created_at, package_tier, package_snapshot)
          VALUES
-           (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, :platformFee, :freelancerNet, :feePercentage, :revisionLimit, :paymentMode, :deadlineAt, :proposalExpiresAt, :createdAt)`,
+           (:ulid, :clientId, :freelancerId, :serviceId, :title, :description, :price, :platformFee, :freelancerNet, :feePercentage, :revisionLimit, :paymentMode, :deadlineAt, :proposalExpiresAt, :createdAt, :packageTier, :packageSnapshot)`,
         row,
       );
       const id = res.insertId;
@@ -229,7 +252,7 @@ export const contractsRepository = {
         }
       }
       if (milestones && milestones.length > 0) {
-        await milestonesRepository.insertMany(conn, id, milestones);
+        await milestonesRepository.insertMany(conn, id, milestones, revisionLimit);
       }
       const offerMilestones = milestones?.length
         ? (await milestonesRepository.listForContract(id, conn)).map((m) => ({

@@ -2,10 +2,11 @@ import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { coarseCoordSql } from '../../utils/coarse-coord';
 import type { PoolConnection } from 'mysql2/promise';
 import { inTransaction, pool } from '../../config/db';
-import type { AvailabilityPeriod } from '@escambo/types';
+import type { AvailabilityPeriod, ServicePackage } from '@escambo/types';
 import type { Slot, ZoneSlots } from '../profiles/availability';
 import { DEFAULT_TIMEZONE } from '../../utils/timezone';
 import { parseTextSearch } from './service-search';
+import { packageFromRow, PACKAGE_TIERS } from './service-packages';
 import { tagSlug } from './service-tags';
 
 export interface ServiceRow extends RowDataPacket {
@@ -223,6 +224,43 @@ async function writeTags(conn: PoolConnection, serviceId: number, tags: string[]
   );
 }
 
+/**
+ * Grava os pacotes do serviço (RF-086, já validados e em ordem): o nível que já existe é
+ * atualizado no lugar (UNIQUE uq_service_tier) e o que não veio sai. Lista vazia tira todos.
+ */
+async function writePackages(
+  conn: PoolConnection,
+  serviceId: number,
+  packages: readonly ServicePackage[],
+): Promise<void> {
+  for (const pkg of packages) {
+    await conn.query<ResultSetHeader>(
+      `INSERT INTO service_packages
+         (service_id, tier, name, description, price, delivery_days, revisions, features, is_active)
+       VALUES (:serviceId, :tier, :name, :description, :price, :deliveryDays, :revisions, :features, 1)
+       ON DUPLICATE KEY UPDATE name = :name, description = :description, price = :price,
+         delivery_days = :deliveryDays, revisions = :revisions, features = :features, is_active = 1`,
+      {
+        serviceId,
+        tier: pkg.tier,
+        name: pkg.name,
+        description: pkg.description,
+        price: pkg.price,
+        deliveryDays: pkg.deliveryDays,
+        revisions: pkg.revisions,
+        features: JSON.stringify(pkg.features),
+      },
+    );
+  }
+  const kept = packages.map((p) => p.tier);
+  await conn.query<ResultSetHeader>(
+    kept.length > 0
+      ? `DELETE FROM service_packages WHERE service_id = :serviceId AND tier NOT IN (:kept)`
+      : `DELETE FROM service_packages WHERE service_id = :serviceId`,
+    kept.length > 0 ? { serviceId, kept } : { serviceId },
+  );
+}
+
 /** Impulsionamento ativo do serviço (ranqueia no topo e trava o "Impulsionar" do dono). */
 const BOOSTED_EXPR = `EXISTS(SELECT 1 FROM boosts bo
         WHERE bo.service_id = s.id AND bo.status = 'active' AND bo.expires_at > NOW())`;
@@ -251,9 +289,11 @@ export const servicesRepository = {
     isRemote: boolean;
     isOnsite: boolean;
     tags: string[];
+    /** RF-086: os pacotes, já em ordem; com eles, price e deliveryDays são os do Básico. */
+    packages?: readonly ServicePackage[];
   }): Promise<number> {
-    // O serviço e as tags juntos: tag que falha não deixa serviço publicado pela metade.
-    const { tags, ...service } = data;
+    // O serviço, as tags e os pacotes juntos: nada fica publicado pela metade.
+    const { tags, packages = [], ...service } = data;
     return inTransaction(async (conn) => {
       const [res] = await conn.query<ResultSetHeader>(
         `INSERT INTO services (user_id, category_id, title, description, price_type, price, delivery_days, is_remote, is_onsite)
@@ -261,6 +301,7 @@ export const servicesRepository = {
         { ...service, isRemote: service.isRemote ? 1 : 0, isOnsite: service.isOnsite ? 1 : 0 },
       );
       await writeTags(conn, res.insertId, tags);
+      if (packages.length > 0) await writePackages(conn, res.insertId, packages);
       return res.insertId;
     });
   },
@@ -317,6 +358,34 @@ export const servicesRepository = {
       tags.set(id, [...(tags.get(id) ?? []), String(row.name)]);
     }
     return tags;
+  },
+
+  /**
+   * Os pacotes ativos de vários serviços numa consulta só (RF-086), do Básico ao Premium (a ordem
+   * do ENUM). Serviço sem pacote não aparece no mapa.
+   */
+  async packagesByServiceIds(ids: number[]): Promise<Map<number, ServicePackage[]>> {
+    const packages = new Map<number, ServicePackage[]>();
+    if (ids.length === 0) return packages;
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT service_id, tier, name, description, price, delivery_days, revisions, features
+         FROM service_packages
+        WHERE service_id IN (:ids) AND is_active = 1
+        ORDER BY service_id, tier`,
+      { ids },
+    );
+    for (const row of rows) {
+      const id = Number(row.service_id);
+      packages.set(id, [
+        ...(packages.get(id) ?? []),
+        packageFromRow(row as Parameters<typeof packageFromRow>[0]),
+      ]);
+    }
+    // A ordem do ENUM já é a dos níveis; a conferência aqui só protege de um ENUM mexido à mão.
+    for (const list of packages.values()) {
+      list.sort((a, b) => PACKAGE_TIERS.indexOf(a.tier) - PACKAGE_TIERS.indexOf(b.tier));
+    }
+    return packages;
   },
 
   /**
@@ -518,13 +587,21 @@ export const servicesRepository = {
     return rows;
   },
 
-  /** Edita as colunas e, com `tags`, troca a lista de tags inteira (na mesma transação). */
-  async update(id: number, fields: Record<string, unknown>, tags?: string[]): Promise<void> {
+  /**
+   * Edita as colunas e, com `tags` ou `packages`, troca a lista inteira (na mesma transação: o
+   * preço "a partir de" e os pacotes mudam juntos).
+   */
+  async update(
+    id: number,
+    fields: Record<string, unknown>,
+    tags?: string[],
+    packages?: readonly ServicePackage[],
+  ): Promise<void> {
     const keys = Object.keys(fields);
-    if (keys.length === 0 && tags === undefined) return;
+    if (keys.length === 0 && tags === undefined && packages === undefined) return;
     // As chaves vêm de um mapeamento fixo no service (nunca do usuário) — sem risco de injeção.
     const setClause = keys.map((k) => `${k} = :${k}`).join(', ');
-    if (tags === undefined) {
+    if (tags === undefined && packages === undefined) {
       await pool.query<ResultSetHeader>(`UPDATE services SET ${setClause} WHERE id = :id`, {
         ...fields,
         id,
@@ -538,10 +615,13 @@ export const servicesRepository = {
           id,
         });
       }
-      await conn.query<ResultSetHeader>(`DELETE FROM service_tag_pivot WHERE service_id = :id`, {
-        id,
-      });
-      await writeTags(conn, id, tags);
+      if (tags !== undefined) {
+        await conn.query<ResultSetHeader>(`DELETE FROM service_tag_pivot WHERE service_id = :id`, {
+          id,
+        });
+        await writeTags(conn, id, tags);
+      }
+      if (packages !== undefined) await writePackages(conn, id, packages);
     });
   },
 

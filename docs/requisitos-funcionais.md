@@ -181,7 +181,7 @@ Requisitos distribuídos por módulos existentes (Serviços, Contratações, Sup
 
 | ID     | Módulo                    | Descrição                                                                                                                                    | Prioridade | Status       |
 | ------ | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------ |
-| RF-086 | Categorias e Serviços     | O freelancer deve poder oferecer pacotes (Basic / Standard / Premium) por serviço, cada um com preço, prazo e nº de revisões próprios        | Média      | Não implementado |
+| RF-086 | Categorias e Serviços     | O freelancer deve poder oferecer pacotes (Basic / Standard / Premium) por serviço, cada um com preço, prazo e nº de revisões próprios        | Média      | Implementado |
 | RF-087 | Categorias e Serviços     | O cliente deve poder favoritar serviços/freelancers e salvar buscas com alerta de novos resultados                                           | Média      | Implementado |
 | RF-088 | Contratações              | O sistema deve permitir dividir um contrato em marcos (milestones), com pagamento e liberação por etapa                                      | Média      | Implementado |
 | RF-089 | Suporte e Mediação        | O usuário deve poder denunciar conteúdo ou usuário; o sistema registra a denúncia e a encaminha à moderação                                  | Alta       | Implementado |
@@ -209,7 +209,7 @@ Requisitos distribuídos por módulos existentes (Serviços, Contratações, Sup
 | Recursos avançados (RF-086–092)  | 7            | 4      | 3      | 0     |
 | **Total**                        | **92**       | **67** | **23** | **2** |
 
-> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.45.0: **83 implementados, 2 parciais, 5 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
+> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.51.0: **85 implementados, 1 parcial, 4 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
 
 > ℹ️ O total ficou em **92 requisitos funcionais**, superando os 72 planejados inicialmente — resultado do detalhamento granular e da inclusão da **troca de serviços (escambo)** e de recursos avançados de confiança e segurança (v1.1.0), com dois requisitos de desistência e revisão humana acrescentados pelo ADR 61 (v1.2.0).
 

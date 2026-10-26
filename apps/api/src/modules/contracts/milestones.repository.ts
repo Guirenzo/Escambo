@@ -138,11 +138,15 @@ async function contractStatus(conn: PoolConnection, contractId: number): Promise
 }
 
 export const milestonesRepository = {
-  /** Usado dentro da transação de criação do contrato. */
+  /**
+   * Usado dentro da transação de criação do contrato. Cada marco ganha as revisões sem custo da
+   * contratação (RN-023): 2, ou as do pacote contratado (RF-086).
+   */
   async insertMany(
     conn: PoolConnection,
     contractId: number,
     specs: MilestoneSpec[],
+    revisionLimit: number = INCLUDED_REVISIONS,
   ): Promise<void> {
     for (const m of specs) {
       await conn.query<ResultSetHeader>(
@@ -153,7 +157,7 @@ export const milestonesRepository = {
           contractId,
           ...m,
           dueAt: m.dueAt ? new Date(m.dueAt) : null,
-          revisionLimit: INCLUDED_REVISIONS,
+          revisionLimit,
         },
       );
     }

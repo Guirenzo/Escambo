@@ -5,6 +5,29 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.51.0] — 2026-10-26
+
+Pacotes Básico, Padrão e Premium por serviço (RF-086, RN-068, ADR 69). RF: 85 implementados, 1 parcial, 4 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Pacotes por serviço:** o freelancer pode oferecer até três níveis (Básico, Padrão e Premium) num serviço de preço fixo, cada um com nome, descrição, preço, prazo em dias, número de revisões sem custo (1 a 10) e itens inclusos. O Básico é obrigatório, não há nível pulado e o preço cresce do Básico ao Premium; cada preço respeita o mínimo do painel e o mínimo de R$ 10,00 da contratação.
+- **Detalhe do serviço** com um cartão de pacotes em abas (setas, Home e End pelo teclado), "Continuar" com o valor do nível e uma tabela "Comparar pacotes" com preço, entrega, revisões e cada item incluso.
+- **Contratação de um pacote:** o modal mostra os níveis para escolher, trava o valor no do pacote, preenche o prazo com os dias dele (sem aceitar data mais cedo) e diz quantas revisões estão incluídas. A contratação guarda uma cópia do pacote (nome, preço, prazo, revisões e itens): editar ou apagar o pacote depois não muda o que foi contratado. A Sala mostra o pacote contratado.
+- O número de revisões do pacote vira o limite da contratação e de cada marco (RN-023: "2 por padrão; com pacote, o do pacote").
+- Migration 0051: garante a tabela `service_packages` (já existia no baseline, sem uso) e acrescenta `package_tier` e `package_snapshot` em `contracts`.
+
+### Alterado
+
+- Um serviço com pacotes aparece na busca e nos cartões **a partir do** preço e do prazo do Básico, que a API grava no próprio serviço: busca, filtros de preço e prazo, ordenação e buscas salvas continuam no índice de cobertura (ADR 63). O cartão ganha o selo "N pacotes".
+- A troca de um serviço com pacotes vale o preço do Básico, com 2 revisões, e a tela diz isso.
+- A cópia de dados LGPD passa ao formato 1.13, com os pacotes dos serviços e o pacote de cada contratação.
+- Contratar um serviço com pacotes sem escolher o nível, com um nível que não existe ou com um valor diferente do publicado é recusado (`package_required`, `package_not_found`, `package_changed`); marco com prazo depois do prazo final também (`milestone_after_deadline`).
+
+### Para atualizar
+
+Rodar a migration 0051 (o job `migrate` do deploy faz isso). Sem variável nova. Ver "Atualizar para a 1.51.0" no `DEPLOY.md`.
+
 ## [1.50.0] — 2026-10-26
 
 Marca própria, gráficos refeitos e o Admin redesenhado por dentro (ADR 68): fecha o que a 1.49.0 deixou para depois. A situação dos requisitos não muda: RF 84 implementados, 1 parcial, 5 não implementados e 2 fora do escopo; RNF 32, 7, 1 e 2.

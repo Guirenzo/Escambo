@@ -37,7 +37,9 @@ vi.mock('./reports/reports.repository', () => ({ reportsRepository: { create: vi
 vi.mock('./reviews/reviews.repository', () => ({
   reviewsRepository: { findByContractIdWithResponse: vi.fn() },
 }));
-vi.mock('./services/services.repository', () => ({ servicesRepository: { findById: vi.fn() } }));
+vi.mock('./services/services.repository', () => ({
+  servicesRepository: { findById: vi.fn(), packagesByServiceIds: vi.fn() },
+}));
 vi.mock('./settings/settings.repository', () => ({
   settingsRepository: { getNumber: vi.fn(), get: vi.fn(), set: vi.fn() },
 }));
@@ -221,6 +223,12 @@ const CASES: [string, () => Promise<unknown>, unknown, unknown[]][] = [
     [9],
   ],
   ['servicesFacade.findById', () => servicesFacade.findById(8), servicesRepository.findById, [8]],
+  [
+    'servicesFacade.packagesByServiceIds',
+    () => servicesFacade.packagesByServiceIds([8]),
+    servicesRepository.packagesByServiceIds,
+    [[8]],
+  ],
   [
     'settingsFacade.getNumber',
     () => settingsFacade.getNumber('ranking_radius_km', 50),

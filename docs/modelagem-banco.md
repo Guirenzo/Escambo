@@ -460,7 +460,7 @@ CREATE TABLE service_tag_pivot (
 
 ### `service_packages`
 
-Pacotes por serviço no estilo Basic / Standard / Premium, cada um com preço, prazo e nº de revisões próprios.
+Pacotes por serviço no estilo Basic / Standard / Premium, cada um com preço, prazo e nº de revisões próprios (RF-086, RN-068). Está no baseline desde o início e passou a ser usada na 1.51.0 (migration 0051, ADR 69): a API grava os pacotes com upsert na chave única por nível e apaga os níveis que saíram, na mesma transação que grava em `services.price` e `services.delivery_days` o preço e o prazo do Básico (o "a partir de" da busca). A API aceita nome de até 60 caracteres, revisões de 1 a 10 e até 10 itens em `features`; `is_active` fica sempre 1.
 
 ```sql
 CREATE TABLE service_packages (
@@ -568,10 +568,12 @@ CREATE TABLE contracts (
   proposal_expires_at    DATETIME     NULL,             -- validade da proposta (RN-021), gravada na criação (migration 0027)
   offer_seq TINYINT UNSIGNED NOT NULL DEFAULT 1,        -- oferta vigente: 1..5, vez pela paridade (0031)
   revision_requested_at DATETIME NULL,                 -- revisão em aberto (0029)
-  revision_limit INT UNSIGNED NULL,                    -- 2 na contratação nova; NULL mantém contrato já registrado ilimitado (0031)
+  revision_limit INT UNSIGNED NULL,                    -- 2 na contratação nova, ou as do pacote (0051); NULL mantém contrato já registrado ilimitado (0031)
   revisions_used INT UNSIGNED NOT NULL DEFAULT 0,      -- consumo por entrega única (0031)
   first_delivery_at DATETIME NULL,                     -- primeira evidência, preservada na reentrega (0031)
   delivery_dispute_opens_at DATETIME NULL,              -- abertura da entrega única, conservada na revisão (0031)
+  package_tier   ENUM('basic', 'standard', 'premium') NULL, -- pacote contratado (RF-086); NULL sem pacote (0051)
+  package_snapshot JSON          NULL,                 -- cópia do pacote na proposta: {tier,name,description,price,deliveryDays,revisions,features}; anda junto do package_tier (0051)
   accepted_at    DATETIME        NULL,
   completed_at   DATETIME        NULL,
   cancelled_at   DATETIME        NULL,
@@ -675,7 +677,7 @@ CREATE TABLE contract_milestones (
   delivered_at    DATETIME    NULL,                    -- última entrega; continua preenchida se o marco voltar para revisão (migration 0006)
   approval_due_at DATETIME    NULL,                    -- aprovação tácita do marco, gravada na entrega; a revisão zera (migration 0028, ADR 57)
   revision_requested_at DATETIME NULL,                -- revisão do marco (0030)
-  revision_limit INT UNSIGNED NULL,                   -- 2 no marco novo; NULL legado ilimitado (0032)
+  revision_limit INT UNSIGNED NULL,                   -- 2 no marco novo, ou as do pacote (0051); NULL legado ilimitado (0032)
   revisions_used INT UNSIGNED NOT NULL DEFAULT 0,     -- contagem própria do marco (0032)
   dispute_opens_at DATETIME NULL,                     -- snapshot preservado em revisão/reentrega (0032)
   released_at DATETIME        NULL,

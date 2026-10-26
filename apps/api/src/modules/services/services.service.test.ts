@@ -11,6 +11,7 @@ vi.mock('./services.repository', () => ({
     findById: vi.fn(),
     findPublicById: vi.fn(),
     tagsByServiceIds: vi.fn().mockResolvedValue(new Map()),
+    packagesByServiceIds: vi.fn().mockResolvedValue(new Map()),
     incrementViews: vi.fn(),
     list: vi.fn(),
     listByOwner: vi.fn(),
@@ -97,6 +98,7 @@ describe('servicesService.create', () => {
           isRemote: true,
           isOnsite: false,
           tags: [],
+          packages: [],
         },
       ],
     ]);
@@ -139,7 +141,7 @@ describe('servicesService.update', () => {
 
     const s = await servicesService.update(1, 5, { title: 'Atualizado' });
 
-    expect(repo.update.mock.calls).toEqual([[1, { title: 'Atualizado' }, undefined]]);
+    expect(repo.update.mock.calls).toEqual([[1, { title: 'Atualizado' }, undefined, undefined]]);
     // Lê o serviço antes (dono) e de novo depois de gravar: o que volta é a linha atualizada.
     expect(repo.findById.mock.calls).toEqual([[1], [1]]);
     expect(s.title).toBe('Atualizado');
@@ -360,6 +362,7 @@ const landing = {
   isRemote: true,
   modality: 'remote',
   tags: [],
+  packages: [],
   isActive: true,
   createdAt: '2026-01-01T00:00:00.000Z',
 };
@@ -398,6 +401,7 @@ describe('servicesService.create — o que é gravado e o preço mínimo (RN-016
           isRemote: false,
           isOnsite: true,
           tags: [],
+          packages: [],
         },
       ],
     ]);
@@ -718,9 +722,10 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
           is_active: 0,
         },
         undefined,
+        undefined,
       ],
-      [1, { is_remote: 1, is_onsite: 0, is_active: 1 }, undefined],
-      [1, {}, undefined],
+      [1, { is_remote: 1, is_onsite: 0, is_active: 1 }, undefined, undefined],
+      [1, {}, undefined, undefined],
     ]);
   });
 
@@ -732,9 +737,9 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
     await servicesService.update(1, 7, { modality: 'remote' });
 
     expect(repo.update.mock.calls).toEqual([
-      [1, { is_remote: 1, is_onsite: 1 }, undefined],
-      [1, { is_remote: 0, is_onsite: 1 }, undefined],
-      [1, { is_remote: 1, is_onsite: 0 }, undefined],
+      [1, { is_remote: 1, is_onsite: 1 }, undefined, undefined],
+      [1, { is_remote: 0, is_onsite: 1 }, undefined, undefined],
+      [1, { is_remote: 1, is_onsite: 0 }, undefined, undefined],
     ]);
   });
 
@@ -746,8 +751,8 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
     await servicesService.update(1, 7, { tags: [] });
 
     expect(repo.update.mock.calls).toEqual([
-      [1, {}, ['programação', 'logo']],
-      [1, {}, []],
+      [1, {}, ['programação', 'logo'], undefined],
+      [1, {}, [], undefined],
     ]);
     // O que volta é o que ficou no banco (relido, em ordem alfabética).
     expect(updated.tags).toEqual(['logo', 'programação']);
@@ -794,7 +799,9 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
   it('o tipo novo é o que vale: preço baixo junto com a troca para por hora passa', async () => {
     repo.findById.mockResolvedValue(fakeRow({ user_id: 7 }));
     await servicesService.update(1, 7, { priceType: 'hourly', price: 5 });
-    expect(repo.update.mock.calls).toEqual([[1, { price_type: 'hourly', price: 5 }, undefined]]);
+    expect(repo.update.mock.calls).toEqual([
+      [1, { price_type: 'hourly', price: 5 }, undefined, undefined],
+    ]);
   });
 
   it('preço fixo igual ao mínimo passa na edição, e o que volta é o serviço relido', async () => {
@@ -805,7 +812,7 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
     const updated = await servicesService.update(1, 7, { price: 10 });
 
     expect(updated).toEqual({ ...landing, ownerId: 7, price: 10 });
-    expect(repo.update.mock.calls).toEqual([[1, { price: 10 }, undefined]]);
+    expect(repo.update.mock.calls).toEqual([[1, { price: 10 }, undefined, undefined]]);
     expect(settings.minServicePrice).toHaveBeenCalledTimes(1);
   });
 
@@ -826,7 +833,7 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
     const updated = await servicesService.update(1, 7, { title: 'Consultoria' });
 
     expect(updated).toMatchObject({ priceType: 'negotiable', price: null });
-    expect(repo.update.mock.calls).toEqual([[1, { title: 'Consultoria' }, undefined]]);
+    expect(repo.update.mock.calls).toEqual([[1, { title: 'Consultoria' }, undefined, undefined]]);
     expect(settings.minServicePrice).not.toHaveBeenCalled();
   });
 
@@ -837,8 +844,8 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
     await servicesService.update(1, 7, { priceType: 'negotiable', price: null });
 
     expect(repo.update.mock.calls).toEqual([
-      [1, { delivery_days: null }, undefined],
-      [1, { price_type: 'negotiable', price: null }, undefined],
+      [1, { delivery_days: null }, undefined, undefined],
+      [1, { price_type: 'negotiable', price: null }, undefined, undefined],
     ]);
     // A combinar não tem piso (RN-016 é do preço fixo): o mínimo nem é consultado na segunda edição.
     expect(settings.minServicePrice).toHaveBeenCalledTimes(1);
@@ -851,7 +858,7 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
 
     await expect(servicesService.update(1, 7, { title: 'Novo título' })).rejects.toBe(boom);
 
-    expect(repo.update.mock.calls).toEqual([[1, { title: 'Novo título' }, undefined]]);
+    expect(repo.update.mock.calls).toEqual([[1, { title: 'Novo título' }, undefined, undefined]]);
     expect(repo.findById.mock.calls).toEqual([[1]]);
   });
 
@@ -860,8 +867,8 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
     await servicesService.update(1, 7, { isActive: false });
     await servicesService.update(1, 7, { isActive: true });
     expect(repo.update.mock.calls).toEqual([
-      [1, { is_active: 0 }, undefined],
-      [1, { is_active: 1 }, undefined],
+      [1, { is_active: 0 }, undefined, undefined],
+      [1, { is_active: 1 }, undefined, undefined],
     ]);
   });
 
@@ -898,7 +905,9 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
 
     await servicesService.update(1, 7, { priceType: 'fixed', price: 50 });
 
-    expect(repo.update.mock.calls).toEqual([[1, { price_type: 'fixed', price: 50 }, undefined]]);
+    expect(repo.update.mock.calls).toEqual([
+      [1, { price_type: 'fixed', price: 50 }, undefined, undefined],
+    ]);
     expect(settings.minServicePrice).toHaveBeenCalledTimes(1);
   });
 
@@ -907,7 +916,7 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
 
     await servicesService.update(1, 7, { price: null });
 
-    expect(repo.update.mock.calls).toEqual([[1, { price: null }, undefined]]);
+    expect(repo.update.mock.calls).toEqual([[1, { price: null }, undefined, undefined]]);
   });
 
   it('trocar para uma categoria inexistente ou inativa é 422 invalid_category e nada é gravado', async () => {
@@ -931,7 +940,7 @@ describe('servicesService.update — colunas, dono e preço mínimo (RN-016)', (
 
     expect(repo.categoryIsActive).not.toHaveBeenCalled();
     expect(repo.update.mock.calls).toEqual([
-      [1, { category_id: 10, title: 'Site completo' }, undefined],
+      [1, { category_id: 10, title: 'Site completo' }, undefined, undefined],
     ]);
   });
 });
@@ -1191,5 +1200,187 @@ describe('servicesService.list — filtros, paginação e o card da busca', () =
     await expect(
       servicesService.list({ page: 1, limit: 20, radiusKm: 25, sort: 'relevance' }),
     ).rejects.toBe(boom);
+  });
+});
+
+describe('servicesService — pacotes Básico, Padrão e Premium (RF-086, RN-068)', () => {
+  const pkg = (tier: 'basic' | 'standard' | 'premium', price: number, deliveryDays = 5) => ({
+    tier,
+    name: `Pacote ${tier}`,
+    description: null,
+    price,
+    deliveryDays,
+    revisions: 2,
+    features: [] as string[],
+  });
+  const three = [pkg('basic', 100, 3), pkg('standard', 200, 5), pkg('premium', 350, 10)];
+  const input = {
+    categoryId: 10,
+    title: 'Identidade visual',
+    description: 'Logo, cores e manual da marca',
+    priceType: 'fixed' as const,
+    isRemote: true,
+  };
+
+  it('no cadastro, o anúncio guarda o preço e o prazo do Básico e os pacotes vão na mesma gravação', async () => {
+    repo.create.mockResolvedValue(31);
+    repo.findById.mockResolvedValue(fakeRow({ id: 31, price: '100.00', delivery_days: 3 }));
+    repo.packagesByServiceIds.mockResolvedValueOnce(new Map([[31, three]]));
+
+    const created = await servicesService.create(7, { ...input, packages: three });
+
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ price: 100, deliveryDays: 3, packages: three }),
+    );
+    expect(created.packages).toEqual(three);
+    expect(created.price).toBe(100);
+    // O mínimo do painel é consultado para os pacotes e para o preço do anúncio.
+    expect(settings.minServicePrice).toHaveBeenCalled();
+  });
+
+  it('pacote fora do preço fixo é 422 packages_require_fixed_price, e nada é gravado', async () => {
+    await expect(
+      servicesService.create(7, { ...input, priceType: 'hourly', packages: three }),
+    ).rejects.toMatchObject({ statusCode: 422, code: 'packages_require_fixed_price' });
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('preço ou prazo junto dos pacotes é 422 price_from_packages: eles saem do Básico', async () => {
+    await expect(
+      servicesService.create(7, { ...input, price: 90, packages: three }),
+    ).rejects.toMatchObject({ statusCode: 422, code: 'price_from_packages' });
+    await expect(
+      servicesService.create(7, { ...input, deliveryDays: 4, packages: three }),
+    ).rejects.toMatchObject({ statusCode: 422, code: 'price_from_packages' });
+    // null não é valor: o web que manda o formulário inteiro passa.
+    repo.create.mockResolvedValue(31);
+    repo.findById.mockResolvedValue(fakeRow({ id: 31 }));
+    await servicesService.create(7, { ...input, price: null, deliveryDays: null, packages: three });
+    expect(repo.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('cada pacote custa pelo menos o maior entre R$ 10,00 (RN-027) e o mínimo do painel (RN-016)', async () => {
+    settings.minServicePrice.mockResolvedValue(5);
+    await expect(
+      servicesService.create(7, { ...input, packages: [pkg('basic', 9.99)] }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'price_below_minimum',
+      message: 'O pacote Básico custa menos que o mínimo de R$ 10,00 (RN-016)',
+    });
+    settings.minServicePrice.mockResolvedValue(50);
+    await expect(
+      servicesService.create(7, {
+        ...input,
+        packages: [pkg('basic', 60), pkg('standard', 49)],
+      }),
+    ).rejects.toMatchObject({
+      code: 'price_below_minimum',
+      message: 'O pacote Padrão custa menos que o mínimo de R$ 50,00 (RN-016)',
+    });
+    settings.minServicePrice.mockResolvedValue(10);
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('o preço não desce do Básico ao Premium (igual vale): 422 package_price_order', async () => {
+    await expect(
+      servicesService.create(7, {
+        ...input,
+        packages: [pkg('basic', 100), pkg('standard', 99.99)],
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'package_price_order',
+      message:
+        'O preço sobe do Básico ao Premium: o Padrão não pode custar menos que o Básico (RN-068)',
+    });
+    repo.create.mockResolvedValue(31);
+    repo.findById.mockResolvedValue(fakeRow({ id: 31 }));
+    await servicesService.create(7, {
+      ...input,
+      packages: [pkg('basic', 100), pkg('standard', 100), pkg('premium', 100)],
+    });
+    expect(repo.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('na edição, os pacotes novos substituem os antigos e o anúncio passa a ter o preço e o prazo do Básico', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7 }));
+
+    await servicesService.update(1, 7, { packages: three });
+
+    expect(repo.update.mock.calls).toEqual([
+      [1, { price: 100, delivery_days: 3 }, undefined, three],
+    ]);
+    // Os pacotes de agora nem são lidos: vale a lista enviada.
+    expect(repo.packagesByServiceIds).toHaveBeenCalledTimes(1); // só a releitura da resposta
+  });
+
+  it('[] tira os pacotes: o preço do anúncio fica o que estava (o do Básico), ou o enviado', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7, price: '100.00' }));
+    repo.packagesByServiceIds.mockResolvedValueOnce(new Map());
+
+    await servicesService.update(1, 7, { packages: [] });
+    await servicesService.update(1, 7, { packages: [], price: 120 });
+
+    expect(repo.update.mock.calls).toEqual([
+      [1, {}, undefined, []],
+      [1, { price: 120 }, undefined, []],
+    ]);
+  });
+
+  it('sem packages no corpo, ficam os de agora: mudar o tipo para por hora é 422, e price junto também', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7, price: '100.00' }));
+    repo.packagesByServiceIds.mockResolvedValue(new Map([[1, three]]));
+
+    await expect(servicesService.update(1, 7, { priceType: 'hourly' })).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'packages_require_fixed_price',
+    });
+    await expect(servicesService.update(1, 7, { price: 80 })).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'price_from_packages',
+    });
+    expect(repo.update).not.toHaveBeenCalled();
+
+    // Editar o resto, ou mandar price null (o formulário inteiro), não mexe no "a partir de".
+    await servicesService.update(1, 7, { title: 'Identidade visual completa', price: null });
+    expect(repo.update.mock.calls).toEqual([
+      [1, { title: 'Identidade visual completa' }, undefined, undefined],
+    ]);
+    repo.packagesByServiceIds.mockResolvedValue(new Map());
+  });
+
+  it('pausar um serviço com pacotes não confere os preços de novo (o painel pode ter mudado o mínimo)', async () => {
+    repo.findById.mockResolvedValue(fakeRow({ user_id: 7, price: '100.00' }));
+    repo.packagesByServiceIds.mockResolvedValue(new Map([[1, three]]));
+    settings.minServicePrice.mockResolvedValue(10);
+
+    await servicesService.update(1, 7, { isActive: false });
+
+    expect(repo.update.mock.calls).toEqual([[1, { is_active: 0 }, undefined, undefined]]);
+    repo.packagesByServiceIds.mockResolvedValue(new Map());
+  });
+
+  it('busca, detalhe e "Meus serviços" trazem os pacotes de cada serviço numa consulta só', async () => {
+    repo.list.mockResolvedValue([fakeRow({ id: 1 }), fakeRow({ id: 2 })]);
+    repo.packagesByServiceIds.mockResolvedValueOnce(new Map([[2, three]]));
+
+    const page = await servicesService.list({
+      radiusKm: 25,
+      sort: 'relevance',
+      page: 1,
+      limit: 20,
+    } as never);
+
+    expect(page.items.map((s) => s.packages)).toEqual([[], three]);
+    expect(repo.packagesByServiceIds.mock.calls).toEqual([[[1, 2]]]);
+
+    repo.findPublicById.mockResolvedValue(fakeRow({ id: 2 }));
+    repo.packagesByServiceIds.mockResolvedValueOnce(new Map([[2, three]]));
+    expect((await servicesService.getById(2, { userId: 1 })).packages).toEqual(three);
+
+    repo.listByOwner.mockResolvedValue([fakeRow({ id: 2 })]);
+    repo.packagesByServiceIds.mockResolvedValueOnce(new Map([[2, three]]));
+    expect((await servicesService.listMine(1))[0]!.packages).toEqual(three);
   });
 });

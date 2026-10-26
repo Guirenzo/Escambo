@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent, { type UserEvent } from '@testing-library/user-event';
 import type { Deposit, Service } from '@escambo/types';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -1231,5 +1231,184 @@ describe('ContratarModal: o prazo no fuso de quem entrega', () => {
     cleanup();
     renderModal(service({ ownerTimezone: 'America/Sao_Paulo' }));
     expect(hint()).toBe(SAME_CLOCK_HINT);
+  });
+});
+
+/** Serviço com pacotes (RF-086): a proposta é de um nível, com o valor, o prazo e as revisões dele. */
+describe('ContratarModal: pacotes', () => {
+  const PACKAGES: NonNullable<Service['packages']> = [
+    {
+      tier: 'basic',
+      name: 'Logo essencial',
+      description: null,
+      price: 150,
+      deliveryDays: 3,
+      revisions: 2,
+      features: [],
+    },
+    {
+      tier: 'standard',
+      name: 'Logo + paleta',
+      description: null,
+      price: 320,
+      deliveryDays: 5,
+      revisions: 3,
+      features: ['Paleta'],
+    },
+    {
+      tier: 'premium',
+      name: 'Identidade completa',
+      description: null,
+      price: 649.9,
+      deliveryDays: 10,
+      revisions: 5,
+      features: [],
+    },
+  ];
+  const packaged = service({ price: 150, deliveryDays: 3, packages: PACKAGES });
+
+  function renderPackaged(initialTier?: 'basic' | 'standard' | 'premium') {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    render(
+      <QueryClientProvider client={client}>
+        <ToastProvider>
+          <MemoryRouter initialEntries={['/servicos/5']}>
+            <Routes>
+              <Route
+                path="*"
+                element={
+                  <ContratarModal service={packaged} initialTier={initialTier} onClose={vi.fn()} />
+                }
+              />
+            </Routes>
+          </MemoryRouter>
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+    return { invalidate };
+  }
+  const tierRadio = (name: RegExp) =>
+    within(screen.getByRole('group', { name: 'Pacote' })).getByRole('radio', { name });
+  const deadlineField = () => screen.getByLabelText('Prazo de entrega');
+
+  it('abre no nível escolhido no detalhe, com o valor só de leitura, o prazo e as revisões dele', async () => {
+    funds = { balance: 1000, credits: 0 };
+    renderPackaged('premium');
+    await walletLoaded();
+    expect(tierRadio(/^Premium — Identidade completa/)).toBeChecked();
+    expect(tierRadio(/^Básico — Logo essencial/)).toHaveAccessibleName(
+      /entrega em 3 dias · 2 revisões$/,
+    );
+    expect(screen.queryByLabelText('Valor')).toBeNull();
+    expect(screen.getByTestId('package-price')).toHaveTextContent(
+      /^Valor do pacote PremiumR\$\s649,90$/,
+    );
+    // Hoje (01/10) + 10 dias; antes disso a API recusa (deadline_before_package).
+    expect(deadlineField()).toHaveValue('2026-10-11');
+    expect(deadlineField()).toHaveAttribute('min', '2026-10-11');
+    expect(screen.getByTestId('deadline-hint')).toHaveTextContent(
+      'O pacote Premium entrega em 10 dias: o prazo começa aí.',
+    );
+    expect(screen.getByTestId('contract-rules-hint')).toHaveTextContent(
+      'Inclui até 5 revisões sem custo (as do pacote Premium).',
+    );
+  });
+
+  it('trocar de nível leva o prazo para o dia dele, e a proposta vai com o nível e o valor dele', async () => {
+    const user = userEvent.setup({ delay: null });
+    funds = { balance: 1000, credits: 0 };
+    renderPackaged();
+    await walletLoaded();
+    // Sem nível escolhido no detalhe, o Básico.
+    expect(tierRadio(/^Básico/)).toBeChecked();
+    await user.click(tierRadio(/^Padrão/));
+    expect(deadlineField()).toHaveValue('2026-10-06');
+    expect(screen.getByTestId('contract-rules-hint')).toHaveTextContent(
+      'Inclui até 3 revisões sem custo (as do pacote Padrão).',
+    );
+    await user.click(submitButton());
+    expect(createContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serviceId: 5,
+        price: 320,
+        packageTier: 'standard',
+        deadlineAt: endOfDay('2026-10-06'),
+      }),
+    );
+  });
+
+  it('créditos são inteiros: o pacote com centavos fica só em dinheiro, com o motivo', async () => {
+    const user = userEvent.setup({ delay: null });
+    funds = { balance: 1000, credits: 1000 };
+    renderPackaged('premium');
+    await walletLoaded();
+    expect(creditsRadio()).toBeDisabled();
+    expect(creditsRadio()).toHaveAccessibleName(/créditos são inteiros e o pacote tem centavos$/);
+    await user.click(tierRadio(/^Padrão/));
+    expect(creditsRadio()).toBeEnabled();
+    await user.click(creditsRadio());
+    expect(screen.getByText('320 créditos')).toBeInTheDocument();
+    // Voltar a um pacote com centavos tira dos créditos.
+    await user.click(tierRadio(/^Premium/));
+    expect(cashRadio()).toBeChecked();
+  });
+
+  it('o pacote mudou depois de a tela abrir (409 package_changed): avisa e relê o serviço', async () => {
+    const user = userEvent.setup({ delay: null });
+    funds = { balance: 1000, credits: 0 };
+    createContract.mockRejectedValue(
+      new ApiRequestError(
+        'O pacote Padrão agora custa R$ 340,00. Confira o pacote e envie de novo.',
+        409,
+        'package_changed',
+      ),
+    );
+    const { invalidate } = renderPackaged('standard');
+    await walletLoaded();
+    await user.click(submitButton());
+    expect(
+      await screen.findByText(
+        'O pacote Padrão agora custa R$ 340,00. Confira o pacote e envie de novo.',
+      ),
+    ).toBeInTheDocument();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['services'] });
+  });
+});
+
+describe('ContratarModal: pacote com marcos', () => {
+  it('os marcos de um pacote podem vencer a partir de amanhã, antes do prazo do pacote', async () => {
+    const user = userEvent.setup({ delay: null });
+    funds = { balance: 1000, credits: 0 };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ToastProvider>
+          <MemoryRouter>
+            <ContratarModal
+              service={service({
+                packages: [
+                  {
+                    tier: 'basic',
+                    name: 'Completo',
+                    description: null,
+                    price: 300,
+                    deliveryDays: 10,
+                    revisions: 2,
+                    features: [],
+                  },
+                ],
+              })}
+              onClose={vi.fn()}
+            />
+          </MemoryRouter>
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+    await walletLoaded();
+    expect(screen.getByLabelText('Prazo de entrega')).toHaveAttribute('min', '2026-10-11');
+    await user.click(milestonesToggle());
+    expect(msDue(1)).toHaveAttribute('min', '2026-10-02');
+    expect(msDue(1)).toHaveAttribute('max', '2026-10-11');
   });
 });

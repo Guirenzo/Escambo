@@ -25,6 +25,7 @@ import {
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { DepositModal } from '../wallet/DepositModal';
+import { packagesOf } from '../services/packages';
 
 function pillClass(status: string): string {
   if (status === 'completed') return 'status-completed';
@@ -49,17 +50,26 @@ const SOURCE_LABEL: Record<BarterValueSource, string> = {
   informed: 'valor informado',
 };
 
-/** De onde vem o valor que a tela mostra antes de enviar. */
-const sourceOf = (catalog: number | null): string =>
-  catalog !== null ? SOURCE_LABEL.catalog : 'informado por você';
+/**
+ * De onde vem o valor que a tela mostra antes de enviar. Serviço com pacotes (RF-086) entra na
+ * troca pelo Básico, o preço do anúncio (ADR 69): a tela diz qual pacote vale.
+ */
+const sourceOf = (catalog: number | null, s?: Service): string =>
+  catalog === null
+    ? 'informado por você'
+    : s && packagesOf(s).length > 0
+      ? 'preço do pacote Básico'
+      : SOURCE_LABEL.catalog;
 
-/** Preço como o catálogo mostra: fechado, por hora ou a combinar. */
+/** Preço como o catálogo mostra: fechado (o do Básico, com pacotes), por hora ou a combinar. */
 const priceLabel = (s: Service): string =>
   s.price == null || s.priceType === 'negotiable'
     ? 'a combinar'
     : s.priceType === 'hourly'
       ? `${brl(s.price)}/h`
-      : brl(s.price);
+      : packagesOf(s).length > 0
+        ? `${brl(s.price)}, pacote Básico`
+        : brl(s.price);
 
 export function TrocasView() {
   usePageTitle('Trocas');
@@ -331,7 +341,7 @@ export function TrocasView() {
           {target && offerReady && offered > 0 && requested > 0 && (
             <div className="summary" data-testid="barter-estimate">
               <span className="muted tiny">
-                {`Valores estimados: você oferece ${brl(offered)} (${sourceOf(offeredCatalog)}) e quer ${brl(requested)} (${sourceOf(requestedCatalog)})`}
+                {`Valores estimados: você oferece ${brl(offered)} (${sourceOf(offeredCatalog, offerService)}) e quer ${brl(requested)} (${sourceOf(requestedCatalog, target)})`}
               </span>
               <strong>{tornaHint}</strong>
               <span className="muted tiny">

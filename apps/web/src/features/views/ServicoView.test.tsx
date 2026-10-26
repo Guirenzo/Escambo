@@ -243,3 +243,88 @@ describe('ServicoView', () => {
     await expectRoute('/inicio');
   });
 });
+
+describe('ServicoView: pacotes (RF-086)', () => {
+  const basic = {
+    tier: 'basic' as const,
+    name: 'Cobertura curta',
+    description: 'Até 2 horas de evento.',
+    price: 900,
+    deliveryDays: 1,
+    revisions: 2,
+    features: ['Galeria online'],
+  };
+  const PACKAGES = [
+    basic,
+    {
+      ...basic,
+      tier: 'standard' as const,
+      name: 'Cobertura completa',
+      description: null,
+      price: 1500,
+      deliveryDays: 3,
+      revisions: 3,
+      features: ['Galeria online', 'Álbum impresso'],
+    },
+  ];
+
+  it('o cartão dos pacotes vem depois do título, com abas, e "Continuar" abre a proposta já no nível', async () => {
+    const user = userEvent.setup({ delay: null });
+    api.service.mockResolvedValue(service({ packages: PACKAGES }));
+    renderAt();
+    const picker = await screen.findByTestId('package-picker');
+    // A ordem da página: título, pacotes, descrição, comparação.
+    const order = [
+      screen.getByRole('heading', { level: 1 }),
+      picker,
+      screen.getByRole('heading', { level: 2, name: 'Sobre o serviço' }),
+      screen.getByTestId('package-compare'),
+    ];
+    for (let i = 1; i < order.length; i++) {
+      expect(
+        order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    // O "Contratar" de preço único sai: quem contrata escolhe o nível.
+    expect(screen.queryByRole('button', { name: 'Contratar' })).toBeNull();
+    await user.click(screen.getByRole('tab', { name: 'Padrão' }));
+    await user.click(screen.getByRole('button', { name: /^Continuar .* com o pacote Padrão$/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(within(dialog).getByRole('group', { name: 'Pacote' })).getByRole('radio', {
+        name: /^Padrão — Cobertura completa/,
+      }),
+    ).toBeChecked();
+  });
+
+  it('"Escolher" na comparação também abre a proposta no nível da coluna', async () => {
+    const user = userEvent.setup({ delay: null });
+    api.service.mockResolvedValue(service({ packages: PACKAGES }));
+    renderAt();
+    await user.click(await screen.findByRole('button', { name: 'Escolher o pacote Básico' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('radio', { name: /^Básico — Cobertura curta/ })).toBeChecked();
+  });
+
+  it('o dono vê os pacotes com o aviso, sem botão de contratar nem de escolher', async () => {
+    auth.user = { id: OWNER, role: 'freelancer', timezone: 'America/Sao_Paulo' };
+    api.service.mockResolvedValue(service({ packages: PACKAGES }));
+    renderAt();
+    expect(await screen.findByTestId('own-service')).toBeVisible();
+    expect(screen.getAllByTestId('own-service')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: /Continuar/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Escolher/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /favoritos|Favoritar/ })).toBeNull();
+  });
+
+  it('freelancer de fora propõe troca pelo cartão dos pacotes; o favorito fica no título', async () => {
+    const user = userEvent.setup({ delay: null });
+    auth.user = { id: VISITOR, role: 'freelancer', timezone: 'America/Sao_Paulo' };
+    api.service.mockResolvedValue(service({ packages: PACKAGES }));
+    renderAt();
+    const picker = await screen.findByTestId('package-picker');
+    expect(screen.getByRole('button', { name: 'Favoritar' })).toBeVisible();
+    await user.click(within(picker).getByRole('button', { name: 'Propor troca' }));
+    await expectRoute('/trocas?propor=41');
+  });
+});

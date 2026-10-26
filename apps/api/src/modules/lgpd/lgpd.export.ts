@@ -28,9 +28,11 @@ import { parseStoredRecoveryCodes, recoveryCodesLeft } from '../auth/recovery-co
  * Formato 1.11 (1.45.0): os pedidos de troca de e-mail (RF-017), sem o token do link.
  * Formato 1.12 (1.48.0): a verificação em duas etapas (ADR 66) — se está ativa, desde quando e
  * quantos códigos de recuperação sobram; nunca o segredo nem os hashes dos códigos.
+ * Formato 1.13 (1.51.0): cada serviço traz os pacotes (RF-086) e cada contratação, o pacote
+ * contratado (package_tier e a cópia package_snapshot), ou null sem pacote.
  */
 
-export const EXPORT_FORMAT_VERSION = '1.12';
+export const EXPORT_FORMAT_VERSION = '1.13';
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -66,14 +68,20 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
             is_active, views_count, created_at, deleted_at,
             (SELECT GROUP_CONCAT(st.name ORDER BY st.name SEPARATOR ', ')
                FROM service_tag_pivot stp JOIN service_tags st ON st.id = stp.tag_id
-              WHERE stp.service_id = services.id) AS tags
+              WHERE stp.service_id = services.id) AS tags,
+            (SELECT JSON_ARRAYAGG(JSON_OBJECT('tier', sp.tier, 'name', sp.name,
+                      'description', sp.description, 'price', sp.price,
+                      'delivery_days', sp.delivery_days, 'revisions', sp.revisions,
+                      'features', sp.features))
+               FROM service_packages sp
+              WHERE sp.service_id = services.id) AS packages
        FROM services WHERE user_id = :userId ORDER BY id`,
     p,
   );
   const contracts = await q(
     `SELECT id, ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee,
             freelancer_net, payment_mode, status, deadline_at, accepted_at, completed_at,
-            cancelled_at, created_at
+            cancelled_at, created_at, package_tier, package_snapshot
        FROM contracts WHERE client_id = :userId OR freelancer_id = :userId ORDER BY id`,
     p,
   );
