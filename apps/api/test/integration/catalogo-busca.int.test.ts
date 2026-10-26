@@ -31,8 +31,11 @@ interface Item {
   boosted?: boolean;
 }
 
-/** Palavra única desta execução: as buscas só acham o que este arquivo publicou. */
-const RUN = `cat${Date.now().toString(36)}`;
+/**
+ * Palavra única desta execução: as buscas só acham o que este arquivo publicou. Só dígitos depois
+ * do "cat": em base 36 ela podia conter "js" ou "ux", e a busca por "contém" achava tudo.
+ */
+const RUN = `cat${Date.now()}`;
 
 let seq = 0;
 async function register(role: 'freelancer' | 'client', fullName: string): Promise<Actor> {

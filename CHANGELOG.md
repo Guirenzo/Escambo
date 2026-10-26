@@ -55,6 +55,7 @@ Marca própria, gráficos refeitos e o Admin redesenhado por dentro (ADR 68): fe
 
 - Com a fila vazia, as filas do Admin (e as de denúncias e contestações) mostravam o cabeçalho de uma tabela sem linhas em vez da mensagem de vazio.
 - A barra vazia da saúde da moderação usava a mesma classe do estado vazio e saía com 64 px de altura.
+- A validação de "prazo no futuro" da contratação usava o relógio do sistema, e a regra, o relógio da API: num teste com o relógio parado, as duas viam instantes diferentes, e um teste de integração com data fixa passou a falhar quando essa data chegou. As duas usam agora o mesmo relógio; em produção nada muda.
 
 ### Para atualizar
 
