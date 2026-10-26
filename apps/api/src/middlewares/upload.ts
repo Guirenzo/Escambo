@@ -46,9 +46,9 @@ function multerMessage(
 export function singleFile(field: string, maxBytes: number = MAX_UPLOAD_BYTES): RequestHandler {
   const parse = multer({
     storage: multer.memoryStorage(),
-    // O busboy corta o campo ao ATINGIR o fieldSize: com +1, um campo de exatamente
-    // MAX_FIELD_BYTES passa e o primeiro byte além dele é recusado.
-    limits: { fileSize: maxBytes, files: 1, fields: MAX_FIELDS, fieldSize: MAX_FIELD_BYTES + 1 },
+    // O busboy corta o campo ao ATINGIR o fieldSize; desde a 2.5 o multer já passa +1 a ele,
+    // então um campo de exatamente MAX_FIELD_BYTES passa e o primeiro byte além é recusado.
+    limits: { fileSize: maxBytes, files: 1, fields: MAX_FIELDS, fieldSize: MAX_FIELD_BYTES },
     // Nome de arquivo com acento chega em UTF-8 (navegadores); o padrão do busboy é latin1.
     defParamCharset: 'utf8',
   }).single(field);
@@ -109,7 +109,7 @@ export function fileArray(
       fileSize: maxBytes,
       files: opts.maxCount,
       fields: limits.fields,
-      fieldSize: limits.fieldBytes + 1,
+      fieldSize: limits.fieldBytes,
     },
     defParamCharset: 'utf8',
   }).array(field, opts.maxCount);

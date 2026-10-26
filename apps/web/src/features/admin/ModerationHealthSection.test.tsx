@@ -20,6 +20,7 @@ vi.mock('../../lib/download', () => ({
   saveBlob: (blob: Blob, name: string) => saveBlob(blob, name),
 }));
 
+import { hoverColumn } from '../../test/charts';
 import { ModerationHealthSection, reportStatusLine } from './ModerationHealthSection';
 
 type Report = ModerationHealth['dailyReport'];
@@ -489,27 +490,28 @@ describe('ModerationHealthSection: série por dia (ADR 50)', () => {
     expect(screen.queryByText('Decisões por dia')).not.toBeInTheDocument();
   });
 
-  it('decisões por dia: resumo com o total e o pico, e a dica de cada dia que teve decisão', async () => {
+  it('decisões por dia: resumo com o total e o pico, pico escrito e a dica de cada dia', async () => {
     adminModerationHealth.mockResolvedValue(health({ history }));
     render(wrap(<ModerationHealthSection />));
     const charts = within(await screen.findByTestId('health-history'));
 
-    const chart = within(
-      charts.getByRole('img', {
-        name: 'Decisões por dia, de 21/09 a 23/09: 4 no período, pico de 3 em 22/09.',
-      }),
-    );
-    expect(chart.getByText('máx 3')).toBeInTheDocument();
-    expect(chart.getByText('21/09: 1 com ação, 0 dispensadas')).toBeInTheDocument();
+    const figure = charts.getByRole('img', {
+      name: 'Decisões por dia, de 21/09 a 23/09: 4 no período, pico de 3 em 22/09.',
+    });
+    expect(figure.querySelector('.viz-peak')).toHaveTextContent('3');
+    // Dia sem decisão não tem coluna.
+    expect(figure.querySelectorAll('.viz-stack')).toHaveLength(2);
+    hoverColumn(figure, 0, 3);
+    expect(figure.querySelector('.viz-tip')).toHaveTextContent('11 Com ação0 Dispensadas21/09');
     // As sinalizações automáticas do dia só entram na dica quando houve alguma.
-    expect(
-      chart.getByText('22/09: 2 com ação, 1 dispensadas, 2 sinalizações automáticas'),
-    ).toBeInTheDocument();
-    // Dia sem decisão não tem barra nem dica.
-    expect(chart.queryByText(/^23\/09: /)).not.toBeInTheDocument();
+    hoverColumn(figure, 1, 3);
+    expect(figure.querySelector('.viz-tip')).toHaveTextContent(
+      '32 Com ação1 Dispensadas22/09 · 2 sinalizações automáticas',
+    );
     expect(charts.getByText('21/09 a 23/09')).toBeInTheDocument();
-    expect(charts.getByText(/^Com ação/)).toHaveTextContent('Com ação 3');
-    expect(charts.getByText(/^Dispensadas/)).toHaveTextContent('Dispensadas 1');
+    // A legenda (fora do desenho) traz o total de cada série.
+    expect(charts.getByText(/^Com ação/, { selector: 'li' })).toHaveTextContent('Com ação 3');
+    expect(charts.getByText(/^Dispensadas/, { selector: 'li' })).toHaveTextContent('Dispensadas 1');
   });
 
   it('tempo até decidir: conta os dias acima da meta e mostra a mediana só dos dias com decisão', async () => {
@@ -517,17 +519,39 @@ describe('ModerationHealthSection: série por dia (ADR 50)', () => {
     render(wrap(<ModerationHealthSection />));
     const charts = within(await screen.findByTestId('health-history'));
 
-    const chart = within(
-      charts.getByRole('img', {
-        name: 'Tempo até decidir por dia, mediana em horas, meta de 24 h: 1 de 2 dias acima da meta.',
-      }),
-    );
+    const figure = charts.getByRole('img', {
+      name: 'Tempo até decidir por dia, mediana em horas, meta de 24 h: 1 de 2 dias acima da meta.',
+    });
+    const chart = within(figure);
     // O topo do eixo é o primeiro número "redondo" que cobre a maior mediana (30 h).
     expect(chart.getByText('30 h')).toBeInTheDocument();
     expect(chart.getByText('meta 24 h')).toBeInTheDocument();
-    expect(chart.getByText('21/09: mediana 6 h')).toBeInTheDocument();
-    expect(chart.getByText('22/09: mediana 30 h')).toBeInTheDocument();
-    expect(chart.queryByText(/^23\/09: mediana/)).not.toBeInTheDocument();
+    // Um marcador por dia com decisão; a dica diz a mediana do dia.
+    expect(figure.querySelectorAll('.viz-dot')).toHaveLength(2);
+    hoverColumn(figure, 0, 3);
+    expect(figure.querySelector('.viz-tip')).toHaveTextContent('6 hmeta 24 h21/09: mediana');
+    hoverColumn(figure, 2, 3);
+    expect(figure.querySelector('.viz-tip')).toHaveTextContent('sem dado');
+    // A tabela da série traz os mesmos números, dia a dia.
+    const table = within(
+      screen.getByRole('table', {
+        name: 'Moderação por dia: os mesmos números dos gráficos, em tabela.',
+      }),
+    );
+    expect(
+      table
+        .getAllByRole('row')
+        .slice(1)
+        .map((r) =>
+          within(r)
+            .getAllByRole('cell')
+            .map((c) => c.textContent),
+        ),
+    ).toEqual([
+      ['21/09', '2', '0', '1', '0', '6 h'],
+      ['22/09', '3', '2', '2', '1', '30 h'],
+      ['23/09', '0', '0', '0', '0', '—'],
+    ]);
     expect(charts.getByText('mediana do dia')).toBeInTheDocument();
     expect(charts.getByText(/^Meta/)).toHaveTextContent('Meta 24 h');
   });
@@ -551,6 +575,7 @@ describe('ModerationHealthSection: série por dia (ADR 50)', () => {
       }),
     ).toBeInTheDocument();
     expect(charts.queryByText(/^máx/)).not.toBeInTheDocument();
+    expect(document.querySelector('.viz-peak')).toBeNull();
   });
 });
 
@@ -560,7 +585,7 @@ describe('ModerationHealthSection: remoções e sinais', () => {
     await loaded();
 
     expect(screen.getByText('Nenhuma remoção no período.')).toBeInTheDocument();
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('health-signals')).not.toBeInTheDocument();
   });
 
   it('as remoções vêm contadas por tipo, com singular e plural de cada um', async () => {

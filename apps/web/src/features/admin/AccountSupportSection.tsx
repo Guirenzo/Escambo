@@ -6,6 +6,7 @@ import { errorMessage } from '../../lib/errors';
 import { dt } from '../../lib/format';
 import { useAdminAccountLookup, useAdminResetMfa } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { SectionHead } from './SectionHead';
 
 const ROLE_LABEL: Record<UserRole, string> = {
   client: 'Cliente',
@@ -59,17 +60,14 @@ export function AccountSupportSection() {
 
   return (
     <section className="card" id="atendimento-conta" aria-labelledby="atendimento-conta-title">
-      <div className="card-head">
-        <h3 id="atendimento-conta-title">
-          <UserCog size={16} /> Atendimento: conta
-        </h3>
-      </div>
-      <p className="muted tiny">
-        Ache a conta pelo e-mail. Desativar a verificação em duas etapas é para quem perdeu o
-        celular e os códigos de recuperação: confirme antes que é o titular (pelo chamado de
-        suporte, por exemplo) e registre o motivo.
-      </p>
-      <form className="stack" onSubmit={search} aria-label="Buscar conta por e-mail">
+      <SectionHead
+        icon={UserCog}
+        tone="blue"
+        title="Atendimento: conta"
+        titleId="atendimento-conta-title"
+        subtitle="Ache a conta pelo e-mail. Desativar a verificação em duas etapas é para quem perdeu o celular e os códigos de recuperação: confirme antes que é o titular (pelo chamado de suporte, por exemplo) e registre o motivo."
+      />
+      <form className="lookup-form" onSubmit={search} aria-label="Buscar conta por e-mail">
         <Field label="E-mail da conta">
           <input
             type="email"

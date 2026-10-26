@@ -1,13 +1,15 @@
-import { Download, LineChart } from 'lucide-react';
+import { CalendarRange, Coins, Download, LineChart } from 'lucide-react';
 import { useState } from 'react';
-import type { FinanceBucket, FinanceGranularity } from '@escambo/types';
+import type { AdminFinanceReport, FinanceGranularity } from '@escambo/types';
+import { ColumnChart } from '../../components/charts';
 import { Button, EmptyState, onTablistKeyDown, QueryState, TableWrap } from '../../components/ui';
 import { api } from '../../lib/api';
 import { saveBlob } from '../../lib/download';
-import { addDays, brl, dateInputValue } from '../../lib/format';
+import { addDays, axisLabel, brl, brlAxis, dateInputValue } from '../../lib/format';
 import { useAdminFinance } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
-import { bucketFullLabel, bucketLabel, GRANULARITY_WORD } from './buckets';
+import { allBuckets, bucketFullLabel, GRANULARITY_WORD } from './buckets';
+import { SectionHead } from './SectionHead';
 import { UsageReport } from './UsageReport';
 
 type Preset = '30d' | '6m' | '12m' | 'custom';
@@ -72,6 +74,18 @@ function rangeOf(
 /** "2026-09-14" → "14/09/2026". */
 const brDay = (s: string): string => `${s.slice(8)}/${s.slice(5, 7)}/${s.slice(0, 4)}`;
 
+/** O que o leitor de tela ouve no lugar das colunas: período, total e o período de maior receita. */
+export function revenueSummary(r: AdminFinanceReport): string {
+  const head = `Receita da plataforma por ${GRANULARITY_WORD[r.granularity]}, de ${brDay(r.from)} a ${brDay(r.to)}: total ${brl(r.totals.revenue)}`;
+  const top = r.series.reduce<AdminFinanceReport['series'][number] | null>(
+    (a, b) => (!a || b.revenue > a.revenue ? b : a),
+    null,
+  );
+  return top && top.revenue > 0
+    ? `${head}; maior em ${bucketFullLabel(top.bucket, r.granularity)}, ${brl(top.revenue)}.`
+    : `${head}.`;
+}
+
 /**
  * Financeiro do admin: receita da plataforma derivada do ledger de R$ (taxas retidas, líquidas
  * de estornos), depósitos, saques, reembolsos e GMV por dia, semana ou mês, com o ledger
@@ -103,74 +117,76 @@ export function FinanceSection() {
 
   return (
     <section className="card" aria-labelledby="finance-title" data-testid="finance">
-      <div className="card-head">
-        <h3 id="finance-title">
-          <LineChart size={16} /> Financeiro
-        </h3>
-        <div className="fin-controls">
-          <div
-            className="tabs tabs-mini"
-            role="tablist"
-            onKeyDown={onTablistKeyDown}
-            aria-label="Período do relatório"
-          >
-            {PRESETS.map((p) => (
-              <button
-                key={p.key}
-                type="button"
-                role="tab"
-                aria-selected={preset === p.key}
-                className={preset === p.key ? 'active' : ''}
-                onClick={() => {
-                  setPreset(p.key);
-                  setChosen(null);
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <div className="tabs tabs-mini" role="group" aria-label="Agrupar por">
-            {GRANULARITIES.map((g) => (
-              <button
-                key={g.key}
-                type="button"
-                aria-pressed={q.granularity === g.key}
-                className={q.granularity === g.key ? 'active' : ''}
-                onClick={() => setChosen(g.key)}
-              >
-                {g.label}
-              </button>
-            ))}
-          </div>
-          {preset === 'custom' && (
-            <div className="fin-range">
-              <input
-                type="date"
-                aria-label="De"
-                value={from}
-                max={to}
-                onChange={(e) => setFrom(e.target.value)}
-              />
-              <span className="muted tiny">até</span>
-              <input
-                type="date"
-                aria-label="Até"
-                value={to}
-                min={from}
-                onChange={(e) => setTo(e.target.value)}
-              />
-            </div>
-          )}
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void exportCsv()}
-            disabled={exporting}
-          >
-            <Download size={14} /> {exporting ? 'Exportando…' : 'Exportar CSV'}
-          </Button>
+      <SectionHead
+        icon={LineChart}
+        title="Financeiro"
+        titleId="finance-title"
+        subtitle="Receita da plataforma e o dinheiro que entrou e saiu no período, com o ledger em CSV."
+      />
+      <div className="fin-controls">
+        <div
+          className="tabs tabs-mini"
+          role="tablist"
+          onKeyDown={onTablistKeyDown}
+          aria-label="Período do relatório"
+        >
+          {PRESETS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              role="tab"
+              aria-selected={preset === p.key}
+              className={preset === p.key ? 'active' : ''}
+              onClick={() => {
+                setPreset(p.key);
+                setChosen(null);
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
         </div>
+        <div className="tabs tabs-mini" role="group" aria-label="Agrupar por">
+          {GRANULARITIES.map((g) => (
+            <button
+              key={g.key}
+              type="button"
+              aria-pressed={q.granularity === g.key}
+              className={q.granularity === g.key ? 'active' : ''}
+              onClick={() => setChosen(g.key)}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+        {preset === 'custom' && (
+          <div className="fin-range">
+            <input
+              type="date"
+              aria-label="De"
+              value={from}
+              max={to}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+            <span className="muted tiny">até</span>
+            <input
+              type="date"
+              aria-label="Até"
+              value={to}
+              min={from}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </div>
+        )}
+        <Button
+          type="button"
+          variant="secondary"
+          className="fin-export"
+          onClick={() => void exportCsv()}
+          disabled={exporting}
+        >
+          <Download size={14} /> {exporting ? 'Exportando…' : 'Exportar CSV'}
+        </Button>
       </div>
 
       <QueryState
@@ -180,11 +196,13 @@ export function FinanceSection() {
         onRetry={() => void report.refetch()}
       >
         {(r) => {
-          const max = Math.max(...r.series.map((b) => b.revenue), 0.01);
+          const per = GRANULARITY_WORD[r.granularity];
+          const byBucket = new Map(r.series.map((b) => [b.bucket, b]));
+          const buckets = allBuckets(r.from, r.to, r.granularity);
           return (
             <>
               <div className="fin-kpis">
-                <div className="fin-kpi">
+                <div className="fin-kpi lead">
                   <span className="kpi-label">Receita da plataforma</span>
                   <strong data-testid="finance-revenue">{brl(r.totals.revenue)}</strong>
                   <span className="muted tiny">taxas retidas, líquidas de estornos</span>
@@ -212,37 +230,39 @@ export function FinanceSection() {
                   <span className="muted tiny">devolvidos a clientes</span>
                 </div>
               </div>
-              <p className="muted tiny" data-testid="finance-period">
-                {brDay(r.from)} a {brDay(r.to)} · por {GRANULARITY_WORD[r.granularity]} · agora:{' '}
-                {brl(r.now.inEscrow)} em escrow e {brl(r.now.usersBalance)} de saldo dos usuários
-                (passivo com usuários).
+              <p className="viz-caption muted tiny" data-testid="finance-period">
+                <CalendarRange size={14} aria-hidden="true" />
+                {brDay(r.from)} a {brDay(r.to)} · por {per} · agora: {brl(r.now.inEscrow)} em escrow
+                e {brl(r.now.usersBalance)} de saldo dos usuários (passivo com usuários).
               </p>
 
               {r.series.length === 0 ? (
-                <EmptyState>Sem movimentação no período.</EmptyState>
+                <EmptyState icon={Coins} title="Sem movimentação no período">
+                  Nenhuma taxa, depósito, saque ou reembolso entre {brDay(r.from)} e {brDay(r.to)}.
+                </EmptyState>
               ) : (
                 <>
-                  <div
-                    className="fin-chart"
-                    role="img"
-                    aria-label={`Receita da plataforma por ${GRANULARITY_WORD[r.granularity]}`}
-                  >
-                    {r.series.map((b: FinanceBucket) => (
-                      <div
-                        className="fin-bar"
-                        key={b.bucket}
-                        title={`${bucketFullLabel(b.bucket, r.granularity)}: ${brl(b.revenue)}`}
-                      >
-                        <div
-                          className="fin-bar-fill"
-                          style={{ height: `${Math.max(2, (b.revenue / max) * 100)}%` }}
-                        />
-                        <span className="fin-bar-label">{bucketLabel(b.bucket)}</span>
-                      </div>
-                    ))}
+                  <div className="viz-block">
+                    <h4 className="viz-title">Receita da plataforma por {per}</h4>
+                    <ColumnChart
+                      data={buckets.map((b, i) => ({
+                        key: b,
+                        axis: axisLabel(b, i === 0),
+                        label: bucketFullLabel(b, r.granularity),
+                        values: [byBucket.get(b)?.revenue ?? 0],
+                      }))}
+                      series={[{ label: 'Receita', tone: 'green' }]}
+                      summary={revenueSummary(r)}
+                      format={brl}
+                      tick={brlAxis}
+                      busy={report.isPlaceholderData}
+                    />
                   </div>
                   <TableWrap label="Tabela do relatório financeiro">
-                    <table className="table">
+                    <table className="table t-list">
+                      <caption className="sr-only">
+                        Relatório financeiro por {per}: os períodos com movimento.
+                      </caption>
                       <thead>
                         <tr>
                           <th>Período</th>
@@ -258,12 +278,24 @@ export function FinanceSection() {
                         {r.series.map((b) => (
                           <tr key={b.bucket}>
                             <td>{bucketFullLabel(b.bucket, r.granularity)}</td>
-                            <td className="num">{brl(b.revenue)}</td>
-                            <td className="num">{brl(b.deposits)}</td>
-                            <td className="num">{brl(b.withdrawals)}</td>
-                            <td className="num">{brl(b.refunds)}</td>
-                            <td className="num">{b.completedContracts}</td>
-                            <td className="num">{brl(b.gmv)}</td>
+                            <td className="num" data-label="Receita">
+                              {brl(b.revenue)}
+                            </td>
+                            <td className="num" data-label="Depósitos">
+                              {brl(b.deposits)}
+                            </td>
+                            <td className="num" data-label="Saques">
+                              {brl(b.withdrawals)}
+                            </td>
+                            <td className="num" data-label="Reembolsos">
+                              {brl(b.refunds)}
+                            </td>
+                            <td className="num" data-label="Concluídas">
+                              {b.completedContracts}
+                            </td>
+                            <td className="num" data-label="GMV">
+                              {brl(b.gmv)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

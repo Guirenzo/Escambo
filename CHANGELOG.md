@@ -5,6 +5,39 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.50.0] — 2026-10-26
+
+Marca própria, gráficos refeitos e o Admin redesenhado por dentro (ADR 68): fecha o que a 1.49.0 deixou para depois. A situação dos requisitos não muda: RF 84 implementados, 1 parcial, 5 não implementados e 2 fora do escopo; RNF 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Marca própria, a "moeda encaixada":** um círculo em duas peças iguais (verde e âmbar) que se encaixam por um degrau. A moeda é o valor guardado no escrow; as peças são as duas partes da troca, e uma é a outra girada, então nenhuma vale mais. Entrou na lateral, na barra do celular, na página inicial, no login, no 404, nos termos e nas telas de conta (componente `BrandMark`). Símbolo, logo e logo negativo em `public/marca/`, com o texto em curvas; favicon, ícones do app e imagem de compartilhamento refeitos.
+- **Admin: faixa "Pede atenção agora"** no topo, com um atalho para cada fila que tem alguém esperando (disputas, saques, denúncias, contestações, chamados e exclusões). Sem pendência, diz que está tudo em dia.
+- Tabela da série por dia no gráfico "Tempo até decidir" da saúde da moderação.
+
+### Alterado
+
+- **Gráficos próprios** (`components/charts.tsx`, HTML/CSS e SVG, sem dependência nova): colunas simples ou empilhadas e linha com meta; grade de fio, valor escrito só no pico, rótulos do eixo que rareiam com a largura, dica ao passar o mouse e ao tocar, resumo em texto para o leitor de tela, legenda e a tabela com os mesmos números. Usados em Meus ganhos, Receita da plataforma, Usuários ativos, Decisões por dia, Tempo até decidir e nas barras de parte do todo da moderação. As cores das séries passaram pelo validador de paleta (luminosidade, croma e separação para daltonismo).
+- Trocar o período de um gráfico mantém o anterior apagado até o novo chegar, sem pulo de layout.
+- A Receita da plataforma mostra os períodos sem movimento zerados, para o tempo não encolher no gráfico.
+- **Admin por dentro:** todas as seções com o mesmo cabeçalho (ícone, título, uma linha dizendo para que serve, contagem e ações); Financeiro e Uso com os filtros numa linha e a tabela que vira lista no celular; Parâmetros com campo, unidade e "Salvar" alinhados e as regras fixas num bloco à parte; as filas (denúncias, mediação, saques, exclusões, contestações e desistências) em cartões, com a ação principal em verde, estornar e excluir em vermelho e o saque atrasado marcado em âmbar; e-mails enviados de 12 em 12, com "Mostrar mais".
+- `scripts/gen-icons.mjs` gera os ícones com o sharp, sem navegador; `scripts/text-outline.mjs` (novo) converte o texto do logotipo em curvas a partir das fontes do projeto.
+
+### Segurança
+
+- Três dependências da API com vulnerabilidade alta publicada (o `npm audit` do CI passou a recusar): `zod` 3.25 → 4.6.7 (uma lista sem limite de tamanho, com muitos itens inválidos, podia esgotar a memória), `multer` 2.4.0 → 2.5.0 e `body-parser` 1.20.8 → 1.20.9 (negação de serviço). Na troca do zod, três esquemas passaram de `invalid_type_error`/`errorMap` para `error`; as mensagens em português continuam as mesmas, e o texto padrão do zod (em inglês) segue fora da resposta.
+- O multer 2.5 passou a somar sozinho o byte de folga do limite de cada campo de texto, que o Escambo já somava: a folga daqui saiu, senão um campo de 4097 bytes voltaria a passar no limite de 4096 (o teste do upload pegou).
+
+### Corrigido
+
+- Com a fila vazia, as filas do Admin (e as de denúncias e contestações) mostravam o cabeçalho de uma tabela sem linhas em vez da mensagem de vazio.
+- A barra vazia da saúde da moderação usava a mesma classe do estado vazio e saía com 64 px de altura.
+- A validação de "prazo no futuro" da contratação usava o relógio do sistema, e a regra, o relógio da API: num teste com o relógio parado, as duas viam instantes diferentes, e um teste de integração com data fixa passou a falhar quando essa data chegou. As duas usam agora o mesmo relógio; em produção nada muda.
+
+### Para atualizar
+
+Nada a fazer na VPS: sem migration nem variável nova. O favicon novo aparece depois de recarregar sem cache.
+
 ## [1.49.0] — 2026-10-21
 
 Visual novo: página inicial pública, login e cadastro, e o app logado inteiro (ADR 67). A localização dos freelancers passa a sair a ~1 km em toda resposta pública. RF: 84 implementados, 1 parcial, 5 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.

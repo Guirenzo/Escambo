@@ -74,12 +74,22 @@ describe('EarningsSection', () => {
     expect(chart.getAttribute('aria-label')!.replace(/\s/g, ' ')).toBe(
       'Ganhos por mês de 01/08/2026 a 19/10/2026: total R$ 1.020,00; maior em 10/2026, R$ 850,00.',
     );
-    // Barras proporcionais; o período sem ganho fica sem barra.
-    const fills = chart.querySelectorAll<HTMLElement>('.fin-bar-fill');
-    expect([...fills].map((f) => f.style.height)).toEqual(['0px', '20%', '100%']);
-    expect(chart.querySelector('.fin-bar')!.getAttribute('title')!.replace(/\s/g, ' ')).toBe(
-      '08/2026: R$ 0,00',
-    );
+    // Colunas proporcionais ao topo "redondo" do eixo (R$ 1 mil); o período sem ganho fica sem
+    // coluna, e só a mais alta leva o valor escrito.
+    const bars = chart.querySelectorAll<HTMLElement>('.viz-stack');
+    expect([...bars].map((b) => b.style.height)).toEqual(['17%', '85%']);
+    expect(chart.querySelector('.viz-peak')!.textContent!.replace(/\s/g, ' ')).toBe('R$ 850,00');
+    expect([...chart.querySelectorAll('.viz-y span')].map((t) => t.textContent)).toEqual([
+      'R$ 1 mil',
+      'R$ 500',
+      'R$ 0',
+    ]);
+    // Meses pelo nome, com o ano no primeiro.
+    expect([...chart.querySelectorAll('.viz-x span')].map((t) => t.textContent)).toEqual([
+      'ago/26',
+      'set',
+      'out',
+    ]);
 
     const table = screen.getByRole('table', { name: 'Ganhos por mês' });
     const rows = within(table).getAllByRole('row').slice(1);
@@ -159,7 +169,7 @@ describe('EarningsSection', () => {
     expect(screen.getByRole('tablist', { name: 'Período dos ganhos' })).toBeInTheDocument();
   });
 
-  it('por dia, o rótulo vai em uma barra a cada cinco e na última', async () => {
+  it('por dia, os rótulos do eixo rareiam pela largura (todos, um a cada 2 ou a cada 3)', async () => {
     const series = Array.from({ length: 12 }, (_, i) => ({
       bucket: `2026-10-${String(i + 1).padStart(2, '0')}`,
       amount: i,
@@ -170,12 +180,12 @@ describe('EarningsSection', () => {
     renderSection();
 
     const chart = await screen.findByRole('img');
-    expect([...chart.querySelectorAll('.fin-bar-label')].map((l) => l.textContent)).toEqual([
-      '01/10',
-      '06/10',
-      '11/10',
-      '12/10',
-    ]);
+    const labels = (sel: string) =>
+      [...chart.querySelectorAll(`.viz-x ${sel}`)].map((l) => l.textContent);
+    expect(labels('span')).toHaveLength(12);
+    expect(labels('.lw')).toHaveLength(12);
+    expect(labels('.lm')).toEqual(['01/10', '03/10', '05/10', '07/10', '09/10', '11/10']);
+    expect(labels('.ln')).toEqual(['01/10', '04/10', '07/10', '10/10']);
     expect(screen.getByRole('rowheader', { name: '01/10/2026' })).toBeInTheDocument();
   });
 

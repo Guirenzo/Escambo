@@ -1,8 +1,9 @@
-import { TrendingUp } from 'lucide-react';
+import { CalendarRange, TrendingUp, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import type { EarningsGranularity, WalletEarnings } from '@escambo/types';
+import { ColumnChart } from '../../components/charts';
 import { EmptyState, onTablistKeyDown, QueryState, TableWrap } from '../../components/ui';
-import { brl } from '../../lib/format';
+import { axisLabel, brl, brlAxis } from '../../lib/format';
 import { useWalletEarnings } from '../../lib/hooks';
 import { timezoneLabel } from '../../lib/timezones';
 
@@ -44,23 +45,20 @@ function chartSummary(e: WalletEarnings): string {
   );
 }
 
-function Body({ e }: { e: WalletEarnings }) {
+function Body({ e, busy }: { e: WalletEarnings; busy: boolean }) {
   if (!e.hasEarnings) {
     return (
-      <EmptyState>
+      <EmptyState icon={TrendingUp} title="Seus ganhos aparecem aqui">
         Você ainda não recebeu por nenhum trabalho. Quando um cliente aprovar uma entrega sua (ou um
         marco) ou uma troca com torna for concluída, o valor aparece aqui, por período.
       </EmptyState>
     );
   }
-  const max = Math.max(...e.series.map((b) => b.amount), 0.01);
   const showCredits = e.credits.total !== 0 || e.credits.contracts > 0;
-  // Por dia são 30 barras: o rótulo vai em uma a cada cinco, para não encavalar.
-  const labelEvery = e.granularity === 'day' ? 5 : 1;
   return (
     <>
       <div className="fin-kpis">
-        <div className="fin-kpi">
+        <div className="fin-kpi lead">
           <span className="kpi-label">Ganhos no período</span>
           <strong data-testid="earnings-total">{brl(e.totals.amount)}</strong>
           <span className="muted tiny">liberados na carteira, já sem a taxa</span>
@@ -92,36 +90,29 @@ function Body({ e }: { e: WalletEarnings }) {
           </div>
         )}
       </div>
-      <p className="muted tiny" data-testid="earnings-period">
+      <p className="viz-caption muted tiny" data-testid="earnings-period">
+        <CalendarRange size={14} aria-hidden="true" />
         {brDay(e.from)} a {brDay(e.to)} · por {UNIT[e.granularity]} · dias no horário de{' '}
         {timezoneLabel(e.timezone)}.
       </p>
       {e.totals.amount === 0 ? (
-        <EmptyState>Nenhum ganho em reais nesse período.</EmptyState>
+        <EmptyState icon={Wallet}>Nenhum ganho em reais nesse período.</EmptyState>
       ) : (
         <>
-          <div className="fin-chart" role="img" aria-label={chartSummary(e)}>
-            {e.series.map((b, i) => (
-              <div
-                className="fin-bar"
-                key={b.bucket}
-                title={`${periodLabel(b.bucket, e.granularity)}: ${brl(b.amount)}`}
-              >
-                <div
-                  className="fin-bar-fill"
-                  style={
-                    b.amount > 0
-                      ? { height: `${Math.max(2, (b.amount / max) * 100)}%` }
-                      : { height: 0, minHeight: 0 }
-                  }
-                />
-                {(i % labelEvery === 0 || i === e.series.length - 1) && (
-                  <span className="fin-bar-label">{barLabel(b.bucket)}</span>
-                )}
-              </div>
-            ))}
-          </div>
-          <details>
+          <ColumnChart
+            data={e.series.map((b, i) => ({
+              key: b.bucket,
+              axis: axisLabel(b.bucket, i === 0),
+              label: periodLabel(b.bucket, e.granularity),
+              values: [b.amount],
+            }))}
+            series={[{ label: 'Ganhos', tone: 'green' }]}
+            summary={chartSummary(e)}
+            format={brl}
+            tick={brlAxis}
+            busy={busy}
+          />
+          <details className="more-details">
             <summary>Ver os valores em tabela</summary>
             <TableWrap label="Tabela de ganhos por período">
               <table className="table">
@@ -171,9 +162,12 @@ export function EarningsSection() {
   return (
     <section className="card" aria-labelledby="earnings-title" data-testid="earnings">
       <div className="card-head">
-        <h3 id="earnings-title">
-          <TrendingUp size={16} /> Meus ganhos
-        </h3>
+        <div>
+          <h3 id="earnings-title">
+            <TrendingUp size={16} /> Meus ganhos
+          </h3>
+          <p className="card-sub">O que ficou livre na sua carteira por trabalho feito.</p>
+        </div>
         {earnings.data?.hasEarnings && (
           <div
             className="tabs tabs-mini"
@@ -202,7 +196,7 @@ export function EarningsSection() {
         data={earnings.data}
         onRetry={() => void earnings.refetch()}
       >
-        {(e) => <Body e={e} />}
+        {(e) => <Body e={e} busy={earnings.isPlaceholderData} />}
       </QueryState>
     </section>
   );

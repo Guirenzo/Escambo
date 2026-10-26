@@ -1,4 +1,3 @@
-import { ArrowLeftRight } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { MfaChallenge } from '@escambo/types';
@@ -9,6 +8,7 @@ import { normalizeRecoveryCode, normalizeTotp } from '../../lib/mfa';
 import { usePageTitle } from '../../lib/title';
 import { AuthPanel } from './AuthPanel';
 import './auth.css';
+import { BrandMark } from '../../components/BrandMark';
 
 /**
  * Passo 2 do login numa conta com verificação em duas etapas (RF-090): a senha já foi conferida e
@@ -209,9 +209,7 @@ export function LoginForm({
       <div className="au-side">
         <div className="au-top">
           <Link to="/" className="brand au-brand">
-            <span className="brand-mark">
-              <ArrowLeftRight size={18} strokeWidth={2.5} />
-            </span>
+            <BrandMark />
             <span className="brand-name">Escambo</span>
           </Link>
         </div>

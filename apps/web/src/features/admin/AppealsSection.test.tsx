@@ -314,9 +314,17 @@ describe('AppealsSection: a fila', () => {
     expect(thumb(7)).toBeNull();
   });
 
-  // Hoje a lista vazia não diz nada: o QueryState recebe `empty` sem `isEmpty` e desenha a lista
-  // sem itens (defeito relatado, não corrigido aqui).
-  it.todo('fila vazia diz "Nenhuma contestação esperando decisão."');
+  it('fila vazia diz "Nenhuma contestação esperando decisão."; nas decididas, que não há nenhuma', async () => {
+    adminAppeals.mockResolvedValue([]);
+    const user = userEvent.setup();
+    render(wrap(<AppealsSection />));
+
+    expect(await screen.findByText('Nenhuma contestação esperando decisão.')).toBeInTheDocument();
+    expect(screen.getByText('0 esperando')).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: /contesta/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Decididas' }));
+    expect(await screen.findByText('Nenhuma contestação decidida ainda.')).toBeInTheDocument();
+  });
 });
 
 describe('AppealsSection: a decisão', () => {

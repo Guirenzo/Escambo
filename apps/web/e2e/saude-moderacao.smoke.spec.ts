@@ -69,7 +69,7 @@ test('painel de saúde da moderação: números, tabela de sinais, período, CSV
   const history = card.getByTestId('health-history');
   await expect(history.getByRole('img', { name: /^Decisões por dia/ })).toBeVisible();
   await expect(history.getByRole('img', { name: /meta de 24 h/ })).toBeVisible();
-  await expect(history.locator('svg text', { hasText: 'meta 24 h' })).toBeVisible();
+  await expect(history.locator('.viz-target', { hasText: 'meta 24 h' })).toBeVisible();
 
   // O período muda a janela e continua mostrando a remoção de agora.
   await card.getByRole('tab', { name: '7 dias' }).click();

@@ -3,15 +3,23 @@ import {
   Banknote,
   Briefcase,
   CheckCircle2,
+  ChevronRight,
   Coins,
+  Flag,
   Gavel,
   LifeBuoy,
   Lock,
   Mail,
+  MailOpen,
+  Scale,
   ShieldAlert,
+  ShieldCheck,
   Trash2,
+  UserCheck,
   Users,
+  UserX,
   XCircle,
+  type LucideIcon,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
@@ -19,9 +27,11 @@ import { Link } from 'react-router-dom';
 import type {
   AdminDeletionRequest,
   AdminEmail,
+  AdminMetrics,
   AdminWithdrawal,
   Dispute,
   DisputeResolution,
+  ModerationHealth,
 } from '@escambo/types';
 import {
   Button,
@@ -31,8 +41,10 @@ import {
   onTablistKeyDown,
   PageHeader,
   QueryState,
+  Stat,
   TableWrap,
 } from '../../components/ui';
+import { Avatar } from '../../components/Avatar';
 import { dueDayText } from '../../lib/business-days';
 import {
   brl,
@@ -53,6 +65,7 @@ import {
   useAdminWithdrawalAction,
   useAdminWithdrawals,
   useMfaStatus,
+  useModerationHealth,
   useResolveDispute,
   qk,
 } from '../../lib/hooks';
@@ -67,6 +80,7 @@ import { ReportsSection } from '../admin/ReportsSection';
 import { SupportSection } from '../admin/SupportSection';
 import { AccountSupportSection } from '../admin/AccountSupportSection';
 import { isMfaRequired, MfaRequiredCard } from '../admin/MfaRequiredCard';
+import { CountBadge, SectionHead } from '../admin/SectionHead';
 import { useToast } from '../../lib/toast';
 
 const RESOLUTIONS: { value: DisputeResolution; label: string; hint: string }[] = [
@@ -399,10 +413,134 @@ const ADMIN_SECTIONS: [string, string][] = [
   ['emails', 'E-mails'],
 ];
 
+const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+/** Quantos e-mails a caixa de saída mostra de cada vez (a lista cresce com o uso da plataforma). */
+const EMAIL_PAGE = 12;
+
+interface Attention {
+  href: string;
+  Icon: LucideIcon;
+  tone: 'amber' | 'blue' | 'violet' | 'red';
+  title: string;
+  hint: string;
+}
+
+/**
+ * "Pede atenção agora": as filas com alguém esperando a equipe, cada uma um atalho para a seção. Os
+ * números vêm dos indicadores (renovados a cada 30 s) e da saúde da moderação; fila vazia não
+ * aparece, e sem nada pendente a faixa diz que está tudo em dia.
+ */
+function AttentionBand({
+  m,
+  health,
+}: {
+  m: AdminMetrics | undefined;
+  health: ModerationHealth | undefined;
+}) {
+  if (!m) return null;
+  const items: Attention[] = [];
+  if (m.openDisputes > 0)
+    items.push({
+      href: '#mediacao',
+      Icon: Gavel,
+      tone: 'red',
+      title: `Mediar ${plural(m.openDisputes, 'disputa', 'disputas')}`,
+      hint: 'o escrow espera a decisão',
+    });
+  if (m.pendingWithdrawals > 0)
+    items.push({
+      href: '#saques',
+      Icon: Banknote,
+      tone: m.overdueWithdrawals > 0 ? 'red' : 'amber',
+      title: `Pagar ${plural(m.pendingWithdrawals, 'saque', 'saques')}`,
+      hint: `${brl(m.pendingWithdrawalsAmount)}${
+        m.overdueWithdrawals > 0
+          ? ` · ${plural(m.overdueWithdrawals, 'passou', 'passaram')} do prazo`
+          : ' no prazo'
+      }`,
+    });
+  if (health && health.queue.pending > 0)
+    items.push({
+      href: '#reports-title',
+      Icon: Flag,
+      tone: health.queue.overSlaPending > 0 ? 'red' : 'amber',
+      title: `Decidir ${plural(health.queue.pending, 'denúncia', 'denúncias')}`,
+      hint:
+        health.queue.overSlaPending > 0
+          ? `${plural(health.queue.overSlaPending, 'passou', 'passaram')} da meta de ${health.slaHours} h`
+          : `meta de ${health.slaHours} h`,
+    });
+  if (health && health.queue.appealsPending > 0)
+    items.push({
+      href: '#appeals-title',
+      Icon: Scale,
+      tone: 'violet',
+      title: `Julgar ${plural(health.queue.appealsPending, 'contestação', 'contestações')}`,
+      hint: 'o autor pediu revisão',
+    });
+  if (m.supportAwaitingReply > 0)
+    items.push({
+      href: '#suporte',
+      Icon: LifeBuoy,
+      tone: m.supportSlaOverdue > 0 ? 'red' : 'blue',
+      title: `Responder ${plural(m.supportAwaitingReply, 'chamado', 'chamados')}`,
+      hint:
+        m.supportSlaOverdue > 0
+          ? `${plural(m.supportSlaOverdue, 'está', 'estão')} com o SLA vencido`
+          : 'aguardando a equipe',
+    });
+  if (m.pendingDeletions > 0)
+    items.push({
+      href: '#exclusoes',
+      Icon: UserX,
+      tone: 'violet',
+      title: `Analisar ${plural(m.pendingDeletions, 'exclusão', 'exclusões')}`,
+      hint: 'pedidos de conta (LGPD)',
+    });
+
+  return (
+    <section className="adm-attention" aria-labelledby="attention-title" data-testid="attention">
+      <div className="adm-attention-head">
+        <h2 id="attention-title">Pede atenção agora</h2>
+        <p>
+          {items.length > 0
+            ? 'As filas com alguém esperando a equipe. Cada atalho leva à seção.'
+            : 'Nenhuma fila esperando a equipe: tudo em dia.'}
+        </p>
+      </div>
+      {items.length > 0 ? (
+        <ul className="adm-attention-list">
+          {items.map((it) => (
+            <li key={it.href}>
+              <a href={it.href} className="adm-action">
+                <span className={`adm-action-ico ${it.tone}`} aria-hidden="true">
+                  <it.Icon size={18} />
+                </span>
+                <span className="adm-action-text">
+                  <strong>{it.title}</strong>
+                  <span>{it.hint}</span>
+                </span>
+                <ChevronRight size={16} aria-hidden="true" className="adm-action-go" />
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="adm-attention-ok">
+          <CheckCircle2 size={18} aria-hidden="true" /> Disputas, saques, denúncias, contestações,
+          chamados e exclusões sem pendência.
+        </p>
+      )}
+    </section>
+  );
+}
+
 /** Métricas, fila de mediação, fila de saques, pedidos LGPD, atendimento e e-mails. */
 function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
   useScrollToHashWhenSettled();
   const metrics = useAdminMetrics();
+  const health = useModerationHealth(30);
   const mfaBlocked = isMfaRequired(metrics.error);
   useEffect(() => {
     if (mfaBlocked) onMfaRequired();
@@ -425,6 +563,7 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
   } | null>(null);
   const emails = useAdminEmails();
   const [openEmail, setOpenEmail] = useState<AdminEmail | null>(null);
+  const [emailCount, setEmailCount] = useState(EMAIL_PAGE);
   const m = metrics.data;
 
   async function startProcessing(w: AdminWithdrawal): Promise<void> {
@@ -440,6 +579,8 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
     <div className="page page-wide admin-page">
       <PageHeader title="Administração" subtitle={ADMIN_SUBTITLE} />
 
+      <AttentionBand m={m} health={health.data} />
+
       {/* Atalhos para as seções desta página longa: âncoras comuns (o Tab e o "voltar" seguem).
           Lista com nome, e não <nav>: um marco de navegação no meio do conteúdo embaralharia a ordem
           "menu antes do conteúdo" de quem anda pelos marcos (como nas migalhas). */}
@@ -453,103 +594,77 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
         </ul>
       </div>
 
-      <div className="kpis" id="indicadores">
-        <div className="kpi">
-          <div className="kpi-top">
-            <span className="kpi-ico">
-              <Users size={18} />
-            </span>
-            <span className="kpi-label">Usuários</span>
-          </div>
-          <strong className="kpi-value">{m ? m.users : '—'}</strong>
-          <span className="muted tiny">{m ? `${m.freelancers} freelancers` : ''}</span>
-        </div>
-        <div className="kpi">
-          <div className="kpi-top">
-            <span className="kpi-ico">
-              <Briefcase size={18} />
-            </span>
-            <span className="kpi-label">Contratações</span>
-          </div>
-          <strong className="kpi-value">{m ? m.contracts : '—'}</strong>
-          <span className="muted tiny">
-            {m ? (
+      <div className="kpis adm-kpis" id="indicadores">
+        <Stat
+          Icon={Users}
+          label="Usuários"
+          value={m ? m.users : '—'}
+          hint={m ? `${m.freelancers} freelancers` : ''}
+        />
+        <Stat
+          Icon={Briefcase}
+          label="Contratações"
+          value={m ? m.contracts : '—'}
+          hint={
+            m ? (
               <>
                 <CheckCircle2 size={12} /> {m.completedContracts} concluídas
               </>
             ) : (
               ''
-            )}
-          </span>
-        </div>
-        <div className="kpi amber">
-          <div className="kpi-top">
-            <span className="kpi-ico">
-              <Gavel size={18} />
-            </span>
-            <span className="kpi-label">Disputas abertas</span>
-          </div>
-          <strong className="kpi-value">{m ? m.openDisputes : '—'}</strong>
-          <span className="muted tiny">aguardando mediação</span>
-        </div>
-        <div className="kpi blue">
-          <div className="kpi-top">
-            <span className="kpi-ico">
-              <Coins size={18} />
-            </span>
-            <span className="kpi-label">Receita da plataforma</span>
-          </div>
-          <strong className="kpi-value">{m ? brl(m.platformFees) : '—'}</strong>
-          <span className="muted tiny">taxas retidas desde o início, líquidas de estornos</span>
-        </div>
-        <div className="kpi">
-          <div className="kpi-top">
-            <span className="kpi-ico">
-              <ArrowDownToLine size={18} />
-            </span>
-            <span className="kpi-label">Depósitos confirmados</span>
-          </div>
-          <strong className="kpi-value">{m ? brl(m.depositsTotal) : '—'}</strong>
-          <span className="muted tiny">entradas via PIX (gateway)</span>
-        </div>
-        <div className="kpi amber">
-          <div className="kpi-top">
-            <span className="kpi-ico">
-              <Lock size={18} />
-            </span>
-            <span className="kpi-label">Em escrow</span>
-          </div>
-          <strong className="kpi-value">{m ? brl(m.inEscrow) : '—'}</strong>
-          <span className="muted tiny">reservado em propostas e contratações</span>
-        </div>
-        <div className="kpi">
-          <div className="kpi-top">
-            <span className="kpi-ico">
-              <Banknote size={18} />
-            </span>
-            <span className="kpi-label">Saldo dos usuários</span>
-          </div>
-          <strong className="kpi-value">{m ? brl(m.usersBalance) : '—'}</strong>
-          <span className="muted tiny">disponível para contratar ou sacar</span>
-        </div>
-        <div className="kpi blue">
-          <div className="kpi-top">
-            <span className="kpi-ico">
-              <Banknote size={18} />
-            </span>
-            <span className="kpi-label">Saques pendentes</span>
-          </div>
-          <strong className="kpi-value">{m ? m.pendingWithdrawals : '—'}</strong>
-          <span className="muted tiny">
-            {m ? `${brl(m.pendingWithdrawalsAmount)} a pagar` : ''}
-            {m && m.overdueWithdrawals > 0 ? ` · ${m.overdueWithdrawals} atrasado(s)` : ''}
-          </span>
-        </div>
+            )
+          }
+        />
+        <Stat
+          Icon={Gavel}
+          label="Disputas abertas"
+          value={m ? m.openDisputes : '—'}
+          tone={m && m.openDisputes > 0 ? 'amber' : undefined}
+          hint="aguardando mediação"
+        />
+        <Stat
+          Icon={Coins}
+          label="Receita da plataforma"
+          value={m ? brl(m.platformFees) : '—'}
+          tone="blue"
+          hint="taxas retidas desde o início, líquidas de estornos"
+        />
+        <Stat
+          Icon={ArrowDownToLine}
+          label="Depósitos confirmados"
+          value={m ? brl(m.depositsTotal) : '—'}
+          hint="entradas via PIX (gateway)"
+        />
+        <Stat
+          Icon={Lock}
+          label="Em escrow"
+          value={m ? brl(m.inEscrow) : '—'}
+          tone="amber"
+          hint="reservado em propostas e contratações"
+        />
+        <Stat
+          Icon={Banknote}
+          label="Saldo dos usuários"
+          value={m ? brl(m.usersBalance) : '—'}
+          hint="disponível para contratar ou sacar"
+        />
+        <Stat
+          Icon={Banknote}
+          label="Saques pendentes"
+          value={m ? m.pendingWithdrawals : '—'}
+          tone="blue"
+          hint={
+            <>
+              {m ? `${brl(m.pendingWithdrawalsAmount)} a pagar` : ''}
+              {m && m.overdueWithdrawals > 0 ? ` · ${m.overdueWithdrawals} atrasado(s)` : ''}
+            </>
+          }
+        />
         {/* Suporte (RF-076): ocupa a linha inteira, com os três números lado a lado. */}
         <div className="kpi kpi-wide amber" data-testid="kpi-support">
           <div className="kpi-top">
-            <span className="kpi-ico">
-              <LifeBuoy size={18} />
+            <span className="kpi-ico" aria-hidden="true">
+              <LifeBuoy size={20} />
             </span>
             <span className="kpi-label">Chamados de suporte</span>
             <a className="tiny kpi-link" href="#suporte">
@@ -595,22 +710,32 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
       <AccountSupportSection />
 
       <section className="card" id="mediacao">
-        <div className="card-head">
-          <h3>
-            <ShieldAlert size={16} /> Fila de mediação
-          </h3>
-          {disputes.data && <span className="muted tiny">{disputes.data.length} aberta(s)</span>}
-        </div>
+        <SectionHead
+          icon={ShieldAlert}
+          tone="red"
+          title="Fila de mediação"
+          subtitle="Disputas abertas pelas partes: decida se o escrow vai ao freelancer, volta ao cliente ou se divide."
+          badge={
+            disputes.data && (
+              <CountBadge hot={disputes.data.length > 0}>
+                {disputes.data.length} aberta(s)
+              </CountBadge>
+            )
+          }
+        />
         <QueryState
           isLoading={disputes.isLoading}
           error={disputes.error}
           data={disputes.data}
+          isEmpty={(list) => list.length === 0}
+          emptyIcon={ShieldCheck}
+          emptyTitle="Fila em dia"
           empty="Nenhuma disputa aberta. Tudo em paz."
           onRetry={() => void disputes.refetch()}
         >
           {(list) => (
             <TableWrap label="Tabela de disputas">
-              <table className="table">
+              <table className="table queue">
                 <thead>
                   <tr>
                     <th>Disputa</th>
@@ -623,25 +748,29 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
                 <tbody>
                   {list.map((d) => (
                     <tr key={d.id} data-testid={`dispute-${d.id}`}>
-                      <td className="cell-title">
+                      <td className="cell-title q-main">
                         <strong>#{d.id}</strong>
                         <span className="muted tiny">aberta em {dtm(d.createdAt)}</span>
                       </td>
-                      <td>
+                      <td data-label="Contrato">
                         <Link to={`/contratos/${d.contractId}`}>#{d.contractId}</Link>
                       </td>
-                      <td>
+                      <td data-label="Motivo" className="q-wide">
                         <strong>{DISPUTE_REASON_LABEL[d.reason] ?? d.reason}</strong>
-                        <div className="muted tiny">{d.description}</div>
+                        <div className="muted tiny q-text">{d.description}</div>
                       </td>
-                      <td>
+                      <td data-label="Status">
                         <span className="pill status-disputed">
                           {DISPUTE_STATUS_LABEL[d.status] ?? d.status}
                         </span>
                       </td>
-                      <td>
+                      <td className="q-acts">
                         <div className="acts">
-                          <Button variant="mini" onClick={() => setResolving(d)}>
+                          <Button
+                            variant="mini"
+                            className="q-primary"
+                            onClick={() => setResolving(d)}
+                          >
                             <Gavel size={14} /> Resolver
                           </Button>
                         </div>
@@ -656,10 +785,12 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
       </section>
 
       <section className="card" id="saques">
-        <div className="card-head">
-          <h3>
-            <Banknote size={16} /> Fila de saques
-          </h3>
+        <SectionHead
+          icon={Banknote}
+          tone="amber"
+          title="Fila de saques"
+          subtitle="Pagamentos pedidos pelos usuários, pelo prazo: processe, conclua com a referência ou estorne."
+        >
           <div
             className="tabs tabs-mini"
             role="tablist"
@@ -685,17 +816,24 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
               Todos
             </button>
           </div>
-        </div>
+        </SectionHead>
         <QueryState
           isLoading={withdrawals.isLoading}
           error={withdrawals.error}
           data={withdrawals.data}
-          empty="Nenhum saque aguardando. Nada a pagar."
+          isEmpty={(list) => list.length === 0}
+          emptyIcon={Banknote}
+          emptyTitle={scope === 'open' ? 'Fila em dia' : 'Sem saques'}
+          empty={
+            scope === 'open'
+              ? 'Nenhum saque aguardando. Nada a pagar.'
+              : 'Nenhum saque pedido ainda.'
+          }
           onRetry={() => void withdrawals.refetch()}
         >
           {(list) => (
             <TableWrap label="Tabela de saques">
-              <table className="table">
+              <table className="table queue">
                 <thead>
                   <tr>
                     <th>Saque</th>
@@ -709,12 +847,16 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
                 </thead>
                 <tbody>
                   {list.map((w) => (
-                    <tr key={w.id} data-testid={`withdrawal-${w.id}`}>
-                      <td className="cell-title">
+                    <tr
+                      key={w.id}
+                      data-testid={`withdrawal-${w.id}`}
+                      className={w.overdue ? 'q-late' : undefined}
+                    >
+                      <td className="cell-title q-main">
                         <strong>#{w.id}</strong>
                         <span className="muted tiny">pedido em {dtm(w.createdAt)}</span>
                       </td>
-                      <td>
+                      <td data-label="Prazo">
                         {/* RN-035: a fila já vem pelo prazo; o atrasado ganha a marca. */}
                         {w.dueAt ? (
                           <span className="muted tiny">até {dueDayText(w.dueAt)}</span>
@@ -727,25 +869,30 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
                           </div>
                         )}
                       </td>
-                      <td className="cell-title">
-                        <strong>{w.userName ?? '—'}</strong>
-                        <span className="muted tiny">{w.userEmail}</span>
+                      <td data-label="Titular">
+                        <div className="q-person">
+                          <Avatar name={w.userName ?? w.userEmail} size="sm" />
+                          <div className="cell-title">
+                            <strong>{w.userName ?? '—'}</strong>
+                            <span className="muted tiny">{w.userEmail}</span>
+                          </div>
+                        </div>
                       </td>
-                      <td>
-                        <strong className="price">{brl(w.amount)}</strong>
+                      <td data-label="Valor">
+                        <strong className="price q-amount">{brl(w.amount)}</strong>
                       </td>
-                      <td>
+                      <td data-label="Destino">
                         <span className="mono">{w.destination}</span>
                         <div className="muted tiny">
                           {w.method === 'pix' ? 'chave PIX' : 'conta bancária'}
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Status">
                         <span className={`pill status-${WITHDRAWAL_STATUS_TONE[w.status] ?? ''}`}>
                           {WITHDRAWAL_STATUS_LABEL[w.status] ?? w.status}
                         </span>
                       </td>
-                      <td>
+                      <td className="q-acts">
                         <div className="acts">
                           {w.status === 'requested' && (
                             <Button
@@ -760,12 +907,14 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
                             <>
                               <Button
                                 variant="mini"
+                                className="q-primary"
                                 onClick={() => setProcessing({ withdrawal: w, action: 'complete' })}
                               >
                                 <CheckCircle2 size={14} /> Concluir
                               </Button>
                               <Button
                                 variant="mini"
+                                className="q-danger"
                                 onClick={() => setProcessing({ withdrawal: w, action: 'fail' })}
                               >
                                 <XCircle size={14} /> Falhar
@@ -784,13 +933,16 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
       </section>
 
       <section className="card" id="exclusoes">
-        <div className="card-head">
-          <h3>
-            <Trash2 size={16} /> Exclusões de conta (LGPD)
-            {m && m.pendingDeletions > 0 && (
-              <span className="chip level tiny">{m.pendingDeletions} pendente(s)</span>
-            )}
-          </h3>
+        <SectionHead
+          icon={Trash2}
+          tone="violet"
+          title="Exclusões de conta (LGPD)"
+          subtitle="Pedidos do titular: concluir anonimiza e encerra o acesso; recusar exige justificativa."
+          badge={
+            m &&
+            m.pendingDeletions > 0 && <CountBadge hot>{m.pendingDeletions} pendente(s)</CountBadge>
+          }
+        >
           <div
             className="tabs tabs-mini"
             role="tablist"
@@ -816,17 +968,24 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
               Todas
             </button>
           </div>
-        </div>
+        </SectionHead>
         <QueryState
           isLoading={deletions.isLoading}
           error={deletions.error}
           data={deletions.data}
-          empty="Nenhum pedido de exclusão aguardando."
+          isEmpty={(list) => list.length === 0}
+          emptyIcon={UserCheck}
+          emptyTitle={deletionScope === 'pending' ? 'Fila em dia' : 'Sem pedidos'}
+          empty={
+            deletionScope === 'pending'
+              ? 'Nenhum pedido de exclusão aguardando.'
+              : 'Nenhum pedido de exclusão ainda.'
+          }
           onRetry={() => void deletions.refetch()}
         >
           {(list) => (
             <TableWrap label="Tabela de pedidos de exclusão">
-              <table className="table">
+              <table className="table queue">
                 <thead>
                   <tr>
                     <th>Pedido</th>
@@ -843,18 +1002,23 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
                     const open = r.status === 'pending' || r.status === 'processing';
                     return (
                       <tr key={r.id} data-testid={`deletion-${r.id}`}>
-                        <td className="cell-title">
+                        <td className="cell-title q-main">
                           <strong>#{r.id}</strong>
                           <span className="muted tiny">pedido em {dtm(r.createdAt)}</span>
                         </td>
-                        <td className="cell-title">
-                          <strong>{r.userName ?? '—'}</strong>
-                          <span className="muted tiny">{r.userEmail}</span>
+                        <td data-label="Titular">
+                          <div className="q-person">
+                            <Avatar name={r.userName ?? r.userEmail} size="sm" />
+                            <div className="cell-title">
+                              <strong>{r.userName ?? '—'}</strong>
+                              <span className="muted tiny">{r.userEmail}</span>
+                            </div>
+                          </div>
                         </td>
-                        <td>
-                          <div className="muted tiny">{r.reason ?? '—'}</div>
+                        <td data-label="Motivo" className="q-wide">
+                          <div className="muted tiny q-text">{r.reason ?? '—'}</div>
                         </td>
-                        <td>
+                        <td data-label="Pendências">
                           {blocked ? (
                             <span className="muted tiny">
                               {r.activeContracts > 0
@@ -866,7 +1030,7 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
                             <span className="muted tiny">nenhuma</span>
                           )}
                         </td>
-                        <td>
+                        <td data-label="Status">
                           <span
                             className={`pill status-${
                               r.status === 'completed'
@@ -879,11 +1043,12 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
                             {DELETION_STATUS_LABEL[r.status] ?? r.status}
                           </span>
                         </td>
-                        <td>
+                        <td className="q-acts">
                           {open && (
                             <div className="acts">
                               <Button
                                 variant="mini"
+                                className="q-danger"
                                 onClick={() => setDeleting({ request: r, action: 'complete' })}
                               >
                                 <Trash2 size={14} /> Concluir exclusão
@@ -908,83 +1073,106 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
       </section>
 
       <section className="card" id="emails">
-        <div className="card-head">
-          <h3>
-            <Mail size={16} /> Caixa de saída de e-mails
-          </h3>
-          <span className="muted tiny">
-            {emails.data?.[0]?.provider === 'smtp'
+        <SectionHead
+          icon={Mail}
+          tone="blue"
+          title="Caixa de saída de e-mails"
+          subtitle={
+            emails.data?.[0]?.provider === 'smtp'
               ? 'enviados via SMTP'
-              : 'provedor simulado: os e-mails ficam aqui (links de confirmação e de senha)'}
-          </span>
-        </div>
+              : 'provedor simulado: os e-mails ficam aqui (links de confirmação e de senha)'
+          }
+          badge={
+            emails.data && emails.data.length > 0 && <CountBadge>{emails.data.length}</CountBadge>
+          }
+        />
         <QueryState
           isLoading={emails.isLoading}
           error={emails.error}
           data={emails.data}
+          isEmpty={(list) => list.length === 0}
+          emptyIcon={MailOpen}
+          emptyTitle="Caixa vazia"
           empty="Nenhum e-mail gerado ainda."
           onRetry={() => void emails.refetch()}
         >
           {(list) => (
-            <TableWrap label="Tabela de e-mails enviados">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Quando</th>
-                    <th>Para</th>
-                    <th>Assunto</th>
-                    <th>Tipo</th>
-                    <th>Status</th>
-                    <th className="right">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((e) => (
-                    <tr key={e.id} data-testid={`email-${e.id}`}>
-                      <td className="muted tiny">{dtm(e.createdAt)}</td>
-                      <td>
-                        <span className="mono">{e.to}</span>
-                      </td>
-                      <td>
-                        <strong>{e.subject}</strong>
-                      </td>
-                      <td className="muted tiny">
-                        {EMAIL_TEMPLATE_LABEL[e.template] ?? e.template}
-                      </td>
-                      <td>
-                        <span
-                          className={`pill status-${
-                            e.status === 'sent'
-                              ? 'completed'
-                              : e.status === 'failed'
-                                ? 'cancelled'
-                                : 'pending'
-                          }`}
-                        >
-                          {e.status === 'sent'
-                            ? 'Enviado'
-                            : e.status === 'failed'
-                              ? 'Falhou'
-                              : 'Na fila'}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="acts">
-                          <Button variant="mini" onClick={() => setOpenEmail(e)}>
-                            Ver
-                          </Button>
-                        </div>
-                      </td>
+            <>
+              <TableWrap label="Tabela de e-mails enviados">
+                <table className="table t-list emails-table">
+                  <thead>
+                    <tr>
+                      <th>Assunto</th>
+                      <th>Para</th>
+                      <th>Quando</th>
+                      <th>Tipo</th>
+                      <th>Status</th>
+                      <th className="right">Ações</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableWrap>
+                  </thead>
+                  <tbody>
+                    {list.slice(0, emailCount).map((e) => (
+                      <tr key={e.id} data-testid={`email-${e.id}`}>
+                        <td className="q-main">
+                          <strong>{e.subject}</strong>
+                        </td>
+                        <td data-label="Para">
+                          <span className="mono email-to">{e.to}</span>
+                        </td>
+                        <td data-label="Quando" className="muted tiny q-when">
+                          {dtm(e.createdAt)}
+                        </td>
+                        <td data-label="Tipo" className="muted tiny">
+                          {EMAIL_TEMPLATE_LABEL[e.template] ?? e.template}
+                        </td>
+                        <td data-label="Status">
+                          <span
+                            className={`pill status-${
+                              e.status === 'sent'
+                                ? 'completed'
+                                : e.status === 'failed'
+                                  ? 'cancelled'
+                                  : 'pending'
+                            }`}
+                          >
+                            {e.status === 'sent'
+                              ? 'Enviado'
+                              : e.status === 'failed'
+                                ? 'Falhou'
+                                : 'Na fila'}
+                          </span>
+                        </td>
+                        <td className="q-acts">
+                          <div className="acts">
+                            <Button variant="mini" onClick={() => setOpenEmail(e)}>
+                              Ver
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableWrap>
+              {list.length > emailCount && (
+                <div className="list-more">
+                  <span className="muted tiny">
+                    {emailCount} de {list.length}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setEmailCount((n) => n + EMAIL_PAGE * 2)}
+                  >
+                    Mostrar mais {Math.min(EMAIL_PAGE * 2, list.length - emailCount)}
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </QueryState>
       </section>
 
-      <p className="muted tiny">
+      <p className="muted tiny adm-foot">
         Moderação de usuários (suspender, banir, reativar) fica no perfil público de cada
         freelancer, visível só para administradores.
       </p>

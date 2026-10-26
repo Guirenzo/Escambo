@@ -1,4 +1,12 @@
-import { Gavel, ImageOff, MessageSquareOff, RotateCcw, ShieldX, StarOff } from 'lucide-react';
+import {
+  ImageOff,
+  MessageSquareOff,
+  RotateCcw,
+  Scale,
+  ShieldCheck,
+  ShieldX,
+  StarOff,
+} from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type { AdminAppeal, AppealDecision } from '@escambo/types';
@@ -8,6 +16,7 @@ import { useAdminAppealDecision, useAdminAppeals, useAppealImage } from '../../l
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
 import { useToast } from '../../lib/toast';
 import { DropoutAppeals } from './DropoutsReview';
+import { CountBadge, SectionHead } from './SectionHead';
 
 const TONE: Record<AdminAppeal['status'], string> = {
   appealed: 'pending',
@@ -159,10 +168,19 @@ export function AppealsSection() {
 
   return (
     <section className="card wide" aria-labelledby="appeals-title" data-testid="appeals-card">
-      <div className="card-head">
-        <h3 id="appeals-title">
-          <Gavel size={16} /> Contestações
-        </h3>
+      <SectionHead
+        icon={Scale}
+        tone="violet"
+        title="Contestações"
+        titleId="appeals-title"
+        subtitle="O autor de um conteúdo removido contesta pelo perfil, uma vez e dentro do prazo. Até a decisão, a imagem fica guardada fora do ar; de avaliação e mensagem, o texto removido aparece aqui."
+        badge={
+          scope === 'pending' &&
+          appeals.data && (
+            <CountBadge hot={appeals.data.length > 0}>{appeals.data.length} esperando</CountBadge>
+          )
+        }
+      >
         <div
           className="tabs tabs-mini"
           role="tablist"
@@ -188,16 +206,14 @@ export function AppealsSection() {
             Decididas
           </button>
         </div>
-      </div>
-      <p className="muted tiny">
-        O autor de um conteúdo removido contesta pelo perfil, uma vez e dentro do prazo. Até a
-        decisão, a imagem fica guardada fora do ar; de avaliação e mensagem, o texto removido
-        aparece aqui.
-      </p>
+      </SectionHead>
       <QueryState
         isLoading={appeals.isLoading}
         error={appeals.error}
         data={appeals.data}
+        isEmpty={(list) => list.length === 0}
+        emptyIcon={ShieldCheck}
+        emptyTitle={scope === 'pending' ? 'Fila em dia' : 'Sem histórico'}
         empty={
           scope === 'pending'
             ? 'Nenhuma contestação esperando decisão.'
@@ -250,7 +266,11 @@ export function AppealsSection() {
                 </div>
                 {a.status === 'appealed' && (
                   <div className="acts appeal-acts">
-                    <Button variant="mini" onClick={() => open(a, 'overturn')}>
+                    <Button
+                      variant="mini"
+                      className="q-primary"
+                      onClick={() => open(a, 'overturn')}
+                    >
                       <RotateCcw size={14} /> Reverter
                     </Button>
                     <Button variant="danger" className="mini" onClick={() => open(a, 'uphold')}>

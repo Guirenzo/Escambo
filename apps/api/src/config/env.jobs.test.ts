@@ -45,7 +45,7 @@ describe('intervalo dos jobs (ADR 58)', () => {
     expect(exit.mock.calls).toEqual([[1]]);
     expect(error.mock.calls).toEqual([
       ['❌ Variáveis de ambiente inválidas:'],
-      [{ JOBS_INTERVAL_MS: ['Number must be less than or equal to 1800000'] }],
+      [{ JOBS_INTERVAL_MS: ['Too big: expected number to be <=1800000'] }],
     ]);
   });
 });

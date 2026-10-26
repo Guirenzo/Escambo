@@ -1,7 +1,7 @@
-import { ArrowLeftRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Category } from '@escambo/types';
 import type { SectionLink } from './PublicHeader';
+import { BrandMark } from '../../components/BrandMark';
 
 const REPO = 'https://github.com/Guirenzo/Escambo';
 
@@ -24,9 +24,7 @@ export function PublicFooter({
         <div className="lp-footer-grid">
           <div className="lp-footer-brand">
             <Link to="/" className="brand lp-brand">
-              <span className="brand-mark">
-                <ArrowLeftRight size={18} strokeWidth={2.5} />
-              </span>
+              <BrandMark onDark />
               <span className="brand-name">Escambo</span>
             </Link>
             <p>

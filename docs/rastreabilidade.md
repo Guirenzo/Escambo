@@ -1,7 +1,7 @@
 # Rastreabilidade dos requisitos — Escambo
 
-> **Versão do código:** 1.49.0
-> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0, a 1.48.0 e a 1.49.0
+> **Versão do código:** 1.50.0
+> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0, a 1.48.0, a 1.49.0 e a 1.50.0
 > **Autor:** Guilherme Renzo
 
 Os documentos de requisitos foram escritos no planejamento, e a coluna de situação ficou para trás conforme o sistema crescia. Esta página registra o que existe **de verdade** em cada requisito: onde está no código, qual teste prova e, quando não está completo, o que falta ou qual decisão registrada (ADR) explica a lacuna. As situações aqui são as mesmas da coluna **Status** de [requisitos funcionais](./requisitos-funcionais.md) e da coluna **Situação** de [requisitos não funcionais](./requisitos-nao-funcionais.md).
@@ -104,8 +104,8 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 | RF-078 | Implementado | SETTING_DEFS com comissão, prazos de saque por forma (RN-035), manutenção e previsão de volta, entre outros; PUT /api/admin/settings/:key com auditoria (ADR 32/33). Testes: platform-settings.int.test.ts, platform-toggles.int.test.ts, settings.service.test.ts | O prazo de saque virou parâmetro na 1.44.0. |
 | RF-079 | Implementado | auth.schema.ts (legalAccepted: true), lgpd/legal-versions.ts, lgpd_consents gravado no servidor com IP (ADR 54); consentimento-cadastro.int.test.ts | Um único checkbox vale para Termos e Política. O aceite separado da RN-071 continua pendente (ADR 54). |
 | RF-080 | Implementado | modules/lgpd: pedido de exclusão; ao concluir, o admin anonimiza a conta numa transação (ADR 17); lgpd-flow.int.test.ts ('exclusão: barrada com contratação aberta ou saldo; admin conclui e a conta some'), e2e confianca.smoke.spec.ts | A exclusão é por anonimização, não apagamento físico, e depende de aprovação do admin. Contratação aberta ou saldo na carteira barram o pedido (decisão do ADR 17). |
-| RF-081 | Implementado | GET /admin/finance por dia, semana ou mês; GET /admin/usage (novos usuários, contratações criadas e concluídas, usuários ativos); job report-snapshots grava o dia, a semana e o mês fechados em report_snapshots (migration 0041); UsageReport.tsx. Testes: report-period.test.ts, usage.service.test.ts, report-snapshots.test.ts, admin-relatorios.int.test.ts | Desde a 1.45.0 (ADR 63). O financeiro continua lido do ledger, que é imutável; o uso lê do snapshot quando o período está fechado. |
-| RF-082 | Implementado | GET /wallet/earnings (dia, semana ou mês no fuso da conta; só escrow_release e barter_in contam); EarningsSection.tsx na Carteira, com gráfico acessível e tabela; créditos à parte. Testes: wallet.earnings.test.ts, carteira-ganhos.int.test.ts, EarningsSection.test.tsx | Desde a 1.45.0 (ADR 63). |
+| RF-081 | Implementado | GET /admin/finance por dia, semana ou mês; GET /admin/usage (novos usuários, contratações criadas e concluídas, usuários ativos); job report-snapshots grava o dia, a semana e o mês fechados em report_snapshots (migration 0041); UsageReport.tsx e FinanceSection.tsx, com gráficos de colunas (components/charts.tsx) e os períodos sem movimento zerados. Testes: report-period.test.ts, usage.service.test.ts, report-snapshots.test.ts, admin-relatorios.int.test.ts, charts.test.tsx, buckets.test.ts | Desde a 1.45.0 (ADR 63); gráficos refeitos na 1.50.0 (ADR 68). O financeiro continua lido do ledger, que é imutável; o uso lê do snapshot quando o período está fechado. |
+| RF-082 | Implementado | GET /wallet/earnings (dia, semana ou mês no fuso da conta; só escrow_release e barter_in contam); EarningsSection.tsx na Carteira, com gráfico de colunas (components/charts.tsx), resumo em texto e tabela; créditos à parte. Testes: wallet.earnings.test.ts, carteira-ganhos.int.test.ts, EarningsSection.test.tsx, charts.test.tsx | Desde a 1.45.0 (ADR 63); gráfico refeito na 1.50.0 (ADR 68). |
 | RF-083 | Implementado | modules/barter (POST /api/barters, createBarterSchema), TrocasView.tsx; barter-flow.int.test.ts ('troca equilibrada: sem torna', 'proponente paga...'), e2e trocas.smoke.spec.ts | — |
 | RF-084 | Implementado | barter.service.ts: o valor de cada lado vem do catálogo quando o serviço tem preço fechado (estimate_mismatch para valor diferente); a combinar, por hora ou oferta descrita usam o valor informado; a origem fica gravada (migration 0043) e a tela mostra a torna antes de enviar. Testes: troca-estimada.int.test.ts, barter.service.test.ts, TrocasView.test.tsx | Desde a 1.45.0 (ADR 63), com a RN-066. |
 | RF-085 | Implementado | barter.service.ts accept (gera 2 contratos recíprocos; torna em held), barter.repository.ts; barter-flow.int.test.ts ('aceite → 2 contratos recíprocos; torna continua reservada', liquida torna − taxa) | — |
@@ -168,6 +168,6 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 
 <div align="center">
 
-*rastreabilidade.md — Escambo v1.49.0 — Católica SC — 2026*
+*rastreabilidade.md — Escambo v1.50.0 — Católica SC — 2026*
 
 </div>

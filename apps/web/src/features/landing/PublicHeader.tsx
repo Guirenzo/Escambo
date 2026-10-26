@@ -1,5 +1,5 @@
-import { ArrowLeftRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { BrandMark } from '../../components/BrandMark';
 
 export interface SectionLink {
   href: string;
@@ -15,9 +15,7 @@ export function PublicHeader({ sections = [] }: { sections?: SectionLink[] }) {
     <header className="lp-header">
       <div className="lp-wrap lp-header-inner">
         <Link to="/" className="brand lp-brand">
-          <span className="brand-mark">
-            <ArrowLeftRight size={18} strokeWidth={2.5} />
-          </span>
+          <BrandMark onDark />
           <span className="brand-name">Escambo</span>
         </Link>
         {sections.length > 0 && (

@@ -287,13 +287,13 @@ escambo/
 │   │   └── Dockerfile
 │   └── web/                    # React + Vite + TS
 │       ├── src/{features,components,lib}
-│       ├── public/             # favicon, ícones, manifesto e capa de compartilhamento
+│       ├── public/             # favicon, ícones, logos da marca (marca/), manifesto e capa de compartilhamento
 │       ├── e2e/                # Playwright (smoke, mobile, a11y, screenshots)
 │       ├── nginx.conf          # SPA + proxy /api e /socket.io
 │       ├── security-headers.conf # CSP e demais cabeçalhos de toda resposta
 │       └── Dockerfile
 ├── packages/types/             # @escambo/types — DTOs compartilhados back/front
-├── scripts/                    # demo-seed.mjs (dados via API) · backup-db.sh · backup-uploads.sh · restore-db.sh · test-backup-restore.sh · module-graph.mjs · gen-icons.mjs
+├── scripts/                    # demo-seed.mjs (dados via API) · backup-db.sh · backup-uploads.sh · restore-db.sh · test-backup-restore.sh · module-graph.mjs · gen-icons.mjs · text-outline.mjs
 ├── deploy/Caddyfile            # borda de produção: HTTPS automático, HSTS, proxy para o web
 ├── deploy/backup/              # backup diário sem cron (serviço `backup`), restauração e cópia fora da VPS
 ├── docs/                       # RFC, requisitos, modelagem, screenshots
@@ -313,7 +313,7 @@ escambo/
 | [📋 RFC Completa](./docs/RFC.md)                                    | Request for Comments — proposta técnica completa                                                                                                                                                                                                                                                                                     |
 | [✅ Requisitos Funcionais](./docs/requisitos-funcionais.md)         | 92 RFs especificados                                                                                                                                                                                                                                                                                                                 |
 | [🔒 Requisitos Não Funcionais](./docs/requisitos-nao-funcionais.md) | 42 RNFs especificados                                                                                                                                                                                                                                                                                                                |
-| [🧭 Rastreabilidade](./docs/rastreabilidade.md) | Situação real de cada RF e RNF na 1.49.0, com o código e o teste que provam e o que falta |
+| [🧭 Rastreabilidade](./docs/rastreabilidade.md) | Situação real de cada RF e RNF na 1.50.0, com o código e o teste que provam e o que falta |
 | [♿ Acessibilidade](./docs/acessibilidade.md) | Os critérios WCAG 2.1 A e AA um a um: como o app atende cada um, o teste ou a revisão que prova e o roteiro da verificação manual |
 | [🗄️ Modelagem do Banco](./docs/modelagem-banco.md)                  | 60 tabelas de aplicação MySQL (schema + migrations)                                                                                                                                                                                                                                                                                  |
 | [⚖️ Regras de Negócio](./docs/regras-de-negocio.md)                 | 81 RNs especificadas                                                                                                                                                                                                                                                                                                                 |

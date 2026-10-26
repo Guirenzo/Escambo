@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import { clock } from '../../utils/clock';
+
+/**
+ * "No futuro" é pelo relógio da API (o mesmo do service), não pelo Date.now() solto: com o relógio
+ * parado de um teste, a validação e a regra veem o mesmo instante.
+ */
+const nowMs = (): number => clock.now().getTime();
 
 /** Teto de DECIMAL(10,2), a coluna do valor da contratação e do marco. */
 export const MAX_CONTRACT_AMOUNT = 99_999_999.99;
@@ -38,7 +45,7 @@ export const createContractSchema = z
     milestones: z.array(milestoneSchema).min(2).max(10).optional(),
   })
   .superRefine((d, ctx) => {
-    if (d.deadlineAt && new Date(d.deadlineAt).getTime() <= Date.now()) {
+    if (d.deadlineAt && new Date(d.deadlineAt).getTime() <= nowMs()) {
       ctx.addIssue({
         code: 'custom',
         path: ['deadlineAt'],
@@ -74,7 +81,7 @@ export const createContractSchema = z
       const t = new Date(m.dueAt).getTime();
       const issue = (message: string) =>
         ctx.addIssue({ code: 'custom', path: ['milestones', i, 'dueAt'], message });
-      if (t <= Date.now()) issue(`O prazo do marco ${i + 1} precisa estar no futuro`);
+      if (t <= nowMs()) issue(`O prazo do marco ${i + 1} precisa estar no futuro`);
       if (t < previous) {
         issue(`O prazo do marco ${i + 1} precisa ser igual ou depois do marco anterior`);
       }
@@ -118,7 +125,7 @@ export const counterOfferSchema = z
   })
   .strict()
   .superRefine((d, ctx) => {
-    const now = Date.now();
+    const now = nowMs();
     const deadline = d.deadlineAt ? new Date(d.deadlineAt).getTime() : null;
     if (deadline !== null && deadline <= now) {
       ctx.addIssue({
@@ -203,7 +210,7 @@ export const deliverMilestoneSchema = z
     message: z.string().min(1),
     files: z
       .never({
-        invalid_type_error:
+        error:
           'A entrega de um marco não leva links: anexe os arquivos ou escreva o link na mensagem',
       })
       .optional(),

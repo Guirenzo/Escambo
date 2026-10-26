@@ -5,6 +5,7 @@ import {
   ImageOff,
   MessageSquare,
   MessageSquareOff,
+  ShieldCheck,
   Star,
   StarOff,
   UserRound,
@@ -25,6 +26,7 @@ import { useAdminReportAction, useAdminReports } from '../../lib/hooks';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
 import { useToast } from '../../lib/toast';
 import { UserDropoutsReview } from './DropoutsReview';
+import { CountBadge, SectionHead } from './SectionHead';
 
 const TONE: Record<string, string> = {
   pending: 'pending',
@@ -191,10 +193,21 @@ export function ReportsSection() {
 
   return (
     <section className="card wide" aria-labelledby="reports-title" data-testid="reports-card">
-      <div className="card-head">
-        <h3 id="reports-title">
-          <Flag size={16} /> Denúncias
-        </h3>
+      <SectionHead
+        icon={Flag}
+        tone="amber"
+        title="Denúncias"
+        titleId="reports-title"
+        subtitle="Agrupadas por alvo: a decisão vale para todas as denúncias do mesmo conteúdo."
+        badge={
+          scope === 'pending' &&
+          reports.data && (
+            <CountBadge hot={reports.data.length > 0}>
+              {reports.data.length} {reports.data.length === 1 ? 'alvo' : 'alvos'}
+            </CountBadge>
+          )
+        }
+      >
         <div
           className="tabs tabs-mini"
           role="tablist"
@@ -220,11 +233,14 @@ export function ReportsSection() {
             Resolvidas
           </button>
         </div>
-      </div>
+      </SectionHead>
       <QueryState
         isLoading={reports.isLoading}
         error={reports.error}
         data={reports.data}
+        isEmpty={(list) => list.length === 0}
+        emptyIcon={ShieldCheck}
+        emptyTitle={scope === 'pending' ? 'Fila em dia' : 'Sem histórico'}
         empty={
           scope === 'pending'
             ? 'Nenhuma denúncia pendente. A comunidade está tranquila.'
@@ -234,7 +250,7 @@ export function ReportsSection() {
       >
         {(list) => (
           <TableWrap label="Tabela de denúncias">
-            <table className="table">
+            <table className="table queue">
               <thead>
                 <tr>
                   <th>Alvo</th>
@@ -247,7 +263,7 @@ export function ReportsSection() {
                 {list.map((g) => (
                   <Fragment key={`${g.id}-${g.status}`}>
                     <tr data-testid={`report-group-${g.id}`}>
-                      <td>
+                      <td className="q-main">
                         <div className="report-target">
                           <ReportThumb group={g} />
                           <div className="cell-title">
@@ -270,7 +286,7 @@ export function ReportsSection() {
                           </div>
                         </div>
                       </td>
-                      <td>
+                      <td className="q-wide" data-label="Motivos">
                         <div className="report-reasons">
                           {g.reasons.map((r) => (
                             <span key={r.reason} className="reason-tag">
@@ -288,7 +304,7 @@ export function ReportsSection() {
                           {dtm(g.lastReportedAt)}
                         </div>
                       </td>
-                      <td>
+                      <td data-label={scope === 'pending' ? 'Situação' : 'Decisão'}>
                         <div className="cell-title">
                           <span className={`pill status-${TONE[g.status] ?? ''}`}>
                             {REPORT_STATUS_LABEL[g.status] ?? g.status}
@@ -302,7 +318,7 @@ export function ReportsSection() {
                         </div>
                       </td>
                       {scope === 'pending' && (
-                        <td>
+                        <td className="q-acts">
                           <div className="acts">
                             {isImage(g) ? (
                               <Button
@@ -328,15 +344,15 @@ export function ReportsSection() {
                                   : 'Remover mensagem'}
                               </Button>
                             ) : (
-                              <Button variant="mini" onClick={() => open(g, 'resolve')}>
+                              <Button
+                                variant="mini"
+                                className="q-primary"
+                                onClick={() => open(g, 'resolve')}
+                              >
                                 <CheckCircle2 size={14} /> Resolvida
                               </Button>
                             )}
-                            <Button
-                              variant="ghost"
-                              className="mini"
-                              onClick={() => open(g, 'dismiss')}
-                            >
+                            <Button variant="mini" onClick={() => open(g, 'dismiss')}>
                               <XCircle size={14} /> Dispensar
                             </Button>
                           </div>
@@ -348,8 +364,8 @@ export function ReportsSection() {
                       g.descriptions.some((description) =>
                         description.startsWith('Desistências:'),
                       ) && (
-                        <tr data-testid={`report-dropouts-${g.id}`}>
-                          <td colSpan={scope === 'pending' ? 4 : 3}>
+                        <tr className="q-sub" data-testid={`report-dropouts-${g.id}`}>
+                          <td className="q-main" colSpan={scope === 'pending' ? 4 : 3}>
                             <UserDropoutsReview ulid={g.owner.ulid} />
                           </td>
                         </tr>

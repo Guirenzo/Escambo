@@ -1,19 +1,18 @@
-import { ArrowLeftRight, CheckCircle2, KeyRound, MailCheck, XCircle } from 'lucide-react';
+import { CheckCircle2, KeyRound, MailCheck, XCircle } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Field, Input } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
+import { BrandMark } from '../../components/BrandMark';
 
 /** Página pública pequena (fora do app shell) com a marca e um cartão. */
 function PublicCard({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main className="auth-simple">
       <Link to="/login" className="brand">
-        <span className="brand-mark">
-          <ArrowLeftRight size={18} strokeWidth={2.5} />
-        </span>
+        <BrandMark />
         <span className="brand-name">Escambo</span>
       </Link>
       <section className="card auth-card">

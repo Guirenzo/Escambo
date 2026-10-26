@@ -1,3 +1,4 @@
+import { ShieldCheck, UserMinus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { AdminDropout } from '@escambo/types';
 import { Button, Field, Modal, QueryState } from '../../components/ui';
@@ -41,7 +42,7 @@ function DropoutsList({ items, appeals = false }: { items: AdminDropout[]; appea
         {items.map((d) => (
           <li className="removal" key={d.id} data-testid={`admin-dropout-${d.id}`}>
             <div className="removal-body">
-              <strong>
+              <strong className="removal-title">
                 Desistência · {d.freelancer.name ?? 'conta sem nome'} · contratação #{d.contractId}{' '}
                 · «{d.contractTitle}» em {dtm(d.droppedAt)}
               </strong>
@@ -70,7 +71,7 @@ function DropoutsList({ items, appeals = false }: { items: AdminDropout[]; appea
             </div>
             {!d.decision && (appeals || dropoutCounts(d, Date.now())) && (
               <div className="acts">
-                <Button variant="mini" onClick={() => open(d, 'excuse')}>
+                <Button variant="mini" className="q-primary" onClick={() => open(d, 'excuse')}>
                   Não contar
                 </Button>
                 {appeals && d.appealedAt && (
@@ -128,16 +129,24 @@ function DropoutsList({ items, appeals = false }: { items: AdminDropout[]; appea
 export function DropoutAppeals() {
   const query = useAdminDropouts();
   return (
-    <section className="stack" data-testid="dropout-appeals">
-      <h4>Desistências contestadas</h4>
-      <p className="muted tiny">
-        As mais antigas aparecem primeiro. Uma pessoa da equipe decide cada contestação.
-      </p>
+    <section className="stack dropout-appeals" data-testid="dropout-appeals">
+      <div className="sub-head">
+        <span className="adm-ico amber" aria-hidden="true">
+          <UserMinus size={18} />
+        </span>
+        <div>
+          <h4>Desistências contestadas</h4>
+          <p className="muted tiny">
+            As mais antigas aparecem primeiro. Uma pessoa da equipe decide cada contestação.
+          </p>
+        </div>
+      </div>
       <QueryState
         isLoading={query.isLoading}
         error={query.error}
         data={query.data}
         isEmpty={(items) => items.length === 0}
+        emptyIcon={ShieldCheck}
         empty="Nenhuma desistência contestada esperando decisão."
         onRetry={() => void query.refetch()}
       >

@@ -28,6 +28,7 @@ import { pickBanner } from './banners';
 import { LegalUpdateBanner } from './LegalUpdateBanner';
 import { TimezoneBanner } from './TimezoneBanner';
 import { TopBar, unreadLabel } from './TopBar';
+import { BrandMark } from '../../components/BrandMark';
 
 /** Conta ainda sem e-mail confirmado: lembrete discreto com reenvio do link. */
 function VerifyEmailBanner({ email }: { email: string }) {
@@ -198,9 +199,7 @@ export function Shell() {
       <SkipLink target="conteudo" />
       <aside className="sidebar">
         <NavLink to="/" end className="brand side-brand">
-          <span className="brand-mark">
-            <ArrowLeftRight size={18} strokeWidth={2.5} />
-          </span>
+          <BrandMark onDark />
           <span className="brand-name">Escambo</span>
         </NavLink>
 

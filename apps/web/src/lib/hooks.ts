@@ -1,4 +1,10 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import type {
   SupportTicketQuery,
   CreateSupportTicketRequest,
@@ -263,6 +269,8 @@ export const useWalletEarnings = (query: WalletEarningsQuery) =>
   useQuery({
     queryKey: [...qk.walletTransactions, 'earnings', query] as const,
     queryFn: () => api.walletEarnings(query),
+    // Trocar o período mantém o gráfico anterior (apagado) até o novo chegar: sem pulo de layout.
+    placeholderData: keepPreviousData,
   });
 export const useDeposits = () => useQuery({ queryKey: qk.deposits, queryFn: () => api.deposits() });
 /** Situação de uma cobrança; enquanto pendente, consulta a cada 3 s (o webhook pode chegar a qualquer momento). */
@@ -907,11 +915,20 @@ export const useAdminFinance = (q: {
   from?: string;
   to?: string;
   granularity: FinanceGranularity;
-}) => useQuery({ queryKey: ['adminFinance', q] as const, queryFn: () => api.adminFinance(q) });
+}) =>
+  useQuery({
+    queryKey: ['adminFinance', q] as const,
+    queryFn: () => api.adminFinance(q),
+    placeholderData: keepPreviousData,
+  });
 
 /** Uso no período (RF-081), com o mesmo recorte do financeiro. */
 export const useAdminUsage = (q: { from?: string; to?: string; granularity: FinanceGranularity }) =>
-  useQuery({ queryKey: ['adminUsage', q] as const, queryFn: () => api.adminUsage(q) });
+  useQuery({
+    queryKey: ['adminUsage', q] as const,
+    queryFn: () => api.adminUsage(q),
+    placeholderData: keepPreviousData,
+  });
 
 /**
  * Indicadores do painel (RF-076): consulta de novo a cada 30 s só com a aba visível (o TanStack
@@ -935,6 +952,7 @@ export const useModerationHealth = (days: number) =>
   useQuery({
     queryKey: qk.moderationHealth(days),
     queryFn: () => api.adminModerationHealth(days),
+    placeholderData: keepPreviousData,
   });
 export const useAdminSettings = () =>
   useQuery({ queryKey: qk.adminSettings, queryFn: () => api.adminSettings() });

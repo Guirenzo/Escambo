@@ -147,6 +147,29 @@ test('tokens de styles.css: contraste dos pares usados, foco nunca tirado sem tr
       3,
     ],
     ['texto secundário sobre a não lida (verde-claro)', token('muted'), token('mint'), 4.5],
+    // 1.50: o símbolo da marca sobre o claro (sobre o escuro, branco e --amber-bright já medidos).
+    ['peça verde do símbolo sobre o branco', token('green'), WHITE, 3],
+    ['peça âmbar do símbolo sobre o branco', token('brand-amber'), WHITE, 3],
+    ['peça âmbar do símbolo sobre o fundo', token('brand-amber'), token('bg'), 3],
+    ['peça âmbar do símbolo sobre o papel', token('brand-amber'), token('paper'), 3],
+    // 1.50: gráficos (marcas 3:1 sobre o cartão e o bloco claro; número dentro do segmento 4,5:1).
+    ['série verde do gráfico sobre o cartão', token('viz-green'), token('surface'), 3],
+    ['série verde do gráfico sobre o bloco claro', token('viz-green'), token('surface-2'), 3],
+    ['série azul do gráfico sobre o cartão', token('blue'), token('surface'), 3],
+    ['série âmbar do gráfico sobre o cartão', token('brand-amber'), token('surface'), 3],
+    ['linha da meta (âmbar) sobre o cartão', token('amber'), token('surface'), 3],
+    ['rótulo da meta (âmbar escuro sobre o cartão)', token('amber-ink'), token('surface'), 4.5],
+    ['número no segmento verde (branco)', WHITE, token('viz-green'), 4.5],
+    ['número no segmento cinza (texto)', token('text'), token('viz-muted'), 4.5],
+    ['número no segmento âmbar (texto)', token('text'), token('brand-amber'), 4.5],
+    [
+      'legenda do número em destaque (texto secundário sobre verde-claro)',
+      token('muted'),
+      token('green-soft'),
+      4.5,
+    ],
+    // 1.50: filas do admin (estornar em vermelho escuro sobre o cartão).
+    ['ação de estorno (vermelho escuro sobre o cartão)', token('red-ink'), token('surface'), 4.5],
   ];
   const rows = pairs.map(([what, fg, bg, min]) => ({ what, ratio: contrast(fg, bg), min }));
   test.info().annotations.push({

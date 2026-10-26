@@ -35,10 +35,6 @@
 .au .au-brand:hover {
   color: var(--text);
 }
-.au .au-brand .brand-mark {
-  background: var(--amber-bright);
-  color: var(--green-deep);
-}
 .au .au-brand:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
@@ -314,6 +310,13 @@
   .au .au-brand,
   .au .au-brand:hover {
     color: var(--on-dark);
+  }
+  /* Na faixa escura, o símbolo usa as cores de sobre o escuro (como na lateral do app). */
+  .au .au-brand .brand-mark-a {
+    fill: var(--on-dark);
+  }
+  .au .au-brand .brand-mark-b {
+    fill: var(--amber-bright);
   }
   .au .au-brand:focus-visible {
     outline-color: var(--focus-on-dark);
