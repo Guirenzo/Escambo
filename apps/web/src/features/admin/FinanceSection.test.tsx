@@ -5,6 +5,7 @@ import type { AdminFinanceReport, FinanceBucket } from '@escambo/types';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../lib/toast';
+import { hoverColumn } from '../../test/charts';
 
 const adminFinance = vi.fn();
 const downloadFinanceCsv = vi.fn();
@@ -144,7 +145,7 @@ describe('FinanceSection', () => {
     );
   });
 
-  it('por mês: uma linha por mês (MM/AAAA) na tabela e uma barra por mês no gráfico', async () => {
+  it('por mês: uma linha por mês com movimento na tabela e uma coluna por mês do período no gráfico', async () => {
     render(wrap(<FinanceSection />));
 
     const table = await screen.findByRole('table');
@@ -174,11 +175,23 @@ describe('FinanceSection', () => {
       'R$ 200,00',
     ]);
 
-    const chart = screen.getByRole('img', { name: 'Receita da plataforma por mês' });
-    expect(within(chart).getByText('08/2026')).toBeInTheDocument();
-    expect(plain(within(chart).getByText('09/2026').parentElement?.getAttribute('title'))).toBe(
-      '09/2026: R$ 30,00',
-    );
+    const chart = screen.getByRole('img', {
+      name: (n) =>
+        plain(n) ===
+        'Receita da plataforma por mês, de 01/04/2026 a 24/09/2026: total R$ 45,50; maior em 09/2026, R$ 30,00.',
+    });
+    // Os meses sem movimento entram zerados: o tempo não encolhe.
+    expect([...chart.querySelectorAll('.viz-x span')].map((l) => l.textContent)).toEqual([
+      'abr/26',
+      'mai',
+      'jun',
+      'jul',
+      'ago',
+      'set',
+    ]);
+    expect(chart.querySelectorAll('.viz-stack')).toHaveLength(2);
+    hoverColumn(chart, 5, 6);
+    expect(plain(chart.querySelector('.viz-tip')?.textContent)).toBe('R$ 30,0009/2026');
   });
 
   it('por dia: os baldes aparecem como DD/MM e o texto diz "por dia"', async () => {
@@ -192,10 +205,11 @@ describe('FinanceSection', () => {
     );
     render(wrap(<FinanceSection />));
 
-    const chart = await screen.findByRole('img', { name: 'Receita da plataforma por dia' });
-    expect(plain(within(chart).getByText('14/09').parentElement?.getAttribute('title'))).toBe(
-      '14/09: R$ 7,00',
-    );
+    const chart = await screen.findByRole('img', { name: /^Receita da plataforma por dia, / });
+    // 26/08 a 24/09: 30 colunas, e 14/09 é a 20ª.
+    expect(chart.querySelectorAll('.viz-col')).toHaveLength(30);
+    hoverColumn(chart, 19, 30);
+    expect(plain(chart.querySelector('.viz-tip')?.textContent)).toBe('R$ 7,0014/09');
     expect(within(screen.getByRole('table')).getByRole('cell', { name: '14/09' })).toBeVisible();
     expect(period()).toContain('26/08/2026 a 24/09/2026 · por dia · agora:');
   });
@@ -216,7 +230,7 @@ describe('FinanceSection', () => {
     );
     render(wrap(<FinanceSection />));
 
-    expect(await screen.findByText('Sem movimentação no período.')).toBeInTheDocument();
+    expect(await screen.findByText('Sem movimentação no período')).toBeInTheDocument();
     expect(kpi('Receita da plataforma')).toBe(
       'Receita da plataformaR$ 0,00taxas retidas, líquidas de estornos',
     );
@@ -458,10 +472,20 @@ describe('FinanceSection', () => {
     );
     render(wrap(<FinanceSection />));
 
-    const chart = await screen.findByRole('img', { name: 'Receita da plataforma por semana' });
-    expect(plain(within(chart).getByText('07/09').parentElement?.getAttribute('title'))).toBe(
-      '07/09 a 13/09: R$ 12,00',
-    );
+    const chart = await screen.findByRole('img', {
+      name: (n) =>
+        plain(n) ===
+        'Receita da plataforma por semana, de 31/08/2026 a 24/09/2026: total R$ 45,50; maior em 07/09 a 13/09, R$ 12,00.',
+    });
+    // Uma coluna por semana (a segunda no eixo), e a dica com a semana inteira.
+    expect([...chart.querySelectorAll('.viz-x span')].map((l) => l.textContent)).toEqual([
+      '31/08',
+      '07/09',
+      '14/09',
+      '21/09',
+    ]);
+    hoverColumn(chart, 1, 4);
+    expect(plain(chart.querySelector('.viz-tip')?.textContent)).toBe('R$ 12,0007/09 a 13/09');
     expect(
       within(screen.getByRole('table')).getByRole('cell', { name: '07/09 a 13/09' }),
     ).toBeVisible();

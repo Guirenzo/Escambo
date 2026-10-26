@@ -8,6 +8,7 @@ import type {
   AdminWithdrawal,
   Dispute,
   MfaStatus,
+  ModerationHealth,
 } from '@escambo/types';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -31,6 +32,8 @@ const adminWithdrawalAction = vi.fn();
 const adminDeletionAction = vi.fn();
 /** A 2FA da conta admin (ADR 66): sem exigência, por padrão, para o painel abrir. */
 const mfaStatus = vi.fn();
+/** A saúde da moderação alimenta a faixa "Pede atenção agora" (denúncias e contestações). */
+const adminModerationHealth = vi.fn();
 /** As outras seções do painel têm testes próprios: aqui as consultas delas ficam carregando. */
 const pending = () => new Promise(() => undefined);
 vi.mock('../../lib/api', () => ({
@@ -50,7 +53,7 @@ vi.mock('../../lib/api', () => ({
     adminStorage: () => pending(),
     adminSettings: () => pending(),
     publicSettings: () => pending(),
-    adminModerationHealth: () => pending(),
+    adminModerationHealth: () => adminModerationHealth(),
     adminReports: () => pending(),
     adminAppeals: () => pending(),
     adminDropouts: () => pending(),
@@ -197,6 +200,8 @@ beforeEach(() => {
     fn.mockReset();
   }
   mfaStatus.mockResolvedValue(mfaStatusOf());
+  adminModerationHealth.mockReset();
+  adminModerationHealth.mockImplementation(pending);
   adminMetrics.mockResolvedValue(metricsOf());
   adminDisputes.mockResolvedValue([]);
   adminWithdrawals.mockResolvedValue([]);
@@ -340,19 +345,36 @@ describe('AdminView: números e estados das filas', () => {
         expect(within(card(title)).queryByRole('status', { name: 'Carregando' })).toBeNull();
       }
     });
-    // As mensagens de fila vazia ("Nenhuma disputa aberta…") ficam no it.todo logo abaixo: hoje a
-    // tela não as mostra para uma lista vazia (defeito relatado), só a tabela sem linhas.
     for (const title of [DISPUTES, WITHDRAWALS, DELETIONS, EMAILS]) {
       expect(within(card(title)).queryByRole('button')).not.toBeInTheDocument();
       expect(within(card(title)).queryByRole('alert')).not.toBeInTheDocument();
     }
   });
 
-  // Defeito de produção: os QueryState das quatro filas (AdminView.tsx) recebem `empty`, mas não
-  // `isEmpty`; com a lista vazia a tela desenha só o cabeçalho da tabela, e as mensagens nunca saem.
-  it.todo(
-    'com as filas vazias, cada uma diz que está vazia: "Nenhuma disputa aberta. Tudo em paz.", "Nenhum saque aguardando. Nada a pagar.", "Nenhum pedido de exclusão aguardando." e "Nenhum e-mail gerado ainda."',
-  );
+  it('com as filas vazias, cada uma diz que está vazia, sem tabela', async () => {
+    renderView();
+
+    for (const [title, text] of [
+      [DISPUTES, 'Nenhuma disputa aberta. Tudo em paz.'],
+      [WITHDRAWALS, 'Nenhum saque aguardando. Nada a pagar.'],
+      [DELETIONS, 'Nenhum pedido de exclusão aguardando.'],
+      [EMAILS, 'Nenhum e-mail gerado ainda.'],
+    ] as const) {
+      expect(await within(card(title)).findByText(text)).toBeInTheDocument();
+      expect(within(card(title)).queryByRole('table')).not.toBeInTheDocument();
+    }
+    expect(within(card(DISPUTES)).getByText('Fila em dia')).toBeInTheDocument();
+    expect(within(card(EMAILS)).getByText('Caixa vazia')).toBeInTheDocument();
+
+    // No filtro "Todos"/"Todas", o vazio fala do histórico, não da fila.
+    const user = userEvent.setup();
+    await user.click(within(card(WITHDRAWALS)).getByRole('tab', { name: 'Todos' }));
+    expect(await within(card(WITHDRAWALS)).findByText('Nenhum saque pedido ainda.')).toBeVisible();
+    await user.click(within(card(DELETIONS)).getByRole('tab', { name: 'Todas' }));
+    expect(
+      await within(card(DELETIONS)).findByText('Nenhum pedido de exclusão ainda.'),
+    ).toBeVisible();
+  });
 
   it('o painel reúne também finanças, armazenamento, parâmetros e as filas de moderação', () => {
     renderView();
@@ -415,6 +437,91 @@ describe('AdminView: números e estados das filas', () => {
       expect(adminDisputes).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+const healthOf = (queue: Partial<ModerationHealth['queue']> = {}): ModerationHealth => ({
+  windowDays: 30,
+  queue: {
+    pending: 0,
+    oldestPendingAt: null,
+    automaticPending: 0,
+    accountReviewsOpen: 0,
+    appealsPending: 0,
+    oldestAppealAt: null,
+    overSlaPending: 0,
+    ...queue,
+  },
+  decisions: { total: 0, dismissed: 0, actioned: 0, medianHours: null, p90Hours: null },
+  automatic: { flagged: 0, pending: 0, dismissed: 0, actioned: 0, precision: null, signals: [] },
+  appeals: { decided: 0, upheld: 0, overturned: 0, medianHours: null, overturnRate: null },
+  removals: { total: 0, byType: [] },
+  slaHours: 24,
+  history: [],
+  dailyReport: { enabled: true, hour: 8, mailProvider: 'smtp', last: null },
+});
+
+describe('AdminView: o que pede atenção agora', () => {
+  const band = () => within(screen.getByRole('region', { name: 'Pede atenção agora' }));
+  const actions = () =>
+    band()
+      .getAllByRole('link')
+      .map((a) => [a.getAttribute('href'), a.textContent]);
+
+  it('cada fila com alguém esperando vira um atalho para a seção, com o detalhe', async () => {
+    adminMetrics.mockResolvedValue(
+      metricsOf({
+        openDisputes: 1,
+        pendingWithdrawals: 2,
+        overdueWithdrawals: 1,
+        supportAwaitingReply: 3,
+        supportSlaOverdue: 1,
+        pendingDeletions: 2,
+      }),
+    );
+    adminModerationHealth.mockResolvedValue(
+      healthOf({ pending: 4, overSlaPending: 1, appealsPending: 1 }),
+    );
+    renderView();
+
+    await screen.findByText('37 freelancers');
+    await waitFor(() => expect(actions()).toHaveLength(6));
+    expect(actions().map(([href, text]) => [href, text!.replace(/\u00a0/g, ' ')])).toEqual([
+      ['#mediacao', 'Mediar 1 disputao escrow espera a decisão'],
+      ['#saques', 'Pagar 2 saquesR$ 450,00 · 1 passou do prazo'],
+      ['#reports-title', 'Decidir 4 denúncias1 passou da meta de 24 h'],
+      ['#appeals-title', 'Julgar 1 contestaçãoo autor pediu revisão'],
+      ['#suporte', 'Responder 3 chamados1 está com o SLA vencido'],
+      ['#exclusoes', 'Analisar 2 exclusõespedidos de conta (LGPD)'],
+    ]);
+  });
+
+  it('no prazo e dentro da meta, os atalhos dizem isso', async () => {
+    adminMetrics.mockResolvedValue(
+      metricsOf({ openDisputes: 0, pendingWithdrawals: 1, supportAwaitingReply: 1 }),
+    );
+    adminModerationHealth.mockResolvedValue(healthOf({ pending: 1 }));
+    renderView();
+
+    await waitFor(() => expect(actions()).toHaveLength(3));
+    expect(actions().map(([, text]) => text!.replace(/\u00a0/g, ' '))).toEqual([
+      'Pagar 1 saqueR$ 450,00 no prazo',
+      'Decidir 1 denúnciameta de 24 h',
+      'Responder 1 chamadoaguardando a equipe',
+    ]);
+  });
+
+  it('sem nada pendente, a faixa diz que está tudo em dia', async () => {
+    adminMetrics.mockResolvedValue(
+      metricsOf({ openDisputes: 0, pendingWithdrawals: 0, supportAwaitingReply: 0 }),
+    );
+    adminModerationHealth.mockResolvedValue(healthOf());
+    renderView();
+
+    expect(
+      await screen.findByText('Nenhuma fila esperando a equipe: tudo em dia.'),
+    ).toBeInTheDocument();
+    expect(band().queryByRole('link')).not.toBeInTheDocument();
+  });
 });
 
 describe('AdminView: mediação de disputas', () => {
@@ -1096,6 +1203,23 @@ describe('AdminView: exclusões de conta (LGPD)', () => {
 });
 
 describe('AdminView: caixa de saída de e-mails', () => {
+  it('mostra 12 de cada vez; "Mostrar mais" traz os próximos', async () => {
+    adminEmails.mockResolvedValue(
+      Array.from({ length: 30 }, (_, i) => emailOf({ id: i + 1, subject: `Assunto ${i + 1}` })),
+    );
+    const user = userEvent.setup();
+    renderView();
+
+    const outbox = within(card(EMAILS));
+    await outbox.findByText('Assunto 1');
+    expect(outbox.getAllByRole('row')).toHaveLength(13); // cabeçalho + 12
+    expect(outbox.getByText('12 de 30')).toBeInTheDocument();
+    expect(outbox.getByText('30')).toBeInTheDocument(); // a contagem ao lado do título
+    await user.click(outbox.getByRole('button', { name: 'Mostrar mais 18' }));
+    expect(outbox.getAllByRole('row')).toHaveLength(31);
+    expect(outbox.queryByRole('button', { name: /^Mostrar mais/ })).not.toBeInTheDocument();
+  });
+
   it('lista destinatário, assunto, tipo e situação de cada e-mail', async () => {
     adminEmails.mockResolvedValue([
       emailOf({ id: 1 }),
@@ -1118,17 +1242,17 @@ describe('AdminView: caixa de saída de e-mails', () => {
 
     const sent = await within(card(EMAILS)).findByRole('row', { name: /Confirme seu e-mail/ });
     expect(sent).toHaveTextContent(
-      `${dtm('2026-09-21T09:00:00.000Z')}carla@escambo.testConfirme seu e-mailConfirmação de e-mailEnviado`,
+      `Confirme seu e-mailcarla@escambo.test${dtm('2026-09-21T09:00:00.000Z')}Confirmação de e-mailEnviado`,
     );
     const failed = within(card(EMAILS)).getByRole('row', { name: /Redefina sua senha/ });
     expect(failed).toHaveTextContent(
-      `${dtm('2026-09-22T10:10:00.000Z')}bruno@escambo.testRedefina sua senhaRedefinição de senhaFalhou`,
+      `Redefina sua senhabruno@escambo.test${dtm('2026-09-22T10:10:00.000Z')}Redefinição de senhaFalhou`,
     );
     const queued = within(card(EMAILS)).getByRole('row', { name: /Seu resumo do dia/ });
     expect(queued).toHaveTextContent('Resumo diárioNa fila');
     // Tipo que a tela não conhece aparece como veio da API.
     const unknown = within(card(EMAILS)).getByRole('row', { name: /Modelo novo/ });
-    expect(unknown).toHaveTextContent('Modelo novowelcomeEnviado');
+    expect(unknown).toHaveTextContent(/^Modelo novo.*welcomeEnviado/);
   });
 
   it('o cabeçalho diz se os e-mails saem por SMTP ou ficam só na caixa simulada', async () => {

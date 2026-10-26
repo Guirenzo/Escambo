@@ -14,7 +14,8 @@ A auditoria tem seis camadas. Cada critério da tabela aponta qual delas o prova
    - sala da contratação: em andamento (freelancer), com o formulário de entrega com arquivo, entregue com arquivo na entrega e anexos de imagem e PDF no chat, a imagem ampliada, e concluída com o formulário de avaliação;
    - admin com dados em todos os relatórios (uso, financeiro, saúde da moderação), uma denúncia na fila, um chamado na fila e a conversa do chamado aberta;
    - verificação em duas etapas (desde a 1.48.0, `dois-fatores.smoke.spec.ts`): o cartão do perfil com o QR e a chave em texto, e o segundo passo do login;
-   - página inicial pública, login e cadastro no visual da 1.49.0 (ADR 67): a página inteira e com as dúvidas abertas, a busca, a vitrine, as abas de "Como funciona" e a calculadora da torna (`landing.smoke.spec.ts`, com axe), além de todas as telas do app redesenhadas.
+   - página inicial pública, login e cadastro no visual da 1.49.0 (ADR 67): a página inteira e com as dúvidas abertas, a busca, a vitrine, as abas de "Como funciona" e a calculadora da torna (`landing.smoke.spec.ts`, com axe), além de todas as telas do app redesenhadas;
+   - Admin redesenhado e gráficos novos da 1.50.0 (ADR 68): a faixa "Pede atenção agora", as filas em cartões (com itens e vazias), o Financeiro, o Uso e a saúde da moderação com os gráficos, e Meus ganhos nos três períodos.
 
    **Regra de reprovação:** qualquer violação de regra WCAG reprova o teste, seja qual for o impacto que o axe atribui (`critical`, `serious`, `moderate` ou `minor`). Até a 1.45.0 só `serious` e `critical` reprovavam. Não deixamos `minor` de fora: entre as regras com etiqueta WCAG quase nenhuma sai com esse impacto, e uma violação de critério é uma violação de critério, qualquer que seja o peso que a ferramenta lhe dá. Ficam **só no relatório** (anotação `axe` de cada teste): as regras de boa prática do axe, que não correspondem a um critério WCAG (por exemplo `heading-order`), e os itens que o axe não consegue decidir sozinho (`incomplete`, por exemplo contraste de texto sobre degradê). Esses últimos foram revistos à mão nesta versão (ver "Itens que o axe deixa para revisão").
 
@@ -103,6 +104,13 @@ O axe, estendido às telas que faltavam e ao celular, achou três violações, t
 - **Fundos escuros e fotos:** texto nunca fica direto sobre degradê ou foto. Onde há brilho decorativo, ele fica numa camada à parte (`aria-hidden`), e o contraste foi medido ponto a ponto sob cada linha: topo da página inicial com 8,54:1 no pior ponto (6,42:1 no celular), chamada final 10,17:1 (5,88:1), seção da troca 7,54:1, painel do login 6,04:1 em texto grande. As fotos são decorativas (`alt=""`) e os nomes das categorias ficam numa faixa sólida.
 - **Corrigido no caminho:** texto cortado ou sobreposto a 200% na faixa de boas-vindas do Início, no cartão de saldo da Carteira, no recibo da Sala e no pódio do Ranking; rolagem lateral no Perfil a 200%; atalhos de seção do Admin trocados de `<nav>` solto por lista com nome.
 - **Movimento:** os avisos que entram na página inicial e o brilho do topo param com `prefers-reduced-motion`.
+
+### Verificado na 1.50.0 (marca, gráficos e Admin, ADR 68)
+
+- **Gráficos:** cada gráfico é uma figura com `role="img"` e um resumo em texto (o maior valor, o total e o período), a legenda fica fora do desenho e uma tabela traz os mesmos números. A dica aparece também ao tocar e com o ponteiro, e os rótulos do eixo são em `rem`, então acompanham o texto a 200% (rareiam em vez de se sobrepor). A cor nunca é a única pista: a série principal tem o valor escrito no pico, e no empilhado o número vai dentro do segmento.
+- **Contraste das marcas de dado (1.4.11):** as séries ficam acima de 3:1 sobre o cartão e o bloco claro. O cinza de contexto (`--viz-muted`, 2,15:1) fica abaixo de propósito, porque não carrega informação sozinho: o número dentro dele tem 8,3:1, e a legenda e a tabela repetem o valor. O teste de tokens passou de 67 para 82 pares, incluindo o símbolo da marca sobre o branco, o fundo e o papel.
+- **Marca:** o símbolo é decorativo onde o nome "Escambo" já está escrito ao lado (`aria-hidden`), e o âmbar dele (`--brand-amber`, 3,3:1) só aparece em forma, nunca em texto.
+- **Corrigido no caminho:** as filas do Admin vazias mostravam o cabeçalho de uma tabela sem linhas, que o leitor de tela anunciava como tabela vazia; agora mostram o estado vazio com texto.
 
 ### Itens que o axe deixa para revisão
 

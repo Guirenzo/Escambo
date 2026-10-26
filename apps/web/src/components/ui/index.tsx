@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeftRight, ChevronRight, Inbox, LoaderCircle, X } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Inbox, LoaderCircle, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -11,6 +11,7 @@ import type {
   SelectHTMLAttributes,
 } from 'react';
 import { errorMessage } from '../../lib/errors';
+import { BrandMark } from '../BrandMark';
 
 /* Kit de componentes base — consistência visual em cima do sistema de design (styles.css). */
 
@@ -246,7 +247,7 @@ export function Spinner({ label = 'Carregando…' }: { label?: string }) {
   return (
     <div className="pulse" role="status" aria-label={label}>
       <span className="pulse-mark">
-        <ArrowLeftRight size={22} strokeWidth={2.5} />
+        <BrandMark onDark size={34} />
       </span>
       <span className="muted">{label}</span>
     </div>
@@ -311,6 +312,8 @@ export function QueryState<T>({
   data,
   isEmpty,
   empty,
+  emptyTitle,
+  emptyIcon,
   onRetry,
   children,
 }: {
@@ -319,13 +322,22 @@ export function QueryState<T>({
   data: T | undefined;
   isEmpty?: (d: T) => boolean;
   empty?: ReactNode;
+  /** Título e ícone do estado vazio (o padrão é a caixa de entrada, sem título). */
+  emptyTitle?: ReactNode;
+  emptyIcon?: LucideIcon;
   onRetry?: () => void;
   children: (d: T) => ReactNode;
 }) {
   if (isLoading) return <Skeleton lines={3} />;
   if (error) return <ErrorState error={error} onRetry={onRetry} />;
   if (data === undefined) return null;
-  if (isEmpty?.(data)) return <EmptyState>{empty ?? 'Nada por aqui ainda.'}</EmptyState>;
+  if (isEmpty?.(data)) {
+    return (
+      <EmptyState title={emptyTitle} icon={emptyIcon}>
+        {empty ?? 'Nada por aqui ainda.'}
+      </EmptyState>
+    );
+  }
   return <>{children(data)}</>;
 }
 

@@ -3,6 +3,42 @@ import type { AvailabilityPeriod, AvailablePeriods, Contract } from '@escambo/ty
 export const brl = (v: number): string =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+/** Valor curto do eixo dos gráficos: "R$ 0", "R$ 800", "R$ 1,5 mil", "R$ 12 mil". */
+export function brlAxis(v: number): string {
+  if (v >= 1000) {
+    return `R$ ${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`;
+  }
+  return `R$ ${v.toLocaleString('pt-BR', { maximumFractionDigits: v < 10 ? 2 : 0 })}`;
+}
+
+const MONTH_SHORT = [
+  'jan',
+  'fev',
+  'mar',
+  'abr',
+  'mai',
+  'jun',
+  'jul',
+  'ago',
+  'set',
+  'out',
+  'nov',
+  'dez',
+];
+
+/**
+ * Rótulo curto de um período no eixo dos gráficos: o mês pelo nome ("nov"), com o ano no primeiro
+ * e em janeiro ("nov/25", "jan/26"); dia e semana (a segunda) como "14/09".
+ */
+export function axisLabel(bucket: string, first = false): string {
+  if (bucket.length === 7) {
+    const month = Number(bucket.slice(5, 7)) - 1;
+    const name = MONTH_SHORT[month] ?? bucket;
+    return first || month === 0 ? `${name}/${bucket.slice(2, 4)}` : name;
+  }
+  return `${bucket.slice(8, 10)}/${bucket.slice(5, 7)}`;
+}
+
 export const dt = (iso: string): string => new Date(iso).toLocaleDateString('pt-BR');
 
 /**

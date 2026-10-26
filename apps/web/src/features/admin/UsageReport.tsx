@@ -1,7 +1,22 @@
-import type { FinanceGranularity, UsageBucket } from '@escambo/types';
+import { Users } from 'lucide-react';
+import type { AdminUsageReport, FinanceGranularity } from '@escambo/types';
+import { ColumnChart } from '../../components/charts';
 import { QueryState, TableWrap } from '../../components/ui';
+import { axisLabel } from '../../lib/format';
 import { useAdminUsage } from '../../lib/hooks';
-import { bucketFullLabel, bucketLabel, GRANULARITY_WORD } from './buckets';
+import { bucketFullLabel, GRANULARITY_WORD } from './buckets';
+
+/** O que o leitor de tela ouve no lugar das colunas: o período de mais gente ativa. */
+export function activeSummary(r: AdminUsageReport): string {
+  const head = `Usuários ativos por ${GRANULARITY_WORD[r.granularity]}`;
+  const top = r.series.reduce<AdminUsageReport['series'][number] | null>(
+    (a, b) => (!a || b.activeUsers > a.activeUsers ? b : a),
+    null,
+  );
+  return top && top.activeUsers > 0
+    ? `${head}: mais ativos em ${bucketFullLabel(top.bucket, r.granularity)}, ${top.activeUsers}.`
+    : `${head}: ninguém ativo no período.`;
+}
 
 /**
  * Uso da plataforma no período do financeiro (RF-081): cadastros, contratações criadas, concluídas
@@ -18,7 +33,15 @@ export function UsageReport({
 
   return (
     <div className="fin-usage" data-testid="usage">
-      <h4 id="usage-title">Uso da plataforma</h4>
+      <div className="sub-head">
+        <span className="adm-ico blue" aria-hidden="true">
+          <Users size={18} />
+        </span>
+        <div>
+          <h4 id="usage-title">Uso da plataforma</h4>
+          <p className="muted tiny">Pessoas e contratações no mesmo período do financeiro.</p>
+        </div>
+      </div>
       <QueryState
         isLoading={usage.isLoading}
         error={usage.error}
@@ -26,14 +49,10 @@ export function UsageReport({
         onRetry={() => void usage.refetch()}
       >
         {(r) => {
-          const max = Math.max(...r.series.map((b) => b.activeUsers), 1);
           const per = GRANULARITY_WORD[r.granularity];
           const fromSnapshot = r.series.filter((b) => b.source === 'snapshot').length;
           return (
             <>
-              <p className="muted tiny" data-testid="usage-definition">
-                {r.activeDefinition}
-              </p>
               <div className="fin-kpis">
                 <div className="fin-kpi">
                   <span className="kpi-label">Usuários ativos</span>
@@ -58,36 +77,36 @@ export function UsageReport({
                   </span>
                 </div>
               </div>
+              <p className="muted tiny" data-testid="usage-definition">
+                {r.activeDefinition}
+              </p>
+
+              <div className="viz-block">
+                <h4 className="viz-title">Usuários ativos por {per}</h4>
+                <ColumnChart
+                  data={r.series.map((b, i) => ({
+                    key: b.bucket,
+                    axis: axisLabel(b.bucket, i === 0),
+                    label: bucketFullLabel(b.bucket, r.granularity),
+                    values: [b.activeUsers],
+                  }))}
+                  series={[{ label: 'Ativos', tone: 'blue' }]}
+                  summary={activeSummary(r)}
+                  format={(v) => `${v} ativo(s)`}
+                  tick={(v) => String(v)}
+                  integer
+                  busy={usage.isPlaceholderData}
+                />
+              </div>
               <p className="muted tiny" data-testid="usage-source">
                 {fromSnapshot === 0
                   ? 'Todos os números foram calculados agora.'
                   : `${fromSnapshot} de ${r.series.length} período(s) vêm do snapshot gravado quando fecharam; o resto foi calculado agora.`}{' '}
                 Os ativos de cada {per} não somam: a mesma pessoa conta em cada {per} em que agiu.
               </p>
-
-              <div
-                className="fin-chart"
-                role="img"
-                aria-label={`Usuários ativos por ${per}`}
-                aria-describedby="usage-table-caption"
-              >
-                {r.series.map((b: UsageBucket) => (
-                  <div
-                    className="fin-bar"
-                    key={b.bucket}
-                    title={`${bucketFullLabel(b.bucket, r.granularity)}: ${b.activeUsers} ativo(s)`}
-                  >
-                    <div
-                      className="fin-bar-fill usage"
-                      style={{ height: `${Math.max(2, (b.activeUsers / max) * 100)}%` }}
-                    />
-                    <span className="fin-bar-label">{bucketLabel(b.bucket)}</span>
-                  </div>
-                ))}
-              </div>
               <TableWrap label="Tabela de uso da plataforma">
-                <table className="table">
-                  <caption id="usage-table-caption" className="sr-only">
+                <table className="table t-list">
+                  <caption className="sr-only">
                     Uso da plataforma por {per}: os mesmos números do gráfico, em tabela.
                   </caption>
                   <thead>
@@ -105,12 +124,22 @@ export function UsageReport({
                     {r.series.map((b) => (
                       <tr key={b.bucket}>
                         <td>{bucketFullLabel(b.bucket, r.granularity)}</td>
-                        <td className="num">{b.activeUsers}</td>
-                        <td className="num">{b.newUsers}</td>
-                        <td className="num">{b.newContracts}</td>
-                        <td className="num">{b.completedContracts}</td>
-                        <td className="num">{b.cancelledContracts}</td>
-                        <td className="muted tiny">
+                        <td className="num" data-label="Ativos">
+                          {b.activeUsers}
+                        </td>
+                        <td className="num" data-label="Novos usuários">
+                          {b.newUsers}
+                        </td>
+                        <td className="num" data-label="Criadas">
+                          {b.newContracts}
+                        </td>
+                        <td className="num" data-label="Concluídas">
+                          {b.completedContracts}
+                        </td>
+                        <td className="num" data-label="Canceladas">
+                          {b.cancelledContracts}
+                        </td>
+                        <td className="muted tiny" data-label="Fonte">
                           {b.source === 'snapshot' ? 'Snapshot' : 'Calculado agora'}
                         </td>
                       </tr>

@@ -28,6 +28,14 @@
   --amber: #b45309; /* texto branco sobre âmbar passa de 3.2:1 para 5:1 */
   --amber-soft: #fdf3e0;
   --amber-ink: #7c4a03;
+  /* Peça âmbar do símbolo sobre o claro: 3,3:1 sobre o branco, 3:1 sobre o fundo e o papel. */
+  --brand-amber: #c47f0a;
+  /* Séries dos gráficos (components/charts.tsx), passadas no validador de paleta (faixa de
+     luminosidade, croma e distância para daltonismo entre vizinhas): verde da série principal
+     (5:1 sobre o branco), azul (--blue) para pessoas, âmbar (--brand-amber) para o que espera e um
+     cinza claro só de contexto, abaixo de 3:1 de propósito, sempre com legenda, número e tabela. */
+  --viz-green: #1a7f52;
+  --viz-muted: #a7b4ae;
   --blue: #2563eb;
   --blue-soft: #e8efff;
   --blue-ink: #1e40af; /* texto azul sobre --blue-soft (7.6:1) */
@@ -271,25 +279,31 @@ td.num {
   text-decoration: none;
   color: var(--text);
 }
+/* O símbolo (components/BrandMark.tsx): uma moeda em duas peças que se encaixam. Sobre o claro,
+   verde e âmbar escuro (3:1 ou mais sobre o branco e o fundo); sobre o escuro, branco e âmbar
+   claro. O nome ao lado é texto (Sora 700), que cresce com o tamanho de fonte do navegador. */
 .brand-mark {
-  display: inline-grid;
-  place-items: center;
+  display: block;
+  flex: none;
   width: 32px;
   height: 32px;
-  border-radius: var(--r-sm);
-  background: var(--green);
-  color: #fff;
+}
+.brand-mark-a {
+  fill: var(--green);
+}
+.brand-mark-b {
+  fill: var(--brand-amber);
+}
+.brand-mark.on-dark .brand-mark-a {
+  fill: var(--on-dark);
+}
+.brand-mark.on-dark .brand-mark-b {
+  fill: var(--amber-bright);
 }
 .brand-name {
   font-weight: 700;
   font-size: 1.1rem;
-}
-.brand-light {
-  color: #fff;
-}
-.brand-light .brand-mark {
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  letter-spacing: -0.02em;
 }
 
 /* ---------- App shell: barra lateral escura + barra superior + conteúdo ---------- */
@@ -318,10 +332,6 @@ td.num {
   padding: 0 8px;
   margin-bottom: 4px;
   border-radius: var(--r);
-}
-.side-brand .brand-mark {
-  background: var(--amber-bright);
-  color: var(--green-deep);
 }
 .sidebar a:focus-visible,
 .sidebar button:focus-visible {
@@ -2511,8 +2521,7 @@ button.toggle.on {
   width: 52px;
   height: 52px;
   border-radius: var(--r-lg);
-  background: var(--green);
-  color: #fff;
+  background: var(--green-deep);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
@@ -3611,101 +3620,397 @@ body.is-dragging-list {
   }
 }
 
+/* ---------- Gráficos (components/charts.tsx) ---------- */
+/* Barras finas (até 24 px) com ponta de 4 px e base reta, 2 px de respiro entre os segmentos,
+   grade de fio e rótulos em rem. O gráfico é um contêiner: os rótulos do eixo rareiam pela
+   largura dele, não pela da tela (no celular e com o texto a 200% cabem menos). */
+.viz {
+  container: viz / inline-size;
+  transition: opacity var(--t) var(--ease);
+}
+.viz.busy {
+  opacity: 0.55;
+}
+.viz-figure {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: 11rem auto;
+  column-gap: 10px;
+  row-gap: 8px;
+  padding-top: 1.75rem; /* o valor escrito em cima da coluna mais alta */
+}
+.viz-y {
+  grid-row: 1;
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-size: var(--fs-xs);
+  line-height: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.viz-y span:first-child {
+  transform: translateY(-50%);
+}
+.viz-y span:last-child {
+  transform: translateY(50%);
+}
+.viz-plot {
+  grid-row: 1;
+  grid-column: 2;
+  position: relative;
+  display: flex;
+  border-bottom: 1px solid var(--border-strong);
+  touch-action: pan-y;
+}
+.viz-grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--border);
+  pointer-events: none;
+}
+.viz-col {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+/* A coluna sob o ponteiro ganha uma faixa clara (o "fio" das barras). */
+.viz-col.on {
+  background: var(--mint);
+}
+.viz-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: min(24px, 64%);
+  min-height: 2px;
+}
+.viz-seg {
+  flex: 1 1 0;
+  min-height: 2px;
+}
+.viz-stack > .viz-seg:first-child {
+  border-radius: 4px 4px 0 0;
+}
+.viz .tone-green {
+  background: var(--viz-green);
+}
+.viz .tone-blue {
+  background: var(--blue);
+}
+.viz .tone-amber {
+  background: var(--brand-amber);
+}
+.viz .tone-muted {
+  background: var(--viz-muted);
+}
+.viz-peak {
+  position: absolute;
+  left: 50%;
+  margin-bottom: 4px;
+  transform: translateX(-50%);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.viz-peak.at-start {
+  left: 0;
+  transform: none;
+}
+.viz-peak.at-end {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.viz-x {
+  grid-row: 2;
+  grid-column: 2;
+  display: flex;
+  font-size: var(--fs-xs);
+  line-height: 1.2;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Cada rótulo centrado na sua coluna, mesmo mais largo que ela (o flex centra para os dois lados).
+   Com muitas colunas, o primeiro e o último encostam na borda do gráfico, sem passar dela. */
+.viz-x span {
+  display: flex;
+  justify-content: center;
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  visibility: hidden;
+}
+.viz-x.dense span:first-child {
+  justify-content: flex-start;
+}
+.viz-x.dense span:last-child {
+  justify-content: flex-end;
+}
+.viz-x span.lw {
+  visibility: visible;
+}
+@container viz (max-width: 40rem) {
+  .viz-x span.lw {
+    visibility: hidden;
+  }
+  .viz-x span.lm {
+    visibility: visible;
+  }
+}
+@container viz (max-width: 24rem) {
+  .viz-x span.lm {
+    visibility: hidden;
+  }
+  .viz-x span.ln {
+    visibility: visible;
+  }
+}
+/* Dica: o valor em destaque, a série com uma marca de linha e o período embaixo. Só reforça: os
+   mesmos números estão na tabela. */
+.viz-tip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  gap: 2px;
+  min-width: 8rem;
+  padding: 8px 10px;
+  transform: translateX(12px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--sh-md);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.viz-tip.flip {
+  transform: translateX(calc(-100% - 12px));
+}
+.viz-tip strong {
+  font-size: var(--fs-base);
+  font-variant-numeric: tabular-nums;
+}
+.viz-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.viz-tip-row > span,
+.viz-tip-label {
+  color: var(--muted);
+}
+.viz-tip-label {
+  font-size: var(--fs-xs);
+}
+.viz-key {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.viz-tip .viz-key {
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+}
+.viz-key.tone-green {
+  background: var(--viz-green);
+}
+.viz-key.tone-blue {
+  background: var(--blue);
+}
+.viz-key.tone-amber {
+  background: var(--brand-amber);
+}
+.viz-key.tone-muted {
+  background: var(--viz-muted);
+}
+.viz-key.tone-line {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--viz-green);
+}
+.viz-key.tone-target {
+  width: 14px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px dashed var(--amber);
+}
+.viz-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.viz-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.viz-legend strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+/* Linha: o SVG estica com o gráfico, o traço não (non-scaling-stroke); os pontos são HTML. */
+.viz-line {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.viz-line polyline {
+  fill: none;
+  stroke: var(--viz-green);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.viz-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--viz-green);
+  box-shadow: 0 0 0 2px var(--surface);
+  transform: translate(-50%, 50%);
+  pointer-events: none;
+}
+.viz-dot.on {
+  width: 11px;
+  height: 11px;
+}
+.viz-cross {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border-strong);
+  pointer-events: none;
+}
+/* A meta é uma linha de verdade (um limite), por isso tracejada; o rótulo vai escrito nela. */
+.viz-target {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px dashed var(--amber);
+  pointer-events: none;
+}
+.viz-target span {
+  position: absolute;
+  right: 0;
+  bottom: 4px;
+  padding: 0 4px;
+  background: var(--surface);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--amber-ink);
+}
+@media (forced-colors: active) {
+  .viz-seg,
+  .viz-key,
+  .viz-dot {
+    forced-color-adjust: none;
+  }
+}
+
 /* ---------- Admin: saúde da moderação (ADR 47) ---------- */
 .health-kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
   gap: 12px;
-  margin: 6px 0 14px;
-}
-@media (max-width: 1000px) {
-  .health-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 480px) {
-  .health-kpis {
-    grid-template-columns: 1fr;
-  }
 }
 .health-kpis .kpi {
-  padding: 14px 16px;
+  padding: 16px 18px;
   box-shadow: none;
+  background: var(--surface-2);
+  border-color: transparent;
 }
 .health-kpis .kpi-value {
   font-size: 1.5rem;
 }
 .health-bars {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14.375rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
   gap: 12px;
-  margin-bottom: 14px;
 }
+/* Parte-a-todo: título e total em cima, a barra (24 px, 2 px entre os segmentos, ponta de 6 px) e
+   a legenda com os números embaixo. */
 .breakdown {
-  padding: 12px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 16px 18px;
   border: 1px solid var(--border);
-  border-radius: var(--r);
-  background: var(--surface-2);
+  border-radius: var(--r-lg);
+  background: var(--surface);
 }
 .breakdown-head {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
-  margin-bottom: 8px;
-  font-size: 0.86rem;
+  font-size: var(--fs-sm);
 }
-/* Barra empilhada: segmentos finos, 2 px de respiro entre eles, pontas arredondadas. */
+.breakdown-head strong {
+  font-size: var(--fs-base);
+}
 .breakdown-bar {
   display: flex;
   gap: 2px;
-  height: 22px;
-  border-radius: 4px;
+  height: 24px;
+  border-radius: 6px;
   overflow: hidden;
 }
-.breakdown-bar.empty {
-  background: var(--border);
+.breakdown-bar.is-empty {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 .breakdown-bar .seg {
   display: grid;
   place-items: center;
-  min-width: 24px;
-  color: #fff;
-  font-size: 0.72rem;
+  min-width: 26px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.seg.action,
-.swatch.action {
-  background: var(--green);
+/* O número dentro do segmento: branco no verde (5:1), texto escuro no cinza (8,3:1) e no âmbar
+   (5,4:1). */
+.seg.action {
+  background: var(--viz-green);
+  color: #fff;
 }
-.seg.dismissed,
-.swatch.dismissed {
-  background: var(--muted);
-}
-.seg.pending,
-.swatch.pending {
-  background: var(--amber);
-}
-.breakdown-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-.breakdown-legend strong {
+.seg.dismissed {
+  background: var(--viz-muted);
   color: var(--text);
 }
-.swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin-right: 6px;
-  border-radius: 3px;
-  vertical-align: -1px;
+.seg.pending {
+  background: var(--brand-amber);
+  color: var(--text);
+}
+.breakdown .viz-legend {
+  margin: 0;
+  font-size: var(--fs-xs);
 }
 .health-signals .meter {
   display: inline-flex;
@@ -3718,59 +4023,97 @@ body.is-dragging-list {
   width: 96px;
   height: 8px;
   border-radius: 4px;
-  background: var(--border);
+  background: var(--green-soft);
   overflow: hidden;
 }
 .health-signals .meter-bar > i {
   display: block;
   height: 100%;
   border-radius: 4px;
-  background: var(--green);
+  background: var(--viz-green);
 }
 @media (max-width: 480px) {
   .health-signals .meter-bar {
     width: 56px;
   }
 }
-/* Série por dia (ADR 50): dois gráficos pequenos com a mesma paleta de estado do painel. */
+/* Série por dia (ADR 50): os dois gráficos lado a lado (empilhados em coluna estreita) e a
+   tabela da série embaixo, fechada. */
 .health-history {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17.5rem), 1fr));
-  gap: 12px;
-  margin-bottom: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 20px 28px;
 }
-.chart-mini {
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  background: var(--surface-2);
+.health-history > .health-table {
+  grid-column: 1 / -1;
 }
 .chart-head {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+/* "Ver em tabela": o resumo do <details> como um link de texto com o triângulo do navegador. */
+.more-details > summary,
+.health-table > summary {
+  display: list-item;
+  width: fit-content;
+  min-height: 24px;
+  padding: 2px 0;
+  color: var(--green);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.more-details > summary:hover,
+.health-table > summary:hover {
+  color: var(--green-hover);
+}
+.more-details > summary:focus-visible,
+.health-table > summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+.more-details[open] > summary,
+.health-table[open] > summary {
+  margin-bottom: 8px;
+}
+/* Notas do rodapé de uma seção: cada uma com o ícone do assunto. */
+.adm-notes {
+  display: grid;
   gap: 8px;
-  margin-bottom: 6px;
-  font-size: 0.86rem;
+  margin: 0;
+  padding: 14px 16px;
+  list-style: none;
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
 }
-.chart-mini svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  /* o ponto do último dia encosta na borda: deixa o círculo respirar */
-  overflow: visible;
+.adm-notes li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
 }
-.swatch.median {
-  background: var(--green-ink);
-}
-.swatch.meta {
-  background: var(--amber);
+.adm-notes li > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--muted);
 }
 
 /* ---------- Admin: financeiro ---------- */
+/* Filtros numa linha só, acima de tudo o que eles recortam (números, gráfico e tabela). */
 .fin-controls {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+}
+.fin-export {
+  margin-left: auto;
+}
+.fin-controls .tabs-mini,
+.adm-head-actions .tabs-mini {
   flex-wrap: wrap;
 }
 .fin-range {
@@ -3781,73 +4124,75 @@ body.is-dragging-list {
 .fin-range input {
   padding: 6px 8px;
 }
+/* Números do período (ganhos, financeiro, uso): blocos claros sem borda, o número grande em cima
+   da legenda; separados por um fio vertical, como numa faixa de indicadores. */
 .fin-kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.375rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
   gap: 12px;
-  margin: 4px 0 12px;
+  margin: 0;
 }
 .fin-kpi {
   display: grid;
-  gap: 2px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--r);
+  align-content: start;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: var(--r-lg);
   background: var(--surface-2);
 }
 .fin-kpi strong {
   font-family: var(--font-display);
-  font-size: 1.25rem;
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
 }
-.fin-chart {
-  position: relative;
+.fin-kpi.lead {
+  background: var(--green-soft);
+}
+.fin-kpi.lead .kpi-label {
+  color: var(--green-ink);
+}
+/* A linha do período acima do gráfico: o ícone de calendário e o recorte. */
+.viz-caption > svg {
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+/* Bloco de gráfico: o título (o que está plotado) em cima do desenho. */
+.viz-block {
+  display: grid;
+  gap: 2px;
+}
+.viz-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-base);
+  font-weight: 650;
+}
+/* Subseção dentro de um cartão (o uso dentro do financeiro): ícone, título e para que serve. */
+.sub-head {
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-start;
-  gap: 6px;
-  height: 150px;
-  margin: 8px 0 14px;
-  padding: 8px 4px 22px;
-  border-bottom: 1px solid var(--border);
+  align-items: flex-start;
+  gap: 12px;
 }
-.fin-bar {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  max-width: 140px; /* um mês só não vira uma barra de parede a parede */
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+.sub-head .adm-ico {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r);
 }
-.fin-bar-fill {
-  background: var(--green);
-  border-radius: 4px 4px 0 0;
-  min-height: 2px;
-}
-.fin-bar-label {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -20px;
-  text-align: center;
-  font-size: 0.68rem;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* Uso por período (RF-081): mesmas barras, outra cor, para não confundir com a receita. */
-.fin-bar-fill.usage {
-  background: var(--blue);
+.sub-head h4 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: 650;
 }
 .fin-usage {
-  margin-top: 18px;
-  padding-top: 14px;
+  display: grid;
+  gap: 16px;
+  margin-top: 8px;
+  padding-top: 24px;
   border-top: 1px solid var(--border);
-}
-.fin-usage h4 {
-  margin: 0 0 6px;
 }
 
 /* ---------- Admin: indicador de suporte (RF-076), a linha inteira com três números ---------- */
@@ -4320,67 +4665,135 @@ body.is-dragging-list {
 }
 .storage-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.625rem), 1fr));
-  gap: 10px 16px;
-  margin: 0 0 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 12px;
+  margin: 0;
 }
 .storage-grid > div {
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: var(--r-lg);
   background: var(--surface-2);
 }
+/* Inconsistência: o bloco fica âmbar e o ícone de alerta diz o mesmo. */
 .storage-grid > div.warn {
-  border-color: #e0b04a;
-  background: #fff8e6;
+  background: var(--amber-soft);
+}
+.storage-grid > div.warn dt {
+  color: var(--amber-ink);
 }
 .storage-grid dt {
-  font-size: 0.74rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
-  margin-bottom: 4px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.storage-grid dt > svg {
+  flex: none;
 }
 .storage-grid dd {
   margin: 0;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.storage-grid dd .tiny {
+  font-family: var(--font-body);
+  font-weight: 500;
 }
 
 /* ---------- Parâmetros da plataforma (admin, ADR 32) ---------- */
+/* Cada parâmetro numa linha: nome e explicação à esquerda (largura de leitura), o campo com a
+   unidade e o "Salvar" à direita, alinhados numa coluna. */
 .settings-list {
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
 }
 .setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 12px 0;
+  gap: 12px 24px;
+  padding: 16px 18px;
   border-top: 1px solid var(--border);
 }
 .setting-row:first-child {
   border-top: 0;
-  padding-top: 0;
+}
+.setting-row:nth-child(even) {
+  background: var(--surface-2);
+}
+.setting-row:last-child {
+  border-radius: 0 0 var(--r-xl) var(--r-xl);
 }
 .setting-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+  max-width: 72ch;
 }
+.setting-text > strong {
+  font-size: var(--fs-base);
+}
+/* Campo, unidade e "Salvar" em colunas fixas: de uma linha para a outra, tudo alinhado. */
 .setting-edit {
-  display: flex;
+  display: grid;
+  grid-template-columns: 6.5rem 6rem auto;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
 .setting-edit input {
-  width: 96px;
+  width: 100%;
+}
+.setting-edit .switch {
+  grid-column: 1 / 3;
+  justify-self: end;
 }
 @media (max-width: 640px) {
   .setting-row {
     flex-direction: column;
     align-items: stretch;
   }
+  /* Estreito (ou com o texto maior): campo, unidade e botão quebram a linha em vez de vazar. */
+  .setting-edit {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .setting-edit input {
+    width: 8rem;
+  }
+}
+/* Regras fixas: só leitura, num bloco claro com o cadeado no título. */
+.fixed-rules {
+  padding: 18px 20px;
+  border-radius: var(--r-xl);
+  background: var(--mint);
+}
+.fixed-rules h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-base);
+}
+.fixed-rules h4 > svg {
+  color: var(--green);
+}
+.fixed-rules ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 1.2em;
 }
 
 /* ---------- Modo de manutenção (ADR 33) e switch dos parâmetros ---------- */
@@ -7710,13 +8123,8 @@ button.deal-open:hover:not(:disabled) {
   font-size: 1.0625rem;
 }
 .bank-brand-mark {
-  display: inline-grid;
-  place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: var(--r-sm);
-  background: var(--amber-bright);
-  color: var(--green-deep);
 }
 .bank-chip {
   display: inline-grid;
@@ -8646,5 +9054,509 @@ a.notif-link:focus-visible {
   /* Indicadores em duas colunas: o último, quando sobra sozinho, ocupa a linha inteira. */
   .kpis > :last-child:nth-child(odd) {
     grid-column: 1 / -1;
+  }
+}
+
+/* ---------- Admin (1.50): faixa de atenção, cabeçalhos de seção, filas em cartões ---------- */
+/* Faixa escura do topo, como a do Início: o que espera a equipe, cada item um atalho claro. */
+.adm-attention {
+  display: grid;
+  gap: 16px;
+  padding: 22px 24px;
+  border-radius: var(--r-2xl);
+  background: var(--green-deep);
+  color: var(--on-dark);
+  box-shadow: var(--sh-md);
+}
+.adm-attention-head h2 {
+  color: var(--on-dark);
+  font-size: 1.25rem;
+}
+.adm-attention-head p,
+.adm-attention-ok {
+  margin-top: 4px;
+  color: var(--on-dark-muted);
+}
+.adm-attention-ok {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.adm-attention-ok > svg {
+  flex: none;
+  color: var(--amber-bright);
+}
+.adm-attention-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.adm-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 100%;
+  min-height: 64px;
+  padding: 12px 14px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  transition: background var(--t) var(--ease);
+}
+.adm-action:hover {
+  background: var(--mint);
+  color: var(--text);
+}
+.adm-action:focus-visible {
+  outline: 2px solid var(--focus-on-dark);
+  outline-offset: 2px;
+}
+.adm-action-ico {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r);
+}
+.adm-action-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.adm-action-text strong {
+  font-size: var(--fs-base);
+  font-weight: 650;
+}
+.adm-action-text span {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.adm-action-go {
+  flex: none;
+  color: var(--muted);
+}
+/* Os tons do ícone (fundo suave, traço escuro do mesmo tom): os mesmos dos cabeçalhos de seção. */
+.adm-ico.green {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.adm-ico.amber,
+.adm-action-ico.amber {
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+.adm-ico.blue,
+.adm-action-ico.blue {
+  background: var(--blue-soft);
+  color: var(--blue-ink);
+}
+.adm-ico.violet,
+.adm-action-ico.violet {
+  background: var(--violet-soft);
+  color: var(--violet-ink);
+}
+.adm-ico.red,
+.adm-action-ico.red {
+  background: var(--red-soft);
+  color: var(--red-ink);
+}
+
+/* Cabeçalho de seção: ícone num quadrado, título maior, para que serve, ações à direita. */
+.adm-head {
+  align-items: flex-start;
+  gap: 12px 16px;
+}
+.adm-head-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+.adm-ico {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-lg);
+}
+.adm-head-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding-top: 1px;
+}
+.adm-head-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.card .adm-head h3,
+.adm-head h3 {
+  font-size: var(--fs-lg);
+  font-weight: 650;
+}
+.adm-head .card-sub {
+  max-width: 72ch;
+}
+.adm-head-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.count-badge.hot {
+  border-color: transparent;
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+.admin-page .card {
+  padding: 28px;
+  gap: 20px;
+}
+.admin-page .table-wrap {
+  margin: 0 -28px -28px;
+  padding: 0 28px 16px;
+}
+@media (max-width: 720px) {
+  .admin-page .card {
+    padding: 20px 16px;
+    gap: 16px;
+  }
+  .admin-page .table-wrap {
+    margin: 0 -16px -20px;
+    padding: 0 16px 16px;
+  }
+}
+.adm-foot {
+  text-align: center;
+}
+
+/* Fila em cartões: cada linha é um cartão (borda, raio, respiro entre eles); a ação principal é
+   o botão verde e a que desfaz ou estorna fica com o texto vermelho. A tabela continua tabela
+   (linhas e colunas para o leitor de tela); no celular, cada linha vira um cartão empilhado. */
+.admin-page .table.queue {
+  border-collapse: separate;
+  border-spacing: 0 10px;
+  margin-top: -10px;
+}
+.admin-page .table.queue thead th {
+  padding: 4px 16px 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--fs-xs);
+}
+.table.queue tbody td {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  vertical-align: middle;
+  transition: border-color var(--t) var(--ease);
+}
+.table.queue tbody tr:last-child td {
+  border-bottom: 1px solid var(--border);
+}
+.table.queue tbody td:first-child {
+  border-left: 1px solid var(--border);
+  border-radius: var(--r-xl) 0 0 var(--r-xl);
+}
+.table.queue tbody td:last-child {
+  border-right: 1px solid var(--border);
+  border-radius: 0 var(--r-xl) var(--r-xl) 0;
+}
+.table.queue tbody tr:hover {
+  background: transparent;
+}
+.table.queue tbody tr:hover td {
+  border-color: var(--border-hover);
+}
+/* Passou do prazo: a borda da esquerda vira uma barra âmbar (o texto "Atrasado" diz o mesmo). */
+.table.queue tbody tr.q-late td:first-child {
+  box-shadow: inset 4px 0 0 var(--amber);
+}
+.q-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.q-person .cell-title {
+  min-width: 0;
+}
+.q-amount {
+  font-size: var(--fs-lg);
+  white-space: nowrap;
+}
+.q-text {
+  max-width: 48ch;
+  margin-top: 2px;
+}
+.table .cell-title.q-main {
+  min-width: 9rem;
+}
+button.mini.q-primary {
+  background: var(--green);
+  border-color: transparent;
+  color: #fff;
+}
+button.mini.q-primary:hover:not(:disabled) {
+  background: var(--green-hover);
+  border-color: transparent;
+  color: #fff;
+}
+button.mini.q-danger {
+  color: var(--red-ink);
+}
+button.mini.q-danger:hover:not(:disabled) {
+  background: var(--red-soft);
+  border-color: var(--red-ink);
+  color: var(--red-ink);
+}
+.email-to {
+  overflow-wrap: anywhere;
+}
+.list-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+/* No celular a tabela vira lista: cada linha um cartão, o título em cima, cada valor com o nome da
+   coluna antes (data-label; o cabeçalho sai) e as ações embaixo, na largura toda. */
+@media (max-width: 720px) {
+  .table.queue,
+  .table.t-list {
+    display: block;
+    border-spacing: 0;
+    margin-top: 0;
+  }
+  .table.queue thead,
+  .table.t-list thead {
+    display: none;
+  }
+  .table.queue tbody,
+  .table.t-list tbody {
+    display: grid;
+    gap: 10px;
+  }
+  .table.queue tr,
+  .table.t-list tr {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+    gap: 12px 16px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    background: var(--surface);
+  }
+  .table.queue tr.q-late {
+    box-shadow: inset 4px 0 0 var(--amber);
+  }
+  .table.queue tbody td,
+  .table.t-list tbody td,
+  .table.queue tbody td:first-child,
+  .table.queue tbody td:last-child {
+    display: block;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    text-align: left;
+  }
+  .table.queue td.q-main,
+  .table.queue td.q-wide,
+  .table.queue td.q-acts,
+  .table.t-list td.q-main,
+  .table.t-list td.q-acts,
+  .table.t-list td:first-child {
+    grid-column: 1 / -1;
+  }
+  .table.queue td[data-label]::before,
+  .table.t-list td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+  }
+  .table.queue .acts,
+  .table.t-list .acts {
+    justify-content: flex-start;
+  }
+  .table.queue .q-acts .acts > button {
+    flex: 1 1 auto;
+  }
+  .table.t-list td.num {
+    font-weight: 600;
+  }
+  .table.t-list td:first-child {
+    font-weight: 650;
+  }
+}
+
+/* Título de bloco grande do painel (Atendimento de suporte): ícone, h2 e para que serve. */
+.adm-h2 {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.adm-h2 h2 {
+  font-size: 1.25rem;
+}
+.adm-h2 p {
+  margin-top: 3px;
+  max-width: 80ch;
+}
+/* Busca de conta: o campo e o botão numa linha (o botão desce quando falta espaço). */
+.lookup-form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+}
+.lookup-form > label {
+  flex: 1 1 18rem;
+}
+.lookup-form button {
+  min-height: 44px;
+}
+.admin-page .lookup-list > div {
+  padding: 12px 14px;
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+}
+
+/* Contestações e desistências no painel: cada item um cartão com a miniatura, o texto (citações
+   com a faixa da cor de quem fala) e as ações à direita. */
+.admin-page .removal-list {
+  gap: 12px;
+  margin: 0;
+}
+.admin-page .removal {
+  gap: 14px 18px;
+  padding: 16px 18px;
+  border-radius: var(--r-xl);
+}
+.admin-page .removal:hover {
+  border-color: var(--border-hover);
+}
+.admin-page .removal-head strong,
+.removal-title {
+  font-size: var(--fs-base);
+  font-weight: 650;
+}
+.admin-page .removal-quote {
+  border-radius: 0 var(--r) var(--r) 0;
+}
+.admin-page .appeal .report-thumb {
+  width: 80px;
+  height: 80px;
+  border-radius: var(--r-lg);
+}
+.dropout-appeals {
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.dropout-appeals .sub-head h4 {
+  font-size: var(--fs-base);
+}
+/* Desistências da conta denunciada: uma faixa clara presa ao cartão da denúncia, logo abaixo. */
+.table.queue tbody tr.q-sub td {
+  padding: 16px 18px;
+  border-color: transparent;
+  background: var(--surface-2);
+}
+.table.queue tr.q-sub .removal {
+  background: var(--surface);
+}
+.admin-page .report-target {
+  min-width: 14rem;
+}
+.admin-page .report-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--r);
+}
+.q-sub h4 {
+  margin: 0;
+}
+@media (max-width: 720px) {
+  .table.queue tbody tr.q-late td:first-child {
+    box-shadow: none;
+  }
+  .table.queue .cell-title,
+  .table.t-list .cell-title {
+    min-width: 0;
+  }
+  .table.queue .cell-title .tiny,
+  .table.queue .mono {
+    overflow-wrap: anywhere;
+  }
+  .table.queue tr.q-sub {
+    padding: 12px;
+    border-color: transparent;
+    background: var(--surface-2);
+  }
+  .table.queue tbody tr.q-sub td {
+    background: none;
+  }
+  .admin-page .report-target {
+    min-width: 0;
+  }
+}
+@media (max-width: 720px) {
+  .table.queue tbody tr:last-child td,
+  .table.queue tbody tr:hover td {
+    border: 0;
+  }
+}
+@media (max-width: 720px) {
+  /* No celular, o número em destaque ocupa a linha e os outros vão dois a dois. */
+  .fin-kpis {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  }
+  .fin-kpi.lead {
+    grid-column: 1 / -1;
+  }
+}
+.q-when {
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .fin-kpi {
+    padding: 12px 14px;
+  }
+  .fin-kpi strong {
+    font-size: 1.125rem;
+  }
+  .fin-kpi.lead strong {
+    font-size: 1.375rem;
   }
 }

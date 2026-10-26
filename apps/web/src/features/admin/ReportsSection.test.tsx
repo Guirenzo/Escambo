@@ -417,9 +417,20 @@ describe('ReportsSection: a fila', () => {
     expect(headers()).toEqual(['Alvo', 'Motivos', 'Situação', 'Ações']);
   });
 
-  // Hoje a lista vazia desenha a tabela só com o cabeçalho: o QueryState recebe `empty` sem
-  // `isEmpty`, e por isso nunca mostra o texto (defeito relatado, não corrigido aqui).
-  it.todo('fila vazia diz "Nenhuma denúncia pendente. A comunidade está tranquila."');
+  it('fila vazia diz "Nenhuma denúncia pendente. A comunidade está tranquila.", sem tabela', async () => {
+    adminReports.mockResolvedValue([]);
+    const user = userEvent.setup();
+    render(wrap(<ReportsSection />));
+
+    expect(
+      await screen.findByText('Nenhuma denúncia pendente. A comunidade está tranquila.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Fila em dia')).toBeInTheDocument();
+    expect(screen.getByText('0 alvos')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Resolvidas' }));
+    expect(await screen.findByText('Nenhuma denúncia analisada ainda.')).toBeInTheDocument();
+  });
 });
 
 describe('ReportsSection: a decisão', () => {

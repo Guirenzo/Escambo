@@ -1,7 +1,8 @@
-import { ArrowLeftRight, Compass, Home } from 'lucide-react';
+import { Compass, Home } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/ui';
 import { usePageTitle } from '../../lib/title';
+import { BrandMark } from '../../components/BrandMark';
 
 /**
  * Endereço que não existe. Antes o app mandava para a home em silêncio, o que esconde link
@@ -14,9 +15,7 @@ export function NotFoundView() {
   return (
     <main className="notfound" data-testid="not-found">
       <Link to="/" className="brand">
-        <span className="brand-mark">
-          <ArrowLeftRight size={18} strokeWidth={2.5} />
-        </span>
+        <BrandMark />
         <span className="brand-name">Escambo</span>
       </Link>
       <p className="nf-code" aria-hidden="true">

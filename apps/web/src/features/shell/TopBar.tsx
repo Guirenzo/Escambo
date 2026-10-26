@@ -1,7 +1,8 @@
-import { ArrowLeftRight, Bell, ChevronDown, LifeBuoy, LogOut, Search, User } from 'lucide-react';
+import { Bell, ChevronDown, LifeBuoy, LogOut, Search, User } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Avatar } from '../../components/Avatar';
+import { BrandMark } from '../../components/BrandMark';
 
 /** "1 não lida", "7 não lidas": o mesmo texto no menu lateral e no sino. */
 export const unreadLabel = (n: number): string => `${n} não lida${n > 1 ? 's' : ''}`;
@@ -78,9 +79,7 @@ export function TopBar({
   return (
     <header className={`topbar${searchOpen ? ' searching' : ''}`}>
       <Link to="/" className="brand topbar-brand" aria-label="Escambo, ir para o início">
-        <span className="brand-mark">
-          <ArrowLeftRight size={18} strokeWidth={2.5} />
-        </span>
+        <BrandMark />
         <span className="brand-name">Escambo</span>
       </Link>
       <button

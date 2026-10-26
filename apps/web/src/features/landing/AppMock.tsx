@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
+import { BrandMark } from '../../components/BrandMark';
 import { money, TRADE_EXAMPLE } from './facts';
 
 /**
@@ -53,9 +54,7 @@ function Sidebar() {
   return (
     <div className="am-side">
       <p className="am-logo">
-        <span className="am-logo-mark">
-          <Ico Icon={ArrowLeftRight} />
-        </span>
+        <BrandMark onDark className="am-logo-mark" />
         Escambo
       </p>
       <p className="am-group">Trabalho</p>

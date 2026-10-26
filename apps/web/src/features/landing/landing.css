@@ -181,7 +181,6 @@ html:has(.lp-header) {
   min-height: 64px;
   padding-block: 10px;
 }
-/* A marca do Escambo: o quadrado âmbar com as setas da troca, como na lateral do app. */
 /* Mais forte que o .brand do app (que vem depois na cascata): no escuro, o nome é branco. */
 .lp .lp-brand {
   border-radius: var(--r-sm);
@@ -189,10 +188,6 @@ html:has(.lp-header) {
 }
 .lp .lp-brand:hover {
   color: var(--on-dark);
-}
-.lp-brand .brand-mark {
-  background: var(--amber-bright);
-  color: var(--green-deep);
 }
 /* Abaixo de 360 px, o nome sai da vista (fica para o leitor de tela) e o topo cabe numa linha só:
    com duas, a âncora pararia atrás do cabeçalho grudado. */
@@ -874,14 +869,8 @@ html:has(.lp-header) {
   font-weight: 700;
 }
 .am-logo-mark {
-  display: grid;
-  place-items: center;
-  width: 1.8em;
-  height: 1.8em;
-  border-radius: 0.45em;
-  background: #f6b73c;
-  color: #062a1b;
-  font-size: 0.85em;
+  width: 1.6em;
+  height: 1.6em;
 }
 .am-group {
   margin: 0.7em 0 0.15em 0.6em;

@@ -1,8 +1,18 @@
-import { HardDrive, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  Archive,
+  Clock3,
+  FolderOpen,
+  HardDrive,
+  Image,
+  Paperclip,
+  Trash2,
+} from 'lucide-react';
 import { Button, QueryState } from '../../components/ui';
 import { dtm, formatBytes } from '../../lib/format';
 import { useAdminStorage, usePurgeAttachments } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { SectionHead } from './SectionHead';
 
 /**
  * Uso do volume da API (anexos do chat e cópias LGPD) e o expurgo (ADR 31): o que está no
@@ -28,10 +38,13 @@ export function StorageSection() {
 
   return (
     <section className="card wide" aria-labelledby="storage-title" data-testid="storage-card">
-      <div className="card-head">
-        <h3 id="storage-title">
-          <HardDrive size={16} /> Armazenamento
-        </h3>
+      <SectionHead
+        icon={HardDrive}
+        tone="blue"
+        title="Armazenamento"
+        titleId="storage-title"
+        subtitle="O que ocupa o volume da API (anexos, uploads, cópias LGPD e imagens) e o expurgo dos anexos antigos."
+      >
         <Button
           variant="secondary"
           className="mini"
@@ -40,7 +53,7 @@ export function StorageSection() {
         >
           <Trash2 size={14} /> {purge.isPending ? 'Rodando…' : 'Rodar expurgo agora'}
         </Button>
-      </div>
+      </SectionHead>
       <QueryState
         isLoading={storage.isLoading}
         error={storage.error}
@@ -51,32 +64,47 @@ export function StorageSection() {
           <>
             <dl className="storage-grid">
               <div>
-                <dt>Anexos no disco</dt>
+                <dt>
+                  <Paperclip size={14} aria-hidden="true" />
+                  Anexos no disco
+                </dt>
                 <dd>
                   {s.attachments.active} · {formatBytes(s.attachments.activeBytes)}
                 </dd>
               </div>
               <div>
-                <dt>Pasta de uploads</dt>
+                <dt>
+                  <FolderOpen size={14} aria-hidden="true" />
+                  Pasta de uploads
+                </dt>
                 <dd>
                   {s.uploads.files} arquivo(s) · {formatBytes(s.uploads.bytes)}
                 </dd>
               </div>
               <div>
-                <dt>Cópias LGPD</dt>
+                <dt>
+                  <Archive size={14} aria-hidden="true" />
+                  Cópias LGPD
+                </dt>
                 <dd>
                   {s.exports.files} arquivo(s) · {formatBytes(s.exports.bytes)}
                 </dd>
               </div>
               <div>
-                <dt>Fotos e portfólio</dt>
+                <dt>
+                  <Image size={14} aria-hidden="true" />
+                  Fotos e portfólio
+                </dt>
                 <dd>
                   {s.media.files} imagem(ns) · {s.media.variants} miniatura(s) ·{' '}
                   {formatBytes(s.media.bytes)}
                 </dd>
               </div>
               <div>
-                <dt>Já removidos</dt>
+                <dt>
+                  <Trash2 size={14} aria-hidden="true" />
+                  Já removidos
+                </dt>
                 <dd>
                   {s.attachments.purged}
                   <span className="muted tiny">
@@ -90,14 +118,20 @@ export function StorageSection() {
                   s.attachments.missing || s.attachments.orphans || s.media.orphans ? 'warn' : ''
                 }
               >
-                <dt>Inconsistências</dt>
+                <dt>
+                  <AlertTriangle size={14} aria-hidden="true" />
+                  Inconsistências
+                </dt>
                 <dd>
                   {s.attachments.missing} sem arquivo · {s.attachments.orphans + s.media.orphans}{' '}
                   órfão(s)
                 </dd>
               </div>
               <div>
-                <dt>Retenção</dt>
+                <dt>
+                  <Clock3 size={14} aria-hidden="true" />
+                  Retenção
+                </dt>
                 <dd>
                   {s.retentionDays} dias
                   <span className="muted tiny"> · expurgo diário às {s.purgeHour}h</span>

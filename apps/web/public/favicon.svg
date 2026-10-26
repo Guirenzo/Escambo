@@ -1,9 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Escambo">
-  <rect width="32" height="32" rx="8" fill="#0d5c3a" />
-  <g transform="translate(4 4)" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M8 3 4 7l4 4" />
-    <path d="M4 7h16" />
-    <path d="m16 21 4-4-4-4" />
-    <path d="M20 17H4" />
-  </g>
-</svg>
+<svg role="img" aria-label="Escambo" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#062a1b"/><g transform="translate(1.28 1.28) scale(0.92)"><path fill="#ffffff" d="M18.625 3.268A13 13 0 0 0 10.625 27.837V14.625H18.625Z"/><path fill="#f6b73c" d="M13.375 28.732A13 13 0 0 0 21.375 4.163V17.375H13.375Z"/></g></svg>

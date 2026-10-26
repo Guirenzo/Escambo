@@ -10,6 +10,7 @@ vi.mock('../../lib/api', () => ({
   api: { adminUsage: (q: unknown) => adminUsage(q) },
 }));
 
+import { hoverColumn } from '../../test/charts';
 import { UsageReport } from './UsageReport';
 
 const wrap = (ui: ReactNode) => (
@@ -94,11 +95,22 @@ describe('UsageReport', () => {
   it('gráfico com nome e tabela equivalente: uma linha por semana, com a fonte de cada uma', async () => {
     render(wrap(<UsageReport range={RANGE} />));
 
-    const chart = await screen.findByRole('img', { name: 'Usuários ativos por semana' });
-    expect(within(chart).getByText('14/09').parentElement).toHaveAttribute(
-      'title',
-      '14/09 a 20/09: 8 ativo(s)',
-    );
+    const chart = await screen.findByRole('img', {
+      name: 'Usuários ativos por semana: mais ativos em 07/09 a 13/09, 10.',
+    });
+    expect([...chart.querySelectorAll('.viz-x span')].map((l) => l.textContent)).toEqual([
+      '07/09',
+      '14/09',
+      '21/09',
+    ]);
+    // Contagem: eixo em inteiros (0 a 10), e a dica com a semana inteira.
+    expect([...chart.querySelectorAll('.viz-y span')].map((t) => t.textContent)).toEqual([
+      '10',
+      '5',
+      '0',
+    ]);
+    hoverColumn(chart, 1, 3);
+    expect(chart.querySelector('.viz-tip')).toHaveTextContent('8 ativo(s)14/09 a 20/09');
     const table = screen.getByRole('table', {
       name: 'Uso da plataforma por semana: os mesmos números do gráfico, em tabela.',
     });
@@ -136,7 +148,23 @@ describe('UsageReport', () => {
       'Todos os números foram calculados agora. Os ativos de cada mês não somam',
     );
     expect(screen.getByRole('cell', { name: '09/2026' })).toBeVisible();
-    expect(screen.getByRole('img', { name: 'Usuários ativos por mês' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /^Usuários ativos por mês: / })).toBeInTheDocument();
+  });
+
+  it('ninguém ativo no período: o resumo diz isso', async () => {
+    adminUsage.mockResolvedValue(
+      report({
+        granularity: 'month',
+        series: [bucket({ bucket: '2026-09', source: 'live', activeUsers: 0 })],
+      }),
+    );
+    render(wrap(<UsageReport range={{ granularity: 'month' }} />));
+
+    expect(
+      await screen.findByRole('img', {
+        name: 'Usuários ativos por mês: ninguém ativo no período.',
+      }),
+    ).toBeInTheDocument();
   });
 
   it('erro ao carregar mostra a mensagem, e "Tentar de novo" busca outra vez', async () => {

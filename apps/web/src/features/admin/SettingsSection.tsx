@@ -1,10 +1,11 @@
-import { SlidersHorizontal } from 'lucide-react';
+import { Lock, SlidersHorizontal } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { PlatformSetting } from '@escambo/types';
 import { Button, Input, QueryState } from '../../components/ui';
 import { dtm } from '../../lib/format';
 import { useAdminSettings, usePublicSettings, useUpdateSetting } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { SectionHead } from './SectionHead';
 
 const show = (s: PlatformSetting, v: number | boolean): string =>
   s.type === 'boolean' ? (v ? 'ligado' : 'desligado') : `${v} ${s.unit}`.trim();
@@ -106,12 +107,13 @@ export function SettingsSection() {
   const rules = publicSettings.data?.fixedContractRules;
   return (
     <section className="card wide" aria-labelledby="settings-title" data-testid="settings-card">
-      <div className="card-head">
-        <h3 id="settings-title">
-          <SlidersHorizontal size={16} /> Parâmetros da plataforma
-        </h3>
-        <span className="muted tiny">efeito imediato · cada mudança fica na auditoria</span>
-      </div>
+      <SectionHead
+        icon={SlidersHorizontal}
+        tone="violet"
+        title="Parâmetros da plataforma"
+        titleId="settings-title"
+        subtitle="O que a API lê em tempo de execução: efeito imediato · cada mudança fica na auditoria"
+      />
       <QueryState
         isLoading={settings.isLoading}
         error={settings.error}
@@ -126,8 +128,10 @@ export function SettingsSection() {
           </div>
         )}
       </QueryState>
-      <div className="stack" data-testid="fixed-contract-rules">
-        <h4>Regras fixas das contratações</h4>
+      <div className="stack fixed-rules" data-testid="fixed-contract-rules">
+        <h4>
+          <Lock size={16} aria-hidden="true" /> Regras fixas das contratações
+        </h4>
         <p className="muted tiny">
           Somente leitura. Alterar estas regras exige uma atualização do sistema e uma nova versão
           dos documentos legais.

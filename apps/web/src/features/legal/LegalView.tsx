@@ -1,8 +1,8 @@
-import { ArrowLeftRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { usePageTitle } from '../../lib/title';
 import { dayLabel } from '../../lib/format';
 import { LEGAL, LEGAL_CHANGES, LEGAL_UPDATED, LEGAL_VERSIONS, type LegalKind } from './content';
+import { BrandMark } from '../../components/BrandMark';
 
 /**
  * Páginas públicas de Termos de Uso e Política de Privacidade (versão gravada no consentimento),
@@ -16,9 +16,7 @@ export function LegalView({ kind }: { kind: LegalKind }) {
   return (
     <main className="legal">
       <Link to="/" className="brand">
-        <span className="brand-mark">
-          <ArrowLeftRight size={18} strokeWidth={2.5} />
-        </span>
+        <BrandMark />
         <span className="brand-name">Escambo</span>
       </Link>
       <h1>{doc.title}</h1>

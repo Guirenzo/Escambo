@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  axisLabel,
   dayLabel,
   BARTER_STATUS_LABEL,
   brl,
+  brlAxis,
   dateInputValue,
   DIGEST_HOURS,
   digestHourLabel,
@@ -146,5 +148,23 @@ describe('hora do resumo do dia (ADR 42)', () => {
     expect([DIGEST_HOURS[0], DIGEST_HOURS[23]]).toEqual([0, 23]);
     expect(digestHourLabel(7)).toBe('07:00');
     expect(digestHourLabel(20)).toBe('20:00');
+  });
+});
+
+describe('eixo dos gráficos', () => {
+  it('valor curto: reais até mil, depois "mil" com uma casa', () => {
+    expect(brlAxis(0)).toBe('R$ 0');
+    expect(brlAxis(0.5)).toBe('R$ 0,5');
+    expect(brlAxis(800)).toBe('R$ 800');
+    expect(brlAxis(1500)).toBe('R$ 1,5 mil');
+    expect(brlAxis(12000)).toBe('R$ 12 mil');
+  });
+
+  it('período curto: o mês pelo nome (com o ano no primeiro e em janeiro), o dia como DD/MM', () => {
+    expect(axisLabel('2025-11', true)).toBe('nov/25');
+    expect(axisLabel('2025-12')).toBe('dez');
+    expect(axisLabel('2026-01')).toBe('jan/26');
+    expect(axisLabel('2026-09-14')).toBe('14/09');
+    expect(axisLabel('2026-13')).toBe('2026-13');
   });
 });

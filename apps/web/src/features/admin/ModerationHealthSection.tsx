@@ -1,13 +1,23 @@
-import { Activity, Crosshair, Download, Gavel, Inbox, Timer } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import {
+  Activity,
+  Crosshair,
+  Download,
+  Gavel,
+  Inbox,
+  MailCheck,
+  Timer,
+  Trash2,
+} from 'lucide-react';
+import { useState } from 'react';
 import type { ModerationHealth } from '@escambo/types';
-import { Button, onTablistKeyDown, QueryState, TableWrap } from '../../components/ui';
+import { ColumnChart, LineChart, VizLegend, type VizTone } from '../../components/charts';
+import { Button, onTablistKeyDown, QueryState, Stat, TableWrap } from '../../components/ui';
 import { api } from '../../lib/api';
-import { lineSegments, niceMax, scaleY, stackBar, xAt } from '../../lib/chart';
 import { saveBlob } from '../../lib/download';
 import { dtm, durationLabel, percentLabel } from '../../lib/format';
 import { useModerationHealth } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
+import { SectionHead } from './SectionHead';
 
 const PERIODS = [7, 30, 90] as const;
 type Period = (typeof PERIODS)[number];
@@ -31,38 +41,17 @@ const REMOVAL_LABEL: Record<string, [string, string]> = {
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
-type Tone = 'action' | 'dismissed' | 'pending';
+/** Cor de cada resultado: o que teve ação (verde), o que só é contexto (cinza), o que espera (âmbar). */
+const TONE = { action: 'green', dismissed: 'muted', pending: 'amber' } as const satisfies Record<
+  string,
+  VizTone
+>;
+type Tone = keyof typeof TONE;
 
 interface Part {
   label: string;
   value: number;
   tone: Tone;
-}
-
-/** Tile de número-título, no mesmo desenho dos KPIs do painel. */
-function Kpi({
-  icon,
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: ReactNode;
-  hint: ReactNode;
-  tone?: 'amber' | 'blue';
-}) {
-  return (
-    <div className={`kpi${tone ? ` ${tone}` : ''}`}>
-      <div className="kpi-top">
-        <span className="kpi-ico">{icon}</span>
-        <span className="kpi-label">{label}</span>
-      </div>
-      <strong className="kpi-value">{value}</strong>
-      <span className="muted tiny">{hint}</span>
-    </div>
-  );
 }
 
 /**
@@ -79,7 +68,7 @@ function Breakdown({ title, parts }: { title: string; parts: Part[] }) {
         <span className="muted tiny">{total === 0 ? 'nada no período' : total}</span>
       </div>
       <div
-        className={`breakdown-bar${total === 0 ? ' empty' : ''}`}
+        className={`breakdown-bar${total === 0 ? ' is-empty' : ''}`}
         role="img"
         aria-label={`${title}: ${summary}`}
       >
@@ -96,14 +85,9 @@ function Breakdown({ title, parts }: { title: string; parts: Part[] }) {
             </span>
           ))}
       </div>
-      <ul className="breakdown-legend">
-        {parts.map((p) => (
-          <li key={p.label}>
-            <i className={`swatch ${p.tone}`} aria-hidden="true" />
-            {p.label} <strong>{p.value}</strong>
-          </li>
-        ))}
-      </ul>
+      <VizLegend
+        items={parts.map((p) => ({ label: p.label, tone: TONE[p.tone], value: p.value }))}
+      />
     </div>
   );
 }
@@ -148,162 +132,120 @@ export function reportStatusLine(r: ModerationHealth['dailyReport']): string {
 const dm = (day: string): string => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 
 /**
- * Série por dia (ADR 50): decisões empilhadas e a mediana do tempo até decidir contra a meta.
- * SVG puro com a paleta de estado do painel; a identidade nunca é só cor (legenda, rótulos e
- * dica por dia), e cada gráfico tem um resumo em texto para leitor de tela.
+ * Série por dia (ADR 50): decisões empilhadas (com ação em verde, dispensadas em cinza) e a
+ * mediana do tempo até decidir contra a meta. Cada gráfico tem um resumo em texto para leitor de
+ * tela, a legenda fica fora do desenho e a tabela logo abaixo traz os números de cada dia.
  */
-function HistoryCharts({ h }: { h: ModerationHealth }) {
+function HistoryCharts({ h, busy }: { h: ModerationHealth; busy: boolean }) {
   const hist = h.history;
   if (hist.length < 2) return null;
-  const W = 320;
-  const PLOT = 88; // o desenho vai de y=14 (rótulo do topo) à linha de base em y=102
   const first = dm(hist[0]!.day);
   const last = dm(hist[hist.length - 1]!.day);
-
   const totals = hist.map((d) => d.actioned + d.dismissed);
   const barMax = Math.max(...totals);
   const peakDay = hist[totals.indexOf(barMax)]!.day;
-  const slot = W / hist.length;
-  const barW = Math.max(1.5, slot * 0.7);
-
-  const medians = hist.map((d) => d.medianHours);
-  const known = medians.filter((v): v is number => v !== null);
-  const lineMax = niceMax(Math.max(h.slaHours, ...known));
+  const known = hist.map((d) => d.medianHours).filter((v): v is number => v !== null);
   const overMeta = known.filter((v) => v > h.slaHours).length;
-  const metaY = 14 + PLOT - scaleY(h.slaHours, lineMax, PLOT);
+  const hours = (v: number): string => `${Math.round(v * 10) / 10} h`;
 
   return (
     <div className="health-history" data-testid="health-history">
-      <div className="chart-mini">
+      <div className="viz-block">
         <div className="chart-head">
-          <strong>Decisões por dia</strong>
+          <h4 className="viz-title">Decisões por dia</h4>
           <span className="muted tiny">
             {first} a {last}
           </span>
         </div>
-        <svg
-          viewBox="0 0 320 118"
-          role="img"
-          aria-label={`Decisões por dia, de ${first} a ${last}: ${h.decisions.total} no período${
+        <ColumnChart
+          data={hist.map((d) => ({
+            key: d.day,
+            axis: dm(d.day),
+            label: `${dm(d.day)}${d.flagged > 0 ? ` · ${plural(d.flagged, 'sinalização automática', 'sinalizações automáticas')}` : ''}`,
+            values: [d.actioned, d.dismissed],
+          }))}
+          series={[
+            { label: 'Com ação', tone: 'green' },
+            { label: 'Dispensadas', tone: 'muted' },
+          ]}
+          summary={`Decisões por dia, de ${first} a ${last}: ${h.decisions.total} no período${
             barMax > 0 ? `, pico de ${barMax} em ${dm(peakDay)}` : ''
           }.`}
-        >
-          {barMax > 0 && (
-            <text x={0} y={10} fontSize={9} fill="var(--muted)">
-              máx {barMax}
-            </text>
-          )}
-          <line x1={0} y1={102.5} x2={W} y2={102.5} stroke="var(--border)" />
-          {hist.map((d, i) => {
-            if (d.actioned + d.dismissed === 0) return null;
-            const x = i * slot + (slot - barW) / 2;
-            const bar = stackBar(d.actioned, d.dismissed, barMax, PLOT, 102);
-            return (
-              <g key={d.day}>
-                <title>{`${dm(d.day)}: ${d.actioned} com ação, ${d.dismissed} dispensadas${
-                  d.flagged > 0 ? `, ${d.flagged} sinalizações automáticas` : ''
-                }`}</title>
-                {bar.up && (
-                  <rect x={x} y={bar.up.y} width={barW} height={bar.up.h} fill="var(--green)" />
-                )}
-                {bar.down && (
-                  <rect x={x} y={bar.down.y} width={barW} height={bar.down.h} fill="var(--muted)" />
-                )}
-              </g>
-            );
-          })}
-          <text x={0} y={114} fontSize={9} fill="var(--muted)">
-            {first}
-          </text>
-          <text x={W} y={114} textAnchor="end" fontSize={9} fill="var(--muted)">
-            {last}
-          </text>
-        </svg>
-        <ul className="breakdown-legend">
-          <li>
-            <i className="swatch action" aria-hidden="true" />
-            Com ação <strong>{h.decisions.actioned}</strong>
-          </li>
-          <li>
-            <i className="swatch dismissed" aria-hidden="true" />
-            Dispensadas <strong>{h.decisions.dismissed}</strong>
-          </li>
-        </ul>
+          format={(v) => String(v)}
+          integer
+          busy={busy}
+        />
       </div>
 
-      <div className="chart-mini">
+      <div className="viz-block">
         <div className="chart-head">
-          <strong>Tempo até decidir</strong>
+          <h4 className="viz-title">Tempo até decidir</h4>
           <span className="muted tiny">mediana do dia</span>
         </div>
-        <svg
-          viewBox="0 0 320 118"
-          role="img"
-          aria-label={`Tempo até decidir por dia, mediana em horas, meta de ${h.slaHours} h: ${
+        <LineChart
+          points={hist.map((d) => d.medianHours)}
+          axis={hist.map((d) => dm(d.day))}
+          labels={hist.map((d) => `${dm(d.day)}: mediana`)}
+          target={{ value: h.slaHours, label: `meta ${h.slaHours} h` }}
+          summary={`Tempo até decidir por dia, mediana em horas, meta de ${h.slaHours} h: ${
             known.length > 0
               ? `${overMeta} de ${known.length} dias acima da meta.`
               : 'nenhuma decisão no período.'
           }`}
-        >
-          <text x={0} y={10} fontSize={9} fill="var(--muted)">
-            {lineMax} h
-          </text>
-          <line x1={0} y1={102.5} x2={W} y2={102.5} stroke="var(--border)" />
-          <line
-            x1={0}
-            y1={metaY}
-            x2={W}
-            y2={metaY}
-            stroke="var(--amber)"
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-          />
-          <text x={W} y={metaY - 4} textAnchor="end" fontSize={9} fill="var(--amber-ink)">
-            meta {h.slaHours} h
-          </text>
-          {lineSegments(medians, W, PLOT, lineMax).map((points) => (
-            <polyline
-              key={points}
-              points={points}
-              fill="none"
-              stroke="var(--green-ink)"
-              strokeWidth={2}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              transform="translate(0 14)"
-            />
-          ))}
-          {hist.map((d, i) =>
-            d.medianHours === null ? null : (
-              <g key={d.day}>
-                <title>{`${dm(d.day)}: mediana ${durationLabel(d.medianHours)}`}</title>
-                <circle
-                  cx={xAt(i, hist.length, W)}
-                  cy={14 + PLOT - scaleY(d.medianHours, lineMax, PLOT)}
-                  r={2.5}
-                  fill="var(--green-ink)"
-                />
-              </g>
-            ),
-          )}
-          <text x={0} y={114} fontSize={9} fill="var(--muted)">
-            {first}
-          </text>
-          <text x={W} y={114} textAnchor="end" fontSize={9} fill="var(--muted)">
-            {last}
-          </text>
-        </svg>
-        <ul className="breakdown-legend">
-          <li>
-            <i className="swatch median" aria-hidden="true" />
-            Mediana do dia
-          </li>
-          <li>
-            <i className="swatch meta" aria-hidden="true" />
-            Meta <strong>{durationLabel(h.slaHours)}</strong>
-          </li>
-        </ul>
+          format={durationLabel}
+          tick={hours}
+          busy={busy}
+        />
+        <VizLegend
+          items={[
+            { label: 'Mediana do dia', tone: 'line' },
+            { label: 'Meta', tone: 'target', value: durationLabel(h.slaHours) },
+          ]}
+        />
       </div>
+
+      <details className="health-table">
+        <summary>Ver a série por dia em tabela</summary>
+        <TableWrap label="Tabela da série por dia">
+          <table className="table t-list">
+            <caption className="sr-only">
+              Moderação por dia: os mesmos números dos gráficos, em tabela.
+            </caption>
+            <thead>
+              <tr>
+                <th>Dia</th>
+                <th className="right">Denúncias</th>
+                <th className="right">Automáticas</th>
+                <th className="right">Com ação</th>
+                <th className="right">Dispensadas</th>
+                <th className="right">Mediana</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hist.map((d) => (
+                <tr key={d.day}>
+                  <td>{dm(d.day)}</td>
+                  <td className="num" data-label="Denúncias">
+                    {d.received}
+                  </td>
+                  <td className="num" data-label="Automáticas">
+                    {d.flagged}
+                  </td>
+                  <td className="num" data-label="Com ação">
+                    {d.actioned}
+                  </td>
+                  <td className="num" data-label="Dispensadas">
+                    {d.dismissed}
+                  </td>
+                  <td className="num" data-label="Mediana">
+                    {durationLabel(d.medianHours)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableWrap>
+      </details>
     </div>
   );
 }
@@ -335,40 +277,40 @@ export function ModerationHealthSection() {
 
   return (
     <section className="card wide" aria-labelledby="health-title" data-testid="moderation-health">
-      <div className="card-head">
-        <h3 id="health-title">
-          <Activity size={16} /> Saúde da moderação
-        </h3>
-        <div className="fin-controls">
-          <div
-            className="tabs tabs-mini"
-            role="tablist"
-            onKeyDown={onTablistKeyDown}
-            aria-label="Período"
-          >
-            {PERIODS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                role="tab"
-                aria-selected={days === p}
-                className={days === p ? 'active' : ''}
-                onClick={() => setDays(p)}
-              >
-                {p} dias
-              </button>
-            ))}
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void exportCsv()}
-            disabled={exporting}
-          >
-            <Download size={14} /> {exporting ? 'Exportando…' : 'Exportar CSV'}
-          </Button>
+      <SectionHead
+        icon={Activity}
+        title="Saúde da moderação"
+        titleId="health-title"
+        subtitle="O que espera agora, quanto a fila demora para decidir e quanto a sinalização automática acerta."
+      >
+        <div
+          className="tabs tabs-mini"
+          role="tablist"
+          onKeyDown={onTablistKeyDown}
+          aria-label="Período"
+        >
+          {PERIODS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              role="tab"
+              aria-selected={days === p}
+              className={days === p ? 'active' : ''}
+              onClick={() => setDays(p)}
+            >
+              {p} dias
+            </button>
+          ))}
         </div>
-      </div>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => void exportCsv()}
+          disabled={exporting}
+        >
+          <Download size={14} /> {exporting ? 'Exportando…' : 'Exportar CSV'}
+        </Button>
+      </SectionHead>
       <QueryState
         isLoading={health.isLoading}
         error={health.error}
@@ -380,8 +322,8 @@ export function ModerationHealthSection() {
           return (
             <>
               <div className="health-kpis">
-                <Kpi
-                  icon={<Inbox size={18} />}
+                <Stat
+                  Icon={Inbox}
                   label="Esperando decisão"
                   value={h.queue.pending}
                   tone={h.queue.pending > 0 ? 'amber' : undefined}
@@ -395,8 +337,8 @@ export function ModerationHealthSection() {
                       : 'a fila está vazia'
                   }
                 />
-                <Kpi
-                  icon={<Timer size={18} />}
+                <Stat
+                  Icon={Timer}
                   label="Tempo até decidir"
                   value={durationLabel(h.decisions.medianHours)}
                   tone={
@@ -410,8 +352,8 @@ export function ModerationHealthSection() {
                       : 'nenhuma decisão no período'
                   }
                 />
-                <Kpi
-                  icon={<Crosshair size={18} />}
+                <Stat
+                  Icon={Crosshair}
                   label="Acerto da sinalização"
                   value={percentLabel(h.automatic.precision)}
                   tone="blue"
@@ -421,8 +363,8 @@ export function ModerationHealthSection() {
                       : 'nenhuma sinalização decidida'
                   }
                 />
-                <Kpi
-                  icon={<Gavel size={18} />}
+                <Stat
+                  Icon={Gavel}
                   label="Contestações esperando"
                   value={h.queue.appealsPending}
                   tone={h.queue.appealsPending > 0 ? 'amber' : undefined}
@@ -459,53 +401,72 @@ export function ModerationHealthSection() {
                 />
               </div>
 
-              <HistoryCharts h={h} />
-
-              <p className="muted tiny">
-                {removalsSentence(h)}
-                {h.queue.accountReviewsOpen > 0 &&
-                  ` ${plural(h.queue.accountReviewsOpen, 'conta', 'contas')} em revisão (reincidência ou desistências).`}
-              </p>
-              <p className="muted tiny" data-testid="health-report">
-                {reportStatusLine(h.dailyReport)}
-              </p>
+              <HistoryCharts h={h} busy={health.isPlaceholderData} />
 
               {h.automatic.signals.length > 0 && (
-                <TableWrap label="Tabela da saúde da moderação">
-                  <table className="table health-signals" data-testid="health-signals">
-                    <caption className="sr-only">
-                      Acerto da sinalização automática por sinal
-                    </caption>
-                    <thead>
-                      <tr>
-                        <th>Sinal</th>
-                        <th className="right">Sinalizadas</th>
-                        <th className="right">Removidas</th>
-                        <th className="right">Dispensadas</th>
-                        <th>Acerto</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {h.automatic.signals.map((s) => (
-                        <tr key={s.signal}>
-                          <td>{SIGNAL_LABEL[s.signal] ?? s.signal}</td>
-                          <td className="right">{s.flagged}</td>
-                          <td className="right">{s.actioned}</td>
-                          <td className="right">{s.dismissed}</td>
-                          <td>
-                            <span className="meter">
-                              <span className="meter-bar" aria-hidden="true">
-                                <i style={{ width: `${Math.round((s.precision ?? 0) * 100)}%` }} />
-                              </span>
-                              {percentLabel(s.precision)}
-                            </span>
-                          </td>
+                <div className="viz-block">
+                  <h4 className="viz-title">Acerto por sinal</h4>
+                  <TableWrap label="Tabela da saúde da moderação">
+                    <table className="table t-list health-signals" data-testid="health-signals">
+                      <caption className="sr-only">
+                        Acerto da sinalização automática por sinal
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th>Sinal</th>
+                          <th className="right">Sinalizadas</th>
+                          <th className="right">Removidas</th>
+                          <th className="right">Dispensadas</th>
+                          <th>Acerto</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </TableWrap>
+                      </thead>
+                      <tbody>
+                        {h.automatic.signals.map((s) => (
+                          <tr key={s.signal}>
+                            <td>{SIGNAL_LABEL[s.signal] ?? s.signal}</td>
+                            <td className="right" data-label="Sinalizadas">
+                              {s.flagged}
+                            </td>
+                            <td className="right" data-label="Removidas">
+                              {s.actioned}
+                            </td>
+                            <td className="right" data-label="Dispensadas">
+                              {s.dismissed}
+                            </td>
+                            <td data-label="Acerto">
+                              <span className="meter">
+                                <span className="meter-bar" aria-hidden="true">
+                                  <i
+                                    style={{ width: `${Math.round((s.precision ?? 0) * 100)}%` }}
+                                  />
+                                </span>
+                                {percentLabel(s.precision)}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </TableWrap>
+                </div>
               )}
+
+              <ul className="adm-notes">
+                <li>
+                  <Trash2 size={16} aria-hidden="true" />
+                  <p className="muted tiny">
+                    {removalsSentence(h)}
+                    {h.queue.accountReviewsOpen > 0 &&
+                      ` ${plural(h.queue.accountReviewsOpen, 'conta', 'contas')} em revisão (reincidência ou desistências).`}
+                  </p>
+                </li>
+                <li>
+                  <MailCheck size={16} aria-hidden="true" />
+                  <p className="muted tiny" data-testid="health-report">
+                    {reportStatusLine(h.dailyReport)}
+                  </p>
+                </li>
+              </ul>
             </>
           );
         }}

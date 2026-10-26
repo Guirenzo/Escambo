@@ -1,8 +1,8 @@
+import { BrandMark } from '../../components/BrandMark';
 import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
 import {
   ArrowDownLeft,
   ArrowDownToLine,
-  ArrowLeftRight,
   ArrowUpRight,
   Coins,
   Landmark,
@@ -241,9 +241,7 @@ export function CarteiraView() {
           <span className="bank-deco" aria-hidden="true" />
           <div className="bank-card-top">
             <span className="bank-brand">
-              <span className="bank-brand-mark" aria-hidden="true">
-                <ArrowLeftRight size={16} strokeWidth={2.5} />
-              </span>
+              <BrandMark onDark className="bank-brand-mark" />
               Escambo
             </span>
             <span className="bank-chip" aria-hidden="true">
