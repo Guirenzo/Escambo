@@ -13,7 +13,8 @@ A auditoria tem seis camadas. Cada critério da tabela aponta qual delas o prova
    - do menu: início com missões e uma proposta recebida, serviços, detalhe do serviço (do dono e de outra pessoa) com o modal de contratação, trocas com proposta recebida e enviada, ranking (geral, por categoria e "perto de mim"), carteira com ganhos (dois períodos, extrato em créditos) e o depósito PIX (valor e cobrança), notificações, perfil com o recorte da foto, perfil público com a galeria aberta, suporte com chamado aberto, a conversa e o modal de novo chamado;
    - sala da contratação: em andamento (freelancer), com o formulário de entrega com arquivo, entregue com arquivo na entrega e anexos de imagem e PDF no chat, a imagem ampliada, e concluída com o formulário de avaliação;
    - admin com dados em todos os relatórios (uso, financeiro, saúde da moderação), uma denúncia na fila, um chamado na fila e a conversa do chamado aberta;
-   - verificação em duas etapas (desde a 1.48.0, `dois-fatores.smoke.spec.ts`): o cartão do perfil com o QR e a chave em texto, e o segundo passo do login.
+   - verificação em duas etapas (desde a 1.48.0, `dois-fatores.smoke.spec.ts`): o cartão do perfil com o QR e a chave em texto, e o segundo passo do login;
+   - página inicial pública, login e cadastro no visual da 1.49.0 (ADR 67): a página inteira e com as dúvidas abertas, a busca, a vitrine, as abas de "Como funciona" e a calculadora da torna (`landing.smoke.spec.ts`, com axe), além de todas as telas do app redesenhadas.
 
    **Regra de reprovação:** qualquer violação de regra WCAG reprova o teste, seja qual for o impacto que o axe atribui (`critical`, `serious`, `moderate` ou `minor`). Até a 1.45.0 só `serious` e `critical` reprovavam. Não deixamos `minor` de fora: entre as regras com etiqueta WCAG quase nenhuma sai com esse impacto, e uma violação de critério é uma violação de critério, qualquer que seja o peso que a ferramenta lhe dá. Ficam **só no relatório** (anotação `axe` de cada teste): as regras de boa prática do axe, que não correspondem a um critério WCAG (por exemplo `heading-order`), e os itens que o axe não consegue decidir sozinho (`incomplete`, por exemplo contraste de texto sobre degradê). Esses últimos foram revistos à mão nesta versão (ver "Itens que o axe deixa para revisão").
 
@@ -95,6 +96,13 @@ O axe, estendido às telas que faltavam e ao celular, achou três violações, t
 | Admin: descrição da denúncia, trecho denunciado, nota da decisão, descrição da disputa e motivo do pedido de exclusão cortados em duas linhas, sem o texto inteiro em outro lugar | 1.4.4, 1.4.12 (e perda de conteúdo mesmo no tamanho normal) | O corte saiu: o texto aparece inteiro | `texto.a11y` (com uma denúncia de descrição comprida na fila) |
 | Desistências e remoções no admin: com o texto a 200% no celular, o título passava por cima do botão "Não contar" | 1.4.4 | A linha quebra: o texto fica com pelo menos 14rem e os botões descem | `texto.a11y` (rodado depois da suíte inteira) |
 | Iniciais do avatar no ranking lidas pelo leitor de tela e cortadas no círculo com o texto maior | 1.1.1, 1.4.4 | `aria-hidden`, como no componente `Avatar`: o nome vem ao lado | `texto.a11y` |
+
+### Verificado na 1.49.0 (visual novo, ADR 67)
+
+- **Cobertura:** a página inicial, o login e o cadastro entraram no axe, no teste de títulos, nos alvos de 24 px, no texto a 200% e no espaçamento (com as dúvidas abertas), nos 320 e 768 px e na passada de teclado (pular, Tab completo, `<details>` com Enter e Espaço, abas com setas, Home e End). O teste de tokens passou a medir 63 pares de cor.
+- **Fundos escuros e fotos:** texto nunca fica direto sobre degradê ou foto. Onde há brilho decorativo, ele fica numa camada à parte (`aria-hidden`), e o contraste foi medido ponto a ponto sob cada linha: topo da página inicial com 8,54:1 no pior ponto (6,42:1 no celular), chamada final 10,17:1 (5,88:1), seção da troca 7,54:1, painel do login 6,04:1 em texto grande. As fotos são decorativas (`alt=""`) e os nomes das categorias ficam numa faixa sólida.
+- **Corrigido no caminho:** texto cortado ou sobreposto a 200% na faixa de boas-vindas do Início, no cartão de saldo da Carteira, no recibo da Sala e no pódio do Ranking; rolagem lateral no Perfil a 200%; atalhos de seção do Admin trocados de `<nav>` solto por lista com nome.
+- **Movimento:** os avisos que entram na página inicial e o brilho do topo param com `prefers-reduced-motion`.
 
 ### Itens que o axe deixa para revisão
 

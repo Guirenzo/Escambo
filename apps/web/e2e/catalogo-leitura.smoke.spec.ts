@@ -4,6 +4,7 @@ import {
   createUser,
   deliveredContract,
   openAs,
+  openFilters,
   settled,
   type TestUser,
 } from './helpers';
@@ -54,7 +55,8 @@ test('tag leva à busca e ao detalhe, a visita conta para o dono e "os dois" apa
   await expect(card.getByRole('link', { name: tag })).toBeVisible();
 
   // "Remoto e presencial" entra no filtro presencial também.
-  await page.getByLabel('Filtrar por modalidade').selectOption({ label: 'presencial' });
+  const filters = await openFilters(page);
+  await filters.getByLabel('Filtrar por modalidade').selectOption({ label: 'presencial' });
   await expect(page.locator('.card', { hasText: service.title }).first()).toBeVisible();
 
   // O título abre o detalhe, com as tags; a visita de quem não é o dono conta.

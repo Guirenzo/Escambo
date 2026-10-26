@@ -5,6 +5,7 @@ import {
   createUser,
   deliveredContract,
   openAs,
+  openLanding,
   pngFixture,
   settled,
   topUp,
@@ -293,6 +294,56 @@ test.describe('teclado', () => {
       () => document.activeElement?.closest('nav, aside, .skip-link') !== null,
     );
     expect(back).toBe(true);
+  });
+
+  test('página inicial sem sessão: "pular", ordem, foco visível no claro e no escuro, dúvidas pelo teclado', async ({
+    page,
+  }) => {
+    await openLanding(page);
+    await noPositiveTabindex(page, 'página inicial');
+    expect(await customControls(page), 'página inicial: controle customizado novo').toEqual([]);
+    const stops = await walk(page, 'página inicial');
+    // Passa pelas chamadas do topo, do hero (fundo escuro), da página e do rodapé (escuro).
+    for (const label of ['Criar conta', 'Ver como funciona', 'O que é torna?', 'Termos de Uso'])
+      expect(
+        stops.some((s) => s.label.includes(label)),
+        `página inicial: o Tab não passa por "${label}"`,
+      ).toBe(true);
+
+    // "Pular para o conteúdo" leva o foco ao <main>, sem mudar a URL.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.locator('body').evaluate((b) => {
+      const start = document.createElement('span');
+      start.tabIndex = -1;
+      b.prepend(start);
+      start.focus();
+      start.addEventListener('blur', () => start.remove(), { once: true });
+    });
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('link', { name: 'Pular para o conteúdo' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('main#conteudo')).toBeFocused();
+    expect(new URL(page.url()).hash).toBe('');
+
+    // As dúvidas abrem e fecham pelo teclado (Enter e Espaço no resumo nativo).
+    const question = page.locator('summary', { hasText: 'Quanto custa usar o Escambo?' });
+    const item = page.locator('details', { has: question });
+    // O marcador vai antes do <details>: dentro dele, fechado, só o resumo aparece.
+    await item.scrollIntoViewIfNeeded();
+    await item.evaluate((d) => {
+      const mark = document.createElement('span');
+      mark.tabIndex = -1;
+      d.before(mark);
+      mark.focus();
+      mark.addEventListener('blur', () => mark.remove(), { once: true });
+    });
+    await page.keyboard.press('Tab');
+    await expect(question).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(item).toHaveAttribute('open', '');
+    await expect(item.getByText(/Criar conta não custa nada/)).toBeVisible();
+    await page.keyboard.press(' ');
+    await expect(item).not.toHaveAttribute('open', '');
   });
 
   test('telas do freelancer: ordem, foco visível e fim da página pelo Tab', async ({

@@ -926,6 +926,14 @@ describe('documento OpenAPI: lacunas de 19/10', () => {
     expect(profile.featuredBadges).toMatchObject({ type: 'array', maxItems: 3 });
     expect(schemas.Badge.required).toEqual(['slug', 'name', 'awardedAt']);
   });
+
+  it('perfil público: localização a ~1 km para quem não é o dono (privacidade)', () => {
+    const profile = schemas.PublicFreelancerProfile.properties;
+    for (const field of ['latitude', 'longitude']) {
+      expect(profile[field]).toMatchObject({ type: 'number', nullable: true });
+      expect(profile[field].description).toMatch(/2 casas.*~1 km.*dono/);
+    }
+  });
 });
 
 /** Leitura no chat (RF-059): a rota, o recibo e o evento Socket.IO message:read. */

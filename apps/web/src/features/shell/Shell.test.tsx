@@ -98,6 +98,7 @@ function renderShell(path = '/') {
             <Route element={<Shell />}>
               <Route path="/" element={<p>conteúdo da home</p>} />
               <Route path="/carteira" element={<p>conteúdo da carteira</p>} />
+              <Route path="/perfil" element={<p>conteúdo do perfil</p>} />
             </Route>
           </Routes>
         </MemoryRouter>
@@ -195,12 +196,13 @@ describe('Shell: navegação', () => {
     renderShell();
     const nav = screen.getByRole('navigation', { name: 'Principal' });
     const links = within(nav).getAllByRole('link');
+    // Em grupos, por importância: trabalho, dinheiro, comunidade e, no pé, a conta.
     expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
       ['Início', '/'],
       ['Serviços', '/servicos'],
       ['Trocas', '/trocas'],
-      ['Ranking', '/ranking'],
       ['Carteira', '/carteira'],
+      ['Ranking', '/ranking'],
       ['Notificações', '/notificacoes'],
       ['Perfil', '/perfil'],
       ['Suporte', '/suporte'],
@@ -210,12 +212,25 @@ describe('Shell: navegação', () => {
       'Início',
       'Serviços',
       'Trocas',
-      'Ranking',
       'Carteira',
+      'Ranking',
       'Notificações',
       'Perfil',
       'Suporte',
     ]);
+    // Cada grupo é uma lista com o nome do grupo.
+    expect(
+      within(nav)
+        .getAllByRole('list')
+        .map((l) => [l.getAttribute('aria-labelledby'), within(l).getAllByRole('link').length]),
+    ).toEqual([
+      ['nav-trabalho', 3],
+      ['nav-dinheiro', 1],
+      ['nav-comunidade', 2],
+      ['nav-conta', 2],
+    ]);
+    expect(within(nav).getByRole('list', { name: 'Trabalho' })).toBeInTheDocument();
+    expect(within(nav).getByRole('list', { name: 'Conta' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Escambo' })).toHaveAttribute('href', '/');
     expect(screen.getByText('conteúdo da home')).toBeInTheDocument();
   });
@@ -271,16 +286,16 @@ describe('Shell: quem está logado', () => {
     await waitFor(() => expect(profilesMe).toHaveBeenCalledTimes(1));
     expect(screen.getByText('conta')).toHaveAttribute('title', 'conta@escambo.test');
     expect(screen.getByText('Cliente')).toBeInTheDocument();
-    // Avatar decorativo (aria-hidden): sem foto, mostra a inicial.
+    // Avatar decorativo (aria-hidden): sem foto, mostra a inicial, na lateral e no menu da conta.
     expect(container.querySelector('img')).toBeNull();
-    expect(screen.getByText('C')).toBeInTheDocument();
+    expect(screen.getAllByText('C')).toHaveLength(2);
 
     // O perfil chega sem nome (cadastro recém-criado): continua o começo do e-mail.
     pending.resolve(profiles({ client: { fullName: null, avatarUrl: null } }));
     await querySettled('profiles');
     expect(screen.getByText('conta')).toHaveAttribute('title', 'conta@escambo.test');
     expect(container.querySelector('img')).toBeNull();
-    expect(screen.getByText('C')).toBeInTheDocument();
+    expect(screen.getAllByText('C')).toHaveLength(2);
   });
 
   it('com perfil de freelancer, mostra o primeiro nome e a foto dele (vence o de cliente)', async () => {
@@ -596,5 +611,68 @@ describe('Shell: faixa do topo (uma por vez)', () => {
     await consentsSettled();
     expect(screen.queryByRole('region')).not.toBeInTheDocument();
     expect(verifyReminder()).not.toBeInTheDocument();
+  });
+});
+
+describe('Shell: "Mais" (a barra de baixo do celular)', () => {
+  it('abre a folha com o resto da navegação e o "Sair da conta"; Esc fecha e devolve o foco', async () => {
+    const user = userEvent.setup();
+    const { container } = renderShell();
+    const more = screen.getByRole('button', { name: 'Mais' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    expect(more).toHaveAttribute('aria-controls', 'nav-more');
+    const sheet = container.querySelector<HTMLElement>('#nav-more')!;
+    expect(sheet).not.toHaveAttribute('data-open');
+    expect(screen.queryByRole('button', { name: 'Sair da conta' })).not.toBeInTheDocument();
+
+    await user.click(more);
+    expect(more).toHaveAttribute('aria-expanded', 'true');
+    expect(sheet).toHaveAttribute('data-open');
+    expect(
+      within(sheet)
+        .getAllByRole('link')
+        .map((a) => a.textContent),
+    ).toEqual(['Ranking', 'Notificações', 'Perfil', 'Suporte']);
+    await user.click(within(sheet).getByRole('button', { name: 'Sair da conta' }));
+    expect(auth.logout).toHaveBeenCalledTimes(1);
+
+    await user.keyboard('{Escape}');
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    expect(sheet).not.toHaveAttribute('data-open');
+    expect(more).toHaveFocus();
+  });
+
+  it('o fundo escurecido fecha a folha, e ir para outra tela também', async () => {
+    const user = userEvent.setup();
+    const { container } = renderShell();
+    const more = screen.getByRole('button', { name: 'Mais' });
+    expect(container.querySelector('.nav-backdrop')).toBeNull();
+    await user.click(more);
+    await user.click(container.querySelector<HTMLElement>('.nav-backdrop')!);
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    expect(container.querySelector('.nav-backdrop')).toBeNull();
+
+    await user.click(more);
+    await user.click(screen.getByRole('link', { name: 'Carteira' }));
+    expect(screen.getByText('conteúdo da carteira')).toBeInTheDocument();
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('"Mais" fica marcado quando a tela atual está dentro dele', () => {
+    const first = renderShell('/perfil');
+    expect(screen.getByRole('button', { name: 'Mais' })).toHaveClass('active');
+    first.unmount();
+    renderShell('/carteira');
+    expect(screen.getByRole('button', { name: 'Mais' })).not.toHaveClass('active');
+  });
+
+  it('a barra superior mostra o sino com as não lidas e o menu da conta', async () => {
+    notifications.mockResolvedValue(unread(3));
+    renderShell();
+    expect(
+      await screen.findByRole('link', { name: 'Abrir notificações, 3 não lidas' }),
+    ).toHaveAttribute('href', '/notificacoes');
+    expect(screen.getByRole('button', { name: 'Menu da conta' })).toBeInTheDocument();
+    expect(screen.getByRole('search', { name: 'Busca no Escambo' })).toBeInTheDocument();
   });
 });

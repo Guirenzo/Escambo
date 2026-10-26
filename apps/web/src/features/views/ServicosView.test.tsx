@@ -1112,6 +1112,21 @@ describe('ServicosView: catálogo (RF-023 e RF-024)', () => {
     await expectRoute('/servicos');
   });
 
+  it('link de categoria da página inicial (?categoria=2) filtra por ela e limpa o endereço', async () => {
+    await openView('/servicos?categoria=2');
+    await expectQuery({ categoryId: 2 });
+    await waitFor(() => expect(combo('Categoria')).toHaveValue('2'));
+    await expectRoute('/servicos');
+  });
+
+  it('categoria inválida no endereço (?categoria=abc) não filtra e limpa o endereço', async () => {
+    await openView('/servicos?categoria=abc');
+    await expectRoute('/servicos');
+    expect(api.listServices).not.toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId: expect.anything() }),
+    );
+  });
+
   it('clicar na tag de um card busca por ela; vindo de "Meus serviços", volta para a busca', async () => {
     const user = userEvent.setup({ delay: null });
     api.listServices.mockResolvedValue(pageOf([service({ tags: ['ui/ux'] })]));
@@ -1159,5 +1174,186 @@ describe('ServicosView: catálogo (RF-023 e RF-024)', () => {
         tags: ['fotografia', 'casamento'],
       }),
     );
+  });
+});
+
+describe('ServicosView: painel de filtros e filtros ativos', () => {
+  it('o título dos resultados diz o que está na tela e quantos serviços vieram', async () => {
+    const user = userEvent.setup();
+    api.listServices.mockResolvedValue(pageOf([service(), service({ id: 12 })]));
+    await openView();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Todos os serviços' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('2 serviços')).toBeInTheDocument();
+
+    api.listServices.mockResolvedValue(pageOf([service()]));
+    await user.type(searchInput(), 'logo{Enter}');
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Resultados para “logo”' }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('1 serviço')).toBeInTheDocument();
+  });
+
+  it('página cheia diz "até agora": pode haver mais para carregar', async () => {
+    api.listServices.mockResolvedValue(
+      pageOf(Array.from({ length: 12 }, (_, i) => service({ id: 100 + i }))),
+    );
+    await openView();
+    expect(screen.getByText('12 serviços até agora')).toBeInTheDocument();
+  });
+
+  it('cada filtro ativo vira um chip que o remove; "Limpar filtros" tira os do painel', async () => {
+    const user = userEvent.setup();
+    await openView();
+    await user.type(searchInput(), 'logo{Enter}');
+    await user.selectOptions(combo('Categoria'), '2');
+    await user.type(screen.getByRole('spinbutton', { name: 'Preço mínimo' }), '100');
+    await user.type(screen.getByRole('spinbutton', { name: 'Preço máximo' }), '500');
+    await user.selectOptions(combo('Prazo máximo'), '7');
+    await user.selectOptions(combo('Nota mínima'), '4');
+    await user.selectOptions(combo('Atende no dia'), '1');
+    await user.selectOptions(combo('Período do dia'), 'morning');
+    await user.selectOptions(combo('Filtrar por modalidade'), 'onsite');
+    await user.click(screen.getByRole('button', { name: 'Atende agora' }));
+    await user.click(screen.getByRole('button', { name: /Só favoritos/ }));
+
+    // O Intl separa "R$" do valor com espaço inseparável: aqui ele vira espaço comum.
+    const chips = () =>
+      screen.queryAllByRole('button', { name: /^Remover o filtro / }).map((b) =>
+        b
+          .getAttribute('aria-label')!
+          .replace('Remover o filtro ', '')
+          .replace(/\u00a0/g, ' '),
+      );
+    expect(chips()).toEqual([
+      '“logo”',
+      'Logos',
+      'A partir de R$ 100,00',
+      'Até R$ 500,00',
+      'Entrega em até 7 dias',
+      '4+ estrelas',
+      `Agenda: ${WEEKDAY_SHORT[1]}, manhã`,
+      'Disponível neste horário',
+      'Presencial',
+      'Favoritos',
+    ]);
+    // O botão do painel mostra quantos filtros do painel estão ligados (texto e categoria não).
+    expect(screen.getByRole('button', { name: 'Filtros (8)' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Remover o filtro Até R\$\s500,00$/ }));
+    expect(screen.getByRole('spinbutton', { name: 'Preço máximo' })).toHaveValue(null);
+    await user.click(screen.getByRole('button', { name: 'Remover o filtro “logo”' }));
+    expect(searchInput()).toHaveValue('');
+    await user.click(screen.getByRole('button', { name: 'Remover o filtro Favoritos' }));
+    expect(screen.getByRole('button', { name: /Só favoritos/ })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    await user.click(screen.getByRole('button', { name: /^Remover o filtro Agenda/ }));
+    expect(combo('Atende no dia')).toHaveValue('-1');
+    expect(combo('Período do dia')).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Limpar filtros' }));
+    expect(chips()).toHaveLength(1); // só a categoria, que não é do painel
+    await user.click(screen.getAllByRole('button', { name: /^Remover o filtro / })[0]!);
+    expect(combo('Categoria')).toHaveValue('0');
+    expect(chips()).toEqual([]);
+  });
+
+  it('cada chip de filtro remove só o próprio filtro', async () => {
+    const user = userEvent.setup();
+    await openView();
+    await user.type(screen.getByRole('spinbutton', { name: 'Preço mínimo' }), '50');
+    await user.selectOptions(combo('Prazo máximo'), '3');
+    await user.selectOptions(combo('Nota mínima'), '3');
+    await user.selectOptions(combo('Filtrar por modalidade'), 'remote');
+    await user.click(screen.getByRole('button', { name: 'Atende agora' }));
+    for (const label of [
+      /^Remover o filtro A partir de R\$\s50,00$/,
+      'Entrega em até 3 dias',
+      '3+ estrelas',
+      'Remoto',
+      'Disponível neste horário',
+    ])
+      await user.click(
+        screen.getByRole('button', {
+          name: typeof label === 'string' ? `Remover o filtro ${label}` : label,
+        }),
+      );
+    await expectQuery({ q: undefined });
+    expect(screen.getByRole('button', { name: 'Atende agora' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  it('perto de mim vira chip com o raio, que desliga a proximidade', async () => {
+    const user = userEvent.setup();
+    stubGeolocation((ok) => ok(HERE));
+    await openView();
+    await user.click(screen.getByRole('button', { name: 'Perto de mim' }));
+    await user.click(await screen.findByRole('button', { name: 'Remover o filtro Até 25 km' }));
+    expect(screen.getByRole('button', { name: 'Perto de mim' })).toBeInTheDocument();
+    await expectQuery({ q: undefined });
+  });
+
+  it('no celular o painel fica atrás do botão "Filtros", que diz se está aberto', async () => {
+    const user = userEvent.setup();
+    await openView();
+    const toggle = screen.getByRole('button', { name: 'Filtros' });
+    const panel = screen.getByTestId('filters');
+    expect(toggle).toHaveAttribute('aria-controls', 'filtros');
+    expect(panel).toHaveAttribute('id', 'filtros');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(panel).not.toHaveAttribute('data-open');
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(panel).toHaveAttribute('data-open');
+    expect(within(panel).getByRole('heading', { level: 2, name: 'Filtros' })).toBeInTheDocument();
+  });
+
+  it('o atalho "Publicar um serviço" do Início (?novo=1) abre o formulário e limpa a URL', async () => {
+    renderView('/servicos?novo=1');
+    expect(await screen.findByRole('button', { name: 'Fechar' })).toBeInTheDocument();
+    await expectRoute('/servicos');
+  });
+});
+
+describe('ServicosView: faixa de busca e pílulas de categoria', () => {
+  it('as pílulas ligam o filtro pela categoria raiz, mostram a ligada, e "Todas" limpa', async () => {
+    const user = userEvent.setup({ delay: null });
+    await openView();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Quem faz, do jeito que você precisa' }),
+    ).toBeVisible();
+    const chips = await screen.findByRole('list', { name: 'Categorias' });
+    const pressed = () =>
+      within(chips)
+        .getAllByRole('button')
+        .filter((b) => b.getAttribute('aria-pressed') === 'true')
+        .map((b) => b.textContent);
+    expect(pressed()).toEqual(['Todas']);
+
+    await user.click(within(chips).getByRole('button', { name: 'Design' }));
+    await expectQuery({ categoryId: 1 });
+    expect(pressed()).toEqual(['Design']);
+    // A lista de categorias da busca acompanha a pílula.
+    expect(combo('Categoria')).toHaveValue('1');
+
+    await user.click(within(chips).getByRole('button', { name: 'Todas' }));
+    await waitFor(() => expect(api.listServices).toHaveBeenLastCalledWith(PAGE));
+    expect(pressed()).toEqual(['Todas']);
+  });
+
+  it('as fotos ao lado da busca são decorativas', async () => {
+    await openView();
+    const art = document.querySelector('.search-hero-art')!;
+    expect(art).toHaveAttribute('aria-hidden', 'true');
+    expect(Array.from(art.querySelectorAll('img')).map((i) => i.getAttribute('alt'))).toEqual([
+      '',
+      '',
+      '',
+    ]);
   });
 });

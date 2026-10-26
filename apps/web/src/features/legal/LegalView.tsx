@@ -15,7 +15,7 @@ export function LegalView({ kind }: { kind: LegalKind }) {
   const history = LEGAL_CHANGES.filter((c) => c.doc === kind);
   return (
     <main className="legal">
-      <Link to="/login" className="brand">
+      <Link to="/" className="brand">
         <span className="brand-mark">
           <ArrowLeftRight size={18} strokeWidth={2.5} />
         </span>
@@ -53,7 +53,7 @@ export function LegalView({ kind }: { kind: LegalKind }) {
         </ul>
       </section>
       <p className="muted tiny" style={{ marginTop: 32 }}>
-        <Link to="/login">Voltar ao início</Link>
+        <Link to="/">Voltar ao início</Link>
       </p>
     </main>
   );

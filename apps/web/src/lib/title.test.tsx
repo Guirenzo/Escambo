@@ -11,7 +11,7 @@ function Tela({ title }: { title?: string }) {
 describe('pageTitle', () => {
   it('compõe "tela · marca" e cai na marca sem tela', () => {
     expect(pageTitle('Carteira')).toBe('Carteira · Escambo');
-    expect(pageTitle()).toBe('Escambo — o iFood dos serviços');
+    expect(pageTitle()).toBe('Escambo: contrate ou troque serviços com pagamento protegido');
   });
 });
 

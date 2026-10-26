@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
-import { browserClockNow, createService, createUser, openAs, settled, topUp } from './helpers';
+import {
+  browserClockNow,
+  createService,
+  createUser,
+  navTo,
+  openAs,
+  openFilters,
+  settled,
+  topUp,
+} from './helpers';
 
 /**
  * Polimento de marketplace: paginação da busca ("Carregar mais"), propor troca direto do card
@@ -13,7 +22,7 @@ test('cada tela tem o próprio título e a navegação é anunciada', async ({ p
   await settled(page);
   await expect(page).toHaveTitle('Início · Escambo');
 
-  await page.getByRole('link', { name: 'Carteira' }).first().click();
+  await navTo(page, 'Carteira');
   await expect(page).toHaveTitle('Carteira · Escambo');
   // Região viva repete o título para quem usa leitor de tela (o SPA não recarrega).
   await expect(page.getByTestId('route-announcer')).toHaveText('Carteira · Escambo');
@@ -104,7 +113,7 @@ test('freelancer propõe troca a partir do card de outro freelancer', async ({ p
   ).toBeVisible();
   await form.getByRole('button', { name: 'Enviar proposta' }).click();
   await expect(page.locator('.toast', { hasText: 'Proposta de troca enviada' })).toBeVisible();
-  const proposed = page.locator('.card.service', { hasText: 'Você propôs' });
+  const proposed = page.locator('.trade-card', { hasText: 'Você propôs' });
   await expect(proposed).toBeVisible();
   await expect(proposed).toContainText('torna reservada');
 });
@@ -136,14 +145,14 @@ test('busca com filtros de preço e prazo e ordenação por menor preço', async
   const cards = page.locator('.card.service', { hasText: tag });
   await expect(cards).toHaveCount(3);
 
-  // Menor preço: o barato primeiro; maior preço: o caro primeiro.
-  const filters = page.getByTestId('filters');
-  await filters.getByLabel('Ordenar por').selectOption('price_asc');
+  // Menor preço: o barato primeiro; maior preço: o caro primeiro (a ordem fica acima da lista).
+  await page.getByLabel('Ordenar por').selectOption('price_asc');
   await expect(cards.first()).toContainText('barato');
-  await filters.getByLabel('Ordenar por').selectOption('price_desc');
+  await page.getByLabel('Ordenar por').selectOption('price_desc');
   await expect(cards.first()).toContainText('caro');
 
-  // Faixa de preço e prazo estreitam a lista; limpar volta aos três.
+  // Faixa de preço e prazo (no painel de filtros) estreitam a lista; limpar volta aos três.
+  const filters = await openFilters(page);
   await filters.getByLabel('Preço máximo').fill('500');
   await expect(cards).toHaveCount(2);
   await filters.getByLabel('Prazo máximo').selectOption('7');
@@ -197,7 +206,7 @@ test('busca por dia de atendimento: "quem atende sábado" só mostra quem marcou
   );
   await expect(cards.filter({ hasText: 'sem dias' }).getByTestId('owner-days')).toHaveCount(0);
 
-  const filters = page.getByTestId('filters');
+  const filters = await openFilters(page);
   await filters.getByLabel('Atende no dia').selectOption('6'); // sábado
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toContainText('fim de semana');
@@ -250,7 +259,7 @@ test('busca por período do dia e "atende agora" (freelancers no fuso padrão, B
 
   // Período só com o dia: segunda à noite → quem atende o dia todo (pausado também: o filtro
   // de dia é sobre a agenda marcada; "agora" é que olha a pausa).
-  const filters = page.getByTestId('filters');
+  const filters = await openFilters(page);
   await expect(filters.getByLabel('Período do dia')).toBeDisabled();
   await filters.getByLabel('Atende no dia').selectOption('1');
   await filters.getByLabel('Período do dia').selectOption('evening');

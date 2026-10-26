@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Notification, NotificationList } from '@escambo/types';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dtm } from '../../lib/format';
-import { NotificacoesView } from './NotificacoesView';
+import { NotificacoesView, notificationGroup, notificationLook } from './NotificacoesView';
 
 /**
  * Central de notificações: o que conta como não lida (subtítulo, título da aba e o botão de marcar
@@ -244,5 +244,104 @@ describe('NotificacoesView', () => {
     expect(await screen.findByText('Voltou')).toBeInTheDocument();
     expect(notifications).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+});
+
+describe('notificações: ícone por tipo e grupos por dia', () => {
+  it('cada família de tipo tem o seu ícone e tom; o resto é o sino neutro', () => {
+    const tone = (type: string) => notificationLook(type).tone;
+    expect(
+      [
+        'dispute_opened',
+        'barter_disputed',
+        'appeal_decided',
+        'content_removed',
+        'contract_deadline_reminder',
+        'contract_overdue',
+        'contract_revision_stalled',
+        'contract_proposal',
+        'dropout_decided',
+        'milestone_delivered',
+        'message_received',
+        'chat_message',
+        'withdrawal_completed',
+        'deposit_confirmed',
+        'export_ready',
+        'review_received',
+        'barter_completed',
+        'saved_search_match',
+        'support_reply',
+        'badge_awarded',
+        'push_test',
+      ].map(tone),
+    ).toEqual([
+      'red',
+      'red',
+      'red',
+      'red',
+      'amber',
+      'amber',
+      'amber',
+      'green',
+      'green',
+      'green',
+      'blue',
+      'blue',
+      'green',
+      'green',
+      'green',
+      'amber',
+      'violet',
+      'blue',
+      'violet',
+      'amber',
+      'neutral',
+    ]);
+  });
+
+  it('hoje, ontem, últimos 7 dias e anteriores, pelo dia do aparelho', () => {
+    const now = new Date(2026, 9, 21, 9, 0);
+    const at = (d: number, h = 12) => new Date(2026, 9, d, h, 0).toISOString();
+    expect(
+      [at(21, 1), at(20, 23), at(15), at(14), at(1)].map((i) => notificationGroup(i, now)),
+    ).toEqual(['Hoje', 'Ontem', 'Últimos 7 dias', 'Anteriores', 'Anteriores']);
+    // Um relógio adiantado (aviso com data à frente) ainda conta como de hoje.
+    expect(notificationGroup(at(22), now)).toBe('Hoje');
+  });
+
+  it('a lista vem em grupos com título, na ordem da API, e cada aviso com o seu ícone', async () => {
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 86_400_000);
+    notifications.mockResolvedValue(
+      list([
+        note({
+          id: 1,
+          title: 'Primeiro',
+          type: 'message_received',
+          createdAt: today.toISOString(),
+        }),
+        note({
+          id: 2,
+          title: 'Segundo',
+          type: 'review_received',
+          createdAt: yesterday.toISOString(),
+        }),
+        note({ id: 3, title: 'Terceiro', createdAt: '2026-01-02T12:00:00.000Z', isRead: true }),
+      ]),
+    );
+    renderView();
+    await screen.findByText('Primeiro');
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Hoje',
+      'Ontem',
+      'Anteriores',
+    ]);
+    const first = screen.getByText('Primeiro').closest('li')!;
+    expect(first).toHaveClass('unread');
+    expect(first.querySelector('.notif-ico')).toHaveClass('tone-blue');
+    expect(within(first).getByRole('img', { name: 'não lida' })).toBeInTheDocument();
+    const third = screen.getByText('Terceiro').closest('li')!;
+    expect(third).not.toHaveClass('unread');
+    expect(within(third).queryByRole('img', { name: 'não lida' })).not.toBeInTheDocument();
   });
 });

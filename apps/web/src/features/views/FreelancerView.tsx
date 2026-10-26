@@ -37,6 +37,7 @@ import {
 } from '../../lib/hooks';
 import { BoostModal } from '../services/BoostModal';
 import { ContratarModal } from '../services/ContratarModal';
+import { useCategoryRoots } from '../services/categoryArt';
 import { ServiceCard } from '../services/ServiceCard';
 import { ModerationButtons } from '../admin/ModerationButtons';
 import { ReportModal, type ReportSubject } from '../profile/ReportModal';
@@ -52,6 +53,7 @@ export function FreelancerView() {
   const userId = profile.data?.userId;
   const services = useServices(userId ? { ownerId: userId, limit: 50 } : undefined);
   const reviews = useFreelancerReviews(userId);
+  const roots = useCategoryRoots();
   const favorites = useFavorites();
   const toggleFav = useToggleFavorite();
   const isFav = !!favorites.data?.some(
@@ -95,326 +97,333 @@ export function FreelancerView() {
         data={profile.data}
         onRetry={() => void profile.refetch()}
       >
-        {(p) => (
-          <>
-            <section className="card" style={{ marginTop: 12 }}>
-              <div className="profile-hero">
-                <Avatar url={p.avatarUrl} name={p.fullName} size="lg" />
-                <div>
-                  <h1 style={{ margin: 0, fontSize: '1.5rem' }}>{p.fullName}</h1>
-                  {p.headline && (
-                    <p className="muted" style={{ margin: '2px 0 0' }}>
-                      {p.headline}
-                    </p>
-                  )}
-                  <div className="profile-meta">
-                    <Stars value={p.avgRating} count={p.totalReviews} size={14} />
-                    <span className="chip level">
-                      Nível {p.level} · {p.levelName}
-                    </span>
-                    <span className="muted tiny" data-testid="total-xp">
-                      {p.totalXp.toLocaleString('pt-BR')} XP
-                    </span>
-                    {(p.city || p.state) && (
-                      <span className="muted tiny">
-                        <MapPin size={12} /> {[p.city, p.state].filter(Boolean).join(', ')}
-                      </span>
-                    )}
-                    <span className="muted tiny">{p.totalContracts} contratos concluídos</span>
-                    <DropoutsSummary summary={p.dropouts} />
-                    {p.availableDays && p.availableDays.length > 0 && (
-                      <span className="muted tiny" data-testid="available-days">
-                        <CalendarDays size={12} /> atende{' '}
-                        {formatAvailability(p.availableDays, p.availablePeriods)}
-                        {zoneNote(p.timezone, user?.timezone)}
-                      </span>
-                    )}
-                    {p.availableNow && (
-                      <span className="chip now" data-testid="available-now">
-                        atende agora
-                      </span>
-                    )}
-                    {p.responseTimeHours != null && (
-                      <span className="muted tiny" data-testid="response-time">
-                        <Clock size={12} /> responde em {formatHours(p.responseTimeHours)}
-                      </span>
-                    )}
-                    {!p.isAvailable && <span className="pill">indisponível</span>}
-                  </div>
-                  {/* RN-058: até 3 badges em destaque; a lista inteira fica em "Conquistas". */}
-                  {p.featuredBadges.length > 0 && (
-                    <ul
-                      className="badges"
-                      aria-label="Conquistas em destaque"
-                      style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}
-                    >
-                      {p.featuredBadges.map((b) => (
-                        <li key={b.slug} className="badge">
-                          <Award size={12} aria-hidden="true" /> {b.name}
-                        </li>
-                      ))}
-                    </ul>
+        {(p) => {
+          // A capa é o primeiro trabalho com imagem do portfólio; sem nenhum, o verde da marca.
+          const cover = p.portfolio.find((i) => i.imageUrl)?.imageUrl ?? null;
+          return (
+            <>
+              <section className="card profile-card" aria-labelledby="profile-name">
+                <div className={`profile-cover${cover ? ' with-image' : ''}`} aria-hidden="true">
+                  {cover && (
+                    <img
+                      src={mediaVariant(cover, MEDIA_THUMB.large)}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                    />
                   )}
                 </div>
-                <div className="stack">
-                  <ScoreBadge score={p.escamboScore} />
-                  {userId !== myId && (
-                    <BusinessButton
-                      variant={isFav ? 'secondary' : 'ghost'}
-                      className="toggle"
-                      aria-pressed={isFav}
-                      disabled={toggleFav.isPending || !userId}
-                      onClick={() =>
-                        userId &&
-                        toggleFav.mutate({
-                          targetType: 'freelancer',
-                          targetId: userId,
-                          favorited: isFav,
-                        })
-                      }
-                    >
-                      <Heart size={14} /> {isFav ? 'Favorito' : 'Favoritar'}
-                    </BusinessButton>
-                  )}
-                  {userId !== myId && (
-                    <BusinessButton
-                      variant="ghost"
-                      onClick={() =>
-                        userId &&
-                        setReport([
-                          {
-                            targetType: 'user',
-                            targetId: userId,
-                            label: 'O perfil',
-                            hint: 'golpe, spam, negociação por fora ou comportamento',
-                          },
-                          ...(p.avatarUrl
-                            ? [
-                                {
-                                  targetType: 'avatar' as const,
-                                  targetId: userId,
-                                  label: 'A foto do perfil',
-                                  hint: 'imagem ofensiva, falsa ou de outra pessoa',
-                                  imageUrl: p.avatarUrl,
-                                },
-                              ]
-                            : []),
-                        ])
-                      }
-                    >
-                      <Flag size={14} /> Denunciar
-                    </BusinessButton>
-                  )}
-                  {user?.role === 'admin' && userId !== myId && (
-                    <ModerationButtons ulid={p.userUlid} />
-                  )}
-                </div>
-              </div>
-              {p.bio && <p className="profile-bio">{p.bio}</p>}
-            </section>
-
-            {p.portfolio.length > 0 && (
-              <section className="card" style={{ marginTop: 16 }} data-testid="portfolio">
-                <div className="card-head">
-                  <h3>
-                    <Images size={16} /> Portfólio
-                  </h3>
-                  <span className="muted tiny">
-                    {p.portfolio.length} trabalho{p.portfolio.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <div className="portfolio-grid">
-                  {p.portfolio.map((i) => (
-                    <figure className="portfolio-item" key={i.id}>
-                      {i.imageUrl ? (
-                        <button
-                          type="button"
-                          className="portfolio-open"
-                          aria-label={`Ampliar ${i.title}`}
-                          onClick={() => openWork(i.id)}
-                        >
-                          <img
-                            src={mediaVariant(i.imageUrl, MEDIA_THUMB.card)}
-                            alt=""
-                            loading="lazy"
-                          />
-                        </button>
-                      ) : (
-                        <div className="portfolio-placeholder" aria-hidden="true">
-                          <Link2 size={22} />
-                        </div>
+                <div className="profile-hero">
+                  <Avatar url={p.avatarUrl} name={p.fullName} size="lg" />
+                  <div className="profile-names">
+                    <h1 id="profile-name">{p.fullName}</h1>
+                    {p.headline && <p className="profile-headline">{p.headline}</p>}
+                    <div className="profile-meta">
+                      <Stars value={p.avgRating} count={p.totalReviews} size={14} />
+                      <span className="chip level">
+                        Nível {p.level} · {p.levelName}
+                      </span>
+                      <span className="muted tiny" data-testid="total-xp">
+                        {p.totalXp.toLocaleString('pt-BR')} XP
+                      </span>
+                      {(p.city || p.state) && (
+                        <span className="muted tiny">
+                          <MapPin size={12} /> {[p.city, p.state].filter(Boolean).join(', ')}
+                        </span>
                       )}
-                      {i.imageUrl && userId !== myId && (
-                        <BusinessIconButton
-                          type="button"
-                          className="icon-btn portfolio-report"
-                          aria-label={`Denunciar imagem de ${i.title}`}
-                          title="Denunciar imagem"
-                          onClick={() =>
-                            setReport([
-                              {
-                                targetType: 'portfolio_item',
-                                targetId: i.id,
-                                label: `Imagem de “${i.title}”`,
-                                imageUrl: i.imageUrl,
-                              },
-                            ])
-                          }
-                        >
-                          <Flag size={14} />
-                        </BusinessIconButton>
+                      <span className="muted tiny">{p.totalContracts} contratos concluídos</span>
+                      <DropoutsSummary summary={p.dropouts} />
+                      {p.availableDays && p.availableDays.length > 0 && (
+                        <span className="muted tiny" data-testid="available-days">
+                          <CalendarDays size={12} /> atende{' '}
+                          {formatAvailability(p.availableDays, p.availablePeriods)}
+                          {zoneNote(p.timezone, user?.timezone)}
+                        </span>
                       )}
-                      <figcaption>
-                        <strong>{i.title}</strong>
-                        {i.description && <span className="muted tiny">{i.description}</span>}
-                        {i.externalUrl && (
-                          <a
-                            href={i.externalUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="tiny"
-                          >
-                            Ver trabalho <ExternalLink size={12} />
-                          </a>
-                        )}
-                      </figcaption>
-                    </figure>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {openWorkId !== null && (
-              <PortfolioGallery
-                items={p.portfolio}
-                openId={openWorkId}
-                onShow={showWork}
-                onClose={closeWork}
-                onReport={
-                  userId !== myId
-                    ? (item) => {
-                        closeWork();
-                        setReport([
-                          {
-                            targetType: 'portfolio_item',
-                            targetId: item.id,
-                            label: `Imagem de “${item.title}”`,
-                            imageUrl: item.imageUrl,
-                          },
-                        ]);
-                      }
-                    : undefined
-                }
-              />
-            )}
-
-            <div className="two-col" style={{ marginTop: 16 }}>
-              <section className="card">
-                <div className="card-head">
-                  <h3>
-                    <Briefcase size={16} /> Serviços
-                  </h3>
-                </div>
-                <QueryState
-                  isLoading={services.isLoading}
-                  error={services.error}
-                  data={services.data}
-                  empty="Este freelancer ainda não publicou serviços."
-                  onRetry={() => void services.refetch()}
-                >
-                  {(d) => (
-                    <div className="cards-grid">
-                      {d.items.map((s) => (
-                        <ServiceCard
-                          key={s.id}
-                          service={s}
-                          mine={s.ownerId === myId}
-                          showOwner={false}
-                          onContratar={setContratar}
-                          onBoost={setBoost}
-                          onProposeBarter={
-                            user?.role === 'freelancer'
-                              ? (svc) => navigate(`/trocas?propor=${svc.id}`)
-                              : undefined
-                          }
-                        />
-                      ))}
+                      {p.availableNow && (
+                        <span className="chip now" data-testid="available-now">
+                          atende agora
+                        </span>
+                      )}
+                      {p.responseTimeHours != null && (
+                        <span className="muted tiny" data-testid="response-time">
+                          <Clock size={12} /> responde em {formatHours(p.responseTimeHours)}
+                        </span>
+                      )}
+                      {!p.isAvailable && <span className="pill">indisponível</span>}
                     </div>
-                  )}
-                </QueryState>
-              </section>
-
-              <div className="stack">
-                <section className="card">
-                  <div className="card-head">
-                    <h3>
-                      <ShieldCheck size={16} /> Escambo Score
-                    </h3>
-                  </div>
-                  <ScoreBadge score={p.escamboScore} detailed />
-                </section>
-
-                <section className="card" data-testid="achievements">
-                  <div className="card-head">
-                    <h3>
-                      <Award size={16} /> Conquistas
-                    </h3>
-                    <span className="muted tiny">
-                      {p.badges.length} badge{p.badges.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
-                  {p.badges.length === 0 ? (
-                    <p className="muted tiny">Nenhuma badge conquistada ainda.</p>
-                  ) : (
-                    <ul className="req-list" aria-label="Badges conquistadas">
-                      {p.badges.map((b) => (
-                        <li key={b.slug}>
-                          <span>{b.name}</span>
-                          <span className="muted tiny">desde {dt(b.awardedAt)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-
-                <section className="card">
-                  <div className="card-head">
-                    <h3>
-                      <Star size={16} /> Avaliações
-                    </h3>
-                  </div>
-                  <QueryState
-                    isLoading={reviews.isLoading}
-                    error={reviews.error}
-                    data={reviews.data}
-                    empty="Nenhuma avaliação ainda."
-                    onRetry={() => void reviews.refetch()}
-                  >
-                    {(d) => (
-                      <ul className="review-list">
-                        {d.items.map((r) => (
-                          <li key={r.id} className="review">
-                            <div className="review-head">
-                              <Stars value={r.rating} showValue={false} size={14} />
-                              <span className="muted tiny">{dtm(r.createdAt)}</span>
-                            </div>
-                            <p>{r.comment ?? <span className="muted">Sem comentário.</span>}</p>
-                            {r.response && (
-                              <div className="review-response">
-                                <strong>Resposta do freelancer</strong>
-                                <p>{r.response}</p>
-                              </div>
-                            )}
+                    {/* RN-058: até 3 badges em destaque; a lista inteira fica em "Conquistas". */}
+                    {p.featuredBadges.length > 0 && (
+                      <ul className="badges profile-badges" aria-label="Conquistas em destaque">
+                        {p.featuredBadges.map((b) => (
+                          <li key={b.slug} className="badge">
+                            <Award size={12} aria-hidden="true" /> {b.name}
                           </li>
                         ))}
                       </ul>
                     )}
+                  </div>
+                  <div className="stack profile-actions">
+                    <ScoreBadge score={p.escamboScore} />
+                    {userId !== myId && (
+                      <BusinessButton
+                        variant={isFav ? 'secondary' : 'ghost'}
+                        className="toggle"
+                        aria-pressed={isFav}
+                        disabled={toggleFav.isPending || !userId}
+                        onClick={() =>
+                          userId &&
+                          toggleFav.mutate({
+                            targetType: 'freelancer',
+                            targetId: userId,
+                            favorited: isFav,
+                          })
+                        }
+                      >
+                        <Heart size={14} /> {isFav ? 'Favorito' : 'Favoritar'}
+                      </BusinessButton>
+                    )}
+                    {userId !== myId && (
+                      <BusinessButton
+                        variant="ghost"
+                        onClick={() =>
+                          userId &&
+                          setReport([
+                            {
+                              targetType: 'user',
+                              targetId: userId,
+                              label: 'O perfil',
+                              hint: 'golpe, spam, negociação por fora ou comportamento',
+                            },
+                            ...(p.avatarUrl
+                              ? [
+                                  {
+                                    targetType: 'avatar' as const,
+                                    targetId: userId,
+                                    label: 'A foto do perfil',
+                                    hint: 'imagem ofensiva, falsa ou de outra pessoa',
+                                    imageUrl: p.avatarUrl,
+                                  },
+                                ]
+                              : []),
+                          ])
+                        }
+                      >
+                        <Flag size={14} /> Denunciar
+                      </BusinessButton>
+                    )}
+                    {user?.role === 'admin' && userId !== myId && (
+                      <ModerationButtons ulid={p.userUlid} />
+                    )}
+                  </div>
+                </div>
+                {p.bio && <p className="profile-bio">{p.bio}</p>}
+              </section>
+
+              {p.portfolio.length > 0 && (
+                <section className="card profile-portfolio" data-testid="portfolio">
+                  <div className="card-head">
+                    <h3>
+                      <Images size={16} /> Portfólio
+                    </h3>
+                    <span className="muted tiny">
+                      {p.portfolio.length} trabalho{p.portfolio.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className="portfolio-grid">
+                    {p.portfolio.map((i) => (
+                      <figure className="portfolio-item" key={i.id}>
+                        {i.imageUrl ? (
+                          <button
+                            type="button"
+                            className="portfolio-open"
+                            aria-label={`Ampliar ${i.title}`}
+                            onClick={() => openWork(i.id)}
+                          >
+                            <img
+                              src={mediaVariant(i.imageUrl, MEDIA_THUMB.card)}
+                              alt=""
+                              loading="lazy"
+                            />
+                          </button>
+                        ) : (
+                          <div className="portfolio-placeholder" aria-hidden="true">
+                            <Link2 size={22} />
+                          </div>
+                        )}
+                        {i.imageUrl && userId !== myId && (
+                          <BusinessIconButton
+                            type="button"
+                            className="icon-btn portfolio-report"
+                            aria-label={`Denunciar imagem de ${i.title}`}
+                            title="Denunciar imagem"
+                            onClick={() =>
+                              setReport([
+                                {
+                                  targetType: 'portfolio_item',
+                                  targetId: i.id,
+                                  label: `Imagem de “${i.title}”`,
+                                  imageUrl: i.imageUrl,
+                                },
+                              ])
+                            }
+                          >
+                            <Flag size={14} />
+                          </BusinessIconButton>
+                        )}
+                        <figcaption>
+                          <strong>{i.title}</strong>
+                          {i.description && <span className="muted tiny">{i.description}</span>}
+                          {i.externalUrl && (
+                            <a
+                              href={i.externalUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="tiny"
+                            >
+                              Ver trabalho <ExternalLink size={12} />
+                            </a>
+                          )}
+                        </figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {openWorkId !== null && (
+                <PortfolioGallery
+                  items={p.portfolio}
+                  openId={openWorkId}
+                  onShow={showWork}
+                  onClose={closeWork}
+                  onReport={
+                    userId !== myId
+                      ? (item) => {
+                          closeWork();
+                          setReport([
+                            {
+                              targetType: 'portfolio_item',
+                              targetId: item.id,
+                              label: `Imagem de “${item.title}”`,
+                              imageUrl: item.imageUrl,
+                            },
+                          ]);
+                        }
+                      : undefined
+                  }
+                />
+              )}
+
+              <div className="two-col">
+                <section className="card">
+                  <div className="card-head">
+                    <h3>
+                      <Briefcase size={16} /> Serviços
+                    </h3>
+                  </div>
+                  <QueryState
+                    isLoading={services.isLoading}
+                    error={services.error}
+                    data={services.data}
+                    empty="Este freelancer ainda não publicou serviços."
+                    onRetry={() => void services.refetch()}
+                  >
+                    {(d) => (
+                      <div className="cards-grid">
+                        {d.items.map((s) => (
+                          <ServiceCard
+                            key={s.id}
+                            service={s}
+                            mine={s.ownerId === myId}
+                            showOwner={false}
+                            categorySlug={roots.get(s.categoryId)?.slug}
+                            categoryName={roots.get(s.categoryId)?.name}
+                            onContratar={setContratar}
+                            onBoost={setBoost}
+                            onProposeBarter={
+                              user?.role === 'freelancer'
+                                ? (svc) => navigate(`/trocas?propor=${svc.id}`)
+                                : undefined
+                            }
+                          />
+                        ))}
+                      </div>
+                    )}
                   </QueryState>
                 </section>
+
+                <div className="stack">
+                  <section className="card">
+                    <div className="card-head">
+                      <h3>
+                        <ShieldCheck size={16} /> Escambo Score
+                      </h3>
+                    </div>
+                    <ScoreBadge score={p.escamboScore} detailed />
+                  </section>
+
+                  <section className="card" data-testid="achievements">
+                    <div className="card-head">
+                      <h3>
+                        <Award size={16} /> Conquistas
+                      </h3>
+                      <span className="muted tiny">
+                        {p.badges.length} badge{p.badges.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    {p.badges.length === 0 ? (
+                      <p className="muted tiny">Nenhuma badge conquistada ainda.</p>
+                    ) : (
+                      <ul className="req-list" aria-label="Badges conquistadas">
+                        {p.badges.map((b) => (
+                          <li key={b.slug}>
+                            <span>{b.name}</span>
+                            <span className="muted tiny">desde {dt(b.awardedAt)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+
+                  <section className="card">
+                    <div className="card-head">
+                      <h3>
+                        <Star size={16} /> Avaliações
+                      </h3>
+                    </div>
+                    <QueryState
+                      isLoading={reviews.isLoading}
+                      error={reviews.error}
+                      data={reviews.data}
+                      empty="Nenhuma avaliação ainda."
+                      onRetry={() => void reviews.refetch()}
+                    >
+                      {(d) => (
+                        <ul className="review-list">
+                          {d.items.map((r) => (
+                            <li key={r.id} className="review">
+                              <div className="review-head">
+                                <Stars value={r.rating} showValue={false} size={14} />
+                                <span className="muted tiny">{dtm(r.createdAt)}</span>
+                              </div>
+                              <p>{r.comment ?? <span className="muted">Sem comentário.</span>}</p>
+                              {r.response && (
+                                <div className="review-response">
+                                  <strong>Resposta do freelancer</strong>
+                                  <p>{r.response}</p>
+                                </div>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </QueryState>
+                  </section>
+                </div>
               </div>
-            </div>
-          </>
-        )}
+            </>
+          );
+        }}
       </QueryState>
 
       {report && <ReportModal subjects={report} onClose={() => setReport(null)} />}

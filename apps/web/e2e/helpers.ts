@@ -229,6 +229,19 @@ export async function settled(page: Page): Promise<void> {
   await expect(page.locator('.skeleton')).toHaveCount(0);
 }
 
+/**
+ * Abre a página inicial pública (`/` sem sessão) e espera os dados da API: a taxa nos cartões
+ * (o texto sem número diz "descontada", com o número, "descontados") e as categorias.
+ */
+export async function openLanding(page: Page): Promise<void> {
+  await page.goto('/');
+  await expect(
+    page.getByRole('heading', { level: 1, name: /o que você sabe fazer/ }),
+  ).toBeVisible();
+  await expect(page.getByText(/% sobre o valor, descontados de quem recebe/)).toBeVisible();
+  await expect(page.locator('#categorias')).toBeVisible();
+}
+
 function crc32(buf: Buffer): number {
   let crc = 0xffffffff;
   for (const byte of buf) {
@@ -376,4 +389,38 @@ export function browserClockNow(): { day: number; hour: number } {
     day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(weekday),
     hour: Number(parts.find((p) => p.type === 'hour')!.value),
   };
+}
+
+/**
+ * Vai a uma área pelo menu principal, como a pessoa faria: no desktop e no tablet o link está na
+ * barra lateral; no celular, Ranking, Notificações, Perfil e Suporte ficam na folha do "Mais".
+ */
+export async function navTo(page: Page, name: string): Promise<void> {
+  const nav = page.getByRole('navigation', { name: 'Principal' });
+  // O nome do link pode vir seguido do contador ("Notificações 3 não lidas").
+  // Os nomes do menu são só letras: entram na expressão sem escapar.
+  const label = new RegExp(`^${name}(\\s|$)`);
+  const link = nav.getByRole('link', { name: label });
+  if (!(await link.isVisible())) {
+    const more = nav.getByRole('button', { name: 'Mais' });
+    await expect(more).toBeVisible();
+    await more.click();
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
+  }
+  await link.click();
+}
+
+/**
+ * O painel de filtros da busca de serviços: no desktop fica sempre ao lado da lista; no celular
+ * abre pelo botão "Filtros". Devolve o painel já aberto.
+ */
+export async function openFilters(page: Page) {
+  const toggle = page.getByRole('button', { name: /^Filtros/ });
+  if ((await toggle.isVisible()) && (await toggle.getAttribute('aria-expanded')) !== 'true') {
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  }
+  const panel = page.getByTestId('filters');
+  await expect(panel).toBeVisible();
+  return panel;
 }

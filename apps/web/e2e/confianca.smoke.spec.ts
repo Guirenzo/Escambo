@@ -150,7 +150,8 @@ test('privacidade (LGPD): cópia dos dados baixável na hora; exclusão concluí
   await expect(page.locator('.toast', { hasText: 'Conta anonimizada' })).toBeVisible();
   await expect(pending).toHaveCount(0);
 
-  await openAs(page, user, '/');
+  // Sem sessão a raiz é a página pública: a prova de que a conta não entra é uma tela do app.
+  await openAs(page, user, '/carteira');
   await expect(page).toHaveURL(/\/login/);
 });
 

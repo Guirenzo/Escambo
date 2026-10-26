@@ -451,10 +451,16 @@ export function SupportDesk({ admin = false }: { admin?: boolean }) {
     <div className="stack">
       {!admin && (
         <div className="support-intro">
-          <p className="muted">
-            Converse com a equipe em um chamado privado, inclusive se sua conta estiver suspensa.
-            Até 3 chamados não encerrados por vez.
-          </p>
+          <span className="support-intro-ico" aria-hidden="true">
+            <LifeBuoy size={22} />
+          </span>
+          <div className="support-intro-text">
+            <h2>Como podemos ajudar?</h2>
+            <p>
+              Converse com a equipe em um chamado privado, inclusive se sua conta estiver suspensa.
+              Até 3 chamados não encerrados por vez.
+            </p>
+          </div>
           <Button onClick={() => setOpening(true)}>
             <Plus size={16} /> Abrir chamado
           </Button>

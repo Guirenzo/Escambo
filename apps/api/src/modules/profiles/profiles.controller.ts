@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { optionalUserId } from '../../middlewares/authenticate';
 import {
   portfolioIdSchema,
   portfolioItemSchema,
@@ -53,5 +54,6 @@ export async function reorderPortfolio(req: Request, res: Response): Promise<voi
 
 export async function getPublicFreelancer(req: Request, res: Response): Promise<void> {
   const { ulid } = ulidParamSchema.parse(req.params);
-  res.json(await profilesService.getPublicFreelancer(ulid));
+  // Rota pública: o token, se veio, só diz se quem abre é o dono (que vê a localização exata).
+  res.json(await profilesService.getPublicFreelancer(ulid, optionalUserId(req)));
 }

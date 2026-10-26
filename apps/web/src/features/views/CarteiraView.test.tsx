@@ -1203,3 +1203,33 @@ describe('CarteiraView: saques e depósitos', () => {
     expect(deposit).not.toHaveBeenCalled();
   });
 });
+
+describe('CarteiraView: cartão de saldo', () => {
+  it('o saldo vem num cartão com o nome de quem é a carteira, o depósito e o atalho para o saque', async () => {
+    renderView();
+    const card = (await screen.findByText('Saldo disponível')).closest('section')!;
+    expect(card).toHaveClass('bank-card');
+    await waitFor(() =>
+      expect(within(card).getByTestId('wallet-balance')).toHaveTextContent('R$ 820,50'),
+    );
+    // Sem perfil carregado, o nome vem do e-mail.
+    expect(card.querySelector('.bank-owner')).toHaveTextContent('bruno');
+    expect(within(card).getByRole('button', { name: 'Depositar' })).toBeInTheDocument();
+    expect(card.querySelector('.bank-deco')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('"Pedir saque" leva o foco ao valor do saque', async () => {
+    const user = userEvent.setup();
+    renderView();
+    await user.click(await screen.findByRole('button', { name: 'Pedir saque' }));
+    expect(screen.getByRole('spinbutton', { name: /Valor \(R\$\)/ })).toHaveFocus();
+  });
+
+  it('sem e-mail confirmado, "Pedir saque" leva ao aviso de confirmação', async () => {
+    const user = userEvent.setup();
+    auth.user = { id: 1, email: 'bruno@escambo.test', emailVerified: false };
+    renderView();
+    await user.click(await screen.findByRole('button', { name: 'Pedir saque' }));
+    expect(screen.getByTestId('withdraw-locked')).toHaveFocus();
+  });
+});

@@ -97,12 +97,9 @@ describe('LegalView', () => {
     expect(items[items.length - 1]).toHaveTextContent('1.0 · 09/09/2026 Primeira versão.');
   });
 
-  it('a marca e o "Voltar ao início" levam para o login', () => {
+  it('a marca e o "Voltar ao início" levam para o início (a landing sem sessão)', () => {
     show('termos');
-    expect(screen.getByRole('link', { name: 'Escambo' })).toHaveAttribute('href', '/login');
-    expect(screen.getByRole('link', { name: 'Voltar ao início' })).toHaveAttribute(
-      'href',
-      '/login',
-    );
+    expect(screen.getByRole('link', { name: 'Escambo' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: 'Voltar ao início' })).toHaveAttribute('href', '/');
   });
 });

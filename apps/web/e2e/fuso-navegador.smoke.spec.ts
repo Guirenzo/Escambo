@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createUser, openAs, PASSWORD, settled, type TestUser } from './helpers';
+import { createUser, navTo, openAs, PASSWORD, settled, type TestUser } from './helpers';
 
 /**
  * Fuso detectado pelo navegador (ADR 51), com o navegador em Manaus: o cadastro pelo formulário
@@ -26,11 +26,13 @@ test('cadastro pelo formulário com o navegador em Manaus já grava o fuso de Ma
   await form.getByLabel('Senha').fill(PASSWORD);
   await form.getByRole('checkbox').check();
   await form.locator('button[type="submit"]').click();
-  await expect(page.getByRole('heading', { name: /^Olá,/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /^(Bom dia|Boa tarde|Boa noite),/ }),
+  ).toBeVisible();
   // Nada a sugerir: a conta já nasceu no fuso do aparelho.
   await expect(page.getByTestId('timezone-banner')).toHaveCount(0);
 
-  await page.getByRole('link', { name: 'Perfil', exact: true }).click();
+  await navTo(page, 'Perfil');
   await settled(page);
   await expect(page.getByTestId('email-prefs')).toContainText('Horário de Manaus.');
   await expect(page.getByTestId('email-prefs').getByLabel('Fuso horário')).toHaveValue(
@@ -66,7 +68,9 @@ test('conta antiga sem fuso escolhido: sugestão única, "Usar" grava Manaus e "
   await page.reload();
   await settled(page);
   // Só afirma que a faixa não voltou depois de a sessão carregar (a saudação da home depende dela).
-  await expect(page.getByRole('heading', { name: /^Olá,/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /^(Bom dia|Boa tarde|Boa noite),/ }),
+  ).toBeVisible();
   await expect(page.getByTestId('timezone-banner')).toHaveCount(0);
 
   // Outra conta prefere continuar em Brasília: também não pergunta de novo.
@@ -88,6 +92,8 @@ test('conta antiga sem fuso escolhido: sugestão única, "Usar" grava Manaus e "
   await page.reload();
   await settled(page);
   // Só afirma que a faixa não voltou depois de a sessão carregar (a saudação da home depende dela).
-  await expect(page.getByRole('heading', { name: /^Olá,/ })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /^(Bom dia|Boa tarde|Boa noite),/ }),
+  ).toBeVisible();
   await expect(page.getByTestId('timezone-banner')).toHaveCount(0);
 });

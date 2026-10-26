@@ -1,5 +1,5 @@
 import { BusinessButton } from '../../components/BusinessActions';
-import { Heart, MapPin, Plus, Search } from 'lucide-react';
+import { Heart, MapPin, Plus, Search, SearchX, SlidersHorizontal, X } from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
 import type { AvailabilityPeriod, SavedSearch, SavedSearchFilters, Service } from '@escambo/types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -26,12 +26,14 @@ import {
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { BoostModal } from '../services/BoostModal';
+import { rootsById } from '../services/categoryArt';
+import { CategoryStrip } from '../services/CategoryStrip';
 import { ContratarModal } from '../services/ContratarModal';
 import { MyServices } from '../services/MyServices';
 import { SavedSearchesBar, SaveSearchButton } from '../services/SavedSearches';
 import { ServiceCard } from '../services/ServiceCard';
 import { flattenCategories, ServiceForm, type ServiceFormBody } from '../services/ServiceForm';
-import { PERIOD_LABEL, PERIOD_ORDER, WEEKDAY_SHORT } from '../../lib/format';
+import { PERIOD_LABEL, PERIOD_ORDER, WEEKDAY_SHORT, brl } from '../../lib/format';
 
 type Geo = { lat: number; lng: number };
 const RADII = [5, 10, 25, 50, 100];
@@ -77,6 +79,13 @@ const NO_FILTERS: Filters = {
   sort: 'relevance',
 };
 
+/** Um filtro ativo, como chip removível acima dos resultados. */
+interface ActiveFilter {
+  key: string;
+  label: string;
+  clear: () => void;
+}
+
 export function ServicosView() {
   usePageTitle('Serviços');
   const { user } = useAuth();
@@ -105,6 +114,8 @@ export function ServicosView() {
     filters.now ||
     filters.modality !== '' ||
     filters.sort !== 'relevance';
+  // No celular o painel de filtros fica recolhido atrás do botão "Filtros".
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const services = useServicesInfinite({
     q: submitted,
     ...(categoryFilter ? { categoryId: categoryFilter } : {}),
@@ -138,6 +149,7 @@ export function ServicosView() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'search' | 'mine'>('search');
   const flat = categories.data ? flattenCategories(categories.data) : [];
+  const roots = useMemo(() => rootsById(categories.data ?? []), [categories.data]);
 
   // modais dos diferenciais
   const [contratar, setContratar] = useState<Service | null>(null);
@@ -198,13 +210,31 @@ export function ServicosView() {
     setSearchParams({}, { replace: true });
   }, [searchParams, savedList.data]);
 
-  // Tag clicada no card ou no detalhe (/servicos?q=react, RF-024): busca por ela e limpa a URL.
+  // Tag clicada no card ou no detalhe, ou a busca global do topo (/servicos?q=react, RF-024):
+  // busca pelo texto e limpa a URL.
   useEffect(() => {
     const text = searchParams.get('q');
     if (text === null) return;
     setTab('search');
     setQ(text);
     setSubmitted(text.trim() || undefined);
+    setSearchParams({}, { replace: true });
+  }, [searchParams]);
+
+  // Categoria escolhida na página inicial (/servicos?categoria=ID): filtra por ela e limpa a URL.
+  useEffect(() => {
+    const raw = searchParams.get('categoria');
+    if (raw === null) return;
+    const id = Number(raw);
+    setTab('search');
+    if (Number.isInteger(id) && id > 0) setCategoryFilter(id);
+    setSearchParams({}, { replace: true });
+  }, [searchParams]);
+
+  // Atalho "Publicar um serviço" do Início (/servicos?novo=1): abre o formulário e limpa a URL.
+  useEffect(() => {
+    if (searchParams.get('novo') === null) return;
+    setOpen(true);
     setSearchParams({}, { replace: true });
   }, [searchParams]);
 
@@ -242,6 +272,75 @@ export function ServicosView() {
     }
   }
 
+  // Filtros ativos como chips removíveis (o nome do chip nunca repete o nome de um botão do painel).
+  const active: ActiveFilter[] = [];
+  if (submitted)
+    active.push({
+      key: 'q',
+      label: `“${submitted}”`,
+      clear: () => {
+        setQ('');
+        setSubmitted(undefined);
+      },
+    });
+  if (categoryFilter) {
+    const c = flat.find((x) => x.id === categoryFilter);
+    // O nome sem o recuo das subcategorias ("— ") da lista.
+    const name = c ? c.label.replace(/^(— )+/, '') : 'Categoria';
+    active.push({ key: 'cat', label: name, clear: () => setCategoryFilter(0) });
+  }
+  if (geo) active.push({ key: 'geo', label: `Até ${radiusKm} km`, clear: () => setGeo(null) });
+  if (filters.minPrice !== '')
+    active.push({
+      key: 'min',
+      label: `A partir de ${brl(Number(filters.minPrice))}`,
+      clear: () => setFilter({ minPrice: '' }),
+    });
+  if (filters.maxPrice !== '')
+    active.push({
+      key: 'max',
+      label: `Até ${brl(Number(filters.maxPrice))}`,
+      clear: () => setFilter({ maxPrice: '' }),
+    });
+  if (filters.maxDeliveryDays)
+    active.push({
+      key: 'days',
+      label: `Entrega em até ${filters.maxDeliveryDays} dias`,
+      clear: () => setFilter({ maxDeliveryDays: 0 }),
+    });
+  if (filters.minRating)
+    active.push({
+      key: 'rating',
+      label: `${filters.minRating}+ estrelas`,
+      clear: () => setFilter({ minRating: 0 }),
+    });
+  if (filters.day >= 0)
+    active.push({
+      key: 'day',
+      label: `Agenda: ${WEEKDAY_SHORT[filters.day]}${filters.period ? `, ${PERIOD_LABEL[filters.period]}` : ''}`,
+      clear: () => setFilter({ day: -1, period: '' }),
+    });
+  if (filters.now)
+    active.push({
+      key: 'now',
+      label: 'Disponível neste horário',
+      clear: () => setFilter({ now: false }),
+    });
+  if (filters.modality)
+    active.push({
+      key: 'mod',
+      label: filters.modality === 'remote' ? 'Remoto' : 'Presencial',
+      clear: () => setFilter({ modality: '' }),
+    });
+  if (onlyFavs) active.push({ key: 'fav', label: 'Favoritos', clear: () => setOnlyFavs(false) });
+  const panelCount = active.filter((a) => !['q', 'cat'].includes(a.key)).length;
+
+  const resultsTitle = submitted
+    ? `Resultados para “${submitted}”`
+    : geo
+      ? 'Perto de você'
+      : 'Todos os serviços';
+
   return (
     <div className="page">
       <PageHeader
@@ -270,11 +369,10 @@ export function ServicosView() {
       )}
 
       <div
-        className="tabs"
+        className="tabs tabs-page"
         role="tablist"
         onKeyDown={onTablistKeyDown}
         aria-label="Serviços"
-        style={{ maxWidth: 420 }}
       >
         <button
           type="button"
@@ -300,273 +398,375 @@ export function ServicosView() {
         <MyServices onBoost={setBoost} />
       ) : (
         <>
-          <form
-            className="searchbar"
-            onSubmit={(e) => {
-              e.preventDefault();
-              setSubmitted(q.trim() || undefined);
-            }}
-          >
-            <Input
-              placeholder="Buscar serviços…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-            <Select
-              aria-label="Categoria"
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(Number(e.target.value))}
-            >
-              <option value={0}>Todas as categorias</option>
-              {flat.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </Select>
-            <Button variant="secondary" type="submit">
-              <Search size={16} /> Buscar
-            </Button>
-          </form>
-
-          {/* Descoberta local (diferencial #2) */}
-          <div className="geo-bar">
-            <Button
-              variant="ghost"
-              className={`toggle ${geo ? 'on' : ''}`}
-              onClick={toggleNearMe}
-              disabled={locating}
-            >
-              <MapPin size={16} />{' '}
-              {locating ? 'Localizando…' : geo ? 'Perto de mim: ativo' : 'Perto de mim'}
-            </Button>
-            {geo && (
-              <>
-                <span className="muted hint">raio</span>
+          {/* Faixa de busca: texto sobre o verde sólido, o campo branco e, ao lado, fotos das
+              categorias (ilustração, some no celular). */}
+          <div className="search-hero">
+            <div className="search-hero-main">
+              <div className="search-hero-text">
+                <h2>Quem faz, do jeito que você precisa</h2>
+                <p>Busque por serviço, tag ou categoria e contrate com o pagamento protegido.</p>
+              </div>
+              <form
+                className="search-panel"
+                role="search"
+                aria-label="Buscar serviços"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setSubmitted(q.trim() || undefined);
+                }}
+              >
+                <div className="search-field">
+                  <Search size={18} aria-hidden="true" />
+                  <Input
+                    type="search"
+                    placeholder="Buscar serviços…"
+                    aria-label="O que você procura"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                  />
+                </div>
                 <Select
-                  value={radiusKm}
-                  onChange={(e) => setRadiusKm(Number(e.target.value))}
-                  aria-label="Raio em km"
+                  aria-label="Categoria"
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(Number(e.target.value))}
                 >
-                  {RADII.map((r) => (
-                    <option key={r} value={r}>
-                      {r} km
+                  <option value={0}>Todas as categorias</option>
+                  {flat.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
                     </option>
                   ))}
                 </Select>
-                {filters.sort === 'relevance' && (
-                  <span className="muted hint">ordenado por proximidade</span>
+                <Button type="submit">
+                  <Search size={16} /> Buscar
+                </Button>
+              </form>
+            </div>
+            <div className="search-hero-art" aria-hidden="true">
+              {['dev', 'designer', 'eletricista'].map((p) => (
+                <img key={p} src={`/img/pessoas/${p}-400.webp`} alt="" width={400} height={500} />
+              ))}
+            </div>
+          </div>
+
+          <CategoryStrip
+            variant="chips"
+            selected={categoryFilter}
+            onSelect={(id) => setCategoryFilter(id)}
+          />
+
+          {/* No celular os filtros ficam recolhidos; o botão vem antes do painel (ordem do Tab). */}
+          <div className="filters-toggle-row">
+            <Button
+              variant="secondary"
+              aria-expanded={filtersOpen}
+              aria-controls="filtros"
+              onClick={() => setFiltersOpen((o) => !o)}
+            >
+              <SlidersHorizontal size={16} aria-hidden="true" /> Filtros
+              {panelCount > 0 ? ` (${panelCount})` : ''}
+            </Button>
+          </div>
+
+          <div className="browse">
+            <div
+              className="filters-panel"
+              id="filtros"
+              data-testid="filters"
+              data-open={filtersOpen || undefined}
+            >
+              <h2>Filtros</h2>
+
+              {/* Descoberta local (diferencial #2) */}
+              <fieldset className="filter-group">
+                <legend>Onde</legend>
+                <Button
+                  variant="ghost"
+                  className={`toggle ${geo ? 'on' : ''}`}
+                  onClick={toggleNearMe}
+                  disabled={locating}
+                >
+                  <MapPin size={16} />{' '}
+                  {locating ? 'Localizando…' : geo ? 'Perto de mim: ativo' : 'Perto de mim'}
+                </Button>
+                {geo && (
+                  <label className="filter">
+                    <span>Raio</span>
+                    <Select
+                      value={radiusKm}
+                      onChange={(e) => setRadiusKm(Number(e.target.value))}
+                      aria-label="Raio em km"
+                    >
+                      {RADII.map((r) => (
+                        <option key={r} value={r}>
+                          {r} km
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
                 )}
-              </>
-            )}
-            <Button
-              variant="ghost"
-              className={`toggle ${onlyFavs ? 'on' : ''}`}
-              aria-pressed={onlyFavs}
-              onClick={() => setOnlyFavs((v) => !v)}
-            >
-              <Heart size={16} /> Só favoritos{favIds.size ? ` (${favIds.size})` : ''}
-            </Button>
-            {/* Atende agora (ADR 34 e 48): aceitando pedidos, no dia e no período de agora no fuso de cada freelancer */}
-            <Button
-              variant="ghost"
-              className={`toggle ${filters.now ? 'on' : ''}`}
-              aria-pressed={filters.now}
-              title="Aceitando pedidos, no dia e no período de agora, no fuso de cada freelancer"
-              onClick={() => setFilter({ now: !filters.now })}
-            >
-              <span className="now-dot" aria-hidden="true" /> Atende agora
-            </Button>
-            <SaveSearchButton current={currentSearch} disabled={onlyFavs} />
-          </div>
-          <SavedSearchesBar onApply={applySaved} />
+                {geo && filters.sort === 'relevance' && (
+                  <span className="muted tiny">ordenado por proximidade</span>
+                )}
+                <label className="filter">
+                  <span>Modalidade</span>
+                  <Select
+                    aria-label="Filtrar por modalidade"
+                    title="Quem atende remoto e presencial aparece nas duas"
+                    value={filters.modality}
+                    onChange={(e) => setFilter({ modality: e.target.value as Filters['modality'] })}
+                  >
+                    <option value="">qualquer</option>
+                    <option value="remote">remoto</option>
+                    <option value="onsite">presencial</option>
+                  </Select>
+                </label>
+              </fieldset>
 
-          {/* Filtros e ordenação (aplicam na hora) */}
-          <div className="filters-bar" data-testid="filters">
-            <label className="filter">
-              <span>Preço de</span>
-              <Input
-                type="number"
-                min={0}
-                step="1"
-                placeholder="R$"
-                aria-label="Preço mínimo"
-                value={filters.minPrice}
-                onChange={(e) => setFilter({ minPrice: e.target.value })}
-              />
-            </label>
-            <label className="filter">
-              <span>até</span>
-              <Input
-                type="number"
-                min={0}
-                step="1"
-                placeholder="R$"
-                aria-label="Preço máximo"
-                value={filters.maxPrice}
-                onChange={(e) => setFilter({ maxPrice: e.target.value })}
-              />
-            </label>
-            <label className="filter">
-              <span>Prazo</span>
-              <Select
-                aria-label="Prazo máximo"
-                value={filters.maxDeliveryDays}
-                onChange={(e) => setFilter({ maxDeliveryDays: Number(e.target.value) })}
-              >
-                <option value={0}>qualquer</option>
-                {DELIVERY_OPTIONS.map((d) => (
-                  <option key={d} value={d}>
-                    até {d} dias
-                  </option>
-                ))}
-              </Select>
-            </label>
-            <label className="filter">
-              <span>Nota</span>
-              <Select
-                aria-label="Nota mínima"
-                value={filters.minRating}
-                onChange={(e) => setFilter({ minRating: Number(e.target.value) })}
-              >
-                <option value={0}>qualquer</option>
-                {RATING_OPTIONS.map((r) => (
-                  <option key={r} value={r}>
-                    {r}+ estrelas
-                  </option>
-                ))}
-              </Select>
-            </label>
-            <label className="filter">
-              <span>Atende</span>
-              <Select
-                aria-label="Atende no dia"
-                value={filters.day}
-                onChange={(e) => {
-                  const day = Number(e.target.value);
-                  setFilter(day < 0 ? { day, period: '' } : { day });
-                }}
-              >
-                <option value={-1}>qualquer dia</option>
-                {WEEKDAY_SHORT.map((label, d) => (
-                  <option key={d} value={d}>
-                    {label}
-                    {d === TODAY ? ' (hoje)' : ''}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            <label className="filter">
-              <span>Período</span>
-              <Select
-                aria-label="Período do dia"
-                value={filters.period}
-                disabled={filters.day < 0}
-                title={filters.day < 0 ? 'Escolha o dia primeiro' : undefined}
-                onChange={(e) => setFilter({ period: e.target.value as Filters['period'] })}
-              >
-                <option value="">qualquer período</option>
-                {PERIOD_ORDER.map((p) => (
-                  <option key={p} value={p}>
-                    {PERIOD_LABEL[p]}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            <label className="filter">
-              <span>Modalidade</span>
-              <Select
-                aria-label="Filtrar por modalidade"
-                title="Quem atende remoto e presencial aparece nas duas"
-                value={filters.modality}
-                onChange={(e) => setFilter({ modality: e.target.value as Filters['modality'] })}
-              >
-                <option value="">qualquer</option>
-                <option value="remote">remoto</option>
-                <option value="onsite">presencial</option>
-              </Select>
-            </label>
-            <label className="filter">
-              <span>Ordenar</span>
-              <Select
-                aria-label="Ordenar por"
-                value={filters.sort}
-                onChange={(e) => setFilter({ sort: e.target.value as Sort })}
-              >
-                {SORTS.filter((s) => !s.geoOnly || geo).map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.label}
-                  </option>
-                ))}
-              </Select>
-            </label>
-            {hasFilters && (
-              <Button variant="ghost" className="mini" onClick={() => setFilters(NO_FILTERS)}>
-                Limpar filtros
-              </Button>
-            )}
-          </div>
-
-          {services.isLoading ? (
-            <Skeleton lines={6} />
-          ) : services.error ? (
-            <ErrorState error={services.error} onRetry={() => void services.refetch()} />
-          ) : (
-            (() => {
-              const all = services.data?.pages.flatMap((p) => p.items) ?? [];
-              const items = onlyFavs ? all.filter((s) => favIds.has(s.id)) : all;
-              if (items.length === 0) {
-                return (
-                  <EmptyState>
-                    {onlyFavs
-                      ? 'Nenhum favorito nesta lista. Marque o coração nos serviços.'
-                      : hasFilters
-                        ? 'Nenhum serviço com esses filtros — afrouxe o preço, o prazo ou a nota.'
-                        : geo
-                          ? `Nenhum serviço num raio de ${radiusKm} km — aumente o raio.`
-                          : 'Nenhum serviço encontrado.'}
-                  </EmptyState>
-                );
-              }
-              return (
-                <>
-                  <div className="cards-grid">
-                    {items.map((s) => (
-                      <ServiceCard
-                        key={s.id}
-                        service={s}
-                        mine={s.ownerId === myId}
-                        onContratar={setContratar}
-                        onBoost={setBoost}
-                        favorited={favIds.has(s.id)}
-                        onToggleFavorite={(svc) =>
-                          toggleFav.mutate({
-                            targetType: 'service',
-                            targetId: svc.id,
-                            favorited: favIds.has(svc.id),
-                          })
-                        }
-                        onProposeBarter={
-                          isFreelancer ? (svc) => navigate(`/trocas?propor=${svc.id}`) : undefined
-                        }
-                      />
+              <fieldset className="filter-group">
+                <legend>Agenda</legend>
+                {/* Atende agora (ADR 34 e 48): aceitando pedidos, no dia e no período de agora no fuso de cada freelancer */}
+                <Button
+                  variant="ghost"
+                  className={`toggle ${filters.now ? 'on' : ''}`}
+                  aria-pressed={filters.now}
+                  title="Aceitando pedidos, no dia e no período de agora, no fuso de cada freelancer"
+                  onClick={() => setFilter({ now: !filters.now })}
+                >
+                  <span className="now-dot" aria-hidden="true" /> Atende agora
+                </Button>
+                <label className="filter">
+                  <span>Dia</span>
+                  <Select
+                    aria-label="Atende no dia"
+                    value={filters.day}
+                    onChange={(e) => {
+                      const day = Number(e.target.value);
+                      setFilter(day < 0 ? { day, period: '' } : { day });
+                    }}
+                  >
+                    <option value={-1}>qualquer dia</option>
+                    {WEEKDAY_SHORT.map((label, d) => (
+                      <option key={d} value={d}>
+                        {label}
+                        {d === TODAY ? ' (hoje)' : ''}
+                      </option>
                     ))}
-                  </div>
-                  {services.hasNextPage && !onlyFavs && (
-                    <div className="center" style={{ marginTop: 16 }}>
-                      <Button
-                        variant="secondary"
-                        onClick={() => void services.fetchNextPage()}
-                        disabled={services.isFetchingNextPage}
-                      >
-                        {services.isFetchingNextPage ? 'Carregando…' : 'Carregar mais'}
-                      </Button>
-                    </div>
+                  </Select>
+                </label>
+                <label className="filter">
+                  <span>Período</span>
+                  <Select
+                    aria-label="Período do dia"
+                    value={filters.period}
+                    disabled={filters.day < 0}
+                    title={filters.day < 0 ? 'Escolha o dia primeiro' : undefined}
+                    onChange={(e) => setFilter({ period: e.target.value as Filters['period'] })}
+                  >
+                    <option value="">qualquer período</option>
+                    {PERIOD_ORDER.map((p) => (
+                      <option key={p} value={p}>
+                        {PERIOD_LABEL[p]}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+              </fieldset>
+
+              <fieldset className="filter-group">
+                <legend>Preço e prazo</legend>
+                <div className="filter-pair">
+                  <label className="filter">
+                    <span>De</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      step="1"
+                      placeholder="R$"
+                      aria-label="Preço mínimo"
+                      value={filters.minPrice}
+                      onChange={(e) => setFilter({ minPrice: e.target.value })}
+                    />
+                  </label>
+                  <label className="filter">
+                    <span>Até</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      step="1"
+                      placeholder="R$"
+                      aria-label="Preço máximo"
+                      value={filters.maxPrice}
+                      onChange={(e) => setFilter({ maxPrice: e.target.value })}
+                    />
+                  </label>
+                </div>
+                <label className="filter">
+                  <span>Prazo</span>
+                  <Select
+                    aria-label="Prazo máximo"
+                    value={filters.maxDeliveryDays}
+                    onChange={(e) => setFilter({ maxDeliveryDays: Number(e.target.value) })}
+                  >
+                    <option value={0}>qualquer</option>
+                    {DELIVERY_OPTIONS.map((d) => (
+                      <option key={d} value={d}>
+                        até {d} dias
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+              </fieldset>
+
+              <fieldset className="filter-group">
+                <legend>Reputação</legend>
+                <label className="filter">
+                  <span>Nota</span>
+                  <Select
+                    aria-label="Nota mínima"
+                    value={filters.minRating}
+                    onChange={(e) => setFilter({ minRating: Number(e.target.value) })}
+                  >
+                    <option value={0}>qualquer</option>
+                    {RATING_OPTIONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}+ estrelas
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <Button
+                  variant="ghost"
+                  className={`toggle ${onlyFavs ? 'on' : ''}`}
+                  aria-pressed={onlyFavs}
+                  onClick={() => setOnlyFavs((v) => !v)}
+                >
+                  <Heart size={16} /> Só favoritos{favIds.size ? ` (${favIds.size})` : ''}
+                </Button>
+              </fieldset>
+            </div>
+
+            <div className="browse-main">
+              <div className="results-bar">
+                <div>
+                  <h2 className="results-title">{resultsTitle}</h2>
+                  {services.data && (
+                    <p className="results-count">
+                      {(() => {
+                        const n = services.data.pages.reduce((t, p) => t + p.items.length, 0);
+                        const label = `${n} ${n === 1 ? 'serviço' : 'serviços'}`;
+                        return services.hasNextPage ? `${label} até agora` : label;
+                      })()}
+                    </p>
                   )}
-                </>
-              );
-            })()
-          )}
+                </div>
+                <div className="results-tools">
+                  <label className="filter sort">
+                    <span>Ordenar</span>
+                    <Select
+                      aria-label="Ordenar por"
+                      value={filters.sort}
+                      onChange={(e) => setFilter({ sort: e.target.value as Sort })}
+                    >
+                      {SORTS.filter((s) => !s.geoOnly || geo).map((s) => (
+                        <option key={s.key} value={s.key}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                  <SaveSearchButton current={currentSearch} disabled={onlyFavs} />
+                </div>
+              </div>
+              <SavedSearchesBar onApply={applySaved} />
+
+              {(active.length > 0 || hasFilters) && (
+                <div className="active-filters">
+                  {active.map((a) => (
+                    <button
+                      key={a.key}
+                      type="button"
+                      className="filter-chip"
+                      aria-label={`Remover o filtro ${a.label}`}
+                      onClick={a.clear}
+                    >
+                      {a.label} <X size={14} aria-hidden="true" />
+                    </button>
+                  ))}
+                  {hasFilters && (
+                    <Button variant="ghost" className="mini" onClick={() => setFilters(NO_FILTERS)}>
+                      Limpar filtros
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {services.isLoading ? (
+                <Skeleton lines={6} />
+              ) : services.error ? (
+                <ErrorState error={services.error} onRetry={() => void services.refetch()} />
+              ) : (
+                (() => {
+                  const all = services.data?.pages.flatMap((p) => p.items) ?? [];
+                  const items = onlyFavs ? all.filter((s) => favIds.has(s.id)) : all;
+                  if (items.length === 0) {
+                    return (
+                      <EmptyState icon={SearchX} title="Nada por aqui">
+                        {onlyFavs
+                          ? 'Nenhum favorito nesta lista. Marque o coração nos serviços.'
+                          : hasFilters
+                            ? 'Nenhum serviço com esses filtros — afrouxe o preço, o prazo ou a nota.'
+                            : geo
+                              ? `Nenhum serviço num raio de ${radiusKm} km — aumente o raio.`
+                              : 'Nenhum serviço encontrado.'}
+                      </EmptyState>
+                    );
+                  }
+                  return (
+                    <>
+                      <div className="cards-grid">
+                        {items.map((s) => (
+                          <ServiceCard
+                            key={s.id}
+                            service={s}
+                            mine={s.ownerId === myId}
+                            onContratar={setContratar}
+                            onBoost={setBoost}
+                            categorySlug={roots.get(s.categoryId)?.slug}
+                            categoryName={roots.get(s.categoryId)?.name}
+                            favorited={favIds.has(s.id)}
+                            onToggleFavorite={(svc) =>
+                              toggleFav.mutate({
+                                targetType: 'service',
+                                targetId: svc.id,
+                                favorited: favIds.has(svc.id),
+                              })
+                            }
+                            onProposeBarter={
+                              isFreelancer
+                                ? (svc) => navigate(`/trocas?propor=${svc.id}`)
+                                : undefined
+                            }
+                          />
+                        ))}
+                      </div>
+                      {services.hasNextPage && !onlyFavs && (
+                        <div className="center">
+                          <Button
+                            variant="secondary"
+                            onClick={() => void services.fetchNextPage()}
+                            disabled={services.isFetchingNextPage}
+                          >
+                            {services.isFetchingNextPage ? 'Carregando…' : 'Carregar mais'}
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()
+              )}
+            </div>
+          </div>
         </>
       )}
 

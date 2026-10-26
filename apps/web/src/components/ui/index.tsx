@@ -1,5 +1,7 @@
-import { AlertTriangle, ArrowLeftRight, Inbox, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, ChevronRight, Inbox, LoaderCircle, X } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -14,31 +16,127 @@ import { errorMessage } from '../../lib/errors';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'mini' | 'danger';
 
+/**
+ * Botão do sistema: primário (sem classe), secundário, fantasma, mini e perigo; tamanho sm (36 px)
+ * ou lg (48 px). Carregando, fica desabilitado, avisa o leitor de tela (aria-busy) e mostra o giro.
+ */
 export function Button({
   variant = 'primary',
+  size,
+  loading = false,
   className = '',
+  disabled,
+  children,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
-  const cls = [variant === 'primary' ? '' : variant, className].filter(Boolean).join(' ');
-  return <button className={cls || undefined} {...props} />;
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: Variant;
+  size?: 'sm' | 'lg';
+  loading?: boolean;
+}) {
+  const cls = [variant === 'primary' ? '' : variant, size ?? '', className]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <button
+      className={cls || undefined}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      {...props}
+    >
+      {loading && <LoaderCircle size={16} className="btn-spin" aria-hidden="true" />}
+      {children}
+    </button>
+  );
 }
 
+/**
+ * Cartão: branco, raio 16, borda decorativa. Com título vira uma seção com cabeçalho (título,
+ * linha de apoio e ação à direita); `interactive` sobe no hover (parado com movimento reduzido).
+ */
 export function Card({
   title,
+  subtitle,
+  action,
   wide = false,
+  interactive = false,
   className = '',
   children,
 }: {
   title?: ReactNode;
+  subtitle?: ReactNode;
+  action?: ReactNode;
   wide?: boolean;
+  interactive?: boolean;
   className?: string;
   children: ReactNode;
 }) {
+  const withHead = title != null && (subtitle != null || action != null);
   return (
-    <section className={['card', wide ? 'wide' : '', className].filter(Boolean).join(' ')}>
-      {title != null && <h3>{title}</h3>}
+    <section
+      className={['card', wide ? 'wide' : '', interactive ? 'interactive' : '', className]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {withHead ? (
+        <div className="card-head">
+          <div>
+            <h3>{title}</h3>
+            {subtitle != null && <p className="card-sub">{subtitle}</p>}
+          </div>
+          {action}
+        </div>
+      ) : (
+        title != null && <h3>{title}</h3>
+      )}
       {children}
     </section>
+  );
+}
+
+/**
+ * Indicador (KPI): rótulo, ícone num quadrado de cor suave, número grande e uma legenda pequena;
+ * opcionalmente a barra de progresso (com nome para o leitor de tela).
+ */
+export function Stat({
+  Icon,
+  label,
+  value,
+  hint,
+  tone,
+  progress,
+  progressLabel = 'Progresso',
+}: {
+  Icon: LucideIcon;
+  label: ReactNode;
+  value: ReactNode;
+  hint?: ReactNode;
+  tone?: 'amber' | 'blue';
+  progress?: number;
+  progressLabel?: string;
+}) {
+  return (
+    <div className={tone ? `kpi ${tone}` : 'kpi'}>
+      <div className="kpi-top">
+        <span className="kpi-label">{label}</span>
+        <span className="kpi-ico" aria-hidden="true">
+          <Icon size={20} />
+        </span>
+      </div>
+      <strong className="kpi-value">{value}</strong>
+      {progress != null && (
+        <div
+          className="bar"
+          role="progressbar"
+          aria-label={progressLabel}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(progress)}
+        >
+          <div className="bar-fill" style={{ width: `${progress}%` }} />
+        </div>
+      )}
+      {hint && <span className="muted tiny">{hint}</span>}
+    </div>
   );
 }
 
@@ -81,19 +179,58 @@ export function TableWrap({ label, children }: { label: string; children: ReactN
   );
 }
 
-/** Cabeçalho de página: título, subtítulo de contexto e ações à direita. */
+export interface Crumb {
+  label: ReactNode;
+  /** Sem endereço, é a página atual (aria-current). */
+  to?: string;
+}
+
+/**
+ * Migalhas: de onde a pessoa veio, com a página atual no fim, sem link. É uma lista com nome, e não
+ * um <nav>: dentro do conteúdo, um marco de navegação a mais embaralharia a ordem "menu antes do
+ * conteúdo" de quem anda pelos marcos da página.
+ */
+export function Breadcrumbs({ items }: { items: Crumb[] }) {
+  return (
+    <div className="breadcrumbs">
+      <ol aria-label="Você está em">
+        {items.map((c, i) => (
+          <li key={i}>
+            {i > 0 && <ChevronRight size={14} aria-hidden="true" />}
+            {c.to ? <Link to={c.to}>{c.label}</Link> : <span aria-current="page">{c.label}</span>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/**
+ * Cabeçalho de página, o mesmo em todas as telas: migalhas (quando ajudam), uma linha de contexto
+ * acima do título, o título (h1), a descrição e as ações à direita (quebram para baixo).
+ */
 export function PageHeader({
   title,
   subtitle,
   action,
+  eyebrow,
+  breadcrumbs,
+  leading,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   action?: ReactNode;
+  eyebrow?: ReactNode;
+  breadcrumbs?: Crumb[];
+  /** Algo antes do texto (o avatar no Início). */
+  leading?: ReactNode;
 }) {
   return (
-    <div className="page-head">
-      <div>
+    <div className={leading ? 'page-head has-leading' : 'page-head'}>
+      {leading}
+      <div className="page-head-text">
+        {breadcrumbs && <Breadcrumbs items={breadcrumbs} />}
+        {eyebrow && <span className="page-eyebrow">{eyebrow}</span>}
         <h1>{title}</h1>
         {subtitle && <p className="muted">{subtitle}</p>}
       </div>
@@ -127,13 +264,26 @@ export function Skeleton({ lines = 3 }: { lines?: number }) {
   );
 }
 
-export function EmptyState({ children }: { children: ReactNode }) {
+/** Estado vazio: ícone num círculo, título (opcional), a frase do que vai aparecer ali e a ação. */
+export function EmptyState({
+  children,
+  title,
+  icon: Icon = Inbox,
+  action,
+}: {
+  children?: ReactNode;
+  title?: ReactNode;
+  icon?: LucideIcon;
+  action?: ReactNode;
+}) {
   return (
     <div className="empty">
-      <span className="empty-ico">
-        <Inbox size={22} />
+      <span className="empty-ico" aria-hidden="true">
+        <Icon size={26} />
       </span>
-      <p className="muted">{children}</p>
+      {title && <p className="empty-title">{title}</p>}
+      {children && <p className="muted">{children}</p>}
+      {action && <div className="empty-action">{action}</div>}
     </div>
   );
 }

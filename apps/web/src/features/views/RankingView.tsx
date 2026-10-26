@@ -1,4 +1,4 @@
-import { MapPin, Trophy } from 'lucide-react';
+import { Crown, MapPin, Trophy } from 'lucide-react';
 import { useState } from 'react';
 import type { LeaderboardEntry, LeaderboardQuery } from '@escambo/types';
 import { Button, Chip, PageHeader, QueryState, Select } from '../../components/ui';
@@ -15,6 +15,14 @@ const initials = (name: string | null): string =>
     .slice(0, 2)
     .map((p) => p[0]!.toUpperCase())
     .join('');
+
+/** Cor do avatar de iniciais, estável por pessoa (todas com texto branco acima de 4,5:1). */
+const AVATAR_TONES = ['a-green', 'a-blue', 'a-violet', 'a-amber', 'a-red', 'a-teal'];
+export function avatarTone(ulid: string): string {
+  let h = 0;
+  for (const ch of ulid) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATAR_TONES[h % AVATAR_TONES.length]!;
+}
 
 /** "★ 4,8 · 12 concluídas · a 3,2 km": os critérios da RN-056 de cada freelancer. */
 function criteria(e: LeaderboardEntry): string {
@@ -130,20 +138,40 @@ export function RankingView() {
           const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean) as LeaderboardEntry[];
           return (
             <>
-              <div className="podium">
-                {podiumOrder.map((e) => (
-                  <div key={e.userUlid} className={`podium-col p${e.rank} ${isMe(e) ? 'me' : ''}`}>
-                    <span className="medal">{e.rank}</span>
-                    <div className="avatar" aria-hidden="true">
-                      {initials(e.name)}
+              {/* O pódio num palco escuro: 2º, 1º e 3º lado a lado (o 1º mais alto, com a coroa).
+                  A ordem na tela é a do documento: o leitor de tela ouve 2º, 1º e 3º, cada um com a
+                  posição escrita. */}
+              <section className="podium-stage" aria-label="Pódio">
+                <span className="podium-deco" aria-hidden="true" />
+                <div className="podium">
+                  {podiumOrder.map((e) => (
+                    <div
+                      key={e.userUlid}
+                      className={`podium-col p${e.rank} ${isMe(e) ? 'me' : ''}`}
+                    >
+                      <div className="podium-person">
+                        {e.rank === 1 && (
+                          <Crown size={22} className="podium-crown" aria-hidden="true" />
+                        )}
+                        <div
+                          className={`avatar podium-avatar ${avatarTone(e.userUlid)}`}
+                          aria-hidden="true"
+                        >
+                          {initials(e.name)}
+                        </div>
+                        <span className="medal">{e.rank}º</span>
+                        <strong className="pname">{e.name ?? 'Anônimo'}</strong>
+                        <span className="podium-level">{e.levelName}</span>
+                        <span className="xp">{filtered ? criteria(e) : `${e.totalXp} XP`}</span>
+                        {isMe(e) && <span className="podium-me">você</span>}
+                      </div>
+                      <div className="stand" aria-hidden="true">
+                        {e.rank}
+                      </div>
                     </div>
-                    <strong className="pname">{e.name ?? 'Anônimo'}</strong>
-                    <Chip>{e.levelName}</Chip>
-                    <span className="xp">{filtered ? criteria(e) : `${e.totalXp} XP`}</span>
-                    <div className="stand">{e.rank}º</div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </section>
 
               {rest.length > 0 && (
                 <section className="card">
@@ -152,7 +180,7 @@ export function RankingView() {
                       <li key={e.userUlid} className={isMe(e) ? 'me-row' : ''}>
                         <div className="rank-left">
                           <span className="pos">{e.rank}º</span>
-                          <div className="avatar sm" aria-hidden="true">
+                          <div className={`avatar sm ${avatarTone(e.userUlid)}`} aria-hidden="true">
                             {initials(e.name)}
                           </div>
                           <div>

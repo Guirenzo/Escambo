@@ -9,6 +9,7 @@ import {
   latestEmail,
   linkIn,
   openAs,
+  openLanding,
   settled,
   type TestUser,
 } from './helpers';
@@ -28,7 +29,10 @@ import {
 
 const h = (t: string) => ({ Authorization: `Bearer ${t}` });
 
-const CSS = readFileSync(fileURLToPath(new URL('../src/styles.css', import.meta.url)), 'utf8');
+const read = (path: string): string =>
+  readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
+/** O CSS do app e o da página inicial (importado só por ela). Os tokens ficam no primeiro :root. */
+const CSS = [read('../src/styles.css'), read('../src/features/landing/landing.css')].join('\n');
 
 /** Contraste WCAG entre duas cores #rrggbb. */
 function contrast(a: string, b: string): number {
@@ -72,6 +76,77 @@ test('tokens de styles.css: contraste dos pares usados, foco nunca tirado sem tr
     ['anel de foco sobre o cartão', token('focus'), token('surface'), 3],
     ['anel de foco sobre o fundo', token('focus'), token('bg'), 3],
     ['anel de foco sobre verde-claro', token('focus'), token('green-soft'), 3],
+    // Página inicial: fundos claros (papel e verde-claro) e as seções escuras (hero, final, rodapé).
+    ['texto sobre o papel', token('text'), token('paper'), 4.5],
+    ['texto secundário sobre o papel', token('muted'), token('paper'), 4.5],
+    ['texto secundário sobre o verde-claro da landing', token('muted'), token('mint'), 4.5],
+    ['link e botão sobre o papel', token('green'), token('paper'), 4.5],
+    ['link sobre o verde-claro da landing', token('green'), token('mint'), 4.5],
+    ['contorno de campo sobre o papel', token('border-input'), token('paper'), 3],
+    ['contorno de campo sobre o verde-claro da landing', token('border-input'), token('mint'), 3],
+    ['anel de foco sobre o papel', token('focus'), token('paper'), 3],
+    ['anel de foco sobre o verde-claro da landing', token('focus'), token('mint'), 3],
+    ['texto no escuro (hero)', token('on-dark'), token('green-ink'), 4.5],
+    ['texto secundário no escuro (hero)', token('on-dark-muted'), token('green-ink'), 4.5],
+    ['texto no escuro (final e rodapé)', token('on-dark'), token('green-deep'), 4.5],
+    ['texto secundário no escuro (rodapé)', token('on-dark-muted'), token('green-deep'), 4.5],
+    ['texto secundário no cartão escuro', token('on-dark-muted'), token('green-ink-raised'), 4.5],
+    ['âmbar claro no escuro (destaque)', token('amber-bright'), token('green-ink'), 4.5],
+    ['botão âmbar (verde-escuro sobre âmbar)', token('green-ink'), token('amber-bright'), 4.5],
+    ['botão âmbar em hover', token('green-ink'), token('amber-bright-hover'), 4.5],
+    ['anel de foco no escuro (hero)', token('focus-on-dark'), token('green-ink'), 3],
+    ['anel de foco no escuro (final e rodapé)', token('focus-on-dark'), token('green-deep'), 3],
+    ['anel branco do botão âmbar', token('on-dark'), token('green-ink'), 3],
+    // App v2: a barra lateral escura (--green-deep) e os fundos dos itens.
+    ['item da lateral', token('nav-text'), token('green-deep'), 4.5],
+    ['rótulo de grupo da lateral', token('nav-label'), token('green-deep'), 4.5],
+    ['item da lateral em hover', token('on-dark'), token('nav-hover'), 4.5],
+    ['item da lateral em hover (texto secundário)', token('nav-text'), token('nav-hover'), 4.5],
+    ['item ativo da lateral', token('on-dark'), token('nav-active'), 4.5],
+    ['ícone âmbar do item ativo', token('amber-bright'), token('nav-active'), 3],
+    ['não lidas na lateral (escuro sobre âmbar)', token('green-deep'), token('amber-bright'), 4.5],
+    ['nome no cartão de quem está logado', token('on-dark'), token('nav-card'), 4.5],
+    ['papel no cartão de quem está logado', token('nav-text'), token('nav-card'), 4.5],
+    ['anel de foco na lateral', token('focus-on-dark'), token('green-deep'), 3],
+    ['anel de foco no item ativo', token('focus-on-dark'), token('nav-active'), 3],
+    ['"Destaque" na capa (âmbar sobre o escuro)', token('amber-bright'), token('green-deep'), 4.5],
+    ['status vermelho (texto sobre vermelho-claro)', token('red-ink'), token('red-soft'), 4.5],
+    [
+      '"Aceita troca" (âmbar escuro sobre âmbar-claro)',
+      token('amber-ink'),
+      token('amber-soft'),
+      4.5,
+    ],
+    [
+      'chip de filtro (verde-escuro sobre verde-claro)',
+      token('green-ink'),
+      token('green-soft'),
+      4.5,
+    ],
+    ['texto secundário sobre o verde-claro do Início', token('muted'), token('mint'), 4.5],
+    ['contorno de campo sobre o bloco claro', token('border-input'), token('surface-2'), 3],
+    // App v3: atalhos e ícones em violeta, avatares de iniciais, degraus do pódio e o verde elevado.
+    ['violeta (texto sobre violeta-claro)', token('violet-ink'), token('violet-soft'), 4.5],
+    ['avatar de iniciais (branco sobre violeta)', WHITE, token('violet-ink'), 4.5],
+    ['avatar de iniciais (branco sobre azul-escuro)', WHITE, token('blue-ink'), 4.5],
+    ['avatar de iniciais (branco sobre vermelho-escuro)', WHITE, token('red-ink'), 4.5],
+    ['avatar de iniciais (branco sobre verde-azulado)', WHITE, token('teal-ink'), 4.5],
+    ['avatar de iniciais (branco sobre verde)', WHITE, token('green'), 4.5],
+    ['degrau do 2º lugar (verde-escuro sobre prata)', token('green-deep'), token('silver'), 4.5],
+    ['degrau do 3º lugar (verde-escuro sobre bronze)', token('green-deep'), token('bronze'), 4.5],
+    [
+      'texto no cartão escuro elevado (passos da troca, nível no pódio)',
+      token('on-dark'),
+      token('green-ink-raised'),
+      4.5,
+    ],
+    [
+      'contorno do botão claro sobre o escuro (Pedir saque)',
+      token('on-dark-muted'),
+      token('green-deep'),
+      3,
+    ],
+    ['texto secundário sobre a não lida (verde-claro)', token('muted'), token('mint'), 4.5],
   ];
   const rows = pairs.map(([what, fg, bg, min]) => ({ what, ratio: contrast(fg, bg), min }));
   test.info().annotations.push({
@@ -122,9 +197,12 @@ test('cada rota tem título próprio, a página é pt-BR e a troca de tela é an
     // O título das telas com dados chega com eles: espera sair do provisório.
     await expect(page).not.toHaveTitle(/^(Serviço|Contratação|Freelancer) · Escambo$/);
     expect(await page.locator('html').getAttribute('lang'), `${path}: idioma`).toBe('pt-BR');
-    titles.set(path, await page.title());
+    // A raiz sem sessão (página inicial) e com sessão (Início) são telas diferentes.
+    titles.set(user ? path : `${path} (sem sessão)`, await page.title());
   };
   for (const path of [
+    '/',
+    '/cadastro',
     '/login',
     '/esqueci-senha',
     '/redefinir-senha?token=x',
@@ -232,6 +310,8 @@ test('alvos de toque têm pelo menos 24 px ou espaço livre em volta', async ({ 
   const contractId = await deliveredContract(request, client, freelancer, service);
   const problems: string[] = [];
   for (const [user, path] of [
+    [null, '/'],
+    [null, '/cadastro'],
     [null, '/login'],
     [client, '/'],
     [client, '/servicos'],
@@ -419,11 +499,13 @@ test('contraste do sistema de design em repouso, hover, foco e desabilitado', as
   }
 
   // Navegação principal: o link (texto ou só ícone, conforme a largura) em repouso, hover e ativo.
+  // No celular, Perfil fica na folha do "Mais" da barra de baixo.
   const nav = page.getByRole('navigation', { name: 'Principal' });
   for (const [name, link] of [
     ['menu', nav.getByRole('link', { name: 'Carteira', exact: true })],
     ['menu ativo', nav.getByRole('link', { name: 'Perfil', exact: true })],
   ] as const) {
+    if (!(await link.isVisible())) await nav.getByRole('button', { name: 'Mais' }).click();
     await page.mouse.move(0, 0);
     const rest = await measure(link);
     await link.hover();
@@ -438,6 +520,70 @@ test('contraste do sistema de design em repouso, hover, foco e desabilitado', as
 
   test.info().annotations.push({
     type: 'contraste (repouso/hover/foco/desabilitado)',
+    description: rows.join(' | '),
+  });
+  expect(problems, `${problems.join('\n')}\n\n${rows.join('\n')}`).toEqual([]);
+});
+
+test('página inicial: contraste das chamadas em repouso, hover e foco, no claro e no escuro', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openLanding(page);
+  const banner = page.getByRole('banner');
+  const hero = page.locator('.lp-hero');
+  const final = page.locator('.lp-final');
+  const footer = page.getByRole('contentinfo');
+  const targets: [string, Locator][] = [
+    ['topo: Entrar', banner.getByRole('link', { name: 'Entrar', exact: true })],
+    ['topo: Criar conta', banner.getByRole('link', { name: 'Criar conta', exact: true })],
+    ['hero: Criar conta (âmbar)', hero.getByRole('link', { name: 'Criar conta', exact: true })],
+    ['hero: Ver como funciona (contorno)', hero.getByRole('link', { name: 'Ver como funciona' })],
+    ['hero: Entrar (link no texto)', hero.getByRole('link', { name: 'Entrar', exact: true })],
+    ['caminho: Criar conta de cliente', page.getByRole('link', { name: /Criar conta de cliente/ })],
+    ['categoria (chip)', page.locator('.lp-chip').first()],
+    ['final: Criar conta (âmbar)', final.getByRole('link', { name: 'Criar conta', exact: true })],
+    ['final: Entrar (contorno)', final.getByRole('link', { name: 'Entrar', exact: true })],
+    ['rodapé: Termos de Uso', footer.getByRole('link', { name: 'Termos de Uso' })],
+  ];
+  // As âncoras do topo só existem a partir de 48rem (no celular saem, sem menu escondido).
+  const anchor = page.getByRole('navigation', { name: 'Seções da página' }).getByRole('link', {
+    name: 'Garantia',
+  });
+  if (await anchor.isVisible()) targets.push(['topo: âncora', anchor]);
+
+  const rows: string[] = [];
+  const problems: string[] = [];
+  for (const [name, el] of targets) {
+    await el.scrollIntoViewIfNeeded();
+    await page.mouse.move(0, 0);
+    const rest = await measure(el);
+    await el.hover();
+    const hover = await measure(el);
+    await page.mouse.move(0, 0);
+    // Foco pelo teclado (o :focus-visible só vale assim): Tab a partir de um marcador logo antes.
+    await el.evaluate((n) => {
+      const mark = document.createElement('span');
+      mark.tabIndex = -1;
+      n.before(mark);
+      mark.focus();
+      mark.addEventListener('blur', () => mark.remove(), { once: true });
+    });
+    await page.keyboard.press('Tab');
+    await expect(el).toBeFocused();
+    const focus = await measure(el);
+    await el.evaluate((n) => (n as HTMLElement).blur());
+    rows.push(`${name}: texto ${rest.text}/${hover.text}/${focus.text}; anel ${focus.ring}`);
+    for (const [state, m] of [
+      ['repouso', rest],
+      ['hover', hover],
+      ['foco', focus],
+    ] as const)
+      if (m.text < 4.5) problems.push(`${name} (${state}): texto ${m.text}:1`);
+    if (focus.ring < 3) problems.push(`${name} (foco): anel ${focus.ring}:1`);
+  }
+  test.info().annotations.push({
+    type: 'contraste da página inicial (repouso/hover/foco)',
     description: rows.join(' | '),
   });
   expect(problems, `${problems.join('\n')}\n\n${rows.join('\n')}`).toEqual([]);

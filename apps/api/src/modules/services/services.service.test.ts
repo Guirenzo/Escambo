@@ -1077,6 +1077,42 @@ describe('servicesService.list — filtros, paginação e o card da busca', () =
     expect(items[1]).not.toHaveProperty('distanceKm');
   });
 
+  it('o card traz a cidade e a capa (primeira imagem do portfólio) de quem presta, ou null sem elas', async () => {
+    repo.list.mockResolvedValue([
+      fakeRow({
+        id: 1,
+        owner_ulid: '01HZX',
+        owner_name: 'Ana',
+        owner_city: 'Joinville',
+        owner_cover_url: '/api/media/capa.webp',
+      } as never),
+      fakeRow({
+        id: 2,
+        owner_ulid: '01HZY',
+        owner_name: 'Bia',
+        owner_city: null,
+        owner_cover_url: null,
+      } as never),
+    ]);
+
+    const { items } = await servicesService.list({
+      page: 1,
+      limit: 20,
+      radiusKm: 25,
+      sort: 'relevance',
+    });
+
+    expect(items[0]).toMatchObject({
+      ownerCity: 'Joinville',
+      ownerCoverUrl: '/api/media/capa.webp',
+    });
+    expect(items[1]).toMatchObject({ ownerCity: null, ownerCoverUrl: null });
+    // Nada do perfil além do que o perfil público já mostra: sem coordenadas no card.
+    for (const item of items) {
+      expect(Object.keys(item).filter((k) => /lat|lng|longitude|latitude/i.test(k))).toEqual([]);
+    }
+  });
+
   it('distância zero (prestador no próprio ponto da busca) aparece como 0, e não some do card', async () => {
     repo.list.mockResolvedValue([
       fakeRow({ id: 1, distance_km: 0 } as never),

@@ -5,11 +5,12 @@ import type { Contract, GamificationProfile, Wallet } from '@escambo/types';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../lib/toast';
-import { InicioView } from './InicioView';
+import { greetingFor, InicioView, shortcutsFor, todayLabel } from './InicioView';
 
 /**
- * Início: o resumo de quem entrou (saldo, escrow, créditos, nível), as contratações com o atalho
- * para a Sala e só as ações que avançam o contrato, as conquistas e o aviso de perfil incompleto.
+ * Início: a faixa de boas-vindas com os atalhos, o resumo de quem entrou (saldo, escrow, créditos),
+ * as categorias, as contratações com o atalho para a Sala e só as ações que avançam o contrato, o
+ * progresso (nível, ranking e conquistas) e o aviso de perfil incompleto.
  */
 
 const wallet = vi.fn();
@@ -17,6 +18,8 @@ const gamification = vi.fn();
 const contracts = vi.fn();
 const profilesMe = vi.fn();
 const contractAction = vi.fn();
+const listServices = vi.fn();
+const notifications = vi.fn();
 vi.mock('../../lib/api', () => ({
   api: {
     wallet: () => wallet(),
@@ -24,8 +27,13 @@ vi.mock('../../lib/api', () => ({
     contracts: (query: unknown) => contracts(query),
     profilesMe: () => profilesMe(),
     contractAction: (id: number, action: string) => contractAction(id, action),
+    // O carrossel "Perto de você" tem teste próprio (NearbyServices.test.tsx); aqui, vazio.
+    listServices: (query: unknown) => listServices(query),
     // O cartão de missões tem teste próprio (MissionsCard.test.tsx); aqui, sem missões.
     missions: () => Promise.resolve([]),
+    notifications: () => notifications(),
+    // A faixa de categorias tem teste próprio (CategoryStrip.test.tsx); aqui, sem categorias.
+    categories: () => Promise.resolve([]),
   },
 }));
 
@@ -145,6 +153,41 @@ beforeEach(() => {
   profilesMe.mockResolvedValue({ freelancer: { fullName: 'Bruno Costa' }, client: null });
   contractAction.mockReset();
   contractAction.mockResolvedValue(undefined);
+  listServices.mockReset();
+  listServices.mockResolvedValue({ items: [], page: 1, limit: 12 });
+  notifications.mockReset();
+  notifications.mockResolvedValue({ items: [], unreadCount: 3 });
+});
+
+/** O cartão de uma contratação, pelo título. */
+const cardOf = (title: RegExp): HTMLElement => screen.getByRole('article', { name: title });
+/** R$ com espaço normal (o Intl usa espaço não separável). */
+const plain = (s: string | null | undefined): string => (s ?? '').replace(/\u00a0/g, ' ');
+/** O valor de um item da lista de definições do cartão ("Valor", "Pagamento"). */
+const meta = (card: HTMLElement, label: string): string =>
+  plain(within(card).getByText(label).nextElementSibling?.textContent);
+/** O cartão "Seu progresso". */
+const progress = (): HTMLElement =>
+  screen.getByRole('heading', { name: 'Seu progresso' }).closest('section')!;
+
+describe('cumprimento e data', () => {
+  it('bom dia das 5h às 11h, boa tarde das 12h às 17h, boa noite no resto', () => {
+    const at = (h: number) => greetingFor(new Date(2026, 9, 20, h, 30));
+    expect([at(4), at(5), at(11), at(12), at(17), at(18), at(23), at(0)]).toEqual([
+      'Boa noite',
+      'Bom dia',
+      'Bom dia',
+      'Boa tarde',
+      'Boa tarde',
+      'Boa noite',
+      'Boa noite',
+      'Boa noite',
+    ]);
+  });
+
+  it('a data vai por extenso, com a primeira letra maiúscula', () => {
+    expect(todayLabel(new Date(2026, 9, 20, 9))).toBe('Terça-feira, 20 de outubro');
+  });
 });
 
 describe('InicioView', () => {
@@ -156,13 +199,17 @@ describe('InicioView', () => {
     profilesMe.mockReturnValue(never);
     renderView();
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Olá, bruno' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: /^(Bom dia|Boa tarde|Boa noite), bruno$/ }),
+    ).toBeInTheDocument();
     expect(kpi('Saldo disponível')).toHaveTextContent('Saldo disponível—para saque');
     expect(kpi('Em escrow')).toHaveTextContent('Em escrow—retido em contratações');
     expect(kpi('Créditos Escambo')).toHaveTextContent('—para contratar ou impulsionar');
-    expect(kpi('Nível')).toHaveTextContent(/^Nível—$/);
+    // O nível sai da fileira de indicadores: fica no cartão "Seu progresso", que ainda carrega.
+    expect(screen.queryByText(/^Nível/)).not.toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-    expect(screen.getByRole('status', { name: 'Carregando' })).toBeInTheDocument();
+    // Dois esqueletos: o do "Perto de você" e o das contratações.
+    expect(screen.getAllByRole('status', { name: 'Carregando' })).toHaveLength(2);
     expect(screen.getByText('Carregando…')).toBeInTheDocument();
     expect(screen.queryByText(/no total$/)).not.toBeInTheDocument();
     // Sem saber se há perfil, o aviso de completar o perfil não aparece.
@@ -177,9 +224,14 @@ describe('InicioView', () => {
     expect(kpi('Em escrow')).toHaveTextContent('R$ 300,00');
     expect(kpi('Créditos Escambo')).toHaveTextContent('40para contratar ou impulsionar');
 
-    const level = kpi('Nível 3 · Profissional');
-    expect(level).toHaveTextContent('950 XP');
-    expect(level).toHaveTextContent('faltam 250 XP · #3 no ranking');
+    const card = progress();
+    expect(card).toHaveTextContent('Nível 3 · Profissional');
+    expect(card).toHaveTextContent('950 XP');
+    expect(card).toHaveTextContent('faltam 250 XP para o nível 4');
+    expect(within(card).getByRole('link', { name: 'Você é #3 no ranking' })).toHaveAttribute(
+      'href',
+      '/ranking',
+    );
     expect(screen.getByRole('progressbar', { name: 'Progresso de nível' })).toHaveAttribute(
       'aria-valuenow',
       '62',
@@ -210,18 +262,22 @@ describe('InicioView', () => {
 
     expect(await screen.findByText('5 em escrow')).toBeInTheDocument();
     expect(kpi('Créditos Escambo')).toHaveTextContent('155 em escrow');
-    const level = kpi('Nível 5 · Mestre');
-    expect(level).toHaveTextContent('9000 XP');
-    expect(level).toHaveTextContent('nível máximo');
-    expect(level).not.toHaveTextContent('no ranking');
+    const card = progress();
+    expect(card).toHaveTextContent('Nível 5 · Mestre');
+    expect(card).toHaveTextContent('9.000 XP');
+    expect(card).toHaveTextContent('nível máximo');
+    expect(card).not.toHaveTextContent('para o nível');
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
   });
 
-  it('quem ainda não tem posição vê um travessão no lugar do número do ranking', async () => {
+  it('quem ainda não tem posição vê que está fora do ranking, com o link para ele', async () => {
     gamification.mockResolvedValue(gamificationOf({ rank: null }));
     renderView();
 
-    expect(await screen.findByText('faltam 250 XP · #— no ranking')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Ainda fora do ranking' })).toHaveAttribute(
+      'href',
+      '/ranking',
+    );
   });
 
   it('o cumprimento usa o primeiro nome do perfil de freelancer; sem ele, o do perfil de cliente', async () => {
@@ -230,13 +286,23 @@ describe('InicioView', () => {
       client: { fullName: 'Carla Dias' },
     });
     const first = renderView();
-    expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Marina' })).toBeVisible();
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: /^(Bom dia|Boa tarde|Boa noite), Marina$/,
+      }),
+    ).toBeVisible();
     first.unmount();
 
     profilesMe.mockResolvedValue({ freelancer: null, client: { fullName: 'Carla Dias' } });
     auth.user = { id: 1, email: 'bruno@escambo.test', role: 'client' };
     renderView();
-    expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Carla' })).toBeVisible();
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: /^(Bom dia|Boa tarde|Boa noite), Carla$/,
+      }),
+    ).toBeVisible();
   });
 
   it('freelancer sem perfil vê o aviso com o link para completar', async () => {
@@ -255,14 +321,24 @@ describe('InicioView', () => {
     profilesMe.mockResolvedValue({ freelancer: null, client: { fullName: 'Carla Dias' } });
     const first = renderView();
     // O nome do perfil na tela garante que os perfis já chegaram antes de conferir a ausência.
-    expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Carla' })).toBeVisible();
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: /^(Bom dia|Boa tarde|Boa noite), Carla$/,
+      }),
+    ).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Completar perfil' })).not.toBeInTheDocument();
     first.unmount();
 
     auth.user = { id: 1, email: 'bruno@escambo.test', role: 'freelancer' };
     profilesMe.mockResolvedValue({ freelancer: { fullName: 'Bruno Costa' }, client: null });
     renderView();
-    expect(await screen.findByRole('heading', { level: 1, name: 'Olá, Bruno' })).toBeVisible();
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: /^(Bom dia|Boa tarde|Boa noite), Bruno$/,
+      }),
+    ).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Completar perfil' })).not.toBeInTheDocument();
   });
 
@@ -273,7 +349,7 @@ describe('InicioView', () => {
       await screen.findByText('Nenhuma contratação ainda. Encontre um serviço em Serviços.'),
     ).toBeInTheDocument();
     expect(screen.getByText('0 no total')).toBeInTheDocument();
-    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
   });
 
   it('lista as contratações com valor na moeda da modalidade e o status em português', async () => {
@@ -291,15 +367,15 @@ describe('InicioView', () => {
     );
     renderView();
 
-    const logo = await screen.findByRole('row', { name: /Logo da padaria/ });
+    const logo = await screen.findByRole('article', { name: /Logo da padaria/ });
     expect(screen.getByText('2 no total')).toBeInTheDocument();
-    expect(within(logo).getByText(/· Dinheiro$/)).toBeInTheDocument();
-    expect(within(logo).getByText('R$ 200,00')).toBeInTheDocument();
+    expect(meta(logo, 'Pagamento')).toBe('Dinheiro');
+    expect(meta(logo, 'Valor')).toBe('R$ 200,00');
     expect(within(logo).getByText('Em andamento')).toBeInTheDocument();
 
-    const lesson = screen.getByRole('row', { name: /Aula de violão/ });
-    expect(within(lesson).getByText(/· Créditos$/)).toBeInTheDocument();
-    expect(within(lesson).getByText('30 cr')).toBeInTheDocument();
+    const lesson = cardOf(/Aula de violão/);
+    expect(meta(lesson, 'Pagamento')).toBe('Créditos');
+    expect(meta(lesson, 'Valor')).toBe('30 cr');
     expect(within(lesson).getByText('Concluído')).toBeInTheDocument();
   });
 
@@ -307,20 +383,20 @@ describe('InicioView', () => {
     contracts.mockResolvedValue(page([contractOf({ id: 5, title: 'Logo da padaria' })], 37));
     renderView();
 
-    expect(await screen.findByRole('row', { name: /Logo da padaria/ })).toBeInTheDocument();
+    expect(await screen.findByRole('article', { name: /Logo da padaria/ })).toBeInTheDocument();
     expect(screen.getByText('37 no total')).toBeInTheDocument();
     expect(contracts).toHaveBeenCalledWith({ page: 1, limit: 20 });
   });
 
-  it('"Sala" abre a sala daquela contratação', async () => {
+  it('"Abrir sala" abre a sala daquela contratação', async () => {
     const user = userEvent.setup();
     contracts.mockResolvedValue(
       page([contractOf({ id: 5, title: 'Logo da padaria' }), contractOf({ id: 8 })]),
     );
     renderView();
 
-    const row = await screen.findByRole('row', { name: /Contratação 8/ });
-    await user.click(within(row).getByRole('button', { name: 'Sala' }));
+    const card = await screen.findByRole('article', { name: /Contratação 8/ });
+    await user.click(within(card).getByRole('button', { name: 'Abrir sala' }));
 
     expect(await screen.findByText('rota: /contratos/8')).toBeInTheDocument();
   });
@@ -330,9 +406,9 @@ describe('InicioView', () => {
     contracts.mockResolvedValue(page([contractOf({ id: 5, status: 'pending' })]));
     renderView();
 
-    const row = await screen.findByRole('row', { name: /Contratação 5/ });
-    expect(within(row).queryByRole('button', { name: 'Recusar' })).not.toBeInTheDocument();
-    await user.click(within(row).getByRole('button', { name: 'Aceitar' }));
+    const card = await screen.findByRole('article', { name: /Contratação 5/ });
+    expect(within(card).queryByRole('button', { name: 'Recusar' })).not.toBeInTheDocument();
+    await user.click(within(card).getByRole('button', { name: 'Aceitar' }));
 
     await waitFor(() => expect(contractAction).toHaveBeenCalledTimes(1));
     expect(contractAction).toHaveBeenCalledWith(5, 'accept');
@@ -364,8 +440,78 @@ describe('InicioView', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Erro ao listar contratações.');
     await user.click(screen.getByRole('button', { name: 'Tentar de novo' }));
 
-    expect(await screen.findByRole('row', { name: /Logo da padaria/ })).toBeInTheDocument();
+    expect(await screen.findByRole('article', { name: /Logo da padaria/ })).toBeInTheDocument();
     expect(contracts).toHaveBeenCalledTimes(2);
+  });
+
+  it('a ação principal e os atalhos mudam com o papel, com o saldo e as não lidas de agora', async () => {
+    const first = renderView();
+    const welcome = screen.getByRole('region', { name: /^(Bom dia|Boa tarde|Boa noite), / });
+    expect(within(welcome).getByRole('link', { name: 'Publicar um serviço' })).toHaveAttribute(
+      'href',
+      '/servicos?novo=1',
+    );
+    const shortcuts = (): string[][] =>
+      within(screen.getByRole('list', { name: 'Atalhos' }))
+        .getAllByRole('link')
+        .map((a) => [plain(a.textContent), a.getAttribute('href') ?? '']);
+    await waitFor(() =>
+      expect(shortcuts()).toEqual([
+        ['Propor uma troca' + 'serviço por serviço', '/trocas'],
+        ['Sacar meus ganhos' + 'R$ 1.234,56 disponível', '/carteira'],
+        ['Notificações' + '3 não lidas', '/notificacoes'],
+        ['Pedir ajuda' + 'fale com o suporte', '/suporte'],
+      ]),
+    );
+    first.unmount();
+
+    auth.user = { id: 1, email: 'bruno@escambo.test', role: 'client' };
+    notifications.mockResolvedValue({ items: [], unreadCount: 0 });
+    renderView();
+    await waitFor(() =>
+      expect(shortcuts().map(([text]) => text)).toEqual([
+        'Adicionar saldo' + 'R$ 1.234,56 disponível',
+        'Notificações' + 'tudo em dia',
+        'Meu perfil' + 'foto, cidade e segurança',
+        'Pedir ajuda' + 'fale com o suporte',
+      ]),
+    );
+    expect(screen.getByRole('link', { name: 'Encontrar um profissional' })).toHaveAttribute(
+      'href',
+      '/servicos',
+    );
+  });
+
+  it('sem a carteira ainda, o atalho do dinheiro diz para que serve, sem número', () => {
+    expect(shortcutsFor('client', { balance: null, unread: 1 }).map((s) => s.hint)).toEqual([
+      'saldo e extrato',
+      '1 não lida',
+      'foto, cidade e segurança',
+      'fale com o suporte',
+    ]);
+  });
+
+  it('a faixa de boas-vindas traz a ilustração decorativa e o selo do pagamento protegido', () => {
+    renderView();
+    const art = document.querySelector('.welcome-art')!;
+    expect(art).toHaveAttribute('aria-hidden', 'true');
+    expect(art.querySelector('img')).toHaveAttribute('alt', '');
+    expect(art).toHaveTextContent('Pagamento protegido');
+  });
+
+  it('o passo a passo do escrow fala com quem lê: cliente aprova, freelancer entrega', async () => {
+    const first = renderView();
+    const steps = () =>
+      within(
+        screen.getByRole('heading', { name: 'Pagamento protegido', level: 3 }).closest('section')!,
+      )
+        .getAllByRole('listitem')
+        .map((li) => li.querySelector('strong')?.textContent);
+    expect(steps()).toEqual(['O cliente paga', 'Você entrega', 'Aprovou, caiu']);
+    first.unmount();
+    auth.user = { id: 1, email: 'bruno@escambo.test', role: 'client' };
+    renderView();
+    expect(steps()).toEqual(['Você paga', 'O freelancer entrega', 'Você aprova']);
   });
 
   it('conquistas: mostra os badges e os dias seguidos de atividade', async () => {

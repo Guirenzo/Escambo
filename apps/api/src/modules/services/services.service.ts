@@ -55,6 +55,9 @@ function toService(row: ServiceRow, tags: string[] = []): Service {
     isActive: Boolean(row.is_active),
     createdAt:
       row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+    // Distância com 1 casa. O banco já a calcula sobre a coordenada do prestador arredondada a ~1 km
+    // (utils/coarse-coord, também no raio e na ordem): nem a distância nem o corte do raio, mesmo
+    // com o ponto da busca mexido aos poucos, chegam mais perto da casa dele que o perfil público.
     ...(row.distance_km != null
       ? { distanceKm: Math.round(Number(row.distance_km) * 10) / 10 }
       : {}),
@@ -75,6 +78,9 @@ function toService(row: ServiceRow, tags: string[] = []): Service {
             timezone: row.owner_timezone,
           }),
           ownerTimezone: timezoneOf(row.owner_timezone),
+          // Ausentes só em linha montada à mão (testes): aí ficam fora do objeto.
+          ownerCity: row.owner_city,
+          ownerCoverUrl: row.owner_cover_url,
         }
       : {}),
   };

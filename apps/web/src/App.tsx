@@ -7,7 +7,7 @@ import {
   useNavigate,
   useParams,
 } from 'react-router-dom';
-import { backTo, RequireAuth } from './components/RequireAuth';
+import { AuthGate, backTo } from './components/AuthGate';
 import { Spinner } from './components/ui';
 import { NotFoundView } from './features/views/NotFoundView';
 import {
@@ -16,7 +16,8 @@ import {
   ResetPasswordView,
   VerifyEmailView,
 } from './features/auth/AccountViews';
-import { LoginForm } from './features/auth/LoginForm';
+import { LoginForm, type AuthMode } from './features/auth/LoginForm';
+import { LandingView } from './features/landing/LandingView';
 import { LegalView } from './features/legal/LegalView';
 import { Shell } from './features/shell/Shell';
 import { AdminView } from './features/views/AdminView';
@@ -37,12 +38,14 @@ import './styles.css';
 import { MaintenanceGate } from './components/MaintenanceGate';
 
 /**
- * /login: se já autenticado, volta para onde a guarda mandou (só caminhos do próprio app, nunca
- * `//outro-site`), ou para a home.
+ * /login e /cadastro: se já autenticado, volta para onde a guarda mandou (só caminhos do próprio
+ * app, nunca `//outro-site`), ou para a home. /cadastro abre em "Criar conta", com o "Eu sou" de
+ * `?perfil=freelancer|cliente`.
  */
-function LoginRoute() {
+function LoginRoute({ mode = 'login' }: { mode?: AuthMode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const perfil = new URLSearchParams(location.search).get('perfil');
   if (loading)
     return (
       <div className="splash">
@@ -50,7 +53,9 @@ function LoginRoute() {
       </div>
     );
   if (user) return <Navigate to={backTo(location.state)} replace />;
-  return <LoginForm />;
+  return (
+    <LoginForm initialMode={mode} initialRole={perfil === 'freelancer' ? 'freelancer' : 'client'} />
+  );
 }
 
 /** /admin: papel atual de administrador e conta sem suspensão. A API revalida os dois. */
@@ -83,13 +88,15 @@ export function App() {
       <MaintenanceGate>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
+          <Route path="/cadastro" element={<LoginRoute mode="register" />} />
           <Route path="/esqueci-senha" element={<ForgotPasswordView />} />
           <Route path="/redefinir-senha" element={<ResetPasswordView />} />
           <Route path="/verificar-email" element={<VerifyEmailView />} />
           <Route path="/confirmar-novo-email" element={<ConfirmEmailChangeView />} />
           <Route path="/termos" element={<LegalView kind="termos" />} />
           <Route path="/privacidade" element={<LegalView kind="privacidade" />} />
-          <Route element={<RequireAuth />}>
+          {/* `/` sem sessão é a página pública; com sessão, o Início dentro do Shell. */}
+          <Route element={<AuthGate home={<LandingView />} />}>
             <Route element={<Shell />}>
               <Route index element={<InicioView />} />
               <Route path="servicos" element={<ServicosView />} />

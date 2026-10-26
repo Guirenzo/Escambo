@@ -108,6 +108,75 @@ describe('profilesService.getPublicFreelancer', () => {
     expect(p.availableDays).toBeNull();
     expect(p.fullName).toBe('Rafael');
   });
+
+  describe('localização (privacidade): só o dono vê o valor exato', () => {
+    const ULID = '01HZXULIDEXAMPLE0000000000';
+    const OWNER = 42;
+    const withCoords = (latitude: unknown, longitude: unknown) =>
+      repo.findPublicFreelancerByUlid.mockResolvedValue({
+        ...freelancerRow({ latitude, longitude }),
+        user_id: OWNER,
+        ulid: ULID,
+        level: 1,
+        level_name: 'Iniciante',
+      } as unknown as PublicFreelancerRow);
+
+    it('outra pessoa logada vê latitude e longitude arredondadas para 2 casas (~1 km)', async () => {
+      withCoords('-26.30449123', '-48.84561234');
+
+      const p = await profilesService.getPublicFreelancer(ULID, 7);
+
+      expect(p.latitude).toBe(-26.3);
+      expect(p.longitude).toBe(-48.85);
+    });
+
+    it('sem sessão (viewer indefinido) também sai arredondado', async () => {
+      withCoords('-26.30449123', '-48.84561234');
+
+      const p = await profilesService.getPublicFreelancer(ULID);
+
+      expect(p.latitude).toBe(-26.3);
+      expect(p.longitude).toBe(-48.85);
+    });
+
+    it('o próprio dono vê o valor exato, como no /me', async () => {
+      withCoords('-26.30449123', '-48.84561234');
+
+      const p = await profilesService.getPublicFreelancer(ULID, OWNER);
+
+      expect(p.latitude).toBe(-26.30449123);
+      expect(p.longitude).toBe(-48.84561234);
+    });
+
+    it('sem coordenadas continua null para todo mundo, e zero (Equador) continua zero', async () => {
+      withCoords(null, null);
+      const none = await profilesService.getPublicFreelancer(ULID, 7);
+      expect(none.latitude).toBeNull();
+      expect(none.longitude).toBeNull();
+
+      withCoords('0.00000000', '-0.00100000');
+      const zero = await profilesService.getPublicFreelancer(ULID, 7);
+      expect(zero.latitude).toBe(0);
+      expect(Object.is(zero.longitude, 0)).toBe(true);
+    });
+
+    it('arredondar a localização não mexe no resto do perfil público', async () => {
+      withCoords('-26.30449123', '-48.84561234');
+
+      const [outsider, owner] = [
+        await profilesService.getPublicFreelancer(ULID, 7),
+        await profilesService.getPublicFreelancer(ULID, OWNER),
+      ];
+
+      const withoutCoords = (p: typeof outsider) => ({
+        ...p,
+        latitude: undefined,
+        longitude: undefined,
+      });
+      expect(withoutCoords(outsider)).toEqual(withoutCoords(owner));
+      expect(outsider.userId).toBe(OWNER);
+    });
+  });
 });
 
 describe('profilesService.upsertFreelancer: o que vai para o banco e o que volta', () => {
