@@ -23,6 +23,11 @@ Marca própria, gráficos refeitos e o Admin redesenhado por dentro (ADR 68): fe
 - **Admin por dentro:** todas as seções com o mesmo cabeçalho (ícone, título, uma linha dizendo para que serve, contagem e ações); Financeiro e Uso com os filtros numa linha e a tabela que vira lista no celular; Parâmetros com campo, unidade e "Salvar" alinhados e as regras fixas num bloco à parte; as filas (denúncias, mediação, saques, exclusões, contestações e desistências) em cartões, com a ação principal em verde, estornar e excluir em vermelho e o saque atrasado marcado em âmbar; e-mails enviados de 12 em 12, com "Mostrar mais".
 - `scripts/gen-icons.mjs` gera os ícones com o sharp, sem navegador; `scripts/text-outline.mjs` (novo) converte o texto do logotipo em curvas a partir das fontes do projeto.
 
+### Segurança
+
+- Três dependências da API com vulnerabilidade alta publicada (o `npm audit` do CI passou a recusar): `zod` 3.25 → 4.6.7 (uma lista sem limite de tamanho, com muitos itens inválidos, podia esgotar a memória), `multer` 2.4.0 → 2.5.0 e `body-parser` 1.20.8 → 1.20.9 (negação de serviço). Na troca do zod, três esquemas passaram de `invalid_type_error`/`errorMap` para `error`; as mensagens em português continuam as mesmas, e o texto padrão do zod (em inglês) segue fora da resposta.
+- O multer 2.5 passou a somar sozinho o byte de folga do limite de cada campo de texto, que o Escambo já somava: a folga daqui saiu, senão um campo de 4097 bytes voltaria a passar no limite de 4096 (o teste do upload pegou).
+
 ### Corrigido
 
 - Com a fila vazia, as filas do Admin (e as de denúncias e contestações) mostravam o cabeçalho de uma tabela sem linhas em vez da mensagem de vazio.

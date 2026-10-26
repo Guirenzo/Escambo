@@ -18,7 +18,7 @@ export const registerSchema = z.object({
    * como consentimento, na versão vigente. Sem ele, não há conta.
    */
   legalAccepted: z.literal(true, {
-    errorMap: () => ({ message: 'É preciso aceitar os Termos de Uso e a Política de Privacidade' }),
+    error: 'É preciso aceitar os Termos de Uso e a Política de Privacidade',
   }),
 });
 export type RegisterInput = z.infer<typeof registerSchema>;

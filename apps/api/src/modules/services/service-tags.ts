@@ -42,9 +42,9 @@ export const tagSlug = (tag: string): string => tagKey(tag).replace(/ /g, '-');
 export const tagsSchema = z
   .array(
     z
-      .string({ invalid_type_error: 'Cada tag é um texto' })
+      .string({ error: 'Cada tag é um texto' })
       .max(200, `Cada tag tem de ${TAG_MIN_LENGTH} a ${TAG_MAX_LENGTH} caracteres (RN-018)`),
-    { invalid_type_error: 'Envie as tags como lista de textos' },
+    { error: 'Envie as tags como lista de textos' },
   )
   .max(MAX_TAGS, `No máximo ${MAX_TAGS} tags por serviço (RN-018)`)
   .transform((tags) => tags.map(normalizeTag))

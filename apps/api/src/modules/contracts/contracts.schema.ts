@@ -203,7 +203,7 @@ export const deliverMilestoneSchema = z
     message: z.string().min(1),
     files: z
       .never({
-        invalid_type_error:
+        error:
           'A entrega de um marco não leva links: anexe os arquivos ou escreva o link na mensagem',
       })
       .optional(),
