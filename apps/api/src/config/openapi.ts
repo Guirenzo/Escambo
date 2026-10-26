@@ -8,6 +8,7 @@ import type {
   DropoutStatus,
   NegotiationTurn,
   OfferOutcome,
+  PackageTier,
   WithdrawalStatus,
 } from '@escambo/types';
 import { buildInfo } from './build-info';
@@ -323,6 +324,53 @@ const preparedContractSchemas = {
       ),
     ],
   }),
+};
+
+const packageTiers = ['basic', 'standard', 'premium'] as const satisfies readonly PackageTier[];
+
+/** Pacotes Básico, Padrão e Premium por serviço (RF-086, RN-068, ADR 69). */
+const packageSchemas = {
+  PackageTier: {
+    type: 'string',
+    enum: packageTiers,
+    description: 'Nível do pacote: basic (Básico), standard (Padrão) e premium (Premium).',
+  },
+  ServicePackage: {
+    ...obj(
+      {
+        tier: ref('PackageTier'),
+        name: { type: 'string', minLength: 3, maxLength: 60 },
+        description: { type: 'string', maxLength: 600, nullable: true },
+        price: { type: 'number', minimum: 10, maximum: 99_999_999.99, multipleOf: 0.01 },
+        deliveryDays: { type: 'integer', minimum: 1, maximum: 365 },
+        revisions: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 10,
+          default: 2,
+          description: 'Revisões sem custo por entrega ou por marco (RN-023); sem ilimitado.',
+        },
+        features: {
+          type: 'array',
+          maxItems: 10,
+          default: [],
+          items: { type: 'string', minLength: 2, maxLength: 80 },
+          description: 'Itens inclusos, na ordem escrita; repetido (sem caixa) é 422.',
+        },
+      },
+      ['tier', 'name', 'price', 'deliveryDays'],
+    ),
+    additionalProperties: false,
+    description:
+      'Um pacote do serviço. Na resposta, description é null sem descrição e revisions e features vêm sempre. Na contratação, é a cópia do pacote como estava publicado.',
+  },
+  ServicePackages: {
+    type: 'array',
+    maxItems: 3,
+    items: ref('ServicePackage'),
+    description:
+      'RF-086/RN-068: até 3 pacotes, um por nível, com o Básico e sem pular nível (o Premium exige o Padrão), só no preço fixo (422 packages_require_fixed_price). Cada preço vale pelo menos o maior entre R$ 10,00 e o mínimo do serviço (422 price_below_minimum) e não desce do Básico ao Premium (422 package_price_order). Com pacotes, price e deliveryDays não vêm (422 price_from_packages): o serviço guarda os do Básico, que a busca, a ordenação e a troca usam ("a partir de"). Na edição, a lista substitui a anterior; [] tira os pacotes.',
+  },
 };
 
 /** Leitura no chat (RF-059): o pedido, a resposta e o evento Socket.IO message:read. */
@@ -862,6 +910,7 @@ export const openapiDocument: Record<string, any> = {
           },
           modality: ref('ServiceModality'),
           tags: ref('ServiceTags'),
+          packages: ref('ServicePackages'),
         },
         ['categoryId', 'title', 'description'],
       ),
@@ -886,6 +935,11 @@ export const openapiDocument: Record<string, any> = {
           description: { type: 'string' },
           price: { type: 'number', minimum: 10 },
           deadlineAt: { type: 'string', format: 'date-time', nullable: true },
+          packageTier: {
+            ...ref('PackageTier'),
+            description:
+              'RF-086: o pacote escolhido, com serviceId. Obrigatório quando o serviço tem pacotes (422 package_required); nível que o serviço não tem é 422 package_not_found. O price precisa ser o do pacote, ao centavo (409 package_changed). Sem deadlineAt, o prazo é o fim do dia daqui a deliveryDays dias no fuso de quem entrega (marco com prazo depois dele: 422 milestone_after_deadline); data antes disso é 422 deadline_before_package. As revisões da contratação (e de cada marco) são as do pacote.',
+          },
         },
         ['freelancerId', 'title', 'description', 'price'],
       ),
@@ -1067,6 +1121,11 @@ export const openapiDocument: Record<string, any> = {
           ...nullableRef('RevisionState'),
           description:
             'Entrega única: revisões usadas e limite. null por marcos; limit null no legado ilimitado. Ausente nas versões anteriores.',
+        },
+        package: {
+          ...nullableRef('ServicePackage'),
+          description:
+            'RF-086: o pacote contratado, como estava publicado na proposta (editar o serviço depois não muda). null sem pacote; ausente nas versões anteriores.',
         },
         disputeOpensAt: {
           ...nullableTimestamp,
@@ -1471,6 +1530,13 @@ export const openapiDocument: Record<string, any> = {
             items: { type: 'string' },
             description: 'Tags do serviço (RF-024), em ordem alfabética.',
           },
+          packages: {
+            type: 'array',
+            maxItems: 3,
+            items: ref('ServicePackage'),
+            description:
+              'Pacotes (RF-086), do Básico ao Premium; [] sem pacotes. Com pacotes, price e deliveryDays são os do Básico ("a partir de").',
+          },
           viewsCount: {
             type: 'integer',
             minimum: 0,
@@ -1506,10 +1572,11 @@ export const openapiDocument: Record<string, any> = {
           isRemote: { type: 'boolean' },
           modality: ref('ServiceModality'),
           tags: ref('ServiceTags'),
+          packages: ref('ServicePackages'),
           isActive: { type: 'boolean', description: 'false pausa o serviço; true reativa.' },
         }),
         description:
-          'Campos a mudar, todos opcionais: a edição manda o serviço inteiro; pausar e reativar mandam só isActive.',
+          'Campos a mudar, todos opcionais: a edição manda o serviço inteiro; pausar e reativar mandam só isActive. Sem packages, os pacotes ficam como estão (e mudar o tipo de preço para outro que não o fixo é 422 packages_require_fixed_price).',
       },
       WalletTransaction: obj(
         {
@@ -1641,6 +1708,7 @@ export const openapiDocument: Record<string, any> = {
         ['resolution'],
       ),
       ...preparedContractSchemas,
+      ...packageSchemas,
       ...supportSchemas,
       ...withdrawalSchemas,
       ...chatReadSchemas,
@@ -1894,7 +1962,12 @@ export const openapiDocument: Record<string, any> = {
       post: op('Serviços', 'Cria serviço', {
         auth: true,
         body: { $ref: '#/components/schemas/CreateService' },
-        responses: res201,
+        responses: {
+          ...jsonResponse('201', 'Service'),
+          '422': errorResponse(
+            'validation_error, price_below_minimum, invalid_category; com pacotes (RF-086): packages_require_fixed_price, price_from_packages, package_price_order',
+          ),
+        },
       }),
     },
     '/services/mine': {
@@ -1933,6 +2006,14 @@ export const openapiDocument: Record<string, any> = {
       patch: op('Serviços', 'Atualiza (dono): edita o serviço inteiro ou pausa/reativa', {
         auth: true,
         body: ref('UpdateService'),
+        responses: {
+          ...jsonResponse('200', 'Service'),
+          '403': errorResponse('forbidden: o serviço não é seu'),
+          '404': errorResponse('service_not_found'),
+          '422': errorResponse(
+            'validation_error, price_required, price_below_minimum, invalid_category; com pacotes (RF-086): packages_require_fixed_price, price_from_packages, package_price_order',
+          ),
+        },
       }),
       delete: op('Serviços', 'Remove (dono, soft delete)', { auth: true, responses: res204 }),
     },
@@ -1989,11 +2070,14 @@ export const openapiDocument: Record<string, any> = {
           ...jsonResponse('201', 'Contract'),
           '409': {
             description:
-              'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive.',
+              'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive e, com pacote (RF-086), package_changed: o preço do pacote mudou.',
             content: {
               'application/json': { schema: { anyOf: [ref('ActiveContractError'), ref('Error')] } },
             },
           },
+          '422': errorResponse(
+            'validation_error; com pacotes (RF-086): package_required, package_not_found, deadline_before_package, milestone_after_deadline',
+          ),
         },
       }),
     },

@@ -984,3 +984,155 @@ describe('servicesRepository', () => {
     ]);
   });
 });
+
+describe('servicesRepository — pacotes (RF-086, RN-068)', () => {
+  beforeEach(() => fakeDb.reset());
+
+  const basic = {
+    tier: 'basic' as const,
+    name: 'Essencial',
+    description: null,
+    price: 100,
+    deliveryDays: 3,
+    revisions: 2,
+    features: ['Logo'],
+  };
+  const standard = { ...basic, tier: 'standard' as const, name: 'Completo', price: 200 };
+  const UPSERT =
+    'INSERT INTO service_packages (service_id, tier, name, description, price, delivery_days, revisions, features, is_active) ' +
+    'VALUES (:serviceId, :tier, :name, :description, :price, :deliveryDays, :revisions, :features, 1) ' +
+    'ON DUPLICATE KEY UPDATE name = :name, description = :description, price = :price, ' +
+    'delivery_days = :deliveryDays, revisions = :revisions, features = :features, is_active = 1';
+
+  it('packagesByServiceIds: uma consulta para todos os ids, só os ativos, do Básico ao Premium', async () => {
+    fakeDb.reply([
+      {
+        service_id: 3,
+        tier: 'basic',
+        name: 'Essencial',
+        description: null,
+        price: '100.00',
+        delivery_days: 3,
+        revisions: 2,
+        features: '["Logo"]',
+      },
+      {
+        service_id: 3,
+        tier: 'standard',
+        name: 'Completo',
+        description: 'Mais',
+        price: '200.00',
+        delivery_days: 5,
+        revisions: 3,
+        features: ['Logo', 'Manual'],
+      },
+    ]);
+
+    const packages = await servicesRepository.packagesByServiceIds([3, 5]);
+
+    expect([...packages]).toEqual([
+      [
+        3,
+        [
+          { ...basic },
+          {
+            tier: 'standard',
+            name: 'Completo',
+            description: 'Mais',
+            price: 200,
+            deliveryDays: 5,
+            revisions: 3,
+            features: ['Logo', 'Manual'],
+          },
+        ],
+      ],
+    ]);
+    expect(fakeDb.calls[0]!.sql).toBe(
+      'SELECT service_id, tier, name, description, price, delivery_days, revisions, features' +
+        ' FROM service_packages WHERE service_id IN (:ids) AND is_active = 1 ORDER BY service_id, tier',
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ ids: [3, 5] });
+  });
+
+  it('packagesByServiceIds sem ids não vai ao banco', async () => {
+    expect((await servicesRepository.packagesByServiceIds([])).size).toBe(0);
+    expect(fakeDb.calls).toHaveLength(0);
+  });
+
+  it('create com pacotes: o serviço, um upsert por nível e a limpeza dos níveis que não vieram, numa transação', async () => {
+    fakeDb.reply({ insertId: 40, affectedRows: 1 });
+
+    await servicesRepository.create({
+      userId: 7,
+      categoryId: 10,
+      title: 'Identidade visual',
+      description: 'Logo, cores e manual',
+      priceType: 'fixed',
+      price: 100,
+      deliveryDays: 3,
+      isRemote: true,
+      isOnsite: false,
+      tags: [],
+      packages: [basic, standard],
+    });
+
+    expect(fakeDb.sqls()).toEqual([
+      expect.stringContaining('INSERT INTO services '),
+      UPSERT,
+      UPSERT,
+      'DELETE FROM service_packages WHERE service_id = :serviceId AND tier NOT IN (:kept)',
+    ]);
+    expect(fakeDb.calls[1]!.params).toEqual({
+      serviceId: 40,
+      tier: 'basic',
+      name: 'Essencial',
+      description: null,
+      price: 100,
+      deliveryDays: 3,
+      revisions: 2,
+      features: '["Logo"]',
+    });
+    expect(fakeDb.calls[3]!.params).toEqual({ serviceId: 40, kept: ['basic', 'standard'] });
+    expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('a falha ao gravar um pacote desfaz o serviço também (rollback)', async () => {
+    const boom = new Error('ER_DATA_TOO_LONG');
+    fakeDb.reply({ insertId: 41, affectedRows: 1 }, boom);
+    await expect(
+      servicesRepository.create({
+        userId: 7,
+        categoryId: 10,
+        title: 'Identidade visual',
+        description: 'Logo, cores e manual',
+        priceType: 'fixed',
+        price: 100,
+        deliveryDays: 3,
+        isRemote: true,
+        isOnsite: false,
+        tags: [],
+        packages: [basic],
+      }),
+    ).rejects.toBe(boom);
+    expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+    expect(fakeDb.conn.commit).not.toHaveBeenCalled();
+  });
+
+  it('update com pacotes: preço do Básico e pacotes na mesma transação; [] apaga todos; tags ficam', async () => {
+    await servicesRepository.update(5, { price: 100, delivery_days: 3 }, undefined, [basic]);
+    expect(fakeDb.sqls()).toEqual([
+      'UPDATE services SET price = :price, delivery_days = :delivery_days WHERE id = :id',
+      UPSERT,
+      'DELETE FROM service_packages WHERE service_id = :serviceId AND tier NOT IN (:kept)',
+    ]);
+    expect(fakeDb.conn.beginTransaction).toHaveBeenCalledTimes(1);
+    expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
+
+    fakeDb.reset();
+    await servicesRepository.update(5, {}, undefined, []);
+    expect(fakeDb.sqls()).toEqual(['DELETE FROM service_packages WHERE service_id = :serviceId']);
+    expect(fakeDb.calls[0]!.params).toEqual({ serviceId: 5 });
+    // As tags não foram enviadas: o pivô delas não é tocado.
+    expect(fakeDb.sqls().some((s) => s.includes('service_tag_pivot'))).toBe(false);
+  });
+});

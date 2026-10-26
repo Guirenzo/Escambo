@@ -1082,6 +1082,26 @@ export type ServicePriceType = 'fixed' | 'hourly' | 'negotiable';
 /** Modalidade (RF-023): remoto, presencial ou os dois ("both" é remoto e presencial). */
 export type ServiceModality = 'remote' | 'onsite' | 'both';
 
+/** Nível do pacote (RF-086, RN-068): Básico, Padrão e Premium. */
+export type PackageTier = 'basic' | 'standard' | 'premium';
+
+/**
+ * Um pacote do serviço (RF-086, RN-068): o que entra em cada nível, com preço, prazo e revisões
+ * próprios. Na contratação, é a cópia do pacote como estava publicado.
+ */
+export interface ServicePackage {
+  tier: PackageTier;
+  name: string;
+  description: string | null;
+  price: number;
+  /** Prazo de entrega em dias, contado a partir do dia da proposta. */
+  deliveryDays: number;
+  /** Revisões sem custo por entrega (ou por marco), de 1 a 10 (RN-023). */
+  revisions: number;
+  /** Itens inclusos, na ordem em que o freelancer escreveu (até 10). */
+  features: string[];
+}
+
 export interface Service {
   id: number;
   categoryId: number;
@@ -1097,6 +1117,11 @@ export interface Service {
   modality?: ServiceModality;
   /** Tags (RF-024, RN-018): até 10, normalizadas em minúsculas, em ordem alfabética. */
   tags?: string[];
+  /**
+   * Pacotes (RF-086), do Básico ao Premium; [] = serviço sem pacotes. Com pacotes, price e
+   * deliveryDays são os do Básico ("a partir de"). Ausente nas versões anteriores da API.
+   */
+  packages?: ServicePackage[];
   /** Visualizações do detalhe (RF-029): só em "Meus serviços", para o dono. */
   viewsCount?: number;
   isActive: boolean;
@@ -1166,6 +1191,12 @@ export interface CreateServiceRequest {
   modality?: ServiceModality;
   /** RN-018: até 10, de 2 a 30 caracteres, sem repetir; na edição, a lista substitui a anterior. */
   tags?: string[];
+  /**
+   * RF-086/RN-068: até 3 pacotes, Básico obrigatório e sem pular nível, só no preço fixo. Com
+   * pacotes, price e deliveryDays não vêm: saem do Básico. Na edição, a lista substitui a anterior
+   * ([] tira os pacotes, e aí price volta a ser obrigatório).
+   */
+  packages?: ServicePackage[];
 }
 
 export type UpdateServiceRequest = Partial<CreateServiceRequest> & { isActive?: boolean };
@@ -1235,6 +1266,11 @@ export interface Contract {
   deadlineZone: BrazilTimezone;
   /** Revisão em aberto (entrega única): quando o cliente pediu; null fora de revisão (ADR 58). */
   revisionRequestedAt: string | null;
+  /**
+   * O pacote contratado (RF-086), como estava publicado na proposta; null sem pacote. Ausente nas
+   * versões anteriores da API.
+   */
+  package?: ServicePackage | null;
 }
 
 /**
@@ -1505,6 +1541,11 @@ export interface CreateContractRequest {
   paymentMode?: 'cash' | 'credits';
   /** Escrow por marcos (só em dinheiro): 2 a 10 marcos cuja soma é o valor da contratação. */
   milestones?: MilestoneInput[];
+  /**
+   * O pacote escolhido (RF-086): obrigatório quando o serviço tem pacotes. O price precisa ser o
+   * do pacote; sem deadlineAt, o prazo é o do pacote.
+   */
+  packageTier?: PackageTier;
 }
 
 export interface ExtensionRequest {

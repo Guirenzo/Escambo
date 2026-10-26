@@ -942,3 +942,37 @@ describe('TrocasView: trocas desativadas', () => {
     expect(screen.queryByRole('button', { name: 'Fechar' })).not.toBeInTheDocument();
   });
 });
+
+describe('TrocasView: serviço com pacotes (RF-086, ADR 69)', () => {
+  it('entra na troca pelo Básico, o preço do anúncio, e a tela diz qual pacote vale', async () => {
+    const user = userEvent.setup();
+    const basic = {
+      tier: 'basic' as const,
+      name: 'Essencial',
+      description: null,
+      price: 300,
+      deliveryDays: 3,
+      revisions: 2,
+      features: [],
+    };
+    listServices.mockResolvedValue(
+      page(
+        SERVICES.map((s) =>
+          s.id === 10
+            ? { ...s, packages: [basic, { ...basic, tier: 'standard' as const, price: 500 }] }
+            : s,
+        ),
+      ),
+    );
+    renderView();
+    const { target } = await openForm(user);
+    expect(within(target).getAllByRole('option').map(plain)).toContain(
+      'Logo profissional — R$ 300,00, pacote Básico',
+    );
+    await user.selectOptions(target, '10');
+    await user.selectOptions(screen.getByLabelText('Serviço que ofereço'), '22');
+    expect(plain(screen.getByTestId('barter-estimate'))).toContain(
+      'você oferece R$ 300,00 (preço do catálogo) e quer R$ 300,00 (preço do pacote Básico)',
+    );
+  });
+});

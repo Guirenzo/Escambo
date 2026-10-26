@@ -1,5 +1,6 @@
 import { ulid } from 'ulid';
 import type {
+  BrazilTimezone,
   CancelResult,
   CancelStage,
   CancelTerms,
@@ -12,6 +13,7 @@ import type {
   Milestone,
   MilestoneStatus,
   PaymentMode,
+  ServicePackage,
 } from '@escambo/types';
 import { logger } from '../../config/logger';
 import { clock } from '../../utils/clock';
@@ -86,6 +88,7 @@ import { authFacade } from '../auth/auth.facade';
 import { userZone } from '../auth/user-zone';
 import { profilesFacade } from '../profiles/profiles.facade';
 import { servicesFacade } from '../services/services.facade';
+import { PACKAGE_TIER_LABEL, packageFromSnapshot } from '../services/service-packages';
 import { cancelTerms, money, type CancelInput } from './cancel-policy';
 import { clientZoneOf, dayZoneOf, freelancerZoneOf } from './contract-zones';
 import {
@@ -132,6 +135,7 @@ import {
 import {
   autoDisputeDescription,
   autoDisputeNotice,
+  brl,
   cancelledNotice,
   deliveredNotice,
   extensionAcceptedNotice,
@@ -239,6 +243,8 @@ function toContract(row: ContractRow, ctx: ViewCtx): Contract {
     deadlineZone: dayZoneOf(row, row.deadline_at),
     revisionRequestedAt:
       row.status === 'revision_requested' ? iso(row.revision_requested_at) : null,
+    // RF-086: o pacote como estava publicado na proposta; o nível e a cópia andam juntos.
+    package: row.package_tier ? packageFromSnapshot(row.package_snapshot) : null,
     negotiation:
       row.status === 'pending' && !row.barter_agreement_id
         ? {
@@ -709,6 +715,68 @@ async function decisionFacts(row: ContractRow, now: Date): Promise<DecisionFacts
   };
 }
 
+/**
+ * O pacote escolhido na contratação de um serviço (RF-086, ADR 69). Serviço com pacotes exige o
+ * nível; o nível precisa existir; e o valor enviado precisa ser o do pacote, ao centavo: o pacote
+ * editado depois de a tela abrir responde 409, para o cliente conferir antes de reservar o valor.
+ * Serviço sem pacotes e sem nível segue como antes (null).
+ */
+async function chosenPackage(
+  serviceId: number,
+  tier: ServicePackage['tier'] | undefined,
+  price: number,
+): Promise<ServicePackage | null> {
+  const packages = (await servicesFacade.packagesByServiceIds([serviceId])).get(serviceId) ?? [];
+  if (packages.length === 0 && !tier) return null;
+  if (!tier) {
+    throw new HttpError(
+      422,
+      'Este serviço tem pacotes: escolha o Básico, o Padrão ou o Premium.',
+      'package_required',
+    );
+  }
+  const pkg = packages.find((p) => p.tier === tier);
+  if (!pkg) {
+    throw new HttpError(
+      422,
+      `Este serviço não tem o pacote ${PACKAGE_TIER_LABEL[tier]}.`,
+      'package_not_found',
+    );
+  }
+  if (Math.round(price * 100) !== Math.round(pkg.price * 100)) {
+    throw new HttpError(
+      409,
+      `O pacote ${PACKAGE_TIER_LABEL[tier]} agora custa ${brl(pkg.price)}. Confira o pacote e envie de novo.`,
+      'package_changed',
+    );
+  }
+  return pkg;
+}
+
+/**
+ * O prazo da contratação de um pacote (ADR 69): sem data, o fim do dia (23:59) daqui a
+ * deliveryDays dias no fuso de quem entrega, o mesmo dia que a tela sugere (RN-080). Com data, ela
+ * não pode cair antes desse dia: 422 deadline_before_package. A contraproposta (RN-030) pode mudar
+ * o prazo depois.
+ */
+function packageDeadline(
+  pkg: ServicePackage,
+  requested: Date | null,
+  fz: BrazilTimezone,
+  now: Date,
+): Date {
+  const firstDay = addDaysToDay(dayIn(fz, now), pkg.deliveryDays);
+  if (!requested) return endOfDayIn(fz, firstDay);
+  if (dayIn(fz, requested) < firstDay) {
+    throw new HttpError(
+      422,
+      `O pacote ${PACKAGE_TIER_LABEL[pkg.tier]} entrega em ${pkg.deliveryDays} ${pkg.deliveryDays === 1 ? 'dia' : 'dias'}: escolha um prazo a partir de ${formatDate(endOfDayIn(fz, firstDay), fz)}.`,
+      'deadline_before_package',
+    );
+  }
+  return requested;
+}
+
 export const contractsService = {
   async create(clientId: number, input: CreateContractInput): Promise<Contract> {
     if (input.freelancerId === clientId) {
@@ -729,6 +797,7 @@ export const contractsService = {
     ) {
       throw notFound();
     }
+    let pkg: ServicePackage | null = null;
     if (input.serviceId != null) {
       // Pelo serviço (o caminho do web): ser dono dele basta. Publicar serviço não exige perfil.
       const service = await servicesFacade.findById(input.serviceId);
@@ -742,6 +811,7 @@ export const contractsService = {
           'service_inactive',
         );
       }
+      pkg = await chosenPackage(service.id, input.packageTier, input.price);
     } else if (
       // Direta (sem serviço): só para quem se cadastrou como freelancer ou criou o perfil de
       // freelancer (a conta de cliente pode ter os dois, RN-006).
@@ -768,7 +838,23 @@ export const contractsService = {
       'proposal_expiry_hours',
       DEFAULT_PROPOSAL_EXPIRY_HOURS,
     );
-    const deadline = input.deadlineAt ? floorSecond(new Date(input.deadlineAt)) : null;
+    let deadline = input.deadlineAt ? floorSecond(new Date(input.deadlineAt)) : null;
+    if (pkg && !input.deadlineAt) {
+      deadline = packageDeadline(pkg, null, fz, now);
+      // O schema compara os marcos com o prazo enviado; sem ele, o prazo é o do pacote.
+      const late = (input.milestones ?? []).findIndex(
+        (m) => m.dueAt && new Date(m.dueAt).getTime() > deadline!.getTime(),
+      );
+      if (late >= 0) {
+        throw new HttpError(
+          422,
+          `O prazo do marco ${late + 1} não pode passar do prazo da contratação (o do pacote ${PACKAGE_TIER_LABEL[pkg.tier]})`,
+          'milestone_after_deadline',
+        );
+      }
+    } else if (pkg) {
+      deadline = packageDeadline(pkg, deadline, fz, now);
+    }
     let expiresAt = humanize(new Date(now.getTime() + expiryHours * H), fz);
     if (deadline) {
       const lastBefore = lastHumanAtOrBefore(deadline, fz);
@@ -827,6 +913,8 @@ export const contractsService = {
       hold: isCredits ? null : { userId: clientId, amount: input.price },
       milestones,
       source: 'user',
+      // RN-023 com RF-086: as revisões do pacote, por entrega ou por marco, e a cópia dele.
+      ...(pkg ? { revisionLimit: pkg.revisions, packageTier: pkg.tier, packageSnapshot: pkg } : {}),
     });
     if (id === null) {
       throw new HttpError(

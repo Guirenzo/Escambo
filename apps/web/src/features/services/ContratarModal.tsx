@@ -1,8 +1,9 @@
 import { BusinessForm, BusinessModal } from '../../components/BusinessActions';
 import { Coins, CreditCard, Flag, Plus, QrCode, Trash2 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useId, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { Service } from '@escambo/types';
+import type { PackageTier, Service } from '@escambo/types';
 import { Button, Field, Input } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { ApiRequestError } from '../../lib/api';
@@ -18,6 +19,10 @@ import {
 import { useToast } from '../../lib/toast';
 import { DepositModal } from '../wallet/DepositModal';
 import { DropoutsSummary } from '../profile/DropoutsSummary';
+import { daysLabel, PACKAGE_TIER_LABEL, packagesOf, revisionsLabel } from './packages';
+
+/** Revisões sem custo da contratação sem pacote (RN-023). */
+const INCLUDED_REVISIONS = 2;
 
 interface MilestoneDraft {
   title: string;
@@ -34,12 +39,35 @@ const money = (v: number): number => Math.sign(v) * (Math.round(Math.abs(v) * 10
  * Cliente contrata um serviço — em dinheiro (carteira pré-paga: o valor é reservado já na
  * proposta e vai para o escrow no aceite) ou em créditos Escambo (retidos no aceite).
  * Em dinheiro, pode dividir em marcos (RN-069): cada marco aprovado libera só o próprio valor.
- * Sem saldo, o depósito acontece aqui mesmo, sem sair do fluxo.
+ * Sem saldo, o depósito acontece aqui mesmo, sem sair do fluxo. Serviço com pacotes (RF-086): a
+ * proposta é de um pacote, com o valor dele (só leitura), o prazo a partir do dele e as revisões
+ * dele; a contraproposta, na Sala, ainda pode mudar valor e prazo.
  */
-export function ContratarModal({ service, onClose }: { service: Service; onClose: () => void }) {
+export function ContratarModal({
+  service,
+  onClose,
+  initialTier,
+}: {
+  service: Service;
+  onClose: () => void;
+  /** O nível escolhido no detalhe ("Continuar"); sem ele, o Básico. */
+  initialTier?: PackageTier;
+}) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToast();
+  const qc = useQueryClient();
+  const group = useId();
+  const packages = packagesOf(service);
+  const [tier, setTier] = useState<PackageTier | null>(() =>
+    packages.length === 0
+      ? null
+      : packages.some((p) => p.tier === initialTier)
+        ? initialTier!
+        : packages[0]!.tier,
+  );
+  // Se o nível escolhido sumiu do serviço (relido depois de um 409), vale o primeiro que ficou.
+  const pkg = packages.find((p) => p.tier === tier) ?? packages[0] ?? null;
   const wallet = useWallet();
   const settings = usePublicSettings();
   const freelancer = usePublicFreelancer(service.ownerUlid);
@@ -57,9 +85,12 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
   const viewerZone = user?.timezone ?? DEFAULT_TIMEZONE;
   const otherClock = !sameClock(ownerZone, viewerZone);
   const today = todayIn(ownerZone);
-  const suggestedDays = service.deliveryDays ?? 7;
+  const suggestedDays = pkg?.deliveryDays ?? service.deliveryDays ?? 7;
   const [deadline, setDeadline] = useState(addDaysToDay(today, suggestedDays));
-  const minDeadline = addDaysToDay(today, 1);
+  // Com pacote, o prazo começa no dia do pacote (a API recusa antes: deadline_before_package).
+  const minDeadline = addDaysToDay(today, pkg ? pkg.deliveryDays : 1);
+  // Os marcos podem vencer antes do prazo da contratação: a partir de amanhã, como sempre.
+  const minMilestoneDay = addDaysToDay(today, 1);
   const [depositing, setDepositing] = useState(false);
   const [existingContractId, setExistingContractId] = useState<number | null>(null);
   const [useMilestones, setUseMilestones] = useState(false);
@@ -70,9 +101,22 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
 
   const credits = wallet.data?.credits ?? 0;
   const balance = wallet.data?.balance ?? 0;
-  const priceNum = Number(price) || 0;
+  const priceNum = pkg ? pkg.price : Number(price) || 0;
   const creditsNeeded = Math.round(priceNum);
-  const canCredits = priceNum > 0 && credits >= creditsNeeded;
+  // Créditos são inteiros (a API recusa o resto): o pacote com centavos (R$ 99,90) só em dinheiro.
+  // Sem pacote, o valor digitado vira o número de créditos arredondado, como antes.
+  const wholeCredits = !pkg || Number.isInteger(priceNum);
+  const canCredits = priceNum > 0 && wholeCredits && credits >= creditsNeeded;
+  const revisions = pkg?.revisions ?? INCLUDED_REVISIONS;
+
+  /** Trocar de pacote leva o prazo para o dia dele, e em créditos só fica se o valor for inteiro. */
+  function chooseTier(next: PackageTier): void {
+    const chosen = packages.find((p) => p.tier === next);
+    if (!chosen) return;
+    setTier(next);
+    setDeadline(addDaysToDay(today, chosen.deliveryDays));
+    if (!Number.isInteger(chosen.price)) setMode('cash');
+  }
   const missing = Math.max(0, round2(priceNum - balance));
   // A mesma conta da API (taxa arredondada ao centavo; o líquido é o resto).
   const fee = feePct != null ? money(priceNum * (feePct / 100)) : 0;
@@ -91,7 +135,7 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
     (m, i) =>
       !m.dueAt ||
       (m.dueAt <= deadline &&
-        m.dueAt >= minDeadline &&
+        m.dueAt >= minMilestoneDay &&
         (i === 0 || !milestones[i - 1]!.dueAt || m.dueAt >= milestones[i - 1]!.dueAt)),
   );
   const msValid =
@@ -137,6 +181,7 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
         price: priceNum,
         paymentMode: mode,
         deadlineAt: endOfDayIn(ownerZone, deadline),
+        ...(pkg ? { packageTier: pkg.tier } : {}),
         milestones: withMilestones
           ? milestones.map((m) => ({
               title: m.title.trim(),
@@ -164,6 +209,10 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
         er.contractId !== undefined
       ) {
         setExistingContractId(er.contractId);
+      }
+      // O freelancer mudou o pacote depois de a tela abrir: relê o serviço, e o valor novo aparece.
+      if (er instanceof ApiRequestError && er.code === 'package_changed') {
+        void qc.invalidateQueries({ queryKey: ['services'] });
       }
       toast.error(er instanceof Error ? er.message : 'Erro ao contratar');
     }
@@ -194,16 +243,47 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
             minLength={10}
           />
         </Field>
-        <Field label="Valor">
-          <Input
-            type="number"
-            min={10}
-            step="0.01"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            required
-          />
-        </Field>
+        {packages.length > 0 && (
+          <fieldset className="pref-list pkg-choice" data-testid="package-choice">
+            <legend>Pacote</legend>
+            {packages.map((p) => (
+              <label key={p.tier} className={p.tier === pkg?.tier ? 'on' : ''}>
+                <input
+                  type="radio"
+                  name={group}
+                  checked={p.tier === pkg?.tier}
+                  onChange={() => chooseTier(p.tier)}
+                />
+                <span>
+                  <strong>
+                    {PACKAGE_TIER_LABEL[p.tier]} — {p.name}
+                  </strong>
+                  <span className="muted tiny">
+                    {brl(p.price)} · entrega em {daysLabel(p.deliveryDays)} ·{' '}
+                    {revisionsLabel(p.revisions)}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {pkg ? (
+          <p className="pkg-value" data-testid="package-price">
+            <span className="muted">Valor do pacote {PACKAGE_TIER_LABEL[pkg.tier]}</span>
+            <strong>{brl(pkg.price)}</strong>
+          </p>
+        ) : (
+          <Field label="Valor">
+            <Input
+              type="number"
+              min={10}
+              step="0.01"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              required
+            />
+          </Field>
+        )}
 
         <Field label="Prazo de entrega">
           <Input
@@ -216,15 +296,18 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
           />
         </Field>
         <span className="muted tiny" id="deadline-hint" data-testid="deadline-hint">
-          Sugerido pelo serviço: {suggestedDays} dia{suggestedDays === 1 ? '' : 's'}.{' '}
+          {pkg
+            ? `O pacote ${PACKAGE_TIER_LABEL[pkg.tier]} entrega em ${daysLabel(pkg.deliveryDays)}: o prazo começa aí.`
+            : `Sugerido pelo serviço: ${daysLabel(suggestedDays)}.`}{' '}
           {otherClock
             ? `Vale até 23:59 do dia, no horário de ${timezoneLabel(ownerZone)} (de quem entrega). Em geral na véspera, o Escambo lembra o freelancer do prazo. Sem entrega até lá, a partir das 9h do dia seguinte, também no horário de ${timezoneLabel(ownerZone)}, o Escambo avisa vocês dois e você pode cancelar com reembolso integral.`
             : 'Vale até 23:59 do dia. Em geral na véspera, o Escambo lembra o freelancer do prazo. Sem entrega até lá, a partir das 9h do dia seguinte o Escambo avisa vocês dois e você pode cancelar com reembolso integral.'}{' '}
           O freelancer pode pedir extensão, que só vale com o seu aceite.
         </span>
         <p className="muted tiny" data-testid="contract-rules-hint">
-          Inclui até 2 revisões sem custo{withMilestones ? ' em cada marco' : ''}. O freelancer pode
-          aceitar, recusar ou responder com uma contraproposta: a negociação vai até 3 rodadas
+          Inclui até {revisionsLabel(revisions)} sem custo{withMilestones ? ' em cada marco' : ''}
+          {pkg ? ` (as do pacote ${PACKAGE_TIER_LABEL[pkg.tier]})` : ''}. O freelancer pode aceitar,
+          recusar ou responder com uma contraproposta: a negociação vai até 3 rodadas
           {mode === 'cash'
             ? ', e a reserva acompanha a sua última proposta.'
             : '; os créditos ficam retidos só no aceite.'}
@@ -261,7 +344,11 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
             </span>
             <small>
               Você tem {credits} · sem taxa
-              {!canCredits && priceNum > 0 ? ` · precisa de ${creditsNeeded}` : ''}
+              {priceNum > 0 && !wholeCredits
+                ? ' · créditos são inteiros e o pacote tem centavos'
+                : !canCredits && priceNum > 0
+                  ? ` · precisa de ${creditsNeeded}`
+                  : ''}
             </small>
           </label>
         </div>
@@ -302,7 +389,7 @@ export function ContratarModal({ service, onClose }: { service: Service; onClose
                 />
                 <Input
                   type="date"
-                  min={minDeadline}
+                  min={minMilestoneDay}
                   max={deadline}
                   value={m.dueAt}
                   onChange={(e) => setMilestone(i, { dueAt: e.target.value })}

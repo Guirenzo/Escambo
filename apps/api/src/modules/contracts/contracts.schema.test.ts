@@ -410,3 +410,24 @@ describe('listContractsSchema: filtro por status da lista (RF-040)', () => {
     expect(r.error!.issues.map((i) => i.message)).toEqual(['Status de contratação desconhecido']);
   });
 });
+
+describe('proposta de um pacote (RF-086)', () => {
+  it('o nível vem com o serviço; sem serviceId, é recusado no campo packageTier', () => {
+    expect(
+      createContractSchema.parse({ ...base, serviceId: 9, packageTier: 'standard' }).packageTier,
+    ).toBe('standard');
+    const res = createContractSchema.safeParse({ ...base, packageTier: 'basic' });
+    expect(res.success).toBe(false);
+    expect(res.error?.issues).toEqual([
+      expect.objectContaining({
+        path: ['packageTier'],
+        message: 'O pacote é de um serviço: envie também o serviceId',
+      }),
+    ]);
+    expect(messages({ ...base, serviceId: 9, packageTier: 'gold' })).toEqual([
+      'Pacote: basic, standard ou premium',
+    ]);
+    // Sem pacote, a proposta continua igual.
+    expect(createContractSchema.parse({ ...base, serviceId: 9 })).not.toHaveProperty('packageTier');
+  });
+});

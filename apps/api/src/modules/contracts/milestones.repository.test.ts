@@ -127,6 +127,24 @@ describe('milestonesRepository', () => {
     expect(fakeDb.conn.commit).not.toHaveBeenCalled();
   });
 
+  it('insertMany com o pacote contratado (RF-086): cada marco ganha as revisões do pacote', async () => {
+    const conn = fakeDb.conn as unknown as PoolConnection;
+    const spec = {
+      title: 'Layout',
+      description: null,
+      amount: 200,
+      freelancerNet: 170,
+      sortOrder: 0,
+      dueAt: null,
+    };
+
+    await milestonesRepository.insertMany(conn, 31, [spec, { ...spec, sortOrder: 1 }], 5);
+
+    expect(fakeDb.calls.map((c) => (c.params as { revisionLimit: number }).revisionLimit)).toEqual([
+      5, 5,
+    ]);
+  });
+
   describe('leituras', () => {
     it('os marcos de um contrato vêm na ordem combinada', async () => {
       const rows = [

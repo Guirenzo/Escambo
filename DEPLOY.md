@@ -265,6 +265,18 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
+### Atualizar para a 1.51.0 (ADR 69)
+
+Uma migration (0051, aditiva e segura de rodar de novo) e nenhum passo manual: nem variável nova, nem script.
+
+**1. Backup antes**, pelo serviço `backup` ou à mão (seção 4).
+
+**2. Deploy normal** (workflow ou à mão, acima). O job `migrate` aplica a 0051: garante a tabela `service_packages`, que já vinha no baseline sem uso, com a chave única por nível, e acrescenta `package_tier` e `package_snapshot` no fim de `contracts` (instantâneo no MySQL 8; as contratações existentes ficam sem pacote).
+
+**3. Conferir.** `curl -s https://SEU_DOMINIO/api/health` mostra o commit da 1.51.0. No formulário de serviço, com preço fixo, aparece "Oferecer pacotes"; um serviço publicado com pacotes mostra o cartão dos pacotes e a tabela "Comparar pacotes" no detalhe.
+
+**4. Voltar para a 1.50.0** é seguro: a API antiga ignora as colunas novas e a tabela. Os serviços com pacotes continuam no ar com o preço e o prazo do Básico, como um serviço de preço fixo; as contratações de pacote seguem com as revisões gravadas nelas.
+
 ### Atualizar para a 1.48.0 (ADR 66)
 
 Uma migration (0050, segura de rodar de novo) e a verificação em duas etapas.

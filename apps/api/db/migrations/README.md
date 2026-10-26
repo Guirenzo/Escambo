@@ -79,3 +79,11 @@ As duas podem rodar de novo sem erro. A 0048 preenche a origem das linhas antiga
 | 0050_mfa_totp.sql                           | `user_mfa` ganha `last_used_step`, `failed_attempts` e `locked_until`: anti-reuso do código e trava de 15 min (RF-090, ADR 66)                             |
 
 Pode rodar de novo sem erro. A tabela `user_mfa` existe desde o baseline e só passa a ser usada agora; o segredo do TOTP é gravado cifrado pela API (`FIELD_ENCRYPTION_KEY`), e sem a chave a 2FA fica indisponível.
+
+## 1.51.0
+
+| Migration                                   | Efeito                                                                                                                                                |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0051_pacotes_servico.sql                    | Pacotes Básico, Padrão e Premium (RF-086, RN-068, ADR 69): garante `service_packages` (a do baseline) com a chave única por nível, e `contracts` ganha `package_tier` e `package_snapshot` |
+
+Pode rodar de novo sem erro. A tabela `service_packages` existe desde o baseline e só passa a ser usada agora: o CREATE é o mesmo do baseline e só age num banco que não a tenha. As duas colunas novas de `contracts` entram no fim da tabela (instantâneo no MySQL 8) e ficam NULL nas contratações sem pacote e nas antigas. O serviço com pacotes guarda o preço e o prazo do Básico em `services.price` e `services.delivery_days`, então a busca, a ordenação e os índices da 0040 não mudam.

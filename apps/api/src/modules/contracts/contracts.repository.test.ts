@@ -158,13 +158,18 @@ describe('contractsRepository', () => {
       ]);
       // O prazo chega em ISO e é gravado como Date; a reserva e os marcos não são colunas.
       expect(fakeDb.calls[1]!.sql).toContain(
-        '(ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, fee_percentage, revision_limit, payment_mode, deadline_at, proposal_expires_at, created_at)',
+        '(ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, fee_percentage, revision_limit, payment_mode, deadline_at, proposal_expires_at, created_at, package_tier, package_snapshot)',
       );
-      expect(fakeDb.calls[1]!.sql).toContain(':deadlineAt, :proposalExpiresAt, :createdAt)');
+      expect(fakeDb.calls[1]!.sql).toContain(
+        ':deadlineAt, :proposalExpiresAt, :createdAt, :packageTier, :packageSnapshot)',
+      );
+      // Sem pacote (RF-086): as duas colunas do pacote vão nulas, juntas.
       expect(fakeDb.calls[1]!.params).toEqual({
         ...columns,
         feePercentage: 15,
         revisionLimit: 2,
+        packageTier: null,
+        packageSnapshot: null,
         deadlineAt: new Date('2026-10-20T02:59:59.000Z'),
       });
       // RN-022: a linha do tempo começa em NULL -> pending, em nome do cliente e feita por ele.
@@ -269,6 +274,43 @@ describe('contractsRepository', () => {
       expect(lockWalletRows).not.toHaveBeenCalled();
       expect(applyWalletEffect).not.toHaveBeenCalled();
       expectRolledBack();
+    });
+
+    it('pacote contratado (RF-086): as revisões dele na contratação e nos marcos, o nível e a cópia em JSON', async () => {
+      const pkg = {
+        tier: 'premium' as const,
+        name: 'Sob medida',
+        description: null,
+        price: 500,
+        deliveryDays: 10,
+        revisions: 5,
+        features: ['Logo'],
+      };
+      fakeDb.reply([], { insertId: 31, affectedRows: 1 }, { affectedRows: 1 });
+
+      await contractsRepository.create({
+        ...data,
+        hold: { userId: 7, amount: 500 },
+        milestones,
+        revisionLimit: 5,
+        packageTier: 'premium',
+        packageSnapshot: pkg,
+      });
+
+      expect(fakeDb.calls[1]!.params).toMatchObject({
+        revisionLimit: 5,
+        packageTier: 'premium',
+        packageSnapshot: JSON.stringify(pkg),
+      });
+      expect(fakeDb.calls[3]!.params).toMatchObject({ title: 'Layout', revisionLimit: 5 });
+      expect(fakeDb.calls[4]!.params).toMatchObject({ title: 'Publicação', revisionLimit: 5 });
+    });
+
+    it('o nível sem a cópia (ou o contrário) não chega ao banco: as duas colunas andam juntas', async () => {
+      await expect(
+        contractsRepository.create({ ...data, packageTier: 'basic', packageSnapshot: null }),
+      ).rejects.toThrow('package_tier e package_snapshot andam juntos');
+      expect(fakeDb.calls).toEqual([]);
     });
 
     it('sem saldo para reservar, nada é criado: desfaz e devolve null', async () => {

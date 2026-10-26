@@ -258,6 +258,41 @@ test('serviço de outra pessoa e o modal de contratação', async ({ page, reque
   done();
 });
 
+test('serviço com pacotes: abas, comparação e o modal com o nível (RF-086)', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const tier = (t: 'basic' | 'standard' | 'premium', price: number, features: string[]) => ({
+    tier: t,
+    name: `Pacote ${t}`,
+    description: t === 'basic' ? 'Um conceito de logo.' : null,
+    price,
+    deliveryDays: t === 'premium' ? 10 : 3,
+    revisions: 2,
+    features,
+  });
+  const service = await createService(request, freelancer, 0, 0, {
+    packages: [
+      tier('basic', 150, ['Logo']),
+      tier('standard', 320, ['Logo', 'Paleta de cores']),
+      tier('premium', 649.9, ['Logo', 'Paleta de cores', 'Manual da marca']),
+    ],
+  });
+  const client = await createUser(request, 'client');
+  await topUp(request, client, 700);
+  await openAs(page, client, `/servicos/${service.id}`);
+  await settled(page);
+  const { check, done } = collector();
+  await check(page, 'detalhe com pacotes');
+  await page.getByRole('tab', { name: 'Premium' }).click();
+  await check(page, 'aba Premium');
+  await page.getByRole('button', { name: /^Continuar/ }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await check(page, 'modal de contratação do pacote');
+  done();
+});
+
 test('ranking com filtro de categoria e "perto de mim"', async ({ page, context, request }) => {
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: -26.3045, longitude: -48.8487 });

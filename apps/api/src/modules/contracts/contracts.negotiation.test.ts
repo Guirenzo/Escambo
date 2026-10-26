@@ -44,7 +44,12 @@ vi.mock('../auth/user-zone', () => ({ userZone: vi.fn() }));
 vi.mock('../profiles/profiles.repository', () => ({
   profilesRepository: { findFreelancerByUserId: vi.fn() },
 }));
-vi.mock('../services/services.repository', () => ({ servicesRepository: { findById: vi.fn() } }));
+vi.mock('../services/services.repository', () => ({
+  servicesRepository: {
+    findById: vi.fn(),
+    packagesByServiceIds: vi.fn().mockResolvedValue(new Map()),
+  },
+}));
 vi.mock('../reviews/reviews.repository', () => ({
   reviewsRepository: { findByContractIdWithResponse: vi.fn() },
 }));

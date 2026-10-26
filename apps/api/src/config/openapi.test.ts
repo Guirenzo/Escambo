@@ -172,7 +172,7 @@ describe('documento OpenAPI', () => {
         },
         '409': {
           description:
-            'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive.',
+            'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive e, com pacote (RF-086), package_changed: o preço do pacote mudou.',
           content: {
             'application/json': {
               schema: {
@@ -183,6 +183,11 @@ describe('documento OpenAPI', () => {
               },
             },
           },
+        },
+        '422': {
+          description:
+            'validation_error; com pacotes (RF-086): package_required, package_not_found, deadline_before_package, milestone_after_deadline',
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
         },
       },
       security: [{ bearerAuth: [] }],
@@ -1045,5 +1050,66 @@ describe('documento OpenAPI: verificação em duas etapas', () => {
       minLength: 10,
       maxLength: 500,
     });
+  });
+});
+
+/** Pacotes Básico, Padrão e Premium (RF-086, RN-068, ADR 69). */
+describe('documento OpenAPI: pacotes por serviço', () => {
+  const { schemas } = openapiDocument.components;
+  const body = (path: string, method: (typeof METHODS)[number]) =>
+    operation(path, method).requestBody?.content['application/json'].schema;
+
+  it('o pacote tem os limites do schema da API, sem chave a mais, e a lista vai até 3', () => {
+    expect(schemas.PackageTier.enum).toEqual(['basic', 'standard', 'premium']);
+    expect(schemas.ServicePackage.additionalProperties).toBe(false);
+    expect(schemas.ServicePackage.required).toEqual(['tier', 'name', 'price', 'deliveryDays']);
+    expect(schemas.ServicePackage.properties.revisions).toMatchObject({
+      minimum: 1,
+      maximum: 10,
+      default: 2,
+    });
+    expect(schemas.ServicePackage.properties.deliveryDays).toMatchObject({
+      minimum: 1,
+      maximum: 365,
+    });
+    expect(schemas.ServicePackage.properties.features.maxItems).toBe(10);
+    expect(schemas.ServicePackages.maxItems).toBe(3);
+    expect(schemas.ServicePackages.description).toContain('package_price_order');
+  });
+
+  it('cadastro, edição e leitura do serviço levam os pacotes; a contratação escolhe o nível e devolve a cópia', () => {
+    expect(schemas.CreateService.properties.packages).toEqual({
+      $ref: '#/components/schemas/ServicePackages',
+    });
+    expect(schemas.UpdateService.properties.packages).toEqual({
+      $ref: '#/components/schemas/ServicePackages',
+    });
+    expect(schemas.Service.properties.packages.items).toEqual({
+      $ref: '#/components/schemas/ServicePackage',
+    });
+    expect(schemas.CreateContract.properties.packageTier.$ref).toBe(
+      '#/components/schemas/PackageTier',
+    );
+    expect(schemas.CreateContract.properties.packageTier.description).toContain('package_required');
+    expect(schemas.Contract.properties.package.oneOf[0]).toEqual({
+      $ref: '#/components/schemas/ServicePackage',
+    });
+    expect(body('/services', 'post')).toEqual({ $ref: '#/components/schemas/CreateService' });
+  });
+
+  it('os erros novos estão nas respostas de quem os devolve', () => {
+    const described = (path: string, method: (typeof METHODS)[number], status: string) =>
+      String(operation(path, method).responses[status]?.description ?? '');
+    for (const code of [
+      'packages_require_fixed_price',
+      'price_from_packages',
+      'package_price_order',
+    ]) {
+      expect(described('/services', 'post', '422')).toContain(code);
+      expect(described('/services/{id}', 'patch', '422')).toContain(code);
+    }
+    for (const code of ['package_required', 'package_not_found', 'deadline_before_package'])
+      expect(described('/contracts', 'post', '422')).toContain(code);
+    expect(described('/contracts', 'post', '409')).toContain('package_changed');
   });
 });

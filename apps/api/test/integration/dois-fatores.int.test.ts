@@ -585,7 +585,7 @@ describe('LGPD: cópia e exclusão de dados com a 2FA', () => {
     const { codes } = await enableMfa(user);
 
     const data = await buildExport(user.id);
-    expect(data.formato).toBe('escambo-export/1.12');
+    expect(data.formato).toBe('escambo-export/1.13');
     const row = (await mfaRowOf(user.id))!;
     expect(data.mfa).toEqual({
       enabled: true,

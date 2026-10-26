@@ -57,6 +57,7 @@ import { DeliverModal } from '../contracts/DeliverModal';
 import { DropoutAgreement } from '../contracts/DropoutAgreement';
 import { ContractActions } from '../contracts/ContractActions';
 import { DisputeWindowNotice, RevisionSummary } from '../contracts/ContractRuleNotices';
+import { ContractPackageSummary } from '../contracts/ContractPackageSummary';
 import { disputeWaiting, revisionCount, revisionsExhausted } from '../contracts/contractRules';
 import { useContractNow } from '../contracts/useContractNow';
 import { CounterOfferModal } from '../contracts/CounterOfferModal';
@@ -651,6 +652,7 @@ export function SalaContratoView({
               {(d) => (
                 <>
                   <div className="kv">
+                    <ContractPackageSummary pkg={d.package} />
                     <span className="muted">
                       {d.status === 'pending' && (d.negotiation?.seq ?? 0) > 1
                         ? 'Valor (oferta do cliente)'

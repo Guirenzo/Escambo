@@ -1,5 +1,6 @@
 import { deflateSync } from 'node:zlib';
 import type { APIRequestContext, Page } from '@playwright/test';
+import type { ServicePackage } from '@escambo/types';
 import { expect } from '@playwright/test';
 
 /**
@@ -65,13 +66,16 @@ export async function createUser(
   return user;
 }
 
-/** Cria um serviço para o freelancer (título único para a busca achar só ele). */
+/**
+ * Cria um serviço para o freelancer (título único para a busca achar só ele). Com `packages`
+ * (RF-086), o preço e o prazo do serviço saem do Básico: `price` e `deliveryDays` não vão.
+ */
 export async function createService(
   request: APIRequestContext,
   owner: TestUser,
   price = 300,
   categoryIndex = 0,
-  opts: { title?: string; deliveryDays?: number } = {},
+  opts: { title?: string; deliveryDays?: number; packages?: ServicePackage[] } = {},
 ): Promise<{ id: number; title: string; categoryId: number }> {
   const categories = await api<{ id: number }[]>(request, 'get', '/categories');
   const categoryId = categories[categoryIndex]?.id ?? categories[0]?.id;
@@ -84,8 +88,9 @@ export async function createService(
       title,
       description: 'Serviço criado automaticamente pelos testes ponta a ponta.',
       priceType: 'fixed',
-      price,
-      deliveryDays: opts.deliveryDays ?? 3,
+      ...(opts.packages
+        ? { packages: opts.packages }
+        : { price, deliveryDays: opts.deliveryDays ?? 3 }),
       isRemote: true,
     },
   });

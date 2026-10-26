@@ -1,7 +1,7 @@
 # Rastreabilidade dos requisitos — Escambo
 
-> **Versão do código:** 1.50.0
-> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0, a 1.48.0, a 1.49.0 e a 1.50.0
+> **Versão do código:** 1.51.0
+> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0, a 1.48.0, a 1.49.0, a 1.50.0 e a 1.51.0
 > **Autor:** Guilherme Renzo
 
 Os documentos de requisitos foram escritos no planejamento, e a coluna de situação ficou para trás conforme o sistema crescia. Esta página registra o que existe **de verdade** em cada requisito: onde está no código, qual teste prova e, quando não está completo, o que falta ou qual decisão registrada (ADR) explica a lacuna. As situações aqui são as mesmas da coluna **Status** de [requisitos funcionais](./requisitos-funcionais.md) e da coluna **Situação** de [requisitos não funcionais](./requisitos-nao-funcionais.md).
@@ -15,7 +15,7 @@ Os documentos de requisitos foram escritos no planejamento, e a coluna de situa�
 
 | | Implementado | Parcial | Não implementado | Fora do escopo | Total |
 |---|---|---|---|---|---|
-| Requisitos funcionais | 84 | 1 | 5 | 2 | 92 |
+| Requisitos funcionais | 85 | 1 | 4 | 2 | 92 |
 | Requisitos não funcionais | 32 | 7 | 1 | 2 | 42 |
 
 As regras de negócio têm a própria matriz de situação, em [regras de negócio](./regras-de-negocio.md), seção 11.
@@ -109,11 +109,11 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 | RF-083 | Implementado | modules/barter (POST /api/barters, createBarterSchema), TrocasView.tsx; barter-flow.int.test.ts ('troca equilibrada: sem torna', 'proponente paga...'), e2e trocas.smoke.spec.ts | — |
 | RF-084 | Implementado | barter.service.ts: o valor de cada lado vem do catálogo quando o serviço tem preço fechado (estimate_mismatch para valor diferente); a combinar, por hora ou oferta descrita usam o valor informado; a origem fica gravada (migration 0043) e a tela mostra a torna antes de enviar. Testes: troca-estimada.int.test.ts, barter.service.test.ts, TrocasView.test.tsx | Desde a 1.45.0 (ADR 63), com a RN-066. |
 | RF-085 | Implementado | barter.service.ts accept (gera 2 contratos recíprocos; torna em held), barter.repository.ts; barter-flow.int.test.ts ('aceite → 2 contratos recíprocos; torna continua reservada', liquida torna − taxa) | — |
-| RF-086 | Não implementado | Só a tabela service_packages em apps/api/db/schema.sql; nenhum uso em apps/api/src, apps/web/src nem packages/types | Pendência sem ADR. A RN-068 também não está implementada. |
+| RF-086 | Implementado | Migration 0051 (service_packages com uq_service_tier; contracts.package_tier e package_snapshot); services/service-packages.ts (zod: até 3 níveis, Básico obrigatório, sem nível pulado, preço crescente, revisões 1 a 10, itens inclusos); services.service.ts grava preço e prazo do Básico no serviço ("a partir de", busca no índice) e valida o mínimo max(painel, R$ 10); contracts.service.ts exige o nível (package_required/package_not_found/package_changed), prazo pelos dias do pacote, revision_limit do pacote no contrato e nos marcos e cópia do pacote; web PackagesEditor.tsx, PackagePicker.tsx (abas e "Comparar pacotes"), ContratarModal.tsx, ContractPackageSummary.tsx. Testes: service-packages.test.ts, services.service.test.ts, contracts.service.test.ts, pacotes.int.test.ts, migrate.int.test.ts, PackagesEditor.test.tsx, PackagePicker.test.tsx, ContratarModal.test.tsx, e2e pacotes.smoke.spec.ts | Desde a 1.51.0 (ADR 69), com a RN-068. Escolher o pacote numa troca fica de fora: a troca vale o Básico, com 2 revisões. |
 | RF-087 | Implementado | modules/favorites (serviço ou freelancer), modules/saved-searches + jobs/saved-search-alerts.ts (ADR 35/37); favorites.int.test.ts, saved-search-alerts.int.test.ts, e2e buscas.smoke.spec.ts e engajamento.smoke.spec.ts | — |
 | RF-088 | Implementado | contracts/milestones.repository.ts (ADR 19/25), MilestonesSection.tsx; milestones-flow.int.test.ts, e2e marcos.smoke.spec.ts | Todos os marcos são financiados no aceite (decisão do ADR 19); a liberação do dinheiro é por marco. |
 | RF-089 | Implementado | modules/reports (POST /api/reports para user, service, review e outros), fila /api/admin/reports com ações; content-moderation.int.test.ts, moderation-images.int.test.ts, e2e confianca.smoke.spec.ts ('denúncia pelo perfil público'), moderacao-conteudo.smoke.spec.ts | — |
-| RF-090 | Implementado | Exportação: modules/lgpd/lgpd.export.ts (formato 1.12, com a situação da 2FA); lgpd-flow.int.test.ts, adr61-export-isolamento.int.test.ts. 2FA: POST /auth/mfa/setup, /enable, /disable, /recovery-codes, GET /auth/mfa e POST /auth/login/mfa (login em dois passos com mfaToken de chave derivada); totp.ts (RFC 6238, anti-reuso por last_used_step, migration 0050), recovery-codes.ts (10 códigos de uso único, só o hash), trava de 5 erros por 15 min; reset pelo atendimento (POST /admin/users/:ulid/mfa/reset); web: DoisFatoresCard.tsx, LoginForm.tsx (passo 2), AccountSupportSection.tsx. Testes: totp.test.ts, recovery-codes.test.ts, mfa-token.test.ts, mfa.service.test.ts, mfa.verify.test.ts, auth.mfa-login.test.ts, admin.mfa.test.ts, dois-fatores.int.test.ts, DoisFatoresCard.test.tsx, e2e dois-fatores.smoke.spec.ts | Desde a 1.48.0 (ADR 66), a 2FA por app autenticador. SMS e e-mail como segundo fator ficaram de fora de propósito; a ativação depende da FIELD_ENCRYPTION_KEY no servidor. |
+| RF-090 | Implementado | Exportação: modules/lgpd/lgpd.export.ts (formato 1.13, com a situação da 2FA e, desde a 1.51.0, os pacotes dos serviços e o pacote de cada contratação); lgpd-flow.int.test.ts, adr61-export-isolamento.int.test.ts. 2FA: POST /auth/mfa/setup, /enable, /disable, /recovery-codes, GET /auth/mfa e POST /auth/login/mfa (login em dois passos com mfaToken de chave derivada); totp.ts (RFC 6238, anti-reuso por last_used_step, migration 0050), recovery-codes.ts (10 códigos de uso único, só o hash), trava de 5 erros por 15 min; reset pelo atendimento (POST /admin/users/:ulid/mfa/reset); web: DoisFatoresCard.tsx, LoginForm.tsx (passo 2), AccountSupportSection.tsx. Testes: totp.test.ts, recovery-codes.test.ts, mfa-token.test.ts, mfa.service.test.ts, mfa.verify.test.ts, auth.mfa-login.test.ts, admin.mfa.test.ts, dois-fatores.int.test.ts, DoisFatoresCard.test.tsx, e2e dois-fatores.smoke.spec.ts | Desde a 1.48.0 (ADR 66), a 2FA por app autenticador. SMS e e-mail como segundo fator ficaram de fora de propósito; a ativação depende da FIELD_ENCRYPTION_KEY no servidor. |
 | RF-091 | Implementado | modules/dropouts, profile/DesistenciasCard.tsx; desistencias-direitos.int.test.ts ('contestação é única, só do titular...', 'janela inclusiva de 60 dias'), e2e desistencias.smoke.spec.ts | Está na 1.42.0 (ADR 61), no ramo feat/regras-pendentes, ainda fora da main. |
 | RF-092 | Implementado | POST /api/admin/dropouts/:id/{excuse,uphold} com nota obrigatória de 10 a 500 caracteres registrada em admin_actions; GET /admin/users/:ulid/dropouts; admin/DropoutsReview.tsx; desistencias-direitos.int.test.ts, moderacao-desistencias.int.test.ts, e2e desistencias.smoke.spec.ts | Mesmo caso do RF-091: ramo feat/regras-pendentes (1.42.0), ainda fora da main. |
 
@@ -168,6 +168,6 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 
 <div align="center">
 
-*rastreabilidade.md — Escambo v1.50.0 — Católica SC — 2026*
+*rastreabilidade.md — Escambo v1.51.0 — Católica SC — 2026*
 
 </div>

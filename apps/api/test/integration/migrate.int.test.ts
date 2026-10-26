@@ -860,3 +860,75 @@ describe('upgrade do suporte com chamados legados até 0033', () => {
     }
   }, 120_000);
 });
+
+describe('0051 (pacotes por serviço, RF-086)', () => {
+  it('num banco sem a tabela, cria a tabela e as colunas da contratação; rodar de novo não muda nada', async () => {
+    const database = `${DB}_pkg_test`;
+    await dropDb(database);
+    const admin = await mysql.createConnection(cfg);
+    await admin.query(
+      `CREATE DATABASE \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    );
+    await admin.end();
+    const old = await mysql.createConnection({ ...cfg, database, multipleStatements: true });
+    try {
+      await ensureMigrationsTable(old);
+      for (const step of loadMigrations().filter((s) => Number(s.name.slice(0, 4)) <= 50)) {
+        await old.query(step.sql);
+        await old.query('INSERT INTO schema_migrations (name, checksum) VALUES (?, ?)', [
+          step.name,
+          createHash('sha256').update(step.sql).digest('hex'),
+        ]);
+      }
+      // Um banco que, por algum motivo, perdeu a tabela do baseline.
+      await old.query('DROP TABLE service_packages');
+      await createLegacyFixture(old);
+
+      expectAppliedFrom((await migrate(old)).applied, ['0051_pacotes_servico']);
+
+      const [tables] = await old.query<RowDataPacket[]>(
+        `SELECT COUNT(*) AS n FROM information_schema.tables
+          WHERE table_schema = ? AND table_name = 'service_packages'`,
+        [database],
+      );
+      expect(Number(tables[0]!.n)).toBe(1);
+      const [cols] = await old.query<RowDataPacket[]>(
+        `SELECT column_name AS col FROM information_schema.columns
+          WHERE table_schema = ? AND table_name = 'contracts'
+            AND column_name IN ('package_tier', 'package_snapshot') ORDER BY column_name`,
+        [database],
+      );
+      expect(cols.map((c) => c.col)).toEqual(['package_snapshot', 'package_tier']);
+      // A contratação antiga fica sem pacote.
+      const [legacy] = await old.query<RowDataPacket[]>(
+        'SELECT package_tier, package_snapshot FROM contracts WHERE id = 101',
+      );
+      expect(legacy[0]).toMatchObject({ package_tier: null, package_snapshot: null });
+
+      const step = loadMigrations().find((s) => s.name === '0051_pacotes_servico')!;
+      await old.query(step.sql);
+      await old.query(step.sql);
+      expect((await migrate(old)).applied).toEqual([]);
+      await old.query(
+        `INSERT INTO service_categories (id, name, slug) VALUES (901, 'Pacotes', 'pacotes-0051')`,
+      );
+      await old.query(
+        `INSERT INTO services (id, user_id, category_id, title, description, price_type, price)
+         VALUES (501, 62, 901, 'Com pacote', 'Serviço do teste da 0051', 'fixed', 100)`,
+      );
+      await old.query(
+        `INSERT INTO service_packages (service_id, tier, name, price, delivery_days)
+         VALUES (501, 'basic', 'Essencial', 100, 3)`,
+      );
+      await expect(
+        old.query(
+          `INSERT INTO service_packages (service_id, tier, name, price, delivery_days)
+           VALUES (501, 'basic', 'Outro', 90, 2)`,
+        ),
+      ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
+    } finally {
+      await old.end();
+      await dropDb(database);
+    }
+  }, 120_000);
+});

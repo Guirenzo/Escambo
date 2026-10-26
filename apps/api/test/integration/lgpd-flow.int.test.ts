@@ -95,7 +95,7 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       sessoes: unknown[];
       registrosDeSeguranca: unknown[];
     };
-    expect(data.formato).toBe('escambo-export/1.12');
+    expect(data.formato).toBe('escambo-export/1.13');
     expect(data).toHaveProperty('ofertas', []);
     expect(data).toHaveProperty('desistencias', []);
     // Formato 1.7 (ADR 56): o que a pessoa deixa sair no silêncio; nunca escolheu = null.

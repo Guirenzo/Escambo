@@ -1893,3 +1893,37 @@ describe('SalaContratoView: leitura no chat (RF-059)', () => {
     await waitFor(() => expect(api.markChatRead).toHaveBeenCalledWith(OTHER, 1));
   });
 });
+
+describe('SalaContratoView: pacote contratado (RF-086)', () => {
+  it('a tabela de valores diz o nível, o nome, o prazo, as revisões e os itens do pacote', async () => {
+    api.contractDetail.mockResolvedValue(
+      contract({
+        package: {
+          tier: 'standard',
+          name: 'Logo + paleta',
+          description: null,
+          price: 320,
+          deliveryDays: 5,
+          revisions: 3,
+          features: ['2 conceitos de logo', 'Paleta de cores'],
+        },
+      }),
+    );
+    await openSala();
+    const kv = within(card('Linha do tempo')).getByTestId('package-kv');
+    expect(kv.previousElementSibling).toHaveTextContent('Pacote');
+    expect(within(kv).getByText('Padrão — Logo + paleta')).toBeVisible();
+    expect(kv).toHaveTextContent('entrega em 5 dias · 3 revisões sem custo');
+    expect(
+      within(within(kv).getByRole('list', { name: 'O que o pacote inclui' }))
+        .getAllByRole('listitem')
+        .map((li) => li.textContent?.trim()),
+    ).toEqual(['2 conceitos de logo', 'Paleta de cores']);
+  });
+
+  it('sem pacote (ou na API anterior), nada de pacote na tabela', async () => {
+    api.contractDetail.mockResolvedValue(contract({ package: null }));
+    await openSala();
+    expect(screen.queryByTestId('package-kv')).toBeNull();
+  });
+});
