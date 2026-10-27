@@ -27,6 +27,7 @@ import { formatDeadline, formatDue, hourIn } from '../../src/utils/timezone';
 import { DAY, fromNow, HOUR, isoFromNow, now, startDaytimeClock, stopClock } from './clock.helpers';
 import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * O que sai durante o "não perturbe" (ADR 56, estreitado pelo ADR 57) contra o MySQL real, com o
@@ -60,6 +61,7 @@ async function actor(role: 'client' | 'freelancer'): Promise<Actor> {
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken, endpoint: '' };
 }
 

@@ -1,4 +1,5 @@
 import { BusinessForm, BusinessModal } from '../../components/BusinessActions';
+import { useEmailVerified, VerifyEmailModal } from '../../components/VerifyEmail';
 import { Coins, CreditCard, Flag, Plus, QrCode, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useId, useState, type FormEvent } from 'react';
@@ -55,6 +56,7 @@ export function ContratarModal({
 }) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const verified = useEmailVerified();
   const toast = useToast();
   const qc = useQueryClient();
   const group = useId();
@@ -216,6 +218,17 @@ export function ContratarModal({
       }
       toast.error(er instanceof Error ? er.message : 'Erro ao contratar');
     }
+  }
+
+  // Contratar exige e-mail confirmado (RF-006): o botão abre o aviso no lugar da proposta.
+  if (!verified) {
+    return (
+      <VerifyEmailModal
+        title={`Contratar: ${service.title}`}
+        action="contratar"
+        onClose={onClose}
+      />
+    );
   }
 
   if (depositing) {

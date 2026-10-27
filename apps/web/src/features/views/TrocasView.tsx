@@ -1,4 +1,9 @@
 import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
+import {
+  useEmailVerified,
+  useVerifiedEmailGate,
+  VerifyEmailNotice,
+} from '../../components/VerifyEmail';
 import { ArrowLeftRight, Coins, Plus, QrCode } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -83,6 +88,9 @@ export function TrocasView() {
   const [params, setParams] = useSearchParams();
   const propose = useProposeBarter();
   const act = useBarterAction();
+  // Propor e aceitar troca exigem e-mail confirmado (RF-006); recusar e cancelar, não.
+  const verified = useEmailVerified();
+  const gate = useVerifiedEmailGate();
 
   const [open, setOpen] = useState(false);
   const [targetId, setTargetId] = useState(0);
@@ -243,7 +251,14 @@ export function TrocasView() {
         </EmptyState>
       )}
 
-      {open && barterEnabled && (
+      {open && barterEnabled && !verified && (
+        <section className="card" aria-labelledby="trade-new-title">
+          <h3 id="trade-new-title">Nova proposta de troca</h3>
+          <VerifyEmailNotice action="propor uma troca" />
+        </section>
+      )}
+
+      {open && barterEnabled && verified && (
         <BusinessForm className="card" onSubmit={submit}>
           <h3>Nova proposta de troca</h3>
           <Field label="Eu quero (serviço de outro freelancer)">
@@ -541,7 +556,7 @@ export function TrocasView() {
                       {iAmReceiver && !mustFund && (
                         <BusinessButton
                           disabled={act.isPending}
-                          onClick={() => void run(b.id, 'accept')}
+                          onClick={() => gate.guard('aceitar a troca', () => run(b.id, 'accept'))}
                         >
                           Aceitar
                         </BusinessButton>
@@ -580,6 +595,7 @@ export function TrocasView() {
           onPaid={() => setDepositFor(null)}
         />
       )}
+      {gate.dialog}
     </div>
   );
 }

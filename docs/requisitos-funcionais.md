@@ -28,11 +28,13 @@
 | RF-003 | O sistema deve emitir tokens JWT com tempo de expiração configurável após autenticação bem-sucedida | Alta       | Implementado |
 | RF-004 | O sistema deve suportar refresh token para renovação de sessão sem novo login                       | Alta       | Implementado |
 | RF-005 | O sistema deve enviar e-mail de confirmação de conta após o cadastro                                | Alta       | Implementado |
-| RF-006 | O sistema deve bloquear o acesso de contas não verificadas a funcionalidades críticas               | Alta       | Parcial |
+| RF-006 | O sistema deve bloquear o acesso de contas não verificadas a funcionalidades críticas               | Alta       | Implementado |
 | RF-007 | O sistema deve permitir recuperação de senha via link enviado ao e-mail cadastrado                  | Alta       | Implementado |
 | RF-008 | O sistema deve invalidar tokens de recuperação de senha após uso ou expiração                       | Alta       | Implementado |
 | RF-009 | O sistema deve registrar data, IP e user-agent de cada login bem-sucedido                           | Média      | Implementado |
 | RF-010 | O sistema deve permitir que o usuário encerre todas as sessões ativas simultaneamente               | Média      | Implementado |
+> ℹ️ RF-006: sem e-mail confirmado, contratar, publicar serviço (criar ou reativar um pausado), depositar ou pagar, propor ou aceitar troca, impulsionar e sacar respondem 403 `email_not_verified`, sempre com a mesma frase; navegar, buscar, ver perfis, editar o próprio perfil, responder ao que já existe, suporte, LGPD, segurança da conta, reenviar a confirmação e trocar o e-mail continuam livres. A regra é uma só, lida na mesma consulta do status da conta e conferida na rota; vale para todos, e o admin só fica de fora quando age como equipe. No web, o botão continua à mostra e abre o aviso com o reenvio do link (RN-004, ADR 70).
+
 ---
 
 ## Módulo 02 — Perfis
@@ -126,7 +128,9 @@
 | RF-059 | O sistema deve exibir indicador de leitura das mensagens (lido / não lido)                 | Média      | Implementado |
 | RF-060 | O sistema deve notificar o usuário via push ao receber uma nova mensagem                   | Alta       | Fora do escopo |
 | RF-061 | O histórico de mensagens deve ser preservado e acessível mesmo após a conclusão do serviço | Média      | Implementado |
-| RF-062 | O sistema deve impedir o envio de mensagens em contratações canceladas ou encerradas       | Baixa      | Não implementado |
+| RF-062 | O sistema deve impedir o envio de mensagens em contratações canceladas ou encerradas       | Baixa      | Implementado |
+> ℹ️ RF-062: a conversa é uma só por par e atravessa as contratações (ADR 31), então a regra olha o par: texto e anexo, pela rota e pelo socket, só enquanto há relação aberta entre as duas pessoas — contratação que não terminou (proposta, aceita, em andamento, entregue, em revisão ou em disputa) ou troca proposta ou em andamento. Sem ela, 409 `conversation_closed`; ler o histórico, baixar anexos e marcar como lida continuam, não há carência depois do fim e uma proposta nova reabre o chat. A Sala troca o compositor por uma faixa só de leitura, com o atalho para nova proposta (RN-082, ADR 70).
+
 ---
 
 ## Módulo 08 — Gamificação
@@ -209,7 +213,7 @@ Requisitos distribuídos por módulos existentes (Serviços, Contratações, Sup
 | Recursos avançados (RF-086–092)  | 7            | 4      | 3      | 0     |
 | **Total**                        | **92**       | **67** | **23** | **2** |
 
-> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.51.0: **85 implementados, 1 parcial, 4 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
+> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.52.0: **87 implementados, 3 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
 
 > ℹ️ O total ficou em **92 requisitos funcionais**, superando os 72 planejados inicialmente — resultado do detalhamento granular e da inclusão da **troca de serviços (escambo)** e de recursos avançados de confiança e segurança (v1.1.0), com dois requisitos de desistência e revisão humana acrescentados pelo ADR 61 (v1.2.0).
 

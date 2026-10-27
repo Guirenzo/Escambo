@@ -26,6 +26,7 @@ import {
   stopClock,
 } from './clock.helpers';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Cancelamento com valores (RN-025, RN-026, ADR 57) contra o MySQL real, conferindo as carteiras
@@ -62,6 +63,7 @@ async function registerAndLogin(role: 'client' | 'freelancer'): Promise<Actor> {
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status, JSON.stringify(login.body)).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 

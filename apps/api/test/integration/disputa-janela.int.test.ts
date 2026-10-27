@@ -33,8 +33,8 @@ const clock = (value: Date) => setClockForTests(value, { frozen: true });
 async function actor(role: 'client' | 'freelancer', zone: BrazilTimezone): Promise<Actor> {
   const key = ulid();
   const [res] = await pool.query<ResultSetHeader>(
-    `INSERT INTO users (ulid, email, role, status, timezone)
-    VALUES (:key, :email, :role, 'active', :zone)`,
+    `INSERT INTO users (ulid, email, role, status, timezone, email_verified_at)
+    VALUES (:key, :email, :role, 'active', :zone, NOW())`,
     { key, email: `dispute-window-${key}@escambo.test`, role, zone },
   );
   ownedUsers.push(res.insertId);

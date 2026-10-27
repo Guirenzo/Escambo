@@ -1,4 +1,5 @@
 import { BusinessButton } from '../../components/BusinessActions';
+import { useEmailVerified, VerifyEmailNotice } from '../../components/VerifyEmail';
 import { Heart, MapPin, Plus, Search, SearchX, SlidersHorizontal, X } from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
 import type { AvailabilityPeriod, SavedSearch, SavedSearchFilters, Service } from '@escambo/types';
@@ -146,6 +147,8 @@ export function ServicosView() {
   // novo serviço e "Meus serviços" (RF-022, RF-023 e RF-030)
   const categories = useCategories();
   const create = useCreateService();
+  // Publicar exige e-mail confirmado (RF-006): "Novo serviço" abre o aviso no lugar do formulário.
+  const verified = useEmailVerified();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'search' | 'mine'>('search');
   const flat = categories.data ? flattenCategories(categories.data) : [];
@@ -356,7 +359,14 @@ export function ServicosView() {
         }
       />
 
-      {open && (
+      {open && !verified && (
+        <section className="card" aria-labelledby="new-service-title">
+          <h3 id="new-service-title">Novo serviço</h3>
+          <VerifyEmailNotice action="publicar um serviço" />
+        </section>
+      )}
+
+      {open && verified && (
         <ServiceForm
           className="card"
           heading="Novo serviço"

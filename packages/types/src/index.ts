@@ -1644,6 +1644,12 @@ export interface ChatHistory {
   contractId: number;
   otherPartyId: number;
   messages: ChatMessage[];
+  /**
+   * Conversa encerrada (RF-062): nenhuma contratação aberta nem troca proposta ou em andamento entre
+   * as duas pessoas. O histórico continua legível; enviar responde 409 `conversation_closed`.
+   * Ausente nas versões anteriores da API.
+   */
+  closed?: boolean;
 }
 
 export interface SendMessageRequest {

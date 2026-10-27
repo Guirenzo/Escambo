@@ -10,6 +10,7 @@ import { env } from '../../src/config/env';
 import { dayIn } from '../../src/utils/timezone';
 import { DAY, fromNow, isoFromNow, startDaytimeClock, stopClock } from './clock.helpers';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Ganhos do freelancer por período (RF-082) contra o MySQL real. Um freelancer passa por:
@@ -41,6 +42,7 @@ async function registerAndLogin(role: 'client' | 'freelancer'): Promise<Actor> {
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status, JSON.stringify(login.body)).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 
@@ -273,8 +275,8 @@ describe('ganhos do freelancer (RF-082)', () => {
 async function conta(timezone: BrazilTimezone): Promise<Actor> {
   const key = ulid();
   const [created] = await pool.query<ResultSetHeader>(
-    `INSERT INTO users (ulid, email, role, status, timezone)
-     VALUES (:key, :email, 'freelancer', 'active', :timezone)`,
+    `INSERT INTO users (ulid, email, role, status, timezone, email_verified_at)
+     VALUES (:key, :email, 'freelancer', 'active', :timezone, NOW())`,
     { key, email: `ganhos-fuso-${key}@escambo.test`, timezone },
   );
   return {

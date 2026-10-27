@@ -72,7 +72,7 @@ Configuração da API sob teste: `NODE_ENV=production`, `LOG_LEVEL=info` (log po
 
 Tudo pela API, como o front faz: 250 freelancers e 250 clientes (cadastro com aceite dos termos, login), perfil de freelancer com cidade, coordenadas e dias de atendimento, **10 000 serviços** distribuídos entre os freelancers e 17 categorias, um depósito PIX de R$ 50.000 "pago" no gateway simulado para cada cliente, e 30 propostas que abrem as Salas do teste de WebSocket. Leva ~4–5 min, quase tudo no bcrypt de 12 rodadas do cadastro e do login (1000 operações).
 
-Único atalho fora da API: o e-mail das contas `@carga.test` é marcado como confirmado direto no banco de carga, com o mesmo UPDATE que o link de confirmação executa. O saque exige e-mail confirmado (ADR 20), e o link só existe na caixa de saída simulada.
+Único atalho fora da API: o e-mail das contas `@carga.test` é marcado como confirmado direto no banco de carga, com o mesmo UPDATE que o link de confirmação executa. Publicar, depositar e contratar exigem e-mail confirmado (RF-006, desde a 1.52.0; o saque, desde o ADR 20), e o link só existe na caixa de saída simulada.
 
 No fim da execução B o banco tinha 11 776 contratações, 9107 pagamentos, 8799 saques, 25 179 lançamentos de carteira, 8226 mensagens, 24 606 notificações e 16 880 e-mails na caixa de saída. As leituras rodam depois das escritas, então medem um banco já cheio.
 

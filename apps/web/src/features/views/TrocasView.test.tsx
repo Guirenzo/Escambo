@@ -37,7 +37,10 @@ vi.mock('../../lib/api', () => ({
   },
 }));
 
-vi.mock('../../lib/auth', () => ({ useAuth: () => ({ user: { id: 1 } }) }));
+const auth = vi.hoisted(() => ({
+  user: { id: 1, email: 'eu@escambo.test', emailVerified: true },
+}));
+vi.mock('../../lib/auth', () => ({ useAuth: () => auth }));
 
 // O jsdom não desenha em canvas: o QR Code do depósito fica de fora (a tela não depende dele).
 vi.mock('qrcode', () => ({ default: { toCanvas: () => Promise.resolve() } }));
@@ -131,6 +134,7 @@ const walletOf = (balance: number) => ({
 const plain = (el: Element) => (el.textContent ?? '').replace(/\s/g, ' ');
 
 beforeEach(() => {
+  auth.user.emailVerified = true;
   for (const fn of [
     barters,
     listServices,
@@ -974,5 +978,43 @@ describe('TrocasView: serviço com pacotes (RF-086, ADR 69)', () => {
     expect(plain(screen.getByTestId('barter-estimate'))).toContain(
       'você oferece R$ 300,00 (preço do catálogo) e quer R$ 300,00 (preço do pacote Básico)',
     );
+  });
+});
+
+/** Propor e aceitar troca exigem e-mail confirmado (RF-006); recusar e cancelar, não. */
+describe('TrocasView: e-mail não confirmado (RF-006)', () => {
+  beforeEach(() => {
+    auth.user.emailVerified = false;
+  });
+
+  it('"Propor troca" abre o aviso com o reenvio no lugar do formulário', async () => {
+    const user = userEvent.setup();
+    renderView();
+    const open = screen.getByRole('button', { name: 'Propor troca' });
+    await waitFor(() => expect(open).toBeEnabled());
+    await user.click(open);
+    const section = screen.getByRole('region', { name: 'Nova proposta de troca' });
+    expect(within(section).getByTestId('verify-email-notice')).toHaveTextContent(
+      'Confirme seu e-mail para propor uma troca. Enviamos um link para eu@escambo.test',
+    );
+    expect(screen.queryByLabelText('Eu quero (serviço de outro freelancer)')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Enviar proposta' })).toBeNull();
+  });
+
+  it('"Aceitar" abre o aviso e não chama a API; "Recusar" continua', async () => {
+    const user = userEvent.setup();
+    barters.mockResolvedValue(
+      page([barterOf({ id: 2, proposerId: 3, receiverId: ME, cashPayerId: 3 })]),
+    );
+    renderView();
+    const card = await screen.findByTestId('barter-2');
+    await user.click(within(card).getByRole('button', { name: 'Aceitar' }));
+    const dialog = screen.getByRole('dialog', { name: 'Confirme seu e-mail' });
+    expect(dialog).toHaveTextContent('Confirme seu e-mail para aceitar a troca.');
+    expect(barterAction).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole('button', { name: 'Fechar' }));
+
+    await user.click(within(card).getByRole('button', { name: 'Recusar' }));
+    await waitFor(() => expect(barterAction).toHaveBeenCalledWith(2, 'reject'));
   });
 });

@@ -4,6 +4,7 @@ import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { env } from '../../src/config/env';
 import { lastDailyAlertAt, runSavedSearchAlerts } from '../../src/jobs/saved-search-alerts';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Buscas salvas com alerta (ADR 35 e 37) contra o MySQL real: validação e limite, PATCH, dono,
@@ -31,6 +32,7 @@ async function actor(role: 'client' | 'freelancer'): Promise<Actor> {
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   const a = { id: login.body.user.id as number, token: login.body.accessToken as string };
   if (role === 'freelancer') {
     await request(app)

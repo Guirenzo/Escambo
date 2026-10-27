@@ -5,6 +5,7 @@ import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 const app = createApp();
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
@@ -25,6 +26,7 @@ async function registerAndLogin(role: 'client' | 'freelancer'): Promise<Actor> {
   expect(reg.status, `register ${role}: ${JSON.stringify(reg.body)}`).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status, `login ${role}: ${JSON.stringify(login.body)}`).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken, email };
 }
 
@@ -380,6 +382,8 @@ describe('Fluxo de contratação cash + escrow (ponta a ponta)', () => {
       email: adminEmail,
     };
     expect(adminLogin.body.user.role).toBe('admin');
+    // Publicar exige e-mail confirmado (RF-006), também para o admin agindo como usuário.
+    await confirmEmail(app, admin.id);
     const adminService = await createService(admin, 'Serviço publicado pelo admin');
     for (const serviceId of [undefined, adminService]) {
       const res = await propose({ freelancerId: admin.id, serviceId });

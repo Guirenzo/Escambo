@@ -7,6 +7,7 @@ import { gamificationRepository } from '../../src/modules/gamification/gamificat
 import { gamificationService } from '../../src/modules/gamification/gamification.service';
 import { DAY, fromNow, startDaytimeClock, stopClock } from './clock.helpers';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Badges automáticas (RF-065, RN-053) contra o MySQL real, pelo fluxo da API: entregas no prazo
@@ -34,6 +35,7 @@ async function registerAndLogin(role: 'client' | 'freelancer'): Promise<Actor> {
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status, JSON.stringify(login.body)).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id as number, token: login.body.accessToken as string };
 }
 

@@ -1,7 +1,8 @@
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { blocklist } from '../../config/blocklist';
 import { bearer, routerApp } from '../../test-support/http';
+import { unverifiedEmails } from '../../test-support/email-verification';
 import { HttpError } from '../../utils/http-error';
 import { servicesRoutes } from './services.routes';
 
@@ -958,5 +959,54 @@ describe('serviços: borda HTTP', () => {
     expect(res.body.message).toBe('Dados de entrada inválidos');
     expect(Object.keys(res.body.details).sort()).toEqual(['categoryId', 'day', 'limit', 'sort']);
     expect(service.list).not.toHaveBeenCalled();
+  });
+});
+
+/** Publicar exige e-mail confirmado (RF-006): criar e reativar; editar, pausar e remover, não. */
+describe('serviços: e-mail não confirmado (RF-006)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    unverifiedEmails.add(7);
+  });
+  afterEach(() => unverifiedEmails.clear());
+
+  it('publicar um serviço novo: 403 email_not_verified, sem chegar ao service', async () => {
+    const res = await request(app).post('/api/services').set(bearer(7)).send(validBody).expect(403);
+    expect(res.body.error).toBe('email_not_verified');
+    expect(service.create).not.toHaveBeenCalled();
+  });
+
+  it('reativar (isActive true) também é publicar: 403', async () => {
+    const res = await request(app)
+      .patch('/api/services/5')
+      .set(bearer(7))
+      .send({ isActive: true })
+      .expect(403);
+    expect(res.body.error).toBe('email_not_verified');
+    expect(service.update).not.toHaveBeenCalled();
+  });
+
+  it('pausar, editar o texto e remover seguem livres', async () => {
+    service.update.mockResolvedValue({ ...landing, isActive: false });
+    service.remove.mockResolvedValue(undefined);
+    await request(app)
+      .patch('/api/services/5')
+      .set(bearer(7))
+      .send({ isActive: false })
+      .expect(200);
+    await request(app)
+      .patch('/api/services/5')
+      .set(bearer(7))
+      .send({ title: 'Landing page nova' })
+      .expect(200);
+    await request(app).delete('/api/services/5').set(bearer(7)).expect(204);
+    expect(service.update).toHaveBeenCalledTimes(2);
+    expect(service.remove).toHaveBeenCalledWith(5, 7);
+  });
+
+  it('com e-mail confirmado, publicar passa', async () => {
+    unverifiedEmails.clear();
+    service.create.mockResolvedValue(landing);
+    await request(app).post('/api/services').set(bearer(7)).send(validBody).expect(201);
   });
 });

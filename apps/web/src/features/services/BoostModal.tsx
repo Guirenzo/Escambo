@@ -1,4 +1,5 @@
 import { BusinessModal } from '../../components/BusinessActions';
+import { useEmailVerified, VerifyEmailModal } from '../../components/VerifyEmail';
 import { Rocket } from 'lucide-react';
 import { useState } from 'react';
 import type { Service } from '@escambo/types';
@@ -13,6 +14,7 @@ export function BoostModal({ service, onClose }: { service: Service; onClose: ()
   const wallet = useWallet();
   const boost = useCreateBoost();
   const [planId, setPlanId] = useState<number | null>(null);
+  const verified = useEmailVerified();
   const credits = wallet.data?.credits ?? 0;
 
   async function confirm(): Promise<void> {
@@ -24,6 +26,17 @@ export function BoostModal({ service, onClose }: { service: Service; onClose: ()
     } catch (er) {
       toast.error(er instanceof Error ? er.message : 'Erro ao impulsionar');
     }
+  }
+
+  // Impulsionar gasta créditos: exige e-mail confirmado (RF-006), e o botão abre o aviso.
+  if (!verified) {
+    return (
+      <VerifyEmailModal
+        title={`Impulsionar: ${service.title}`}
+        action="impulsionar o serviço"
+        onClose={onClose}
+      />
+    );
   }
 
   return (

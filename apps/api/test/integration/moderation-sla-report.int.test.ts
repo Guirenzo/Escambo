@@ -7,6 +7,7 @@ import { dayKey, startOfTodayBrt } from '../../src/modules/reports/moderation.da
 import { parseState, REPORT_STATE_KEY } from '../../src/modules/reports/moderation.sla-state';
 import { settingsRepository } from '../../src/modules/settings/settings.repository';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Relatório diário da meta da moderação (ADR 55) contra o MySQL real, com o provedor simulado
@@ -35,6 +36,7 @@ async function actor(role: 'client' | 'freelancer', domain = 'escambo.test'): Pr
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, email, token: login.body.accessToken };
 }
 

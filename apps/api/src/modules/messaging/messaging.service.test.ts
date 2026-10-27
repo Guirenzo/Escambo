@@ -13,6 +13,7 @@ vi.mock('./messaging.repository', () => ({
     markRead: vi.fn(),
     markPurged: vi.fn().mockResolvedValue(undefined),
     findByFileKeys: vi.fn(),
+    hasOpenRelation: vi.fn(),
   },
 }));
 vi.mock('../contracts/contracts.repository', () => ({
@@ -40,6 +41,7 @@ vi.mock('./attachments.storage', async (importOriginal) => ({
 }));
 
 import {
+  CONVERSATION_CLOSED_MESSAGE,
   discardAttachments,
   messagingService,
   notificationBody,
@@ -87,6 +89,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Uma contratação só entre as duas pessoas: a do contrato de onde a mensagem sai.
   mRepo.pairContractIds.mockResolvedValue([1]);
+  // E aberta (RF-062): a conversa aceita mensagens; os testes da conversa encerrada mudam isto.
+  mRepo.hasOpenRelation.mockResolvedValue(true);
 });
 
 describe('messagingService.history', () => {
@@ -117,6 +121,7 @@ describe('messagingService.history', () => {
       contractId: 1,
       otherPartyId: 10,
       messages: [],
+      closed: false,
     });
     expect(mRepo.findByPair).toHaveBeenCalledWith(10, 20);
     expect(mRepo.getOrCreate).not.toHaveBeenCalled();
@@ -783,7 +788,13 @@ describe('messagingService.history: o que cada mensagem mostra', () => {
     const h = await messagingService.history(1, 20);
 
     expect(mRepo.listMessages).toHaveBeenCalledWith(5, 200);
-    expect(h).toEqual({ conversationId: 5, contractId: 1, otherPartyId: 10, messages: [] });
+    expect(h).toEqual({
+      conversationId: 5,
+      contractId: 1,
+      otherPartyId: 10,
+      messages: [],
+      closed: false,
+    });
   });
 
   it('mensagem removida pela moderação sai sem o texto, sem o anexo e sem os sinais — só o aviso (ADR 44)', async () => {
@@ -1541,5 +1552,85 @@ describe('arquivos de uma entrega (RF-035): as regras do anexo do chat para vár
     await messagingService.announceStored(1, 5, []);
     expect(mRepo.findByFileKeys).not.toHaveBeenCalled();
     expect(realtime.emitToContract).not.toHaveBeenCalled();
+  });
+});
+
+describe('messagingService: conversa encerrada (RF-062)', () => {
+  beforeEach(() => {
+    cRepo.findById.mockResolvedValue(fakeContract());
+    mRepo.hasOpenRelation.mockResolvedValue(false);
+    mRepo.getOrCreate.mockResolvedValue(5);
+    disk.saveAttachment.mockResolvedValue('2026/09/01KEY.png');
+  });
+
+  it('texto: 409 conversation_closed, sem criar conversa, gravar, transmitir nem avisar', async () => {
+    await expect(messagingService.send(1, 10, 'Ainda dá para ajustar?')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'conversation_closed',
+      message: CONVERSATION_CLOSED_MESSAGE,
+    });
+    expect(mRepo.hasOpenRelation).toHaveBeenCalledWith(10, 20);
+    expect(mRepo.getOrCreate).not.toHaveBeenCalled();
+    expect(mRepo.insertMessage).not.toHaveBeenCalled();
+    expect(realtime.emitToContract).not.toHaveBeenCalled();
+    expect(notificationsService.notify).not.toHaveBeenCalled();
+    expect(reports.create).not.toHaveBeenCalled();
+  });
+
+  it('anexo: 409 antes de o arquivo ir para o disco', async () => {
+    await expect(
+      messagingService.sendAttachment(1, 20, { buffer: PNG, originalname: 'a.png' }, 'segue'),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'conversation_closed' });
+    expect(disk.saveAttachment).not.toHaveBeenCalled();
+    expect(mRepo.insertMessage).not.toHaveBeenCalled();
+  });
+
+  it('a frase diz o motivo e o caminho de volta', () => {
+    expect(CONVERSATION_CLOSED_MESSAGE).toBe(
+      'Esta conversa está encerrada: não há contratação nem troca em aberto entre vocês. Para conversar de novo, faça uma nova proposta.',
+    );
+  });
+
+  it('quem não é parte continua no 403, sem saber se a conversa está encerrada', async () => {
+    await expect(messagingService.send(1, 99, 'oi')).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'forbidden',
+    });
+    expect(mRepo.hasOpenRelation).not.toHaveBeenCalled();
+  });
+
+  it('o histórico continua legível e diz que está encerrada, sem criar conversa', async () => {
+    mRepo.findByPair.mockResolvedValue({ id: 5, contract_id: 1 } as unknown as ConversationRow);
+    mRepo.listMessages.mockResolvedValue([fakeMsg()]);
+    const h = await messagingService.history(1, 10);
+    expect(h).toMatchObject({ conversationId: 5, closed: true });
+    expect(h.messages).toHaveLength(1);
+    expect(mRepo.getOrCreate).not.toHaveBeenCalled();
+  });
+
+  it('encerrada e sem conversa: histórico vazio, id nulo, e nada é criado', async () => {
+    mRepo.findByPair.mockResolvedValue(undefined);
+    expect(await messagingService.history(1, 20)).toEqual({
+      conversationId: null,
+      contractId: 1,
+      otherPartyId: 10,
+      messages: [],
+      closed: true,
+    });
+    expect(mRepo.getOrCreate).not.toHaveBeenCalled();
+  });
+
+  it('a relação aberta (outra contratação ou troca do par) reabre: o texto sai', async () => {
+    mRepo.hasOpenRelation.mockResolvedValue(true);
+    mRepo.insertMessage.mockResolvedValue(fakeMsg({ id: 9 }));
+    expect(await messagingService.send(1, 10, 'Vamos de novo?')).toMatchObject({ id: 9 });
+    expect(mRepo.getOrCreate).toHaveBeenCalledWith(10, 20, 1);
+  });
+
+  it('com a relação aberta, o histórico diz closed false', async () => {
+    mRepo.hasOpenRelation.mockResolvedValue(true);
+    mRepo.listMessages.mockResolvedValue([]);
+    expect((await messagingService.history(1, 10)).closed).toBe(false);
+    expect(mRepo.getOrCreate).toHaveBeenCalledWith(10, 20, 1);
   });
 });

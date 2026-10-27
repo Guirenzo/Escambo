@@ -123,7 +123,9 @@ test('links que chegam por e-mail: confirmar e-mail, redefinir senha e confirmar
 }) => {
   const { check, done } = collector();
   const admin = await createAdmin(request);
-  const user = await createUser(request, 'client');
+  // O link de confirmação só vale para quem ainda não confirmou (as contas de teste já nascem
+  // confirmadas, RF-006).
+  const user = await createUser(request, 'client', { verified: false });
 
   await page.goto(await tokenFrom(request, admin, user, 'verify_email'));
   await expect(page.getByTestId('verify-ok')).toBeVisible();

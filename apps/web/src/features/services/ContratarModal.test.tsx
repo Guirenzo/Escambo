@@ -1412,3 +1412,20 @@ describe('ContratarModal: pacote com marcos', () => {
     expect(msDue(1)).toHaveAttribute('max', '2026-10-11');
   });
 });
+
+describe('ContratarModal: e-mail não confirmado (RF-006)', () => {
+  it('"Contratar" abre o aviso com o reenvio, sem o formulário nem a proposta', async () => {
+    const user = userEvent.setup();
+    auth.user = { id: 1, timezone: 'America/Sao_Paulo', emailVerified: false } as never;
+    const { onClose } = renderModal();
+    const dialog = screen.getByRole('dialog', { name: 'Contratar: Logo profissional' });
+    expect(within(dialog).getByTestId('verify-email-notice')).toHaveTextContent(
+      'Confirme seu e-mail para contratar.',
+    );
+    expect(within(dialog).getByRole('button', { name: 'Reenviar e-mail' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Enviar proposta' })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Fechar' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(createContract).not.toHaveBeenCalled();
+  });
+});

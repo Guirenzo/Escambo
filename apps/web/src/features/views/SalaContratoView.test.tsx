@@ -204,7 +204,11 @@ function renderSala(
     </QueryClientProvider>
   );
   const view = render(tree(status));
-  return { ...view, setStatus: (next: 'active' | 'suspended') => view.rerender(tree(next)) };
+  return {
+    ...view,
+    client,
+    setStatus: (next: 'active' | 'suspended') => view.rerender(tree(next)),
+  };
 }
 
 /** Renderiza e espera a contratação e o histórico do chat chegarem. */
@@ -1925,5 +1929,123 @@ describe('SalaContratoView: pacote contratado (RF-086)', () => {
     api.contractDetail.mockResolvedValue(contract({ package: null }));
     await openSala();
     expect(screen.queryByTestId('package-kv')).toBeNull();
+  });
+});
+
+/**
+ * Conversa encerrada (RF-062): sem contratação nem troca em aberto entre os dois, o histórico fica
+ * para consulta e o compositor dá lugar a uma faixa só de leitura, com o atalho para nova proposta.
+ */
+describe('SalaContratoView: conversa encerrada (RF-062)', () => {
+  const closed = (messages: ChatMessage[] = []): ChatHistory => ({
+    ...history(messages),
+    closed: true,
+  });
+  const band = () => screen.getByTestId('chat-closed');
+
+  it('o histórico continua, o compositor sai e a faixa diz por quê; o cliente ganha "Contratar de novo"', async () => {
+    api.contractDetail.mockResolvedValue(contract({ status: 'completed' }));
+    api.chatHistory.mockResolvedValue(closed([message({ content: 'Entreguei, obrigado!' })]));
+    await openSala(CLIENT);
+    expect(within(card('Chat')).getByText('Entreguei, obrigado!')).toBeVisible();
+    expect(read(band())).toBe(
+      'Conversa encerrada. Não há contratação nem troca em aberto entre vocês: o histórico fica aqui para consulta, e uma nova proposta reabre o chat. Contratar de novo',
+    );
+    expect(band()).toHaveAttribute('role', 'status');
+    expect(within(band()).getByRole('link', { name: 'Contratar de novo' })).toHaveAttribute(
+      'href',
+      '/servicos/21',
+    );
+    expect(screen.queryByPlaceholderText('Escreva uma mensagem…')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Anexar arquivo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enviar' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/clipe, colar ou arrastar aqui/)).not.toBeInTheDocument();
+  });
+
+  it('o freelancer não contrata o cliente: a faixa explica, sem atalho', async () => {
+    api.contractDetail.mockResolvedValue(contract({ status: 'cancelled' }));
+    api.chatHistory.mockResolvedValue(closed());
+    await openSala(FREELANCER);
+    expect(within(band()).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('numa troca, qualquer um dos dois pode propor outra', async () => {
+    api.contractDetail.mockResolvedValue(contract({ status: 'completed', paymentMode: 'barter' }));
+    api.chatHistory.mockResolvedValue(closed());
+    await openSala(FREELANCER);
+    expect(within(band()).getByRole('link', { name: 'Propor outra troca' })).toHaveAttribute(
+      'href',
+      '/trocas',
+    );
+  });
+
+  it('proposta direta, sem serviço: o cliente lê a faixa sem atalho', async () => {
+    api.contractDetail.mockResolvedValue(contract({ status: 'rejected', serviceId: null }));
+    api.chatHistory.mockResolvedValue(closed());
+    await openSala(CLIENT);
+    expect(within(band()).queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('arrastar um arquivo para a conversa encerrada não anexa nada', async () => {
+    api.contractDetail.mockResolvedValue(contract({ status: 'completed' }));
+    api.chatHistory.mockResolvedValue(closed());
+    await openSala(CLIENT);
+    const chat = card('Chat');
+    fireEvent.dragOver(chat);
+    expect(chat).not.toHaveClass('dragging');
+    fireEvent.drop(chat, { dataTransfer: { files: [pdf()] } });
+    expect(screen.queryByText('roteiro.pdf')).not.toBeInTheDocument();
+  });
+
+  it('a contratação muda de estado na tela: o chat confere de novo e a faixa aparece', async () => {
+    api.contractDetail.mockResolvedValue(contract({ status: 'delivered' }));
+    const view = await openSala(CLIENT);
+    expect(screen.queryByTestId('chat-closed')).not.toBeInTheDocument();
+    expect(api.chatHistory).toHaveBeenCalledTimes(1);
+
+    api.contractDetail.mockResolvedValue(contract({ status: 'completed' }));
+    api.chatHistory.mockResolvedValue(closed());
+    await act(async () => {
+      await view.client.invalidateQueries({ queryKey: ['contract', ID] });
+    });
+    expect(await screen.findByTestId('chat-closed')).toBeVisible();
+    expect(api.chatHistory).toHaveBeenCalledTimes(2);
+    expect(screen.queryByPlaceholderText('Escreva uma mensagem…')).not.toBeInTheDocument();
+  });
+
+  it('recarregar a contratação sem mudar o estado não busca o chat de novo', async () => {
+    const view = await openSala(CLIENT);
+    await act(async () => {
+      await view.client.invalidateQueries({ queryKey: ['contract', ID] });
+    });
+    await waitFor(() => expect(api.contractDetail).toHaveBeenCalledTimes(2));
+    expect(api.chatHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('encerrou entre abrir e enviar: o 409 vira a faixa, e o anexo escolhido sai', async () => {
+    const user = userEvent.setup({ delay: null });
+    api.sendAttachment.mockRejectedValue(
+      Object.assign(new Error('Esta conversa está encerrada.'), { code: 'conversation_closed' }),
+    );
+    await openSala(CLIENT);
+    api.chatHistory.mockResolvedValue(closed());
+    await user.upload(screen.getByTestId('attachment-input'), pdf());
+    await user.click(sendButton());
+    expect(await screen.findByText('Esta conversa está encerrada.')).toBeInTheDocument();
+    expect(await screen.findByTestId('chat-closed')).toBeVisible();
+    expect(screen.queryByText('roteiro.pdf')).not.toBeInTheDocument();
+  });
+
+  it('outra recusa da API não fecha a conversa', async () => {
+    const user = userEvent.setup({ delay: null });
+    api.sendMessage.mockRejectedValue(
+      Object.assign(new Error('Muitas mensagens.'), { code: 'too_many_requests' }),
+    );
+    await openSala(CLIENT);
+    await user.type(draftInput(), 'Oi');
+    await user.click(sendButton());
+    expect(await screen.findByText('Muitas mensagens.')).toBeInTheDocument();
+    expect(api.chatHistory).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('chat-closed')).not.toBeInTheDocument();
   });
 });

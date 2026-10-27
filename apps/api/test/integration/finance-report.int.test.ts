@@ -4,6 +4,7 @@ import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Relatório financeiro do admin contra o MySQL real. Os outros arquivos de integração também
@@ -33,6 +34,7 @@ async function registerAndLogin(
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken, email };
 }
 

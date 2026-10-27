@@ -8,6 +8,7 @@ import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { fundWallet } from './wallet.helpers';
 import { createSocketServer } from '../../src/config/socket';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Notificações em tempo real: cada usuário conectado entra na sala `user:<id>` e recebe
@@ -37,6 +38,7 @@ async function registerAndLogin(role: 'client' | 'freelancer'): Promise<Actor> {
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 

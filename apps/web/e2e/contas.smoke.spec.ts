@@ -50,7 +50,7 @@ test('confirmação de e-mail: banner no app, link do e-mail confirma e o banner
   page,
   request,
 }) => {
-  const user = await createUser(request, 'client');
+  const user = await createUser(request, 'client', { verified: false });
   const admin = await createAdmin(request);
 
   await openAs(page, user, '/');

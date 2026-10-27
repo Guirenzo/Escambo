@@ -12,6 +12,7 @@ import { runOverdueContracts } from '../../src/jobs/overdue-contracts';
 import { runTacitApproval } from '../../src/jobs/tacit-approval';
 import { DAY, fromNow, HOUR, isoFromNow, now, startDaytimeClock, stopClock } from './clock.helpers';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Origem de cada mudança de status (coluna contract_status_history.source, migration 0048, ADR 63)
@@ -53,6 +54,7 @@ async function registerAndLogin(
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status, JSON.stringify(login.body)).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id as number, token: login.body.accessToken as string };
 }
 
@@ -380,8 +382,8 @@ describe('migration 0048: a origem das linhas antigas e a migration rodando de n
 
   async function user(role: 'client' | 'freelancer'): Promise<number> {
     const [res] = await conn.query<ResultSetHeader>(
-      `INSERT INTO users (ulid, email, password_hash, role, status)
-       VALUES (:key, :email, 'x', :role, 'active')`,
+      `INSERT INTO users (ulid, email, password_hash, role, status, email_verified_at)
+       VALUES (:key, :email, 'x', :role, 'active', NOW())`,
       { key: ulid(), email: `int_origem_mig_${Date.now()}_${n++}@escambo.test`, role },
     );
     return res.insertId;

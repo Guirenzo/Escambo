@@ -4,6 +4,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Moderação de avaliações e mensagens (ADR 44) contra o MySQL real: a avaliação removida sai da
@@ -30,6 +31,7 @@ async function actor(role: 'client' | 'freelancer', domain = 'escambo.test'): Pr
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   const a: Actor = {
     id: login.body.user.id,
     ulid: login.body.user.ulid,

@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from 'express';
 import { authenticate } from '../../middlewares/authenticate';
 import { uploadRateLimiter } from '../../middlewares/rate-limit';
+import { requireVerifiedEmail } from '../../middlewares/require-verified-email';
 import { fileArray } from '../../middlewares/upload';
 import { asyncHandler } from '../../utils/async-handler';
 import { agreeDropout } from '../dropouts/dropouts.controller';
@@ -47,7 +48,9 @@ const deliveryUpload: RequestHandler[] = [
 // Toda contratação exige login.
 contractsRoutes.use(authenticate);
 
-contractsRoutes.post('/', asyncHandler(createContract));
+// Contratar exige e-mail confirmado (RF-006). Responder ao que já existe (aceitar, recusar,
+// contrapropor, entregar, aprovar, disputar), não.
+contractsRoutes.post('/', requireVerifiedEmail, asyncHandler(createContract));
 contractsRoutes.get('/', asyncHandler(listContracts));
 contractsRoutes.get('/:id', asyncHandler(getContract));
 

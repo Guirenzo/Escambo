@@ -1,8 +1,9 @@
 import type { Request, Response } from 'express';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { blocklist } from '../../config/blocklist';
 import { bearer, routerApp, businessAudits } from '../../test-support/http';
+import { unverifiedEmails } from '../../test-support/email-verification';
 import { HttpError } from '../../utils/http-error';
 import { walletRoutes } from './wallet.routes';
 import { getWallet } from './wallet.controller';
@@ -653,5 +654,37 @@ describe('carteira e depósitos: borda HTTP', () => {
       await request(app).get('/api/wallet/deposits/12/simulate').set(bearer(7)).expect(404);
       expect(payments.simulate).not.toHaveBeenCalled();
     });
+  });
+});
+
+/** Depositar e pagar a cobrança exigem e-mail confirmado (RF-006); consultar, não. */
+describe('depósitos: e-mail não confirmado (RF-006)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    unverifiedEmails.add(7);
+  });
+  afterEach(() => unverifiedEmails.clear());
+
+  it('gerar a cobrança e simular o pagamento: 403 email_not_verified, sem chegar ao service', async () => {
+    const created = await request(app)
+      .post('/api/wallet/deposits')
+      .set(bearer(7))
+      .send({ amount: 150, method: 'pix' })
+      .expect(403);
+    expect(created.body.error).toBe('email_not_verified');
+    const paid = await request(app)
+      .post('/api/wallet/deposits/12/simulate')
+      .set(bearer(7))
+      .expect(403);
+    expect(paid.body.error).toBe('email_not_verified');
+    expect(payments.createDeposit).not.toHaveBeenCalled();
+    expect(payments.simulate).not.toHaveBeenCalled();
+    expect(businessAudits(log)).toEqual([]);
+  });
+
+  it('as cobranças continuam consultáveis', async () => {
+    payments.getDeposit.mockResolvedValue(deposit);
+    await request(app).get('/api/wallet/deposits/12').set(bearer(7)).expect(200);
+    expect(payments.getDeposit).toHaveBeenCalled();
   });
 });

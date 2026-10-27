@@ -5,6 +5,27 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.52.0] — 2026-10-26
+
+Ações críticas só com e-mail confirmado (RF-006, RN-004) e chat só com contratação ou troca em aberto (RF-062, RN-082), ADR 70. RF: 87 implementados, 3 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Conversa encerrada:** a conversa continua uma só por par (ADR 31), e enviar texto ou anexo, pela rota ou pelo socket, só vale enquanto há uma contratação que não terminou (proposta, aceita, em andamento, entregue, em revisão ou em disputa) ou uma troca proposta ou em andamento entre as duas pessoas. Sem ela, a API responde 409 `conversation_closed`, conferido antes de criar a conversa ou gravar o arquivo. Ler o histórico, baixar anexos e marcar como lida continuam; disputa aberta mantém o chat aberto; não há carência depois do fim.
+- Na Sala, a conversa encerrada troca o compositor por uma faixa só de leitura, com "Contratar de novo" (cliente) ou "Propor outra troca", e reabre sozinha quando chega uma proposta nova. O histórico do chat traz `closed`.
+- **Aviso "Confirme seu e-mail"** no lugar da ação, com o botão "Reenviar e-mail": em Contratar, Impulsionar, Depositar, Novo serviço, Reativar, propor e aceitar troca.
+
+### Alterado
+
+- **E-mail confirmado nas ações críticas:** sem e-mail confirmado, contratar, publicar serviço (criar ou reativar um pausado), depositar ou pagar, propor ou aceitar troca, impulsionar e sacar respondem 403 `email_not_verified`, sempre com a mesma frase. Navegar, editar o perfil, responder ao que já existe (aceitar, recusar, contrapropor, entregar, aprovar, disputar), suporte, LGPD e segurança da conta continuam livres. A confirmação é lida na mesma consulta do status da conta e conferida na rota por uma regra só, para todos os papéis; as rotas de equipe do admin não mudam.
+- O saque passa a usar essa regra e essa frase ("Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo."); antes a checagem ficava no serviço do saque.
+- O lembrete do topo diz que confirmar o e-mail libera "contratar, publicar e movimentar dinheiro".
+- O seed da demo manda os anexos da "Landing page" com a contratação aberta e para com uma mensagem clara se não achar o link de confirmação.
+
+### Para atualizar
+
+Sem migration e sem variável nova. Antes de subir, confira que o e-mail chega: quem não confirmou não contrata nem publica. Ver "Atualizar para a 1.52.0" no `DEPLOY.md`.
+
 ## [1.51.0] — 2026-10-26
 
 Pacotes Básico, Padrão e Premium por serviço (RF-086, RN-068, ADR 69). RF: 85 implementados, 1 parcial, 4 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.

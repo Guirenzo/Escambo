@@ -9,6 +9,8 @@ const STATUSES: readonly string[] = ['active', 'pending_verification', 'suspende
 export interface CurrentAccount extends AccessIdentity {
   role: UserRole;
   status: UserStatus;
+  /** O e-mail da conta está confirmado (RF-006, RN-004). */
+  emailVerified: boolean;
 }
 
 export function validateAccessIdentity(payload: unknown): AccessIdentity {
@@ -52,7 +54,13 @@ export async function currentAccount(identity: AccessIdentity): Promise<CurrentA
   if (row.status === 'banned') {
     throw new HttpError(403, 'Conta banida. Fale com o suporte.', 'account_blocked');
   }
-  return { uid: row.id, sub: row.ulid, role: row.role, status: row.status };
+  return {
+    uid: row.id,
+    sub: row.ulid,
+    role: row.role,
+    status: row.status,
+    emailVerified: row.email_verified_at != null,
+  };
 }
 
 export function assertBusinessWrite(account: CurrentAccount): void {
@@ -62,6 +70,22 @@ export function assertBusinessWrite(account: CurrentAccount): void {
       'Conta suspensa: acesso somente para consulta. Esta ação está bloqueada.',
       'account_suspended',
     );
+  }
+}
+
+/** A mesma frase para toda ação recusada por e-mail não confirmado (RF-006). */
+export const EMAIL_NOT_VERIFIED_MESSAGE =
+  'Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo.';
+
+/**
+ * Ações críticas exigem e-mail confirmado (RF-006, RN-004): contratar, publicar serviço, depositar
+ * ou pagar, propor ou aceitar troca, impulsionar e sacar. Vale para qualquer papel; o admin só
+ * passa sem ela quando age como equipe, em rotas que não usam esta checagem. O resto (navegar,
+ * perfil, responder ao que já existe, suporte, LGPD, segurança da conta) continua livre.
+ */
+export function assertEmailVerified(account: Pick<CurrentAccount, 'emailVerified'>): void {
+  if (!account.emailVerified) {
+    throw new HttpError(403, EMAIL_NOT_VERIFIED_MESSAGE, 'email_not_verified');
   }
 }
 

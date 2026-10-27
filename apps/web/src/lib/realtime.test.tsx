@@ -66,7 +66,15 @@ afterEach(() => {
 });
 
 describe('avisos em tempo real', () => {
-  const CONTRACT = [['notifications'], ['contracts'], ['contract'], ['wallet'], ['gamification']];
+  // A conversa do par abre e fecha com as contratações e trocas dele (RF-062): o chat também.
+  const CONTRACT = [
+    ['notifications'],
+    ['contracts'],
+    ['contract'],
+    ['wallet'],
+    ['gamification'],
+    ['chat'],
+  ];
   const MONEY = [
     ['notifications'],
     ['wallet'],
@@ -93,7 +101,7 @@ describe('avisos em tempo real', () => {
     // ADR 57: extensão de prazo e disputa também mudam a Sala.
     ['deadline_extension_requested', CONTRACT],
     ['dispute_opened', CONTRACT],
-    ['barter_proposed', [['notifications'], ['barters'], ['contracts']]],
+    ['barter_proposed', [['notifications'], ['barters'], ['contracts'], ['chat']]],
     // Missão cumprida (RF-066): o cartão, o XP e o ranking.
     ['mission_completed', [['notifications'], ['missions'], ['gamification'], ['leaderboard']]],
     ['deposit_confirmed', MONEY],

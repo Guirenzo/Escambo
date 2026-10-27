@@ -6,6 +6,7 @@ import { env } from '../../src/config/env';
 import { runDailyDigest, startOfTodayBrt } from '../../src/jobs/daily-digest';
 import { notificationsService } from '../../src/modules/notifications/notifications.service';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Preferência de e-mail e resumo diário contra o MySQL real (provedor simulado: a caixa de
@@ -34,6 +35,7 @@ async function registerAndLogin(
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 

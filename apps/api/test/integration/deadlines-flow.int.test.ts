@@ -8,6 +8,7 @@ import { formatDateTime } from '../../src/utils/timezone';
 import { DAY, fromNow, HOUR, isoFromNow, now, startDaytimeClock, stopClock } from './clock.helpers';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Prazos de ponta a ponta contra o MySQL real (ADR 57):
@@ -46,6 +47,7 @@ async function registerAndLogin(
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 

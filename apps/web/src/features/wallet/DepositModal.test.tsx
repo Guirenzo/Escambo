@@ -22,6 +22,10 @@ vi.mock('../../lib/api', () => ({
   },
 }));
 
+// A sessão só importa para o e-mail confirmado (RF-006): sem conta na sessão, a tela não trava.
+const auth = vi.hoisted(() => ({ user: null as { email: string; emailVerified: boolean } | null }));
+vi.mock('../../lib/auth', () => ({ useAuth: () => auth }));
+
 /** O desenho do QR Code é da biblioteca (e o jsdom não tem canvas): aqui só importa o que ela recebe. */
 const toCanvas = vi.fn();
 vi.mock('qrcode', () => ({
@@ -122,6 +126,7 @@ describe('DepositModal: suspensão com o modal aberto', () => {
 });
 
 beforeEach(() => {
+  auth.user = null;
   createDeposit.mockReset();
   createDeposit.mockResolvedValue(deposit());
   depositStatus.mockReset();
@@ -566,5 +571,34 @@ describe('DepositModal: cobrança encerrada sem pagamento', () => {
     expect(screen.getByText('Cobrança falhou. Gere uma nova para continuar.')).toBeInTheDocument();
     expect(screen.queryByLabelText('PIX copia e cola')).not.toBeInTheDocument();
     expect(onPaid).not.toHaveBeenCalled();
+  });
+});
+
+describe('DepositModal: e-mail não confirmado (RF-006)', () => {
+  beforeEach(() => {
+    auth.user = { email: 'bia@escambo.test', emailVerified: false };
+  });
+
+  it('depositar abre o aviso com o reenvio no lugar do valor', () => {
+    renderModal();
+    const dialog = screen.getByRole('dialog', { name: 'Depositar na carteira' });
+    expect(within(dialog).getByTestId('verify-email-notice')).toHaveTextContent(
+      'Confirme seu e-mail para depositar. Enviamos um link para bia@escambo.test',
+    );
+    expect(screen.queryByLabelText('Valor (R$)')).not.toBeInTheDocument();
+    expect(createDeposit).not.toHaveBeenCalled();
+  });
+
+  it('a cobrança pendente também espera a confirmação: sem QR Code nem simulação', () => {
+    renderModal({ initial: deposit({ canSimulate: true }) });
+    expect(screen.getByTestId('verify-email-notice')).toBeInTheDocument();
+    expect(screen.queryByLabelText('PIX copia e cola')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Simular pagamento' })).not.toBeInTheDocument();
+  });
+
+  it('o depósito já confirmado continua aparecendo', () => {
+    renderModal({ initial: deposit({ status: 'paid', paidAt: '2026-10-01T15:05:00.000Z' }) });
+    expect(screen.queryByTestId('verify-email-notice')).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Depositar na carteira' })).toBeInTheDocument();
   });
 });
