@@ -1,16 +1,22 @@
 import type {
   Badge,
   ClientProfile,
+  CompanyProfile,
   FreelancerProfile,
   MyProfiles,
   PortfolioItem,
+  PublicCompanyProfile,
   PublicFreelancerProfile,
 } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
+import { userAgentOf } from '../../utils/user-agent';
+import { auditService } from '../audit/audit.service';
+import type { RequestContext } from '../auth/auth.service';
 import { computeEscamboScore } from '../score/score.service';
 import {
   profilesRepository,
   type ClientRow,
+  type CompanyRow,
   type FreelancerRow,
   type PortfolioRow,
   type PublicFreelancerRow,
@@ -19,6 +25,7 @@ import {
   PORTFOLIO_MAX_ITEMS,
   type PortfolioItemInput,
   type UpsertClientInput,
+  type UpsertCompanyInput,
   type UpsertFreelancerInput,
 } from './profiles.schema';
 import { isAvailableNow, normalizePeriods, parsePeriods } from './availability';
@@ -102,6 +109,23 @@ function toClient(r: ClientRow): ClientProfile {
     state: r.state,
   };
 }
+
+/** company_name é a razão social; o nome fantasia cai nela se faltar (linha anterior à 1.53.0). */
+function toCompany(r: CompanyRow): CompanyProfile {
+  return {
+    legalName: r.company_name,
+    tradeName: r.trade_name ?? r.company_name,
+    cnpj: r.cnpj ?? '',
+    logoUrl: r.logo_url,
+    bio: r.bio,
+    website: r.website,
+    city: r.city,
+    state: r.state,
+  };
+}
+
+const cnpjTaken = (): HttpError =>
+  new HttpError(409, 'Este CNPJ já está em outra conta do Escambo.', 'cnpj_taken');
 
 export const profilesService = {
   async upsertFreelancer(userId: number, input: UpsertFreelancerInput): Promise<FreelancerProfile> {
@@ -204,11 +228,82 @@ export const profilesService = {
   },
 
   async getMine(userId: number): Promise<MyProfiles> {
-    const [f, c] = await Promise.all([
+    const [f, c, co] = await Promise.all([
       profilesRepository.findFreelancerByUserId(userId),
       profilesRepository.findClientByUserId(userId),
+      profilesRepository.findCompanyByUserId(userId),
     ]);
-    return { freelancer: f ? toFreelancer(f) : null, client: c ? toClient(c) : null };
+    return {
+      freelancer: f ? toFreelancer(f) : null,
+      client: c ? toClient(c) : null,
+      company: co ? toCompany(co) : null,
+    };
+  },
+
+  /**
+   * Dados da empresa (RF-018), só de conta de empresa: a razão social, o nome fantasia e o CNPJ
+   * continuam obrigatórios; logo, site, descrição curta e cidade são do Perfil. O CNPJ é dado
+   * público, mas a troca dele fica na auditoria (de qual para qual).
+   */
+  async upsertCompany(
+    userId: number,
+    role: string,
+    input: UpsertCompanyInput,
+    ctx: RequestContext,
+  ): Promise<CompanyProfile> {
+    if (role !== 'company') {
+      throw new HttpError(403, 'Só contas de empresa têm dados de empresa.', 'not_company');
+    }
+    const before = await profilesRepository.findCompanyByUserId(userId);
+    if (await profilesRepository.cnpjTaken(input.cnpj, userId)) throw cnpjTaken();
+    try {
+      await profilesRepository.upsertCompany(userId, {
+        legalName: input.legalName,
+        tradeName: input.tradeName,
+        cnpj: input.cnpj,
+        logoUrl: input.logoUrl ?? null,
+        bio: input.bio ?? null,
+        website: input.website ?? null,
+        city: input.city ?? null,
+        state: input.state ? input.state.toUpperCase() : null,
+      });
+    } catch (err) {
+      // Outra conta gravou o mesmo CNPJ entre a conferência e o UPDATE.
+      if ((err as { code?: string }).code === 'ER_DUP_ENTRY') throw cnpjTaken();
+      throw err;
+    }
+    if ((before?.cnpj ?? null) !== input.cnpj) {
+      void auditService.log({
+        userId,
+        action: 'company_cnpj_changed',
+        entityType: 'user',
+        entityId: userId,
+        oldValue: { cnpj: before?.cnpj ?? null },
+        newValue: { cnpj: input.cnpj },
+        ip: ctx.ip,
+        userAgent: userAgentOf(ctx.userAgent),
+      });
+    }
+    return toCompany((await profilesRepository.findCompanyByUserId(userId))!);
+  },
+
+  /** A página pública da empresa (RF-018): o CNPJ é dado público e aparece inteiro. */
+  async getPublicCompany(ulid: string): Promise<PublicCompanyProfile> {
+    const r = await profilesRepository.findPublicCompanyByUlid(ulid);
+    if (!r) throw new HttpError(404, 'Empresa não encontrada', 'company_not_found');
+    return {
+      ...toCompany(r),
+      userUlid: r.ulid,
+      memberSince: new Date(r.created_at).toISOString(),
+    };
+  },
+
+  /** Para o atendimento: o nome fantasia e o CNPJ da conta de empresa; null nas outras. */
+  async companySummary(userId: number): Promise<{ tradeName: string; cnpj: string } | null> {
+    const r = await profilesRepository.findCompanyByUserId(userId);
+    if (!r) return null;
+    const c = toCompany(r);
+    return { tradeName: c.tradeName, cnpj: c.cnpj };
   },
 
   /**

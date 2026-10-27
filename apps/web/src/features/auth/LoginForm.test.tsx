@@ -290,7 +290,10 @@ describe('LoginForm: criar conta', () => {
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
       'Cliente — quero contratar',
       'Freelancer — quero oferecer',
+      'Empresa — quero contratar',
     ]);
+    // Os dados da empresa só aparecem para quem escolhe "Empresa".
+    expect(screen.queryByRole('group', { name: 'Dados da empresa' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Esqueci minha senha' })).not.toBeInTheDocument();
     // Senha nova: o gerenciador sugere uma em vez de preencher a guardada.
     expect(screen.getByLabelText('Senha')).toHaveAttribute('autocomplete', 'new-password');
@@ -373,6 +376,69 @@ describe('LoginForm: criar conta', () => {
       password: 'segredo123',
       role: 'freelancer',
       legalAccepted: true,
+    });
+  });
+
+  describe('conta de empresa (RF-018)', () => {
+    async function asCompany(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+      renderForm();
+      await user.click(tab('Criar conta'));
+      await user.type(screen.getByLabelText('E-mail'), 'compras@paobom.test');
+      await user.type(screen.getByLabelText('Senha'), 'segredo123');
+      await user.selectOptions(
+        screen.getByRole('combobox', { name: 'Eu sou' }),
+        'Empresa — quero contratar',
+      );
+      return screen.getByRole('group', { name: 'Dados da empresa' });
+    }
+
+    it('pede razão social, nome fantasia e CNPJ, e manda tudo no cadastro', async () => {
+      const user = userEvent.setup();
+      const group = await asCompany(user);
+      await user.type(within(group).getByLabelText('Razão social'), ' Padaria Pão Bom Ltda ');
+      await user.type(within(group).getByLabelText('Nome fantasia'), 'Pão Bom');
+      await user.type(within(group).getByLabelText('CNPJ'), '12.abc.345/01de-35');
+      expect(within(group).getByLabelText('CNPJ')).toHaveAccessibleDescription(
+        'Com ou sem pontos, barra e hífen. Vale também o CNPJ com letras (alfanumérico).',
+      );
+      await user.click(consentBox());
+      await user.click(submitButton());
+
+      expect(register).toHaveBeenCalledWith({
+        email: 'compras@paobom.test',
+        password: 'segredo123',
+        role: 'company',
+        company: {
+          legalName: 'Padaria Pão Bom Ltda',
+          tradeName: 'Pão Bom',
+          cnpj: '12.abc.345/01de-35',
+        },
+        legalAccepted: true,
+      });
+    });
+
+    it('CNPJ com dígito errado avisa no campo, sem enviar; digitar de novo limpa o aviso', async () => {
+      const user = userEvent.setup();
+      const group = await asCompany(user);
+      await user.type(within(group).getByLabelText('Razão social'), 'Padaria Pão Bom Ltda');
+      await user.type(within(group).getByLabelText('Nome fantasia'), 'Pão Bom');
+      const cnpj = within(group).getByLabelText('CNPJ');
+      await user.type(cnpj, '12.ABC.345/01DE-36');
+      await user.click(consentBox());
+      await user.click(submitButton());
+
+      expect(register).not.toHaveBeenCalled();
+      const alert = await within(group).findByRole('alert');
+      expect(alert).toHaveTextContent(
+        'CNPJ inválido: confira os 14 caracteres e os dois dígitos verificadores.',
+      );
+      expect(cnpj).toHaveAttribute('aria-invalid', 'true');
+      expect(cnpj).toHaveFocus();
+      expect(submitButton()).toBeEnabled();
+
+      await user.type(cnpj, '{Backspace}5');
+      expect(within(group).queryByRole('alert')).not.toBeInTheDocument();
+      expect(cnpj).toHaveAttribute('aria-invalid', 'false');
     });
   });
 

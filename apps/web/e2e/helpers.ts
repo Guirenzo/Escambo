@@ -164,6 +164,101 @@ export async function verifyEmail(
   await api(request, 'post', '/auth/verify-email', { data: { token } });
 }
 
+let docSeq = 0;
+/** Base de 9 caracteres que não se repete na execução (relógio + contador). */
+const docBase = (): string =>
+  `${(Date.now() % 1_000_000_000) + docSeq++ * 7919}`.padStart(9, '1').slice(-9);
+
+/** Um CPF válido e único por chamada (RF-020: o CPF é único entre contas). */
+export function uniqueCpf(): string {
+  const digit = (b: string, n: number): number => {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += Number(b[i]) * (n + 1 - i);
+    const rest = (sum * 10) % 11;
+    return rest === 10 ? 0 : rest;
+  };
+  let base = docBase();
+  if (/^(\d)\1{8}$/.test(base)) base = `${base.slice(0, 8)}${(Number(base[8]) + 1) % 10}`;
+  const first = digit(base, 9);
+  return `${base}${first}${digit(`${base}${first}`, 10)}`;
+}
+
+/** Um CNPJ alfanumérico válido e único (IN RFB 2.229/2024): "AB" + 10 caracteres e os verificadores. */
+export function uniqueCnpj(): string {
+  const dv = (b: string): number => {
+    let sum = 0;
+    let weight = 2;
+    for (let i = b.length - 1; i >= 0; i--) {
+      sum += (b.charCodeAt(i) - 48) * weight;
+      weight = weight === 9 ? 2 : weight + 1;
+    }
+    const rest = sum % 11;
+    return rest < 2 ? 0 : 11 - rest;
+  };
+  const base = `AB${unique()
+    .toUpperCase()
+    .replace(/[^0-9A-Z]/g, '0')}`
+    .padEnd(12, '7')
+    .slice(0, 12);
+  const first = dv(base);
+  return `${base}${first}${dv(`${base}${first}`)}`;
+}
+
+/**
+ * Valida o CPF de quem vai sacar pelo caminho do produto (RF-020): o perfil de freelancer (criado
+ * se faltar) e o CPF com a data de nascimento de um adulto. Devolve o CPF.
+ */
+export async function verifyCpf(request: APIRequestContext, user: TestUser): Promise<string> {
+  const mine = await api<{ freelancer: unknown }>(request, 'get', '/profiles/me', {
+    token: user.token,
+  });
+  if (!mine.freelancer) {
+    await api(request, 'put', '/profiles/freelancer', {
+      token: user.token,
+      data: { fullName: `Freela ${user.id}` },
+    });
+  }
+  const cpf = uniqueCpf();
+  await api(request, 'put', '/profiles/me/cpf', {
+    token: user.token,
+    data: { cpf, birthDate: '1990-05-17' },
+  });
+  return cpf;
+}
+
+/** Conta de empresa (RF-018) com a razão social, o nome fantasia e um CNPJ único. */
+export async function createCompany(
+  request: APIRequestContext,
+  opts: { tradeName?: string; legalName?: string } = {},
+): Promise<TestUser & { ulid: string; cnpj: string; tradeName: string }> {
+  const email = `e2e-company-${unique()}@escambo.test`;
+  const cnpj = uniqueCnpj();
+  const tradeName = opts.tradeName ?? `Empresa ${unique()}`;
+  await api(request, 'post', '/auth/register', {
+    data: {
+      email,
+      password: PASSWORD,
+      role: 'company',
+      legalAccepted: true,
+      company: { legalName: opts.legalName ?? `${tradeName} Ltda`, tradeName, cnpj },
+    },
+  });
+  const auth = await api<{ accessToken: string; user: { id: number; ulid: string } }>(
+    request,
+    'post',
+    '/auth/login',
+    { data: { email, password: PASSWORD } },
+  );
+  return {
+    id: auth.user.id,
+    ulid: auth.user.ulid,
+    email,
+    token: auth.accessToken,
+    cnpj,
+    tradeName,
+  };
+}
+
 /** Contratação levada até 'delivered' pela API (create → accept → deliver). */
 export async function deliveredContract(
   request: APIRequestContext,

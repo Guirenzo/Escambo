@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   createAdmin,
+  createCompany,
   createService,
   createUser,
   deliveredContract,
@@ -244,6 +245,24 @@ for (const [criterion, css] of [
       await request.get('/api/auth/me', { headers: h(freelancer.token) })
     ).json()) as { ulid: string };
     const admin = await createAdmin(request);
+    // Conta de empresa de nomes compridos (RF-018), contratando o freelancer.
+    const company = await createCompany(request, {
+      tradeName: 'Padaria e Confeitaria Pão Quentinho do Bairro',
+      legalName: 'Padaria e Confeitaria Pão Quentinho do Bairro Comércio de Alimentos Ltda',
+    });
+    await topUp(request, company, 150);
+    const byCompany = await request.post('/api/contracts', {
+      headers: h(company.token),
+      data: {
+        freelancerId: freelancer.id,
+        serviceId: service.id,
+        title: 'Cardápio da padaria',
+        description: 'Contratação feita por uma conta de empresa.',
+        price: 150,
+      },
+    });
+    expect(byCompany.ok(), await byCompany.text()).toBeTruthy();
+    const byCompanyId = ((await byCompany.json()) as { id: number }).id;
 
     const problems: string[] = [];
     const check = async (label: string): Promise<void> => {
@@ -270,6 +289,7 @@ for (const [criterion, css] of [
     await check('/ com as dúvidas abertas');
     for (const path of [
       '/cadastro?perfil=freelancer',
+      '/cadastro?perfil=empresa',
       '/login',
       '/esqueci-senha',
       '/redefinir-senha?token=x',
@@ -299,6 +319,10 @@ for (const [criterion, css] of [
     await visit(freelancer, `/contratos/${contractId}`);
     await visit(other, '/trocas');
     await visit(admin, '/admin');
+    // Documentos (RF-018, RF-020): o Perfil e a página da empresa, e a Sala com o selo.
+    await visit(company, '/perfil');
+    await visit(freelancer, `/empresas/${company.ulid}`);
+    await visit(freelancer, `/contratos/${byCompanyId}`);
 
     // Perfil público com o portfólio e a galeria aberta.
     await visit(client, `/freelancers/${ulid}`);

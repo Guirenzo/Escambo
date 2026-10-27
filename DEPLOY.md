@@ -265,6 +265,24 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
+### Atualizar para a 1.53.0 (CPF e conta de empresa)
+
+Uma migration (0052, aditiva e segura de rodar de novo). O passo que pede atenção é a chave de cifragem: **a partir desta versão, o saque de quem entrega trabalho pede o CPF validado**, e o CPF só é gravado cifrado.
+
+**1. Confira a `FIELD_ENCRYPTION_KEY`** no `.env` (exigida desde a 1.48.0 para a verificação em duas etapas; seção "Atualizar para a 1.44.0"). Sem ela, a API sobe, mas o cartão "Dados para receber" do Perfil diz que a validação de CPF está indisponível, e **nenhum freelancer saca** (503 `cpf_unavailable`). A mesma chave deriva o índice cego que impede o mesmo CPF em duas contas: ao trocá-la, deixe a antiga em `FIELD_ENCRYPTION_OLD_KEYS` enquanto houver CPF validado com ela (o `fields:encrypt` não regrava o CPF).
+
+**2. Backup antes**, pelo serviço `backup` ou à mão (seção 4).
+
+**3. Deploy normal** (workflow ou à mão, acima). O job `migrate` aplica a 0052: `profiles_freelancer` ganha as colunas do CPF e a chave única do índice cego; `profiles_company`, o nome fantasia.
+
+**4. Avise os freelancers.** Quem entrega trabalho (papel freelancer, algum serviço ou alguma contratação como freelancer) e quer sacar passa a informar o CPF e a data de nascimento em Perfil, "Dados para receber"; a Carteira mostra o motivo e leva até lá. Quem só contrata saca o que depositou como antes. A validação confere os dígitos, a unicidade entre contas e os 18 anos: não é consulta à Receita.
+
+**5. CPF errado.** Validado, o CPF não se altera pela tela. O admin, em "Atendimento: conta", busca a conta pelo e-mail (o CPF aparece só mascarado) e o apaga com um motivo; a ação vai para `admin_actions` e para a auditoria (sem o CPF), e o titular recebe um e-mail para informar de novo. Confira o documento antes, fora do sistema.
+
+**6. Conferir.** `curl -s https://SEU_DOMINIO/api/health` mostra o commit da 1.53.0. No cadastro, "Eu sou" oferece "Empresa"; no Perfil de um freelancer, aparece "Dados para receber".
+
+**7. Voltar para a versão anterior** é seguro: a API antiga ignora as colunas novas (e volta a sacar sem CPF), e as contas de empresa abertas na 1.53.0 entram como contas de contratante sem os dados da empresa na tela.
+
 ### Atualizar para a 1.51.0 (ADR 69)
 
 Uma migration (0051, aditiva e segura de rodar de novo) e nenhum passo manual: nem variável nova, nem script.
@@ -623,7 +641,8 @@ docker compose -f docker-compose.prod.yml start api
   se confirmam pelo webhook (`PAYMENT_WEBHOOK_SECRET`). Num piloto sem dinheiro de verdade, `true` libera o
   botão "Simular pagamento".
 - **Saque** exige e-mail confirmado (a API responde 403 `email_not_verified`): o SMTP precisa estar funcionando
-  para os freelancers sacarem — ou o admin confirma pela caixa de saída no modo simulado.
+  para os freelancers sacarem — ou o admin confirma pela caixa de saída no modo simulado. De quem entrega trabalho,
+  exige também o CPF validado no Perfil (403 `cpf_required`, 1.53.0), que depende da `FIELD_ENCRYPTION_KEY`.
 
 ## 6. Checklist de segurança
 
@@ -634,7 +653,7 @@ docker compose -f docker-compose.prod.yml start api
 - [ ] Serviço `backup` "healthy" (banco **e** arquivos da API, todo dia) **e** cópia fora da VPS (perfil `offsite`); restauração testada uma vez.
 - [ ] Atualizações do sistema (`unattended-upgrades`) e das imagens oficiais (`pull` periódico).
 - [ ] 2FA na conta do GitHub: quem controla `main` controla o que a VPS puxa.
-- [ ] `FIELD_ENCRYPTION_KEY` no `.env` (e guardada fora da VPS), 2FA ativa em cada conta admin e `ADMIN_MFA_REQUIRED=true`.
+- [ ] `FIELD_ENCRYPTION_KEY` no `.env` (e guardada fora da VPS: sem ela, a 2FA, o CPF e o saque dos freelancers param), 2FA ativa em cada conta admin e `ADMIN_MFA_REQUIRED=true`.
 
 ## 7. Problemas comuns
 

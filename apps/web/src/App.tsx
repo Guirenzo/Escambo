@@ -22,6 +22,7 @@ import { LegalView } from './features/legal/LegalView';
 import { Shell } from './features/shell/Shell';
 import { AdminView } from './features/views/AdminView';
 import { CarteiraView } from './features/views/CarteiraView';
+import { EmpresaView } from './features/views/EmpresaView';
 import { FreelancerView } from './features/views/FreelancerView';
 import { InicioView } from './features/views/InicioView';
 import { NotificacoesView } from './features/views/NotificacoesView';
@@ -40,7 +41,7 @@ import { MaintenanceGate } from './components/MaintenanceGate';
 /**
  * /login e /cadastro: se já autenticado, volta para onde a guarda mandou (só caminhos do próprio
  * app, nunca `//outro-site`), ou para a home. /cadastro abre em "Criar conta", com o "Eu sou" de
- * `?perfil=freelancer|cliente`.
+ * `?perfil=freelancer|cliente|empresa`.
  */
 function LoginRoute({ mode = 'login' }: { mode?: AuthMode }) {
   const { user, loading } = useAuth();
@@ -53,9 +54,8 @@ function LoginRoute({ mode = 'login' }: { mode?: AuthMode }) {
       </div>
     );
   if (user) return <Navigate to={backTo(location.state)} replace />;
-  return (
-    <LoginForm initialMode={mode} initialRole={perfil === 'freelancer' ? 'freelancer' : 'client'} />
-  );
+  const role = perfil === 'freelancer' ? 'freelancer' : perfil === 'empresa' ? 'company' : 'client';
+  return <LoginForm initialMode={mode} initialRole={role} />;
 }
 
 /** /admin: papel atual de administrador e conta sem suspensão. A API revalida os dois. */
@@ -109,6 +109,7 @@ export function App() {
               <Route path="suporte" element={<SuporteView />} />
               <Route path="contratos/:id" element={<SalaContratoRoute />} />
               <Route path="freelancers/:ulid" element={<FreelancerView />} />
+              <Route path="empresas/:ulid" element={<EmpresaView />} />
               <Route path="admin" element={<AdminRoute />} />
             </Route>
           </Route>

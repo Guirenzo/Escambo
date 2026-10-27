@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BRAZIL_TIMEZONES } from '../../utils/timezone';
+import { companySignupSchema } from '../profiles/profiles.schema';
 import { normalizeBrazilPhone } from './phone';
 
 /** Validação de entrada (RNF-015: schema em 100% das rotas). */
@@ -7,20 +8,42 @@ import { normalizeBrazilPhone } from './phone';
 /** Regra de força da senha: a mesma no cadastro, na redefinição e na troca com login (RF-017). */
 export const passwordSchema = z.string().min(8, 'A senha deve ter ao menos 8 caracteres');
 
-export const registerSchema = z.object({
-  email: z.string().email('E-mail inválido'),
-  password: passwordSchema,
-  role: z.enum(['client', 'freelancer', 'company']).default('client'),
-  /** Fuso detectado no aparelho (ADR 51); só os do Brasil. */
-  timezone: z.enum(BRAZIL_TIMEZONES).optional(),
-  /**
-   * O gesto de aceitar os Termos e a Política, no cadastro (RN-071, ADR 54): é o que a API grava
-   * como consentimento, na versão vigente. Sem ele, não há conta.
-   */
-  legalAccepted: z.literal(true, {
-    error: 'É preciso aceitar os Termos de Uso e a Política de Privacidade',
-  }),
-});
+export const registerSchema = z
+  .object({
+    email: z.string().email('E-mail inválido'),
+    password: passwordSchema,
+    role: z.enum(['client', 'freelancer', 'company']).default('client'),
+    /**
+     * Conta de empresa (RF-018): razão social, nome fantasia e CNPJ, obrigatórios com role
+     * 'company' e recusados nas outras (dado de empresa numa conta de pessoa não teria onde ficar).
+     */
+    company: companySignupSchema.optional(),
+    /** Fuso detectado no aparelho (ADR 51); só os do Brasil. */
+    timezone: z.enum(BRAZIL_TIMEZONES).optional(),
+    /**
+     * O gesto de aceitar os Termos e a Política, no cadastro (RN-071, ADR 54): é o que a API grava
+     * como consentimento, na versão vigente. Sem ele, não há conta.
+     */
+    legalAccepted: z.literal(true, {
+      error: 'É preciso aceitar os Termos de Uso e a Política de Privacidade',
+    }),
+  })
+  .superRefine((input, ctx) => {
+    if (input.role === 'company' && !input.company) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['company'],
+        message: 'Informe a razão social, o nome fantasia e o CNPJ da empresa',
+      });
+    }
+    if (input.role !== 'company' && input.company) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['company'],
+        message: 'Dados de empresa só no cadastro de empresa',
+      });
+    }
+  });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
 export const loginSchema = z.object({

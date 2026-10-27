@@ -4,6 +4,8 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type {
   ClientProfile,
+  CompanyProfile,
+  CpfStatus,
   FreelancerProfile,
   MyProfiles,
   Paginated,
@@ -46,6 +48,10 @@ const api = vi.hoisted(() => ({
   updatePhone: vi.fn(),
   // Verificação em duas etapas (RF-090), no cartão de mesmo nome.
   mfaStatus: vi.fn(),
+  // Documentos (RF-018, RF-020): o CPF em "Dados para receber" e os dados da empresa.
+  cpfStatus: vi.fn(),
+  verifyCpf: vi.fn(),
+  putCompanyProfile: vi.fn(),
 }));
 vi.mock('../../lib/api', () => ({ api }));
 
@@ -118,6 +124,29 @@ const review = (o: Partial<Review> = {}): Review => ({
 
 const reviews = (items: Review[]): Paginated<Review> => ({ items, page: 1, limit: 50 });
 
+const cpfStatus = (o: Partial<CpfStatus> = {}): CpfStatus => ({
+  available: true,
+  required: true,
+  hasFreelancerProfile: true,
+  verified: false,
+  maskedCpf: null,
+  birthDate: null,
+  verifiedAt: null,
+  ...o,
+});
+
+const company = (o: Partial<CompanyProfile> = {}): CompanyProfile => ({
+  legalName: 'Padaria Pão Bom Ltda',
+  tradeName: 'Pão Bom',
+  cnpj: '12ABC34501DE35',
+  logoUrl: null,
+  bio: 'Pães de fermentação natural.',
+  website: 'https://paobom.com.br/',
+  city: 'Joinville',
+  state: 'SC',
+  ...o,
+});
+
 function renderView(path = '/perfil') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -161,7 +190,12 @@ const stubGeolocation = (getCurrentPosition: Locate): void => {
 
 beforeEach(() => {
   for (const fn of Object.values(api)) fn.mockReset();
-  api.profilesMe.mockResolvedValue({ freelancer: freelancer(), client: null } satisfies MyProfiles);
+  api.profilesMe.mockResolvedValue({
+    freelancer: freelancer(),
+    client: null,
+    company: null,
+  } satisfies MyProfiles);
+  api.cpfStatus.mockResolvedValue(cpfStatus());
   api.putFreelancerProfile.mockResolvedValue(freelancer());
   api.putClientProfile.mockResolvedValue(client());
   api.reviews.mockResolvedValue(reviews([]));
@@ -807,7 +841,7 @@ describe('PerfilView: topo e navegação das seções', () => {
     const hashes = within(nav)
       .getAllByRole('link')
       .map((a) => a.getAttribute('href')!.slice(1));
-    expect(hashes).toEqual(profileSections(true).map(([h]) => h));
+    expect(hashes).toEqual(profileSections(true, { payout: true }).map(([h]) => h));
     await waitFor(() => {
       for (const h of hashes) expect(document.getElementById(h), h).not.toBeNull();
     });
@@ -817,6 +851,79 @@ describe('PerfilView: topo e navegação das seções', () => {
     const labels = profileSections(false).map(([, l]) => l);
     expect(labels).not.toContain('Escambo Score');
     expect(labels).not.toContain('Portfólio');
+    expect(labels).not.toContain('Dados para receber');
     expect(labels).toContain('Dados de cliente');
+  });
+
+  it('conta de empresa: os dados da empresa no lugar dos de cliente; quem recebe vê "Dados para receber"', () => {
+    const company = profileSections(false, { company: true }).map(([h]) => h);
+    expect(company).toContain('dados-empresa');
+    expect(company).not.toContain('dados-cliente');
+    expect(profileSections(true, { payout: true }).map(([, l]) => l)).toContain(
+      'Dados para receber',
+    );
+  });
+});
+
+/** Documentos no Perfil (RF-018, RF-020). */
+describe('PerfilView: CPF e conta de empresa', () => {
+  afterEach(() => {
+    auth.user.role = 'freelancer';
+  });
+
+  it('o freelancer vê "Dados para receber" com o formulário do CPF, que diz que não é consulta à Receita', async () => {
+    renderView();
+    const card = await screen.findByTestId('cpf-card');
+    expect(within(card).getByRole('heading', { name: 'Dados para receber' })).toBeInTheDocument();
+    expect(await within(card).findByLabelText('CPF')).toBeInTheDocument();
+    expect(card).toHaveTextContent('Não é uma consulta à Receita Federal.');
+    expect(card).toHaveTextContent('O saque do que você recebe por trabalhos pede o CPF validado.');
+  });
+
+  it('quem só contrata e não entrega trabalho não vê a seção do CPF', async () => {
+    auth.user.role = 'client';
+    api.profilesMe.mockResolvedValue({ freelancer: null, client: client(), company: null });
+    api.cpfStatus.mockResolvedValue(cpfStatus({ required: false, hasFreelancerProfile: false }));
+    renderView();
+    await screen.findByRole('button', { name: 'Salvar cliente' });
+    await waitFor(() => expect(api.cpfStatus).toHaveBeenCalled());
+    expect(screen.queryByTestId('cpf-card')).not.toBeInTheDocument();
+  });
+
+  it('conta de empresa: o topo traz o nome fantasia, a razão social e o selo; os dados da empresa no lugar dos de cliente', async () => {
+    auth.user.role = 'company';
+    api.profilesMe.mockResolvedValue({ freelancer: null, client: null, company: company() });
+    api.cpfStatus.mockResolvedValue(cpfStatus({ required: false, hasFreelancerProfile: false }));
+    renderView();
+
+    expect(await screen.findByRole('heading', { name: 'Pão Bom' })).toBeInTheDocument();
+    expect(screen.getByText('Padaria Pão Bom Ltda')).toBeInTheDocument();
+    const hero = screen.getByRole('heading', { name: 'Pão Bom' }).closest('section')!;
+    expect(within(hero).getByText('Empresa')).toBeInTheDocument();
+    expect(within(hero).getByRole('link', { name: /Ver a página da empresa/ })).toHaveAttribute(
+      'href',
+      '/empresas/u-marina',
+    );
+    expect(await screen.findByTestId('empresa-card')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Salvar cliente' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Salvar freelancer' })).not.toBeInTheDocument();
+    const nav = screen.getByRole('list', { name: 'Seções do perfil' });
+    expect(within(nav).getByRole('link', { name: 'Dados da empresa' })).toHaveAttribute(
+      'href',
+      '#dados-empresa',
+    );
+  });
+
+  it('avaliação feita por empresa mostra o nome fantasia e o selo', async () => {
+    api.reviews.mockResolvedValue(
+      reviews([review({ reviewerCompany: { ulid: '01EMPRESA', tradeName: 'Pão Bom' } })]),
+    );
+    renderView();
+    const tag = await screen.findByTestId('company-tag');
+    expect(within(tag).getByRole('link', { name: 'Pão Bom' })).toHaveAttribute(
+      'href',
+      '/empresas/01EMPRESA',
+    );
+    expect(tag).toHaveTextContent('Empresa');
   });
 });

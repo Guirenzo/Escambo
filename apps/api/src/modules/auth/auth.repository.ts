@@ -189,6 +189,17 @@ export const authRepository = {
     return rows[0];
   },
 
+  /**
+   * Desfaz uma conta que acabou de nascer e não pôde ser concluída (o CNPJ da empresa entrou em outra
+   * conta no meio do cadastro, RF-018). Só a recém-criada: ainda sem confirmação de e-mail nem login.
+   */
+  async deleteUnfinished(id: number): Promise<void> {
+    await pool.query<ResultSetHeader>(
+      `DELETE FROM users WHERE id = :id AND last_login_at IS NULL AND email_verified_at IS NULL`,
+      { id },
+    );
+  },
+
   async updateRole(id: number, role: string): Promise<void> {
     await pool.query<ResultSetHeader>(`UPDATE users SET role = :role WHERE id = :id`, { id, role });
   },

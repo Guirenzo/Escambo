@@ -87,3 +87,11 @@ Pode rodar de novo sem erro. A tabela `user_mfa` existe desde o baseline e só p
 | 0051_pacotes_servico.sql                    | Pacotes Básico, Padrão e Premium (RF-086, RN-068, ADR 69): garante `service_packages` (a do baseline) com a chave única por nível, e `contracts` ganha `package_tier` e `package_snapshot` |
 
 Pode rodar de novo sem erro. A tabela `service_packages` existe desde o baseline e só passa a ser usada agora: o CREATE é o mesmo do baseline e só age num banco que não a tenha. As duas colunas novas de `contracts` entram no fim da tabela (instantâneo no MySQL 8) e ficam NULL nas contratações sem pacote e nas antigas. O serviço com pacotes guarda o preço e o prazo do Básico em `services.price` e `services.delivery_days`, então a busca, a ordenação e os índices da 0040 não mudam.
+
+## 1.53.0
+
+| Migration                                   | Efeito                                                                                                                                                |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0052_documentos.sql                         | CPF do freelancer (RF-020, RN-009, RN-075): `profiles_freelancer` ganha `cpf_encrypted`, `cpf_index` (com a chave única `uq_pf_cpf_index`), `birth_date` e `cpf_verified_at`; conta de empresa (RF-018): `profiles_company` ganha `trade_name` (nome fantasia) |
+
+Pode rodar de novo sem erro, e é só aditiva: colunas no fim das tabelas (instantâneo no MySQL 8) e a chave única sobre uma coluna ainda vazia. A coluna `cpf_verified` e a tabela `profiles_company` existem desde o baseline e só passam a ser usadas agora. O CPF é gravado pela API **só cifrado** com a `FIELD_ENCRYPTION_KEY`; sem a chave, a validação fica indisponível e o saque de quem entrega trabalho fica travado. O número 0052 está reservado para a 1.52.0.

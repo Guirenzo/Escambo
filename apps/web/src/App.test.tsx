@@ -182,6 +182,7 @@ describe('App: /cadastro', () => {
     ['/cadastro', 'Criar conta (client)'],
     ['/cadastro?perfil=cliente', 'Criar conta (client)'],
     ['/cadastro?perfil=freelancer', 'Criar conta (freelancer)'],
+    ['/cadastro?perfil=empresa', 'Criar conta (company)'],
     ['/cadastro?perfil=outro', 'Criar conta (client)'],
   ])('%s abre o formulário em "Criar conta" com o perfil do endereço', (path, title) => {
     auth.user = null;

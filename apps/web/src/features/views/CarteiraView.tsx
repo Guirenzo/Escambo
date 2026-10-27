@@ -5,6 +5,7 @@ import {
   ArrowDownToLine,
   ArrowUpRight,
   Coins,
+  IdCard,
   Landmark,
   Lock,
   MailWarning,
@@ -12,6 +13,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import type {
   CreateWithdrawalRequest,
   CreditReason,
@@ -41,15 +43,16 @@ import { usePageTitle } from '../../lib/title';
 import { scrollBehavior } from '../../lib/motion';
 import {
   brl,
-  displayName,
   DEPOSIT_STATUS_LABEL,
   dtm,
   WALLET_REASON_LABEL,
   WITHDRAWAL_STATUS_LABEL,
   WITHDRAWAL_STATUS_TONE,
 } from '../../lib/format';
+import { identityName } from '../../lib/documents';
 import {
   useCancelWithdrawal,
+  useCpfStatus,
   useCreditTransactions,
   useDeposits,
   useProfilesMe,
@@ -163,6 +166,16 @@ export function CarteiraView() {
   const [resending, setResending] = useState(false);
   // Saque é a única ação que tira dinheiro da plataforma: a API exige e-mail confirmado (403).
   const canWithdraw = user?.emailVerified ?? true;
+  // E, de quem entrega trabalho, o CPF validado no Perfil (RF-020); sem a chave de cifragem no
+  // servidor, nem dá para validar. Quem só contrata saca o que depositou sem CPF.
+  const cpf = useCpfStatus().data;
+  const cpfBlock: 'required' | 'unavailable' | null = !cpf?.required
+    ? null
+    : !cpf.available
+      ? 'unavailable'
+      : cpf.verified
+        ? null
+        : 'required';
   // Prazo da forma escolhida (RN-035): a previsão daqui; o que vale é o dueAt que a API grava.
   const businessDays =
     settings?.withdrawalBusinessDays?.[method] ?? DEFAULT_WITHDRAWAL_BUSINESS_DAYS[method];
@@ -215,10 +228,7 @@ export function CarteiraView() {
 
   const w = wallet.data;
   const profiles = useProfilesMe();
-  const owner = displayName(
-    profiles.data?.freelancer?.fullName ?? profiles.data?.client?.fullName,
-    user?.email,
-  );
+  const owner = identityName(profiles.data, user?.email);
 
   /** "Pedir saque" leva ao formulário (o foco vai ao valor) ou, sem e-mail confirmado, ao aviso. */
   function goToWithdraw(): void {
@@ -440,7 +450,45 @@ export function CarteiraView() {
               </Button>
             </section>
           )}
-          {canWithdraw && (
+          {canWithdraw && cpfBlock && (
+            <section
+              className="card withdraw-locked"
+              data-testid="withdraw-cpf"
+              id="saque"
+              tabIndex={-1}
+              data-hash-target
+            >
+              <div className="card-head">
+                <h3>
+                  <Landmark size={16} /> Solicitar saque
+                </h3>
+              </div>
+              <p className="withdraw-locked-msg">
+                <IdCard size={16} aria-hidden="true" />
+                {cpfBlock === 'required' ? (
+                  <span>
+                    Valide seu CPF para sacar: o saque do que você recebe por trabalhos pede o CPF e
+                    a data de nascimento, em Perfil, “Dados para receber”.
+                  </span>
+                ) : (
+                  <span>
+                    O saque do que você recebe por trabalhos pede o CPF validado, e a validação de
+                    CPF ainda não está disponível neste servidor.
+                  </span>
+                )}
+              </p>
+              {cpfBlock === 'required' ? (
+                <Link to="/perfil#dados-recebimento" className="btn secondary">
+                  Informar o CPF
+                </Link>
+              ) : (
+                <Link to="/suporte" className="btn secondary">
+                  Falar com o suporte
+                </Link>
+              )}
+            </section>
+          )}
+          {canWithdraw && !cpfBlock && (
             <BusinessForm className="card withdraw-form" onSubmit={submit} id="saque">
               <div className="card-head">
                 <h3>

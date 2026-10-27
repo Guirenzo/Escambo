@@ -68,6 +68,25 @@ describe('logger: o que nunca vai para o log', () => {
     });
   });
 
+  it('o CPF e a data de nascimento (RF-020), soltos ou um nível abaixo', () => {
+    const { log, lines } = capture();
+
+    log.info(
+      {
+        cpf: '52998224725',
+        input: { cpf: '529.982.247-25', birthDate: '1990-05-17' },
+        row: { cpf_encrypted: 'enc:v1:abc', birth_date: '1990-05-17' },
+      },
+      'cpf',
+    );
+
+    const text = JSON.stringify(lines());
+    for (const secret of ['52998224725', '529.982.247-25', '1990-05-17', 'enc:v1:abc']) {
+      expect(text).not.toContain(secret);
+    }
+    expect(lines()[0]).toMatchObject({ cpf: '[REDACTED]', input: { cpf: '[REDACTED]' } });
+  });
+
   it('as credenciais de antes continuam censuradas', () => {
     const { log, lines } = capture();
 

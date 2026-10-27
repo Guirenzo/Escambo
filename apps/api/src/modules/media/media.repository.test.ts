@@ -10,21 +10,23 @@ const URL = '/api/media/2026/09/01J8ZQ4K7M3VX5R2T9W6Y1B0CD.webp';
 
 /**
  * Repository das imagens de perfil e portfólio sem banco: onde uma imagem pode aparecer (avatar de
- * freelancer, avatar de cliente, trabalho do portfólio), o que cada método pede e o que devolve.
+ * freelancer, avatar de cliente, logo da empresa, trabalho do portfólio), o que cada método pede e o
+ * que devolve.
  */
 describe('mediaRepository', () => {
   beforeEach(() => fakeDb.reset());
 
-  it('a lista fechada de lugares que mostram imagem: os dois avatares e o portfólio', () => {
+  it('a lista fechada de lugares que mostram imagem: os dois avatares, o logo da empresa e o portfólio', () => {
     expect(IMAGE_COLUMNS).toEqual({
       profiles_freelancer: 'avatar_url',
       profiles_client: 'avatar_url',
+      profiles_company: 'logo_url',
       freelancer_portfolio_items: 'image_url',
     });
   });
 
   describe('listReferencedUrls (ADR 36)', () => {
-    it('junta as URLs de mídia própria dos três lugares, sem repetir, e devolve só o texto', async () => {
+    it('junta as URLs de mídia própria dos quatro lugares, sem repetir, e devolve só o texto', async () => {
       fakeDb.reply([{ url: URL }, { url: '/api/media/2026/10/01J8ZQ4K7M3VX5R2T9W6Y1B0CE.png' }]);
 
       expect(await mediaRepository.listReferencedUrls()).toEqual([
@@ -40,11 +42,15 @@ describe('mediaRepository', () => {
       expect(sql).toContain(
         "SELECT avatar_url FROM profiles_client WHERE avatar_url LIKE '/api/media/%'",
       );
+      // O logo da empresa (RF-018): sem ele aqui, o expurgo apagaria o arquivo de um logo em uso.
+      expect(sql).toContain(
+        "SELECT logo_url FROM profiles_company WHERE logo_url LIKE '/api/media/%'",
+      );
       expect(sql).toContain(
         "SELECT image_url FROM freelancer_portfolio_items WHERE image_url LIKE '/api/media/%'",
       );
       // UNION (e não UNION ALL): a mesma imagem em dois lugares vem uma vez só.
-      expect(sql.match(/UNION/g)).toHaveLength(2);
+      expect(sql.match(/UNION/g)).toHaveLength(3);
       expect(sql).not.toContain('UNION ALL');
       expect(params).toBeUndefined();
       // Leitura fora de transação: vai pelo pool.
@@ -84,10 +90,13 @@ describe('mediaRepository', () => {
         "SELECT 'profiles_client', id FROM profiles_client WHERE avatar_url = :url",
       );
       expect(sql).toContain(
+        "SELECT 'profiles_company', id FROM profiles_company WHERE logo_url = :url",
+      );
+      expect(sql).toContain(
         "SELECT 'freelancer_portfolio_items', id FROM freelancer_portfolio_items WHERE image_url = :url",
       );
       // UNION ALL: cada linha que mostra a imagem conta, nenhuma some por parecer repetida.
-      expect(sql.match(/UNION ALL/g)).toHaveLength(2);
+      expect(sql.match(/UNION ALL/g)).toHaveLength(3);
       expect(params).toEqual({ url: URL });
     });
 
@@ -104,24 +113,35 @@ describe('mediaRepository', () => {
   });
 
   describe('clearReferences (ADR 39)', () => {
-    it('limpa a imagem dos três lugares pela URL e devolve quantas linhas mudaram ao todo', async () => {
-      fakeDb.reply({ affectedRows: 1 }, { affectedRows: 0 }, { affectedRows: 3 });
+    it('limpa a imagem dos quatro lugares pela URL e devolve quantas linhas mudaram ao todo', async () => {
+      fakeDb.reply(
+        { affectedRows: 1 },
+        { affectedRows: 0 },
+        { affectedRows: 1 },
+        { affectedRows: 3 },
+      );
 
-      expect(await mediaRepository.clearReferences(conn, URL)).toBe(4);
+      expect(await mediaRepository.clearReferences(conn, URL)).toBe(5);
 
       // A limpeza é pela URL e não pelo dono: qualquer um pode ter colado o endereço no perfil.
       expect(fakeDb.sqls()).toEqual([
         'UPDATE profiles_freelancer SET avatar_url = NULL WHERE avatar_url = :url',
         'UPDATE profiles_client SET avatar_url = NULL WHERE avatar_url = :url',
+        'UPDATE profiles_company SET logo_url = NULL WHERE logo_url = :url',
         'UPDATE freelancer_portfolio_items SET image_url = NULL WHERE image_url = :url',
       ]);
       for (const call of fakeDb.calls) expect(call.params).toEqual({ url: URL });
     });
 
     it('quando ninguém mostrava a imagem, devolve zero', async () => {
-      fakeDb.reply({ affectedRows: 0 }, { affectedRows: 0 }, { affectedRows: 0 });
+      fakeDb.reply(
+        { affectedRows: 0 },
+        { affectedRows: 0 },
+        { affectedRows: 0 },
+        { affectedRows: 0 },
+      );
       expect(await mediaRepository.clearReferences(conn, URL)).toBe(0);
-      expect(fakeDb.calls).toHaveLength(3);
+      expect(fakeDb.calls).toHaveLength(4);
     });
 
     it('se uma das limpezas falha, o erro sobe (quem chamou desfaz a transação)', async () => {
@@ -138,21 +158,29 @@ describe('mediaRepository', () => {
       const refs: ImageRef[] = [
         { table: 'profiles_freelancer', id: 12 },
         { table: 'profiles_client', id: 8 },
+        { table: 'profiles_company', id: 4 },
         { table: 'freelancer_portfolio_items', id: 5 },
       ];
       // A pessoa da segunda linha já pôs outra foto: a nova fica e a linha não conta.
-      fakeDb.reply({ affectedRows: 1 }, { affectedRows: 0 }, { affectedRows: 1 });
+      fakeDb.reply(
+        { affectedRows: 1 },
+        { affectedRows: 0 },
+        { affectedRows: 1 },
+        { affectedRows: 1 },
+      );
 
-      expect(await mediaRepository.restoreReferences(conn, URL, refs)).toBe(2);
+      expect(await mediaRepository.restoreReferences(conn, URL, refs)).toBe(3);
 
       expect(fakeDb.sqls()).toEqual([
         'UPDATE profiles_freelancer SET avatar_url = :url WHERE id = :id AND avatar_url IS NULL',
         'UPDATE profiles_client SET avatar_url = :url WHERE id = :id AND avatar_url IS NULL',
+        'UPDATE profiles_company SET logo_url = :url WHERE id = :id AND logo_url IS NULL',
         'UPDATE freelancer_portfolio_items SET image_url = :url WHERE id = :id AND image_url IS NULL',
       ]);
       expect(fakeDb.calls.map((c) => c.params)).toEqual([
         { url: URL, id: 12 },
         { url: URL, id: 8 },
+        { url: URL, id: 4 },
         { url: URL, id: 5 },
       ]);
     });
@@ -229,11 +257,16 @@ describe('mediaRepository', () => {
     });
 
     it('clearReferences limpa pela conexão recebida: se a remoção falhar adiante, a limpeza é desfeita junto', async () => {
-      const tx = ownConnection({ affectedRows: 2 }, { affectedRows: 1 }, { affectedRows: 0 });
+      const tx = ownConnection(
+        { affectedRows: 2 },
+        { affectedRows: 1 },
+        { affectedRows: 0 },
+        { affectedRows: 0 },
+      );
 
       expect(await mediaRepository.clearReferences(tx.asConn, URL)).toBe(3);
 
-      expect(tx.query).toHaveBeenCalledTimes(3);
+      expect(tx.query).toHaveBeenCalledTimes(4);
       for (const [sql, params] of tx.query.mock.calls) {
         expect(sql).toMatch(/^UPDATE \w+ SET \w+ = NULL WHERE \w+ = :url$/);
         expect(params).toEqual({ url: URL });

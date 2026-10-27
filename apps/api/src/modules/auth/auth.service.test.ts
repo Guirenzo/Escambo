@@ -17,7 +17,11 @@ vi.mock('./auth.repository', () => ({
     findById: vi.fn(),
     create: vi.fn(),
     updateRole: vi.fn(),
+    deleteUnfinished: vi.fn(),
   },
+}));
+vi.mock('../profiles/profiles.repository', () => ({
+  profilesRepository: { cnpjTaken: vi.fn().mockResolvedValue(false), createCompany: vi.fn() },
 }));
 
 vi.mock('../lgpd/lgpd.repository', () => ({
@@ -54,6 +58,7 @@ import { lgpdRepository } from '../lgpd/lgpd.repository';
 import { CURRENT_LEGAL_VERSION } from '../lgpd/legal-versions';
 import { auditService } from '../audit/audit.service';
 import { logger } from '../../config/logger';
+import { profilesRepository } from '../profiles/profiles.repository';
 
 /** O login de conta sem 2FA devolve a sessão (e não o MfaChallenge): o tipo diz isso aqui. */
 const loginWithSession = (...args: Parameters<typeof authService.login>) =>
@@ -245,6 +250,7 @@ describe('authService.register', () => {
         email: 'manaus@exemplo.com',
         password: 'senha12345',
         role: 'company',
+        company: { legalName: 'Manaus Ltda', tradeName: 'Manaus', cnpj: '11222333000181' },
         timezone: 'America/Manaus',
         legalAccepted: true as const,
       },
@@ -279,6 +285,93 @@ describe('authService.register', () => {
     expect(repo.create).not.toHaveBeenCalled();
     // Sem conta nova, não há aceite a registrar.
     expect(vi.mocked(lgpdRepository).recordConsent).not.toHaveBeenCalled();
+  });
+});
+
+/** Conta de empresa (RF-018): o perfil da empresa nasce com a conta, e o CNPJ é único. */
+describe('authService.register: empresa', () => {
+  const companies = vi.mocked(profilesRepository);
+  const COMPANY = {
+    legalName: 'Padaria Pão Bom Ltda',
+    tradeName: 'Pão Bom',
+    cnpj: '12ABC34501DE35',
+  };
+  const input = (o: Record<string, unknown> = {}) => ({
+    email: 'empresa@exemplo.com',
+    password: 'senha12345',
+    role: 'company' as const,
+    company: COMPANY,
+    legalAccepted: true as const,
+    ...o,
+  });
+
+  beforeEach(() => {
+    repo.findByEmail.mockResolvedValue(undefined);
+    repo.create.mockResolvedValue(9);
+    companies.cnpjTaken.mockResolvedValue(false);
+    companies.createCompany.mockResolvedValue(undefined);
+  });
+
+  it('cria a conta com o papel company e, logo depois, o perfil da empresa com a razão social, o nome fantasia e o CNPJ', async () => {
+    const user = await authService.register(input(), CTX);
+
+    expect(user).toMatchObject({ id: 9, role: 'company' });
+    expect(companies.cnpjTaken).toHaveBeenCalledWith('12ABC34501DE35');
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ role: 'company' }));
+    expect(companies.createCompany).toHaveBeenCalledWith(9, COMPANY);
+    expect(repo.create.mock.invocationCallOrder[0]!).toBeLessThan(
+      companies.createCompany.mock.invocationCallOrder[0]!,
+    );
+    expect(repo.deleteUnfinished).not.toHaveBeenCalled();
+  });
+
+  it('CNPJ que já tem conta: 409 cnpj_taken antes de criar a conta', async () => {
+    companies.cnpjTaken.mockResolvedValue(true);
+
+    await expect(authService.register(input(), CTX)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'cnpj_taken',
+      message: 'Este CNPJ já está em outra conta do Escambo.',
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(vi.mocked(lgpdRepository).recordConsent).not.toHaveBeenCalled();
+  });
+
+  it('o mesmo CNPJ entrou em outra conta no meio do cadastro: a conta recém-criada é desfeita e sai 409', async () => {
+    companies.createCompany.mockRejectedValue(
+      Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' }),
+    );
+
+    await expect(authService.register(input(), CTX)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'cnpj_taken',
+    });
+    expect(repo.deleteUnfinished).toHaveBeenCalledWith(9);
+    // A conta que não nasceu não registra aceite nem recebe e-mail.
+    expect(vi.mocked(lgpdRepository).recordConsent).not.toHaveBeenCalled();
+  });
+
+  it('outra falha ao gravar a empresa também desfaz a conta, e o erro sobe como veio', async () => {
+    const boom = new Error('conexão perdida');
+    companies.createCompany.mockRejectedValue(boom);
+
+    await expect(authService.register(input(), CTX)).rejects.toBe(boom);
+    expect(repo.deleteUnfinished).toHaveBeenCalledWith(9);
+  });
+
+  it('e-mail da lista de admins vira admin, e os dados de empresa são ignorados', async () => {
+    const user = await authService.register(input({ email: 'chefe@admin.escambo.test' }), CTX);
+
+    expect(user.role).toBe('admin');
+    expect(companies.cnpjTaken).not.toHaveBeenCalled();
+    expect(companies.createCompany).not.toHaveBeenCalled();
+  });
+
+  it('conta de pessoa nem consulta CNPJ', async () => {
+    await authService.register(input({ role: 'client', company: undefined }), CTX);
+
+    expect(companies.cnpjTaken).not.toHaveBeenCalled();
+    expect(companies.createCompany).not.toHaveBeenCalled();
   });
 });
 

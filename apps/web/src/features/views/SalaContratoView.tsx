@@ -28,6 +28,7 @@ import type {
   ChatReadEvent,
   ContractWithHistory,
 } from '@escambo/types';
+import { CompanyTag } from '../../components/CompanyTag';
 import { StarInput, Stars } from '../../components/Stars';
 import { Breadcrumbs, Button, Input, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
@@ -612,6 +613,12 @@ export function SalaContratoView({
                 <span className="muted">
                   {MODE_LABEL[c.paymentMode] ?? c.paymentMode} · criado em {dtm(c.createdAt)}
                 </span>
+              </p>
+            )}
+            {/* RF-018: quem contrata é empresa; quem entrega vê com quem está trabalhando. */}
+            {c?.clientCompany && c.clientId !== myId && (
+              <p className="sala-head-meta">
+                <CompanyTag company={c.clientCompany} label="Contratante:" />
               </p>
             )}
           </div>

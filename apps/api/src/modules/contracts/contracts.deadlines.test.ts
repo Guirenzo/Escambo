@@ -1906,6 +1906,8 @@ describe('a contratação como a API devolve (ADR 57)', () => {
       proposalExpiresAt: null,
       revisionRequestedAt: null,
       package: null,
+      // Quem contrata é pessoa: sem empresa (RF-018).
+      clientCompany: null,
       history: [],
       review: null,
       milestones: [],

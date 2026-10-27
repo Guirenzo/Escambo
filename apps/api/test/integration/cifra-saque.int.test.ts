@@ -21,6 +21,7 @@ import {
   sealField,
   setFieldKeysForTests,
 } from '../../src/utils/field-crypto';
+import { verifyCpfOf } from './cpf.helpers';
 import { verifyEmailOf } from './mail.helpers';
 import { fundWallet } from './wallet.helpers';
 
@@ -133,6 +134,7 @@ beforeAll(async () => {
   freelancer = await registerAndLogin('freelancer');
   await fundWallet(app, freelancer.token, 500);
   await verifyEmailOf(app, admin.token, freelancer.id); // saque exige e-mail confirmado
+  await verifyCpfOf(app, freelancer.token); // e o CPF validado de quem entrega trabalho (RF-020)
   const [wallets] = await pool.query<RowDataPacket[]>(
     `SELECT id FROM wallets WHERE user_id = :userId`,
     { userId: freelancer.id },

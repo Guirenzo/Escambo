@@ -46,9 +46,9 @@
 | RF-015 | O sistema deve exibir no perfil do freelancer: nota média, total de serviços e badges conquistadas | Alta       | Implementado |
 | RF-016 | O sistema deve exibir o tempo médio de resposta do freelancer em seu perfil                        | Média      | Implementado |
 | RF-017 | O usuário deve poder editar seus dados pessoais a qualquer momento                                 | Alta       | Implementado |
-| RF-018 | O sistema deve suportar perfil do tipo empresa com CNPJ, logo e dados corporativos                 | Baixa      | Não implementado |
+| RF-018 | O sistema deve suportar perfil do tipo empresa com CNPJ, logo e dados corporativos                 | Baixa      | Implementado |
 | RF-019 | O sistema deve permitir upload de foto de perfil com redimensionamento automático                  | Alta       | Implementado |
-| RF-020 | O sistema deve validar CPF do freelancer para habilitar funcionalidades financeiras                | Média      | Não implementado |
+| RF-020 | O sistema deve validar CPF do freelancer para habilitar funcionalidades financeiras                | Média      | Implementado |
 ---
 
 ## Módulo 03 — Categorias e Serviços
@@ -209,7 +209,7 @@ Requisitos distribuídos por módulos existentes (Serviços, Contratações, Sup
 | Recursos avançados (RF-086–092)  | 7            | 4      | 3      | 0     |
 | **Total**                        | **92**       | **67** | **23** | **2** |
 
-> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.51.0: **85 implementados, 1 parcial, 4 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
+> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.53.0: **87 implementados, 1 parcial, 2 não implementados e 2 fora do escopo**. Na 1.53.0, o RF-018 (conta de empresa: cadastro com razão social, nome fantasia e CNPJ, numérico ou alfanumérico, único entre contas; logo, site e descrição curta no Perfil; página pública e o selo "Empresa" onde quem contrata aparece) e o RF-020 (CPF do freelancer validado por dígitos verificadores, unicidade entre contas e maioridade, guardado cifrado; o saque de quem entrega trabalho passa a pedi-lo). A validação do CPF é de formato, unicidade e idade: não é consulta à Receita. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
 
 > ℹ️ O total ficou em **92 requisitos funcionais**, superando os 72 planejados inicialmente — resultado do detalhamento granular e da inclusão da **troca de serviços (escambo)** e de recursos avançados de confiança e segurança (v1.1.0), com dois requisitos de desistência e revisão humana acrescentados pelo ADR 61 (v1.2.0).
 

@@ -44,13 +44,14 @@ export interface StoredDestinationRow extends RowDataPacket {
   bank_account: string | null;
 }
 
-/** Saque + titular (e-mail e nome do perfil de freelancer ou de cliente). */
+/** Saque + titular (e-mail e nome do perfil de freelancer, de cliente ou da empresa). */
 const ADMIN_SELECT = `SELECT ${COLS}, u.ulid AS user_ulid, u.email AS user_email,
-              COALESCE(fp.full_name, cp.full_name) AS user_name
+              COALESCE(fp.full_name, cp.full_name, co.trade_name) AS user_name
          FROM withdrawals w
          JOIN users u ON u.id = w.user_id
          LEFT JOIN profiles_freelancer fp ON fp.user_id = w.user_id
-         LEFT JOIN profiles_client cp ON cp.user_id = w.user_id`;
+         LEFT JOIN profiles_client cp ON cp.user_id = w.user_id
+         LEFT JOIN profiles_company co ON co.user_id = w.user_id`;
 
 export const withdrawalRepository = {
   /**

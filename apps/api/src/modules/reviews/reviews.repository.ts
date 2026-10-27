@@ -16,6 +16,9 @@ export interface ReviewRow extends RowDataPacket {
 
 export interface ReviewListRow extends ReviewRow {
   response: string | null;
+  /** RF-018: quem avaliou é conta de empresa (nome fantasia e ulid); NULL quando é pessoa. */
+  reviewer_company_name?: string | null;
+  reviewer_company_ulid?: string | null;
 }
 
 /** Nota média e total do freelancer: só avaliações públicas e não removidas (RN-044, ADR 44). */
@@ -75,9 +78,12 @@ export const reviewsRepository = {
   ): Promise<ReviewListRow[]> {
     const [rows] = await pool.query<ReviewListRow[]>(
       `SELECT r.id, r.contract_id, r.reviewer_id, r.reviewee_id, r.rating, r.comment, r.created_at,
-              rr.response
+              rr.response, COALESCE(pco.trade_name, pco.company_name) AS reviewer_company_name,
+              IF(pco.id IS NULL, NULL, ru.ulid) AS reviewer_company_ulid
          FROM reviews r
          LEFT JOIN review_responses rr ON rr.review_id = r.id
+         LEFT JOIN users ru ON ru.id = r.reviewer_id AND ru.role = 'company'
+         LEFT JOIN profiles_company pco ON pco.user_id = ru.id
         WHERE r.reviewee_id = :revieweeId AND r.is_public = 1 AND r.removed_at IS NULL
         ORDER BY r.created_at DESC
         LIMIT ${limit} OFFSET ${offset}`,

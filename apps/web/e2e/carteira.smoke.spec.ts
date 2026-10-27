@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createAdmin, createUser, openAs, settled, topUp, verifyEmail } from './helpers';
+import { createAdmin, createUser, openAs, settled, topUp, verifyCpf, verifyEmail } from './helpers';
 
 /**
  * Carteira: saque por transferência bancária (RF-045) com o prazo em dias úteis (RN-035) e os
@@ -14,6 +14,7 @@ test('freelancer saca por transferência bancária e filtra o extrato por perío
   const freelancer = await createUser(request, 'freelancer');
   const admin = await createAdmin(request);
   await verifyEmail(request, freelancer, admin); // saque exige e-mail confirmado
+  await verifyCpf(request, freelancer); // e, de quem entrega trabalho, o CPF validado (RF-020)
   await topUp(request, freelancer, 200);
 
   await openAs(page, freelancer, '/carteira');

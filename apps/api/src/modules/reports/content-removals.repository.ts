@@ -148,11 +148,13 @@ export const contentRemovalsRepository = {
         : `r.status IN ('upheld', 'overturned') AND r.appealed_at IS NOT NULL`;
     const order = scope === 'pending' ? 'r.appealed_at ASC' : 'r.decided_at DESC';
     const [rows] = await pool.query<AppealRow[]>(
-      `SELECT ${COLS}, u.ulid AS owner_ulid, COALESCE(pf.full_name, pc.full_name) AS owner_name
+      `SELECT ${COLS}, u.ulid AS owner_ulid,
+              COALESCE(pf.full_name, pc.full_name, pco.trade_name) AS owner_name
          FROM content_removals r ${WORK_JOIN}
          JOIN users u ON u.id = r.owner_id
          LEFT JOIN profiles_freelancer pf ON pf.user_id = u.id
          LEFT JOIN profiles_client pc ON pc.user_id = u.id
+         LEFT JOIN profiles_company pco ON pco.user_id = u.id
         WHERE ${where}
         ORDER BY ${order}, r.id ASC
         LIMIT ${Math.trunc(limit)}`,

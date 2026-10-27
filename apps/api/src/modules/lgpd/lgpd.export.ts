@@ -6,6 +6,7 @@ import type { Readable } from 'node:stream';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { env } from '../../config/env';
+import { FIELD_UNAVAILABLE, openField } from '../../utils/field-crypto';
 import { openDestination } from '../withdrawal/withdrawal.fields';
 import { parseStoredRecoveryCodes, recoveryCodesLeft } from '../auth/recovery-codes';
 
@@ -30,9 +31,19 @@ import { parseStoredRecoveryCodes, recoveryCodesLeft } from '../auth/recovery-co
  * quantos códigos de recuperação sobram; nunca o segredo nem os hashes dos códigos.
  * Formato 1.13 (1.51.0): cada serviço traz os pacotes (RF-086) e cada contratação, o pacote
  * contratado (package_tier e a cópia package_snapshot), ou null sem pacote.
+ * Formato 1.14 (1.53.0): o perfil de freelancer traz o CPF completo, a data de nascimento e quando
+ * foram validados (RF-020: direito de acesso; o índice cego não entra), e há perfis.empresa, com a
+ * razão social, o nome fantasia, o CNPJ e o resto dos dados da conta de empresa (RF-018).
  */
 
-export const EXPORT_FORMAT_VERSION = '1.13';
+export const EXPORT_FORMAT_VERSION = '1.14';
+
+/** O CPF do titular, legível como ele o informou; o que não decifra sai como "[indisponível]". */
+function openCpf(stored: unknown): string | null {
+  if (typeof stored !== 'string' || stored === '') return null;
+  const opened = openField(stored);
+  return opened.ok ? opened.value : FIELD_UNAVAILABLE;
+}
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -47,10 +58,22 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
        FROM users WHERE id = :userId`,
     p,
   );
-  const [freelancer] = await q(
+  const [freelancerRow] = await q(
     `SELECT full_name, avatar_url, bio, headline, city, state, latitude, longitude, avg_rating,
-            total_reviews, total_contracts, response_time_hours, is_available, created_at
+            total_reviews, total_contracts, response_time_hours, is_available, cpf_encrypted,
+            DATE_FORMAT(birth_date, '%Y-%m-%d') AS birth_date, cpf_verified, cpf_verified_at,
+            created_at
        FROM profiles_freelancer WHERE user_id = :userId`,
+    p,
+  );
+  // O CPF vai inteiro, decifrado, só aqui: a cópia é do próprio titular (art. 18, II).
+  const freelancer = freelancerRow
+    ? (({ cpf_encrypted, ...rest }) => ({ ...rest, cpf: openCpf(cpf_encrypted) }))(freelancerRow)
+    : null;
+  const [company] = await q(
+    `SELECT company_name AS razao_social, trade_name AS nome_fantasia, cnpj, logo_url, bio, website,
+            city, state, created_at
+       FROM profiles_company WHERE user_id = :userId`,
     p,
   );
   const [client] = await q(
@@ -268,7 +291,7 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     formato: `escambo-export/${EXPORT_FORMAT_VERSION}`,
     exportadoEm: new Date().toISOString(),
     titular: { id: userId, ...(user ?? {}), push_quiet_pass: quietPassOf(user?.push_quiet_pass) },
-    perfis: { freelancer: freelancer ?? null, cliente: client ?? null },
+    perfis: { freelancer, cliente: client ?? null, empresa: company ?? null },
     consentimentos: consents,
     servicos: services,
     contratacoes: contracts,

@@ -31,7 +31,13 @@ vi.mock('./notifications/push.repository', () => ({
   pushRepository: { removeAllForUser: vi.fn() },
 }));
 vi.mock('./profiles/profiles.repository', () => ({
-  profilesRepository: { findFreelancerByUserId: vi.fn(), blendResponseTime: vi.fn() },
+  profilesRepository: {
+    findFreelancerByUserId: vi.fn(),
+    blendResponseTime: vi.fn(),
+    payoutState: vi.fn(),
+    cnpjTaken: vi.fn(),
+    createCompany: vi.fn(),
+  },
 }));
 vi.mock('./reports/reports.repository', () => ({ reportsRepository: { create: vi.fn() } }));
 vi.mock('./reviews/reviews.repository', () => ({
@@ -214,6 +220,29 @@ const CASES: [string, () => Promise<unknown>, unknown, unknown[]][] = [
     () => profilesFacade.blendResponseTime(3, 1.5),
     profilesRepository.blendResponseTime,
     [3, 1.5],
+  ],
+  [
+    'profilesFacade.payoutState',
+    () => profilesFacade.payoutState(3),
+    profilesRepository.payoutState,
+    [3],
+  ],
+  [
+    'profilesFacade.cnpjTaken',
+    () => profilesFacade.cnpjTaken('12ABC34501DE35'),
+    profilesRepository.cnpjTaken,
+    ['12ABC34501DE35'],
+  ],
+  [
+    'profilesFacade.createCompany',
+    () =>
+      profilesFacade.createCompany(3, {
+        legalName: 'Padaria Pão Bom Ltda',
+        tradeName: 'Pão Bom',
+        cnpj: '12ABC34501DE35',
+      }),
+    profilesRepository.createCompany,
+    [3, { legalName: 'Padaria Pão Bom Ltda', tradeName: 'Pão Bom', cnpj: '12ABC34501DE35' }],
   ],
   ['reportsFacade.create', () => reportsFacade.create(REPORT), reportsRepository.create, [REPORT]],
   [

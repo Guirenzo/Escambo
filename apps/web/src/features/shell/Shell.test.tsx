@@ -324,6 +324,19 @@ describe('Shell: quem está logado', () => {
     expect(container.querySelector('img')).toHaveAttribute('src', 'https://fotos.test/bruno.png');
   });
 
+  it('conta de empresa (RF-018): o nome fantasia e o logo, e o papel "Empresa"', async () => {
+    auth.user = account({ role: 'company' });
+    profilesMe.mockResolvedValue({
+      freelancer: null,
+      client: null,
+      company: { tradeName: 'Pão Bom', logoUrl: 'https://fotos.test/logo.png' },
+    } as unknown as MyProfiles);
+    const { container } = renderShell();
+    expect(await screen.findByText('Pão Bom')).toHaveAttribute('title', 'conta@escambo.test');
+    expect(screen.getByText('Empresa')).toBeInTheDocument();
+    expect(container.querySelector('img')).toHaveAttribute('src', 'https://fotos.test/logo.png');
+  });
+
   it('"Sair" encerra a sessão, e só quando a pessoa clica', async () => {
     const user = userEvent.setup();
     const { querySettled } = renderShell();

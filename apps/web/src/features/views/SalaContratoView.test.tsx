@@ -1927,3 +1927,28 @@ describe('SalaContratoView: pacote contratado (RF-086)', () => {
     expect(screen.queryByTestId('package-kv')).toBeNull();
   });
 });
+
+describe('SalaContratoView: quem contrata é empresa (RF-018)', () => {
+  const company = { ulid: '01EMPRESA', tradeName: 'Pão Bom' };
+
+  it('o freelancer vê "Contratante:" com o nome fantasia, que leva à página da empresa, e o selo', async () => {
+    api.contractDetail.mockResolvedValue(contract({ clientCompany: company }));
+    await openSala(FREELANCER);
+    const tag = screen.getByTestId('company-tag');
+    expect(tag).toHaveTextContent('Contratante: Pão Bom Empresa');
+    expect(within(tag).getByRole('link', { name: 'Pão Bom' })).toHaveAttribute(
+      'href',
+      '/empresas/01EMPRESA',
+    );
+  });
+
+  it('a própria empresa não vê o selo de si mesma; contratação de pessoa não tem selo', async () => {
+    api.contractDetail.mockResolvedValue(contract({ clientCompany: company }));
+    const view = await openSala(CLIENT);
+    expect(screen.queryByTestId('company-tag')).toBeNull();
+    view.unmount();
+    api.contractDetail.mockResolvedValue(contract({ clientCompany: null }));
+    await openSala(FREELANCER);
+    expect(screen.queryByTestId('company-tag')).toBeNull();
+  });
+});

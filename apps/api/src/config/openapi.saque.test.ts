@@ -102,7 +102,11 @@ describe('documento OpenAPI: prazo de saque (RN-035)', () => {
       '400',
       '403',
       '422',
+      '503',
     ]);
+    // RF-020: quem entrega trabalho saca com o CPF validado; sem a chave de cifragem, não saca.
+    expect(path('/withdrawals', 'post').responses['403'].description).toContain('cpf_required');
+    expect(path('/withdrawals', 'post').responses['503'].description).toContain('cpf_unavailable');
     expect(path('/withdrawals', 'post').summary).toContain('withdrawal_bank_business_days');
     expect(json('/withdrawals', 'get', '200')).toEqual({
       $ref: '#/components/schemas/WithdrawalsPage',

@@ -496,6 +496,9 @@ describe('atendimento: a conta pelo e-mail e o reset da 2FA (ADR 66)', () => {
       status: 'pending_verification',
       mfaEnabled: true,
       createdAt: expect.any(String),
+      // Conta de cliente sem perfil de freelancer nem de empresa (RF-018, RF-020).
+      cpf: null,
+      company: null,
     });
     await request(app)
       .get('/api/admin/users/lookup?email=ninguem@escambo.test')
@@ -585,7 +588,7 @@ describe('LGPD: cópia e exclusão de dados com a 2FA', () => {
     const { codes } = await enableMfa(user);
 
     const data = await buildExport(user.id);
-    expect(data.formato).toBe('escambo-export/1.13');
+    expect(data.formato).toBe('escambo-export/1.14');
     const row = (await mfaRowOf(user.id))!;
     expect(data.mfa).toEqual({
       enabled: true,

@@ -37,9 +37,9 @@ const COLS =
   'id, reporter_id, target_type, target_id, image_url, reason, description, status, reviewed_at, resolution_note, created_at';
 /** O nome de exibição do dono: perfil de freelancer, senão o de cliente. */
 const OWNER =
-  'u.id AS owner_id, u.ulid AS owner_ulid, COALESCE(pf.full_name, pc.full_name) AS owner_name';
+  'u.id AS owner_id, u.ulid AS owner_ulid, COALESCE(pf.full_name, pc.full_name, pco.trade_name) AS owner_name';
 const OWNER_JOINS =
-  'LEFT JOIN profiles_freelancer pf ON pf.user_id = u.id LEFT JOIN profiles_client pc ON pc.user_id = u.id';
+  'LEFT JOIN profiles_freelancer pf ON pf.user_id = u.id LEFT JOIN profiles_client pc ON pc.user_id = u.id LEFT JOIN profiles_company pco ON pco.user_id = u.id';
 
 /** O filtro de uma instrução, com o que vem depois dele (ordem e limite). */
 const whereOf = (sql: string): string => sql.slice(sql.indexOf(' WHERE ') + ' WHERE '.length);
@@ -146,7 +146,7 @@ describe('reportsRepository', () => {
 
       const { sql, params } = fakeDb.calls[0]!;
       expect(sql).toContain(
-        'SELECT u.id AS owner_id, COALESCE(pf.avatar_url, pc.avatar_url) AS image_url, NULL AS title',
+        'SELECT u.id AS owner_id, COALESCE(pf.avatar_url, pc.avatar_url, pco.logo_url) AS image_url, NULL AS title',
       );
       expect(sql).toContain(`FROM users u ${OWNER_JOINS}`);
       expect(sql).toContain('WHERE u.id = :id AND u.deleted_at IS NULL LIMIT 1');
@@ -230,7 +230,7 @@ describe('reportsRepository', () => {
 
       const { sql, params } = fakeDb.calls[0]!;
       expect(sql).toContain(
-        `SELECT u.id, ${OWNER}, NULL AS title, COALESCE(pf.avatar_url, pc.avatar_url) AS image_url FROM users u`,
+        `SELECT u.id, ${OWNER}, NULL AS title, COALESCE(pf.avatar_url, pc.avatar_url, pco.logo_url) AS image_url FROM users u`,
       );
       expect(beforeWhere(sql).endsWith(`FROM users u ${OWNER_JOINS}`)).toBe(true);
       expect(whereOf(sql)).toBe('u.id IN (:ids)');

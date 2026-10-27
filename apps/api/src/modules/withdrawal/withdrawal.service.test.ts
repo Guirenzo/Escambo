@@ -11,12 +11,17 @@ vi.mock('./withdrawal.repository', () => ({
   withdrawalRepository: { createIfSufficient: vi.fn(), findById: vi.fn(), listForUser: vi.fn() },
 }));
 vi.mock('../auth/auth.repository', () => ({ authRepository: { findById: vi.fn() } }));
+vi.mock('../profiles/profiles.repository', () => ({
+  profilesRepository: { payoutState: vi.fn() },
+}));
 vi.mock('../admin/admin.repository', () => ({ adminRepository: { recordAction: vi.fn() } }));
 vi.mock('../notifications/notifications.service', () => ({
   notificationsService: { notify: vi.fn() },
 }));
 
 import { setClockForTests } from '../../utils/clock';
+import { setFieldKeysForTests } from '../../utils/field-crypto';
+import { profilesRepository } from '../profiles/profiles.repository';
 import { HttpError } from '../../utils/http-error';
 import { authRepository, type UserRow } from '../auth/auth.repository';
 import { settingsService } from '../settings/settings.service';
@@ -27,6 +32,8 @@ const repo = vi.mocked(withdrawalRepository);
 const users = vi.mocked(authRepository);
 const minWithdrawal = vi.mocked(settingsService.minWithdrawal);
 const businessDays = vi.mocked(settingsService.withdrawalBusinessDays);
+const payout = vi.mocked(profilesRepository.payoutState);
+const FIELD_KEY = Buffer.alloc(32, 0x5c).toString('base64');
 
 /** Sexta, 09/10/2026, 15:00 em Brasília: PIX (1 dia útil) vence na segunda, TED (2) na terça. */
 const FRIDAY_AFTERNOON = new Date('2026-10-09T18:00:00.000Z');
@@ -67,8 +74,71 @@ beforeEach(() => {
   vi.clearAllMocks();
   setClockForTests(FRIDAY_AFTERNOON, { frozen: true });
   businessDays.mockImplementation(async (method) => (method === 'pix' ? 1 : 2));
+  // Freelancer com o CPF validado (RF-020), num servidor com a chave de cifragem.
+  setFieldKeysForTests({ current: FIELD_KEY });
+  payout.mockResolvedValue({ delivers_work: 1, cpf_verified: 1 } as never);
 });
-afterEach(() => setClockForTests(null));
+afterEach(() => {
+  setClockForTests(null);
+  setFieldKeysForTests(null);
+});
+
+/** RF-020: quem entrega trabalho só saca com o CPF validado; quem só contrata, não precisa. */
+describe('withdrawalService.request: CPF (RF-020)', () => {
+  it('freelancer sem CPF validado: 403 cpf_required, que leva ao Perfil, sem tocar no saldo', async () => {
+    users.findById.mockResolvedValue(userRow(true));
+    payout.mockResolvedValue({ delivers_work: 1, cpf_verified: 0 } as never);
+
+    const err = await withdrawalService.request(7, input).catch((e) => e);
+
+    expect(err).toMatchObject({ statusCode: 403, code: 'cpf_required' });
+    expect(err.message).toBe('Para sacar, valide seu CPF em Perfil, "Dados para receber".');
+    expect(payout).toHaveBeenCalledWith(7);
+    expect(repo.createIfSufficient).not.toHaveBeenCalled();
+  });
+
+  it('o e-mail é conferido antes: sem ele, 403 email_not_verified nem chega ao CPF', async () => {
+    users.findById.mockResolvedValue(userRow(false));
+    payout.mockResolvedValue({ delivers_work: 1, cpf_verified: 0 } as never);
+
+    await expect(withdrawalService.request(7, input)).rejects.toMatchObject({
+      code: 'email_not_verified',
+    });
+    expect(payout).not.toHaveBeenCalled();
+  });
+
+  it('sem a FIELD_ENCRYPTION_KEY: 503 cpf_unavailable para quem entrega trabalho, mesmo validado', async () => {
+    users.findById.mockResolvedValue(userRow(true));
+    setFieldKeysForTests({});
+
+    const err = await withdrawalService.request(7, input).catch((e) => e);
+
+    expect(err).toMatchObject({ statusCode: 503, code: 'cpf_unavailable' });
+    expect(err.message).toContain('validação de CPF ainda não está disponível neste servidor');
+    expect(repo.createIfSufficient).not.toHaveBeenCalled();
+  });
+
+  it('quem só contrata (cliente, empresa) saca o que depositou sem CPF, com ou sem a chave', async () => {
+    users.findById.mockResolvedValue(userRow(true));
+    payout.mockResolvedValue({ delivers_work: 0, cpf_verified: 0 } as never);
+    repo.createIfSufficient.mockResolvedValue(42);
+    repo.findById.mockResolvedValue(withdrawalRow());
+
+    await expect(withdrawalService.request(7, input)).resolves.toMatchObject({ id: 42 });
+    setFieldKeysForTests({});
+    await expect(withdrawalService.request(7, input)).resolves.toMatchObject({ id: 42 });
+    expect(repo.createIfSufficient).toHaveBeenCalledTimes(2);
+  });
+
+  it('conta que não voltou do banco conta como quem não entrega trabalho', async () => {
+    users.findById.mockResolvedValue(userRow(true));
+    payout.mockResolvedValue(undefined);
+    repo.createIfSufficient.mockResolvedValue(42);
+    repo.findById.mockResolvedValue(withdrawalRow());
+
+    await expect(withdrawalService.request(7, input)).resolves.toMatchObject({ id: 42 });
+  });
+});
 
 describe('withdrawalService.request', () => {
   it('exige e-mail confirmado: 403 email_not_verified sem tocar no saldo', async () => {

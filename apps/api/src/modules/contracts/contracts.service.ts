@@ -245,6 +245,11 @@ function toContract(row: ContractRow, ctx: ViewCtx): Contract {
       row.status === 'revision_requested' ? iso(row.revision_requested_at) : null,
     // RF-086: o pacote como estava publicado na proposta; o nível e a cópia andam juntos.
     package: row.package_tier ? packageFromSnapshot(row.package_snapshot) : null,
+    // RF-018: a empresa aparece com o nome fantasia e o selo; a pessoa, como sempre (sem nome).
+    clientCompany:
+      row.client_company_name && row.client_company_ulid
+        ? { ulid: row.client_company_ulid, tradeName: row.client_company_name }
+        : null,
     negotiation:
       row.status === 'pending' && !row.barter_agreement_id
         ? {

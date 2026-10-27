@@ -9,6 +9,7 @@ import { env } from '../../src/config/env';
 import { settingsService } from '../../src/modules/settings/settings.service';
 import { businessDueAt } from '../../src/utils/business-days';
 import { setClockForTests } from '../../src/utils/clock';
+import { verifyCpfOf } from './cpf.helpers';
 import { verifyEmailOf } from './mail.helpers';
 import { fundWallet } from './wallet.helpers';
 
@@ -96,6 +97,7 @@ beforeAll(async () => {
   freelancer = await registerAndLogin('freelancer');
   await fundWallet(app, freelancer.token, 600);
   await verifyEmailOf(app, admin.token, freelancer.id); // saque exige e-mail confirmado
+  await verifyCpfOf(app, freelancer.token); // e o CPF validado de quem entrega trabalho (RF-020)
 });
 
 afterEach(() => setClockForTests(null));
