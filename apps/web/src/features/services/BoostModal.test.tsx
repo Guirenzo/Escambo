@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { BoostPlan, Service } from '@escambo/types';
 import type { ReactNode } from 'react';
@@ -17,6 +17,10 @@ vi.mock('../../lib/api', () => ({
     createBoost: (body: unknown) => createBoost(body),
   },
 }));
+
+// A sessão só importa para o e-mail confirmado (RF-006): sem conta na sessão, a tela não trava.
+const auth = vi.hoisted(() => ({ user: null as { email: string; emailVerified: boolean } | null }));
+vi.mock('../../lib/auth', () => ({ useAuth: () => auth }));
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -61,6 +65,7 @@ const walletWith = (credits: number) => ({
 });
 
 beforeEach(() => {
+  auth.user = null;
   boostPlans.mockReset();
   boostPlans.mockResolvedValue(PLANS);
   wallet.mockReset();
@@ -255,6 +260,26 @@ describe('BoostModal', () => {
     await screen.findByRole('radiogroup', { name: 'Plano de impulsionamento' });
 
     await user.click(screen.getByRole('button', { name: 'Fechar' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(createBoost).not.toHaveBeenCalled();
+  });
+});
+
+describe('BoostModal: e-mail não confirmado (RF-006)', () => {
+  it('"Impulsionar" abre o aviso com o reenvio, sem planos nem confirmação', async () => {
+    const user = userEvent.setup();
+    auth.user = { email: 'bruno@escambo.test', emailVerified: false };
+    const onClose = vi.fn();
+    render(wrap(<BoostModal service={service} onClose={onClose} />));
+    const dialog = screen.getByRole('dialog', { name: 'Impulsionar: Logo profissional' });
+    expect(within(dialog).getByTestId('verify-email-notice')).toHaveTextContent(
+      'Confirme seu e-mail para impulsionar o serviço.',
+    );
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Confirmar impulsionamento' }),
+    ).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Fechar' }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(createBoost).not.toHaveBeenCalled();
   });

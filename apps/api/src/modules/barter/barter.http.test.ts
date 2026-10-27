@@ -1,7 +1,8 @@
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { blocklist } from '../../config/blocklist';
 import { bearer, routerApp } from '../../test-support/http';
+import { unverifiedEmails } from '../../test-support/email-verification';
 import { HttpError } from '../../utils/http-error';
 import { barterRoutes } from './barter.routes';
 
@@ -528,5 +529,36 @@ describe('trocas: borda HTTP', () => {
       expect(service.reject).not.toHaveBeenCalled();
       expect(service.cancel).not.toHaveBeenCalled();
     });
+  });
+});
+
+/** Propor e aceitar troca exigem e-mail confirmado (RF-006); recusar e cancelar, não. */
+describe('trocas: e-mail não confirmado (RF-006)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    unverifiedEmails.add(1);
+  });
+  afterEach(() => unverifiedEmails.clear());
+
+  it('propor e aceitar: 403 email_not_verified, sem chegar ao service', async () => {
+    const proposed = await request(app)
+      .post('/api/barters')
+      .set(bearer(1))
+      .send(proposal)
+      .expect(403);
+    expect(proposed.body.error).toBe('email_not_verified');
+    const accepted = await request(app).post('/api/barters/4/accept').set(bearer(1)).expect(403);
+    expect(accepted.body.error).toBe('email_not_verified');
+    expect(service.propose).not.toHaveBeenCalled();
+    expect(service.accept).not.toHaveBeenCalled();
+  });
+
+  it('recusar e cancelar seguem livres', async () => {
+    service.reject.mockResolvedValue(undefined);
+    service.cancel.mockResolvedValue(undefined);
+    await request(app).post('/api/barters/4/reject').set(bearer(1)).expect(204);
+    await request(app).post('/api/barters/4/cancel').set(bearer(1)).expect(204);
+    expect(service.reject).toHaveBeenCalled();
+    expect(service.cancel).toHaveBeenCalled();
   });
 });

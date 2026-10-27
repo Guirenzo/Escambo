@@ -132,6 +132,8 @@ const REFRESH_KEY = 'escambo_refresh';
 export const SESSION_TOKEN_EVENT = 'escambo:token';
 export const SESSION_EXPIRED_EVENT = 'escambo:session-expired';
 export const ACCOUNT_STATUS_EVENT = 'escambo:account-status';
+/** A API recusou uma ação crítica por e-mail não confirmado (RF-006): a tela mostra o aviso. */
+export const EMAIL_UNVERIFIED_EVENT = 'escambo:email-unverified';
 /** A API respondeu 503 em modo de manutenção (ADR 33): o app mostra a tela de manutenção. */
 export const MAINTENANCE_EVENT = 'escambo:maintenance';
 /** O proxy (nginx ou Caddy) não alcançou a API ou o web (RNF-010): o app mostra a tela de fora do ar. */
@@ -271,6 +273,7 @@ function accountErrorResponse(res: Response, token: string | null, data: unknown
   if (res.status !== 403 || !token || token !== accessToken) return;
   const code = (data as { error?: string }).error ?? '';
   if (code === 'account_suspended') emit(ACCOUNT_STATUS_EVENT, 'suspended');
+  else if (code === 'email_not_verified') emit(EMAIL_UNVERIFIED_EVENT);
   else if (BLOCKED_CODES.has(code)) expireSession();
 }
 

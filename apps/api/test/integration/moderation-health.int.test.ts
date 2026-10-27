@@ -4,6 +4,7 @@ import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { moderationHealthService } from '../../src/modules/reports/moderation.health';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Saúde da moderação (ADR 47) contra o MySQL real: duas mensagens sinalizadas, uma dispensada e
@@ -29,6 +30,7 @@ async function actor(role: 'client' | 'freelancer', domain = 'escambo.test'): Pr
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 

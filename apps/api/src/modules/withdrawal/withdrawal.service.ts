@@ -10,7 +10,6 @@ import { clock } from '../../utils/clock';
 import { FIELD_UNAVAILABLE } from '../../utils/field-crypto';
 import { HttpError } from '../../utils/http-error';
 import { adminFacade } from '../admin/admin.facade';
-import { authFacade } from '../auth/auth.facade';
 import { notificationsService } from '../notifications/notifications.service';
 import {
   withdrawalRepository,
@@ -87,12 +86,8 @@ export const withdrawalService = {
     if (input.amount < min) {
       throw new HttpError(422, `Saque mínimo é ${brl(min)} (RN-034)`, 'below_minimum');
     }
-    // Saque é a única ação que tira dinheiro da plataforma: exige e-mail confirmado (ADR 20),
-    // para que uma sessão roubada não mande o saldo para uma chave PIX de terceiro sem aviso.
-    const user = await authFacade.findById(userId);
-    if (!user?.email_verified_at) {
-      throw new HttpError(403, 'Confirme seu e-mail para sacar', 'email_not_verified');
-    }
+    // E-mail confirmado (ADR 20, RF-006) é conferido na rota (requireVerifiedEmail), como nas
+    // outras ações críticas: uma sessão roubada não manda o saldo para um PIX de terceiro sem aviso.
     // Prazo (RN-035) com o parâmetro que vale agora: gravado no saque, não muda se o admin mexer.
     const businessDays = await settingsService.withdrawalBusinessDays(input.method);
     const id = await withdrawalRepository.createIfSufficient({

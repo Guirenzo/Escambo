@@ -36,6 +36,8 @@ export function useRealtimeNotifications(): void {
         void qc.invalidateQueries({ queryKey: ['contract'] });
         void qc.invalidateQueries({ queryKey: qk.wallet });
         void qc.invalidateQueries({ queryKey: qk.gamification });
+        // A conversa do par abre e fecha com as contratações e trocas dele (RF-062).
+        void qc.invalidateQueries({ queryKey: ['chat'] });
       }
       // Missão cumprida (RF-066): o cartão, o XP e a posição no ranking mudam.
       if (n.type === 'mission_completed') {
@@ -46,6 +48,7 @@ export function useRealtimeNotifications(): void {
       if (n.type.startsWith('barter_')) {
         void qc.invalidateQueries({ queryKey: qk.barters });
         void qc.invalidateQueries({ queryKey: qk.contracts });
+        void qc.invalidateQueries({ queryKey: ['chat'] });
       }
       if (n.type.startsWith('deposit_') || n.type.startsWith('withdrawal_')) {
         void qc.invalidateQueries({ queryKey: qk.wallet });

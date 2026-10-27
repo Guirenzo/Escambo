@@ -37,13 +37,12 @@ async function api<T>(
   return (await res.json()) as T;
 }
 
-/** Registra um usuário novo (e-mail único) e faz login pela API. */
-export async function createUser(
+/** Cadastro e login pela API, sem mais nada. */
+async function registerAndLogin(
   request: APIRequestContext,
   role: 'client' | 'freelancer',
-  opts: { profile?: boolean; email?: string } = {},
+  email: string,
 ): Promise<TestUser> {
-  const email = opts.email ?? `e2e-${role}-${unique()}@escambo.test`;
   await api(request, 'post', '/auth/register', {
     data: { email, password: PASSWORD, role, legalAccepted: true },
   });
@@ -55,7 +54,41 @@ export async function createUser(
       data: { email, password: PASSWORD },
     },
   );
-  const user = { id: auth.user.id, email, token: auth.accessToken };
+  return { id: auth.user.id, email, token: auth.accessToken };
+}
+
+/**
+ * O admin que lê a caixa de saída para confirmar os e-mails das contas de teste: um por execução
+ * (o worker é um só), trocado antes de o token de acesso vencer. Ler a caixa de saída é trabalho de
+ * equipe e não pede e-mail confirmado; sem confirmar, ele também não entra na lista de quem recebe
+ * os avisos da equipe (os chamados de suporte avisam todo admin ativo).
+ */
+let outboxReader: { admin: TestUser; since: number } | null = null;
+async function mailReader(request: APIRequestContext): Promise<TestUser> {
+  if (!outboxReader || Date.now() - outboxReader.since > 30 * 60_000) {
+    const admin = await registerAndLogin(
+      request,
+      'client',
+      `e2e-admin-${unique()}@admin.escambo.test`,
+    );
+    outboxReader = { admin, since: Date.now() };
+  }
+  return outboxReader.admin;
+}
+
+/**
+ * Registra um usuário novo (e-mail único) e faz login pela API. A conta sai com o e-mail
+ * confirmado pelo caminho do produto (o link da caixa de saída): contratar, publicar, pagar,
+ * trocar, impulsionar e sacar exigem isso (RF-006). `verified: false` deixa sem confirmar.
+ */
+export async function createUser(
+  request: APIRequestContext,
+  role: 'client' | 'freelancer',
+  opts: { profile?: boolean; email?: string; verified?: boolean } = {},
+): Promise<TestUser> {
+  const email = opts.email ?? `e2e-${role}-${unique()}@escambo.test`;
+  const user = await registerAndLogin(request, role, email);
+  if (opts.verified !== false) await verifyEmail(request, user, await mailReader(request));
   // Freelancer de verdade tem perfil (nome, cidade): é nele que moram nota média e Score.
   if (role === 'freelancer' && opts.profile !== false) {
     await api(request, 'put', '/profiles/freelancer', {
@@ -140,24 +173,37 @@ export async function latestEmail(
 /** Primeiro link http(s) de um texto de e-mail. */
 export const linkIn = (text: string): string => /https?:\/\/\S+/.exec(text)?.[0] ?? '';
 
-/** Admin de teste: e-mail no domínio liberado por ADMIN_EMAILS (@admin.escambo.test). */
-export function createAdmin(request: APIRequestContext): Promise<TestUser> {
+/**
+ * Admin de teste: e-mail no domínio liberado por ADMIN_EMAILS (@admin.escambo.test). Age como
+ * equipe, que não pede e-mail confirmado (RF-006): nasce sem confirmar, como antes, para não entrar
+ * na lista de avisos da equipe de todos os testes; `verified: true` confirma.
+ */
+export function createAdmin(
+  request: APIRequestContext,
+  opts: { verified?: boolean } = {},
+): Promise<TestUser> {
   return createUser(request, 'client', {
     email: `e2e-admin-${unique()}@admin.escambo.test`,
     profile: false,
+    verified: opts.verified ?? false,
   });
 }
 
 /**
  * Confirma o e-mail de `user` pelo mesmo caminho do produto: lê o link na caixa de saída
- * (com uma conta admin) e consome o token. Saque exige e-mail confirmado.
+ * (com uma conta admin) e consome o token. As ações críticas exigem e-mail confirmado (RF-006).
+ * Conta já confirmada fica como está.
  */
 export async function verifyEmail(
   request: APIRequestContext,
   user: TestUser,
   admin?: TestUser,
 ): Promise<void> {
-  const reader = admin ?? (await createAdmin(request));
+  const me = await api<{ emailVerified: boolean }>(request, 'get', '/auth/me', {
+    token: user.token,
+  });
+  if (me.emailVerified) return;
+  const reader = admin ?? (await mailReader(request));
   const mail = await latestEmail(request, reader, user.id, 'verify_email');
   const token = /token=([A-Za-z0-9_-]+)/.exec(mail.text)?.[1] ?? '';
   expect(token, 'token de confirmação no e-mail').not.toBe('');
@@ -190,20 +236,24 @@ export async function deliveredContract(
   return created.id;
 }
 
-/** Contratação levada até 'completed' pela API (create → accept → deliver → approve). */
+/**
+ * Contratação levada até 'completed' pela API (create → accept → deliver → approve). Com `service`
+ * null, é a proposta direta ao freelancer, sem serviço publicado (quem ainda não confirmou o e-mail
+ * não publica, mas recebe, entrega e é pago).
+ */
 export async function completeContract(
   request: APIRequestContext,
   client: TestUser,
   freelancer: TestUser,
-  service: { id: number; title: string },
+  service: { id: number; title: string } | null,
 ): Promise<number> {
   await topUp(request, client, 250);
   const created = await api<{ id: number }>(request, 'post', '/contracts', {
     token: client.token,
     data: {
       freelancerId: freelancer.id,
-      serviceId: service.id,
-      title: service.title,
+      ...(service ? { serviceId: service.id } : {}),
+      title: service?.title ?? 'Contratação direta e2e',
       description: 'Contratação criada pelos testes ponta a ponta e levada até a conclusão.',
       price: 250,
     },

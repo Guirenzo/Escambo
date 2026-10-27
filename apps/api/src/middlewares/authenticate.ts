@@ -15,6 +15,8 @@ export interface AuthPayload {
   uid: number; // id numérico (users.id)
   role: string;
   status?: import('@escambo/types').UserStatus;
+  /** E-mail confirmado, lido junto com o status (RF-006). */
+  emailVerified?: boolean;
 }
 
 // Torna req.user tipado nas rotas protegidas.

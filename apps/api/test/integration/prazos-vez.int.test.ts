@@ -15,6 +15,7 @@ import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
 import { DAY, fromNow, HOUR, isoFromNow, now, startDaytimeClock, stopClock } from './clock.helpers';
 import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * A vez de quem entrega, a hora humana e a extensão de prazo (ADR 57) contra o MySQL real:
@@ -83,6 +84,7 @@ async function registerAndLogin(role: 'client' | 'freelancer'): Promise<Actor> {
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status, JSON.stringify(login.body)).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 

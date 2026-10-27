@@ -9,6 +9,7 @@ import { brl, DEPOSIT_STATUS_LABEL } from '../../lib/format';
 import { qk, useCreateDeposit, useDeposit, useSimulateDeposit } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { useReadOnlyAccount } from '../../lib/account-access';
+import { useEmailVerified, VerifyEmailModal } from '../../components/VerifyEmail';
 
 const PRESETS = [50, 100, 200, 500];
 const MIN = 10;
@@ -43,6 +44,7 @@ export function DepositModal({
   const live = useDeposit(deposit?.id ?? null, deposit?.status === 'pending');
   const current = live.data ?? deposit;
   const readOnly = useReadOnlyAccount();
+  const verified = useEmailVerified();
   const paidRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -121,6 +123,11 @@ export function DepositModal({
     : null;
   const value = Number(amount) || 0;
   if (readOnly && !current) return null;
+  // Depositar e pagar a cobrança exigem e-mail confirmado (RF-006): o aviso fica no lugar dos dois.
+  // O depósito já confirmado continua aparecendo, para a tela não esconder o saldo que entrou.
+  if (!verified && current?.status !== 'paid') {
+    return <VerifyEmailModal title="Depositar na carteira" action="depositar" onClose={onClose} />;
+  }
 
   return (
     <Modal title="Depositar na carteira" onClose={onClose}>

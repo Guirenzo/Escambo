@@ -4,6 +4,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Troca estimada pelo sistema (RF-084, RN-066) contra o MySQL: o lado de serviço com preço fechado
@@ -28,6 +29,7 @@ async function freelancer(): Promise<Actor> {
     .send({ legalAccepted: true, email, password, role: 'freelancer' })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 

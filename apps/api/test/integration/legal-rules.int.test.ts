@@ -8,6 +8,7 @@ import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { env } from '../../src/config/env';
 import { walletRepository } from '../../src/modules/wallet/wallet.repository';
+import { confirmEmail } from './mail.helpers';
 
 const app = createApp();
 const headers = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -15,8 +16,8 @@ const headers = (token: string) => ({ Authorization: `Bearer ${token}` });
 async function actor(role: 'client' | 'freelancer') {
   const key = ulid();
   const [created] = await pool.query<ResultSetHeader>(
-    `INSERT INTO users (ulid, email, role, status, timezone)
-      VALUES (:key, :email, :role, 'active', 'America/Sao_Paulo')`,
+    `INSERT INTO users (ulid, email, role, status, timezone, email_verified_at)
+      VALUES (:key, :email, :role, 'active', 'America/Sao_Paulo', NOW())`,
     { key, email: `legal-rules-${key}@escambo.test`, role },
   );
   const id = created.insertId;
@@ -42,6 +43,7 @@ describe('ADR 61: versões legais e escolhas preservadas no banco real', () => {
       .send({ email, password, role: 'client', legalAccepted: true })
       .expect(201);
     const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+    await confirmEmail(app, login.body.user.id);
     const auth = headers(login.body.accessToken as string);
     const initial = await request(app).get('/api/lgpd/consents').set(auth).expect(200);
     expect(initial.body).toEqual(

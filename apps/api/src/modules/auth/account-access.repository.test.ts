@@ -7,14 +7,21 @@ import { accountAccessRepository } from './account-access.repository';
 beforeEach(() => fakeDb.reset());
 describe('consulta atual da identidade', () => {
   it('vincula uid e sub na mesma consulta e carrega o papel/status atuais', async () => {
-    const row = { id: 7, ulid: 'ulid-7', role: 'client', status: 'suspended', deleted_at: null };
+    const row = {
+      id: 7,
+      ulid: 'ulid-7',
+      role: 'client',
+      status: 'suspended',
+      deleted_at: null,
+      email_verified_at: null,
+    };
     fakeDb.reply([row]);
     expect(
       await accountAccessRepository.findCurrent({ uid: 7, sub: 'ulid-7', role: 'admin' }),
     ).toBe(row);
     expect(fakeDb.calls).toEqual([
       {
-        sql: 'SELECT id, ulid, role, status, deleted_at FROM users WHERE id = :uid AND ulid = :sub LIMIT 1',
+        sql: 'SELECT id, ulid, role, status, deleted_at, email_verified_at FROM users WHERE id = :uid AND ulid = :sub LIMIT 1',
         params: { uid: 7, sub: 'ulid-7' },
       },
     ]);

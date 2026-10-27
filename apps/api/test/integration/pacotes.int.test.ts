@@ -47,8 +47,8 @@ const auth = (a: Actor) => ({ Authorization: `Bearer ${a.token}` });
 async function actor(role: 'client' | 'freelancer'): Promise<Actor> {
   const key = ulid();
   const [created] = await pool.query<ResultSetHeader>(
-    `INSERT INTO users (ulid, email, role, status, timezone)
-      VALUES (:key, :email, :role, 'active', 'America/Sao_Paulo')`,
+    `INSERT INTO users (ulid, email, role, status, timezone, email_verified_at)
+      VALUES (:key, :email, :role, 'active', 'America/Sao_Paulo', NOW())`,
     { key, email: `pacotes-${key}@escambo.test`, role },
   );
   ownedUsers.push(created.insertId);

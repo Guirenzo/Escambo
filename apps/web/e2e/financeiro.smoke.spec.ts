@@ -95,10 +95,11 @@ test('freelancer saca; admin conclui na fila de saques; o status muda para o tit
   page,
   request,
 }) => {
-  const freelancer = await createUser(request, 'freelancer');
-  const service = await createService(request, freelancer, 250);
+  // Sem e-mail confirmado o freelancer não publica (RF-006), mas recebe a proposta direta, entrega
+  // e é pago: o saque é que espera a confirmação.
+  const freelancer = await createUser(request, 'freelancer', { verified: false });
   const client = await createUser(request, 'client');
-  await completeContract(request, client, freelancer, service); // 250 − 15% = 212,50 liberados
+  await completeContract(request, client, freelancer, null); // 250 − 15% = 212,50 liberados
 
   // Sem e-mail confirmado a Carteira não oferece o saque (ação sensível): só o reenvio do link.
   await openAs(page, freelancer, '/carteira');

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import {
   ACCOUNT_STATUS_EVENT,
   api,
+  EMAIL_UNVERIFIED_EVENT,
   getRefreshToken,
   getToken,
   SESSION_EXPIRED_EVENT,
@@ -620,5 +621,36 @@ describe('useAuth fora do provider', () => {
     );
     window.removeEventListener('error', swallow);
     quiet.mockRestore();
+  });
+});
+
+describe('AuthProvider: e-mail não confirmado (RF-006)', () => {
+  it('a recusa da API marca a conta como não confirmada, sem derrubar a sessão', async () => {
+    setSession(tokens);
+    apiMock.me.mockResolvedValue({ ...ana, emailVerified: true });
+    const view = mountHook();
+    await waitFor(() => expect(view.result.current.user?.emailVerified).toBe(true));
+    act(() => window.dispatchEvent(new CustomEvent(EMAIL_UNVERIFIED_EVENT)));
+    expect(view.result.current.user).toMatchObject({ id: 1, emailVerified: false });
+    expect(getToken()).toBe('acesso-1');
+    expect(disconnectSocket).not.toHaveBeenCalled();
+  });
+
+  it('sem sessão, o aviso não cria usuário', async () => {
+    const view = mountHook();
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    act(() => window.dispatchEvent(new CustomEvent(EMAIL_UNVERIFIED_EVENT)));
+    expect(view.result.current.user).toBeNull();
+  });
+
+  it('conta já não confirmada continua igual (nada muda na tela)', async () => {
+    setSession(tokens);
+    const unverified = { ...ana, emailVerified: false };
+    apiMock.me.mockResolvedValue(unverified);
+    const view = mountHook();
+    await waitFor(() => expect(view.result.current.user).toEqual(unverified));
+    const before = view.result.current.user;
+    act(() => window.dispatchEvent(new CustomEvent(EMAIL_UNVERIFIED_EVENT)));
+    expect(view.result.current.user).toBe(before);
   });
 });

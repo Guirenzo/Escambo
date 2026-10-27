@@ -3,7 +3,9 @@ import { blocklist } from '../../config/blocklist';
 import { accountAccessRepository, type AccountAccessRow } from './account-access.repository';
 import {
   assertBusinessWrite,
+  assertEmailVerified,
   currentAccount,
+  EMAIL_NOT_VERIFIED_MESSAGE,
   suspendedRequestAllowed,
   validateAccessIdentity,
 } from './account-access';
@@ -17,6 +19,7 @@ const row = (extra: Partial<Omit<AccountAccessRow, 'constructor'>> = {}) =>
     role: 'client',
     status: 'active',
     deleted_at: null,
+    email_verified_at: new Date('2026-01-01T00:00:00Z'),
     ...extra,
   }) as AccountAccessRow;
 
@@ -33,6 +36,7 @@ describe('autoridade atual da conta', () => {
       sub: 'ulid-7',
       role: 'client',
       status: 'active',
+      emailVerified: true,
     });
     expect(lookup).toHaveBeenCalledWith(identity);
     blocklist.delete(7);
@@ -76,6 +80,37 @@ describe('autoridade atual da conta', () => {
       await expect(currentAccount(identity)).rejects.toMatchObject({ statusCode: 503 });
     },
   );
+});
+
+describe('e-mail confirmado (RF-006)', () => {
+  it('vem da mesma consulta da conta, a cada request', async () => {
+    lookup.mockResolvedValueOnce(row({ email_verified_at: null })).mockResolvedValueOnce(row());
+    expect((await currentAccount(identity)).emailVerified).toBe(false);
+    // Confirmou pelo link: a próxima requisição já passa, sem token novo.
+    expect((await currentAccount(identity)).emailVerified).toBe(true);
+  });
+
+  it('sem e-mail confirmado: 403 email_not_verified com a mesma frase para toda ação crítica', () => {
+    expect(() => assertEmailVerified({ emailVerified: false })).toThrow(
+      expect.objectContaining({
+        statusCode: 403,
+        code: 'email_not_verified',
+        message: EMAIL_NOT_VERIFIED_MESSAGE,
+      }),
+    );
+    expect(EMAIL_NOT_VERIFIED_MESSAGE).toBe(
+      'Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo.',
+    );
+    expect(() => assertEmailVerified({ emailVerified: true })).not.toThrow();
+  });
+
+  it('conta pendente de verificação entra normalmente, só sem o e-mail confirmado', async () => {
+    lookup.mockResolvedValue(row({ status: 'pending_verification', email_verified_at: null }));
+    expect(await currentAccount(identity)).toMatchObject({
+      status: 'pending_verification',
+      emailVerified: false,
+    });
+  });
 });
 
 describe('identificadores assinados', () => {

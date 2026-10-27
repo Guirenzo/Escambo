@@ -39,6 +39,8 @@ interface Viewer {
   role: 'client' | 'freelancer';
   timezone: string;
   digestHour: number;
+  email?: string;
+  emailVerified?: boolean;
 }
 const auth = vi.hoisted(() => ({ user: null as Viewer | null }));
 vi.mock('../../lib/auth', () => ({ useAuth: () => auth }));
@@ -1355,5 +1357,21 @@ describe('ServicosView: faixa de busca e pílulas de categoria', () => {
       '',
       '',
     ]);
+  });
+});
+
+describe('ServicosView: publicar sem e-mail confirmado (RF-006)', () => {
+  it('"Novo serviço" abre o aviso com o reenvio no lugar do formulário', async () => {
+    const user = userEvent.setup({ delay: null });
+    await openView();
+    auth.user = { ...auth.user!, email: 'eu@escambo.test', emailVerified: false };
+    await user.click(screen.getByRole('button', { name: 'Novo serviço' }));
+    const section = screen.getByRole('region', { name: 'Novo serviço' });
+    expect(within(section).getByTestId('verify-email-notice')).toHaveTextContent(
+      'Confirme seu e-mail para publicar um serviço. Enviamos um link para eu@escambo.test',
+    );
+    expect(within(section).getByRole('button', { name: 'Reenviar e-mail' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Publicar' })).toBeNull();
+    expect(api.createService).not.toHaveBeenCalled();
   });
 });

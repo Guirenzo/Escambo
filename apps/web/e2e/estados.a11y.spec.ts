@@ -616,7 +616,8 @@ test('erros de campo ficam marcados e ligados ao campo, e os avisos vão para re
   page,
   request,
 }) => {
-  const user = await createUser(request, 'client');
+  // Sem e-mail confirmado: o lembrete do topo (com o reenvio que falha, mais abaixo) aparece.
+  const user = await createUser(request, 'client', { verified: false });
   await openAs(page, user, '/perfil');
   await settled(page);
 

@@ -149,6 +149,13 @@ export function createSocketServer(httpServer: HttpServer): Server {
               input.data.content,
             );
           } catch (err) {
+            // Conversa encerrada (RF-062): quem recusa já conferiu que é parte da contratação, então
+            // o motivo volta como na rota REST, para a tela trocar o compositor pela faixa. O resto
+            // (não é parte, contratação que não existe) continua sem o motivo.
+            if (err instanceof HttpError && err.code === 'conversation_closed') {
+              reply({ ok: false, error: err.code, message: err.message });
+              return;
+            }
             logger.warn({ err }, 'message:send falhou');
             reply({ ok: false, error: 'send_failed' });
             return;

@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Moderação efetiva (RN-007): suspensão mantém sessão de consulta e bloqueia negócios;
@@ -33,6 +34,7 @@ async function registerAndLogin(
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password: PASSWORD });
   expect(login.status).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return {
     id: login.body.user.id,
     ulid: login.body.user.ulid,

@@ -7,6 +7,7 @@ import { pool } from '../../src/config/db';
 import { runPurgeAttachments } from '../../src/jobs/purge-attachments';
 import { attachmentPath, uploadsDir } from '../../src/modules/messaging/attachments.storage';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Expurgo de anexos (ADR 31) contra MySQL e disco reais: retenção só sem contratação aberta,
@@ -37,6 +38,7 @@ async function registerAndLogin(role: 'client' | 'freelancer', admin = false): P
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 
@@ -119,6 +121,9 @@ describe('Expurgo de anexos (ADR 31)', () => {
     const { client, freelancer, contractId } = await makeContract();
     const a = await upload(contractId, client, 'rascunho.png');
     await backdate(a.id, 200);
+    // Um anexo recente no mesmo par, mandado enquanto a contratação está aberta: depois do fim, a
+    // conversa não recebe mais nada (RF-062), e é ele que mostra que a retenção olha a idade.
+    const recent = await upload(contractId, freelancer, 'entrega.png');
 
     // Contrato ainda pendente entre os dois: nada é removido.
     const first = await runPurgeAttachments({ force: true, trigger: 'admin' });
@@ -146,9 +151,18 @@ describe('Expurgo de anexos (ADR 31)', () => {
     expect(typeof msg.attachment.purgedAt).toBe('string');
 
     // Anexo recente no mesmo par não é tocado, mesmo com o contrato encerrado.
-    const recent = await upload(contractId, freelancer, 'entrega.png');
+    expect(await exists(recent.key)).toBe(true);
     await runPurgeAttachments({ force: true });
     expect(await exists(recent.key)).toBe(true);
+    await request(app).get(recent.url).set(auth(client.token)).expect(200);
+
+    // Encerrada, a conversa não recebe anexo novo (RF-062): 409, e nada vai para o disco.
+    const closed = await request(app)
+      .post(`/api/messaging/contracts/${contractId}/attachments`)
+      .set(auth(freelancer.token))
+      .attach('file', PNG, { filename: 'depois.png', contentType: 'image/png' });
+    expect(closed.status).toBe(409);
+    expect(closed.body.error).toBe('conversation_closed');
   });
 
   it('LGPD: anonimização do titular leva os arquivos que ele enviou; os da outra parte ficam', async () => {
