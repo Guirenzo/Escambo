@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { currentSlot } from '../../src/modules/profiles/availability';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Horário de atendimento (ADR 34) contra o MySQL real: períodos por dia no perfil, busca por
@@ -28,6 +29,7 @@ async function freelancer(profile: Record<string, unknown>): Promise<Freela> {
     .send({ legalAccepted: true, email, password, role: 'freelancer' })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   const token = login.body.accessToken as string;
   const saved = await request(app)
     .put('/api/profiles/freelancer')

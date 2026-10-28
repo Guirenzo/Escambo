@@ -95,6 +95,10 @@ const errorResponse = (description: string) => ({
   description,
   content: { 'application/json': { schema: ref('Error') } },
 });
+/** Ação crítica sem e-mail confirmado (RF-006, RN-004): a mesma recusa em todas as rotas. */
+const emailNotVerified = errorResponse(
+  'email_not_verified: a conta ainda não confirmou o e-mail (RF-006). Contratar, publicar serviço, depositar ou pagar, propor ou aceitar troca, impulsionar e sacar esperam a confirmação; a mensagem é sempre "Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo."',
+);
 const pageParameters = [
   {
     name: 'page',
@@ -2164,11 +2168,12 @@ export const openapiDocument: Record<string, any> = {
           },
         ],
       },
-      post: op('Serviços', 'Cria serviço', {
+      post: op('Serviços', 'Cria serviço (publicar exige e-mail confirmado, RF-006)', {
         auth: true,
         body: { $ref: '#/components/schemas/CreateService' },
         responses: {
           ...jsonResponse('201', 'Service'),
+          '403': emailNotVerified,
           '422': errorResponse(
             'validation_error, price_below_minimum, invalid_category; com pacotes (RF-086): packages_require_fixed_price, price_from_packages, package_price_order',
           ),
@@ -2208,18 +2213,24 @@ export const openapiDocument: Record<string, any> = {
           },
         ),
       },
-      patch: op('Serviços', 'Atualiza (dono): edita o serviço inteiro ou pausa/reativa', {
-        auth: true,
-        body: ref('UpdateService'),
-        responses: {
-          ...jsonResponse('200', 'Service'),
-          '403': errorResponse('forbidden: o serviço não é seu'),
-          '404': errorResponse('service_not_found'),
-          '422': errorResponse(
-            'validation_error, price_required, price_below_minimum, invalid_category; com pacotes (RF-086): packages_require_fixed_price, price_from_packages, package_price_order',
-          ),
+      patch: op(
+        'Serviços',
+        'Atualiza (dono): edita o serviço inteiro ou pausa/reativa. isActive true (deixar no ar, reativar um pausado) é publicar e exige e-mail confirmado (RF-006); editar e pausar, não',
+        {
+          auth: true,
+          body: ref('UpdateService'),
+          responses: {
+            ...jsonResponse('200', 'Service'),
+            '403': errorResponse(
+              'forbidden: o serviço não é seu; email_not_verified: isActive true sem e-mail confirmado (RF-006)',
+            ),
+            '404': errorResponse('service_not_found'),
+            '422': errorResponse(
+              'validation_error, price_required, price_below_minimum, invalid_category; com pacotes (RF-086): packages_require_fixed_price, price_from_packages, package_price_order',
+            ),
+          },
         },
-      }),
+      ),
       delete: op('Serviços', 'Remove (dono, soft delete)', { auth: true, responses: res204 }),
     },
 
@@ -2268,23 +2279,30 @@ export const openapiDocument: Record<string, any> = {
           },
         ],
       },
-      post: op('Contratações', 'Cria proposta e reserva o valor', {
-        auth: true,
-        body: { $ref: '#/components/schemas/CreateContract' },
-        responses: {
-          ...jsonResponse('201', 'Contract'),
-          '409': {
-            description:
-              'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive e, com pacote (RF-086), package_changed: o preço do pacote mudou.',
-            content: {
-              'application/json': { schema: { anyOf: [ref('ActiveContractError'), ref('Error')] } },
+      post: op(
+        'Contratações',
+        'Cria proposta e reserva o valor (exige e-mail confirmado, RF-006)',
+        {
+          auth: true,
+          body: { $ref: '#/components/schemas/CreateContract' },
+          responses: {
+            ...jsonResponse('201', 'Contract'),
+            '403': emailNotVerified,
+            '409': {
+              description:
+                'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive e, com pacote (RF-086), package_changed: o preço do pacote mudou.',
+              content: {
+                'application/json': {
+                  schema: { anyOf: [ref('ActiveContractError'), ref('Error')] },
+                },
+              },
             },
+            '422': errorResponse(
+              'validation_error; com pacotes (RF-086): package_required, package_not_found, deadline_before_package, milestone_after_deadline',
+            ),
           },
-          '422': errorResponse(
-            'validation_error; com pacotes (RF-086): package_required, package_not_found, deadline_before_package, milestone_after_deadline',
-          ),
         },
-      }),
+      ),
     },
     '/contracts/{id}': {
       get: op(
@@ -2907,17 +2925,23 @@ export const openapiDocument: Record<string, any> = {
     },
     '/wallet/deposits': {
       get: op('Carteira', 'Meus depósitos', { auth: true }),
-      post: op('Carteira', 'Gera cobrança PIX de depósito na carteira', {
-        auth: true,
-        body: { $ref: '#/components/schemas/CreateDeposit' },
-        responses: res201,
-      }),
+      post: op(
+        'Carteira',
+        'Gera cobrança PIX de depósito na carteira (exige e-mail confirmado, RF-006)',
+        {
+          auth: true,
+          body: { $ref: '#/components/schemas/CreateDeposit' },
+          responses: { ...res201, '403': emailNotVerified },
+        },
+      ),
     },
     '/wallet/deposits/{id}': { get: op('Carteira', 'Situação da cobrança', { auth: true }) },
     '/wallet/deposits/{id}/simulate': {
-      post: op('Carteira', 'Demo: confirma a cobrança sem gateway (PAYMENTS_SIMULATE)', {
-        auth: true,
-      }),
+      post: op(
+        'Carteira',
+        'Demo: confirma a cobrança sem gateway (PAYMENTS_SIMULATE). Pagar exige e-mail confirmado (RF-006)',
+        { auth: true, responses: { '200': { description: 'OK' }, '403': emailNotVerified } },
+      ),
     },
     '/payments/webhook': {
       post: op(
@@ -2956,10 +2980,11 @@ export const openapiDocument: Record<string, any> = {
     },
     '/boosts': {
       get: op('Impulsionamento', 'Meus impulsionamentos', { auth: true }),
-      post: op('Impulsionamento', 'Impulsiona um serviço meu (paga em créditos)', {
-        auth: true,
-        responses: res201,
-      }),
+      post: op(
+        'Impulsionamento',
+        'Impulsiona um serviço meu (paga em créditos; exige e-mail confirmado, RF-006)',
+        { auth: true, responses: { ...res201, '403': emailNotVerified } },
+      ),
     },
     '/withdrawals': {
       get: {
@@ -2979,7 +3004,7 @@ export const openapiDocument: Record<string, any> = {
             ...jsonResponse('201', 'Withdrawal'),
             '400': errorResponse('insufficient_balance'),
             '403': errorResponse(
-              'email_not_verified; cpf_required (RF-020: quem entrega trabalho saca com o CPF validado no Perfil); ou conta bloqueada',
+              'email_not_verified (ADR 20, RF-006: "Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo."); cpf_required (RF-020: quem entrega trabalho saca com o CPF validado no Perfil); ou conta bloqueada',
             ),
             '422': errorResponse('below_minimum ou validation_error'),
             '503': errorResponse(
@@ -3088,6 +3113,7 @@ export const openapiDocument: Record<string, any> = {
           responses: {
             ...res201,
             '402': errorResponse('insufficient_balance: sem saldo para reservar a torna'),
+            '403': emailNotVerified,
             '422': errorResponse(
               'validation_error, estimate_mismatch (valor diferente do catálogo), estimate_required (lado sem preço fechado sem valor), invalid_offered_service, invalid_requested_service',
             ),
@@ -3099,8 +3125,8 @@ export const openapiDocument: Record<string, any> = {
     '/barters/{id}/accept': {
       post: op(
         'Troca (Escambo)',
-        'Aceita a troca (gera 2 contratos recíprocos; reserva a torna se o receptor paga — 402 sem saldo)',
-        { auth: true },
+        'Aceita a troca (gera 2 contratos recíprocos; reserva a torna se o receptor paga — 402 sem saldo). Exige e-mail confirmado (RF-006); recusar e cancelar, não',
+        { auth: true, responses: { ...res201, '403': emailNotVerified } },
       ),
     },
     '/barters/{id}/reject': {
@@ -3158,13 +3184,21 @@ export const openapiDocument: Record<string, any> = {
     '/messaging/contracts/{id}': {
       get: op(
         'Chat',
-        'Histórico do chat do contrato (partes). Cada mensagem traz readAt: quando o destinatário leu (RF-059), null enquanto não lida',
+        'Histórico do chat do contrato (partes). Cada mensagem traz readAt: quando o destinatário leu (RF-059), null enquanto não lida. closed: true quando a conversa está encerrada (RF-062): nenhuma contratação aberta (proposta, aceita, em andamento, entregue, em revisão ou em disputa) nem troca proposta ou em andamento entre as duas pessoas; ler, baixar anexos e marcar como lida continuam permitidos',
         { auth: true },
       ),
       post: op(
         'Chat',
-        'Envia mensagem (persiste + broadcast Socket.IO). Texto com sinal de negociação por fora (chave Pix, CPF, telefone, e-mail, WhatsApp, "por fora") sai com signals para as duas partes e entra sozinho na fila de denúncias, sem ser barrado (ADR 45)',
-        { auth: true, responses: res201 },
+        'Envia mensagem (persiste + broadcast Socket.IO). Texto com sinal de negociação por fora (chave Pix, CPF, telefone, e-mail, WhatsApp, "por fora") sai com signals para as duas partes e entra sozinho na fila de denúncias, sem ser barrado (ADR 45). Só com relação aberta entre as duas pessoas (RF-062)',
+        {
+          auth: true,
+          responses: {
+            ...res201,
+            '409': errorResponse(
+              'conversation_closed: conversa encerrada (RF-062), sem contratação nem troca em aberto entre as duas pessoas; uma nova proposta reabre',
+            ),
+          },
+        },
       ),
     },
     '/messaging/contracts/{id}/read': {
@@ -3187,8 +3221,16 @@ export const openapiDocument: Record<string, any> = {
     '/messaging/contracts/{id}/attachments': {
       post: op(
         'Chat',
-        'Envia imagem ou arquivo (multipart: file + content opcional). JPG, PNG, GIF, WebP, PDF ou ZIP, reconhecidos pelo conteúdo, até UPLOAD_MAX_MB',
-        { auth: true, responses: res201 },
+        'Envia imagem ou arquivo (multipart: file + content opcional). JPG, PNG, GIF, WebP, PDF ou ZIP, reconhecidos pelo conteúdo, até UPLOAD_MAX_MB. Só com relação aberta entre as duas pessoas (RF-062)',
+        {
+          auth: true,
+          responses: {
+            ...res201,
+            '409': errorResponse(
+              'conversation_closed: conversa encerrada (RF-062); o arquivo não chega a ser gravado',
+            ),
+          },
+        },
       ),
     },
     '/messaging/attachments/{id}': {

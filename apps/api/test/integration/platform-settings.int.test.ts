@@ -6,6 +6,7 @@ import { settingsService } from '../../src/modules/settings/settings.service';
 import { setClockForTests } from '../../src/utils/clock';
 import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Parâmetros da plataforma (ADR 32): o admin lê e muda pelo painel, com limites e auditoria, e
@@ -29,6 +30,7 @@ async function registerAndLogin(
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken, email };
 }
 

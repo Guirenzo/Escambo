@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { currentSlot, PERIODS } from '../../src/modules/profiles/availability';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Horário de atendimento no fuso do freelancer (ADR 48) contra o MySQL real: quem escolheu Rio
@@ -29,6 +30,7 @@ async function freelancer(zone: string | null): Promise<Freela> {
     .send({ legalAccepted: true, email, password, role: 'freelancer' })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   const token = login.body.accessToken as string;
   if (zone) {
     await request(app)
@@ -161,19 +163,23 @@ describe('Atendimento no fuso do freelancer (ADR 48)', () => {
     // 13h30 em Noronha e 12h30 em Brasília (tarde); 11h30 em Cuiabá e Manaus e 10h30 em Rio
     // Branco (manhã). Dois grupos de fuso na mesma consulta: é o caminho do OR que a hora real
     // só exercita perto de uma virada. Só o Date é parado; timers e rede seguem normais.
+    const cases = [
+      ['acre-manha', 'America/Rio_Branco', 'morning', true],
+      ['acre-tarde', 'America/Rio_Branco', 'afternoon', false],
+      ['manaus-manha', 'America/Manaus', 'morning', true],
+      ['brasilia-manha', null, 'morning', false],
+      ['brasilia-tarde', null, 'afternoon', true],
+      ['noronha-tarde', 'America/Noronha', 'afternoon', true],
+    ] as const;
+    // As contas nascem, e confirmam o e-mail (RF-006), no relógio de verdade: o link de
+    // confirmação vence pelo relógio do banco, que não para junto com o Date.
+    const accounts: Freela[] = [];
+    for (const [, zone] of cases) accounts.push(await freelancer(zone));
     vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-09-14T15:30:00Z') });
     try {
       const tag = `${TAG}relogio`;
-      const cases = [
-        ['acre-manha', 'America/Rio_Branco', 'morning', true],
-        ['acre-tarde', 'America/Rio_Branco', 'afternoon', false],
-        ['manaus-manha', 'America/Manaus', 'morning', true],
-        ['brasilia-manha', null, 'morning', false],
-        ['brasilia-tarde', null, 'afternoon', true],
-        ['noronha-tarde', 'America/Noronha', 'afternoon', true],
-      ] as const;
-      for (const [name, zone, period] of cases) {
-        const f = await freelancer(zone);
+      for (const [i, [name, , period]] of cases.entries()) {
+        const f = accounts[i]!;
         // Segunda (1) só no período do caso; os outros dias marcados valem o dia todo.
         await agenda(f, { '1': [period] });
         await publish(f, name, tag);

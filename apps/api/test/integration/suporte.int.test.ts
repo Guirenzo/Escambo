@@ -31,8 +31,8 @@ const at = (offset = 0) => setClockForTests(new Date(BASE.getTime() + offset), {
 async function actor(role: 'client' | 'freelancer' | 'admin' = 'client'): Promise<Actor> {
   const key = ulid();
   const [res] = await pool.query<ResultSetHeader>(
-    `INSERT INTO users (ulid, email, role, status, timezone, email_frequency)
-     VALUES (:key, :email, :role, 'active', 'America/Sao_Paulo', 'off')`,
+    `INSERT INTO users (ulid, email, role, status, timezone, email_frequency, email_verified_at)
+     VALUES (:key, :email, :role, 'active', 'America/Sao_Paulo', 'off', NOW())`,
     { key, email: `support-${key}@escambo.test`, role },
   );
   actors.push(res.insertId);

@@ -212,6 +212,7 @@ describe('mídia: borda HTTP', () => {
         uid: 7,
         role: 'client',
         status: 'active',
+        emailVerified: true,
       });
       expect(strikeSummary).not.toHaveBeenCalled();
       expect(saveMedia).not.toHaveBeenCalled();

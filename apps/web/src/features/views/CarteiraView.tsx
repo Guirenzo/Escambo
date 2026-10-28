@@ -1,5 +1,6 @@
 import { BrandMark } from '../../components/BrandMark';
 import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
+import { useEmailVerified, useResendVerification } from '../../components/VerifyEmail';
 import {
   ArrowDownLeft,
   ArrowDownToLine,
@@ -31,7 +32,6 @@ import {
   QueryState,
   Select,
 } from '../../components/ui';
-import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import {
   businessDaysLabel,
@@ -163,9 +163,9 @@ export function CarteiraView() {
   const [bankAccount, setBankAccount] = useState('');
   const [tab, setTab] = useState<'brl' | 'credits'>('brl');
   const [depositing, setDepositing] = useState<null | { initial?: Deposit }>(null);
-  const [resending, setResending] = useState(false);
-  // Saque é a única ação que tira dinheiro da plataforma: a API exige e-mail confirmado (403).
-  const canWithdraw = user?.emailVerified ?? true;
+  const { resend, sending: resending } = useResendVerification();
+  // Saque, como as outras ações críticas (RF-006), exige e-mail confirmado: a API recusa com 403.
+  const canWithdraw = useEmailVerified();
   // E, de quem entrega trabalho, o CPF validado no Perfil (RF-020); sem a chave de cifragem no
   // servidor, nem dá para validar. Quem só contrata saca o que depositou sem CPF.
   const cpf = useCpfStatus().data;
@@ -180,18 +180,6 @@ export function CarteiraView() {
   const businessDays =
     settings?.withdrawalBusinessDays?.[method] ?? DEFAULT_WITHDRAWAL_BUSINESS_DAYS[method];
   const now = Date.now();
-
-  async function resend(): Promise<void> {
-    setResending(true);
-    try {
-      await api.resendVerification();
-      toast.success(`Link reenviado para ${user?.email ?? 'seu e-mail'}.`);
-    } catch (er) {
-      toast.error(er instanceof Error ? er.message : 'Não foi possível reenviar');
-    } finally {
-      setResending(false);
-    }
-  }
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();

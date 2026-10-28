@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Privacidade da localização (achado de auditoria): o perfil público só mostra latitude e
@@ -34,6 +35,7 @@ async function registerAndLogin(
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password: PASS });
   expect(login.status, JSON.stringify(login.body)).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, ulid: login.body.user.ulid, token: login.body.accessToken };
 }
 

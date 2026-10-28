@@ -141,7 +141,8 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-const verifyReminder = () => screen.queryByText(/Confirme seu e-mail: enviamos um link para/);
+const verifyReminder = () =>
+  screen.queryByText(/Confirme seu e-mail para contratar, publicar e movimentar dinheiro/);
 
 beforeEach(() => {
   auth.user = account();
@@ -446,7 +447,7 @@ describe('Shell: faixa do topo (uma por vez)', () => {
     const { consentsSettled } = renderShell();
     await consentsSettled();
     expect(verifyReminder()).toHaveTextContent(
-      'Confirme seu e-mail: enviamos um link para conta@escambo.test.',
+      'Confirme seu e-mail para contratar, publicar e movimentar dinheiro: enviamos um link para conta@escambo.test.',
     );
     expect(screen.getByRole('button', { name: 'Reenviar e-mail' })).toBeEnabled();
     expect(screen.queryByRole('region')).not.toBeInTheDocument();

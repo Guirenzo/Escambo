@@ -5,6 +5,51 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.53.0] — 2026-10-26
+
+CPF do freelancer para receber (RF-020, RN-009, RN-075) e conta de empresa com CNPJ (RF-018, RN-006), ADR 71. RF: 89 implementados, 1 não implementado e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **CPF do freelancer:** em Perfil, "Dados para receber", o freelancer informa o CPF e a data de nascimento. A API confere os dígitos verificadores, se o CPF já está em outra conta e se a pessoa tem 18 anos completos no dia de hoje, no fuso da conta. Não é consulta à Receita, e a tela diz isso. O CPF é gravado só cifrado (AES-256-GCM, `FIELD_ENCRYPTION_KEY`), com um índice cego (HMAC-SHA256 com chave derivada) e chave única no banco para recusar o mesmo CPF em duas contas; aparece só mascarado (`***.456.789-**`) e, validado, não se altera pela tela.
+- **Saque com CPF validado:** quem entrega trabalho (papel freelancer, algum serviço ou alguma contratação como freelancer, ADR 56) só saca com o CPF validado (403 `cpf_required`); a Carteira mostra o motivo e leva ao Perfil. Sem a chave de cifragem, a validação fica indisponível e esse saque também (503 `cpf_unavailable`). Quem só contrata saca o que depositou como antes.
+- **Atendimento:** a busca de conta mostra o CPF mascarado, e o admin pode apagá-lo para correção, com motivo, registro em `admin_actions` e na auditoria (sem o CPF) e e-mail ao titular.
+- **Conta de empresa:** no cadastro, "Eu sou" oferece "Empresa", com razão social, nome fantasia e CNPJ obrigatórios. O CNPJ é aceito com ou sem máscara, numérico ou alfanumérico (IN RFB 2.229/2024, vigente desde julho de 2026), com os dígitos verificadores conferidos e único entre contas. No Perfil, a empresa edita os dados, o logo (com o mesmo recorte da foto), o site e uma descrição curta.
+- **Página pública da empresa** em `/empresas/:ulid` e o selo "Empresa" com o nome fantasia onde quem contrata aparece: na Sala, nas contratações do Início e nas avaliações.
+- Migration 0052: as colunas do CPF em `profiles_freelancer` (`cpf_encrypted`, `cpf_index` com chave única, `birth_date`, `cpf_verified_at`) e `trade_name` em `profiles_company`.
+
+### Alterado
+
+- A cópia de dados LGPD passa ao formato 1.14: o CPF inteiro, a data de nascimento e a validação no perfil de freelancer (só para o próprio titular), e os dados da empresa. A anonimização apaga o CPF, o índice e a data, e troca os dados da empresa por "Empresa removida".
+- O log censura `cpf`, `birthDate` e `cpf_encrypted`. Validar o CPF tem o mesmo limite de tentativas do login, porque a resposta diz se o CPF já está em outra conta.
+- Onde a conta não tem perfil de cliente (denúncias, remoções, saques no admin, fila de exclusão), o nome exibido da empresa é o nome fantasia. O logo da empresa entra na moderação de imagens e no expurgo.
+- O seed da demo valida o CPF de Marina e Bruno antes dos saques e pula os saques, com aviso, se o servidor não tiver a chave.
+
+### Para atualizar
+
+Rodar a migration 0052 (o job `migrate` do deploy faz isso) e conferir a `FIELD_ENCRYPTION_KEY`: sem ela, nenhum freelancer saca. Ver "Atualizar para a 1.53.0" no `DEPLOY.md`.
+
+## [1.52.0] — 2026-10-26
+
+Ações críticas só com e-mail confirmado (RF-006, RN-004) e chat só com contratação ou troca em aberto (RF-062, RN-082), ADR 70. RF: 87 implementados, 3 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Conversa encerrada:** a conversa continua uma só por par (ADR 31), e enviar texto ou anexo, pela rota ou pelo socket, só vale enquanto há uma contratação que não terminou (proposta, aceita, em andamento, entregue, em revisão ou em disputa) ou uma troca proposta ou em andamento entre as duas pessoas. Sem ela, a API responde 409 `conversation_closed`, conferido antes de criar a conversa ou gravar o arquivo. Ler o histórico, baixar anexos e marcar como lida continuam; disputa aberta mantém o chat aberto; não há carência depois do fim.
+- Na Sala, a conversa encerrada troca o compositor por uma faixa só de leitura, com "Contratar de novo" (cliente) ou "Propor outra troca", e reabre sozinha quando chega uma proposta nova. O histórico do chat traz `closed`.
+- **Aviso "Confirme seu e-mail"** no lugar da ação, com o botão "Reenviar e-mail": em Contratar, Impulsionar, Depositar, Novo serviço, Reativar, propor e aceitar troca.
+
+### Alterado
+
+- **E-mail confirmado nas ações críticas:** sem e-mail confirmado, contratar, publicar serviço (criar ou reativar um pausado), depositar ou pagar, propor ou aceitar troca, impulsionar e sacar respondem 403 `email_not_verified`, sempre com a mesma frase. Navegar, editar o perfil, responder ao que já existe (aceitar, recusar, contrapropor, entregar, aprovar, disputar), suporte, LGPD e segurança da conta continuam livres. A confirmação é lida na mesma consulta do status da conta e conferida na rota por uma regra só, para todos os papéis; as rotas de equipe do admin não mudam.
+- O saque passa a usar essa regra e essa frase ("Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo."); antes a checagem ficava no serviço do saque.
+- O lembrete do topo diz que confirmar o e-mail libera "contratar, publicar e movimentar dinheiro".
+- O seed da demo manda os anexos da "Landing page" com a contratação aberta e para com uma mensagem clara se não achar o link de confirmação.
+
+### Para atualizar
+
+Sem migration e sem variável nova. Antes de subir, confira que o e-mail chega: quem não confirmou não contrata nem publica. Ver "Atualizar para a 1.52.0" no `DEPLOY.md`.
+
 ## [1.51.0] — 2026-10-26
 
 Pacotes Básico, Padrão e Premium por serviço (RF-086, RN-068, ADR 69). RF: 85 implementados, 1 parcial, 4 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.

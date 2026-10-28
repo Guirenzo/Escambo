@@ -132,9 +132,10 @@ beforeAll(async () => {
   expect(fieldEncryptionEnabled()).toBe(true);
   admin = await registerAndLogin('client', true);
   freelancer = await registerAndLogin('freelancer');
+  // Depositar e sacar exigem e-mail confirmado (RF-006): confirma antes de pôr dinheiro na carteira.
+  await verifyEmailOf(app, admin.token, freelancer.id);
   await fundWallet(app, freelancer.token, 500);
-  await verifyEmailOf(app, admin.token, freelancer.id); // saque exige e-mail confirmado
-  await verifyCpfOf(app, freelancer.token); // e o CPF validado de quem entrega trabalho (RF-020)
+  await verifyCpfOf(app, freelancer.token); // saque de quem entrega trabalho pede o CPF validado (RF-020)
   const [wallets] = await pool.query<RowDataPacket[]>(
     `SELECT id FROM wallets WHERE user_id = :userId`,
     { userId: freelancer.id },

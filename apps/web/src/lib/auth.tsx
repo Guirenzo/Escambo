@@ -17,6 +17,7 @@ import type {
 import {
   ACCOUNT_STATUS_EVENT,
   api,
+  EMAIL_UNVERIFIED_EVENT,
   getRefreshToken,
   getToken,
   isAccountStatus,
@@ -131,6 +132,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener(ACCOUNT_STATUS_EVENT, onStatus);
     return () => window.removeEventListener(ACCOUNT_STATUS_EVENT, onStatus);
+  }, []);
+
+  // A API recusou uma ação por e-mail não confirmado (RF-006): a tela achava que estava confirmado
+  // (sessão antiga), então passa a mostrar os avisos no lugar das ações críticas.
+  useEffect(() => {
+    const onUnverified = (): void => {
+      if (!getToken() && !getRefreshToken()) return;
+      setUser((current) =>
+        current && current.emailVerified ? { ...current, emailVerified: false } : current,
+      );
+    };
+    window.addEventListener(EMAIL_UNVERIFIED_EVENT, onUnverified);
+    return () => window.removeEventListener(EMAIL_UNVERIFIED_EVENT, onUnverified);
   }, []);
 
   const userId = user?.id;

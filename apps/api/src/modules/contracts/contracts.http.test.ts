@@ -1,6 +1,7 @@
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bearer, routerApp, businessAudits } from '../../test-support/http';
+import { unverifiedEmails } from '../../test-support/email-verification';
 import { HttpError } from '../../utils/http-error';
 import { contractsRoutes } from './contracts.routes';
 
@@ -1358,5 +1359,60 @@ describe('contratações: borda HTTP', () => {
         .expect(403);
       expect(notify).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * Contratar exige e-mail confirmado (RF-006, RN-004); responder ao que já existe, não. A recusa
+ * vem da rota (requireVerifiedEmail), antes da validação e do service.
+ */
+describe('contratações: e-mail não confirmado (RF-006)', () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => unverifiedEmails.clear());
+
+  it('criar a proposta: 403 email_not_verified, nada chega ao service nem à auditoria', async () => {
+    unverifiedEmails.add(CLIENT);
+    const res = await request(app)
+      .post('/api/contracts')
+      .set(bearer(CLIENT))
+      .send(proposal)
+      .expect(403);
+    expect(res.body.error).toBe('email_not_verified');
+    expect(service.create).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    expect(businessAudits(audit)).toEqual([]);
+  });
+
+  it('responder ao que já existe continua livre: aceitar, recusar, contrapropor, entregar, aprovar, cancelar', async () => {
+    unverifiedEmails.add(CLIENT);
+    unverifiedEmails.add(FREELANCER);
+    // O service recusa por um motivo qualquer: o que importa é que o pedido chegou até ele.
+    const reached = new HttpError(409, 'Chegou ao service', 'reached');
+    const calls: [string, ReturnType<typeof vi.fn>, number, object?][] = [
+      ['/api/contracts/9/accept', service.accept, FREELANCER],
+      ['/api/contracts/9/reject', service.reject, FREELANCER],
+      ['/api/contracts/9/offers', service.counter, CLIENT, { seq: 2, price: 450 }],
+      ['/api/contracts/9/offers/2/accept', service.acceptCounter, CLIENT],
+      ['/api/contracts/9/deliver', service.deliver, FREELANCER, { message: 'Pronto' }],
+      ['/api/contracts/9/approve', service.approve, CLIENT],
+      ['/api/contracts/9/cancel', service.cancel, CLIENT, { reason: 'Mudou o plano' }],
+    ];
+    for (const [path, fn, who, body] of calls) {
+      fn.mockRejectedValueOnce(reached);
+      const res = await request(app)
+        .post(path)
+        .set(bearer(who))
+        .send(body ?? {});
+      expect(res.body.error, path).not.toBe('email_not_verified');
+    }
+    expect(service.accept).toHaveBeenCalled();
+    expect(service.approve).toHaveBeenCalled();
+    expect(service.reject).toHaveBeenCalled();
+  });
+
+  it('ler as contratações não depende do e-mail', async () => {
+    unverifiedEmails.add(CLIENT);
+    service.listMine.mockResolvedValue({ items: [], page: 1, limit: 20, total: 0 });
+    await request(app).get('/api/contracts').set(bearer(CLIENT)).expect(200);
   });
 });

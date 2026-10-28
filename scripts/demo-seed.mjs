@@ -280,7 +280,11 @@ const step = (msg) => console.log(`\n▶ ${msg}`);
 // Passos
 // ---------------------------------------------------------------------------
 
-/** Confirma o e-mail da conta da demo pelo link da caixa de saída (provedor simulado). */
+/**
+ * Confirma o e-mail da conta da demo pelo link da caixa de saída (provedor simulado). Desde a
+ * 1.52.0, contratar, publicar, pagar, trocar, impulsionar e sacar exigem e-mail confirmado (RF-006):
+ * sem o link, os passos seguintes recusariam com 403, então o seed para aqui dizendo por quê.
+ */
 async function ensureVerified(user, admin) {
   const me = await call('GET', '/auth/me', { token: user.token });
   if (me.emailVerified) return;
@@ -290,7 +294,11 @@ async function ensureVerified(user, admin) {
   });
   const mail = emails.find((e) => e.template === 'verify_email');
   const token = mail && /token=([A-Za-z0-9_-]+)/.exec(mail.text)?.[1];
-  if (!token) return;
+  if (!token) {
+    throw new Error(
+      `Link de confirmação de ${user.email} não está na caixa de saída: a demo precisa de MAIL_PROVIDER=simulated (ou smtp), e não off.`,
+    );
+  }
   await call('POST', '/auth/verify-email', { body: { token } });
   log(`e-mail confirmado: ${user.email}`);
 }
@@ -519,7 +527,11 @@ function briefingPdf() {
   );
 }
 
-/** Envia um anexo no chat do contrato, se ainda não houver um com esse nome (idempotente). */
+/**
+ * Envia um anexo no chat do contrato, se ainda não houver um com esse nome (idempotente). O chat só
+ * aceita mensagem com contratação ou troca em aberto no par (RF-062): numa demo antiga em que a
+ * contratação já fechou sem o anexo, ele fica de fora, com um aviso, em vez de parar o seed.
+ */
 async function ensureAttachment(contract, user, { name, type, bytes, caption }) {
   const history = await call('GET', `/messaging/contracts/${contract.id}`, { token: user.token });
   if ((history.messages ?? []).some((m) => m.attachment?.name === name)) return;
@@ -533,6 +545,10 @@ async function ensureAttachment(contract, user, { name, type, bytes, caption }) 
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
+    if (data.error === 'conversation_closed') {
+      log(`  anexo ${name} ficou de fora: a conversa já está encerrada (RF-062)`);
+      return;
+    }
     throw new ApiError(res.status, data.message ?? data.error ?? res.statusText, 'attachments');
   }
   log(`  anexo ${name} no chat`);
@@ -562,7 +578,7 @@ async function ensureContract(
   client,
   freelancer,
   service,
-  { title, price, paymentMode = 'cash', to, chat = [], deadlineDays },
+  { title, price, paymentMode = 'cash', to, chat = [], attachments = [], deadlineDays },
 ) {
   const mine = items(await call('GET', '/contracts', { token: client.token }));
   let contract = mine.find(
@@ -617,6 +633,12 @@ async function ensureContract(
         });
       }
       log(`  ${chat.length} mensagens no chat`);
+    }
+  }
+  // Anexos enquanto a contratação está aberta: depois de concluída, a conversa encerra (RF-062).
+  if (attachments.length && at(status) >= at('accepted')) {
+    for (const [who, spec] of attachments) {
+      await ensureAttachment(contract, who === 'client' ? client : freelancer, spec);
     }
   }
   if (at(status) < at('delivered') && at(to) >= at('delivered')) {
@@ -933,18 +955,26 @@ async function main() {
       ['client', 'Perfeito, obrigada!'],
       ['freelancer', 'Preview no ar: https://preview.escambo.demo/landing — pode olhar?'],
     ],
-  });
-  await ensureAttachment(landing, users.bruno, {
-    name: 'preview-landing.png',
-    type: 'image/png',
-    bytes: landingMockupPng(),
-    caption: 'Print do preview: herói, três blocos e o rodapé que combinamos.',
-  });
-  await ensureAttachment(landing, ana, {
-    name: 'briefing-landing.pdf',
-    type: 'application/pdf',
-    bytes: briefingPdf(),
-    caption: 'Ficou ótimo! Segue o briefing com os textos finais para fechar.',
+    attachments: [
+      [
+        'freelancer',
+        {
+          name: 'preview-landing.png',
+          type: 'image/png',
+          bytes: landingMockupPng(),
+          caption: 'Print do preview: herói, três blocos e o rodapé que combinamos.',
+        },
+      ],
+      [
+        'client',
+        {
+          name: 'briefing-landing.pdf',
+          type: 'application/pdf',
+          bytes: briefingPdf(),
+          caption: 'Ficou ótimo! Segue o briefing com os textos finais para fechar.',
+        },
+      ],
+    ],
   });
   const ajustes = await ensureContract(ana, users.bruno, svc['Ajustes e correções no site'], {
     title: 'Ajustes e correções no site',

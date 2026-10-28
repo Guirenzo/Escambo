@@ -55,8 +55,8 @@ async function actor(
 ): Promise<Actor> {
   const key = ulid();
   const [created] = await pool.query<ResultSetHeader>(
-    `INSERT INTO users (ulid, email, role, status, timezone)
-     VALUES (:key, :email, :role, 'active', :zone)`,
+    `INSERT INTO users (ulid, email, role, status, timezone, email_verified_at)
+     VALUES (:key, :email, :role, 'active', :zone, NOW())`,
     { key, email: `adversarial-${key}@escambo.test`, role, zone },
   );
   await walletRepository.ensure(created.insertId);

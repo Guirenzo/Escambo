@@ -187,8 +187,9 @@ describe('migration 0052 (documentos)', () => {
 describe('CPF do freelancer (RF-020, RN-009, RN-075)', () => {
   it('valida uma vez: cifrado no banco, índice cego único, só mascarado na tela; o saque passa a pedi-lo', async () => {
     const freelancer = await register('freelancer');
-    await fundWallet(app, freelancer.token, 200);
+    // Depositar pede e-mail confirmado (RF-006, 1.52.0): confirma antes de pôr dinheiro na carteira.
     await verifyEmailOf(app, admin.token, freelancer.id);
+    await fundWallet(app, freelancer.token, 200);
 
     // Sem perfil de freelancer, o CPF não tem onde ficar.
     const cpf = uniqueCpf();
@@ -306,8 +307,8 @@ describe('CPF do freelancer (RF-020, RN-009, RN-075)', () => {
 
   it('quem só contrata saca o que depositou sem CPF (decisão desta versão)', async () => {
     const client = await register('client');
-    await fundWallet(app, client.token, 100);
     await verifyEmailOf(app, admin.token, client.id);
+    await fundWallet(app, client.token, 100);
 
     const status = await request(app).get('/api/profiles/me/cpf').set(auth(client.token));
     expect(status.body).toMatchObject({ required: false, hasFreelancerProfile: false });
@@ -513,6 +514,8 @@ describe('conta de empresa (RF-018)', () => {
     });
     const person = await register('client');
     const freelancer = await register('freelancer');
+    // Contratar, depositar e publicar pedem e-mail confirmado (RF-006, 1.52.0).
+    for (const who of [company, person, freelancer]) await verifyEmailOf(app, admin.token, who.id);
     await request(app)
       .put('/api/profiles/freelancer')
       .set(auth(freelancer.token))

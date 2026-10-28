@@ -1,6 +1,7 @@
 import type { Service } from '@escambo/types';
 import { useMemo, useState } from 'react';
 import { BusinessModal } from '../../components/BusinessActions';
+import { useVerifiedEmailGate } from '../../components/VerifyEmail';
 import { QueryState } from '../../components/ui';
 import { useCategories, useMyServices, usePublicSettings, useUpdateService } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
@@ -21,6 +22,8 @@ export function MyServices({ onBoost }: { onBoost: (s: Service) => void }) {
   const roots = useMemo(() => rootsById(categories.data ?? []), [categories.data]);
   const minPrice = usePublicSettings().data?.minServicePrice ?? 10;
   const [editing, setEditing] = useState<Service | null>(null);
+  // Reativar é publicar de novo: exige e-mail confirmado (RF-006). Pausar e editar, não.
+  const gate = useVerifiedEmailGate();
   const togglingId = update.isPending && !editing ? update.variables?.id : undefined;
 
   async function toggle(s: Service): Promise<void> {
@@ -79,7 +82,11 @@ export function MyServices({ onBoost }: { onBoost: (s: Service) => void }) {
                     onContratar={() => undefined}
                     onBoost={onBoost}
                     onEdit={setEditing}
-                    onToggleActive={(svc) => void toggle(svc)}
+                    onToggleActive={(svc) =>
+                      svc.isActive
+                        ? void toggle(svc)
+                        : gate.guard('reativar o serviço', () => toggle(svc))
+                    }
                     toggling={togglingId === s.id}
                   />
                 ))}
@@ -103,6 +110,7 @@ export function MyServices({ onBoost }: { onBoost: (s: Service) => void }) {
           />
         </BusinessModal>
       )}
+      {gate.dialog}
     </section>
   );
 }

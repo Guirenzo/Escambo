@@ -688,7 +688,11 @@ export function useProposeBarter() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateBarterRequest) => api.proposeBarter(body),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.barters }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.barters });
+      // Uma troca proposta reabre a conversa do par (RF-062).
+      void qc.invalidateQueries({ queryKey: ['chat'] });
+    },
   });
 }
 
@@ -700,6 +704,8 @@ export function useBarterAction() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.barters });
       void qc.invalidateQueries({ queryKey: qk.contracts });
+      // Aceitar, recusar ou cancelar abre ou fecha a conversa do par (RF-062).
+      void qc.invalidateQueries({ queryKey: ['chat'] });
     },
   });
 }
@@ -767,6 +773,8 @@ export function useCreateContract() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.wallet });
+      // A proposta nova reabre a conversa do par (RF-062), aberta em outra Sala.
+      void qc.invalidateQueries({ queryKey: ['chat'] });
     },
   });
 }

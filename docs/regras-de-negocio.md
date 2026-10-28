@@ -19,8 +19,9 @@
 8. [RN-61 a RN-65 — Suporte e Disputas](#8-rn-61-a-rn-65--suporte-e-disputas)
 9. [RN-66 a RN-70 — Troca, Pacotes e Confiança](#81-rn-66-a-rn-70--troca-pacotes-e-confiança)
 10. [RN-71 a RN-81 — Conformidade, LGPD, avisos e prazos](#9-rn-71-a-rn-81--conformidade-lgpd-avisos-e-prazos)
-11. [Tabela Consolidada](#10-tabela-consolidada)
-12. [Matriz de situação (ADR 60)](#11-matriz-de-situação-adr-60)
+11. [RN-82 — Chat](#91-rn-82--chat)
+12. [Tabela Consolidada](#10-tabela-consolidada)
+13. [Matriz de situação (ADR 60)](#11-matriz-de-situação-adr-60)
 
 ---
 
@@ -38,7 +39,7 @@ Cada regra possui:
 - **Situação** — nas regras revistas contra o código (a partir do ADR 57): implementada, parcial, não implementada ou corrigida no texto; a [matriz da seção 11](#11-matriz-de-situação-adr-60) reúne essas regras
 - **Origem** — quando a regra nasceu de uma decisão registrada em `docs/decisoes.md`
 
-O documento reúne **81 regras**, de RN-001 a RN-081.
+O documento reúne **82 regras**, de RN-001 a RN-082.
 
 ---
 
@@ -87,6 +88,7 @@ O documento reúne **81 regras**, de RN-001 a RN-081.
 | **Descrição**      | Contas não verificadas por e-mail têm acesso restrito: podem visualizar serviços, mas **não podem contratar, publicar serviços nem realizar pagamentos** |
 | **Impacto**        | Garante a validade do e-mail antes de qualquer transação                                                                                                 |
 | **UC Relacionado** | UC-01, UC-04, UC-06                                                                                                                                      |
+| **Situação**       | Implementada (1.52.0): sem e-mail confirmado, contratar, publicar serviço (criar ou reativar um pausado), depositar ou pagar, propor ou aceitar troca, impulsionar e sacar respondem 403 `email_not_verified`, sempre com a mesma frase ("Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo."), e nada se move. Navegar, buscar, ver perfis, editar o próprio perfil, responder ao que já existe (aceitar, recusar, contrapropor, entregar, aprovar, disputar, recusar ou cancelar troca, cancelar saque), suporte, LGPD, segurança da conta, reenviar a confirmação e trocar o e-mail continuam livres. A confirmação é lida na mesma consulta do status da conta, a cada requisição, e conferida na rota por uma regra só; vale para todos os papéis, e o admin só fica de fora quando age como equipe (moderação, mediação, filas). Contas antigas sem confirmação não foram migradas: passam a ver o aviso, com o reenvio do link |
 
 ---
 
@@ -1004,6 +1006,21 @@ O documento reúne **81 regras**, de RN-001 a RN-081.
 
 ---
 
+## 9.1 RN-82 — Chat
+
+### RN-082 — Conversa só com relação aberta
+
+| Campo              | Detalhe |
+| ------------------ | ------- |
+| **Categoria**      | Chat |
+| **Descrição**      | A conversa é uma só por par e atravessa as contratações (ADR 31). Enviar texto ou anexo, pela rota ou pelo socket, só é permitido enquanto existe **relação aberta entre as duas pessoas**: uma contratação que não terminou (proposta pendente, aceita, em andamento, entregue, em revisão ou em disputa), em qualquer direção, ou uma troca proposta ou em andamento. Sem ela, a API responde 409 `conversation_closed` ("Esta conversa está encerrada: não há contratação nem troca em aberto entre vocês. Para conversar de novo, faça uma nova proposta."). Ler o histórico, baixar anexos e marcar como lida continuam permitidos. Não há janela de carência depois do encerramento; disputa aberta mantém a conversa aberta, e uma proposta nova (contratação ou troca) reabre o chat em qualquer Sala do par |
+| **Impacto**        | O chat registra a negociação e a execução de uma contratação; terminada a relação, conversar de novo passa por uma nova proposta, com a proteção do escrow |
+| **UC Relacionado** | UC-05, UC-06 |
+| **Situação**       | Implementada (1.52.0): `modules/messaging/messaging.service.ts` (`writableContext`) e `messaging.repository.ts` (`hasOpenRelation`), `config/socket.ts` (o ack devolve `conversation_closed`); o histórico traz `closed`, e a Sala troca o compositor por uma faixa só de leitura, com o atalho para nova proposta, atualizada quando a contratação ou a troca muda |
+| **Origem**         | RF-062 (1.52.0, ADR 70) |
+
+---
+
 ## 10. Tabela Consolidada
 
 | ID     | Categoria       | Descrição Resumida                                                                                                                                                                                                                                           | UC           |
@@ -1089,18 +1106,20 @@ O documento reúne **81 regras**, de RN-001 a RN-081.
 | RN-079 | Notificações    | Lembrete antes do vencimento: no máximo um, a partir das 9h no fuso de quem recebe, em geral na véspera; não muda nenhuma hora                                                                                                                               | UC-05, UC-06 |
 | RN-080 | Contratações    | O prazo de entrega é uma data, até 23:59 no fuso de quem entrega, o mesmo dia para as duas partes                                                                                                                                                            | UC-05        |
 | RN-081 | Contratações    | Revisão sem nova entrega há 7 dias: aviso às duas partes, uma vez, sem sanção                                                                                                                                                                                | UC-05        |
+| RN-082 | Chat            | Enviar mensagem só com contratação ou troca em aberto entre as duas pessoas; ler continua                                                                                                                                                                    | UC-05, UC-06 |
 
 ---
 
 ## 11. Matriz de situação (ADR 61)
 
-Regras revistas contra o código na v1.39.0 (ADR 57), na v1.41.0 (ADR 58), na v1.41.1 (ADR 60), na v1.42.0 (ADR 61), na v1.44.0 (ADR 62), na v1.45.0 (ADR 63), na v1.51.0 (ADR 69) e na v1.53.0 (RN-006, RN-009 e RN-075). Os arquivos da API ficam em `apps/api/src/` (as contratações em `modules/contracts/`), e os do web em `apps/web/src/features/`.
+Regras revistas contra o código na v1.39.0 (ADR 57), na v1.41.0 (ADR 58), na v1.41.1 (ADR 60), na v1.42.0 (ADR 61), na v1.44.0 (ADR 62), na v1.45.0 (ADR 63), na v1.51.0 (ADR 69), na v1.52.0 (ADR 70) e na v1.53.0 (ADR 71). Os arquivos da API ficam em `apps/api/src/` (as contratações em `modules/contracts/`), e os do web em `apps/web/src/features/`.
 
 | RN     | Situação                                                | Onde                                                                                                                                                                                    | ADR            |
 | ------ | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| RN-006 | Implementada; conta de empresa e regra do CNPJ (1.53.0) | `modules/auth/auth.schema.ts` e `auth.service.ts` (cadastro de empresa), `modules/profiles/profiles.schema.ts` (`cnpjSchema`), `profiles.service.ts` (dados e página pública), `utils/documents.ts` (CNPJ alfanumérico) e Web: `auth/LoginForm.tsx`, `profile/EmpresaCard.tsx`, `views/EmpresaView.tsx`, `components/CompanyTag.tsx` | —              |
+| RN-004 | Implementada (1.52.0)                                   | `modules/auth/account-access.ts` (`assertEmailVerified`, na mesma consulta do status), `middlewares/require-verified-email.ts` nas rotas de contratar, publicar, depositar, trocar, impulsionar e sacar; Web: `components/VerifyEmail.tsx` (aviso com reenvio no lugar da ação) | 70             |
+| RN-006 | Implementada; conta de empresa e regra do CNPJ (1.53.0) | `modules/auth/auth.schema.ts` e `auth.service.ts` (cadastro de empresa), `modules/profiles/profiles.schema.ts` (`cnpjSchema`), `profiles.service.ts` (dados e página pública), `utils/documents.ts` (CNPJ alfanumérico) e Web: `auth/LoginForm.tsx`, `profile/EmpresaCard.tsx`, `views/EmpresaView.tsx`, `components/CompanyTag.tsx` | 71             |
 | RN-007 | Implementada                                            | `modules/auth/account-access.ts`, `middlewares/authenticate.ts`, `config/socket.ts`, `config/realtime.ts` e Web: consulta durante suspensão, negócios bloqueados e direitos preservados; `modules/support` (suporte geral, etapa 13) | 60, 61         |
-| RN-009 | Parcial (1.53.0): conferida para quem recebe            | `modules/profiles/cpf.service.ts` (18 anos no dia de hoje do fuso da conta), `modules/withdrawal/withdrawal.service.ts` (saque pede o CPF validado de quem entrega trabalho) e Web: `profile/CpfCard.tsx`, `views/CarteiraView.tsx` | —              |
+| RN-009 | Parcial (1.53.0): conferida para quem recebe            | `modules/profiles/cpf.service.ts` (18 anos no dia de hoje do fuso da conta), `modules/withdrawal/withdrawal.service.ts` (saque pede o CPF validado de quem entrega trabalho) e Web: `profile/CpfCard.tsx`, `views/CarteiraView.tsx` | 71             |
 | RN-013 | Implementada                                            | `contracts.service.ts` (criação: serviço do freelancer e no ar), `modules/barter/barter.service.ts` (proposta de troca)                                                                 | 60             |
 | RN-016 | Implementada; corrigida na edição                       | `modules/services/services.service.ts` (`update`)                                                                                                                                       | 60             |
 | RN-017 | Implementada                                            | `modules/boosts/boosts.repository.ts` (`purchase`, com a trava da carteira de quem compra)                                                                                              | 60             |
@@ -1124,13 +1143,14 @@ Regras revistas contra o código na v1.39.0 (ADR 57), na v1.41.0 (ADR 58), na v1
 | RN-066 | Implementada (1.45.0)                                   | `modules/barter/barter.service.ts` (valor do catálogo no preço fechado, `estimate_mismatch`; valor informado no a combinar e por hora) e Web: `TrocasView.tsx`                                                                       | 63             |
 | RN-068 | Implementada (1.51.0)                                   | `modules/services/service-packages.ts` (até 3, Básico obrigatório, sem pular nível), `services.service.ts` (preço mínimo e crescente, só no preço fixo, "a partir de" do Básico), `contracts.service.ts` (nível, valor e prazo do pacote, cópia na contratação) e Web: `services/PackagesEditor.tsx`, `PackagePicker.tsx`, `ContratarModal.tsx`, `contracts/ContractPackageSummary.tsx` | 69             |
 | RN-069 | Implementada                                            | `milestones.repository.ts` (revisões por marco), `dispute-window.ts`, `jobs/tacit-approval.ts`                                                                                          | 57, 58, 61     |
-| RN-075 | Implementada para o CPF (1.53.0)                        | `utils/field-crypto.ts` (`sealField`, `blindIndex`), `modules/profiles/cpf.service.ts`, `modules/lgpd/lgpd.export.ts` (CPF inteiro só na cópia do titular), migration 0052 | 62, 66, —      |
+| RN-075 | Implementada para o CPF (1.53.0)                        | `utils/field-crypto.ts` (`sealField`, `blindIndex`), `modules/profiles/cpf.service.ts`, `modules/lgpd/lgpd.export.ts` (CPF inteiro só na cópia do titular), migration 0052 | 62, 66, 71     |
 | RN-076 | Implementada                                            | `shell/LegalUpdateBanner.tsx`, `shell/banners.ts`, `legal/content.ts`, `modules/lgpd/legal-versions.ts` (Termos/Política 1.5)                                                           | 54, 57, 58, 61 |
 | RN-077 | Implementada                                            | `modules/notifications/push.service.ts`, `deadline-notices.ts`, `notifications/deadline-types.ts`                                                                                       | 56, 57, 58     |
 | RN-078 | Implementada                                            | `utils/human-hours.ts`, `offers.ts`, `jobs/repair-deadlines.ts`, migrations 0027–0033                                                                                                   | 57, 61         |
 | RN-079 | Implementada                                            | `reminders-sql.ts`, `deadline-reminders.service.ts`, `reminder-notices.ts`, `jobs/deadline-reminders.ts`, migrations 0029 e 0033                                                        | 58, 61         |
 | RN-080 | Implementada                                            | `utils/timezone.ts` (`inferDeadlineZone`, `formatDeadline`), `contract-zones.ts`; no web, `lib/deadline.ts`, `services/ContratarModal.tsx`, `contracts/DeadlineSection.tsx`             | 58             |
 | RN-081 | Implementada                                            | `deadline-reminders.service.ts` (revisão parada), `jobs/repair-deadlines.ts` (passos 9 e 10), migrations 0029 e 0030; no web, `contracts/DeadlineSection.tsx` e `MilestonesSection.tsx` | 58             |
+| RN-082 | Implementada (1.52.0)                                   | `modules/messaging/messaging.service.ts` (`writableContext`), `messaging.repository.ts` (`hasOpenRelation`), `config/socket.ts`; Web: `views/SalaContratoView.tsx` (faixa de conversa encerrada) | 70             |
 
 ---
 

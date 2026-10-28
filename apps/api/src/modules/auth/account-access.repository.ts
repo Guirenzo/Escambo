@@ -14,13 +14,18 @@ export interface AccountAccessRow extends RowDataPacket {
   role: UserRole;
   status: UserStatus;
   deleted_at: Date | null;
+  /** E-mail confirmado (RF-006): as ações críticas leem daqui, na mesma consulta. */
+  email_verified_at: Date | null;
 }
 
 export const accountAccessRepository = {
-  /** Status e papel atuais, vinculando os dois identificadores assinados da mesma conta. */
+  /**
+   * Status, papel e confirmação do e-mail atuais, vinculando os dois identificadores assinados da
+   * mesma conta.
+   */
   async findCurrent(identity: AccessIdentity): Promise<AccountAccessRow | undefined> {
     const [rows] = await pool.query<AccountAccessRow[]>(
-      `SELECT id, ulid, role, status, deleted_at FROM users
+      `SELECT id, ulid, role, status, deleted_at, email_verified_at FROM users
         WHERE id = :uid AND ulid = :sub LIMIT 1`,
       { uid: identity.uid, sub: identity.sub },
     );

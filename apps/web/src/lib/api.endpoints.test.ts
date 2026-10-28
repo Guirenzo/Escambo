@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   api,
   ACCOUNT_STATUS_EVENT,
+  EMAIL_UNVERIFIED_EVENT,
   getRefreshToken,
   getToken,
   MAINTENANCE_EVENT,
@@ -1386,5 +1387,38 @@ describe('tokens da sessão', () => {
     });
     expect(() => setToken('tok-2')).not.toThrow();
     expect(getToken()).toBe('tok-2');
+  });
+});
+
+describe('erros da API: e-mail não confirmado (RF-006)', () => {
+  it('403 email_not_verified avisa a tela, com o motivo da API, sem mexer na sessão', async () => {
+    setSession({ accessToken: 'tok', refreshToken: 'refresh-1' });
+    stubFetch(
+      reply(403, {
+        error: 'email_not_verified',
+        message: 'Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo.',
+      }),
+    );
+    const unverified = listen(EMAIL_UNVERIFIED_EVENT);
+    const status = listen(ACCOUNT_STATUS_EVENT);
+    await expect(api.createService({} as never)).rejects.toMatchObject({
+      status: 403,
+      code: 'email_not_verified',
+      message: 'Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo.',
+    });
+    expect(unverified.handler).toHaveBeenCalledTimes(1);
+    expect(status.handler).not.toHaveBeenCalled();
+    expect(getToken()).toBe('tok');
+    unverified.stop();
+    status.stop();
+  });
+
+  it('outro 403 não fala de e-mail', async () => {
+    setSession({ accessToken: 'tok', refreshToken: 'refresh-1' });
+    stubFetch(reply(403, { error: 'forbidden', message: 'Não é seu' }));
+    const unverified = listen(EMAIL_UNVERIFIED_EVENT);
+    await expect(api.createService({} as never)).rejects.toMatchObject({ code: 'forbidden' });
+    expect(unverified.handler).not.toHaveBeenCalled();
+    unverified.stop();
   });
 });

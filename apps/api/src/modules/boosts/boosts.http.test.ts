@@ -1,6 +1,7 @@
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bearer, routerApp } from '../../test-support/http';
+import { unverifiedEmails } from '../../test-support/email-verification';
 import { HttpError } from '../../utils/http-error';
 import { boostsRoutes } from './boosts.routes';
 
@@ -209,5 +210,31 @@ describe('impulsionamentos: borda HTTP', () => {
         .expect(500);
       expect(res.body).toEqual({ error: 'internal_error', message: 'Erro interno do servidor' });
     });
+  });
+});
+
+/** Impulsionar gasta créditos: exige e-mail confirmado (RF-006); ver os planos, não. */
+describe('impulsionamentos: e-mail não confirmado (RF-006)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    unverifiedEmails.add(7);
+  });
+  afterEach(() => unverifiedEmails.clear());
+
+  it('comprar: 403 email_not_verified, sem chegar ao service', async () => {
+    const res = await request(app)
+      .post('/api/boosts')
+      .set(bearer(7))
+      .send({ serviceId: 3, planId: 2 })
+      .expect(403);
+    expect(res.body.error).toBe('email_not_verified');
+    expect(service.buy).not.toHaveBeenCalled();
+  });
+
+  it('os planos e os meus impulsionamentos continuam consultáveis', async () => {
+    service.plans.mockResolvedValue([]);
+    service.listMine.mockResolvedValue([]);
+    await request(app).get('/api/boosts/plans').set(bearer(7)).expect(200);
+    await request(app).get('/api/boosts').set(bearer(7)).expect(200);
   });
 });

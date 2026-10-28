@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Aviso de negociação por fora (ADR 45) contra o MySQL real: a mensagem com Pix, telefone ou
@@ -28,6 +29,7 @@ async function actor(role: 'client' | 'freelancer', domain = 'escambo.test'): Pr
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 

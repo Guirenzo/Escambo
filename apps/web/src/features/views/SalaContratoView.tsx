@@ -6,6 +6,7 @@ import {
   CheckCheck,
   Hourglass,
   ListChecks,
+  Lock,
   MessageSquare,
   Paperclip,
   Send,
@@ -29,12 +30,15 @@ import type {
   ContractWithHistory,
 } from '@escambo/types';
 import { CompanyTag } from '../../components/CompanyTag';
+import { useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { StarInput, Stars } from '../../components/Stars';
 import { Breadcrumbs, Button, Input, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
 import { brl, dt, dtm, hm, statusLabel, STATUS_LABEL } from '../../lib/format';
 import {
+  qk,
   useChatHistory,
   useContractDetail,
   useCreateReview,
@@ -419,6 +423,11 @@ export function SalaContratoView({
   const send = useSendMessage(contractId);
   const sendFile = useSendAttachment(contractId);
   const { mutate: markReadUpTo } = useMarkChatRead(contractId);
+  const qc = useQueryClient();
+  // Conversa encerrada (RF-062): sem contratação nem troca em aberto entre os dois, o histórico
+  // fica para consulta e o compositor sai. Como na suspensão, nada de anexo nem de arrastar.
+  const closed = history.data?.closed === true;
+  const cannotWrite = readOnly || closed;
 
   const [live, setLive] = useState<ChatMessage[]>([]); // mensagens que chegaram pelo socket
   const [reads, setReads] = useState<ChatReadEvent[]>([]); // leituras avisadas pelo socket
@@ -443,6 +452,20 @@ export function SalaContratoView({
     setCounterOpen(false);
     setAcceptCounterOpen(false);
   }, [readOnly]);
+
+  // A conversa abre e fecha com as relações do par: quando o estado desta contratação muda (pela
+  // própria tela ou pelo aviso em tempo real da outra parte), o chat confere de novo se dá para
+  // escrever. As outras relações do par chegam pelos avisos (lib/realtime.ts).
+  const statusSeen = useRef<{ contractId: number; status?: string }>({ contractId });
+  const contractStatus = contract.data?.status;
+  useEffect(() => {
+    const seen = statusSeen.current;
+    if (seen.contractId !== contractId) statusSeen.current = { contractId, status: contractStatus };
+    else if (contractStatus !== undefined && contractStatus !== seen.status) {
+      if (seen.status !== undefined) void qc.invalidateQueries({ queryKey: qk.chat(contractId) });
+      seen.status = contractStatus;
+    }
+  }, [contractId, contractStatus, qc]);
 
   // Conecta o socket, entra na sala e ouve mensagens novas em tempo real.
   useEffect(() => {
@@ -545,7 +568,7 @@ export function SalaContratoView({
 
   /** Escolhe um arquivo (clipe, colar ou arrastar); a API confere o tipo pelo conteúdo. */
   function pick(file: File | undefined | null): void {
-    if (!file || readOnly) return;
+    if (!file || cannotWrite) return;
     if (file.size > MAX_ATTACHMENT_BYTES) {
       toast.error(`Arquivo maior que ${MAX_ATTACHMENT_MB} MB`);
       return;
@@ -564,7 +587,7 @@ export function SalaContratoView({
   function onDrop(e: DragEvent<HTMLElement>): void {
     e.preventDefault();
     setDragging(false);
-    if (readOnly) return;
+    if (cannotWrite) return;
     pick(e.dataTransfer.files[0]);
   }
 
@@ -575,7 +598,7 @@ export function SalaContratoView({
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
-    if (readOnly) return;
+    if (cannotWrite) return;
     const content = draft.trim();
     if (!content && !pending) return;
     try {
@@ -586,9 +609,23 @@ export function SalaContratoView({
       setDraft('');
       setPending(null);
     } catch (er) {
+      // Encerrou entre abrir a tela e enviar (RF-062): a faixa de conversa encerrada aparece.
+      if ((er as { code?: unknown } | null)?.code === 'conversation_closed') {
+        setPending(null);
+        void qc.invalidateQueries({ queryKey: qk.chat(contractId) });
+      }
       toast.error(er instanceof Error ? er.message : 'Erro ao enviar');
     }
   }
+
+  // Atalho para uma nova proposta, quando quem lê pode fazê-la: o cliente volta ao serviço; numa
+  // troca, qualquer um dos dois propõe outra.
+  const reopen =
+    contract.data?.paymentMode === 'barter'
+      ? { to: '/trocas', label: 'Propor outra troca' }
+      : contract.data?.clientId === myId && contract.data.serviceId
+        ? { to: `/servicos/${contract.data.serviceId}`, label: 'Contratar de novo' }
+        : null;
 
   const c = contract.data;
 
@@ -723,7 +760,7 @@ export function SalaContratoView({
           className={`card chat${dragging ? ' dragging' : ''}`}
           onDragOver={(e) => {
             e.preventDefault();
-            if (!readOnly) setDragging(true);
+            if (!cannotWrite) setDragging(true);
           }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
@@ -794,8 +831,25 @@ export function SalaContratoView({
               ))
             )}
           </div>
-          {pending && <PendingAttachment file={pending} onRemove={() => setPending(null)} />}
-          {hints.length > 0 && (
+          {closed && (
+            <div className="chat-closed" role="status" data-testid="chat-closed">
+              <Lock size={16} aria-hidden="true" />
+              <p>
+                <strong>Conversa encerrada.</strong> Não há contratação nem troca em aberto entre
+                vocês: o histórico fica aqui para consulta, e uma nova proposta reabre o chat.
+                {reopen && (
+                  <>
+                    {' '}
+                    <Link to={reopen.to}>{reopen.label}</Link>
+                  </>
+                )}
+              </p>
+            </div>
+          )}
+          {!closed && pending && (
+            <PendingAttachment file={pending} onRemove={() => setPending(null)} />
+          )}
+          {!closed && hints.length > 0 && (
             <p className="chat-hint off-platform" role="status" data-testid="off-platform-hint">
               <TriangleAlert size={14} aria-hidden="true" />
               <span>
@@ -804,50 +858,54 @@ export function SalaContratoView({
               </span>
             </p>
           )}
-          <BusinessForm className="chat-input" onSubmit={submit}>
-            <input
-              ref={fileRef}
-              type="file"
-              accept={ATTACHMENT_ACCEPT}
-              hidden
-              data-testid="attachment-input"
-              onChange={(e) => {
-                pick(e.target.files?.[0]);
-                e.target.value = '';
-              }}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => fileRef.current?.click()}
-              disabled={sending}
-              aria-label="Anexar arquivo"
-              title={`Imagem, PDF ou ZIP até ${MAX_ATTACHMENT_MB} MB`}
-            >
-              <Paperclip size={16} />
-            </Button>
-            <Input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onPaste={onPaste}
-              placeholder={pending ? 'Legenda (opcional)…' : 'Escreva uma mensagem…'}
-              maxLength={2000}
-            />
-            <Button
-              type="submit"
-              disabled={sending || (!draft.trim() && !pending)}
-              aria-label="Enviar"
-            >
-              <Send size={16} />
-            </Button>
-          </BusinessForm>
-          <p className="muted tiny chat-hint">
-            {readOnly ? (
-              'Chat disponível somente para leitura durante a suspensão.'
-            ) : (
-              <>Imagem, PDF ou ZIP até {MAX_ATTACHMENT_MB} MB: clipe, colar ou arrastar aqui.</>
-            )}
-          </p>
+          {!closed && (
+            <BusinessForm className="chat-input" onSubmit={submit}>
+              <input
+                ref={fileRef}
+                type="file"
+                accept={ATTACHMENT_ACCEPT}
+                hidden
+                data-testid="attachment-input"
+                onChange={(e) => {
+                  pick(e.target.files?.[0]);
+                  e.target.value = '';
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => fileRef.current?.click()}
+                disabled={sending}
+                aria-label="Anexar arquivo"
+                title={`Imagem, PDF ou ZIP até ${MAX_ATTACHMENT_MB} MB`}
+              >
+                <Paperclip size={16} />
+              </Button>
+              <Input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onPaste={onPaste}
+                placeholder={pending ? 'Legenda (opcional)…' : 'Escreva uma mensagem…'}
+                maxLength={2000}
+              />
+              <Button
+                type="submit"
+                disabled={sending || (!draft.trim() && !pending)}
+                aria-label="Enviar"
+              >
+                <Send size={16} />
+              </Button>
+            </BusinessForm>
+          )}
+          {!closed && (
+            <p className="muted tiny chat-hint">
+              {readOnly ? (
+                'Chat disponível somente para leitura durante a suspensão.'
+              ) : (
+                <>Imagem, PDF ou ZIP até {MAX_ATTACHMENT_MB} MB: clipe, colar ou arrastar aqui.</>
+              )}
+            </p>
+          )}
         </section>
       </div>
       {c && disputeOpen && <DisputeModal contract={c} onClose={() => setDisputeOpen(false)} />}

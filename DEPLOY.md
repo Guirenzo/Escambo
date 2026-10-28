@@ -283,6 +283,22 @@ Uma migration (0052, aditiva e segura de rodar de novo). O passo que pede atenç
 
 **7. Voltar para a versão anterior** é seguro: a API antiga ignora as colunas novas (e volta a sacar sem CPF), e as contas de empresa abertas na 1.53.0 entram como contas de contratante sem os dados da empresa na tela.
 
+### Atualizar para a 1.52.0 (ADR 70: e-mail confirmado e conversa encerrada)
+
+Nenhuma migration, nenhuma variável nova, nenhum script. O que muda para quem usa: sem e-mail confirmado, contratar, publicar serviço, depositar ou pagar, propor ou aceitar troca, impulsionar e sacar respondem 403 `email_not_verified` (RF-006), e o chat só aceita mensagem enquanto há contratação ou troca em aberto entre as duas pessoas (RF-062, 409 `conversation_closed`).
+
+**1. O e-mail precisa chegar.** Com o SMTP fora do ar, quem acabou de se cadastrar não consegue contratar nem publicar. Antes de subir, mande um "Esqueci minha senha" para uma conta de teste e confira o status em Painel admin → **E-mails**. No modo simulado (`MAIL_PROVIDER=simulated`), o admin confirma pelo link da caixa de saída.
+
+**2. Quantas contas ainda não confirmaram** (elas passam a ver o aviso com o reenvio do link; nenhuma é marcada como confirmada):
+
+```bash
+docker compose -f docker-compose.prod.yml exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" -e "SELECT COUNT(*) AS sem_confirmar FROM users WHERE email_verified_at IS NULL AND deleted_at IS NULL"'
+```
+
+**3. Deploy normal** e **conferir**: `curl -s https://SEU_DOMINIO/api/health` mostra o commit da 1.52.0; numa conta sem confirmar, "Contratar" abre o aviso "Confirme seu e-mail para contratar." com o botão "Reenviar e-mail".
+
+**4. Voltar para a 1.51.0** é seguro: nada mudou no banco. As ações voltam a valer sem e-mail confirmado (menos o saque, que já exigia), e o chat volta a aceitar mensagem em conversa encerrada.
+
 ### Atualizar para a 1.51.0 (ADR 69)
 
 Uma migration (0051, aditiva e segura de rodar de novo) e nenhum passo manual: nem variável nova, nem script.
@@ -640,9 +656,11 @@ docker compose -f docker-compose.prod.yml start api
 - **Pagamentos:** não existe gateway real ainda (ADR 15). Em produção `PAYMENTS_SIMULATE=false`: depósitos só
   se confirmam pelo webhook (`PAYMENT_WEBHOOK_SECRET`). Num piloto sem dinheiro de verdade, `true` libera o
   botão "Simular pagamento".
-- **Saque** exige e-mail confirmado (a API responde 403 `email_not_verified`): o SMTP precisa estar funcionando
-  para os freelancers sacarem — ou o admin confirma pela caixa de saída no modo simulado. De quem entrega trabalho,
-  exige também o CPF validado no Perfil (403 `cpf_required`, 1.53.0), que depende da `FIELD_ENCRYPTION_KEY`.
+- **E-mail confirmado** (RF-006): contratar, publicar serviço, depositar ou pagar, propor ou aceitar troca,
+  impulsionar e sacar respondem 403 `email_not_verified` sem ele. O SMTP precisa estar funcionando para quem se
+  cadastra conseguir usar o app — ou o admin confirma pela caixa de saída no modo simulado.
+- **CPF para sacar** (RF-020, 1.53.0): de quem entrega trabalho, o saque exige também o CPF validado no Perfil
+  (403 `cpf_required`), que depende da `FIELD_ENCRYPTION_KEY`.
 
 ## 6. Checklist de segurança
 

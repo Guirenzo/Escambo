@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { blocklist } from '../../config/blocklist';
 import { bearer, routerApp, businessAudits } from '../../test-support/http';
+import { unverifiedEmails } from '../../test-support/email-verification';
 import { HttpError } from '../../utils/http-error';
 import { cancelWithdrawal, requestWithdrawal } from './withdrawal.controller';
 import { withdrawalRoutes } from './withdrawal.routes';
@@ -596,5 +597,35 @@ describe('saques: borda HTTP', () => {
     const res = await request(app).get('/api/withdrawals').set(bearer(7)).expect(500);
     expect(res.body).toEqual({ error: 'internal_error', message: 'Erro interno do servidor' });
     expect(auditLog).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Saque exige e-mail confirmado (ADR 20, RF-006), conferido na rota como nas outras ações
+ * críticas; cancelar o próprio saque e consultar, não.
+ */
+describe('saques: e-mail não confirmado (RF-006)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    unverifiedEmails.add(7);
+  });
+  afterEach(() => unverifiedEmails.clear());
+
+  it('pedir o saque: 403 email_not_verified, sem tocar no saldo nem na auditoria', async () => {
+    const res = await request(app).post('/api/withdrawals').set(bearer(7)).send(pix).expect(403);
+    expect(res.body).toEqual({
+      error: 'email_not_verified',
+      message: 'Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo.',
+    });
+    expect(service.request).not.toHaveBeenCalled();
+    expect(businessAudits(auditLog)).toEqual([]);
+  });
+
+  it('cancelar e listar os próprios saques seguem livres', async () => {
+    service.listMine.mockResolvedValue({ items: [], page: 1, limit: 20 });
+    service.cancelMine.mockResolvedValue({ ...withdrawal, status: 'cancelled' });
+    await request(app).get('/api/withdrawals').set(bearer(7)).expect(200);
+    await request(app).post('/api/withdrawals/42/cancel').set(bearer(7)).expect(200);
+    expect(service.cancelMine).toHaveBeenCalledWith(42, 7);
   });
 });

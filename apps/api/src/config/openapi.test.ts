@@ -162,13 +162,17 @@ describe('documento OpenAPI', () => {
     // Protegida, com corpo e resposta própria.
     expect(operation('/contracts', 'post')).toEqual({
       tags: ['Contratações'],
-      summary: 'Cria proposta e reserva o valor',
+      summary: 'Cria proposta e reserva o valor (exige e-mail confirmado, RF-006)',
       responses: {
         '201': {
           description: 'Criado',
           content: {
             'application/json': { schema: { $ref: '#/components/schemas/Contract' } },
           },
+        },
+        '403': {
+          description: expect.stringMatching(/^email_not_verified: /),
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
         },
         '409': {
           description:
@@ -1135,5 +1139,48 @@ describe('documento OpenAPI: pacotes por serviço', () => {
     for (const code of ['package_required', 'package_not_found', 'deadline_before_package'])
       expect(described('/contracts', 'post', '422')).toContain(code);
     expect(described('/contracts', 'post', '409')).toContain('package_changed');
+  });
+});
+
+describe('documento OpenAPI: travas da 1.52 (RF-006 e RF-062)', () => {
+  const desc = (path: string, method: (typeof METHODS)[number], status: string): string =>
+    (operation(path, method).responses as Record<string, { description: string }>)[status]
+      ?.description ?? '';
+
+  it('toda ação crítica documenta o 403 email_not_verified, com a mesma frase', () => {
+    const critical: [string, (typeof METHODS)[number]][] = [
+      ['/contracts', 'post'],
+      ['/services', 'post'],
+      ['/services/{id}', 'patch'],
+      ['/wallet/deposits', 'post'],
+      ['/wallet/deposits/{id}/simulate', 'post'],
+      ['/barters', 'post'],
+      ['/barters/{id}/accept', 'post'],
+      ['/boosts', 'post'],
+      ['/withdrawals', 'post'],
+    ];
+    for (const [path, method] of critical) {
+      expect(desc(path, method, '403'), `${method} ${path}`).toContain('email_not_verified');
+    }
+    expect(desc('/withdrawals', 'post', '403')).toContain(
+      'Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo.',
+    );
+  });
+
+  it('o que continua livre não ganha a recusa: recusar troca, cancelar saque, responder proposta', () => {
+    for (const [path, method] of [
+      ['/barters/{id}/reject', 'post'],
+      ['/contracts/{id}/accept', 'post'],
+    ] as const) {
+      expect(desc(path, method, '403'), `${method} ${path}`).not.toContain('email_not_verified');
+    }
+  });
+
+  it('enviar no chat documenta o 409 conversation_closed; o histórico, o campo closed', () => {
+    expect(desc('/messaging/contracts/{id}', 'post', '409')).toMatch(/^conversation_closed: /);
+    expect(desc('/messaging/contracts/{id}/attachments', 'post', '409')).toMatch(
+      /^conversation_closed: /,
+    );
+    expect(operation('/messaging/contracts/{id}', 'get').summary).toContain('closed: true');
   });
 });

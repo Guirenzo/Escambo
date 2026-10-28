@@ -10,7 +10,6 @@ vi.mock('../settings/settings.service', () => ({
 vi.mock('./withdrawal.repository', () => ({
   withdrawalRepository: { createIfSufficient: vi.fn(), findById: vi.fn(), listForUser: vi.fn() },
 }));
-vi.mock('../auth/auth.repository', () => ({ authRepository: { findById: vi.fn() } }));
 vi.mock('../profiles/profiles.repository', () => ({
   profilesRepository: { payoutState: vi.fn() },
 }));
@@ -23,13 +22,11 @@ import { setClockForTests } from '../../utils/clock';
 import { setFieldKeysForTests } from '../../utils/field-crypto';
 import { profilesRepository } from '../profiles/profiles.repository';
 import { HttpError } from '../../utils/http-error';
-import { authRepository, type UserRow } from '../auth/auth.repository';
 import { settingsService } from '../settings/settings.service';
 import { withdrawalRepository, type WithdrawalRow } from './withdrawal.repository';
 import { withdrawalService } from './withdrawal.service';
 
 const repo = vi.mocked(withdrawalRepository);
-const users = vi.mocked(authRepository);
 const minWithdrawal = vi.mocked(settingsService.minWithdrawal);
 const businessDays = vi.mocked(settingsService.withdrawalBusinessDays);
 const payout = vi.mocked(profilesRepository.payoutState);
@@ -57,17 +54,6 @@ const withdrawalRow = (o: Record<string, unknown> = {}): WithdrawalRow =>
     ...o,
   }) as unknown as WithdrawalRow;
 
-const userRow = (verified: boolean): UserRow =>
-  ({
-    id: 7,
-    ulid: 'U',
-    email: 'f@escambo.test',
-    password_hash: 'x',
-    role: 'freelancer',
-    status: verified ? 'active' : 'pending_verification',
-    email_verified_at: verified ? new Date('2026-01-01T00:00:00Z') : null,
-  }) as UserRow;
-
 const input = { amount: 100, method: 'pix' as const, pixKey: 'chave-secreta@escambo.test' };
 
 beforeEach(() => {
@@ -86,7 +72,6 @@ afterEach(() => {
 /** RF-020: quem entrega trabalho só saca com o CPF validado; quem só contrata, não precisa. */
 describe('withdrawalService.request: CPF (RF-020)', () => {
   it('freelancer sem CPF validado: 403 cpf_required, que leva ao Perfil, sem tocar no saldo', async () => {
-    users.findById.mockResolvedValue(userRow(true));
     payout.mockResolvedValue({ delivers_work: 1, cpf_verified: 0 } as never);
 
     const err = await withdrawalService.request(7, input).catch((e) => e);
@@ -97,18 +82,7 @@ describe('withdrawalService.request: CPF (RF-020)', () => {
     expect(repo.createIfSufficient).not.toHaveBeenCalled();
   });
 
-  it('o e-mail é conferido antes: sem ele, 403 email_not_verified nem chega ao CPF', async () => {
-    users.findById.mockResolvedValue(userRow(false));
-    payout.mockResolvedValue({ delivers_work: 1, cpf_verified: 0 } as never);
-
-    await expect(withdrawalService.request(7, input)).rejects.toMatchObject({
-      code: 'email_not_verified',
-    });
-    expect(payout).not.toHaveBeenCalled();
-  });
-
   it('sem a FIELD_ENCRYPTION_KEY: 503 cpf_unavailable para quem entrega trabalho, mesmo validado', async () => {
-    users.findById.mockResolvedValue(userRow(true));
     setFieldKeysForTests({});
 
     const err = await withdrawalService.request(7, input).catch((e) => e);
@@ -119,7 +93,6 @@ describe('withdrawalService.request: CPF (RF-020)', () => {
   });
 
   it('quem só contrata (cliente, empresa) saca o que depositou sem CPF, com ou sem a chave', async () => {
-    users.findById.mockResolvedValue(userRow(true));
     payout.mockResolvedValue({ delivers_work: 0, cpf_verified: 0 } as never);
     repo.createIfSufficient.mockResolvedValue(42);
     repo.findById.mockResolvedValue(withdrawalRow());
@@ -131,7 +104,6 @@ describe('withdrawalService.request: CPF (RF-020)', () => {
   });
 
   it('conta que não voltou do banco conta como quem não entrega trabalho', async () => {
-    users.findById.mockResolvedValue(userRow(true));
     payout.mockResolvedValue(undefined);
     repo.createIfSufficient.mockResolvedValue(42);
     repo.findById.mockResolvedValue(withdrawalRow());
@@ -141,18 +113,7 @@ describe('withdrawalService.request: CPF (RF-020)', () => {
 });
 
 describe('withdrawalService.request', () => {
-  it('exige e-mail confirmado: 403 email_not_verified sem tocar no saldo', async () => {
-    users.findById.mockResolvedValue(userRow(false));
-
-    await expect(withdrawalService.request(7, input)).rejects.toMatchObject({
-      statusCode: 403,
-      code: 'email_not_verified',
-    } satisfies Partial<HttpError>);
-    expect(repo.createIfSufficient).not.toHaveBeenCalled();
-  });
-
   it('sem saldo: 400 insufficient_balance (RN-034)', async () => {
-    users.findById.mockResolvedValue(userRow(true));
     repo.createIfSufficient.mockResolvedValue(null);
 
     await expect(withdrawalService.request(7, input)).rejects.toMatchObject({
@@ -164,8 +125,7 @@ describe('withdrawalService.request', () => {
     expect(repo.findById).not.toHaveBeenCalled();
   });
 
-  it('com e-mail confirmado e saldo: cria o saque e mascara o destino', async () => {
-    users.findById.mockResolvedValue(userRow(true));
+  it('com saldo: cria o saque e mascara o destino', async () => {
     repo.createIfSufficient.mockResolvedValue(42);
     repo.findById.mockResolvedValue({
       id: 42,
@@ -196,12 +156,10 @@ describe('withdrawalService.request', () => {
     expect(err).toBeInstanceOf(HttpError);
     expect(err).toMatchObject({ statusCode: 422, code: 'below_minimum' });
     expect(err.message).toMatch(/^Saque mínimo é R\$\s20,00 \(RN-034\)$/);
-    expect(users.findById).not.toHaveBeenCalled();
     expect(repo.createIfSufficient).not.toHaveBeenCalled();
   });
 
   it('o mínimo é o configurado na plataforma, e o valor igual a ele é aceito', async () => {
-    users.findById.mockResolvedValue(userRow(true));
     repo.createIfSufficient.mockResolvedValue(42);
     repo.findById.mockResolvedValue(withdrawalRow({ amount: '50.00' }));
 
@@ -214,20 +172,9 @@ describe('withdrawalService.request', () => {
     expect(await withdrawalService.request(7, { ...input, amount: 50 })).toMatchObject({
       amount: 50,
     });
-    expect(users.findById).toHaveBeenCalledWith(7);
-  });
-
-  it('usuário que não existe mais também não saca: 403 email_not_verified', async () => {
-    users.findById.mockResolvedValue(undefined);
-    await expect(withdrawalService.request(7, input)).rejects.toMatchObject({
-      statusCode: 403,
-      code: 'email_not_verified',
-    });
-    expect(repo.createIfSufficient).not.toHaveBeenCalled();
   });
 
   it('saque por PIX grava só a chave: dados bancários enviados junto são descartados', async () => {
-    users.findById.mockResolvedValue(userRow(true));
     repo.createIfSufficient.mockResolvedValue(42);
     repo.findById.mockResolvedValue(withdrawalRow());
 
@@ -251,7 +198,6 @@ describe('withdrawalService.request', () => {
   });
 
   it('saque por conta bancária grava só os dados do banco e mascara a conta na resposta', async () => {
-    users.findById.mockResolvedValue(userRow(true));
     repo.createIfSufficient.mockResolvedValue(43);
     repo.findById.mockResolvedValue(
       withdrawalRow({
@@ -296,7 +242,6 @@ describe('withdrawalService.request', () => {
   });
 
   it('destino com até 4 caracteres é mascarado por inteiro (os últimos 4 seriam ele todo)', async () => {
-    users.findById.mockResolvedValue(userRow(true));
     repo.createIfSufficient.mockResolvedValue(42);
 
     repo.findById.mockResolvedValue(withdrawalRow({ pix_key: ' 1234 ' }));
@@ -314,7 +259,6 @@ describe('withdrawalService.request', () => {
   });
 
   it('chamado sem os campos de destino (fora da rota), grava null e não undefined', async () => {
-    users.findById.mockResolvedValue(userRow(true));
     repo.createIfSufficient.mockResolvedValue(42);
     repo.findById.mockResolvedValue(withdrawalRow());
     const empty = { userId: 7, pixKey: null, bankName: null, bankAgency: null, bankAccount: null };
@@ -337,7 +281,6 @@ describe('withdrawalService.request', () => {
 
 describe('withdrawalService.request: prazo do saque (RN-035)', () => {
   beforeEach(() => {
-    users.findById.mockResolvedValue(userRow(true));
     repo.createIfSufficient.mockResolvedValue(42);
     repo.findById.mockResolvedValue(withdrawalRow());
   });
@@ -373,10 +316,9 @@ describe('withdrawalService.request: prazo do saque (RN-035)', () => {
     expect(repo.createIfSufficient.mock.calls[0]![0].dueAt).toEqual(PIX_DUE);
   });
 
-  it('pedido recusado antes (mínimo ou e-mail) nem lê o prazo', async () => {
+  // O e-mail não confirmado é recusado na rota (requireVerifiedEmail), antes de chegar aqui.
+  it('pedido abaixo do mínimo nem lê o prazo', async () => {
     await withdrawalService.request(7, { ...input, amount: 1 }).catch(() => undefined);
-    users.findById.mockResolvedValue(userRow(false));
-    await withdrawalService.request(7, input).catch(() => undefined);
     expect(businessDays).not.toHaveBeenCalled();
     expect(repo.createIfSufficient).not.toHaveBeenCalled();
   });
