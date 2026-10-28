@@ -16,6 +16,7 @@ import { clock } from '../../utils/clock';
 import { HttpError } from '../../utils/http-error';
 import { isBrazilTimezone, timezoneOf } from '../../utils/timezone';
 import { notificationsFacade } from '../notifications/notifications.facade';
+import { profilesFacade } from '../profiles/profiles.facade';
 import { quietPassOf, quietWindowOf } from '../notifications/quiet-hours';
 import { lgpdFacade } from '../lgpd/lgpd.facade';
 import { CURRENT_LEGAL_VERSION } from '../lgpd/legal-versions';
@@ -168,6 +169,9 @@ function assertSessionAllowed(user: { status: string; deleted_at?: Date | null }
   }
 }
 
+const cnpjTaken = (): HttpError =>
+  new HttpError(409, 'Este CNPJ já está em outra conta do Escambo.', 'cnpj_taken');
+
 const invalidMfaToken = (): HttpError =>
   new HttpError(401, 'A verificação expirou. Entre com a senha de novo.', 'invalid_mfa_token');
 
@@ -198,6 +202,10 @@ export const authService = {
 
     // Lista de admins (ADMIN_EMAILS) tem precedência sobre o papel pedido no cadastro.
     const role: UserRole = isAdminEmail(input.email) ? 'admin' : input.role;
+    // Conta de empresa (RF-018): o CNPJ é único entre contas. Conferido antes de criar a conta, e
+    // de novo pela chave única ao gravar (duas empresas com o mesmo CNPJ ao mesmo tempo).
+    const company = role === 'company' ? input.company! : null;
+    if (company && (await profilesFacade.cnpjTaken(company.cnpj))) throw cnpjTaken();
     const id = await authRepository.create({
       ulid: userUlid,
       email: input.email,
@@ -205,6 +213,16 @@ export const authService = {
       role,
       timezone: input.timezone ?? null,
     });
+    if (company) {
+      try {
+        await profilesFacade.createCompany(id, company);
+      } catch (err) {
+        // A conta não fica pela metade: sem o perfil da empresa, ela não nasce.
+        await authRepository.deleteUnfinished(id);
+        if ((err as { code?: string }).code === 'ER_DUP_ENTRY') throw cnpjTaken();
+        throw err;
+      }
+    }
 
     // O aceite dos Termos e da Política vira registro na versão vigente, com IP e navegador
     // (ADR 54). Gravado pelo servidor, e não pelo cliente: toda conta nasce com a trilha. Falha

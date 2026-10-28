@@ -94,14 +94,94 @@ describe('autenticação: borda HTTP', () => {
 
     it('os três papéis públicos (client, freelancer e company) são aceitos e chegam ao service como vieram', async () => {
       service.register.mockResolvedValue(USER);
-      for (const role of ['client', 'freelancer', 'company']) {
-        await request(app)
-          .post('/api/auth/register')
-          .send({ ...valid, role })
-          .expect(201);
-        expect(service.register.mock.lastCall![0]).toStrictEqual({ ...valid, role });
+      const company = {
+        legalName: 'Padaria Pão Bom Ltda',
+        tradeName: 'Pão Bom',
+        cnpj: '12ABC34501DE35',
+      };
+      for (const body of [
+        { ...valid, role: 'client' },
+        { ...valid, role: 'freelancer' },
+        { ...valid, role: 'company', company },
+      ]) {
+        await request(app).post('/api/auth/register').send(body).expect(201);
+        expect(service.register.mock.lastCall![0]).toStrictEqual(body);
       }
       expect(service.register).toHaveBeenCalledTimes(3);
+    });
+
+    describe('conta de empresa (RF-018)', () => {
+      const company = {
+        legalName: '  Padaria Pão Bom Ltda ',
+        tradeName: 'Pão Bom',
+        cnpj: '12.abc.345/01de-35',
+      };
+
+      it('o CNPJ chega normalizado (maiúsculas, sem máscara) e os nomes sem espaço nas pontas', async () => {
+        service.register.mockResolvedValue(USER);
+
+        await request(app)
+          .post('/api/auth/register')
+          .send({ ...valid, role: 'company', company })
+          .expect(201);
+
+        expect(service.register.mock.lastCall![0].company).toStrictEqual({
+          legalName: 'Padaria Pão Bom Ltda',
+          tradeName: 'Pão Bom',
+          cnpj: '12ABC34501DE35',
+        });
+      });
+
+      it('empresa sem os dados da empresa: 422, e o motivo aponta para eles', async () => {
+        const res = await request(app)
+          .post('/api/auth/register')
+          .send({ ...valid, role: 'company' })
+          .expect(422);
+        expect(res.body.details.company).toEqual([
+          'Informe a razão social, o nome fantasia e o CNPJ da empresa',
+        ]);
+        expect(service.register).not.toHaveBeenCalled();
+      });
+
+      it('dados de empresa numa conta de pessoa: 422', async () => {
+        const res = await request(app)
+          .post('/api/auth/register')
+          .send({ ...valid, role: 'client', company })
+          .expect(422);
+        expect(res.body.details.company).toEqual(['Dados de empresa só no cadastro de empresa']);
+        expect(service.register).not.toHaveBeenCalled();
+      });
+
+      it('CNPJ com dígito errado, curto ou com caractere estranho: 422 com a mensagem do CNPJ', async () => {
+        for (const cnpj of [
+          '12.ABC.345/01DE-36',
+          '11222333000',
+          '12ABC34501DE3%',
+          '00000000000000',
+        ]) {
+          const res = await request(app)
+            .post('/api/auth/register')
+            .send({ ...valid, role: 'company', company: { ...company, cnpj } })
+            .expect(422);
+          expect(res.body.details.company[0]).toMatch(/^CNPJ inválido/);
+        }
+        expect(service.register).not.toHaveBeenCalled();
+      });
+
+      it('razão social e nome fantasia: de 2 a 150 caracteres', async () => {
+        const res = await request(app)
+          .post('/api/auth/register')
+          .send({
+            ...valid,
+            role: 'company',
+            company: { ...company, legalName: 'A', tradeName: 'x'.repeat(151) },
+          })
+          .expect(422);
+        expect(res.body.details.company).toEqual([
+          'A razão social precisa de ao menos 2 caracteres',
+          'O nome fantasia tem no máximo 150 caracteres',
+        ]);
+      });
     });
 
     it('cada fuso do Brasil é aceito (ADR 51), e sem fuso o campo nem chega ao service', async () => {

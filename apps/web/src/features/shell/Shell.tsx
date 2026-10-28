@@ -16,7 +16,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../lib/auth';
-import { displayName } from '../../lib/format';
+import { identityName, profileIdentity } from '../../lib/documents';
 import { Avatar } from '../../components/Avatar';
 import { SkipLink } from '../../components/ui';
 import { useConsents, useNotifications, useProfilesMe } from '../../lib/hooks';
@@ -108,6 +108,7 @@ const SECONDARY_PATHS = SECONDARY.flatMap((g) => g.items.map((i) => i.to));
 export const ROLE_LABEL: Record<string, string> = {
   client: 'Cliente',
   freelancer: 'Freelancer',
+  company: 'Empresa',
   admin: 'Admin',
 };
 
@@ -122,12 +123,10 @@ export function Shell() {
 
   // Badge de não lidas + push em tempo real (socket) para qualquer tela.
   const profiles = useProfilesMe();
-  const avatarUrl =
-    profiles.data?.freelancer?.avatarUrl ?? profiles.data?.client?.avatarUrl ?? null;
-  const name = displayName(
-    profiles.data?.freelancer?.fullName ?? profiles.data?.client?.fullName,
-    user?.email,
-  );
+  // Na conta de empresa, o nome fantasia e o logo (RF-018).
+  const identity = profileIdentity(profiles.data);
+  const avatarUrl = identity.avatarUrl;
+  const name = identityName(profiles.data, user?.email);
   const notifications = useNotifications();
   const unread = notifications.data?.unreadCount ?? 0;
   useRealtimeNotifications();

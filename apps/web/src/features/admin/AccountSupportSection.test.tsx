@@ -13,7 +13,11 @@ import { AccountSupportSection } from './AccountSupportSection';
  * passa a mostrar a conta já sem ela.
  */
 
-const api = vi.hoisted(() => ({ adminAccountLookup: vi.fn(), adminResetMfa: vi.fn() }));
+const api = vi.hoisted(() => ({
+  adminAccountLookup: vi.fn(),
+  adminResetMfa: vi.fn(),
+  adminResetCpf: vi.fn(),
+}));
 vi.mock('../../lib/api', () => ({ api }));
 
 const accountOf = (o: Partial<AdminAccountLookup> = {}): AdminAccountLookup => ({
@@ -23,6 +27,8 @@ const accountOf = (o: Partial<AdminAccountLookup> = {}): AdminAccountLookup => (
   status: 'suspended',
   mfaEnabled: true,
   createdAt: '2026-03-02T12:00:00.000Z',
+  cpf: null,
+  company: null,
   ...o,
 });
 
@@ -50,6 +56,7 @@ async function search(user: ReturnType<typeof userEvent.setup>, email: string) {
 beforeEach(() => {
   api.adminAccountLookup.mockReset();
   api.adminResetMfa.mockReset();
+  api.adminResetCpf.mockReset();
 });
 
 describe('AccountSupportSection: busca', () => {
@@ -290,5 +297,107 @@ describe('AccountSupportSection: desativar a 2FA de uma conta', () => {
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(api.adminResetMfa).not.toHaveBeenCalled();
+  });
+});
+
+/** Documentos no atendimento (RF-018, RF-020): o CPF só mascarado e a correção com motivo. */
+describe('AccountSupportSection: CPF e empresa', () => {
+  const verified = {
+    verified: true,
+    maskedCpf: '***.982.247-**',
+    verifiedAt: '2026-10-20T12:00:00.000Z',
+  };
+
+  it('mostra o CPF só mascarado, com a data da validação, e o botão de apagar para correção', async () => {
+    const user = userEvent.setup();
+    api.adminAccountLookup.mockResolvedValue(accountOf({ mfaEnabled: false, cpf: verified }));
+    renderSection();
+    await search(user, 'carla@escambo.test');
+
+    expect(await screen.findByTestId('lookup-cpf')).toHaveTextContent(
+      `***.982.247-** · validado em ${dt('2026-10-20T12:00:00.000Z')}`,
+    );
+    expect(screen.getByRole('button', { name: 'Apagar o CPF para correção' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Desativar verificação em duas etapas' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('perfil de freelancer sem CPF: "Não informado", sem botão; conta de empresa mostra o CNPJ com máscara', async () => {
+    const user = userEvent.setup();
+    api.adminAccountLookup.mockResolvedValue(
+      accountOf({
+        role: 'company',
+        mfaEnabled: false,
+        cpf: { verified: false, maskedCpf: null, verifiedAt: null },
+        company: { tradeName: 'Pão Bom', cnpj: '12ABC34501DE35' },
+      }),
+    );
+    renderSection();
+    await search(user, 'carla@escambo.test');
+
+    expect(await screen.findByTestId('lookup-cpf')).toHaveTextContent('Não informado');
+    expect(screen.getByTestId('lookup-company')).toHaveTextContent(
+      'Pão Bom · CNPJ 12.ABC.345/01DE-35',
+    );
+    expect(screen.getByTestId('lookup-account')).toHaveTextContent('Tipo de contaEmpresa');
+    expect(
+      screen.queryByRole('button', { name: 'Apagar o CPF para correção' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('apagar o CPF pede o motivo, chama a API e a busca mostra a conta já sem ele', async () => {
+    const user = userEvent.setup();
+    api.adminAccountLookup.mockResolvedValue(accountOf({ mfaEnabled: false, cpf: verified }));
+    renderSection();
+    await search(user, 'carla@escambo.test');
+    await user.click(await screen.findByRole('button', { name: 'Apagar o CPF para correção' }));
+    const dialog = screen.getByRole('dialog', { name: 'Apagar o CPF para correção' });
+    expect(dialog).toHaveTextContent('o saque do que ele recebe por trabalhos fica bloqueado');
+    const reason = within(dialog).getByLabelText('Motivo (fica no registro do atendimento)');
+    expect(reason).toHaveAccessibleDescription(
+      'De 10 a 500 caracteres. Ex.: titular digitou o CPF errado; documento conferido no chamado de suporte.',
+    );
+
+    api.adminResetCpf.mockResolvedValue(undefined);
+    api.adminAccountLookup.mockResolvedValue(
+      accountOf({ mfaEnabled: false, cpf: { verified: false, maskedCpf: null, verifiedAt: null } }),
+    );
+    await user.type(reason, 'CPF digitado errado; documento conferido no chamado 7.');
+    await user.click(within(dialog).getByRole('button', { name: 'Apagar o CPF' }));
+
+    expect(
+      await screen.findByText(
+        'CPF apagado. O titular foi avisado por e-mail para informar de novo.',
+      ),
+    ).toBeInTheDocument();
+    expect(api.adminResetCpf).toHaveBeenCalledWith(
+      '01JCARLA',
+      'CPF digitado errado; documento conferido no chamado 7.',
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('lookup-cpf')).toHaveTextContent('Não informado'),
+    );
+  });
+
+  it('falha ao apagar: a mensagem fica no diálogo', async () => {
+    const user = userEvent.setup();
+    api.adminAccountLookup.mockResolvedValue(accountOf({ mfaEnabled: false, cpf: verified }));
+    renderSection();
+    await search(user, 'carla@escambo.test');
+    await user.click(await screen.findByRole('button', { name: 'Apagar o CPF para correção' }));
+    const dialog = screen.getByRole('dialog', { name: 'Apagar o CPF para correção' });
+    api.adminResetCpf.mockRejectedValue(
+      Object.assign(new Error('Esta conta não tem CPF informado.'), { code: 'cpf_not_set' }),
+    );
+    await user.type(
+      within(dialog).getByLabelText('Motivo (fica no registro do atendimento)'),
+      'CPF digitado errado; conferido.',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Apagar o CPF' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Esta conta não tem CPF informado.',
+    );
   });
 });

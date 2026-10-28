@@ -8,6 +8,7 @@ import type {
   WalletTransaction,
   Withdrawal,
 } from '@escambo/types';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dtm } from '../../lib/format';
 import { ToastProvider } from '../../lib/toast';
@@ -30,6 +31,7 @@ const requestWithdrawal = vi.fn();
 const cancelWithdrawal = vi.fn();
 const resendVerification = vi.fn();
 const deposit = vi.fn();
+const cpfStatus = vi.fn();
 vi.mock('../../lib/api', () => ({
   api: {
     wallet: () => wallet(),
@@ -43,6 +45,7 @@ vi.mock('../../lib/api', () => ({
     cancelWithdrawal: (id: number) => cancelWithdrawal(id),
     resendVerification: (...args: unknown[]) => resendVerification(...args),
     deposit: (id: number) => deposit(id),
+    cpfStatus: () => cpfStatus(),
     createDeposit: vi.fn(),
     simulateDeposit: vi.fn(),
   },
@@ -159,10 +162,21 @@ beforeEach(() => {
     cancelWithdrawal,
     resendVerification,
     deposit,
+    cpfStatus,
   ]) {
     fn.mockReset();
   }
   wallet.mockResolvedValue(walletOf());
+  // Freelancer com o CPF validado (RF-020): o saque segue como antes.
+  cpfStatus.mockResolvedValue({
+    available: true,
+    required: true,
+    hasFreelancerProfile: true,
+    verified: true,
+    maskedCpf: '***.982.247-**',
+    birthDate: '1990-05-17',
+    verifiedAt: '2026-10-20T12:00:00.000Z',
+  });
   publicSettings.mockResolvedValue({ minWithdrawalAmount: 20 });
   withdrawals.mockResolvedValue(page([]));
   deposits.mockResolvedValue(page([]));
@@ -973,6 +987,75 @@ describe('CarteiraView: e-mail sem confirmação conhecida', () => {
     expect(
       screen.queryByRole('button', { name: 'Reenviar e-mail de confirmação' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/** RF-020: quem entrega trabalho saca com o CPF validado; a Carteira diz o motivo e leva ao Perfil. */
+describe('CarteiraView: CPF para sacar', () => {
+  const renderRouted = () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <ToastProvider>
+          <MemoryRouter>
+            <CarteiraView />
+          </MemoryRouter>
+        </ToastProvider>
+      </QueryClientProvider>,
+    );
+  };
+  const status = (o: Record<string, unknown>) => ({
+    available: true,
+    required: true,
+    hasFreelancerProfile: true,
+    verified: false,
+    maskedCpf: null,
+    birthDate: null,
+    verifiedAt: null,
+    ...o,
+  });
+
+  it('sem o CPF validado: no lugar do formulário, o motivo e o caminho para "Dados para receber"', async () => {
+    cpfStatus.mockResolvedValue(status({}));
+    renderRouted();
+
+    const locked = await screen.findByTestId('withdraw-cpf');
+    expect(locked).toHaveTextContent('Valide seu CPF para sacar');
+    expect(within(locked).getByRole('link', { name: 'Informar o CPF' })).toHaveAttribute(
+      'href',
+      '/perfil#dados-recebimento',
+    );
+    expect(screen.queryByRole('button', { name: /^Sacar/ })).not.toBeInTheDocument();
+  });
+
+  it('servidor sem a chave de cifragem: diz que a validação não está disponível e leva ao suporte', async () => {
+    cpfStatus.mockResolvedValue(status({ available: false }));
+    renderRouted();
+
+    const locked = await screen.findByTestId('withdraw-cpf');
+    expect(locked).toHaveTextContent('a validação de CPF ainda não está disponível neste servidor');
+    expect(within(locked).getByRole('link', { name: 'Falar com o suporte' })).toHaveAttribute(
+      'href',
+      '/suporte',
+    );
+  });
+
+  it('quem só contrata (não entrega trabalho) saca sem CPF', async () => {
+    cpfStatus.mockResolvedValue(status({ required: false, hasFreelancerProfile: false }));
+    renderRouted();
+
+    expect(await screen.findByRole('button', { name: /^Sacar/ })).toBeInTheDocument();
+    expect(screen.queryByTestId('withdraw-cpf')).not.toBeInTheDocument();
+  });
+
+  it('sem e-mail confirmado, o aviso do e-mail vem primeiro', async () => {
+    auth.user = { id: 1, email: 'bruno@escambo.test', emailVerified: false };
+    cpfStatus.mockResolvedValue(status({}));
+    renderRouted();
+
+    expect(await screen.findByTestId('withdraw-locked')).toBeInTheDocument();
+    await waitFor(() => expect(cpfStatus).toHaveBeenCalled());
+    expect(screen.queryByTestId('withdraw-cpf')).not.toBeInTheDocument();
   });
 });
 

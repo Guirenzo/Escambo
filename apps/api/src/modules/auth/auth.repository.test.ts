@@ -305,6 +305,15 @@ describe('authRepository', () => {
     expect(fakeDb.calls[0]!.params).toEqual({ id: 5, role: 'admin' });
   });
 
+  it('deleteUnfinished só apaga a conta recém-criada: sem login e sem e-mail confirmado (RF-018)', async () => {
+    fakeDb.reply({ affectedRows: 1 });
+    await authRepository.deleteUnfinished(9);
+    expect(fakeDb.calls[0]!.sql).toBe(
+      'DELETE FROM users WHERE id = :id AND last_login_at IS NULL AND email_verified_at IS NULL',
+    );
+    expect(fakeDb.calls[0]!.params).toEqual({ id: 9 });
+  });
+
   describe('contato da conta (RF-017)', () => {
     it('findContact lê só e-mail, confirmação e telefone daquela conta', async () => {
       const row = { email: 'ana@escambo.test', email_verified_at: null, phone: '+5547999991234' };

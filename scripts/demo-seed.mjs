@@ -677,6 +677,23 @@ async function ensureBalance(user, amount) {
   log(`depósito PIX (simulado) de R$ ${need} confirmado para ${user.email}`);
 }
 
+/**
+ * CPF do freelancer que saca (RF-020, 1.53.0): o saque de quem entrega trabalho pede o CPF validado
+ * no Perfil. CPFs fictícios, válidos só pelos dígitos verificadores. Sem a FIELD_ENCRYPTION_KEY no
+ * servidor, a validação fica indisponível e devolve false (o saque também não passaria).
+ */
+async function ensureCpf(user, cpf, birthDate) {
+  const status = await call('GET', '/profiles/me/cpf', { token: user.token });
+  if (status.verified) return true;
+  if (!status.available) {
+    log(`CPF de ${user.email} não validado: o servidor está sem a FIELD_ENCRYPTION_KEY`);
+    return false;
+  }
+  await call('PUT', '/profiles/me/cpf', { token: user.token, body: { cpf, birthDate } });
+  log(`CPF de ${user.email} validado`);
+  return true;
+}
+
 /** Saque do freelancer (idempotente por valor); opcionalmente concluído pelo admin. */
 async function ensureWithdrawal(user, admin, amount, pixKey, { complete = false } = {}) {
   const mine = items(await call('GET', '/withdrawals', { token: user.token }));
@@ -1085,8 +1102,15 @@ async function main() {
   );
 
   step('Saques (fila do admin)');
-  await ensureWithdrawal(users.marina, users.admin, 200, 'marina@escambo.demo', { complete: true });
-  await ensureWithdrawal(users.bruno, users.admin, 300, '47 99999-0001');
+  // Desde a 1.53.0 o saque de quem entrega trabalho pede o CPF validado (RF-020).
+  if (await ensureCpf(users.marina, '390.533.447-05', '1994-08-21')) {
+    await ensureWithdrawal(users.marina, users.admin, 200, 'marina@escambo.demo', {
+      complete: true,
+    });
+  }
+  if (await ensureCpf(users.bruno, '111.444.777-35', '1990-02-11')) {
+    await ensureWithdrawal(users.bruno, users.admin, 300, '47 99999-0001');
+  }
 
   step('Favoritos da cliente');
   await ensureFavorite(ana, svc['Landing page em React']);

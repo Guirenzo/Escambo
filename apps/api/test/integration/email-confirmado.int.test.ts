@@ -4,6 +4,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { verifyCpfOf } from './cpf.helpers';
 import { confirmEmail } from './mail.helpers';
 import { fundWallet } from './wallet.helpers';
 
@@ -220,6 +221,7 @@ describe('RF-006: ações críticas sem e-mail confirmado', () => {
     expect(await balanceOf(freelancer.token)).toBe(earned);
 
     await confirmEmail(app, freelancer.id);
+    await verifyCpfOf(app, freelancer.token); // e o CPF validado de quem entrega trabalho (RF-020, 1.53.0)
     await request(app).post('/api/withdrawals').set(auth(freelancer.token)).send(pix).expect(201);
   });
 

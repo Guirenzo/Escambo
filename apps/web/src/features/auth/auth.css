@@ -72,6 +72,27 @@
   font-size: 0.875rem;
 }
 
+/* Conta de empresa (RF-018): os dados da empresa num grupo próprio, com a legenda como título. */
+.au .au-company {
+  display: grid;
+  gap: 12px;
+  /* O fieldset nasce com a largura mínima do conteúdo: a 320 px ele alargaria o formulário. */
+  min-inline-size: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.au .au-company legend {
+  padding: 0 6px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.au .au-company .muted {
+  margin-top: -6px;
+}
+
 /* Entrar | Criar conta: controle segmentado (o estado vai em aria-pressed). */
 .au .au-switch {
   display: grid;

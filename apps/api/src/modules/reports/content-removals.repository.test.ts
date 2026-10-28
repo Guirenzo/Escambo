@@ -254,7 +254,7 @@ describe('contentRemovalsRepository', () => {
       const { sql, params } = fakeDb.calls[0]!;
       expectRemovalColumns(sql);
       expect(sql).toContain(
-        'u.ulid AS owner_ulid, COALESCE(pf.full_name, pc.full_name) AS owner_name',
+        'u.ulid AS owner_ulid, COALESCE(pf.full_name, pc.full_name, pco.trade_name) AS owner_name',
       );
       expect(sql).toContain(`${WORK_JOIN} JOIN users u ON u.id = r.owner_id`);
       expect(sql).toContain('LEFT JOIN profiles_freelancer pf ON pf.user_id = u.id');

@@ -274,9 +274,11 @@ describe('lgpdRepository', () => {
         expect(sql).toContain('FROM data_deletion_requests d JOIN users u ON u.id = d.user_id');
         expect(sql).toContain(`${DELETION_FIELDS}, u.ulid AS user_ulid, u.email AS user_email,`);
         // O nome vem do perfil que existir; quem não tem perfil nem carteira ainda aparece na fila.
-        expect(sql).toContain('COALESCE(fp.full_name, cp.full_name) AS user_name');
+        expect(sql).toContain('COALESCE(fp.full_name, cp.full_name, co.trade_name) AS user_name');
         expect(sql).toContain('LEFT JOIN profiles_freelancer fp ON fp.user_id = d.user_id');
         expect(sql).toContain('LEFT JOIN profiles_client cp ON cp.user_id = d.user_id');
+        // A conta de empresa aparece pelo nome fantasia (RF-018).
+        expect(sql).toContain('LEFT JOIN profiles_company co ON co.user_id = d.user_id');
         expect(sql).toContain('LEFT JOIN wallets w ON w.user_id = d.user_id');
         expect(sql).toContain(
           `WHERE (c.client_id = d.user_id OR c.freelancer_id = d.user_id) AND c.${OPEN_CONTRACTS}) AS active_contracts`,
@@ -346,6 +348,7 @@ describe('lgpdRepository', () => {
           'UPDATE support_ticket_messages m',
           'UPDATE profiles_freelancer SET',
           'UPDATE profiles_client SET',
+          'UPDATE profiles_company SET',
           'UPDATE services SET',
           'DELETE FROM favorites',
           'DELETE FROM saved_searches',
@@ -391,12 +394,20 @@ describe('lgpdRepository', () => {
         expect(freelancer.sql).toContain(
           "SET full_name = 'Usuário removido', avatar_url = NULL, bio = NULL, headline = NULL, city = NULL, state = NULL, latitude = NULL, longitude = NULL, is_available = 0",
         );
+        // O CPF, o índice cego e a data de nascimento saem (RF-020): o CPF fica livre.
+        expect(freelancer.sql).toContain(
+          'cpf_encrypted = NULL, cpf_index = NULL, birth_date = NULL, cpf_verified = 0, cpf_verified_at = NULL',
+        );
         expect(freelancer.sql).toMatch(/WHERE user_id = :userId$/);
         const client = stmt('UPDATE profiles_client');
         expect(client.sql).toContain(
           "SET full_name = 'Usuário removido', avatar_url = NULL, bio = NULL, city = NULL, state = NULL, latitude = NULL, longitude = NULL",
         );
         expect(client.sql).toMatch(/WHERE user_id = :userId$/);
+        // A conta de empresa (RF-018) perde o que a identifica, o CNPJ inclusive.
+        expect(stmt('UPDATE profiles_company').sql).toBe(
+          "UPDATE profiles_company SET company_name = 'Empresa removida', trade_name = 'Empresa removida', cnpj = NULL, logo_url = NULL, bio = NULL, website = NULL, city = NULL, state = NULL WHERE user_id = :userId",
+        );
 
         // Serviços saem do ar sem perder a data de quem já tinha sido removido antes.
         expect(stmt('UPDATE services').sql).toBe(
@@ -468,7 +479,7 @@ describe('lgpdRepository', () => {
         // Tudo dentro da mesma transação: ela abre antes da primeira instrução, só confirma depois
         // da última (o registro da ação do admin) e a conexão só volta ao pool depois do commit.
         const statements = fakeDb.conn.query.mock.invocationCallOrder;
-        expect(statements).toHaveLength(23);
+        expect(statements).toHaveLength(24);
         const begun = fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!;
         const committed = fakeDb.conn.commit.mock.invocationCallOrder[0]!;
         expect(begun).toBeLessThan(statements[0]!);
@@ -545,13 +556,13 @@ describe('lgpdRepository', () => {
 
       it('falha na última etapa (o registro da ação do admin) também desfaz a anonimização inteira', async () => {
         const boom = new Error('ER_NO_REFERENCED_ROW');
-        // As 22 primeiras instruções passam; o INSERT em admin_actions falha.
-        fakeDb.reply([], [], { affectedRows: 1 }, ...Array.from({ length: 19 }, () => ({})), boom);
+        // As 23 primeiras instruções passam; o INSERT em admin_actions falha.
+        fakeDb.reply([], [], { affectedRows: 1 }, ...Array.from({ length: 20 }, () => ({})), boom);
 
         await expect(lgpdRepository.completeDeletion(5, 7, 99)).rejects.toBe(boom);
 
-        expect(fakeDb.calls).toHaveLength(23);
-        expect(fakeDb.calls[22]!.sql.startsWith('INSERT INTO admin_actions')).toBe(true);
+        expect(fakeDb.calls).toHaveLength(24);
+        expect(fakeDb.calls[23]!.sql.startsWith('INSERT INTO admin_actions')).toBe(true);
         expect(fakeDb.conn.commit).not.toHaveBeenCalled();
         expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
         expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
@@ -564,7 +575,7 @@ describe('lgpdRepository', () => {
 
         await expect(lgpdRepository.completeDeletion(5, 7, 99)).rejects.toBe(boom);
 
-        expect(fakeDb.calls).toHaveLength(23);
+        expect(fakeDb.calls).toHaveLength(24);
         expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
         expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
       });

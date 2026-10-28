@@ -13,6 +13,9 @@ const WITHDRAWAL_DESTINATION = [
   'bank_account',
 ];
 
+/** O CPF e a data de nascimento do freelancer (RF-020): nada os registra; se um dia registrar, sai censurado. */
+const PERSONAL_DOCUMENTS = ['cpf', 'cpf_encrypted', 'cpfEncrypted', 'birthDate', 'birth_date'];
+
 export const loggerOptions: LoggerOptions = {
   level: env.LOG_LEVEL,
   base: undefined, // sem pid/hostname para logs mais limpos
@@ -33,6 +36,7 @@ export const loggerOptions: LoggerOptions = {
       '*.accessToken',
       '*.refreshToken',
       ...WITHDRAWAL_DESTINATION.flatMap((key) => [key, `*.${key}`]),
+      ...PERSONAL_DOCUMENTS.flatMap((key) => [key, `*.${key}`]),
       // O mysql2 põe no erro a instrução já com os valores (a chave PIX de um INSERT que falhou, um
       // e-mail): fica o código e a mensagem do banco, sem a instrução.
       'err.sql',

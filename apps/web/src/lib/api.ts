@@ -85,6 +85,11 @@ import type {
   MfaSetup,
   MfaStatus,
   AdminAccountLookup,
+  CompanyProfile,
+  CpfStatus,
+  PublicCompanyProfile,
+  UpsertCompanyProfileRequest,
+  VerifyCpfRequest,
   MediaPurpose,
   MediaUpload,
   ModerationHealth,
@@ -970,6 +975,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
+  /** Apaga o CPF validado para o titular corrigir (RF-020); o motivo fica no registro. */
+  adminResetCpf: (ulid: string, reason: string) =>
+    request<void>(`/admin/users/${encodeURIComponent(ulid)}/cpf/reset`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
   // moderação (ADR 39)
   adminReports: (status: 'pending' | 'resolved' = 'pending') =>
     request<AdminReportGroup[]>(`/admin/reports?status=${status}`),
@@ -1041,6 +1052,15 @@ export const api = {
     }),
   putClientProfile: (body: UpsertClientProfileRequest) =>
     request<ClientProfile>('/profiles/client', { method: 'PUT', body: JSON.stringify(body) }),
+  /** Dados da empresa (RF-018), só de conta de empresa. */
+  putCompanyProfile: (body: UpsertCompanyProfileRequest) =>
+    request<CompanyProfile>('/profiles/company', { method: 'PUT', body: JSON.stringify(body) }),
+  publicCompany: (ulid: string) =>
+    request<PublicCompanyProfile>(`/profiles/company/${encodeURIComponent(ulid)}`),
+  /** CPF do freelancer (RF-020): a situação, com o CPF só mascarado. */
+  cpfStatus: () => request<CpfStatus>('/profiles/me/cpf'),
+  verifyCpf: (body: VerifyCpfRequest) =>
+    request<CpfStatus>('/profiles/me/cpf', { method: 'PUT', body: JSON.stringify(body) }),
 
   // avaliações (fecham o ciclo: aprovação → nota → Escambo Score)
   reviews: (freelancerId: number) =>

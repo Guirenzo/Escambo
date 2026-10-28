@@ -251,12 +251,36 @@ describe('documento OpenAPI', () => {
 
   it('sem resposta declarada, a operação responde 200; quem cria responde 201 e quem apaga, 204', () => {
     expect(operation('/health', 'get').responses).toEqual({ '200': { description: 'OK' } });
-    expect(operation('/auth/register', 'post').responses).toEqual({
-      '201': { description: 'Criado' },
+    expect(operation('/auth/register', 'post').responses['201']).toEqual({
+      description: 'Criado',
     });
     expect(operation('/services/{id}', 'delete').responses).toEqual({
       '204': { description: 'Sem conteúdo' },
     });
+  });
+
+  it('documentos (RF-018, RF-020): cadastro de empresa, perfil da empresa, CPF e o atendimento', () => {
+    const { schemas } = openapiDocument.components;
+    expect(schemas.Register.properties.company.$ref).toBe('#/components/schemas/RegisterCompany');
+    expect(schemas.RegisterCompany.required).toEqual(['legalName', 'tradeName', 'cnpj']);
+    expect(operation('/auth/register', 'post').responses['409']?.description).toContain(
+      'cnpj_taken',
+    );
+    expect(schemas.Contract.properties.clientCompany.oneOf[0].$ref).toBe(
+      '#/components/schemas/CompanyRef',
+    );
+    expect(schemas.AdminAccountLookup.required).toEqual(expect.arrayContaining(['cpf', 'company']));
+    expect(operation('/profiles/company', 'put').security).toEqual([{ bearerAuth: [] }]);
+    expect(operation('/profiles/company/{ulid}', 'get').security).toBeUndefined();
+    const verify = operation('/profiles/me/cpf', 'put');
+    expect(verify.requestBody?.content['application/json'].schema.$ref).toBe(
+      '#/components/schemas/VerifyCpf',
+    );
+    expect(Object.keys(verify.responses)).toEqual(['200', '409', '422', '429', '503']);
+    expect(verify.summary).toContain('não é consulta à Receita');
+    expect(operation('/admin/users/{ulid}/cpf/reset', 'post').responses['409']?.description).toBe(
+      'cpf_not_set',
+    );
   });
 
   it('operação com corpo o declara obrigatório, em JSON, com o schema; sem corpo, não há requestBody', () => {

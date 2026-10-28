@@ -278,6 +278,7 @@ describe('reviewsService: XP, listagem e respostas a avaliações removidas', ()
           response: 'obrigado',
           createdAt: '2026-01-01T00:00:00.000Z',
           removedAt: null,
+          reviewerCompany: null,
         },
         {
           id: 8,
@@ -289,9 +290,30 @@ describe('reviewsService: XP, listagem e respostas a avaliações removidas', ()
           response: null,
           createdAt: '2026-01-01T00:00:00.000Z',
           removedAt: '2026-02-01T00:00:00.000Z',
+          reviewerCompany: null,
         },
       ],
     });
+  });
+
+  it('avaliação de empresa (RF-018) sai com o nome fantasia e o perfil público; de pessoa, sem nome', async () => {
+    reviews.listForReviewee.mockResolvedValue([
+      {
+        ...fakeReview({ id: 9 }),
+        response: null,
+        removed_at: null,
+        reviewer_company_name: 'Pão Bom',
+        reviewer_company_ulid: '01COMPANY',
+      },
+      { ...fakeReview({ id: 8 }), response: null, removed_at: null, reviewer_company_name: null },
+    ] as unknown as ReviewListRow[]);
+
+    const page = await reviewsService.listForFreelancer({ freelancerId: 2, page: 1, limit: 10 });
+
+    expect(page.items.map((r) => r.reviewerCompany)).toEqual([
+      { ulid: '01COMPANY', tradeName: 'Pão Bom' },
+      null,
+    ]);
   });
 
   it('responder: avaliação que não existe é 404; removida pela moderação é 409, sem gravar nada', async () => {

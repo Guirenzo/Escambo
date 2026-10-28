@@ -5796,6 +5796,51 @@ button.link.mfa-link {
   font-weight: 600;
 }
 
+/* Documentos (RF-018, RF-020): o CPF validado no Perfil, os fatos da página da empresa e o selo
+   "Empresa" onde quem contrata aparece (o nome fantasia leva à página pública). */
+.cpf-ok {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--green-ink);
+  font-weight: 600;
+}
+.cpf-ok svg {
+  flex: none;
+}
+.cpf-ok strong {
+  font-variant-numeric: tabular-nums;
+}
+.card.profile-card .company-facts {
+  padding: 0 24px 24px;
+}
+.company-facts a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.company-tag {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.company-tag-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.deal-company {
+  margin: 0;
+}
+@media (max-width: 560px) {
+  .card.profile-card .company-facts {
+    padding: 0 18px 18px;
+  }
+}
+
 /* =====================================================================
    App v2: cartão de serviço de marketplace, Início e busca de Serviços
    ===================================================================== */

@@ -5,6 +5,30 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.53.0] — 2026-10-26
+
+CPF do freelancer para receber (RF-020, RN-009, RN-075) e conta de empresa com CNPJ (RF-018, RN-006), ADR 71. RF: 89 implementados, 1 não implementado e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **CPF do freelancer:** em Perfil, "Dados para receber", o freelancer informa o CPF e a data de nascimento. A API confere os dígitos verificadores, se o CPF já está em outra conta e se a pessoa tem 18 anos completos no dia de hoje, no fuso da conta. Não é consulta à Receita, e a tela diz isso. O CPF é gravado só cifrado (AES-256-GCM, `FIELD_ENCRYPTION_KEY`), com um índice cego (HMAC-SHA256 com chave derivada) e chave única no banco para recusar o mesmo CPF em duas contas; aparece só mascarado (`***.456.789-**`) e, validado, não se altera pela tela.
+- **Saque com CPF validado:** quem entrega trabalho (papel freelancer, algum serviço ou alguma contratação como freelancer, ADR 56) só saca com o CPF validado (403 `cpf_required`); a Carteira mostra o motivo e leva ao Perfil. Sem a chave de cifragem, a validação fica indisponível e esse saque também (503 `cpf_unavailable`). Quem só contrata saca o que depositou como antes.
+- **Atendimento:** a busca de conta mostra o CPF mascarado, e o admin pode apagá-lo para correção, com motivo, registro em `admin_actions` e na auditoria (sem o CPF) e e-mail ao titular.
+- **Conta de empresa:** no cadastro, "Eu sou" oferece "Empresa", com razão social, nome fantasia e CNPJ obrigatórios. O CNPJ é aceito com ou sem máscara, numérico ou alfanumérico (IN RFB 2.229/2024, vigente desde julho de 2026), com os dígitos verificadores conferidos e único entre contas. No Perfil, a empresa edita os dados, o logo (com o mesmo recorte da foto), o site e uma descrição curta.
+- **Página pública da empresa** em `/empresas/:ulid` e o selo "Empresa" com o nome fantasia onde quem contrata aparece: na Sala, nas contratações do Início e nas avaliações.
+- Migration 0052: as colunas do CPF em `profiles_freelancer` (`cpf_encrypted`, `cpf_index` com chave única, `birth_date`, `cpf_verified_at`) e `trade_name` em `profiles_company`.
+
+### Alterado
+
+- A cópia de dados LGPD passa ao formato 1.14: o CPF inteiro, a data de nascimento e a validação no perfil de freelancer (só para o próprio titular), e os dados da empresa. A anonimização apaga o CPF, o índice e a data, e troca os dados da empresa por "Empresa removida".
+- O log censura `cpf`, `birthDate` e `cpf_encrypted`. Validar o CPF tem o mesmo limite de tentativas do login, porque a resposta diz se o CPF já está em outra conta.
+- Onde a conta não tem perfil de cliente (denúncias, remoções, saques no admin, fila de exclusão), o nome exibido da empresa é o nome fantasia. O logo da empresa entra na moderação de imagens e no expurgo.
+- O seed da demo valida o CPF de Marina e Bruno antes dos saques e pula os saques, com aviso, se o servidor não tiver a chave.
+
+### Para atualizar
+
+Rodar a migration 0052 (o job `migrate` do deploy faz isso) e conferir a `FIELD_ENCRYPTION_KEY`: sem ela, nenhum freelancer saca. Ver "Atualizar para a 1.53.0" no `DEPLOY.md`.
+
 ## [1.52.0] — 2026-10-26
 
 Ações críticas só com e-mail confirmado (RF-006, RN-004) e chat só com contratação ou troca em aberto (RF-062, RN-082), ADR 70. RF: 87 implementados, 3 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.

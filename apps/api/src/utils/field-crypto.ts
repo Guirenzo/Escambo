@@ -1,4 +1,11 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  hkdfSync,
+  randomBytes,
+} from 'node:crypto';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
 
@@ -15,7 +22,7 @@ import { logger } from '../config/logger';
  *
  * Sem chave configurada, nada muda: `sealField` devolve o texto puro, como antes da 1.44.0.
  * Com IV aleatório o mesmo valor cifra diferente a cada vez: não dá para buscar, comparar nem
- * indexar pela coluna cifrada.
+ * indexar pela coluna cifrada. Para isso existe o índice cego (`blindIndex`), numa coluna à parte.
  */
 
 const PREFIX = 'enc:v1:';
@@ -160,6 +167,35 @@ export function openField(stored: string): OpenedField {
   }
 }
 
+/**
+ * Índice cego (RF-020, RN-075): HMAC-SHA256 do valor com uma chave DERIVADA da de cifragem (HKDF,
+ * com o contexto no rótulo), em hex. O mesmo valor dá sempre o mesmo índice, então a coluna pode ter
+ * chave única e ser buscada sem decifrar nada; sem a chave, o índice não leva de volta ao valor (o
+ * CPF tem só 11 dígitos: um hash puro se quebraria por força bruta). Cada `context` tem a sua
+ * chave: o índice de um campo não se compara com o de outro. Sem chave configurada, null.
+ */
+export function blindIndex(context: string, value: string): string | null {
+  return keyring.current ? indexWith(keyring.current.key, context, value) : null;
+}
+
+/**
+ * Os índices do valor com a chave atual e com cada antiga (FIELD_ENCRYPTION_OLD_KEYS), sem repetir:
+ * depois de trocar a chave, o que foi gravado com a anterior ainda é achado na conferência de
+ * unicidade. O primeiro é sempre o da chave atual (o que se grava). Sem chave atual, vazio.
+ */
+export function blindIndexCandidates(context: string, value: string): string[] {
+  if (!keyring.current) return [];
+  // byId tem a atual e as antigas; a atual vai na frente.
+  const keys = [keyring.current.key, ...keyring.byId.values()];
+  return [...new Set(keys.map((key) => indexWith(key, context, value)))];
+}
+
+function indexWith(key: Buffer, context: string, value: string): string {
+  const info = `escambo:blind-index:${context}:v1`;
+  const derived = Buffer.from(hkdfSync('sha256', key, Buffer.alloc(0), info, 32));
+  return createHmac('sha256', derived).update(value, 'utf8').digest('hex');
+}
+
 export type ResealedField =
   | { status: 'current' } // já cifrado com a chave atual: fica como está
   | { status: 'sealed'; value: string } // texto puro ou chave antiga: cifrado com a atual
@@ -186,13 +222,14 @@ export function logFieldEncryptionStatus(production = env.NODE_ENV === 'producti
   if (keyring.current) {
     logger.info(
       { keyId: keyring.current.id, oldKeys: keyring.byId.size - 1 },
-      'Cifragem de campo ligada (RNF-017): chave PIX e dados bancários dos saques, e o segredo da verificação em duas etapas',
+      'Cifragem de campo ligada (RNF-017): chave PIX e dados bancários dos saques, o segredo da verificação em duas etapas e o CPF dos freelancers',
     );
     return;
   }
   const message =
     'FIELD_ENCRYPTION_KEY não configurada: a chave PIX e os dados bancários dos saques são ' +
-    'gravados em TEXTO PURO (RNF-017), e a verificação em duas etapas fica indisponível (ADR 66). ' +
+    'gravados em TEXTO PURO (RNF-017), a verificação em duas etapas fica indisponível (ADR 66), e a ' +
+    'validação do CPF também, o que trava o saque de quem recebe por trabalhos (RF-020). ' +
     'Gere com "openssl rand -base64 32", configure e rode o fields:encrypt para cifrar as linhas ' +
     'antigas';
   if (production) logger.warn(message);

@@ -122,6 +122,21 @@ export async function resetUserMfa(req: Request, res: Response): Promise<void> {
   res.status(204).send();
 }
 
+/** POST /admin/users/:ulid/cpf/reset — apaga o CPF para o titular corrigir (motivo obrigatório). */
+export async function resetUserCpf(req: Request, res: Response): Promise<void> {
+  const { ulid } = userUlidSchema.parse(req.params);
+  const { reason } = resetMfaSchema.parse(req.body ?? {});
+  await adminService.resetCpf(req.user!.uid, ulid, reason);
+  void auditService.log({
+    userId: req.user!.uid,
+    action: 'cpf_reset_by_admin',
+    entityType: 'user',
+    newValue: { ulid },
+    ...audit(req),
+  });
+  res.status(204).send();
+}
+
 // ---------- Saques (processamento manual pelo admin) ----------
 
 export async function listWithdrawals(req: Request, res: Response): Promise<void> {

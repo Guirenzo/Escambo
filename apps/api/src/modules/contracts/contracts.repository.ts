@@ -84,6 +84,9 @@ export interface ContractRow extends RowDataPacket {
   package_tier?: PackageTier | null;
   /** A cópia do pacote como estava publicado (JSON; o driver pode devolver texto). */
   package_snapshot?: unknown;
+  /** RF-018: quem contrata é conta de empresa (o nome fantasia e o ulid); NULL quando é pessoa. */
+  client_company_name?: string | null;
+  client_company_ulid?: string | null;
 }
 
 export interface DeliveryRow extends RowDataPacket {
@@ -103,7 +106,8 @@ export interface HistoryRow extends RowDataPacket {
 
 /**
  * Toda leitura de contratação traz, além das colunas, o que o prazo e o cancelamento precisam
- * saber (ADR 57): avaliação, marcos por situação, entregas e os fusos ATUAIS das partes.
+ * saber (ADR 57): avaliação, marcos por situação, entregas e os fusos ATUAIS das partes. E, quando
+ * quem contrata é empresa (RF-018), o nome fantasia e o ulid do perfil público.
  */
 const CONTRACT_COLS = `c.*,
   EXISTS(SELECT 1 FROM reviews r WHERE r.contract_id = c.id) AS has_review,
@@ -131,7 +135,12 @@ const CONTRACT_COLS = `c.*,
       AND (ms.status = 'delivered' OR (ms.status = 'funded' AND ms.delivered_at IS NOT NULL)))
     AS next_milestone_dispute_opens_at,
   (SELECT uf.timezone FROM users uf WHERE uf.id = c.freelancer_id) AS freelancer_timezone,
-  (SELECT uc.timezone FROM users uc WHERE uc.id = c.client_id) AS client_timezone`;
+  (SELECT uc.timezone FROM users uc WHERE uc.id = c.client_id) AS client_timezone,
+  (SELECT COALESCE(pco.trade_name, pco.company_name) FROM users ucc
+     JOIN profiles_company pco ON pco.user_id = ucc.id
+    WHERE ucc.id = c.client_id AND ucc.role = 'company') AS client_company_name,
+  (SELECT ucu.ulid FROM users ucu WHERE ucu.id = c.client_id AND ucu.role = 'company')
+    AS client_company_ulid`;
 
 /** Guarda da disputa automática (RN-029, fase 2): o que a leitura viu, repetido na gravação. */
 export const OVERDUE_DISPUTE_GUARD = `AND ${rn029Eligible('c')}

@@ -183,10 +183,24 @@ export interface AdminEmail {
   createdAt: string;
 }
 
+/**
+ * Dados da empresa no cadastro (RF-018): obrigatórios quando `role` é 'company'. O CNPJ vai com ou
+ * sem máscara, numérico ou alfanumérico (IN RFB 2.229/2024).
+ */
+export interface RegisterCompanyData {
+  /** Razão social. */
+  legalName: string;
+  /** Nome fantasia: o nome que aparece para os freelancers. */
+  tradeName: string;
+  cnpj: string;
+}
+
 export interface RegisterRequest {
   email: string;
   password: string;
   role?: Exclude<UserRole, 'admin'>;
+  /** Só com role 'company', e aí obrigatório. */
+  company?: RegisterCompanyData;
   /** Fuso do aparelho, quando é um dos do Brasil (ADR 51); sem ele, a conta fica em Brasília. */
   timezone?: BrazilTimezone;
   /** O aceite dos Termos e da Política: a API grava o consentimento na versão vigente (ADR 54). */
@@ -273,6 +287,18 @@ export interface AdminAccountLookup {
   status: UserStatus;
   mfaEnabled: boolean;
   createdAt: string;
+  /** CPF do perfil de freelancer (RF-020), só mascarado; null sem perfil de freelancer. */
+  cpf: AdminCpfSummary | null;
+  /** Conta de empresa (RF-018): o nome fantasia e o CNPJ (dado público); null nas outras. */
+  company: { tradeName: string; cnpj: string } | null;
+}
+
+/** O CPF como o atendimento vê: validado ou não, e só mascarado (RN-075). */
+export interface AdminCpfSummary {
+  verified: boolean;
+  /** ***.456.789-**; null sem CPF; "[indisponível]" se o cifrado não abriu. */
+  maskedCpf: string | null;
+  verifiedAt: string | null;
 }
 
 // --- Favoritos ---
@@ -1024,6 +1050,77 @@ export interface ClientProfile {
 export interface MyProfiles {
   freelancer: FreelancerProfile | null;
   client: ClientProfile | null;
+  /** Só nas contas de empresa (RF-018). */
+  company: CompanyProfile | null;
+}
+
+/**
+ * Conta de empresa (RF-018): contrata como o cliente. Razão social, nome fantasia e CNPJ vêm do
+ * cadastro; logo, site e descrição curta, do Perfil.
+ */
+export interface CompanyProfile {
+  /** Razão social. */
+  legalName: string;
+  /** Nome fantasia: o nome exibido. */
+  tradeName: string;
+  /** 14 caracteres, maiúsculas, sem máscara (dado público; a tela põe a máscara). */
+  cnpj: string;
+  logoUrl: string | null;
+  /** Descrição curta. */
+  bio: string | null;
+  website: string | null;
+  city: string | null;
+  state: string | null;
+}
+
+/** GET /profiles/company/:ulid — a página pública da empresa. */
+export interface PublicCompanyProfile extends CompanyProfile {
+  userUlid: string;
+  /** Desde quando está no Escambo (a criação da conta). */
+  memberSince: string;
+}
+
+/** PUT /profiles/company — a razão social, o nome fantasia e o CNPJ continuam obrigatórios. */
+export interface UpsertCompanyProfileRequest {
+  legalName: string;
+  tradeName: string;
+  cnpj: string;
+  logoUrl?: string | null;
+  bio?: string | null;
+  website?: string | null;
+  city?: string | null;
+  state?: string | null;
+}
+
+/** Quem contrata é empresa (RF-018): o nome fantasia e o endereço do perfil público. */
+export interface CompanyRef {
+  ulid: string;
+  tradeName: string;
+}
+
+/**
+ * GET /profiles/me/cpf — o CPF do freelancer (RF-020, RN-009, RN-075). A validação confere os
+ * dígitos verificadores, a unicidade entre contas e a maioridade: não é consulta à Receita.
+ */
+export interface CpfStatus {
+  /** O servidor guarda o CPF cifrado (sem a FIELD_ENCRYPTION_KEY, não: o recurso fica indisponível). */
+  available: boolean;
+  /** A conta entrega trabalho (ADR 56): o saque pede o CPF validado. */
+  required: boolean;
+  /** O CPF mora no perfil de freelancer: sem ele, primeiro o perfil. */
+  hasFreelancerProfile: boolean;
+  verified: boolean;
+  /** ***.456.789-**; null antes de validar. */
+  maskedCpf: string | null;
+  /** AAAA-MM-DD; null antes de validar. */
+  birthDate: string | null;
+  verifiedAt: string | null;
+}
+
+/** PUT /profiles/me/cpf — CPF com ou sem máscara e a data de nascimento (AAAA-MM-DD). */
+export interface VerifyCpfRequest {
+  cpf: string;
+  birthDate: string;
 }
 
 export interface PublicFreelancerProfile extends FreelancerProfile {
@@ -1271,6 +1368,11 @@ export interface Contract {
    * versões anteriores da API.
    */
   package?: ServicePackage | null;
+  /**
+   * Quem contrata é empresa (RF-018): nome fantasia e perfil público; null quando é pessoa. Ausente
+   * nas versões anteriores da API.
+   */
+  clientCompany?: CompanyRef | null;
 }
 
 /**
@@ -1861,6 +1963,11 @@ export interface Review {
   createdAt: string;
   /** Removida pela moderação (ADR 44): só a contratação mostra, sem comentário nem resposta. */
   removedAt: string | null;
+  /**
+   * Quem avaliou é empresa (RF-018): nome fantasia e perfil público; null quando é pessoa. Ausente
+   * nas versões anteriores da API.
+   */
+  reviewerCompany?: CompanyRef | null;
 }
 
 export interface CreateReviewRequest {

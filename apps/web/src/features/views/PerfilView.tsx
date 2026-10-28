@@ -12,6 +12,7 @@ import { usePageTitle } from '../../lib/title';
 import { useScrollToHashWhenSettled } from '../../lib/useScrollToHash';
 import { dtm, PERIOD_LABEL, PERIOD_ORDER, WEEKDAY_SHORT } from '../../lib/format';
 import {
+  useCpfStatus,
   useFreelancerReviews,
   useProfilesMe,
   usePutClientProfile,
@@ -31,6 +32,10 @@ import { DoisFatoresCard } from '../profile/DoisFatoresCard';
 import { EmailCard } from '../profile/EmailCard';
 import { TelefoneCard } from '../profile/TelefoneCard';
 import { ImageUploadButton } from '../../components/ImageUploadButton';
+import { profileIdentity } from '../../lib/documents';
+import { CompanyTag } from '../../components/CompanyTag';
+import { CpfCard } from '../profile/CpfCard';
+import { EmpresaCard } from '../profile/EmpresaCard';
 
 /** Avaliações que o freelancer recebeu, com resposta pública (uma por avaliação). */
 function AvaliacoesRecebidas({ userId }: { userId: number }) {
@@ -70,6 +75,7 @@ function AvaliacoesRecebidas({ userId }: { userId: number }) {
               <li key={r.id} className="review">
                 <div className="review-head">
                   <Stars value={r.rating} showValue={false} size={16} />
+                  {r.reviewerCompany && <CompanyTag company={r.reviewerCompany} />}
                   <span className="muted tiny">{dtm(r.createdAt)}</span>
                 </div>
                 <p>{r.comment ?? <span className="muted">Sem comentário.</span>}</p>
@@ -111,8 +117,15 @@ function AvaliacoesRecebidas({ userId }: { userId: number }) {
   );
 }
 
-/** As seções da página, na ordem em que aparecem: [âncora, rótulo] da navegação lateral. */
-export function profileSections(freelancer: boolean): [string, string][] {
+/**
+ * As seções da página, na ordem em que aparecem: [âncora, rótulo] da navegação lateral. A conta de
+ * empresa (RF-018) tem os dados da empresa no lugar dos de cliente; "Dados para receber" (o CPF,
+ * RF-020) aparece para quem tem perfil de freelancer ou entrega trabalho.
+ */
+export function profileSections(
+  freelancer: boolean,
+  opts: { company?: boolean; payout?: boolean } = {},
+): [string, string][] {
   return [
     ['perfil-publico', 'Seu perfil'],
     ...(freelancer
@@ -122,7 +135,10 @@ export function profileSections(freelancer: boolean): [string, string][] {
           ['dados-freelancer', 'Dados de freelancer'],
         ] as [string, string][])
       : []),
-    ['dados-cliente', 'Dados de cliente'],
+    (opts.company
+      ? ['dados-empresa', 'Dados da empresa']
+      : ['dados-cliente', 'Dados de cliente']) as [string, string],
+    ...(opts.payout ? ([['dados-recebimento', 'Dados para receber']] as [string, string][]) : []),
     ...(freelancer ? ([['portfolio', 'Portfólio']] as [string, string][]) : []),
     ['email-pref-title', 'E-mails do Escambo'],
     ['push-title', 'Avisos no navegador'],
@@ -142,7 +158,11 @@ export function PerfilView() {
   const profiles = useProfilesMe();
   const putFreelancer = usePutFreelancerProfile();
   const putClient = usePutClientProfile();
+  const cpf = useCpfStatus();
   const toast = useToast();
+  // Conta de empresa (RF-018): os dados da empresa no lugar dos de cliente, e sem o formulário de
+  // freelancer, a não ser que a conta já tenha esse perfil.
+  const isCompany = user?.role === 'company';
 
   const [name, setName] = useState('');
   const [headline, setHeadline] = useState('');
@@ -186,6 +206,13 @@ export function PerfilView() {
       setIsAvailable(p.freelancer.isAvailable);
     }
   }, [profiles.data]);
+
+  /**
+   * "Dados para receber" (RF-020): para quem tem perfil de freelancer, se cadastrou como freelancer
+   * ou entrega trabalho (o saque pede o CPF). Quem só contrata não vê.
+   */
+  const showPayout = (hasFreelancer: boolean): boolean =>
+    hasFreelancer || user?.role === 'freelancer' || cpf.data?.required === true;
 
   /** Localização do freelancer: é o que faz "Perto de mim" encontrá-lo. */
   function locateMe(): void {
@@ -263,7 +290,10 @@ export function PerfilView() {
                 <nav>, como as migalhas: nada de marco de navegação no meio do conteúdo. */}
             <div className="settings-nav">
               <ul aria-label="Seções do perfil">
-                {profileSections(!!p.freelancer).map(([hash, label]) => (
+                {profileSections(!!p.freelancer, {
+                  company: isCompany,
+                  payout: showPayout(p.freelancer !== null),
+                }).map(([hash, label]) => (
                   <li key={hash}>
                     <a href={`#${hash}`}>{label}</a>
                   </li>
@@ -281,31 +311,42 @@ export function PerfilView() {
                 <div className="profile-cover" aria-hidden="true" />
                 <div className="profile-hero">
                   <Avatar
-                    url={(p.freelancer ?? p.client)?.avatarUrl ?? null}
-                    name={(p.freelancer ?? p.client)?.fullName ?? user?.email ?? '?'}
+                    url={profileIdentity(p).avatarUrl}
+                    name={profileIdentity(p).name ?? user?.email ?? '?'}
                     size="lg"
                   />
                   <div className="profile-names">
-                    <h2 id="me-name">
-                      {(p.freelancer ?? p.client)?.fullName ?? user?.email ?? 'Seu perfil'}
-                    </h2>
+                    <h2 id="me-name">{profileIdentity(p).name ?? user?.email ?? 'Seu perfil'}</h2>
                     <p className="profile-headline">
-                      {p.freelancer?.headline ||
-                        (p.freelancer ? 'Freelancer no Escambo' : 'Cliente no Escambo')}
+                      {p.company
+                        ? p.company.legalName
+                        : p.freelancer?.headline ||
+                          (p.freelancer ? 'Freelancer no Escambo' : 'Cliente no Escambo')}
                     </p>
                     <div className="profile-meta">
-                      {(p.freelancer ?? p.client)?.city && (
+                      {(p.company ?? p.freelancer ?? p.client)?.city && (
                         <span className="muted tiny">
-                          <MapPin size={12} aria-hidden="true" /> {(p.freelancer ?? p.client)?.city}
-                          {p.freelancer?.state ? `, ${p.freelancer.state}` : ''}
+                          <MapPin size={12} aria-hidden="true" />{' '}
+                          {(p.company ?? p.freelancer ?? p.client)?.city}
+                          {(p.company ?? p.freelancer)?.state
+                            ? `, ${(p.company ?? p.freelancer)?.state}`
+                            : ''}
                         </span>
                       )}
+                      {isCompany && <span className="chip level">Empresa</span>}
                       {p.freelancer && <span className="chip rank">Freelancer</span>}
-                      {p.client && <span className="chip level">Cliente</span>}
+                      {p.client && !isCompany && <span className="chip level">Cliente</span>}
                       {user?.email && <span className="muted tiny">{user.email}</span>}
                     </div>
                   </div>
-                  {p.freelancer && user?.ulid && (
+                  {p.company && user?.ulid && (
+                    <div className="stack profile-actions">
+                      <Link to={`/empresas/${user.ulid}`} className="btn secondary">
+                        <Eye size={16} aria-hidden="true" /> Ver a página da empresa
+                      </Link>
+                    </div>
+                  )}
+                  {!p.company && p.freelancer && user?.ulid && (
                     <div className="stack profile-actions">
                       <Link to={`/freelancers/${user.ulid}`} className="btn secondary">
                         <Eye size={16} aria-hidden="true" /> Ver meu perfil público
@@ -342,206 +383,215 @@ export function PerfilView() {
               {p.freelancer && user && <AvaliacoesRecebidas userId={user.id} />}
               {p.freelancer && <DesistenciasCard />}
 
-              <BusinessForm className="card" id="dados-freelancer" onSubmit={saveFreelancer}>
-                <h3>
-                  <Briefcase size={16} /> Freelancer
-                </h3>
-                <Field label="Nome">
-                  <Input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    autoComplete="name"
-                    required
-                    minLength={2}
-                  />
-                </Field>
-                <Field label="Foto (URL da imagem)">
-                  <div className="loc-row">
-                    <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
+              {(!isCompany || p.freelancer) && (
+                <BusinessForm className="card" id="dados-freelancer" onSubmit={saveFreelancer}>
+                  <h3>
+                    <Briefcase size={16} /> Freelancer
+                  </h3>
+                  <Field label="Nome">
                     <Input
-                      type="text"
-                      inputMode="url"
-                      value={avatarUrl}
-                      onChange={(e) => setAvatarUrl(e.target.value)}
-                      placeholder="https://…/sua-foto.jpg ou envie do aparelho"
-                      maxLength={512}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      autoComplete="name"
+                      required
+                      minLength={2}
                     />
-                    <ImageUploadButton
-                      purpose="avatar"
-                      label="Enviar foto"
-                      testId="avatar-upload"
-                      onUploaded={(url) => {
-                        setAvatarUrl(url);
-                        toast.success('Foto enviada. Salve o perfil para aplicar.');
-                      }}
+                  </Field>
+                  <Field label="Foto (URL da imagem)">
+                    <div className="loc-row">
+                      <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
+                      <Input
+                        type="text"
+                        inputMode="url"
+                        value={avatarUrl}
+                        onChange={(e) => setAvatarUrl(e.target.value)}
+                        placeholder="https://…/sua-foto.jpg ou envie do aparelho"
+                        maxLength={512}
+                      />
+                      <ImageUploadButton
+                        purpose="avatar"
+                        label="Enviar foto"
+                        testId="avatar-upload"
+                        onUploaded={(url) => {
+                          setAvatarUrl(url);
+                          toast.success('Foto enviada. Salve o perfil para aplicar.');
+                        }}
+                      />
+                    </div>
+                  </Field>
+                  <Field label="Headline">
+                    <Input
+                      value={headline}
+                      onChange={(e) => setHeadline(e.target.value)}
+                      placeholder="Dev Full Stack | 5 anos"
                     />
-                  </div>
-                </Field>
-                <Field label="Headline">
-                  <Input
-                    value={headline}
-                    onChange={(e) => setHeadline(e.target.value)}
-                    placeholder="Dev Full Stack | 5 anos"
-                  />
-                </Field>
-                <Field label="Bio">
-                  <Input value={bio} onChange={(e) => setBio(e.target.value)} />
-                </Field>
-                <Field label="Cidade">
-                  <Input
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    autoComplete="address-level2"
-                  />
-                </Field>
-                <Field label="Estado (UF)">
-                  <Input
-                    value={stateUf}
-                    onChange={(e) => setStateUf(e.target.value)}
-                    autoComplete="address-level1"
-                    maxLength={2}
-                    placeholder="SC"
-                  />
-                </Field>
-                <div className="stack">
-                  <span className="muted tiny" id="days-label">
-                    Dias em que você atende
-                  </span>
-                  <div className="days-row" role="group" aria-labelledby="days-label">
-                    {WEEKDAY_SHORT.map((label, d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        className={`day-chip ${availableDays.includes(d) ? 'on' : ''}`}
-                        aria-pressed={availableDays.includes(d)}
-                        onClick={() => toggleDay(d)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {availableDays.length === 0 && (
-                    <span className="muted tiny" data-testid="days-hint">
-                      Sem dias marcados, você fica fora do filtro "atende no dia" da busca.
+                  </Field>
+                  <Field label="Bio">
+                    <Input value={bio} onChange={(e) => setBio(e.target.value)} />
+                  </Field>
+                  <Field label="Cidade">
+                    <Input
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      autoComplete="address-level2"
+                    />
+                  </Field>
+                  <Field label="Estado (UF)">
+                    <Input
+                      value={stateUf}
+                      onChange={(e) => setStateUf(e.target.value)}
+                      autoComplete="address-level1"
+                      maxLength={2}
+                      placeholder="SC"
+                    />
+                  </Field>
+                  <div className="stack">
+                    <span className="muted tiny" id="days-label">
+                      Dias em que você atende
                     </span>
-                  )}
-                  {availableDays.length > 0 && (
-                    <div className="periods-grid" data-testid="periods-grid">
-                      {[...availableDays]
-                        .sort((a, b) => a - b)
-                        .map((d) => (
-                          <div key={d} className="periods-row">
-                            <span className="periods-day">{WEEKDAY_SHORT[d]}</span>
-                            {PERIOD_ORDER.map((p) => {
-                              const on = (availablePeriods[String(d)] ?? []).includes(p);
-                              return (
-                                <button
-                                  key={p}
-                                  type="button"
-                                  className={`day-chip period ${on ? 'on' : ''}`}
-                                  aria-pressed={on}
-                                  aria-label={`${WEEKDAY_SHORT[d]} ${PERIOD_LABEL[p]}`}
-                                  onClick={() => togglePeriod(d, p)}
-                                >
-                                  {PERIOD_LABEL[p]}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      <span className="muted tiny">
-                        Sem período marcado, vale o dia todo. Manhã 6h–12h, tarde 12h–18h, noite
-                        18h–24h no horário de {timezoneLabel(user?.timezone)}, o fuso da sua conta
-                        (muda em "E-mails do Escambo").
+                    <div className="days-row" role="group" aria-labelledby="days-label">
+                      {WEEKDAY_SHORT.map((label, d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          className={`day-chip ${availableDays.includes(d) ? 'on' : ''}`}
+                          aria-pressed={availableDays.includes(d)}
+                          onClick={() => toggleDay(d)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {availableDays.length === 0 && (
+                      <span className="muted tiny" data-testid="days-hint">
+                        Sem dias marcados, você fica fora do filtro "atende no dia" da busca.
+                      </span>
+                    )}
+                    {availableDays.length > 0 && (
+                      <div className="periods-grid" data-testid="periods-grid">
+                        {[...availableDays]
+                          .sort((a, b) => a - b)
+                          .map((d) => (
+                            <div key={d} className="periods-row">
+                              <span className="periods-day">{WEEKDAY_SHORT[d]}</span>
+                              {PERIOD_ORDER.map((p) => {
+                                const on = (availablePeriods[String(d)] ?? []).includes(p);
+                                return (
+                                  <button
+                                    key={p}
+                                    type="button"
+                                    className={`day-chip period ${on ? 'on' : ''}`}
+                                    aria-pressed={on}
+                                    aria-label={`${WEEKDAY_SHORT[d]} ${PERIOD_LABEL[p]}`}
+                                    onClick={() => togglePeriod(d, p)}
+                                  >
+                                    {PERIOD_LABEL[p]}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ))}
+                        <span className="muted tiny">
+                          Sem período marcado, vale o dia todo. Manhã 6h–12h, tarde 12h–18h, noite
+                          18h–24h no horário de {timezoneLabel(user?.timezone)}, o fuso da sua conta
+                          (muda em "E-mails do Escambo").
+                        </span>
+                      </div>
+                    )}
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        aria-label="Aceitando novos pedidos"
+                        checked={isAvailable}
+                        onChange={(e) => setIsAvailable(e.target.checked)}
+                      />
+                      <span>
+                        {isAvailable
+                          ? 'Aceitando novos pedidos'
+                          : 'Agenda pausada: você não aparece em "atende agora"'}
+                      </span>
+                    </label>
+                  </div>
+                  <div className="stack">
+                    <span className="muted tiny">
+                      Localização (é o que faz "Perto de mim" te encontrar)
+                    </span>
+                    <div className="loc-row">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={locateMe}
+                        disabled={locating}
+                      >
+                        <MapPin size={14} /> {locating ? 'Localizando…' : 'Usar minha localização'}
+                      </Button>
+                      <span className="muted tiny" aria-live="polite">
+                        {lat != null && lng != null
+                          ? `Definida (${lat.toFixed(4)}, ${lng.toFixed(4)})`
+                          : 'Não definida'}
                       </span>
                     </div>
-                  )}
-                  <label className="switch">
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      aria-label="Aceitando novos pedidos"
-                      checked={isAvailable}
-                      onChange={(e) => setIsAvailable(e.target.checked)}
-                    />
-                    <span>
-                      {isAvailable
-                        ? 'Aceitando novos pedidos'
-                        : 'Agenda pausada: você não aparece em "atende agora"'}
-                    </span>
-                  </label>
-                </div>
-                <div className="stack">
-                  <span className="muted tiny">
-                    Localização (é o que faz "Perto de mim" te encontrar)
-                  </span>
-                  <div className="loc-row">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={locateMe}
-                      disabled={locating}
-                    >
-                      <MapPin size={14} /> {locating ? 'Localizando…' : 'Usar minha localização'}
-                    </Button>
-                    <span className="muted tiny" aria-live="polite">
-                      {lat != null && lng != null
-                        ? `Definida (${lat.toFixed(4)}, ${lng.toFixed(4)})`
-                        : 'Não definida'}
-                    </span>
                   </div>
-                </div>
-                <Button type="submit" disabled={putFreelancer.isPending}>
-                  Salvar freelancer
-                </Button>
-              </BusinessForm>
+                  <Button type="submit" disabled={putFreelancer.isPending}>
+                    Salvar freelancer
+                  </Button>
+                </BusinessForm>
+              )}
 
-              <BusinessForm className="card" id="dados-cliente" onSubmit={saveClient}>
-                <h3>
-                  <User size={16} /> Cliente {p.client && <span className="chip rank">ativo</span>}
-                </h3>
-                <Field label="Nome">
-                  <Input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    autoComplete="name"
-                    required
-                    minLength={2}
-                  />
-                </Field>
-                <Field label="Foto (URL da imagem)">
-                  <div className="loc-row">
-                    <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
+              {showPayout(p.freelancer !== null) && <CpfCard />}
+
+              {isCompany ? (
+                <EmpresaCard company={p.company} />
+              ) : (
+                <BusinessForm className="card" id="dados-cliente" onSubmit={saveClient}>
+                  <h3>
+                    <User size={16} /> Cliente{' '}
+                    {p.client && <span className="chip rank">ativo</span>}
+                  </h3>
+                  <Field label="Nome">
                     <Input
-                      type="text"
-                      inputMode="url"
-                      value={avatarUrl}
-                      onChange={(e) => setAvatarUrl(e.target.value)}
-                      placeholder="https://…/sua-foto.jpg ou envie do aparelho"
-                      maxLength={512}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      autoComplete="name"
+                      required
+                      minLength={2}
                     />
-                    <ImageUploadButton
-                      purpose="avatar"
-                      label="Enviar foto"
-                      testId="avatar-upload"
-                      onUploaded={(url) => {
-                        setAvatarUrl(url);
-                        toast.success('Foto enviada. Salve o perfil para aplicar.');
-                      }}
+                  </Field>
+                  <Field label="Foto (URL da imagem)">
+                    <div className="loc-row">
+                      <Avatar url={avatarUrl.trim() || null} name={name || '?'} size="sm" />
+                      <Input
+                        type="text"
+                        inputMode="url"
+                        value={avatarUrl}
+                        onChange={(e) => setAvatarUrl(e.target.value)}
+                        placeholder="https://…/sua-foto.jpg ou envie do aparelho"
+                        maxLength={512}
+                      />
+                      <ImageUploadButton
+                        purpose="avatar"
+                        label="Enviar foto"
+                        testId="avatar-upload"
+                        onUploaded={(url) => {
+                          setAvatarUrl(url);
+                          toast.success('Foto enviada. Salve o perfil para aplicar.');
+                        }}
+                      />
+                    </div>
+                  </Field>
+                  <Field label="Cidade">
+                    <Input
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      autoComplete="address-level2"
                     />
-                  </div>
-                </Field>
-                <Field label="Cidade">
-                  <Input
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    autoComplete="address-level2"
-                  />
-                </Field>
-                <Button type="submit" disabled={putClient.isPending}>
-                  Salvar cliente
-                </Button>
-              </BusinessForm>
+                  </Field>
+                  <Button type="submit" disabled={putClient.isPending}>
+                    Salvar cliente
+                  </Button>
+                </BusinessForm>
+              )}
 
               <ModeracaoCard />
               {p.freelancer && (

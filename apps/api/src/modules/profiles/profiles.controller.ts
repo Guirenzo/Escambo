@@ -6,9 +6,16 @@ import {
   portfolioOrderSchema,
   ulidParamSchema,
   upsertClientSchema,
+  upsertCompanySchema,
   upsertFreelancerSchema,
+  verifyCpfSchema,
 } from './profiles.schema';
+import { cpfService } from './cpf.service';
 import { profilesService } from './profiles.service';
+
+function context(req: Request) {
+  return { ip: req.ip ?? null, userAgent: req.headers['user-agent'] ?? null };
+}
 
 export async function getMyProfiles(req: Request, res: Response): Promise<void> {
   res.json(await profilesService.getMine(req.user!.uid));
@@ -22,6 +29,31 @@ export async function putFreelancerProfile(req: Request, res: Response): Promise
 export async function putClientProfile(req: Request, res: Response): Promise<void> {
   const input = upsertClientSchema.parse(req.body);
   res.json(await profilesService.upsertClient(req.user!.uid, input));
+}
+
+/** PUT /profiles/company — dados da empresa (RF-018), só de conta de empresa. */
+export async function putCompanyProfile(req: Request, res: Response): Promise<void> {
+  const input = upsertCompanySchema.parse(req.body);
+  res.json(await profilesService.upsertCompany(req.user!.uid, req.user!.role, input, context(req)));
+}
+
+/** GET /profiles/company/:ulid — a página pública da empresa. */
+export async function getPublicCompany(req: Request, res: Response): Promise<void> {
+  const { ulid } = ulidParamSchema.parse(req.params);
+  res.json(await profilesService.getPublicCompany(ulid));
+}
+
+// ---------- CPF do freelancer (RF-020) ----------
+
+/** GET /profiles/me/cpf — se o servidor valida, se o saque pede, e o CPF só mascarado. */
+export async function getMyCpf(req: Request, res: Response): Promise<void> {
+  res.json(await cpfService.status(req.user!.uid));
+}
+
+/** PUT /profiles/me/cpf — valida e grava (uma vez: a correção é pelo atendimento). */
+export async function putMyCpf(req: Request, res: Response): Promise<void> {
+  const input = verifyCpfSchema.parse(req.body);
+  res.json(await cpfService.verify(req.user!.uid, input, context(req)));
 }
 
 // ---------- Portfólio (meu) ----------

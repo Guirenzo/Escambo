@@ -17,6 +17,8 @@ import { disputesFacade } from '../disputes/disputes.facade';
 import { toDispute } from '../disputes/disputes.service';
 import { mailService } from '../mail/mail.service';
 import { notificationsService } from '../notifications/notifications.service';
+import { cpfService } from '../profiles/cpf.service';
+import { profilesService } from '../profiles/profiles.service';
 import { adminRepository } from './admin.repository';
 import type { ResolveDisputeInput } from './admin.schema';
 
@@ -172,10 +174,17 @@ export const adminService = {
     await adminRepository.recordAction(adminId, `user_${action}`, 'user', user.id, `ulid=${ulid}`);
   },
 
-  /** Atendimento (ADR 66): a conta pelo e-mail, com a situação da verificação em duas etapas. */
+  /**
+   * Atendimento (ADR 66): a conta pelo e-mail, com a situação da verificação em duas etapas, o CPF
+   * do perfil de freelancer só mascarado (RF-020) e, na conta de empresa, o CNPJ (RF-018).
+   */
   async lookupAccount(email: string): Promise<AdminAccountLookup> {
     const row = await authFacade.findAccountByEmail(email);
     if (!row) throw new HttpError(404, 'Nenhuma conta com este e-mail', 'user_not_found');
+    const [cpf, company] = await Promise.all([
+      cpfService.adminSummary(row.id),
+      profilesService.companySummary(row.id),
+    ]);
     return {
       ulid: row.ulid,
       email: row.email,
@@ -183,7 +192,36 @@ export const adminService = {
       status: row.status as UserStatus,
       mfaEnabled: Number(row.mfa_enabled) === 1,
       createdAt: new Date(row.created_at).toISOString(),
+      cpf,
+      company,
     };
+  },
+
+  /**
+   * Correção do CPF pelo atendimento (RF-020): validado, o CPF não se edita pela tela. O suporte
+   * confere a identidade fora do sistema e apaga o CPF por aqui; o titular informa o certo no
+   * Perfil. Até lá, o saque de quem entrega trabalho fica travado. Fica na trilha do admin com o
+   * motivo (sem o CPF) e o titular é avisado por e-mail.
+   */
+  async resetCpf(adminId: number, ulid: string, reason: string): Promise<void> {
+    const user = await authFacade.findByUlid(ulid);
+    if (!user) throw new HttpError(404, 'Usuário não encontrado', 'user_not_found');
+    if (!(await cpfService.clear(user.id))) {
+      throw new HttpError(409, 'Esta conta não tem CPF informado.', 'cpf_not_set');
+    }
+    await adminRepository.recordAction(adminId, 'user_cpf_reset', 'user', user.id, reason);
+    // Aviso ao titular, mesmo com os e-mails de novidades desligados (melhor esforço).
+    await mailService.send({
+      userId: user.id,
+      to: user.email,
+      template: 'notification',
+      vars: {
+        title: 'CPF apagado pelo atendimento',
+        body: 'A pedido feito ao suporte, o CPF da sua conta do Escambo foi apagado para correção. Informe o CPF certo em Perfil, "Dados para receber": até lá, o saque fica bloqueado. Se você não pediu isso, fale com o suporte.',
+        link: `${env.APP_URL.replace(/\/$/, '')}/perfil#dados-recebimento`,
+        cta: 'Informar o CPF',
+      },
+    });
   },
 
   /**

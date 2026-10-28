@@ -308,11 +308,16 @@ CREATE TABLE profiles_freelancer (
   total_contracts     INT UNSIGNED    NOT NULL DEFAULT 0,
   response_time_hours INT UNSIGNED    NULL,             -- tempo médio de resposta
   is_available        TINYINT(1)      NOT NULL DEFAULT 1,
-  cpf_verified        TINYINT(1)      NOT NULL DEFAULT 0,
+  cpf_verified        TINYINT(1)      NOT NULL DEFAULT 0,   -- 1 quando o CPF passou na validação (RF-020)
+  cpf_encrypted       VARCHAR(255)    NULL,             -- CPF só cifrado (enc:v1:..., AES-256-GCM, RN-075) (0052)
+  cpf_index           CHAR(64)        NULL,             -- índice cego: HMAC-SHA256 do CPF, hex (0052)
+  birth_date          DATE            NULL,             -- data de nascimento, maioridade (RN-009) (0052)
+  cpf_verified_at     DATETIME        NULL,             -- quando o CPF foi validado (0052)
   created_at          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
   PRIMARY KEY (id),
+  UNIQUE KEY uq_pf_cpf_index (cpf_index),                -- o mesmo CPF não valida em duas contas (0052)
   INDEX idx_pf_user      (user_id),
   INDEX idx_pf_rating    (avg_rating),
   INDEX idx_pf_location  (latitude, longitude),
@@ -320,6 +325,8 @@ CREATE TABLE profiles_freelancer (
   CONSTRAINT fk_pf_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
+
+CPF do freelancer (RF-020, RN-009, RN-075; migration 0052, 1.53.0). O freelancer informa o CPF e a data de nascimento no Perfil; a API confere os dígitos verificadores, a unicidade entre contas e os 18 anos no dia de hoje do fuso da conta (não é consulta à Receita) e grava as quatro colunas num UPDATE só, condicionado a `cpf_verified = 0`: validado, o CPF não se altera pela tela, e a correção é pelo atendimento, que apaga as quatro colunas. `cpf_encrypted` guarda o CPF **só cifrado** com a `FIELD_ENCRYPTION_KEY` (sem a chave, nada é gravado); com IV aleatório, a coluna não se compara, e é `cpf_index` (HMAC-SHA256 do CPF com chave derivada da mesma chave por HKDF, contexto `cpf`) que deixa a chave única recusar o mesmo CPF em duas contas. As telas mostram só o CPF mascarado; inteiro, só na cópia de dados do titular. A anonimização (RN-072) apaga as quatro colunas e devolve `cpf_verified` a 0, o que libera o CPF.
 
 ---
 
@@ -351,8 +358,9 @@ CREATE TABLE freelancer_portfolio_items (
 CREATE TABLE profiles_company (
   id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id      BIGINT UNSIGNED NOT NULL UNIQUE,
-  company_name VARCHAR(150)    NOT NULL,
-  cnpj         VARCHAR(18)     NULL UNIQUE,
+  company_name VARCHAR(150)    NOT NULL,               -- razão social (1.53.0)
+  trade_name   VARCHAR(150)    NULL,                   -- nome fantasia, o nome exibido (0052)
+  cnpj         VARCHAR(18)     NULL UNIQUE,            -- 14 caracteres, maiúsculas, sem máscara; numérico ou alfanumérico
   logo_url     VARCHAR(512)    NULL,
   bio          TEXT            NULL,
   website      VARCHAR(255)    NULL,
@@ -366,6 +374,8 @@ CREATE TABLE profiles_company (
   CONSTRAINT fk_pco_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
+
+Conta de empresa (RF-018; usada desde a 1.53.0, migration 0052). A linha nasce no cadastro da conta de papel `company`, com a razão social em `company_name`, o nome fantasia em `trade_name` e o CNPJ, conferido pelos dígitos verificadores (IN RFB 2.229/2024, que aceita letras nas 12 primeiras posições) e único pela chave da coluna. Logo (`logo_url`, pelo mesmo envio da foto de perfil, e contado no expurgo e na moderação de imagens), site, descrição curta (`bio`, até 280 caracteres), cidade e UF vêm do Perfil. A empresa não tem `profiles_client`: onde o nome de quem contrata aparece, as consultas usam `COALESCE(perfil de freelancer, perfil de cliente, trade_name)`. A anonimização troca a razão social e o nome fantasia por "Empresa removida" e apaga CNPJ, logo, site, descrição, cidade e UF, o que libera o CNPJ.
 
 ---
 

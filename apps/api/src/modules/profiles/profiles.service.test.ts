@@ -6,6 +6,7 @@ vi.mock('./profiles.repository', () => ({
     upsertClient: vi.fn(),
     findFreelancerByUserId: vi.fn(),
     findClientByUserId: vi.fn(),
+    findCompanyByUserId: vi.fn().mockResolvedValue(undefined),
     findPublicFreelancerByUlid: vi.fn(),
     listPortfolio: vi.fn().mockResolvedValue([]),
     listBadges: vi.fn().mockResolvedValue([]),
@@ -386,14 +387,19 @@ describe('profilesService.upsertClient', () => {
 });
 
 describe('profilesService.getMine', () => {
-  it('quem ainda não criou perfil recebe os dois como null', async () => {
+  it('quem ainda não criou perfil recebe os três como null', async () => {
     repo.findFreelancerByUserId.mockResolvedValue(undefined);
     repo.findClientByUserId.mockResolvedValue(undefined);
 
-    expect(await profilesService.getMine(7)).toEqual({ freelancer: null, client: null });
+    expect(await profilesService.getMine(7)).toEqual({
+      freelancer: null,
+      client: null,
+      company: null,
+    });
 
     expect(repo.findFreelancerByUserId).toHaveBeenCalledWith(7);
     expect(repo.findClientByUserId).toHaveBeenCalledWith(7);
+    expect(repo.findCompanyByUserId).toHaveBeenCalledWith(7);
   });
 
   it('traz os dois perfis do próprio usuário, cada um no formato da API', async () => {

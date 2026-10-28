@@ -1,10 +1,12 @@
-import { createCipheriv } from 'node:crypto';
+import { createCipheriv, createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ logger: { info: vi.fn(), warn: vi.fn() } }));
 vi.mock('../config/logger', () => ({ logger: h.logger }));
 
 import {
+  blindIndex,
+  blindIndexCandidates,
   currentSealPrefix,
   FIELD_UNAVAILABLE,
   fieldEncryptionEnabled,
@@ -246,7 +248,7 @@ describe('field-crypto (RNF-017)', () => {
       expect(h.logger.info.mock.calls).toEqual([
         [
           { keyId: ID_B, oldKeys: 1 },
-          'Cifragem de campo ligada (RNF-017): chave PIX e dados bancários dos saques, e o segredo da verificação em duas etapas',
+          'Cifragem de campo ligada (RNF-017): chave PIX e dados bancários dos saques, o segredo da verificação em duas etapas e o CPF dos freelancers',
         ],
       ]);
       expect(JSON.stringify(h.logger.info.mock.calls)).not.toContain(KEY_B);
@@ -274,6 +276,50 @@ describe('field-crypto (RNF-017)', () => {
       expect(h.logger.warn).not.toHaveBeenCalled();
       expect(h.logger.info).toHaveBeenCalledTimes(1);
       expect(h.logger.info.mock.calls[0]![0]).toContain('TEXTO PURO');
+    });
+  });
+
+  describe('índice cego (RF-020)', () => {
+    const CPF = '52998224725';
+
+    it('mesmo valor e contexto dão o mesmo índice (64 hex), que não contém nem revela o valor', () => {
+      setFieldKeysForTests({ current: KEY_A });
+
+      const index = blindIndex('cpf', CPF)!;
+
+      expect(index).toMatch(/^[0-9a-f]{64}$/);
+      expect(blindIndex('cpf', CPF)).toBe(index);
+      expect(index).not.toContain(CPF);
+      // Não é o SHA-256 puro do valor (que se quebraria testando os CPFs possíveis).
+      expect(index).not.toBe(createHash('sha256').update(CPF).digest('hex'));
+    });
+
+    it('contexto, valor e chave diferentes dão índices diferentes', () => {
+      setFieldKeysForTests({ current: KEY_A });
+      const a = blindIndex('cpf', CPF);
+
+      expect(blindIndex('outro', CPF)).not.toBe(a);
+      expect(blindIndex('cpf', '11144477735')).not.toBe(a);
+      setFieldKeysForTests({ current: KEY_B });
+      expect(blindIndex('cpf', CPF)).not.toBe(a);
+    });
+
+    it('candidatos: o da chave atual primeiro, depois o de cada antiga, sem repetir', () => {
+      setFieldKeysForTests({ current: KEY_A });
+      const withA = blindIndex('cpf', CPF)!;
+      setFieldKeysForTests({ current: KEY_B });
+      const withB = blindIndex('cpf', CPF)!;
+
+      setFieldKeysForTests({ current: KEY_B, old: [KEY_A, KEY_B] });
+
+      expect(blindIndexCandidates('cpf', CPF)).toEqual([withB, withA]);
+    });
+
+    it('sem chave: nenhum índice, nenhum candidato', () => {
+      setFieldKeysForTests({});
+
+      expect(blindIndex('cpf', CPF)).toBeNull();
+      expect(blindIndexCandidates('cpf', CPF)).toEqual([]);
     });
   });
 
