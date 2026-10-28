@@ -5,6 +5,30 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.54.0] — 2026-10-28
+
+Login com Google (RF-002, ADR 72), pronto e **desligado até o dono configurar** as credenciais. RF: 90 implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Entrar com Google:** com `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` configurados, o login e o cadastro mostram "Entrar com Google" / "Criar conta com Google". O botão é um link para a API, sem SDK nem script do Google no app (a CSP não muda), que faz o fluxo de servidor OAuth 2.0 com PKCE (S256), `state` e `nonce`. A volta confere o ID token (emissor, público, validade, idade e nonce) e exige o e-mail confirmado pelo Google. Sem as duas variáveis, o botão não aparece e as rotas do Google respondem 404; `GET /api/auth/providers` diz o que está ligado.
+- A sessão nunca vai no endereço: a volta deixa um código de uso único no fragmento (`#codigo=`), amarrado ao navegador por um cookie, que o web troca por `POST /api/auth/google/exchange`. Com 2FA, o próximo passo é o código do app, como no login por senha.
+- **Conta nova pelo Google:** "Concluir cadastro" pede o papel (cliente ou freelancer) e o aceite dos Termos e da Política, e a conta nasce com o e-mail confirmado e sem senha. Empresa continua pelo cadastro com CNPJ.
+- **Conta que já existe:** com o e-mail confirmado, o Google é vinculado e o titular recebe um aviso por e-mail. Com o e-mail não confirmado, o Google prova a posse: a conta fica confirmada, todas as sessões caem e a senha antiga deixa de valer (fica na auditoria). Uma conta Google entra numa conta só, e a conta já vinculada a outra conta Google é recusada.
+- No Perfil, o cartão "Entrar com Google: Vinculado"; a conta sem senha vê como criar uma pelo "Esqueci minha senha".
+- Migration 0053: `users.google_sub` (único) e a tabela `google_login_tickets` dos passes de uso único (só o hash).
+- O guia "Ligar o login com Google" no `DEPLOY.md`, com o passo a passo no Google Cloud Console.
+
+### Alterado
+
+- A cópia de dados LGPD passa ao formato 1.15, com a conta Google vinculada; a anonimização apaga o vínculo.
+- O log das requisições tira o code e o state da volta do Google, o código de uso único e o valor dos cookies.
+- O e2e do CI sobe um Google falso local (só em 127.0.0.1) para cobrir o login com conta existente e o cadastro de conta nova.
+
+### Para atualizar
+
+Rodar a migration 0053 (o job `migrate` do deploy faz isso). Sem variável nova obrigatória: o Google fica desligado até `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` entrarem no `.env`. Ver "Atualizar para a 1.54.0" e "Ligar o login com Google" no `DEPLOY.md`.
+
 ## [1.53.0] — 2026-10-26
 
 CPF do freelancer para receber (RF-020, RN-009, RN-075) e conta de empresa com CNPJ (RF-018, RN-006), ADR 71. RF: 89 implementados, 1 não implementado e 2 fora do escopo; RNF: 32, 7, 1 e 2.
