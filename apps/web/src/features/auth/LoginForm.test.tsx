@@ -1,4 +1,6 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render as rtlRender, screen, waitFor, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +22,19 @@ const auth = {
   error: null as string | null,
 };
 vi.mock('../../lib/auth', () => ({ useAuth: () => auth }));
+
+/**
+ * Os jeitos de entrar ligados no servidor (RF-002): aqui, o login com Google desligado, como no
+ * padrão; o botão do Google tem os testes dele em GoogleButton.test.tsx.
+ */
+const api = vi.hoisted(() => ({ authProviders: vi.fn() }));
+vi.mock('../../lib/api', () => ({ api, GOOGLE_START_URL: '/api/auth/google/start' }));
+
+/** O formulário pergunta à API se o Google está ligado: cada tela nasce com um cache novo. */
+function render(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 const renderForm = () =>
   render(
@@ -58,6 +73,8 @@ function deferred() {
 }
 
 beforeEach(() => {
+  api.authProviders.mockReset();
+  api.authProviders.mockResolvedValue({ google: false });
   login.mockReset();
   login.mockResolvedValue(undefined);
   loginMfa.mockReset();
@@ -239,6 +256,57 @@ function renderRoutes(entry: string, state?: unknown) {
     </MemoryRouter>,
   );
 }
+
+describe('LoginForm: login com Google (RF-002)', () => {
+  it('ligado: "Entrar com Google" no login; "Criar conta com Google" no cadastro, menos para empresa', async () => {
+    const user = userEvent.setup();
+    api.authProviders.mockResolvedValue({ google: true });
+    renderForm();
+    expect(await screen.findByRole('link', { name: 'Entrar com Google' })).toHaveAttribute(
+      'href',
+      '/api/auth/google/start',
+    );
+    await user.click(tab('Criar conta'));
+    expect(screen.getByRole('link', { name: 'Criar conta com Google' })).toBeInTheDocument();
+    // Empresa continua pelo cadastro com CNPJ: o botão some.
+    await user.selectOptions(screen.getByLabelText('Eu sou'), 'company');
+    expect(screen.queryByRole('link', { name: /com Google/ })).toBeNull();
+  });
+
+  it('desligado: nenhum botão do Google', async () => {
+    renderForm();
+    await waitFor(() => expect(api.authProviders).toHaveBeenCalled());
+    expect(screen.queryByRole('link', { name: /Google/ })).toBeNull();
+  });
+
+  /** O endereço com a query (o Where do arquivo mostra o caminho e o estado). */
+  function Search() {
+    const { pathname, search } = useLocation();
+    return <p data-testid="search">{`${pathname}${search}`}</p>;
+  }
+
+  it('a volta do Google que não entrou: o aviso do motivo, e o motivo sai do endereço', async () => {
+    render(
+      <MemoryRouter initialEntries={['/login?google=conta_banida&x=1']}>
+        <Routes>
+          <Route
+            path="/login"
+            element={
+              <>
+                <LoginForm />
+                <Search />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Conta banida. Fale com o suporte.');
+    await waitFor(() => expect(screen.getByTestId('search')).toHaveTextContent(/^\/login\?x=1$/));
+    // O aviso continua na tela depois de o endereço mudar.
+    expect(screen.getByRole('alert')).toHaveTextContent('Conta banida.');
+  });
+});
 
 describe('LoginForm: /cadastro', () => {
   it('abre em "Criar conta", com título próprio e o "Eu sou" que veio do endereço', () => {

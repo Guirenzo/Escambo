@@ -24,6 +24,7 @@ import type {
   FinanceGranularity,
   AdminWithdrawal,
   AppealDecision,
+  AuthProviders,
   AuthResponse,
   AvailabilityPeriod,
   BarterAgreement,
@@ -79,6 +80,9 @@ import type {
   LoginRequest,
   LoginResponse,
   MfaChallenge,
+  GoogleExchangeResponse,
+  GoogleSignupChallenge,
+  GoogleSignupRequest,
   MfaEnabledResponse,
   MfaLoginRequest,
   MfaRecoveryCodesResponse,
@@ -130,6 +134,11 @@ import type {
 } from '@escambo/types';
 
 const BASE_URL = '/api';
+/**
+ * Login com Google (RF-002): o botão é um link de navegação para a API, que leva ao Google. Nada
+ * do Google roda no app (sem SDK nem script de terceiro: a CSP continua 'self').
+ */
+export const GOOGLE_START_URL = `${BASE_URL}/auth/google/start`;
 const TOKEN_KEY = 'escambo_token';
 const REFRESH_KEY = 'escambo_refresh';
 
@@ -288,13 +297,20 @@ const NO_REFRESH = [
   '/auth/login',
   '/auth/login/mfa',
   '/auth/register',
+  '/auth/google/exchange',
+  '/auth/google/signup',
   '/auth/refresh',
   '/auth/logout',
 ];
 
 /** A resposta do login é o pedido do segundo fator (conta com 2FA), e não a sessão. */
-export function isMfaChallenge(res: LoginResponse): res is MfaChallenge {
+export function isMfaChallenge(res: LoginResponse | GoogleExchangeResponse): res is MfaChallenge {
   return (res as Partial<MfaChallenge>).mfaRequired === true;
+}
+
+/** A volta do Google trouxe uma conta Google sem conta no Escambo: falta concluir o cadastro. */
+export function isGoogleSignup(res: GoogleExchangeResponse): res is GoogleSignupChallenge {
+  return (res as Partial<GoogleSignupChallenge>).signupRequired === true;
 }
 
 /** O que a 2FA pede para mexer nela: a senha da conta e um código do app ou de recuperação. */
@@ -550,6 +566,18 @@ export const api = {
   /** Segundo passo do login (RF-090): o código do app ou um de recuperação abre a sessão. */
   loginMfa: (body: MfaLoginRequest) =>
     request<AuthResponse>('/auth/login/mfa', { method: 'POST', body: JSON.stringify(body) }),
+  // login com Google (RF-002)
+  /** Os jeitos de entrar ligados no servidor: o botão do Google só aparece com google: true. */
+  authProviders: () => request<AuthProviders>('/auth/providers'),
+  /** Troca o código de uso único da volta do Google: a sessão, a 2FA ou o cadastro por concluir. */
+  googleExchange: (code: string) =>
+    request<GoogleExchangeResponse>('/auth/google/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  /** Conclui a conta nova que veio do Google (papel e aceite): devolve a sessão. */
+  googleSignup: (body: GoogleSignupRequest) =>
+    request<AuthResponse>('/auth/google/signup', { method: 'POST', body: JSON.stringify(body) }),
   // verificação em duas etapas da própria conta (RF-090, ADR 66)
   mfaStatus: () => request<MfaStatus>('/auth/mfa'),
   /** Começa a ativação: um segredo novo, ainda inativo, para o app autenticador. */

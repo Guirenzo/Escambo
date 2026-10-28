@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   startJobs: vi.fn(),
   stopJobs: vi.fn(),
   logFieldEncryptionStatus: vi.fn(),
+  logGoogleLoginStatus: vi.fn(),
 }));
 vi.mock('node:http', () => ({
   createServer: h.createServer,
@@ -40,6 +41,9 @@ vi.mock('./config/socket', () => ({ createSocketServer: h.createSocketServer }))
 vi.mock('./jobs/scheduler', () => ({ startJobs: h.startJobs, stopJobs: h.stopJobs }));
 vi.mock('./utils/field-crypto', () => ({
   logFieldEncryptionStatus: h.logFieldEncryptionStatus,
+}));
+vi.mock('./modules/auth/google-oauth', () => ({
+  logGoogleLoginStatus: h.logGoogleLoginStatus,
 }));
 
 type Handler = (...args: unknown[]) => void;
@@ -148,6 +152,7 @@ describe('servidor da API', () => {
       expect(h.startJobs).not.toHaveBeenCalled();
       expect(h.logger.info).not.toHaveBeenCalled();
       expect(h.logFieldEncryptionStatus).not.toHaveBeenCalled();
+      expect(h.logGoogleLoginStatus).not.toHaveBeenCalled();
 
       onListening!();
 
@@ -155,6 +160,8 @@ describe('servidor da API', () => {
       // RNF-017: a situação da cifragem de campo sai uma vez, na subida (o texto é da field-crypto).
       expect(h.logFieldEncryptionStatus).toHaveBeenCalledTimes(1);
       expect(h.logFieldEncryptionStatus).toHaveBeenCalledWith();
+      // RF-002: se o login com Google está ligado, também uma vez (o texto é do google-oauth).
+      expect(h.logGoogleLoginStatus).toHaveBeenCalledTimes(1);
       expect(h.logger.info.mock.calls).toEqual([
         [
           { version: buildInfo.version, commit: buildInfo.commit },

@@ -181,6 +181,9 @@ describe('troca de e-mail (RF-017)', () => {
       emailVerified: false,
       phone: null,
       pendingEmail: { email: newEmail, expiresAt: res.body.expiresAt },
+      // Como a conta entra (RF-002, 1.54.0): com senha e sem Google.
+      hasPassword: true,
+      googleLinked: false,
     });
     // Até a confirmação, nada muda: o login segue pelo endereço antigo.
     expect((await userRow(a.id)).email).toBe(oldEmail);

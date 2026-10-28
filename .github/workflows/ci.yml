@@ -303,6 +303,12 @@ jobs:
       # Chave de TESTE da cifragem de campo: sem ela a verificação em duas etapas fica indisponível
       # (ADR 66) e o spec dois-fatores não roda. São os 32 bytes de "chave-de-teste-do-escambo-2fa-32".
       FIELD_ENCRYPTION_KEY: Y2hhdmUtZGUtdGVzdGUtZG8tZXNjYW1iby0yZmEtMzI=
+      # Login com Google (RF-002) contra o Google FALSO dos testes (apps/web/e2e/google-falso.mjs, só em
+      # 127.0.0.1): cliente e segredo de TESTE, sem uso fora do CI. Sem eles, o spec do Google só
+      # confere o desligado.
+      GOOGLE_CLIENT_ID: cliente-de-teste.apps.googleusercontent.com
+      GOOGLE_CLIENT_SECRET: segredo-de-teste-do-google-com-32-caracteres
+      GOOGLE_TEST_IDP_URL: http://127.0.0.1:4590
 
     steps:
       - name: Checkout
@@ -331,6 +337,7 @@ jobs:
       - name: Sobe API e Web (build servido pelo Vite preview) em background
         run: |
           export NODE_ENV=production
+          (cd apps/web && nohup node e2e/google-falso.mjs --port 4590 > /tmp/google.log 2>&1 &)
           (cd apps/api && nohup node dist/server.js > /tmp/api.log 2>&1 &)
           (cd apps/web && nohup npx vite preview --port 5173 --strictPort > /tmp/web.log 2>&1 &)
           for i in $(seq 1 30); do
@@ -346,7 +353,7 @@ jobs:
 
       - name: Logs da API/Web (só em falha)
         if: failure()
-        run: tail -n 120 /tmp/api.log /tmp/web.log 2>/dev/null || true
+        run: tail -n 120 /tmp/api.log /tmp/web.log /tmp/google.log 2>/dev/null || true
 
       - name: Relatório do Playwright (só em falha)
         if: failure()

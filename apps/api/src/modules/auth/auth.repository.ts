@@ -25,6 +25,10 @@ export interface UserRow extends RowDataPacket {
   push_quiet_summary_id?: number | null;
 }
 
+/** As colunas da conta que o login e o resto da API leem (UserRow), sem as da 2FA nem do Google. */
+export const USER_COLUMNS =
+  'id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_pass, push_quiet_summary_id';
+
 /** A conta como o atendimento a vê (ADR 66): sem senha nem contato além do e-mail buscado. */
 export interface AccountLookupRow extends RowDataPacket {
   id: number;
@@ -37,11 +41,22 @@ export interface AccountLookupRow extends RowDataPacket {
   mfa_enabled: number;
 }
 
+/** O contato e as formas de entrar da conta, para o próprio titular (GET /auth/contact). */
+export interface ContactRow extends RowDataPacket {
+  email: string;
+  email_verified_at: Date | null;
+  phone: string | null;
+  /** 1 se a conta tem senha (a conta criada pelo Google nasce sem). */
+  has_password: number;
+  /** 1 se a conta tem conta Google vinculada (RF-002). */
+  google_linked: number;
+}
+
 /** Camada de acesso a dados da tabela `users`. */
 export const authRepository = {
   async findByEmail(email: string): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_pass, push_quiet_summary_id FROM users WHERE email = :email LIMIT 1',
+      `SELECT ${USER_COLUMNS} FROM users WHERE email = :email LIMIT 1`,
       { email },
     );
     return rows[0];
@@ -49,7 +64,7 @@ export const authRepository = {
 
   async findByUlid(ulid: string): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_pass, push_quiet_summary_id FROM users WHERE ulid = :ulid LIMIT 1',
+      `SELECT ${USER_COLUMNS} FROM users WHERE ulid = :ulid LIMIT 1`,
       { ulid },
     );
     return rows[0];
@@ -57,7 +72,7 @@ export const authRepository = {
 
   async findById(id: number): Promise<UserRow | undefined> {
     const [rows] = await pool.query<UserRow[]>(
-      'SELECT id, ulid, email, password_hash, role, status, deleted_at, email_verified_at, email_frequency, digest_hour, timezone, push_quiet_start, push_quiet_end, push_quiet_pass, push_quiet_summary_id FROM users WHERE id = :id LIMIT 1',
+      `SELECT ${USER_COLUMNS} FROM users WHERE id = :id LIMIT 1`,
       { id },
     );
     return rows[0];
@@ -152,13 +167,17 @@ export const authRepository = {
     return rows.map((r) => ({ id: r.id, email: r.email }));
   },
 
-  /** O contato da conta (RF-017), que só o titular vê: e-mail, se está confirmado e o telefone. */
-  async findContact(
-    id: number,
-  ): Promise<{ email: string; email_verified_at: Date | null; phone: string | null } | undefined> {
-    const [rows] = await pool.query<
-      (RowDataPacket & { email: string; email_verified_at: Date | null; phone: string | null })[]
-    >('SELECT email, email_verified_at, phone FROM users WHERE id = :id LIMIT 1', { id });
+  /**
+   * O contato da conta (RF-017), que só o titular vê: e-mail, se está confirmado e o telefone. E
+   * como ela entra (RF-002): se tem senha e se tem conta Google vinculada (nunca o hash nem o sub).
+   */
+  async findContact(id: number): Promise<ContactRow | undefined> {
+    const [rows] = await pool.query<ContactRow[]>(
+      `SELECT email, email_verified_at, phone, password_hash IS NOT NULL AS has_password,
+              google_sub IS NOT NULL AS google_linked
+         FROM users WHERE id = :id LIMIT 1`,
+      { id },
+    );
     return rows[0];
   },
 

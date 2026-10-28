@@ -10,6 +10,7 @@ import { captureError, flushSentry, initSentry } from './config/sentry';
 import { createSocketServer } from './config/socket';
 import { startJobs, stopJobs } from './jobs/scheduler';
 import { logFieldEncryptionStatus } from './utils/field-crypto';
+import { logGoogleLoginStatus } from './modules/auth/google-oauth';
 
 /** Espera o banco ficar disponível antes de subir (resiliência a boot fora de ordem). */
 async function waitForDb(retries = 10, delayMs = 1500): Promise<void> {
@@ -42,6 +43,7 @@ async function main(): Promise<void> {
       `API Escambo em http://localhost:${env.PORT}/api (env: ${env.NODE_ENV})`,
     );
     logFieldEncryptionStatus(); // RNF-017: cifragem ligada, ou o aviso de texto puro (warn em produção)
+    logGoogleLoginStatus(); // RF-002: ligado ou desligado, e o aviso do Google falso dos testes
     startJobs(); // aprovação tácita etc. (JOBS_ENABLED)
   });
 

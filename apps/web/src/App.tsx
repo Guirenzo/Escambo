@@ -17,6 +17,7 @@ import {
   VerifyEmailView,
 } from './features/auth/AccountViews';
 import { LoginForm, type AuthMode } from './features/auth/LoginForm';
+import { GoogleReturnView } from './features/auth/GoogleReturnView';
 import { LandingView } from './features/landing/LandingView';
 import { LegalView } from './features/legal/LegalView';
 import { Shell } from './features/shell/Shell';
@@ -89,6 +90,8 @@ export function App() {
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
           <Route path="/cadastro" element={<LoginRoute mode="register" />} />
+          {/* A volta do Google (RF-002): troca o código de uso único do endereço pela sessão. */}
+          <Route path="/entrar/google" element={<GoogleReturnView />} />
           <Route path="/esqueci-senha" element={<ForgotPasswordView />} />
           <Route path="/redefinir-senha" element={<ResetPasswordView />} />
           <Route path="/verificar-email" element={<VerifyEmailView />} />

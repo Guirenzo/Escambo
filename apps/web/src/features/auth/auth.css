@@ -138,6 +138,43 @@
   border-radius: 12px;
   font-size: 1rem;
 }
+
+/* Login com Google (RF-002): o "ou" entre o formulário e o botão branco com o G, da mesma altura
+   do botão principal. O botão é um link (vai à API, que leva ao Google). */
+.au .au-google {
+  display: grid;
+  gap: 14px;
+}
+.au .au-or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.au .au-or::before,
+.au .au-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-strong);
+}
+.au .au-google-btn {
+  width: 100%;
+  min-height: 48px;
+  gap: 10px;
+  border-radius: 12px;
+  font-size: 1rem;
+}
+.au .au-google-wait {
+  align-items: center;
+}
+/* "Concluir cadastro" recebe o foco ao aparecer (diz onde a pessoa está): é título, não controle,
+   então sem o anel, como os destinos de âncora (ADR 55). */
+.au .au-title[tabindex='-1']:focus {
+  outline: none;
+}
+
 .au .au-alt {
   color: var(--muted);
   font-size: 0.9375rem;

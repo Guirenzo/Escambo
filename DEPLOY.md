@@ -265,6 +265,20 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
+### Atualizar para a 1.54.0 (login com Google)
+
+Uma migration (0053, aditiva e segura de rodar de novo) e nenhuma variável obrigatória: **o login com Google sobe desligado** e só liga quando você configurar o cliente OAuth do Google (seção 5, "Ligar o login com Google"). Sem isso, nada muda para quem usa: o botão "Entrar com Google" não aparece e as rotas do Google respondem 404.
+
+**1. Backup antes**, pelo serviço `backup` ou à mão (seção 4).
+
+**2. Deploy normal** (workflow ou à mão, acima). O job `migrate` aplica a 0053: `users` ganha `google_sub` (a conta Google vinculada, única) e nasce a tabela `google_login_tickets` (os passes de uso único do fluxo, só o hash). Nenhuma conta muda.
+
+**3. Conferir.** `curl -s https://SEU_DOMINIO/api/health` mostra o commit da 1.54.0, e `curl -s https://SEU_DOMINIO/api/auth/providers` responde `{"google":false}` enquanto o Google não estiver configurado. O log da subida da API diz "Login com Google desligado" (ou "ligado", com o endereço de volta).
+
+**4. Ligar (opcional, quando quiser):** siga "Ligar o login com Google", na seção 5. Dá para ligar e desligar só com o `.env` e um `up -d`, sem deploy.
+
+**5. Voltar para a 1.53.0** é seguro: a API antiga ignora a coluna e a tabela novas. As contas criadas pelo Google não têm senha: com a 1.53.0 (ou com o Google desligado) elas entram criando uma senha pelo "Esqueci minha senha", que chega ao e-mail da conta.
+
 ### Atualizar para a 1.53.0 (CPF e conta de empresa)
 
 Uma migration (0052, aditiva e segura de rodar de novo). O passo que pede atenção é a chave de cifragem: **a partir desta versão, o saque de quem entrega trabalho pede o CPF validado**, e o CPF só é gravado cifrado.
@@ -661,6 +675,83 @@ docker compose -f docker-compose.prod.yml start api
   cadastra conseguir usar o app — ou o admin confirma pela caixa de saída no modo simulado.
 - **CPF para sacar** (RF-020, 1.53.0): de quem entrega trabalho, o saque exige também o CPF validado no Perfil
   (403 `cpf_required`), que depende da `FIELD_ENCRYPTION_KEY`.
+- **Login com Google** (RF-002, 1.54.0): desligado até você configurar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET`
+  (abaixo). A API nunca guarda token do Google; o segredo do cliente fica só no `.env` da VPS.
+
+### Ligar o login com Google (RF-002)
+
+O botão "Entrar com Google" só aparece depois destes passos. O fluxo é todo do servidor: o navegador vai da tela de
+entrar para a API (`/api/auth/google/start`), dela para o Google, e o Google devolve para a API
+(`/api/auth/google/callback`), que confere tudo e manda o navegador de volta ao app. Nada do Google roda no app (sem
+SDK, sem script de terceiro: a CSP do web continua `'self'`). Faça uma vez, com a conta Google que vai ser a dona do
+projeto. Os nomes do console mudam de tempos em tempos; entre parênteses, o nome antigo.
+
+**1. Projeto.** Abra <https://console.cloud.google.com>, clique no seletor de projeto (no alto, ao lado do logo) e em
+**Novo projeto**. Nome: `Escambo`. Crie e deixe esse projeto selecionado.
+
+**2. Tela de consentimento** (menu ☰ → **APIs e serviços** → **Tela de permissão OAuth**; no console novo, **Google
+Auth Platform**). Clique em **Começar** e preencha:
+
+- **Informações do app:** nome do app `Escambo` e o **e-mail de suporte** (o seu).
+- **Público:** **Externo** (qualquer conta Google pode entrar).
+- **Dados de contato:** o seu e-mail. Aceite a política de dados do usuário e conclua.
+- **Branding** (identidade visual): página inicial `https://SEU_DOMINIO`, política de privacidade
+  `https://SEU_DOMINIO/privacidade`, termos de serviço `https://SEU_DOMINIO/termos` e, em **Domínios autorizados**, o
+  domínio raiz (ex.: `seudominio.com.br`, sem `https://` e sem o `app.`). Logo é opcional (com logo, o Google pede a
+  verificação da marca antes de mostrá-lo).
+- **Acesso a dados** (escopos): **Adicionar ou remover escopos** e marque só `openid`, `.../auth/userinfo.email` e
+  `.../auth/userinfo.profile`. São escopos não sensíveis: não exigem a verificação do app pelo Google.
+- **Público** → status de publicação: o app nasce **Em teste**, e só os **usuários de teste** que você adicionar ali
+  conseguem entrar (bom para conferir). Quando estiver tudo certo, clique em **Publicar app** (**Em produção**): aí
+  qualquer conta Google entra.
+
+**3. Cliente OAuth** (**Clientes** → **Criar cliente**; no console antigo, **Credenciais** → **Criar credenciais** →
+**ID do cliente OAuth**):
+
+- **Tipo de aplicativo:** **Aplicativo da Web**. Nome: `Escambo web`.
+- **Origens JavaScript autorizadas:** deixe vazio (o app não usa o Google no navegador).
+- **URIs de redirecionamento autorizados:** adicione, exatamente assim (protocolo, domínio, caminho, sem barra no fim):
+  - produção: `https://SEU_DOMINIO/api/auth/google/callback`
+  - desenvolvimento (opcional): `http://localhost:3333/api/auth/google/callback`
+- **Criar.** Copie o **ID do cliente** (termina em `.apps.googleusercontent.com`) e a **Chave secreta do cliente**
+  (começa com `GOCSPX-`). Baixe o JSON também: o console novo só mostra o segredo na criação; se perder, crie outro
+  segredo no mesmo cliente e troque no `.env`.
+
+**4. Colar na VPS.** No `.env` ao lado do `docker-compose.prod.yml` (nunca no repositório):
+
+```bash
+GOOGLE_CLIENT_ID=123456789012-abc...apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-...
+# GOOGLE_REDIRECT_URI fica vazio: vale https://SEU_DOMINIO/api/auth/google/callback (o APP_URL do compose)
+```
+
+Os dois vão juntos: um sem o outro, a API não sobe (e diz qual falta). Depois:
+
+```bash
+chmod 600 .env
+docker compose -f docker-compose.prod.yml up -d    # recria a API com as variáveis novas
+```
+
+**5. Conferir.** `curl -s https://SEU_DOMINIO/api/auth/providers` responde `{"google":true}`, e
+`docker compose -f docker-compose.prod.yml logs api | grep -i google` mostra "Login com Google ligado" com o
+`redirectUri`, que tem de ser igual ao registrado no passo 3. Abra `https://SEU_DOMINIO/login` numa janela anônima:
+aparece "Entrar com Google". Entre com uma conta Google de teste (com o app ainda **Em teste**, ela precisa estar na
+lista de usuários de teste): conta nova cai em "Concluir cadastro" (cliente ou freelancer e o aceite), conta que já existe
+entra direto (ou pede o código, se tem a verificação em duas etapas). No Perfil, o cartão "Entrar com Google" diz
+"Vinculado". Por fim, **Publicar app** no console (passo 2).
+
+**No desenvolvimento** (opcional): no `apps/api/.env`, os mesmos `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` e
+`GOOGLE_REDIRECT_URI=http://localhost:3333/api/auth/google/callback` (o endereço de desenvolvimento do passo 3), com o
+`APP_URL=http://localhost:5173` de sempre: o Google volta direto para a API, e a API manda o navegador ao Vite.
+
+**Como funciona com as contas** (RF-002): a conta Google já vinculada entra na conta dela; a conta com o mesmo e-mail
+confirmado é vinculada (o titular recebe um aviso por e-mail); a conta com o mesmo e-mail **não** confirmado é retomada,
+porque o Google provou a posse: fica confirmada, a senha que existia deixa de valer e todas as sessões caem (proteção
+contra quem cadastrou o e-mail de outra pessoa). Conta banida ou excluída não entra. A verificação em duas etapas nunca é
+pulada. Empresa continua pelo cadastro com CNPJ. Desvincular a conta Google ainda não existe.
+
+**Desligar:** apague as duas variáveis do `.env` e rode o `up -d`. O botão some na hora. Quem criou a conta pelo Google
+não tem senha: entra pelo "Esqueci minha senha", que manda o link ao e-mail da conta.
 
 ## 6. Checklist de segurança
 
@@ -671,6 +762,7 @@ docker compose -f docker-compose.prod.yml start api
 - [ ] Serviço `backup` "healthy" (banco **e** arquivos da API, todo dia) **e** cópia fora da VPS (perfil `offsite`); restauração testada uma vez.
 - [ ] Atualizações do sistema (`unattended-upgrades`) e das imagens oficiais (`pull` periódico).
 - [ ] 2FA na conta do GitHub: quem controla `main` controla o que a VPS puxa.
+- [ ] Login com Google (se ligado): o segredo só no `.env` da VPS, o app publicado no Google Cloud e só os dois endereços de volta do DEPLOY registrados no cliente OAuth.
 - [ ] `FIELD_ENCRYPTION_KEY` no `.env` (e guardada fora da VPS: sem ela, a 2FA, o CPF e o saque dos freelancers param), 2FA ativa em cada conta admin e `ADMIN_MFA_REQUIRED=true`.
 
 ## 7. Problemas comuns
@@ -682,5 +774,9 @@ docker compose -f docker-compose.prod.yml start api
 | `migrate` saiu com erro e a API não sobe     | `docker compose … logs migrate`. Corrija e rode `docker compose … up -d` de novo (o job é idempotente).                            |
 | `denied` ao fazer `pull`                     | Pacote privado no GHCR: torne público ou `docker login ghcr.io` com token `read:packages`.                                         |
 | E-mails não chegam                           | Painel admin → **E-mails**: status `failed` traz o erro do SMTP. Confira `SMTP_*`, porta 587 liberada, `SMTP_SECURE` (465 = true). |
+| Google: "Erro 400: redirect_uri_mismatch"    | O endereço de volta não é igual ao registrado no cliente OAuth. Compare o `redirectUri` do log da API com o do console (https, domínio, sem barra no fim). |
+| Google: "Acesso bloqueado" ou "app não verificado" | App ainda **Em teste**: adicione a conta em usuários de teste, ou **Publicar app** (seção 5, "Ligar o login com Google"). |
+| Volta do Google com "O login com o Google expirou" | O cookie da ida não voltou: mais de 10 minutos na tela do Google, outro navegador, ou o domínio do endereço de volta diferente do domínio do app. Tente de novo; se repetir, confira o `APP_URL`/`GOOGLE_REDIRECT_URI`. |
+| A API não sobe: "falta GOOGLE_CLIENT_SECRET" (ou ID) | Só uma das duas variáveis do Google no `.env`: preencha as duas ou apague as duas. |
 | Rate limit pegando todo mundo junto          | Proxy extra na frente do Caddy (Cloudflare etc.): aumente `TRUST_PROXY` para o número real de saltos.                              |
 | Trocou `DB_PASSWORD` e o banco não sobe      | A senha vale só na criação do volume. Ou volte a senha, ou altere o usuário dentro do MySQL, ou recrie o volume (com backup).      |

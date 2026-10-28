@@ -34,11 +34,35 @@ beforeEach(() => {
 
 const sqlSent = (): string[] => query.mock.calls.map((c) => String(c[0]));
 
+describe('cópia de dados 1.15: a conta Google (RF-002)', () => {
+  it('com vínculo, contaGoogle traz o sub, que não se repete dentro do titular', async () => {
+    query.mockImplementation((async (sql: string) => [
+      sql.includes('FROM users WHERE')
+        ? [
+            {
+              ulid: '01USER',
+              email: 'ana@gmail.com',
+              google_sub: '109876543210',
+              push_quiet_pass: null,
+            },
+          ]
+        : [],
+      [],
+    ]) as never);
+    const out = await buildExport(7);
+    expect(out.contaGoogle).toEqual({ vinculada: true, sub: '109876543210' });
+    expect(out.titular).not.toHaveProperty('google_sub');
+    expect(sqlSent().find((s) => s.includes('FROM users WHERE id'))).toContain('google_sub');
+  });
+});
+
 describe('cópia de dados 1.12 (ADR 54, 56, 61, 66, RF-059 e RF-017)', () => {
   it('declara o formato novo e as seções novas, mesmo vazias', async () => {
     const out = await buildExport(7);
-    expect(EXPORT_FORMAT_VERSION).toBe('1.14');
-    expect(out.formato).toBe('escambo-export/1.14');
+    expect(EXPORT_FORMAT_VERSION).toBe('1.15');
+    expect(out.formato).toBe('escambo-export/1.15');
+    // 1.15: a conta Google vinculada (RF-002); sem vínculo, false e sem sub.
+    expect(out).toHaveProperty('contaGoogle', { vinculada: false, sub: null });
     // 1.12: a verificação em duas etapas; sem a linha, desligada e sem códigos.
     expect(out).toHaveProperty('mfa', { enabled: false, confirmedAt: null, recoveryCodesLeft: 0 });
     expect(out).toHaveProperty('ofertas', []);
@@ -432,9 +456,10 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
     }
 
     expect(out).toEqual({
-      formato: 'escambo-export/1.14',
+      formato: 'escambo-export/1.15',
       exportadoEm: '2026-10-01T12:00:00.000Z',
       titular: { id: 7, ulid: '01USER', email: 'ana@escambo.test', push_quiet_pass: null },
+      contaGoogle: { vinculada: false, sub: null },
       perfis: {
         // Sem CPF gravado, o campo sai como null (1.14).
         freelancer: { full_name: 'Ana Freela', cpf: null },

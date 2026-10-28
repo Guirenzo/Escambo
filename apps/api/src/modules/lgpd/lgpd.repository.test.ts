@@ -387,6 +387,8 @@ describe('lgpdRepository', () => {
         expect(user.sql).toContain(
           'push_quiet_start = NULL, push_quiet_end = NULL, push_quiet_pass = NULL, push_quiet_summary_id = NULL',
         );
+        // O vínculo com a conta Google sai junto (RF-002).
+        expect(user.sql).toContain('google_sub = NULL');
         expect(user.sql).toMatch(/WHERE id = :userId$/);
 
         // Os dois perfis perdem nome, foto, texto e localização; o freelancer sai da busca.

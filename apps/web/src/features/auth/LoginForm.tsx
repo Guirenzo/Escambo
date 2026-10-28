@@ -5,23 +5,26 @@ import { Button, Field, Input, Select } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { isValidCnpj } from '../../lib/documents';
 import { errorMessage } from '../../lib/errors';
+import { googleFailureMessage } from '../../lib/google';
 import { normalizeRecoveryCode, normalizeTotp } from '../../lib/mfa';
 import { usePageTitle } from '../../lib/title';
 import { AuthPanel } from './AuthPanel';
+import { GoogleButton } from './GoogleButton';
 import './auth.css';
 import { BrandMark } from '../../components/BrandMark';
 
 /**
- * Passo 2 do login numa conta com verificação em duas etapas (RF-090): a senha já foi conferida e
- * falta o código do app autenticador, ou um de recuperação para quem está sem o celular.
+ * Passo 2 do login numa conta com verificação em duas etapas (RF-090): a senha (ou o Google,
+ * RF-002) já foi conferida e falta o código do app autenticador, ou um de recuperação para quem
+ * está sem o celular. Sem `email` (a volta do Google), diz que a entrada é pela conta Google.
  */
-function MfaStep({
+export function MfaStep({
   email,
   challenge,
   onBack,
   onExpired,
 }: {
-  email: string;
+  email: string | null;
   challenge: MfaChallenge;
   onBack: () => void;
   onExpired: () => void;
@@ -90,7 +93,13 @@ function MfaStep({
         Verificação em duas etapas
       </h1>
       <p className="au-sub">
-        Entrando como <strong className="email-addr">{email}</strong>.
+        {email ? (
+          <>
+            Entrando como <strong className="email-addr">{email}</strong>.
+          </>
+        ) : (
+          'Entrando com a sua conta Google.'
+        )}
       </p>
       <Field label={recovery ? 'Código de recuperação' : 'Código do app autenticador'}>
         <input
@@ -174,10 +183,27 @@ export function LoginForm({
   const [accepted, setAccepted] = useState(false);
   /** Senha certa numa conta com 2FA: o passo 2 toma o lugar do formulário. */
   const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
-  /** Aviso ao voltar do passo 2 sem entrar (o pedido do código venceu). */
-  const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * Aviso ao voltar do passo 2 sem entrar (o pedido do código venceu), ou da volta do Google que
+   * não entrou (/login?google=motivo, RF-002).
+   */
+  const [notice, setNotice] = useState<string | null>(() =>
+    googleFailureMessage(new URLSearchParams(location.search).get('google')),
+  );
   const [focusPassword, setFocusPassword] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
+
+  // O motivo da volta do Google já virou aviso: sai do endereço (recarregar não o repete).
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (!params.has('google')) return;
+    params.delete('google');
+    const search = params.toString();
+    navigate(`${location.pathname}${search ? `?${search}` : ''}`, {
+      replace: true,
+      state: location.state,
+    });
+  }, [location.pathname, location.search, location.state, navigate]);
 
   // De volta do passo 2, o e-mail continua preenchido: o foco vai para a senha.
   useEffect(() => {
@@ -408,6 +434,11 @@ export function LoginForm({
               >
                 {loading ? '…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
               </Button>
+              {/* Login com Google (RF-002): só com ele ligado no servidor; empresa continua pelo
+                  cadastro com CNPJ. */}
+              {(mode === 'login' || role !== 'company') && (
+                <GoogleButton mode={mode} role={role === 'company' ? undefined : role} />
+              )}
               <p className="au-alt">
                 {mode === 'login' ? 'Novo por aqui? ' : 'Já tem conta? '}
                 <button

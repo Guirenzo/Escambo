@@ -35,10 +35,18 @@ export default tseslint.config(
     },
   },
   {
-    // Scripts utilitários em Node puro (ESM): sem TypeScript, com os globais do runtime.
-    files: ['scripts/**/*.mjs'],
+    // Scripts utilitários em Node puro (ESM): sem TypeScript, com os globais do runtime. O Google
+    // falso dos testes ponta a ponta (apps/web/e2e/google-falso.mjs, RF-002) também.
+    files: ['scripts/**/*.mjs', 'apps/web/e2e/**/*.mjs'],
     languageOptions: {
-      globals: { process: 'readonly', console: 'readonly', fetch: 'readonly', URL: 'readonly' },
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        Buffer: 'readonly',
+      },
     },
   },
   // Fronteiras entre os módulos da API (RNF-021): repository alheio, camadas e fachadas.

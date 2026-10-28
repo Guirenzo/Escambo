@@ -15,6 +15,34 @@ function isAes256Key(value: string): boolean {
 
 const FIELD_KEY_HINT = '32 bytes em base64 (gere com "openssl rand -base64 32")';
 
+/** Endereço http(s) absoluto, sem usuário e senha nem fragmento (o Google recusa os dois). */
+function isRedirectUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === 'https:' || url.protocol === 'http:') &&
+      url.username === '' &&
+      url.password === '' &&
+      url.hash === ''
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** http(s) num host da própria máquina: 127.0.0.1, localhost ou [::1]. */
+function isLoopbackUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Validação das variáveis de ambiente (RNF-034: configs externalizadas).
  * Se faltar/estiver inválida, a API não sobe — falha cedo e claro.
@@ -174,6 +202,33 @@ const envSchema = z.object({
     .refine((v) => v === '' || v.split(',').every((k) => isAes256Key(k.trim())), {
       message: `cada chave de FIELD_ENCRYPTION_OLD_KEYS deve ter ${FIELD_KEY_HINT}`,
     }),
+
+  // --- Login com Google (RF-002, 1.54.0) ---
+  // O cliente OAuth "Aplicativo da Web" criado no Google Cloud (DEPLOY.md). Sem os dois, o login com
+  // Google fica desligado: GET /auth/providers diz { google: false }, as rotas do Google respondem
+  // 404 e o botão não aparece. Só um dos dois não sobe. O segredo fica só na API, nunca no web.
+  GOOGLE_CLIENT_ID: z.string().trim().default(''),
+  GOOGLE_CLIENT_SECRET: z.string().trim().default(''),
+  // O endereço de volta, igual ao registrado no Google Cloud. Vazio = APP_URL + /api/auth/google/callback
+  // (o web e a API no mesmo domínio, como no compose; no dev, o proxy do Vite leva /api à API).
+  GOOGLE_REDIRECT_URI: z
+    .string()
+    .trim()
+    .default('')
+    .refine((v) => v === '' || isRedirectUrl(v), {
+      message:
+        'GOOGLE_REDIRECT_URI deve ser um endereço http(s) completo, como https://SEU_DOMINIO/api/auth/google/callback',
+    }),
+  // Só para os testes ponta a ponta: um Google falso NA PRÓPRIA MÁQUINA (127.0.0.1, localhost ou
+  // [::1]) no lugar dos endereços do Google. Vazio em qualquer servidor de verdade; outro host não sobe.
+  GOOGLE_TEST_IDP_URL: z
+    .string()
+    .trim()
+    .default('')
+    .refine((v) => v === '' || isLoopbackUrl(v), {
+      message:
+        'GOOGLE_TEST_IDP_URL só aceita um endereço da própria máquina (127.0.0.1, localhost ou [::1]): é o Google falso dos testes',
+    }),
 });
 
 /**
@@ -193,6 +248,16 @@ const envChecked = envSchema.superRefine((e, ctx) => {
         });
       }
     }
+  }
+  // Login com Google pela metade (o id sem o segredo, ou o contrário) é erro de configuração: subir
+  // desligado em silêncio esconderia o engano até alguém procurar o botão.
+  if ((e.GOOGLE_CLIENT_ID === '') !== (e.GOOGLE_CLIENT_SECRET === '')) {
+    const missing = e.GOOGLE_CLIENT_ID === '' ? 'GOOGLE_CLIENT_ID' : 'GOOGLE_CLIENT_SECRET';
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [missing],
+      message: `O login com Google precisa de GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET juntos: falta ${missing} (ou deixe os dois vazios para desligar)`,
+    });
   }
   if (e.ADMIN_MFA_REQUIRED && e.FIELD_ENCRYPTION_KEY === '') {
     ctx.addIssue({

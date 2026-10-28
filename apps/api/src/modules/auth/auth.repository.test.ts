@@ -315,7 +315,7 @@ describe('authRepository', () => {
   });
 
   describe('contato da conta (RF-017)', () => {
-    it('findContact lê só e-mail, confirmação e telefone daquela conta', async () => {
+    it('findContact lê e-mail, confirmação, telefone e se há senha e Google, nunca o hash nem o sub', async () => {
       const row = { email: 'ana@escambo.test', email_verified_at: null, phone: '+5547999991234' };
       fakeDb.reply([row], []);
       expect(await authRepository.findContact(7)).toBe(row);
@@ -323,6 +323,8 @@ describe('authRepository', () => {
         'email',
         'email_verified_at',
         'phone',
+        'password_hash IS NOT NULL AS has_password',
+        'google_sub IS NOT NULL AS google_linked',
       ]);
       expect(fakeDb.calls[0]!.sql).toContain('FROM users WHERE id = :id LIMIT 1');
       expect(fakeDb.calls[0]!.params).toEqual({ id: 7 });

@@ -216,13 +216,15 @@ export const lgpdRepository = {
       await conn.query<ResultSetHeader>('DELETE FROM push_subscriptions WHERE user_id = :userId', {
         userId,
       });
+      // O vínculo com a conta Google sai junto (RF-002): a mesma conta Google pode abrir uma conta
+      // nova. Um passe do login com Google ainda aberto não leva a nada: a troca recusa conta excluída.
       await conn.query<ResultSetHeader>(
         `UPDATE users
             SET email = CONCAT('removido+', id, '@anon.escambo.invalid'),
                 phone = NULL, password_hash = NULL, status = 'banned', deleted_at = NOW(),
                 email_frequency = 'instant', digest_hour = NULL, timezone = NULL,
                 push_quiet_start = NULL, push_quiet_end = NULL, push_quiet_pass = NULL,
-                push_quiet_summary_id = NULL
+                push_quiet_summary_id = NULL, google_sub = NULL
           WHERE id = :userId`,
         { userId },
       );
