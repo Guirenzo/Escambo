@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccountAccessProvider } from '../../lib/account-access';
 import { ToastProvider } from '../../lib/toast';
@@ -195,5 +196,23 @@ describe('SenhaCard', () => {
     await user.click(screen.getByRole('button', { name: 'Trocar senha' }));
 
     await waitFor(() => expect(changePassword).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('SenhaCard: conta sem senha (RF-002)', () => {
+  it('conta do Google sem senha: em vez do formulário, o caminho para criar uma', () => {
+    render(
+      <MemoryRouter>
+        <SenhaCard hasPassword={false} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('heading', { name: 'Senha' })).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Trocar senha' })).toBeNull();
+    expect(screen.queryByLabelText('Senha atual')).toBeNull();
+    expect(screen.getByTestId('sem-senha')).toHaveTextContent('Sua conta ainda não tem senha');
+    expect(screen.getByRole('link', { name: 'Criar uma senha' })).toHaveAttribute(
+      'href',
+      '/esqueci-senha',
+    );
   });
 });

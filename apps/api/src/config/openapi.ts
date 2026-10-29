@@ -1509,6 +1509,59 @@ export const openapiDocument: Record<string, any> = {
         'accessToken',
         'refreshToken',
       ]),
+      // Login com Google (RF-002): desligado até configurar o cliente OAuth.
+      AuthProviders: {
+        ...obj(
+          {
+            google: {
+              type: 'boolean',
+              description:
+                'Login com Google ligado (GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET configurados)',
+            },
+          },
+          ['google'],
+        ),
+        additionalProperties: false,
+      },
+      GoogleExchange: obj({ code: { type: 'string', minLength: 16, maxLength: 255 } }, ['code']),
+      GoogleSignupChallenge: {
+        ...obj(
+          {
+            signupRequired: { type: 'boolean', enum: [true] },
+            signupToken: {
+              type: 'string',
+              description:
+                'Passe de uso único, só para POST /auth/google/signup: não serve como token de acesso.',
+            },
+            expiresInSeconds: { type: 'integer', minimum: 1 },
+            email: {
+              type: 'string',
+              format: 'email',
+              description: 'O e-mail confirmado pelo Google',
+            },
+            name: {
+              type: 'string',
+              nullable: true,
+              description: 'O nome da conta Google, sugestão para o perfil',
+            },
+          },
+          ['signupRequired', 'signupToken', 'expiresInSeconds', 'email', 'name'],
+        ),
+        additionalProperties: false,
+      },
+      GoogleSignup: obj(
+        {
+          signupToken: { type: 'string', minLength: 16, maxLength: 255 },
+          role: { type: 'string', enum: ['client', 'freelancer'] },
+          timezone: { type: 'string', enum: brazilTimezones },
+          legalAccepted: {
+            type: 'boolean',
+            enum: [true],
+            description: 'O aceite dos Termos e da Política, gravado na versão vigente (ADR 54)',
+          },
+        },
+        ['signupToken', 'role', 'legalAccepted'],
+      ),
       // Verificação em duas etapas (RF-090, RNF-042, ADR 66).
       MfaChallenge: {
         ...obj(
@@ -1632,8 +1685,17 @@ export const openapiDocument: Record<string, any> = {
             description: 'E.164 (+55, DDD e número); null quando não informado',
           },
           pendingEmail: nullableRef('PendingEmailChange'),
+          hasPassword: {
+            type: 'boolean',
+            description:
+              'A conta tem senha. A criada pelo Google (RF-002) nasce sem; para ter uma, "Esqueci minha senha"',
+          },
+          googleLinked: {
+            type: 'boolean',
+            description: 'A conta entra também com a conta Google do e-mail (RF-002)',
+          },
         },
-        ['email', 'emailVerified', 'phone', 'pendingEmail'],
+        ['email', 'emailVerified', 'phone', 'pendingEmail', 'hasPassword', 'googleLinked'],
       ),
       ChangeEmail: obj(
         {
@@ -2025,6 +2087,90 @@ export const openapiDocument: Record<string, any> = {
           },
         },
       }),
+    },
+
+    // Login com Google (RF-002): sem GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET, as rotas do Google
+    // respondem 404 e /auth/providers diz { google: false }.
+    '/auth/providers': {
+      get: op('Auth', 'Jeitos de entrar ligados neste servidor (o botão do Google só com true)', {
+        responses: jsonResponse('200', 'AuthProviders'),
+      }),
+    },
+    '/auth/google/start': {
+      get: op(
+        'Auth',
+        'Login com Google: grava o cookie da ida (state, nonce e PKCE, cifrado, 10 min) e redireciona ao Google (OAuth 2.0 com PKCE S256, escopos openid email profile). É um link de navegação, não uma chamada do app',
+        {
+          responses: {
+            '302': { description: 'Para a tela de consentimento do Google' },
+            '404': errorResponse('not_found: login com Google desligado neste servidor'),
+            '429': errorResponse('too_many_requests (o limite do login, por IP)'),
+          },
+        },
+      ),
+    },
+    '/auth/google/callback': {
+      get: op(
+        'Auth',
+        'Volta do Google (o endereço registrado no Google Cloud): confere o state com o cookie (uma vez só), troca o código, confere o ID token (iss, aud, exp, iat, nonce, email_verified) e decide a conta. Nunca põe sessão no endereço',
+        {
+          responses: {
+            '302': {
+              description:
+                'Para o web: /entrar/google#codigo=... (código de uso único, 2 min, para POST /auth/google/exchange) com o cookie da volta (escambo_google_volta, httpOnly), que amarra o código a este navegador; ou /login?google=motivo (negado, expirado, email_nao_verificado, conta_banida, conta_excluida, conta_vinculada, falhou)',
+            },
+            '404': errorResponse('not_found: login com Google desligado neste servidor'),
+            '429': errorResponse('too_many_requests (o limite do login, por IP)'),
+          },
+        },
+      ),
+    },
+    '/auth/google/exchange': {
+      post: op(
+        'Auth',
+        'Troca o código de uso único da volta do Google pela resposta do login: a sessão, o MfaChallenge (a 2FA nunca é pulada) ou o GoogleSignupChallenge (conta nova: concluir o cadastro). Só no navegador que voltou do Google: pede o cookie da volta, que a resposta apaga',
+        {
+          body: ref('GoogleExchange'),
+          responses: {
+            '200': {
+              description: 'OK',
+              content: {
+                'application/json': {
+                  schema: {
+                    oneOf: [ref('AuthResponse'), ref('MfaChallenge'), ref('GoogleSignupChallenge')],
+                  },
+                },
+              },
+            },
+            '400': errorResponse(
+              'invalid_google_code (vencido, já usado, inexistente ou fora do navegador que voltou do Google, sem o cookie da volta)',
+            ),
+            '403': errorResponse('account_banned ou account_deleted (as mesmas do login)'),
+            '404': errorResponse('not_found: login com Google desligado neste servidor'),
+            '422': errorResponse('validation_error: details.code'),
+            '429': errorResponse('too_many_requests (o limite do login, por IP)'),
+          },
+        },
+      ),
+    },
+    '/auth/google/signup': {
+      post: op(
+        'Auth',
+        'Conclui a conta nova que veio do Google: papel (cliente ou freelancer; empresa pelo cadastro com CNPJ) e aceite dos Termos e da Política. Nasce com o e-mail confirmado, sem senha',
+        {
+          body: ref('GoogleSignup'),
+          responses: {
+            ...jsonResponse('201', 'AuthResponse'),
+            '400': errorResponse('invalid_signup_token (vencido, já usado ou inexistente)'),
+            '404': errorResponse('not_found: login com Google desligado neste servidor'),
+            '409': errorResponse(
+              'email_taken: o e-mail ou a conta Google ganhou conta no meio tempo (entrar com o Google de novo resolve)',
+            ),
+            '422': errorResponse('validation_error: details.role ou details.legalAccepted'),
+            '429': errorResponse('too_many_requests (o limite do login, por IP)'),
+          },
+        },
+      ),
     },
 
     '/categories': { get: op('Categorias', 'Árvore de categorias') },

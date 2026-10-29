@@ -26,8 +26,25 @@ import {
   updatePhone,
   verifyEmail,
 } from './auth.controller';
+import {
+  googleCallback,
+  googleExchange,
+  googleOnly,
+  googleSignup,
+  googleStart,
+  providers,
+} from './google.controller';
 
 export const authRoutes = Router();
+
+// Login com Google (RF-002), desligado até o dono configurar o cliente OAuth: /providers diz se o
+// botão aparece, e as rotas do Google respondem 404 enquanto isso. Ligado, as quatro têm o limite
+// do login por IP; a volta e a troca do código são públicas (o navegador ainda não tem sessão).
+authRoutes.get('/providers', asyncHandler(providers));
+authRoutes.get('/google/start', googleOnly, loginRateLimiter, asyncHandler(googleStart));
+authRoutes.get('/google/callback', googleOnly, loginRateLimiter, asyncHandler(googleCallback));
+authRoutes.post('/google/exchange', googleOnly, loginRateLimiter, asyncHandler(googleExchange));
+authRoutes.post('/google/signup', googleOnly, loginRateLimiter, asyncHandler(googleSignup));
 
 // Rotas sensíveis com anti brute-force (RNF-005 / RN-002).
 authRoutes.post('/register', loginRateLimiter, asyncHandler(register));

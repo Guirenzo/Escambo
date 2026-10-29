@@ -786,8 +786,44 @@ describe('PerfilView: e-mail e telefone da conta (RF-017)', () => {
     expect(within(email).getByRole('form', { name: 'Trocar e-mail' })).toBeInTheDocument();
     const phone = screen.getByRole('heading', { name: 'Telefone' }).closest('section')!;
     expect(await within(phone).findByLabelText('Telefone com DDD')).toHaveValue('(47) 99999-1234');
-    // Os dois cartões dividem uma consulta só.
+    // Os cartões de e-mail, telefone e senha dividem uma consulta só.
     expect(api.accountContact).toHaveBeenCalledTimes(1);
+    // Conta com senha e sem Google: o formulário de senha, sem o cartão do Google.
+    expect(screen.getByRole('form', { name: 'Trocar senha' })).toBeInTheDocument();
+    expect(screen.queryByTestId('google-card')).toBeNull();
+  });
+});
+
+describe('PerfilView: conta que entra com o Google (RF-002)', () => {
+  afterEach(() => sessionStorage.clear());
+
+  it('vinculada e sem senha: o cartão do Google e o caminho para criar a senha', async () => {
+    api.accountContact.mockResolvedValue({
+      email: 'marina@gmail.com',
+      emailVerified: true,
+      phone: null,
+      pendingEmail: null,
+      hasPassword: false,
+      googleLinked: true,
+    });
+    renderView();
+    expect(await screen.findByTestId('google-card')).toHaveTextContent('Vinculado');
+    expect(await screen.findByTestId('sem-senha')).toBeInTheDocument();
+    expect(screen.queryByRole('form', { name: 'Trocar senha' })).toBeNull();
+  });
+
+  it('conta nova sem perfil: o nome da conta Google vem sugerido; com perfil, a sugestão sai', async () => {
+    sessionStorage.setItem('escambo:google-nome', 'Marina do Google');
+    api.profilesMe.mockResolvedValue({ freelancer: null, client: null });
+    const view = renderView();
+    const form = await loaded(clientForm);
+    expect(form.getByLabelText('Nome')).toHaveValue('Marina do Google');
+    view.unmount();
+
+    api.profilesMe.mockResolvedValue({ freelancer: null, client: client() });
+    renderView();
+    expect((await loaded(clientForm)).getByLabelText('Nome')).toHaveValue('Carlos Lima');
+    expect(sessionStorage.getItem('escambo:google-nome')).toBeNull();
   });
 });
 

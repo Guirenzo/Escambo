@@ -143,6 +143,13 @@ export interface AccountContact {
   /** E.164 (+55 com DDD); null = não informado. */
   phone: string | null;
   pendingEmail: PendingEmailChange | null;
+  /**
+   * A conta tem senha. A criada pelo Google (RF-002) nasce sem, e a que o Google retomou perde a
+   * antiga: para ter uma, "Esqueci minha senha".
+   */
+  hasPassword: boolean;
+  /** A conta entra também com a conta Google do e-mail (RF-002). */
+  googleLinked: boolean;
 }
 /** Pedido de troca de e-mail: a senha atual confirma o titular. */
 export interface ChangeEmailRequest {
@@ -241,6 +248,59 @@ export interface MfaChallenge {
 
 /** POST /auth/login: a sessão, ou o pedido do segundo fator. */
 export type LoginResponse = AuthResponse | MfaChallenge;
+
+// --- Login com Google (RF-002) ---
+
+/** GET /auth/providers: os jeitos de entrar ligados neste servidor (o botão só aparece com true). */
+export interface AuthProviders {
+  google: boolean;
+}
+
+/** POST /auth/google/exchange: o código de uso único que a volta do Google deixou no endereço. */
+export interface GoogleExchangeRequest {
+  code: string;
+}
+
+/**
+ * Conta Google sem conta no Escambo: falta concluir o cadastro (papel e aceite dos Termos e da
+ * Política). O `signupToken` vale alguns minutos, uma vez, só para POST /auth/google/signup.
+ */
+export interface GoogleSignupChallenge {
+  signupRequired: true;
+  signupToken: string;
+  expiresInSeconds: number;
+  /** O e-mail confirmado pelo Google: é o da conta nova. */
+  email: string;
+  /** O nome da conta Google, sugestão para o perfil; null se o Google não mandou. */
+  name: string | null;
+}
+
+/** A troca do código: a sessão, o pedido do segundo fator (2FA) ou o cadastro por concluir. */
+export type GoogleExchangeResponse = LoginResponse | GoogleSignupChallenge;
+
+/** POST /auth/google/signup: conclui a conta nova (empresa continua pelo cadastro com CNPJ). */
+export interface GoogleSignupRequest {
+  signupToken: string;
+  role: 'client' | 'freelancer';
+  /** Fuso do aparelho, quando é um dos do Brasil (ADR 51). */
+  timezone?: BrazilTimezone;
+  /** O mesmo aceite do cadastro: a API grava o consentimento na versão vigente (ADR 54). */
+  legalAccepted: true;
+}
+
+/**
+ * Por que a volta do Google não entrou: vai no endereço do login (/login?google=...), sem detalhe
+ * técnico. `negado`: a pessoa desistiu na tela do Google; `expirado`: a ida venceu, foi usada ou
+ * não é deste navegador; `conta_vinculada`: o e-mail tem conta ligada a outra conta Google.
+ */
+export type GoogleLoginFailure =
+  | 'negado'
+  | 'expirado'
+  | 'email_nao_verificado'
+  | 'conta_banida'
+  | 'conta_excluida'
+  | 'conta_vinculada'
+  | 'falhou';
 
 export interface MfaLoginRequest {
   mfaToken: string;

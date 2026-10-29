@@ -95,3 +95,11 @@ Pode rodar de novo sem erro. A tabela `service_packages` existe desde o baseline
 | 0052_documentos.sql                         | CPF do freelancer (RF-020, RN-009, RN-075): `profiles_freelancer` ganha `cpf_encrypted`, `cpf_index` (com a chave única `uq_pf_cpf_index`), `birth_date` e `cpf_verified_at`; conta de empresa (RF-018): `profiles_company` ganha `trade_name` (nome fantasia) |
 
 Pode rodar de novo sem erro, e é só aditiva: colunas no fim das tabelas (instantâneo no MySQL 8) e a chave única sobre uma coluna ainda vazia. A coluna `cpf_verified` e a tabela `profiles_company` existem desde o baseline e só passam a ser usadas agora. O CPF é gravado pela API **só cifrado** com a `FIELD_ENCRYPTION_KEY`; sem a chave, a validação fica indisponível e o saque de quem entrega trabalho fica travado. O número 0052 está reservado para a 1.52.0.
+
+## 1.54.0
+
+| Migration                                   | Efeito                                                                                                                                                |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0053_login_google.sql                       | Login com Google (RF-002): `users.google_sub` (ASCII, comparação exata, chave única `uq_users_google_sub`) e a tabela `google_login_tickets`, com os passes de uso único do fluxo (só o hash) |
+
+Pode rodar de novo sem erro, e é só aditiva: a coluna entra no fim de `users` (instantâneo no MySQL 8), a chave única nasce sobre a coluna vazia e a tabela é criada com `IF NOT EXISTS`. Nenhuma conta muda: todas ficam sem vínculo. O login com Google continua desligado até o dono configurar `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` (DEPLOY.md). A tabela `user_social_logins` do baseline continua sem uso.

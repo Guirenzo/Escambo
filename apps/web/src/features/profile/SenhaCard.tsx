@@ -1,5 +1,6 @@
 import { KeyRound } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, Field } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useToast } from '../../lib/toast';
@@ -7,9 +8,36 @@ import { useToast } from '../../lib/toast';
 /**
  * Troca de senha com login (RF-017). Não usa o formulário de negócio: é segurança da conta e vale
  * também durante a suspensão. A API encerra as outras sessões; esta segue com o par novo, que o
- * cliente HTTP já guarda.
+ * cliente HTTP já guarda. A conta sem senha (criada pelo Google, ou retomada por ele, RF-002) não
+ * tem "senha atual": o cartão mostra o caminho para criar uma, que é o "Esqueci minha senha".
  */
-export function SenhaCard() {
+export function SenhaCard({ hasPassword = true }: { hasPassword?: boolean } = {}) {
+  if (!hasPassword) return <SemSenha />;
+  return <TrocarSenha />;
+}
+
+/** A conta entra só com o Google: criar a senha é pelo link do "Esqueci minha senha". */
+function SemSenha() {
+  return (
+    <section className="card" data-testid="sem-senha">
+      <div className="card-head">
+        <h3>
+          <KeyRound size={16} /> Senha
+        </h3>
+      </div>
+      <p className="muted tiny">
+        Sua conta ainda não tem senha: você entra com o Google. Para ter uma senha também, peça o
+        link em "Esqueci minha senha" com o e-mail da conta. Ao criar a senha, as sessões abertas
+        são encerradas e você entra de novo.
+      </p>
+      <Link to="/esqueci-senha" className="btn secondary sm">
+        Criar uma senha
+      </Link>
+    </section>
+  );
+}
+
+function TrocarSenha() {
   const toast = useToast();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');

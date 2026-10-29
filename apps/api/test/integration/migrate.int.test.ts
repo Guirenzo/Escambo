@@ -932,3 +932,72 @@ describe('0051 (pacotes por serviço, RF-086)', () => {
     }
   }, 120_000);
 });
+
+describe('0053 (login com Google, RF-002)', () => {
+  it('acrescenta users.google_sub (único, comparação exata) e a tabela dos passes; rodar de novo não muda nada', async () => {
+    const database = `${DB}_google_test`;
+    await dropDb(database);
+    const admin = await mysql.createConnection(cfg);
+    await admin.query(
+      `CREATE DATABASE \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    );
+    await admin.end();
+    const old = await mysql.createConnection({ ...cfg, database, multipleStatements: true });
+    try {
+      await ensureMigrationsTable(old);
+      for (const step of loadMigrations().filter((s) => Number(s.name.slice(0, 4)) <= 52)) {
+        await old.query(step.sql);
+        await old.query('INSERT INTO schema_migrations (name, checksum) VALUES (?, ?)', [
+          step.name,
+          createHash('sha256').update(step.sql).digest('hex'),
+        ]);
+      }
+      await createLegacyFixture(old);
+
+      expectAppliedFrom((await migrate(old)).applied, ['0053_login_google']);
+
+      const [cols] = await old.query<RowDataPacket[]>(
+        `SELECT is_nullable AS nullable, character_set_name AS charset, collation_name AS coll
+           FROM information_schema.columns
+          WHERE table_schema = ? AND table_name = 'users' AND column_name = 'google_sub'`,
+        [database],
+      );
+      expect(cols[0]).toMatchObject({ nullable: 'YES', charset: 'ascii', coll: 'ascii_bin' });
+      // As contas antigas ficam sem vínculo.
+      const [legacy] = await old.query<RowDataPacket[]>(
+        'SELECT COUNT(*) AS n FROM users WHERE google_sub IS NOT NULL',
+      );
+      expect(Number(legacy[0]!.n)).toBe(0);
+      const [tables] = await old.query<RowDataPacket[]>(
+        `SELECT COUNT(*) AS n FROM information_schema.tables
+          WHERE table_schema = ? AND table_name = 'google_login_tickets'`,
+        [database],
+      );
+      expect(Number(tables[0]!.n)).toBe(1);
+
+      const step = loadMigrations().find((s) => s.name === '0053_login_google')!;
+      await old.query(step.sql);
+      await old.query(step.sql);
+      expect((await migrate(old)).applied).toEqual([]);
+
+      await old.query("UPDATE users SET google_sub = 'Sub-0053' WHERE id = 61");
+      await expect(
+        old.query("UPDATE users SET google_sub = 'Sub-0053' WHERE id = 62"),
+      ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
+      await old.query("UPDATE users SET google_sub = 'sub-0053' WHERE id = 62");
+      await old.query(
+        `INSERT INTO google_login_tickets (ticket_hash, purpose, expires_at)
+         VALUES (REPEAT('a', 64), 'state', NOW() + INTERVAL 1 MINUTE)`,
+      );
+      await expect(
+        old.query(
+          `INSERT INTO google_login_tickets (ticket_hash, purpose, expires_at)
+           VALUES (REPEAT('a', 64), 'exchange', NOW() + INTERVAL 1 MINUTE)`,
+        ),
+      ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
+    } finally {
+      await old.end();
+      await dropDb(database);
+    }
+  }, 120_000);
+});

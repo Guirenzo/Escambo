@@ -141,7 +141,7 @@ export function isAdminEmail(email: string): boolean {
  */
 export async function cancelEmailChanges(
   userId: number,
-  reason: 'password_changed' | 'password_reset' | 'user',
+  reason: 'password_changed' | 'password_reset' | 'google_claim' | 'user',
   ctx: Partial<RequestContext>,
 ): Promise<number> {
   const cancelled = await emailChangeRepository.cancelOpen(userId);
@@ -160,7 +160,7 @@ export async function cancelEmailChanges(
 }
 
 /** Suspenso mantém sessão de consulta; banimento/exclusão continuam sem acesso. */
-function assertSessionAllowed(user: { status: string; deleted_at?: Date | null }): void {
+export function assertSessionAllowed(user: { status: string; deleted_at?: Date | null }): void {
   if (user.deleted_at) {
     throw new HttpError(403, 'Esta conta foi excluída a pedido do titular.', 'account_deleted');
   }
@@ -180,13 +180,46 @@ const invalidMfaToken = (): HttpError =>
  * para contas já existentes, e a sessão. A troca de e-mail (RF-017) nunca leva uma conta comum a
  * um endereço da lista: não vira caminho para cá.
  */
-async function openSession(user: UserRow, ctx: SessionContext): Promise<AuthResponse> {
+export async function openSession(user: UserRow, ctx: SessionContext): Promise<AuthResponse> {
   if (user.status !== 'suspended' && user.role !== 'admin' && isAdminEmail(user.email)) {
     await authRepository.updateRole(user.id, 'admin');
     user.role = 'admin';
   }
   const tokens = await issueSession(user, ctx);
   return { ...tokens, user: toPublic(user) };
+}
+
+/**
+ * O aceite dos Termos e da Política no cadastro vira registro na versão vigente, com IP e navegador
+ * (ADR 54). Gravado pelo servidor, e não pelo cliente: toda conta nasce com a trilha, pelo cadastro
+ * com senha ou pelo Google (RF-002). Falha aqui não derruba o cadastro — a faixa de atualização da
+ * política cura na próxima entrada.
+ */
+export async function recordSignupConsents(userId: number, ctx: RequestContext): Promise<void> {
+  const userAgent = userAgentOf(ctx.userAgent);
+  for (const type of ['terms_of_use', 'privacy_policy'] as const) {
+    const version = CURRENT_LEGAL_VERSION[type];
+    try {
+      await lgpdFacade.recordConsent({
+        userId,
+        type,
+        version,
+        accepted: true,
+        ip: ctx.ip,
+        userAgent,
+      });
+      void auditService.log({
+        userId,
+        action: 'lgpd_consent',
+        entityType: 'consent',
+        newValue: { type, version, accepted: true },
+        ip: ctx.ip,
+        userAgent,
+      });
+    } catch (err) {
+      logger.warn({ err, userId, type }, 'consentimento do cadastro não gravado');
+    }
+  }
 }
 
 /** Regras de negócio de autenticação (RF-001 a RF-004, RNF-013). */
@@ -224,33 +257,7 @@ export const authService = {
       }
     }
 
-    // O aceite dos Termos e da Política vira registro na versão vigente, com IP e navegador
-    // (ADR 54). Gravado pelo servidor, e não pelo cliente: toda conta nasce com a trilha. Falha
-    // aqui não derruba o cadastro — a faixa de atualização da política cura na próxima entrada.
-    const userAgent = userAgentOf(ctx.userAgent);
-    for (const type of ['terms_of_use', 'privacy_policy'] as const) {
-      const version = CURRENT_LEGAL_VERSION[type];
-      try {
-        await lgpdFacade.recordConsent({
-          userId: id,
-          type,
-          version,
-          accepted: true,
-          ip: ctx.ip,
-          userAgent,
-        });
-        void auditService.log({
-          userId: id,
-          action: 'lgpd_consent',
-          entityType: 'consent',
-          newValue: { type, version, accepted: true },
-          ip: ctx.ip,
-          userAgent,
-        });
-      } catch (err) {
-        logger.warn({ err, userId: id, type }, 'consentimento do cadastro não gravado');
-      }
-    }
+    await recordSignupConsents(id, ctx);
 
     // Boas-vindas + confirmação de e-mail. Falha no e-mail não derruba o cadastro.
     try {

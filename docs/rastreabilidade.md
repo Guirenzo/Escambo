@@ -1,7 +1,7 @@
 # Rastreabilidade dos requisitos — Escambo
 
-> **Versão do código:** 1.53.0
-> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0, a 1.48.0, a 1.49.0, a 1.50.0, a 1.51.0, a 1.52.0 e a 1.53.0
+> **Versão do código:** 1.54.0
+> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0, a 1.48.0, a 1.49.0, a 1.50.0, a 1.51.0, a 1.52.0, a 1.53.0 e a 1.54.0
 > **Autor:** Guilherme Renzo
 
 Os documentos de requisitos foram escritos no planejamento, e a coluna de situação ficou para trás conforme o sistema crescia. Esta página registra o que existe **de verdade** em cada requisito: onde está no código, qual teste prova e, quando não está completo, o que falta ou qual decisão registrada (ADR) explica a lacuna. As situações aqui são as mesmas da coluna **Status** de [requisitos funcionais](./requisitos-funcionais.md) e da coluna **Situação** de [requisitos não funcionais](./requisitos-nao-funcionais.md).
@@ -15,7 +15,7 @@ Os documentos de requisitos foram escritos no planejamento, e a coluna de situa�
 
 | | Implementado | Parcial | Não implementado | Fora do escopo | Total |
 |---|---|---|---|---|---|
-| Requisitos funcionais | 89 | 0 | 1 | 2 | 92 |
+| Requisitos funcionais | 90 | 0 | 0 | 2 | 92 |
 | Requisitos não funcionais | 32 | 7 | 1 | 2 | 42 |
 
 As regras de negócio têm a própria matriz de situação, em [regras de negócio](./regras-de-negocio.md), seção 11.
@@ -25,7 +25,7 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 | ID | Situação | Evidência (código e teste) | O que falta ou decisão |
 |---|---|---|---|
 | RF-001 | Implementado | api: auth.routes.ts POST /auth/register, auth.service.ts register (bcrypt, 409 email_taken); web: LoginForm.tsx. Testes: auth.service.test.ts:117/256, consentimento-cadastro.int.test.ts, e2e contas.smoke.spec.ts:22 | — |
-| RF-002 | Não implementado | Nenhum código OAuth/Google em apps/api/src nem apps/web/src (grep vazio); auth.routes.ts só tem e-mail e senha | Não há ADR. Só docs/wiki/Arquitetura.md:58 diz "fora do escopo entregue (sem ADR próprio)", e RFC e UC-01 (FA-01) ainda descrevem o login Google. Para virar "Fora do escopo", falta um ADR; até lá é pendência. |
+| RF-002 | Implementado | Migration 0053 (users.google_sub único, google_login_tickets só com hash); auth/google-oauth.ts (cliente sem SDK, fetch injetável, PKCE S256, state, nonce, conferência do ID token: iss, aud/azp, exp, iat, nonce, email_verified), google-state.ts (cookies cifrados), google.service.ts (vínculo, retomada de conta não confirmada com sessões revogadas e senha invalidada, 2FA, passe de cadastro), google.controller.ts; rotas GET /auth/providers, GET /auth/google/start e /callback, POST /auth/google/exchange e /signup (limite do login; 404 desligado); utils/redact-url.ts (log sem code, state e cookies); web GoogleButton.tsx, GoogleReturnView.tsx (/entrar/google, 2FA e "Concluir cadastro"), GoogleCard.tsx. Testes: google-oauth.test.ts, google-state.test.ts, google.service.test.ts, google.http.test.ts, google.repository.test.ts, login-google.int.test.ts, login-google-desligado.int.test.ts, migrate.int.test.ts, e2e google.smoke.spec.ts (Google falso local) | Desde a 1.54.0 (ADR 72), desligado até o dono configurar GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET (passo a passo no DEPLOY.md). Desvincular o Google, outros provedores e empresa pelo Google ficaram de fora. |
 | RF-003 | Implementado | auth.service.ts signAccessToken usa env.JWT_EXPIRES_IN (config/env.ts, padrão 1h; .env.example). Teste: auth.service.test.ts:303-307 (exp-iat = 15 min com o env de teste) | — |
 | RF-004 | Implementado | POST /auth/refresh com rotação (auth.service.ts refresh, session.repository.ts revokeByHash), REFRESH_TOKEN_EXPIRES_DAYS=7; web renova no 401 (lib/api.ts). Testes: auth.service.test.ts:421-497, auth-sessao.int.test.ts:51, web lib/api.session.test.ts | — |
 | RF-005 | Implementado | auth.service.ts register chama sendVerification (token verify_email, 24h) pela caixa de saída. Testes: auth-email.int.test.ts:74, e2e contas.smoke.spec.ts:46 | O envio é de melhor esforço (ADR 18): com MAIL_PROVIDER=off nenhum e-mail sai. |
@@ -113,7 +113,7 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 | RF-087 | Implementado | modules/favorites (serviço ou freelancer), modules/saved-searches + jobs/saved-search-alerts.ts (ADR 35/37); favorites.int.test.ts, saved-search-alerts.int.test.ts, e2e buscas.smoke.spec.ts e engajamento.smoke.spec.ts | — |
 | RF-088 | Implementado | contracts/milestones.repository.ts (ADR 19/25), MilestonesSection.tsx; milestones-flow.int.test.ts, e2e marcos.smoke.spec.ts | Todos os marcos são financiados no aceite (decisão do ADR 19); a liberação do dinheiro é por marco. |
 | RF-089 | Implementado | modules/reports (POST /api/reports para user, service, review e outros), fila /api/admin/reports com ações; content-moderation.int.test.ts, moderation-images.int.test.ts, e2e confianca.smoke.spec.ts ('denúncia pelo perfil público'), moderacao-conteudo.smoke.spec.ts | — |
-| RF-090 | Implementado | Exportação: modules/lgpd/lgpd.export.ts (formato 1.14, com a situação da 2FA, os pacotes dos serviços e o pacote de cada contratação (1.51.0) e, desde a 1.53.0, o CPF inteiro do titular e os dados da empresa); lgpd-flow.int.test.ts, adr61-export-isolamento.int.test.ts. 2FA: POST /auth/mfa/setup, /enable, /disable, /recovery-codes, GET /auth/mfa e POST /auth/login/mfa (login em dois passos com mfaToken de chave derivada); totp.ts (RFC 6238, anti-reuso por last_used_step, migration 0050), recovery-codes.ts (10 códigos de uso único, só o hash), trava de 5 erros por 15 min; reset pelo atendimento (POST /admin/users/:ulid/mfa/reset); web: DoisFatoresCard.tsx, LoginForm.tsx (passo 2), AccountSupportSection.tsx. Testes: totp.test.ts, recovery-codes.test.ts, mfa-token.test.ts, mfa.service.test.ts, mfa.verify.test.ts, auth.mfa-login.test.ts, admin.mfa.test.ts, dois-fatores.int.test.ts, DoisFatoresCard.test.tsx, e2e dois-fatores.smoke.spec.ts | Desde a 1.48.0 (ADR 66), a 2FA por app autenticador. SMS e e-mail como segundo fator ficaram de fora de propósito; a ativação depende da FIELD_ENCRYPTION_KEY no servidor. |
+| RF-090 | Implementado | Exportação: modules/lgpd/lgpd.export.ts (formato 1.15, com a situação da 2FA, os pacotes dos serviços e o pacote de cada contratação (1.51.0), o CPF inteiro do titular e os dados da empresa (1.53.0) e, desde a 1.54.0, a conta Google vinculada); lgpd-flow.int.test.ts, adr61-export-isolamento.int.test.ts. 2FA: POST /auth/mfa/setup, /enable, /disable, /recovery-codes, GET /auth/mfa e POST /auth/login/mfa (login em dois passos com mfaToken de chave derivada); totp.ts (RFC 6238, anti-reuso por last_used_step, migration 0050), recovery-codes.ts (10 códigos de uso único, só o hash), trava de 5 erros por 15 min; reset pelo atendimento (POST /admin/users/:ulid/mfa/reset); web: DoisFatoresCard.tsx, LoginForm.tsx (passo 2), AccountSupportSection.tsx. Testes: totp.test.ts, recovery-codes.test.ts, mfa-token.test.ts, mfa.service.test.ts, mfa.verify.test.ts, auth.mfa-login.test.ts, admin.mfa.test.ts, dois-fatores.int.test.ts, DoisFatoresCard.test.tsx, e2e dois-fatores.smoke.spec.ts | Desde a 1.48.0 (ADR 66), a 2FA por app autenticador. SMS e e-mail como segundo fator ficaram de fora de propósito; a ativação depende da FIELD_ENCRYPTION_KEY no servidor. |
 | RF-091 | Implementado | modules/dropouts, profile/DesistenciasCard.tsx; desistencias-direitos.int.test.ts ('contestação é única, só do titular...', 'janela inclusiva de 60 dias'), e2e desistencias.smoke.spec.ts | Está na 1.42.0 (ADR 61), no ramo feat/regras-pendentes, ainda fora da main. |
 | RF-092 | Implementado | POST /api/admin/dropouts/:id/{excuse,uphold} com nota obrigatória de 10 a 500 caracteres registrada em admin_actions; GET /admin/users/:ulid/dropouts; admin/DropoutsReview.tsx; desistencias-direitos.int.test.ts, moderacao-desistencias.int.test.ts, e2e desistencias.smoke.spec.ts | Mesmo caso do RF-091: ramo feat/regras-pendentes (1.42.0), ainda fora da main. |
 
@@ -168,6 +168,6 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 
 <div align="center">
 
-*rastreabilidade.md — Escambo v1.53.0 — Católica SC — 2026*
+*rastreabilidade.md — Escambo v1.54.0 — Católica SC — 2026*
 
 </div>

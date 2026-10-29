@@ -58,7 +58,8 @@
 
 ```
 users (base)
- ├── user_social_logins      (OAuth2 providers)
+ ├── user_social_logins      (OAuth2 providers; sem uso: o Google vincula por users.google_sub)
+ ├── google_login_tickets    (passes de uso único do login com Google, só o hash)
  ├── user_sessions           (tokens ativos)
  ├── user_mfa                (2FA / TOTP — segredo cifrado)
  ├── profiles_client         (1:1)
@@ -126,7 +127,7 @@ report_snapshots              (relatórios)
 
 ### `users`
 
-Tabela central de todos os usuários da plataforma. A preferência de e-mail (`email_frequency`, ADR 27) e a hora do resumo do dia (`digest_hour`, ADR 42) e o fuso da conta (`timezone`, ADR 46; é nele que a agenda de atendimento do freelancer vale, ADR 48) moram aqui, junto com `last_digest_at`, a trava de um resumo por dia.
+Tabela central de todos os usuários da plataforma. A preferência de e-mail (`email_frequency`, ADR 27) e a hora do resumo do dia (`digest_hour`, ADR 42) e o fuso da conta (`timezone`, ADR 46; é nele que a agenda de atendimento do freelancer vale, ADR 48) moram aqui, junto com `last_digest_at`, a trava de um resumo por dia. O login com Google (RF-002, migration 0053, 1.54.0) vincula a conta pela `google_sub`, a claim `sub` do ID token, que não muda quando a pessoa troca o e-mail no Google: única (uma conta Google entra em uma conta só), em ASCII com comparação exata (`ascii_bin`), NULL na conta sem Google e apagada na anonimização (RN-072). A conta criada pelo Google nasce com `email_verified_at` preenchido e `password_hash` NULL (o login com senha a recusa como a senha errada); a conta não confirmada que o Google retoma também fica com `password_hash` NULL.
 
 ```sql
 CREATE TABLE users (
@@ -145,6 +146,7 @@ CREATE TABLE users (
   push_quiet_end    TINYINT UNSIGNED NULL,                    -- fim (exclusivo); NULL nos dois = desligado; início > fim cruza a meia-noite; CHECK recusa meia janela e início = fim
   push_quiet_pass   SET('deadline') NULL,                     -- o que sai durante o silêncio, escolha da pessoa numa lista fechada (migration 0026, ADR 56); NULL = nunca escolheu (vale como nada); '' = nada
   push_quiet_summary_id BIGINT UNSIGNED NULL,                -- marca d'água do resumo ao fim do silêncio: avisos retidos até este id já foram resumidos (ou descartados ao desligar)
+  google_sub        VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NULL, -- conta Google vinculada (claim sub, RF-002); UNIQUE uq_users_google_sub (migration 0053)
   last_digest_at    DATETIME    NULL,                          -- último resumo diário (trava de um por dia)
   phone_verified_at DATETIME    NULL,
   last_login_at     DATETIME    NULL,
@@ -164,7 +166,7 @@ CREATE TABLE users (
 
 ### `user_social_logins`
 
-Vínculos de login social (Google, Facebook etc).
+Vínculos de login social (Google, Facebook etc). Existe desde o baseline e continua **sem uso**: o login com Google (1.54.0) vincula pela coluna única `users.google_sub`, que resolve o vínculo de um provedor só numa consulta e não convida a guardar o token do Google (a coluna `token` daqui), que o Escambo não usa depois do login.
 
 ```sql
 CREATE TABLE user_social_logins (
@@ -257,6 +259,32 @@ CREATE TABLE user_mfa (
   UNIQUE KEY uq_user_mfa (user_id, method),
   INDEX idx_mfa_user (user_id),
   CONSTRAINT fk_mfa_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+---
+
+### `google_login_tickets`
+
+Os passes de uso único do login com Google (RF-002, migration 0053, 1.54.0), guardados só como hash SHA-256. `state`: o `state` de cada ida ao Google, gravado na volta, para a mesma volta não passar duas vezes, nem com o cookie copiado. `exchange`: o código que a volta deixa no endereço do web (2 minutos), trocado em POST /auth/google/exchange pela sessão, pelo passe da 2FA ou pelo de conta nova. `signup`: o passe de "Concluir cadastro" (15 minutos), com o `sub`, o e-mail e o nome que o Google mandou. O passe sai da tabela quando é usado, e os vencidos saem a cada passe novo: o e-mail e o nome de quem não concluiu o cadastro não ficam. Nenhum token do Google é guardado.
+
+```sql
+CREATE TABLE google_login_tickets (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  ticket_hash CHAR(64)        CHARACTER SET ascii COLLATE ascii_bin NOT NULL, -- SHA-256 do passe
+  purpose     ENUM('state', 'exchange', 'signup') NOT NULL,
+  user_id     BIGINT UNSIGNED NULL,          -- exchange de conta que já existe
+  google_sub  VARCHAR(255)    CHARACTER SET ascii COLLATE ascii_bin NULL, -- conta nova
+  email       VARCHAR(255)    NULL,          -- conta nova: o e-mail confirmado pelo Google
+  name        VARCHAR(150)    NULL,          -- conta nova: o nome da conta Google, sugestão
+  expires_at  DATETIME        NOT NULL,
+  created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_glt_hash (ticket_hash),
+  INDEX idx_glt_expires (expires_at),
+  INDEX idx_glt_user (user_id),
+  CONSTRAINT fk_glt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 

@@ -34,9 +34,13 @@ import { parseStoredRecoveryCodes, recoveryCodesLeft } from '../auth/recovery-co
  * Formato 1.14 (1.53.0): o perfil de freelancer traz o CPF completo, a data de nascimento e quando
  * foram validados (RF-020: direito de acesso; o índice cego não entra), e há perfis.empresa, com a
  * razão social, o nome fantasia, o CNPJ e o resto dos dados da conta de empresa (RF-018).
+ * Formato 1.15 (1.54.0): contaGoogle diz se a conta entra com o Google (RF-002) e traz o `sub`, o
+ * identificador da conta Google vinculada: é dado do titular que a plataforma guarda (art. 18, II),
+ * como o CPF na 1.14, e não é credencial (sozinho não entra em conta nenhuma). Nenhum token do
+ * Google é guardado, então nenhum entra.
  */
 
-export const EXPORT_FORMAT_VERSION = '1.14';
+export const EXPORT_FORMAT_VERSION = '1.15';
 
 /** O CPF do titular, legível como ele o informou; o que não decifra sai como "[indisponível]". */
 function openCpf(stored: unknown): string | null {
@@ -54,7 +58,8 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
   const p = { userId };
   const [user] = await q(
     `SELECT ulid, email, phone, role, status, email_verified_at, email_frequency, digest_hour, timezone,
-            push_quiet_start, push_quiet_end, push_quiet_pass, last_digest_at, last_login_at, created_at
+            push_quiet_start, push_quiet_end, push_quiet_pass, last_digest_at, last_login_at, created_at,
+            google_sub
        FROM users WHERE id = :userId`,
     p,
   );
@@ -290,7 +295,15 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
   return {
     formato: `escambo-export/${EXPORT_FORMAT_VERSION}`,
     exportadoEm: new Date().toISOString(),
-    titular: { id: userId, ...(user ?? {}), push_quiet_pass: quietPassOf(user?.push_quiet_pass) },
+    titular: {
+      id: userId,
+      ...(user ? (({ google_sub: _sub, ...rest }) => rest)(user) : {}),
+      push_quiet_pass: quietPassOf(user?.push_quiet_pass),
+    },
+    contaGoogle: {
+      vinculada: typeof user?.google_sub === 'string',
+      sub: typeof user?.google_sub === 'string' ? user.google_sub : null,
+    },
     perfis: { freelancer, cliente: client ?? null, empresa: company ?? null },
     consentimentos: consents,
     servicos: services,

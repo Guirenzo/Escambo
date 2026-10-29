@@ -372,7 +372,7 @@ describe('CPF do freelancer (RF-020, RN-009, RN-075)', () => {
       formato: string;
       perfis: { freelancer: Record<string, unknown> };
     };
-    expect(data.formato).toBe('escambo-export/1.14');
+    expect(data.formato).toBe('escambo-export/1.15');
     expect(data.perfis.freelancer).toMatchObject({
       cpf,
       birth_date: '1990-05-17',

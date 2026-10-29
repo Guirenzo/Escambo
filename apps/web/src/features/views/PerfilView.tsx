@@ -31,6 +31,9 @@ import { SenhaCard } from '../profile/SenhaCard';
 import { DoisFatoresCard } from '../profile/DoisFatoresCard';
 import { EmailCard } from '../profile/EmailCard';
 import { TelefoneCard } from '../profile/TelefoneCard';
+import { GoogleCard } from '../profile/GoogleCard';
+import { useAccountContact } from '../profile/contact';
+import { forgetSuggestedName, suggestedName } from '../../lib/google';
 import { ImageUploadButton } from '../../components/ImageUploadButton';
 import { profileIdentity } from '../../lib/documents';
 import { CompanyTag } from '../../components/CompanyTag';
@@ -150,6 +153,15 @@ export function profileSections(
   ];
 }
 
+/**
+ * O cartão Senha com a forma de entrar da conta (RF-002): sem senha (conta do Google), o caminho
+ * para criar uma. Monta junto com os cartões de e-mail e telefone: os três dividem a consulta.
+ */
+function SenhaDaConta() {
+  const contact = useAccountContact();
+  return <SenhaCard hasPassword={contact.data?.hasPassword !== false} />;
+}
+
 export function PerfilView() {
   usePageTitle('Perfil');
   // O painel admin manda para /perfil#dois-fatores quando exige a 2FA: rola até o cartão.
@@ -194,6 +206,11 @@ export function PerfilView() {
       setName(base.fullName);
       setCity(base.city ?? '');
       setAvatarUrl(base.avatarUrl ?? '');
+      forgetSuggestedName();
+    } else {
+      // Conta nova pelo Google (RF-002): o nome da conta Google é a sugestão, até salvar o perfil.
+      const suggestion = suggestedName();
+      if (suggestion) setName(suggestion);
     }
     if (p.freelancer) {
       setHeadline(p.freelancer.headline ?? '');
@@ -603,8 +620,9 @@ export function PerfilView() {
               <PushCard />
               <EmailCard />
               <TelefoneCard />
+              <GoogleCard />
               <div id="senha" className="settings-anchor">
-                <SenhaCard />
+                <SenhaDaConta />
               </div>
               <DoisFatoresCard />
               <div id="privacidade" className="settings-anchor">

@@ -610,7 +610,7 @@ describe('Suporte geral — HTTP real e regras RN-007/061/064/065', () => {
     );
     await reply(staff, foreign.id, { message: 'MENSAGEM ALHEIA NÃO PORTÁVEL' }, true);
     const exported = await buildExport(owner.id);
-    expect(exported.formato).toBe('escambo-export/1.14');
+    expect(exported.formato).toBe('escambo-export/1.15');
     const support = exported.suporte as {
       chamados: { id: number }[];
       mensagens: { message: string }[];

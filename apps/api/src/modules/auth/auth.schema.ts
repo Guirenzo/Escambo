@@ -129,6 +129,26 @@ export const updatePhoneSchema = z.object({
     }),
 });
 
+/** POST /auth/google/exchange: o código de uso único que a volta do Google deixou no endereço. */
+export const googleExchangeSchema = z.object({
+  code: z.string().min(16, 'Código inválido').max(255, 'Código inválido'),
+});
+
+/**
+ * POST /auth/google/signup: conclui a conta nova que veio do Google (RF-002). Os mesmos passos do
+ * cadastro, menos a senha (o Google confirmou o e-mail): o papel e o aceite dos Termos e da
+ * Política (RN-071, ADR 54). Empresa continua pelo cadastro com CNPJ (RF-018).
+ */
+export const googleSignupSchema = z.object({
+  signupToken: z.string().min(16, 'Token inválido').max(255, 'Token inválido'),
+  role: z.enum(['client', 'freelancer'], { error: 'Escolha cliente ou freelancer' }),
+  timezone: z.enum(BRAZIL_TIMEZONES).optional(),
+  legalAccepted: z.literal(true, {
+    error: 'É preciso aceitar os Termos de Uso e a Política de Privacidade',
+  }),
+});
+export type GoogleSignupInput = z.infer<typeof googleSignupSchema>;
+
 export const refreshSchema = z.object({
   refreshToken: z.string().min(1, 'Refresh token obrigatório'),
 });

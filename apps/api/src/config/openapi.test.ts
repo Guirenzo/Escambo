@@ -899,6 +899,8 @@ describe('documento OpenAPI: lacunas de 19/10', () => {
       'emailVerified',
       'phone',
       'pendingEmail',
+      'hasPassword',
+      'googleLinked',
     ]);
     expect(schemas.AccountContact.properties.phone.pattern).toBe('^\\+55\\d{10,11}$');
     expect(schemas.UpdatePhone.properties.phone.nullable).toBe(true);
