@@ -1,8 +1,11 @@
+import { createHash } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
 import type { Connection } from 'mysql2/promise';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  appliedChecksums,
   appliedMigrations,
+  changedMigrations,
   ensureMigrationsTable,
   loadMigrations,
   migrate,
@@ -29,6 +32,13 @@ const M1_SHA = '7212a8b9ba9a0ef1b7a36e7c83d86b161114fd9b7d570de7e9e2a245e5b52b40
 const M2_SHA = '74ae5451dbc36d83a6d7aaeac19c7bcf1eec2b17a679678090b8e1a32621c4dc';
 
 const RECORD_SQL = 'INSERT INTO schema_migrations (name, checksum) VALUES (?, ?)';
+const APPLIED_SQL = 'SELECT name, checksum FROM schema_migrations';
+/** O checksum gravado quando cada arquivo acima foi aplicado sem mudança. */
+const SHA_OF: Record<string, string> = {
+  '0000_baseline': BASELINE_SHA,
+  '0001_apelido': M1_SHA,
+  '0002_indice': M2_SHA,
+};
 
 interface Disk {
   schema?: string;
@@ -60,6 +70,8 @@ function mountDisk(disk: Disk): void {
 interface DbState {
   /** Nomes já registrados em schema_migrations. */
   applied?: string[];
+  /** Checksum gravado por nome; sem ele, o do arquivo como está no disco do teste. */
+  checksums?: Record<string, string>;
   /** A tabela `users` já existe (banco criado pelo init do Docker). */
   hasUsers?: boolean;
   /** Já há categorias de serviço (o seed de referência entrou). */
@@ -80,6 +92,10 @@ function fakeConn(state: DbState = {}): {
     if (state.failOn?.sql === sql) throw state.failOn.error;
     if (sql === 'SELECT name FROM schema_migrations') {
       return [(state.applied ?? []).map((name) => ({ name })), []];
+    }
+    if (sql === APPLIED_SQL) {
+      const sums = { ...SHA_OF, ...state.checksums };
+      return [(state.applied ?? []).map((name) => ({ name, checksum: sums[name] })), []];
     }
     if (sql.includes('information_schema.tables')) return [state.hasUsers ? [{ 1: 1 }] : [], []];
     if (sql === 'SELECT 1 FROM service_categories LIMIT 1') {
@@ -172,6 +188,22 @@ describe('runner de migrations', () => {
       expect(sql).toContain('PRIMARY KEY (name)');
     });
 
+    it('appliedChecksums devolve o checksum gravado de cada nome, e changedMigrations aponta só o arquivo que mudou', async () => {
+      mountDisk({ schema: BASELINE_SQL, migrations: TWO_MIGRATIONS });
+      const { conn } = fakeConn({
+        applied: ['0000_baseline', '0001_apelido', '0002_indice'],
+        checksums: { '0002_indice': '0'.repeat(64) },
+      });
+
+      const applied = await appliedChecksums(conn);
+
+      expect([...applied.keys()]).toEqual(['0000_baseline', '0001_apelido', '0002_indice']);
+      expect(applied.get('0001_apelido')).toBe(M1_SHA);
+      expect(changedMigrations(loadMigrations(), applied)).toEqual(['0002_indice']);
+      // Pendente (sem registro) não é "alterada".
+      expect(changedMigrations(loadMigrations(), new Map())).toEqual([]);
+    });
+
     it('appliedMigrations devolve o conjunto dos nomes registrados', async () => {
       const { conn, sqls } = fakeConn({ applied: ['0000_baseline', '0001_apelido'] });
 
@@ -195,7 +227,7 @@ describe('runner de migrations', () => {
         skipped: [],
       });
       expect(flat(calls[0]!.sql)).toMatch(/^CREATE TABLE IF NOT EXISTS schema_migrations/);
-      expect(calls[1]!.sql).toBe('SELECT name FROM schema_migrations');
+      expect(calls[1]!.sql).toBe(APPLIED_SQL);
       // A âncora do baseline é a tabela users do banco da própria conexão.
       expect(flat(calls[2]!.sql)).toBe(
         "SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'users' LIMIT 1",
@@ -245,7 +277,7 @@ describe('runner de migrations', () => {
       });
       // Só a criação da tabela de controle e a leitura dela.
       expect(sqls()).toHaveLength(2);
-      expect(sqls()[1]).toBe('SELECT name FROM schema_migrations');
+      expect(sqls()[1]).toBe(APPLIED_SQL);
     });
 
     it('aplica só o que falta, sem tocar no que já foi registrado', async () => {
@@ -277,6 +309,53 @@ describe('runner de migrations', () => {
       expect(calls.at(-1)).toEqual({ sql: M1_SQL, params: undefined });
       expect(sqls()).not.toContain(RECORD_SQL);
       expect(sqls()).not.toContain(M2_SQL);
+    });
+
+    it('migration editada depois de aplicada: recusa antes de executar qualquer coisa e diz qual é', async () => {
+      mountDisk({ schema: BASELINE_SQL, migrations: TWO_MIGRATIONS });
+      const { conn, sqls } = fakeConn({
+        applied: ['0000_baseline', '0001_apelido'],
+        checksums: { '0001_apelido': 'f'.repeat(64) },
+      });
+
+      await expect(migrate(conn)).rejects.toThrow(
+        /^Migration alterada depois de aplicada: 0001_apelido\. .*migration nova/,
+      );
+      // Só a tabela de controle e a leitura dela: nenhuma migration rodou.
+      expect(sqls()).toHaveLength(2);
+      expect(sqls()[1]).toBe(APPLIED_SQL);
+    });
+
+    it('o mesmo arquivo com outro fim de linha (CRLF no Windows, LF na imagem) não conta como editado', async () => {
+      const crlf = 'ALTER TABLE users\r\n  ADD COLUMN nickname VARCHAR(40);\r\n';
+      const lf = crlf.replace(/\r\n/g, '\n');
+      const sha = (s: string): string => createHash('sha256').update(s).digest('hex');
+      for (const [onDisk, recorded] of [
+        [crlf, sha(lf)],
+        [lf, sha(crlf)],
+      ] as const) {
+        mountDisk({ schema: BASELINE_SQL, migrations: { '0001_apelido.sql': onDisk } });
+        const { conn } = fakeConn({
+          applied: ['0000_baseline', '0001_apelido'],
+          checksums: { '0001_apelido': recorded },
+        });
+        await expect(migrate(conn)).resolves.toEqual({
+          applied: [],
+          skipped: ['0000_baseline', '0001_apelido'],
+        });
+      }
+    });
+
+    it('o baseline fica de fora da conferência: o schema.sql é o retrato para bancos novos', async () => {
+      mountDisk({
+        schema: 'CREATE TABLE users (id INT, nome VARCHAR(80));',
+        migrations: TWO_MIGRATIONS,
+      });
+      const { conn } = fakeConn({ applied: ['0000_baseline'], hasUsers: true });
+
+      await expect(migrate(conn)).resolves.toMatchObject({
+        applied: ['0001_apelido', '0002_indice'],
+      });
     });
 
     it('trigger recusado por falta de SUPER com o binlog ligado (1419) diz a migration e o que mudar no MySQL', async () => {

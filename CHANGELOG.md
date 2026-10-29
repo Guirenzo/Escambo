@@ -5,6 +5,21 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.54.1] — 2026-10-29
+
+Correções de engenharia e de documentação, sem mudança para quem usa o app.
+
+### Corrigido
+
+- **Migrations conferem o checksum das já aplicadas:** `schema_migrations` gravava o checksum de cada migration e nunca o comparava. Agora o `migrate`, antes de aplicar qualquer coisa, recusa com o nome da migration quando um arquivo já aplicado foi editado depois ("ponha a mudança numa migration nova"). O mesmo arquivo com outro fim de linha (CRLF no Windows, LF na imagem do CI) não conta como editado, e o baseline (`schema.sql`, o retrato para bancos novos) fica de fora. O `db:migrate -- --status` marca a migration alterada.
+- **README:** o passo de desenvolvimento não funcionava como estava. O `apps/api/.env` é obrigatório (`JWT_SECRET`), e faltava o `db:migrate` depois do schema. Entram também a situação atual e os números de testes, no lugar do resumo antigo da 1.42.0.
+- **ADR 7:** registra que, desde a 1.42.0 (ADR 61), a autorização lê o status da conta no banco a cada requisição; a lista em memória ficou só como retrato local.
+- Dependências de produção atualizadas pelo dependabot: @sentry/node 11.9.0, nodemailer 10.2.1, @tanstack/react-query 5.104.5 e lucide-react 1.61.0.
+
+### Para atualizar
+
+Nada a fazer: sem migration nova e sem variável nova.
+
 ## [1.54.0] — 2026-10-28
 
 Login com Google (RF-002, ADR 72), pronto e **desligado até o dono configurar** as credenciais. RF: 90 implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.

@@ -32,6 +32,15 @@ export interface MigrateResult {
 
 const checksum = (sql: string): string => createHash('sha256').update(sql).digest('hex');
 
+/**
+ * O mesmo arquivo pode chegar com outro fim de linha: o checkout no Windows traz CRLF, a imagem
+ * construída no CI traz LF. Qualquer uma dessas variantes conta como o arquivo que foi aplicado.
+ */
+function checksumVariants(sql: string): string[] {
+  const lf = sql.replace(/\r\n/g, '\n');
+  return [checksum(sql), checksum(lf), checksum(lf.replace(/\n/g, '\r\n'))];
+}
+
 /** Baseline sem `CREATE DATABASE`/`USE` — roda no database já selecionado pela conexão. */
 function loadBaseline(): string {
   return readFileSync(join(DB_DIR, 'schema.sql'), 'utf8')
@@ -74,6 +83,25 @@ export async function ensureMigrationsTable(conn: Connection): Promise<void> {
 export async function appliedMigrations(conn: Connection): Promise<Set<string>> {
   const [rows] = await conn.query<RowDataPacket[]>('SELECT name FROM schema_migrations');
   return new Set(rows.map((r) => r.name as string));
+}
+
+/** Nome e checksum de cada migration registrada em schema_migrations. */
+export async function appliedChecksums(conn: Connection): Promise<Map<string, string>> {
+  const [rows] = await conn.query<RowDataPacket[]>('SELECT name, checksum FROM schema_migrations');
+  return new Map(rows.map((r) => [r.name as string, r.checksum as string]));
+}
+
+/**
+ * Migrations já aplicadas cujo arquivo mudou depois: o checksum gravado na aplicação não bate com
+ * nenhuma variante do arquivo atual. Migration aplicada não se edita (o banco de quem já rodou
+ * nunca veria a mudança); a correção é a próxima migration. O baseline fica de fora: o schema.sql
+ * é o retrato do banco inteiro para bancos novos, não uma mudança incremental.
+ */
+export function changedMigrations(steps: MigrationStep[], applied: Map<string, string>): string[] {
+  return steps
+    .filter((step) => step.name !== '0000_baseline' && applied.has(step.name))
+    .filter((step) => !checksumVariants(step.sql).includes(applied.get(step.name)!))
+    .map((step) => step.name);
 }
 
 /** Já existe o schema base? (checa uma tabela âncora no database atual). */
@@ -130,14 +158,26 @@ function explainFailure(step: MigrationStep, err: unknown): unknown {
   );
 }
 
-/** Aplica todas as migrations pendentes, em ordem. Idempotente. */
+/**
+ * Aplica todas as migrations pendentes, em ordem. Idempotente. Antes de aplicar qualquer coisa,
+ * recusa se uma migration já aplicada foi editada depois (changedMigrations): rodar por cima
+ * deixaria bancos diferentes com o mesmo histórico.
+ */
 export async function migrate(conn: Connection): Promise<MigrateResult> {
   await ensureMigrationsTable(conn);
-  const done = await appliedMigrations(conn);
+  const applied = await appliedChecksums(conn);
+  const steps = loadMigrations();
+  const changed = changedMigrations(steps, applied);
+  if (changed.length > 0) {
+    throw new Error(
+      `Migration alterada depois de aplicada: ${changed.join(', ')}. Volte o arquivo ao que foi ` +
+        'aplicado (git log) e ponha a mudança numa migration nova, com a próxima numeração.',
+    );
+  }
   const result: MigrateResult = { applied: [], skipped: [] };
 
-  for (const step of loadMigrations()) {
-    if (done.has(step.name)) {
+  for (const step of steps) {
+    if (applied.has(step.name)) {
       result.skipped.push(step.name);
       continue;
     }

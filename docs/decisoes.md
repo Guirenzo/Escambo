@@ -44,6 +44,7 @@ Serve para a banca e para quem for evoluir o sistema: cada item explica **por qu
 - **Contexto:** suspender/banir precisa valer agora, mas o JWT vigente dura até 1h.
 - **Decisão:** status checado no login e no refresh (banco) **e** lista de bloqueio em memória hidratada na subida e mantida pela moderação, consultada pelo middleware e pelo handshake do socket; sessões são revogadas ao suspender/banir.
 - **Consequências:** efeito instantâneo na instância que moderou; em cluster, outras instâncias convergem no refresh (≤1h) — aceitável para o porte atual. Uma versão distribuída trocaria o `Set` por Redis.
+- **Atualização (1.42.0, ADR 61):** a autorização deixou de depender da lista em memória. O `authenticate` e o handshake do socket leem o status e o papel da conta no banco a cada requisição ou evento (`auth/account-access.ts`, `currentAccount`), e a suspensão passou a ser só leitura (RN-007). Por isso a moderação vale na hora em qualquer instância, sem Redis. A lista (`config/blocklist.ts`) continua como retrato local, hidratado na subida, e não concede nem nega acesso.
 
 ## 8. Tempo real com Socket.IO, salas por contrato e por usuário
 
