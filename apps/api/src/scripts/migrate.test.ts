@@ -8,7 +8,8 @@ const h = vi.hoisted(() => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   runRepairDeadlines: vi.fn(),
   core: {
-    appliedMigrations: vi.fn(),
+    appliedChecksums: vi.fn(),
+    changedMigrations: vi.fn(),
     ensureMigrationsTable: vi.fn(),
     loadMigrations: vi.fn(),
     migrate: vi.fn(),
@@ -144,21 +145,28 @@ describe('CLI de migrations', () => {
   });
 
   it('--status só lista aplicadas e pendentes: não aplica, não carrega seed nem repara', async () => {
-    h.core.appliedMigrations.mockResolvedValue(new Set(['0000_baseline', '0001_credits']));
-    h.core.loadMigrations.mockReturnValue([
+    const applied = new Map([
+      ['0000_baseline', 'a'.repeat(64)],
+      ['0001_credits', 'b'.repeat(64)],
+    ]);
+    const steps = [
       { name: '0000_baseline', sql: '' },
       { name: '0001_credits', sql: '' },
       { name: '0002_pagamentos', sql: '' },
-    ]);
+    ];
+    h.core.appliedChecksums.mockResolvedValue(applied);
+    h.core.loadMigrations.mockReturnValue(steps);
+    h.core.changedMigrations.mockReturnValue([]);
 
     await runCli('--status');
 
     // A tabela de controle é criada antes de ser lida (banco novo não a tem).
     expect(h.core.ensureMigrationsTable).toHaveBeenCalledWith(h.conn);
     expect(firstCall(h.core.ensureMigrationsTable)).toBeLessThan(
-      firstCall(h.core.appliedMigrations),
+      firstCall(h.core.appliedChecksums),
     );
-    expect(h.core.appliedMigrations).toHaveBeenCalledWith(h.conn);
+    expect(h.core.appliedChecksums).toHaveBeenCalledWith(h.conn);
+    expect(h.core.changedMigrations).toHaveBeenCalledWith(steps, applied);
     expect(print.mock.calls).toEqual([
       ['✓ aplicada  0000_baseline'],
       ['✓ aplicada  0001_credits'],
@@ -170,6 +178,23 @@ describe('CLI de migrations', () => {
     expect(h.conn.end).toHaveBeenCalledTimes(1);
     expect(h.poolEnd).toHaveBeenCalledTimes(1);
     expect(exit).not.toHaveBeenCalled();
+  });
+
+  it('--status marca a migration editada depois de aplicada', async () => {
+    h.core.appliedChecksums.mockResolvedValue(new Map([['0001_credits', 'b'.repeat(64)]]));
+    h.core.loadMigrations.mockReturnValue([
+      { name: '0001_credits', sql: '' },
+      { name: '0002_pagamentos', sql: '' },
+    ]);
+    h.core.changedMigrations.mockReturnValue(['0001_credits']);
+
+    await runCli('--status');
+
+    expect(print.mock.calls).toEqual([
+      ['✗ alterada depois de aplicada  0001_credits'],
+      ['· pendente  0002_pagamentos'],
+    ]);
+    expect(h.core.migrate).not.toHaveBeenCalled();
   });
 
   it('migration que falha: fecha a conexão e o pool, registra o erro e sai com código 1 (o deploy para)', async () => {

@@ -4,7 +4,8 @@ import { env } from '../config/env';
 import { logger } from '../config/logger';
 import { runRepairDeadlines } from '../jobs/repair-deadlines';
 import {
-  appliedMigrations,
+  appliedChecksums,
+  changedMigrations,
   ensureMigrationsTable,
   loadMigrations,
   migrate,
@@ -14,7 +15,7 @@ import {
 /**
  * CLI de migrations. Usa as credenciais da própria API (mesmo database):
  *   npm run db:migrate            # aplica pendentes (+ seed de referência se o catálogo estiver vazio)
- *   npm run db:migrate -- --status  # lista aplicadas x pendentes
+ *   npm run db:migrate -- --status  # lista aplicadas x pendentes (e as alteradas depois de aplicadas)
  */
 async function main(): Promise<void> {
   const statusOnly = process.argv.includes('--status');
@@ -30,9 +31,15 @@ async function main(): Promise<void> {
   try {
     if (statusOnly) {
       await ensureMigrationsTable(conn);
-      const done = await appliedMigrations(conn);
-      for (const step of loadMigrations()) {
-        const mark = done.has(step.name) ? '✓ aplicada' : '· pendente';
+      const applied = await appliedChecksums(conn);
+      const steps = loadMigrations();
+      const changed = new Set(changedMigrations(steps, applied));
+      for (const step of steps) {
+        const mark = changed.has(step.name)
+          ? '✗ alterada depois de aplicada'
+          : applied.has(step.name)
+            ? '✓ aplicada'
+            : '· pendente';
         console.log(`${mark}  ${step.name}`);
       }
       return;
