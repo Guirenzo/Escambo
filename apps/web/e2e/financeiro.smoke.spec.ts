@@ -7,6 +7,7 @@ import {
   openAs,
   settled,
   topUp,
+  verifyCpf,
   verifyEmail,
 } from './helpers';
 
@@ -95,10 +96,11 @@ test('freelancer saca; admin conclui na fila de saques; o status muda para o tit
   page,
   request,
 }) => {
-  const freelancer = await createUser(request, 'freelancer');
-  const service = await createService(request, freelancer, 250);
+  // Sem e-mail confirmado o freelancer não publica (RF-006), mas recebe a proposta direta, entrega
+  // e é pago: o saque é que espera a confirmação.
+  const freelancer = await createUser(request, 'freelancer', { verified: false });
   const client = await createUser(request, 'client');
-  await completeContract(request, client, freelancer, service); // 250 − 15% = 212,50 liberados
+  await completeContract(request, client, freelancer, null); // 250 − 15% = 212,50 liberados
 
   // Sem e-mail confirmado a Carteira não oferece o saque (ação sensível): só o reenvio do link.
   await openAs(page, freelancer, '/carteira');
@@ -113,6 +115,12 @@ test('freelancer saca; admin conclui na fila de saques; o status muda para o tit
   await openAs(page, freelancer, '/carteira');
   await settled(page);
   await expect(page.getByTestId('withdraw-locked')).toHaveCount(0);
+  // Com o e-mail, quem recebe por trabalhos ainda precisa do CPF validado (RF-020).
+  await expect(page.getByTestId('withdraw-cpf')).toContainText('Valide seu CPF para sacar');
+  await verifyCpf(request, freelancer);
+  await page.reload();
+  await settled(page);
+  await expect(page.getByTestId('withdraw-cpf')).toHaveCount(0);
   await expect(
     page.getByTestId('ledger').locator('li', { hasText: 'Liberado do escrow' }),
   ).toBeVisible();
@@ -156,6 +164,7 @@ test('saque falho é estornado pelo admin; saque aguardando pode ser cancelado p
   const freelancer = await createUser(request, 'freelancer');
   const admin = await createAdmin(request);
   await verifyEmail(request, freelancer, admin); // saque exige e-mail confirmado
+  await verifyCpf(request, freelancer); // e o CPF validado de quem entrega trabalho (RF-020)
   await topUp(request, freelancer, 200);
   const ask = async (amount: number, key: string) => {
     const res = await request.post('/api/withdrawals', {

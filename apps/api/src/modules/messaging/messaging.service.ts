@@ -176,9 +176,25 @@ async function authorizedContext(
   return { contract, otherPartyId };
 }
 
-/** Resolve a conversa para operações que podem inicializá-la. */
-async function contextFor(contractId: number, uid: number): Promise<ConversationContext> {
+/** A recusa de quem escreve numa conversa sem relação aberta (RF-062). */
+export const CONVERSATION_CLOSED_MESSAGE =
+  'Esta conversa está encerrada: não há contratação nem troca em aberto entre vocês. Para conversar de novo, faça uma nova proposta.';
+
+/** A conversa do par está encerrada (RF-062)? Sem contratação aberta nem troca em andamento. */
+async function isClosed(contract: ContractRow): Promise<boolean> {
+  return !(await messagingRepository.hasOpenRelation(contract.client_id, contract.freelancer_id));
+}
+
+/**
+ * Resolve a conversa para escrever nela (texto ou anexo): exige ser parte da contratação e uma
+ * relação aberta entre as duas pessoas (RF-062), conferida antes de criar a conversa e de gravar
+ * qualquer arquivo. Disputa aberta mantém a conversa aberta; não há carência depois do fim.
+ */
+async function writableContext(contractId: number, uid: number): Promise<ConversationContext> {
   const ctx = await authorizedContext(contractId, uid);
+  if (await isClosed(ctx.contract)) {
+    throw new HttpError(409, CONVERSATION_CLOSED_MESSAGE, 'conversation_closed');
+  }
   const conversationId = await messagingRepository.getOrCreate(
     ctx.contract.client_id,
     ctx.contract.freelancer_id,
@@ -322,21 +338,28 @@ export const messagingService = {
     }
   },
 
-  /** Histórico do chat do contrato (somente para as partes). */
+  /**
+   * Histórico do chat do contrato (somente para as partes), com `closed` quando não há relação
+   * aberta no par (RF-062): ler continua permitido, escrever não. Consultar a conversa encerrada,
+   * como a da conta suspensa, não cria conversa.
+   */
   async history(
     contractId: number,
     uid: number,
     options: { readOnly?: boolean } = {},
   ): Promise<ChatHistory> {
     const ctx = await authorizedContext(contractId, uid);
-    const conversationId = options.readOnly
-      ? ((await messagingRepository.findByPair(ctx.contract.client_id, ctx.contract.freelancer_id))
-          ?.id ?? null)
-      : await messagingRepository.getOrCreate(
-          ctx.contract.client_id,
-          ctx.contract.freelancer_id,
-          contractId,
-        );
+    const closed = await isClosed(ctx.contract);
+    const conversationId =
+      options.readOnly || closed
+        ? ((
+            await messagingRepository.findByPair(ctx.contract.client_id, ctx.contract.freelancer_id)
+          )?.id ?? null)
+        : await messagingRepository.getOrCreate(
+            ctx.contract.client_id,
+            ctx.contract.freelancer_id,
+            contractId,
+          );
     const rows =
       conversationId === null
         ? []
@@ -346,6 +369,7 @@ export const messagingService = {
       contractId,
       otherPartyId: ctx.otherPartyId,
       messages: rows.map(toMessage),
+      closed,
     };
   },
 
@@ -383,9 +407,12 @@ export const messagingService = {
     };
   },
 
-  /** Persiste uma mensagem de texto, transmite em tempo real e notifica a outra parte. */
+  /**
+   * Persiste uma mensagem de texto, transmite em tempo real e notifica a outra parte. Só com uma
+   * relação aberta no par (RF-062): sem ela, 409 `conversation_closed`.
+   */
   async send(contractId: number, uid: number, content: string): Promise<ChatMessage> {
-    const ctx = await contextFor(contractId, uid);
+    const ctx = await writableContext(contractId, uid);
     const signals = offPlatformSignals(content);
     const row = await messagingRepository.insertMessage({
       conversationId: ctx.conversationId,
@@ -400,7 +427,8 @@ export const messagingService = {
   /**
    * Persiste uma imagem ou arquivo (ADR 29): o tipo vem dos primeiros bytes, nunca do nome ou
    * do Content-Type declarado; o arquivo vai para o disco antes da linha no banco e é removido
-   * se a linha falhar — nunca fica linha apontando para arquivo que não existe.
+   * se a linha falhar — nunca fica linha apontando para arquivo que não existe. Como o texto, só
+   * com uma relação aberta no par (RF-062), conferida antes de o arquivo ir para o disco.
    */
   async sendAttachment(
     contractId: number,
@@ -409,7 +437,7 @@ export const messagingService = {
     caption: string | null,
   ): Promise<ChatMessage> {
     const type = checkUpload(file);
-    const ctx = await contextFor(contractId, uid);
+    const ctx = await writableContext(contractId, uid);
     const text = caption?.trim() || null;
     const signals = offPlatformSignals(text);
     const key = await saveAttachment(file.buffer, type);

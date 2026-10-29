@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'node:http';
 import jwt from 'jsonwebtoken';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tokenFor } from '../test-support/http';
+import { HttpError } from '../utils/http-error';
 import { blocklist } from './blocklist';
 import { env } from './env';
 import { logger } from './logger';
@@ -367,6 +368,34 @@ describe('servidor de sockets', () => {
         expect(ack.mock.calls).toEqual([[{ ok: false, error: 'send_failed' }]]);
         // O motivo não vai a quem enviou, mas fica no log do servidor.
         expect(warn.mock.calls).toEqual([[{ err: boom }, 'message:send falhou']]);
+      });
+
+      it('conversa encerrada (RF-062): o motivo volta como na rota REST, sem ir para o log', async () => {
+        service.send.mockRejectedValue(
+          new HttpError(409, 'Esta conversa está encerrada.', 'conversation_closed'),
+        );
+        const warn = vi.spyOn(logger, 'warn');
+        const socket = connected();
+        const ack = vi.fn();
+
+        await socket.listeners.get('message:send')!({ contractId: 5, content: 'oi' }, ack);
+
+        expect(ack.mock.calls).toEqual([
+          [{ ok: false, error: 'conversation_closed', message: 'Esta conversa está encerrada.' }],
+        ]);
+        expect(warn).not.toHaveBeenCalledWith(expect.anything(), 'message:send falhou');
+        // A conta continua conectada: é uma recusa de regra, não de acesso.
+        expect(socket.disconnect).not.toHaveBeenCalled();
+      });
+
+      it('outra recusa da API (não é parte) continua send_failed, sem o motivo', async () => {
+        service.send.mockRejectedValue(
+          new HttpError(403, 'Você não participa desta contratação', 'forbidden'),
+        );
+        const socket = connected();
+        const ack = vi.fn();
+        await socket.listeners.get('message:send')!({ contractId: 5, content: 'oi' }, ack);
+        expect(ack.mock.calls).toEqual([[{ ok: false, error: 'send_failed' }]]);
       });
 
       it('sem ack, envia (ou falha) sem quebrar', async () => {

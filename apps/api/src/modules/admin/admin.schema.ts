@@ -62,7 +62,10 @@ export const userUlidSchema = z.object({ ulid: z.string().length(26) });
 export const accountLookupQuerySchema = z.object({
   email: z.string().trim().toLowerCase().max(255, 'E-mail inválido').email('E-mail inválido'),
 });
-/** Desativar a 2FA de alguém pelo atendimento pede o porquê, que fica na trilha do admin. */
+/**
+ * Desativar a 2FA ou apagar o CPF de alguém pelo atendimento pede o porquê, que fica na trilha do
+ * admin (o CPF nunca vai junto).
+ */
 export const resetMfaSchema = z.object({
   reason: z
     .string()

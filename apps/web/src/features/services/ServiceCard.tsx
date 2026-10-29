@@ -20,6 +20,7 @@ import { usePublicSettings } from '../../lib/hooks';
 import { MEDIA_THUMB, mediaVariant } from '../../lib/image';
 import { zoneNote } from '../../lib/timezones';
 import { categoryArt, categoryPhoto } from './categoryArt';
+import { packagesOf } from './packages';
 import { MODALITY_LABEL, modalityOf } from './ServiceForm';
 import { tagSearchPath } from './tags';
 
@@ -194,6 +195,8 @@ export function ServiceCard({
     s.distanceKm == null && s.deliveryDays != null
       ? `${s.deliveryDays} ${s.deliveryDays === 1 ? 'dia' : 'dias'}`
       : null;
+  // Com pacotes (RF-086), o preço e o prazo do card são os do Básico: "a partir de".
+  const tiers = packagesOf(s).length;
   return (
     <article
       className={[
@@ -266,6 +269,7 @@ export function ServiceCard({
         <div className="svc-facts">
           {owner && <Rating value={s.ownerRating ?? 0} count={s.ownerReviews ?? 0} />}
           {delivery && <span>{delivery}</span>}
+          {tiers > 1 && <span data-testid="packages-count">{tiers} pacotes</span>}
           <span className="tag">{modalityTag(s)}</span>
         </div>
         {owner && (s.ownerAvailableNow || !!s.ownerAvailableDays?.length) && (

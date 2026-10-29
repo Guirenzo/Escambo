@@ -31,8 +31,8 @@ const at = (offset = 0) => setClockForTests(new Date(BASE.getTime() + offset), {
 async function actor(role: 'client' | 'freelancer' | 'admin' = 'client'): Promise<Actor> {
   const key = ulid();
   const [res] = await pool.query<ResultSetHeader>(
-    `INSERT INTO users (ulid, email, role, status, timezone, email_frequency)
-     VALUES (:key, :email, :role, 'active', 'America/Sao_Paulo', 'off')`,
+    `INSERT INTO users (ulid, email, role, status, timezone, email_frequency, email_verified_at)
+     VALUES (:key, :email, :role, 'active', 'America/Sao_Paulo', 'off', NOW())`,
     { key, email: `support-${key}@escambo.test`, role },
   );
   actors.push(res.insertId);
@@ -610,7 +610,7 @@ describe('Suporte geral — HTTP real e regras RN-007/061/064/065', () => {
     );
     await reply(staff, foreign.id, { message: 'MENSAGEM ALHEIA NÃO PORTÁVEL' }, true);
     const exported = await buildExport(owner.id);
-    expect(exported.formato).toBe('escambo-export/1.12');
+    expect(exported.formato).toBe('escambo-export/1.15');
     const support = exported.suporte as {
       chamados: { id: number }[];
       mensagens: { message: string }[];

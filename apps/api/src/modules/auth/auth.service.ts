@@ -16,6 +16,7 @@ import { clock } from '../../utils/clock';
 import { HttpError } from '../../utils/http-error';
 import { isBrazilTimezone, timezoneOf } from '../../utils/timezone';
 import { notificationsFacade } from '../notifications/notifications.facade';
+import { profilesFacade } from '../profiles/profiles.facade';
 import { quietPassOf, quietWindowOf } from '../notifications/quiet-hours';
 import { lgpdFacade } from '../lgpd/lgpd.facade';
 import { CURRENT_LEGAL_VERSION } from '../lgpd/legal-versions';
@@ -140,7 +141,7 @@ export function isAdminEmail(email: string): boolean {
  */
 export async function cancelEmailChanges(
   userId: number,
-  reason: 'password_changed' | 'password_reset' | 'user',
+  reason: 'password_changed' | 'password_reset' | 'google_claim' | 'user',
   ctx: Partial<RequestContext>,
 ): Promise<number> {
   const cancelled = await emailChangeRepository.cancelOpen(userId);
@@ -159,7 +160,7 @@ export async function cancelEmailChanges(
 }
 
 /** Suspenso mantém sessão de consulta; banimento/exclusão continuam sem acesso. */
-function assertSessionAllowed(user: { status: string; deleted_at?: Date | null }): void {
+export function assertSessionAllowed(user: { status: string; deleted_at?: Date | null }): void {
   if (user.deleted_at) {
     throw new HttpError(403, 'Esta conta foi excluída a pedido do titular.', 'account_deleted');
   }
@@ -167,6 +168,9 @@ function assertSessionAllowed(user: { status: string; deleted_at?: Date | null }
     throw new HttpError(403, 'Conta banida. Fale com o suporte.', 'account_banned');
   }
 }
+
+const cnpjTaken = (): HttpError =>
+  new HttpError(409, 'Este CNPJ já está em outra conta do Escambo.', 'cnpj_taken');
 
 const invalidMfaToken = (): HttpError =>
   new HttpError(401, 'A verificação expirou. Entre com a senha de novo.', 'invalid_mfa_token');
@@ -176,13 +180,46 @@ const invalidMfaToken = (): HttpError =>
  * para contas já existentes, e a sessão. A troca de e-mail (RF-017) nunca leva uma conta comum a
  * um endereço da lista: não vira caminho para cá.
  */
-async function openSession(user: UserRow, ctx: SessionContext): Promise<AuthResponse> {
+export async function openSession(user: UserRow, ctx: SessionContext): Promise<AuthResponse> {
   if (user.status !== 'suspended' && user.role !== 'admin' && isAdminEmail(user.email)) {
     await authRepository.updateRole(user.id, 'admin');
     user.role = 'admin';
   }
   const tokens = await issueSession(user, ctx);
   return { ...tokens, user: toPublic(user) };
+}
+
+/**
+ * O aceite dos Termos e da Política no cadastro vira registro na versão vigente, com IP e navegador
+ * (ADR 54). Gravado pelo servidor, e não pelo cliente: toda conta nasce com a trilha, pelo cadastro
+ * com senha ou pelo Google (RF-002). Falha aqui não derruba o cadastro — a faixa de atualização da
+ * política cura na próxima entrada.
+ */
+export async function recordSignupConsents(userId: number, ctx: RequestContext): Promise<void> {
+  const userAgent = userAgentOf(ctx.userAgent);
+  for (const type of ['terms_of_use', 'privacy_policy'] as const) {
+    const version = CURRENT_LEGAL_VERSION[type];
+    try {
+      await lgpdFacade.recordConsent({
+        userId,
+        type,
+        version,
+        accepted: true,
+        ip: ctx.ip,
+        userAgent,
+      });
+      void auditService.log({
+        userId,
+        action: 'lgpd_consent',
+        entityType: 'consent',
+        newValue: { type, version, accepted: true },
+        ip: ctx.ip,
+        userAgent,
+      });
+    } catch (err) {
+      logger.warn({ err, userId, type }, 'consentimento do cadastro não gravado');
+    }
+  }
 }
 
 /** Regras de negócio de autenticação (RF-001 a RF-004, RNF-013). */
@@ -198,6 +235,10 @@ export const authService = {
 
     // Lista de admins (ADMIN_EMAILS) tem precedência sobre o papel pedido no cadastro.
     const role: UserRole = isAdminEmail(input.email) ? 'admin' : input.role;
+    // Conta de empresa (RF-018): o CNPJ é único entre contas. Conferido antes de criar a conta, e
+    // de novo pela chave única ao gravar (duas empresas com o mesmo CNPJ ao mesmo tempo).
+    const company = role === 'company' ? input.company! : null;
+    if (company && (await profilesFacade.cnpjTaken(company.cnpj))) throw cnpjTaken();
     const id = await authRepository.create({
       ulid: userUlid,
       email: input.email,
@@ -205,34 +246,18 @@ export const authService = {
       role,
       timezone: input.timezone ?? null,
     });
-
-    // O aceite dos Termos e da Política vira registro na versão vigente, com IP e navegador
-    // (ADR 54). Gravado pelo servidor, e não pelo cliente: toda conta nasce com a trilha. Falha
-    // aqui não derruba o cadastro — a faixa de atualização da política cura na próxima entrada.
-    const userAgent = userAgentOf(ctx.userAgent);
-    for (const type of ['terms_of_use', 'privacy_policy'] as const) {
-      const version = CURRENT_LEGAL_VERSION[type];
+    if (company) {
       try {
-        await lgpdFacade.recordConsent({
-          userId: id,
-          type,
-          version,
-          accepted: true,
-          ip: ctx.ip,
-          userAgent,
-        });
-        void auditService.log({
-          userId: id,
-          action: 'lgpd_consent',
-          entityType: 'consent',
-          newValue: { type, version, accepted: true },
-          ip: ctx.ip,
-          userAgent,
-        });
+        await profilesFacade.createCompany(id, company);
       } catch (err) {
-        logger.warn({ err, userId: id, type }, 'consentimento do cadastro não gravado');
+        // A conta não fica pela metade: sem o perfil da empresa, ela não nasce.
+        await authRepository.deleteUnfinished(id);
+        if ((err as { code?: string }).code === 'ER_DUP_ENTRY') throw cnpjTaken();
+        throw err;
       }
     }
+
+    await recordSignupConsents(id, ctx);
 
     // Boas-vindas + confirmação de e-mail. Falha no e-mail não derruba o cadastro.
     try {

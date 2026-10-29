@@ -24,15 +24,19 @@
 | ID     | Descrição                                                                                           | Prioridade | Status   |
 | ------ | --------------------------------------------------------------------------------------------------- | ---------- | -------- |
 | RF-001 | O sistema deve permitir cadastro de novos usuários via e-mail e senha                               | Alta       | Implementado |
-| RF-002 | O sistema deve permitir login social via conta Google (OAuth2)                                      | Alta       | Não implementado |
+| RF-002 | O sistema deve permitir login social via conta Google (OAuth2)                                      | Alta       | Implementado |
 | RF-003 | O sistema deve emitir tokens JWT com tempo de expiração configurável após autenticação bem-sucedida | Alta       | Implementado |
 | RF-004 | O sistema deve suportar refresh token para renovação de sessão sem novo login                       | Alta       | Implementado |
 | RF-005 | O sistema deve enviar e-mail de confirmação de conta após o cadastro                                | Alta       | Implementado |
-| RF-006 | O sistema deve bloquear o acesso de contas não verificadas a funcionalidades críticas               | Alta       | Parcial |
+| RF-006 | O sistema deve bloquear o acesso de contas não verificadas a funcionalidades críticas               | Alta       | Implementado |
 | RF-007 | O sistema deve permitir recuperação de senha via link enviado ao e-mail cadastrado                  | Alta       | Implementado |
 | RF-008 | O sistema deve invalidar tokens de recuperação de senha após uso ou expiração                       | Alta       | Implementado |
 | RF-009 | O sistema deve registrar data, IP e user-agent de cada login bem-sucedido                           | Média      | Implementado |
 | RF-010 | O sistema deve permitir que o usuário encerre todas as sessões ativas simultaneamente               | Média      | Implementado |
+> ℹ️ RF-006: sem e-mail confirmado, contratar, publicar serviço (criar ou reativar um pausado), depositar ou pagar, propor ou aceitar troca, impulsionar e sacar respondem 403 `email_not_verified`, sempre com a mesma frase; navegar, buscar, ver perfis, editar o próprio perfil, responder ao que já existe, suporte, LGPD, segurança da conta, reenviar a confirmação e trocar o e-mail continuam livres. A regra é uma só, lida na mesma consulta do status da conta e conferida na rota; vale para todos, e o admin só fica de fora quando age como equipe. No web, o botão continua à mostra e abre o aviso com o reenvio do link (RN-004, ADR 70).
+
+> ℹ️ RF-002 (1.54.0, ADR 72): **desligado até o dono configurar** o cliente OAuth do Google (`GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET`, passo a passo no DEPLOY.md); sem os dois, o botão não aparece e as rotas do Google respondem 404. Ligado, "Entrar com Google" é um link para a API (sem SDK nem script do Google no app), que faz o fluxo de servidor OAuth 2.0 com PKCE (S256), `state` e `nonce`, escopos `openid email profile`; a volta confere o ID token (emissor, público, validade e nonce) e exige o e-mail confirmado pelo Google. A sessão nunca vai no endereço: o web troca um código de uso único, que só vale no navegador que voltou do Google, pela resposta do login, e a verificação em duas etapas nunca é pulada. Conta já vinculada entra; conta com o mesmo e-mail confirmado é vinculada; conta com o mesmo e-mail **não** confirmado é retomada (fica confirmada, a senha antiga deixa de valer e todas as sessões caem); conta banida ou excluída não entra. Conta nova passa por "Concluir cadastro" (cliente ou freelancer e o aceite dos Termos e da Política) e nasce com o e-mail confirmado e sem senha; quem quiser uma usa "Esqueci minha senha". Empresa continua pelo cadastro com CNPJ. Desvincular a conta Google fica para outra versão.
+
 ---
 
 ## Módulo 02 — Perfis
@@ -46,9 +50,9 @@
 | RF-015 | O sistema deve exibir no perfil do freelancer: nota média, total de serviços e badges conquistadas | Alta       | Implementado |
 | RF-016 | O sistema deve exibir o tempo médio de resposta do freelancer em seu perfil                        | Média      | Implementado |
 | RF-017 | O usuário deve poder editar seus dados pessoais a qualquer momento                                 | Alta       | Implementado |
-| RF-018 | O sistema deve suportar perfil do tipo empresa com CNPJ, logo e dados corporativos                 | Baixa      | Não implementado |
+| RF-018 | O sistema deve suportar perfil do tipo empresa com CNPJ, logo e dados corporativos                 | Baixa      | Implementado |
 | RF-019 | O sistema deve permitir upload de foto de perfil com redimensionamento automático                  | Alta       | Implementado |
-| RF-020 | O sistema deve validar CPF do freelancer para habilitar funcionalidades financeiras                | Média      | Não implementado |
+| RF-020 | O sistema deve validar CPF do freelancer para habilitar funcionalidades financeiras                | Média      | Implementado |
 ---
 
 ## Módulo 03 — Categorias e Serviços
@@ -126,7 +130,9 @@
 | RF-059 | O sistema deve exibir indicador de leitura das mensagens (lido / não lido)                 | Média      | Implementado |
 | RF-060 | O sistema deve notificar o usuário via push ao receber uma nova mensagem                   | Alta       | Fora do escopo |
 | RF-061 | O histórico de mensagens deve ser preservado e acessível mesmo após a conclusão do serviço | Média      | Implementado |
-| RF-062 | O sistema deve impedir o envio de mensagens em contratações canceladas ou encerradas       | Baixa      | Não implementado |
+| RF-062 | O sistema deve impedir o envio de mensagens em contratações canceladas ou encerradas       | Baixa      | Implementado |
+> ℹ️ RF-062: a conversa é uma só por par e atravessa as contratações (ADR 31), então a regra olha o par: texto e anexo, pela rota e pelo socket, só enquanto há relação aberta entre as duas pessoas — contratação que não terminou (proposta, aceita, em andamento, entregue, em revisão ou em disputa) ou troca proposta ou em andamento. Sem ela, 409 `conversation_closed`; ler o histórico, baixar anexos e marcar como lida continuam, não há carência depois do fim e uma proposta nova reabre o chat. A Sala troca o compositor por uma faixa só de leitura, com o atalho para nova proposta (RN-082, ADR 70).
+
 ---
 
 ## Módulo 08 — Gamificação
@@ -181,7 +187,7 @@ Requisitos distribuídos por módulos existentes (Serviços, Contratações, Sup
 
 | ID     | Módulo                    | Descrição                                                                                                                                    | Prioridade | Status       |
 | ------ | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------ |
-| RF-086 | Categorias e Serviços     | O freelancer deve poder oferecer pacotes (Basic / Standard / Premium) por serviço, cada um com preço, prazo e nº de revisões próprios        | Média      | Não implementado |
+| RF-086 | Categorias e Serviços     | O freelancer deve poder oferecer pacotes (Basic / Standard / Premium) por serviço, cada um com preço, prazo e nº de revisões próprios        | Média      | Implementado |
 | RF-087 | Categorias e Serviços     | O cliente deve poder favoritar serviços/freelancers e salvar buscas com alerta de novos resultados                                           | Média      | Implementado |
 | RF-088 | Contratações              | O sistema deve permitir dividir um contrato em marcos (milestones), com pagamento e liberação por etapa                                      | Média      | Implementado |
 | RF-089 | Suporte e Mediação        | O usuário deve poder denunciar conteúdo ou usuário; o sistema registra a denúncia e a encaminha à moderação                                  | Alta       | Implementado |
@@ -209,7 +215,7 @@ Requisitos distribuídos por módulos existentes (Serviços, Contratações, Sup
 | Recursos avançados (RF-086–092)  | 7            | 4      | 3      | 0     |
 | **Total**                        | **92**       | **67** | **23** | **2** |
 
-> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.45.0: **83 implementados, 2 parciais, 5 não implementados e 2 fora do escopo**. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
+> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.54.0: **90 implementados, nenhum não implementado e 2 fora do escopo**. Na 1.54.0 (ADR 72), passou a implementado o RF-002 (login com Google, desligado até o dono criar as credenciais no Google Cloud). Na 1.53.0 (ADR 71), passaram a implementados o RF-018 (conta de empresa: cadastro com razão social, nome fantasia e CNPJ, numérico ou alfanumérico, único entre contas; logo, site e descrição curta no Perfil; página pública e o selo "Empresa" onde quem contrata aparece) e o RF-020 (CPF do freelancer validado por dígitos verificadores, unicidade entre contas e maioridade, guardado cifrado; o saque de quem entrega trabalho passa a pedi-lo). A validação do CPF é de formato, unicidade e idade: não é consulta à Receita. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
 
 > ℹ️ O total ficou em **92 requisitos funcionais**, superando os 72 planejados inicialmente — resultado do detalhamento granular e da inclusão da **troca de serviços (escambo)** e de recursos avançados de confiança e segurança (v1.1.0), com dois requisitos de desistência e revisão humana acrescentados pelo ADR 61 (v1.2.0).
 

@@ -155,7 +155,7 @@ export const lgpdRepository = {
     if (statuses.length === 0) return [];
     const [rows] = await pool.query<AdminDeletionRow[]>(
       `SELECT ${DELETION_COLS}, u.ulid AS user_ulid, u.email AS user_email,
-              COALESCE(fp.full_name, cp.full_name) AS user_name,
+              COALESCE(fp.full_name, cp.full_name, co.trade_name) AS user_name,
               (SELECT COUNT(*) FROM contracts c
                 WHERE (c.client_id = d.user_id OR c.freelancer_id = d.user_id)
                   AND c.status IN ${ACTIVE_CONTRACT_STATUSES}) AS active_contracts,
@@ -165,6 +165,7 @@ export const lgpdRepository = {
          JOIN users u ON u.id = d.user_id
          LEFT JOIN profiles_freelancer fp ON fp.user_id = d.user_id
          LEFT JOIN profiles_client cp ON cp.user_id = d.user_id
+         LEFT JOIN profiles_company co ON co.user_id = d.user_id
          LEFT JOIN wallets w ON w.user_id = d.user_id
         WHERE d.status IN (:statuses)
         ORDER BY d.created_at ASC, d.id ASC
@@ -186,8 +187,8 @@ export const lgpdRepository = {
 
   /**
    * Conclui a exclusão ANONIMIZANDO o titular em uma transação: a conta deixa de ser
-   * identificável (e-mail, telefone, senha, perfis, serviços, favoritos, buscas salvas,
-   * notificações), mas contratações, mensagens, avaliações e extratos ficam, sem nome, para
+   * identificável (e-mail, telefone, senha, perfis com o CPF e o CNPJ, serviços, favoritos, buscas
+   * salvas, notificações), mas contratações, mensagens, avaliações e extratos ficam, sem nome, para
    * obrigações fiscais e segurança (Política de Privacidade, seção 4).
    */
   async completeDeletion(id: number, userId: number, adminId: number): Promise<boolean> {
@@ -215,13 +216,15 @@ export const lgpdRepository = {
       await conn.query<ResultSetHeader>('DELETE FROM push_subscriptions WHERE user_id = :userId', {
         userId,
       });
+      // O vínculo com a conta Google sai junto (RF-002): a mesma conta Google pode abrir uma conta
+      // nova. Um passe do login com Google ainda aberto não leva a nada: a troca recusa conta excluída.
       await conn.query<ResultSetHeader>(
         `UPDATE users
             SET email = CONCAT('removido+', id, '@anon.escambo.invalid'),
                 phone = NULL, password_hash = NULL, status = 'banned', deleted_at = NOW(),
                 email_frequency = 'instant', digest_hour = NULL, timezone = NULL,
                 push_quiet_start = NULL, push_quiet_end = NULL, push_quiet_pass = NULL,
-                push_quiet_summary_id = NULL
+                push_quiet_summary_id = NULL, google_sub = NULL
           WHERE id = :userId`,
         { userId },
       );
@@ -237,10 +240,14 @@ export const lgpdRepository = {
           WHERE t.user_id = :userId OR m.sender_id = :userId`,
         { userId },
       );
+      // O CPF, o índice cego e a data de nascimento saem (RF-020): o índice livre deixa o CPF
+      // ser usado de novo numa conta nova do mesmo titular.
       await conn.query<ResultSetHeader>(
         `UPDATE profiles_freelancer
             SET full_name = 'Usuário removido', avatar_url = NULL, bio = NULL, headline = NULL,
-                city = NULL, state = NULL, latitude = NULL, longitude = NULL, is_available = 0
+                city = NULL, state = NULL, latitude = NULL, longitude = NULL, is_available = 0,
+                cpf_encrypted = NULL, cpf_index = NULL, birth_date = NULL, cpf_verified = 0,
+                cpf_verified_at = NULL
           WHERE user_id = :userId`,
         { userId },
       );
@@ -248,6 +255,15 @@ export const lgpdRepository = {
         `UPDATE profiles_client
             SET full_name = 'Usuário removido', avatar_url = NULL, bio = NULL,
                 city = NULL, state = NULL, latitude = NULL, longitude = NULL
+          WHERE user_id = :userId`,
+        { userId },
+      );
+      // Conta de empresa (RF-018): sai o que a identifica, como nos outros perfis; contratações e
+      // extratos ficam, sem nome. O CNPJ livre pode abrir outra conta.
+      await conn.query<ResultSetHeader>(
+        `UPDATE profiles_company
+            SET company_name = 'Empresa removida', trade_name = 'Empresa removida', cnpj = NULL,
+                logo_url = NULL, bio = NULL, website = NULL, city = NULL, state = NULL
           WHERE user_id = :userId`,
         { userId },
       );

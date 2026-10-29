@@ -34,11 +34,35 @@ beforeEach(() => {
 
 const sqlSent = (): string[] => query.mock.calls.map((c) => String(c[0]));
 
+describe('cópia de dados 1.15: a conta Google (RF-002)', () => {
+  it('com vínculo, contaGoogle traz o sub, que não se repete dentro do titular', async () => {
+    query.mockImplementation((async (sql: string) => [
+      sql.includes('FROM users WHERE')
+        ? [
+            {
+              ulid: '01USER',
+              email: 'ana@gmail.com',
+              google_sub: '109876543210',
+              push_quiet_pass: null,
+            },
+          ]
+        : [],
+      [],
+    ]) as never);
+    const out = await buildExport(7);
+    expect(out.contaGoogle).toEqual({ vinculada: true, sub: '109876543210' });
+    expect(out.titular).not.toHaveProperty('google_sub');
+    expect(sqlSent().find((s) => s.includes('FROM users WHERE id'))).toContain('google_sub');
+  });
+});
+
 describe('cópia de dados 1.12 (ADR 54, 56, 61, 66, RF-059 e RF-017)', () => {
   it('declara o formato novo e as seções novas, mesmo vazias', async () => {
     const out = await buildExport(7);
-    expect(EXPORT_FORMAT_VERSION).toBe('1.12');
-    expect(out.formato).toBe('escambo-export/1.12');
+    expect(EXPORT_FORMAT_VERSION).toBe('1.15');
+    expect(out.formato).toBe('escambo-export/1.15');
+    // 1.15: a conta Google vinculada (RF-002); sem vínculo, false e sem sub.
+    expect(out).toHaveProperty('contaGoogle', { vinculada: false, sub: null });
     // 1.12: a verificação em duas etapas; sem a linha, desligada e sem códigos.
     expect(out).toHaveProperty('mfa', { enabled: false, confirmedAt: null, recoveryCodesLeft: 0 });
     expect(out).toHaveProperty('ofertas', []);
@@ -236,6 +260,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
     for (const table of [
       'profiles_freelancer',
       'profiles_client',
+      'profiles_company',
       'lgpd_consents',
       'services',
       'wallets',
@@ -282,7 +307,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
         new RegExp(`FROM ${table} WHERE user_id = :userId ORDER BY id$`),
       );
     }
-    for (const table of ['profiles_freelancer', 'profiles_client', 'wallets']) {
+    for (const table of ['profiles_freelancer', 'profiles_client', 'profiles_company', 'wallets']) {
       expect(sentQuery(`FROM ${table} WHERE`)).toMatch(
         new RegExp(`FROM ${table} WHERE user_id = :userId$`),
       );
@@ -377,6 +402,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
       ['FROM users WHERE', [{ ulid: '01USER', email: 'ana@escambo.test', push_quiet_pass: null }]],
       ['FROM profiles_freelancer', [{ full_name: 'Ana Freela' }]],
       ['FROM profiles_client', [{ full_name: 'Ana Cliente' }]],
+      ['FROM profiles_company', [{ razao_social: 'Ana Ltda' }]],
       ['FROM lgpd_consents', [{ t: 'consents' }]],
       ['FROM services', [{ t: 'services' }]],
       ['FROM contracts WHERE', [{ t: 'contracts' }]],
@@ -430,10 +456,16 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
     }
 
     expect(out).toEqual({
-      formato: 'escambo-export/1.12',
+      formato: 'escambo-export/1.15',
       exportadoEm: '2026-10-01T12:00:00.000Z',
       titular: { id: 7, ulid: '01USER', email: 'ana@escambo.test', push_quiet_pass: null },
-      perfis: { freelancer: { full_name: 'Ana Freela' }, cliente: { full_name: 'Ana Cliente' } },
+      contaGoogle: { vinculada: false, sub: null },
+      perfis: {
+        // Sem CPF gravado, o campo sai como null (1.14).
+        freelancer: { full_name: 'Ana Freela', cpf: null },
+        cliente: { full_name: 'Ana Cliente' },
+        empresa: { razao_social: 'Ana Ltda' },
+      },
       consentimentos: [{ t: 'consents' }],
       servicos: [{ t: 'services' }],
       contratacoes: [{ t: 'contracts' }],
@@ -502,7 +534,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
       carteira: { saldo: unknown };
     };
     expect(out.titular).toEqual({ id: 7, push_quiet_pass: null });
-    expect(out.perfis).toEqual({ freelancer: null, cliente: null });
+    expect(out.perfis).toEqual({ freelancer: null, cliente: null, empresa: null });
     expect(out.carteira.saldo).toBeNull();
   });
 
@@ -617,5 +649,83 @@ describe('arquivos da exportação (DATA_DIR/exports)', () => {
     expect(err!.code).toMatch(/^E[A-Z]+$/);
     expect(err!.code).not.toBe('ENOENT');
     expect(existsSync(path.join(exportsDir(), 'presa.json'))).toBe(true);
+  });
+});
+
+describe('cópia de dados 1.14: CPF e empresa (RF-018, RF-020)', () => {
+  it('o CPF sai inteiro e decifrado, com a data de nascimento; o índice cego nunca sai', async () => {
+    setFieldKeysForTests({ current: Buffer.alloc(32, 0x4d).toString('base64') });
+    try {
+      query.mockImplementation((async (sql: string) => [
+        sql.includes('FROM profiles_freelancer')
+          ? [
+              {
+                full_name: 'Ana Freela',
+                cpf_encrypted: sealField('52998224725'),
+                birth_date: '1990-05-17',
+                cpf_verified: 1,
+              },
+            ]
+          : [],
+        [],
+      ]) as never);
+
+      const out = (await buildExport(7)) as { perfis: { freelancer: Record<string, unknown> } };
+
+      expect(out.perfis.freelancer).toEqual({
+        full_name: 'Ana Freela',
+        cpf: '52998224725',
+        birth_date: '1990-05-17',
+        cpf_verified: 1,
+      });
+      expect(JSON.stringify(out)).not.toContain('enc:v1:');
+      const sql = sqlSent().find((s) => s.includes('FROM profiles_freelancer'))!;
+      expect(sql).toContain("DATE_FORMAT(birth_date, '%Y-%m-%d') AS birth_date");
+      expect(sql).toContain('cpf_verified_at');
+      expect(sql).not.toContain('cpf_index');
+    } finally {
+      setFieldKeysForTests(null);
+    }
+  });
+
+  it('o CPF cifrado que não abre sai como "[indisponível]", e não derruba a cópia', async () => {
+    query.mockImplementation((async (sql: string) => [
+      sql.includes('FROM profiles_freelancer')
+        ? [{ full_name: 'Ana', cpf_encrypted: 'enc:v1:quebrado' }]
+        : [],
+      [],
+    ]) as never);
+
+    const out = (await buildExport(7)) as { perfis: { freelancer: Record<string, unknown> } };
+
+    expect(out.perfis.freelancer).toEqual({ full_name: 'Ana', cpf: '[indisponível]' });
+  });
+
+  it('a empresa sai com a razão social, o nome fantasia e o CNPJ, e o resto do perfil', async () => {
+    await buildExport(7);
+    const sql = sentQuery('FROM profiles_company');
+    expect(sql.slice('SELECT '.length, sql.indexOf(' FROM ')).split(', ')).toEqual([
+      'company_name AS razao_social',
+      'trade_name AS nome_fantasia',
+      'cnpj',
+      'logo_url',
+      'bio',
+      'website',
+      'city',
+      'state',
+      'created_at',
+    ]);
+  });
+});
+
+describe('cópia de dados 1.13: pacotes (RF-086)', () => {
+  it('cada serviço traz os pacotes dele e cada contratação, o pacote contratado', async () => {
+    await buildExport(7);
+    const services = sqlSent().find((s) => s.includes('FROM services WHERE'))!;
+    expect(services).toContain('FROM service_packages sp');
+    expect(services).toContain('WHERE sp.service_id = services.id) AS packages');
+    expect(services).toContain("'revisions', sp.revisions");
+    const contracts = sqlSent().find((s) => s.includes('FROM contracts WHERE'))!;
+    expect(contracts).toContain('package_tier, package_snapshot');
   });
 });

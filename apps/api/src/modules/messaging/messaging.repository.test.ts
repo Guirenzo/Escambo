@@ -702,3 +702,39 @@ describe('arquivos de uma entrega (RF-035)', () => {
     expect(fakeDb.calls).toEqual([]);
   });
 });
+
+describe('relação aberta entre as duas pessoas (RF-062)', () => {
+  beforeEach(() => fakeDb.reset());
+
+  it('uma consulta: contratação que não terminou ou troca proposta/em andamento, nos dois sentidos', async () => {
+    fakeDb.reply([{ open_relation: 1 }]);
+    expect(await messagingRepository.hasOpenRelation(10, 20)).toBe(true);
+    expect(fakeDb.calls).toHaveLength(1);
+    const { sql, params } = fakeDb.calls[0]!;
+    expect(params).toEqual({ a: 10, b: 20 });
+    expect(sql).toContain(
+      '((c.client_id = :a AND c.freelancer_id = :b) OR (c.client_id = :b AND c.freelancer_id = :a))',
+    );
+    // Disputa aberta mantém a conversa; concluída, cancelada e recusada encerram.
+    expect(sql).toContain(
+      "AND c.status IN ('pending', 'accepted', 'in_progress', 'delivered', 'revision_requested', 'disputed')",
+    );
+    expect(sql).toContain(
+      '((ba.proposer_id = :a AND ba.receiver_id = :b) OR (ba.proposer_id = :b AND ba.receiver_id = :a))',
+    );
+    expect(sql).toContain("AND ba.status IN ('proposed', 'accepted', 'active', 'disputed')");
+    expect(sql).toContain('AS open_relation');
+  });
+
+  it('sem relação aberta, false; resposta vazia também', async () => {
+    fakeDb.reply([{ open_relation: 0 }]);
+    expect(await messagingRepository.hasOpenRelation(10, 20)).toBe(false);
+    fakeDb.reply([]);
+    expect(await messagingRepository.hasOpenRelation(10, 20)).toBe(false);
+  });
+
+  it('o MySQL pode devolver o booleano como texto: "1" vale aberta', async () => {
+    fakeDb.reply([{ open_relation: '1' }]);
+    expect(await messagingRepository.hasOpenRelation(20, 10)).toBe(true);
+  });
+});

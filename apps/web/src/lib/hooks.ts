@@ -31,6 +31,8 @@ import type {
   UpdateSavedSearchRequest,
   UpdateServiceRequest,
   UpsertClientProfileRequest,
+  UpsertCompanyProfileRequest,
+  VerifyCpfRequest,
   UpsertFreelancerProfileRequest,
   UpsertPortfolioItemRequest,
   CreateWithdrawalRequest,
@@ -89,6 +91,8 @@ export const qk = {
   deletionRequests: ['deletionRequests'] as const,
   reviews: (freelancerId: number) => ['reviews', freelancerId] as const,
   publicFreelancer: (ulid: string) => ['publicFreelancer', ulid] as const,
+  publicCompany: (ulid: string) => ['publicCompany', ulid] as const,
+  cpf: ['cpf'] as const,
   mfaStatus: ['mfaStatus'] as const,
   adminAccountLookup: (email: string) => ['adminAccountLookup', email] as const,
 };
@@ -684,7 +688,11 @@ export function useProposeBarter() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateBarterRequest) => api.proposeBarter(body),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: qk.barters }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.barters });
+      // Uma troca proposta reabre a conversa do par (RF-062).
+      void qc.invalidateQueries({ queryKey: ['chat'] });
+    },
   });
 }
 
@@ -696,6 +704,8 @@ export function useBarterAction() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.barters });
       void qc.invalidateQueries({ queryKey: qk.contracts });
+      // Aceitar, recusar ou cancelar abre ou fecha a conversa do par (RF-062).
+      void qc.invalidateQueries({ queryKey: ['chat'] });
     },
   });
 }
@@ -716,6 +726,37 @@ export function usePutClientProfile() {
   });
 }
 
+/** Dados da empresa (RF-018): o perfil e a página pública mudam juntos. */
+export function usePutCompanyProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpsertCompanyProfileRequest) => api.putCompanyProfile(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.profiles });
+      void qc.invalidateQueries({ queryKey: ['publicCompany'] });
+    },
+  });
+}
+
+export const usePublicCompany = (ulid: string | undefined) =>
+  useQuery({
+    queryKey: qk.publicCompany(ulid ?? ''),
+    queryFn: () => api.publicCompany(ulid!),
+    enabled: !!ulid,
+  });
+
+/** CPF do freelancer (RF-020): o Perfil e a Carteira leem daqui. */
+export const useCpfStatus = (enabled = true) =>
+  useQuery({ queryKey: qk.cpf, queryFn: () => api.cpfStatus(), enabled });
+
+export function useVerifyCpf() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: VerifyCpfRequest) => api.verifyCpf(body),
+    onSuccess: (status) => qc.setQueryData(qk.cpf, status),
+  });
+}
+
 // ---------- Fase B: diferenciais ----------
 /** Extrato de créditos por período e com "Carregar mais", como o de R$ (RF-047). */
 export const useCreditTransactions = (period: WalletPeriod = {}) =>
@@ -732,6 +773,8 @@ export function useCreateContract() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: qk.contracts });
       void qc.invalidateQueries({ queryKey: qk.wallet });
+      // A proposta nova reabre a conversa do par (RF-062), aberta em outra Sala.
+      void qc.invalidateQueries({ queryKey: ['chat'] });
     },
   });
 }
@@ -1180,6 +1223,16 @@ export const useAdminAccountLookup = (email: string | null) =>
     enabled: !!email,
     retry: false,
   });
+
+/** Apaga o CPF de uma conta pelo atendimento (RF-020); a busca mostra a conta já sem ele. */
+export function useAdminResetCpf() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ulid, reason }: { ulid: string; reason: string }) =>
+      api.adminResetCpf(ulid, reason),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['adminAccountLookup'] }),
+  });
+}
 
 /** Tira a 2FA de uma conta pelo atendimento; a busca mostra a conta já sem ela. */
 export function useAdminResetMfa() {

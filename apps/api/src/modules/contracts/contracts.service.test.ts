@@ -66,7 +66,10 @@ vi.mock('../barter/barter.service', () => ({
 // Quem é contratado e o serviço da proposta: o create confere os dois antes de gravar (ADR 60).
 vi.mock('../auth/auth.repository', () => ({ authRepository: { findById: vi.fn() } }));
 vi.mock('../services/services.repository', () => ({
-  servicesRepository: { findById: vi.fn() },
+  servicesRepository: {
+    findById: vi.fn(),
+    packagesByServiceIds: vi.fn().mockResolvedValue(new Map()),
+  },
 }));
 // Na proposta direta, conta que não se cadastrou como freelancer precisa do perfil de freelancer.
 vi.mock('../profiles/profiles.repository', () => ({
@@ -1576,5 +1579,187 @@ describe('avisos', () => {
       ),
     );
     warn.mockRestore();
+  });
+});
+
+describe('create: contratação de um pacote (RF-086, RN-068, ADR 69)', () => {
+  // 15/10/2026 às 14:00 em Brasília (17:00 UTC), uma quinta-feira.
+  const AT = new Date('2026-10-15T17:00:00Z');
+  const pkg = (tier: 'basic' | 'standard' | 'premium', price: number, deliveryDays: number) => ({
+    tier,
+    name: `Pacote ${tier}`,
+    description: null,
+    price,
+    deliveryDays,
+    revisions: tier === 'premium' ? 5 : 2,
+    features: ['Logo'],
+  });
+  const three = [pkg('basic', 100, 3), pkg('standard', 200, 5), pkg('premium', 350.5, 10)];
+  const proposal = {
+    freelancerId: 2,
+    serviceId: 9,
+    title: 'Identidade visual',
+    description: 'Logo, cores e manual da marca',
+    price: 350.5,
+    paymentMode: 'cash' as const,
+    packageTier: 'premium' as const,
+  };
+
+  beforeEach(() => {
+    setClockForTests(AT, { frozen: true });
+    services.packagesByServiceIds.mockResolvedValue(new Map([[9, three]]));
+    repo.create.mockResolvedValue(1);
+    repo.findById.mockResolvedValue(fakeRow({ service_id: 9 }));
+  });
+  afterEach(() => {
+    setClockForTests(null);
+    services.packagesByServiceIds.mockResolvedValue(new Map());
+  });
+
+  it('grava as revisões do pacote, o nível e a cópia dele; sem data, o prazo é o fim do dia do pacote', async () => {
+    await contractsService.create(1, { ...proposal, deadlineAt: undefined });
+
+    expect(services.packagesByServiceIds.mock.calls).toEqual([[[9]]]);
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        price: 350.5,
+        revisionLimit: 5,
+        packageTier: 'premium',
+        packageSnapshot: three[2],
+        // 15/10 + 10 dias = 25/10, até 23:59:59 em Brasília (02:59:59 UTC do dia 26).
+        deadlineAt: '2026-10-26T02:59:59.000Z',
+      }),
+    );
+  });
+
+  it('serviço com pacotes sem o nível escolhido: 422 package_required, e nada é gravado', async () => {
+    const err = await contractsService
+      .create(1, { ...proposal, packageTier: undefined })
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({
+      statusCode: 422,
+      code: 'package_required',
+      message: 'Este serviço tem pacotes: escolha o Básico, o Padrão ou o Premium.',
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('nível que o serviço não tem (ou serviço sem pacotes): 422 package_not_found', async () => {
+    services.packagesByServiceIds.mockResolvedValue(new Map([[9, three.slice(0, 2)]]));
+    await expect(contractsService.create(1, proposal)).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'package_not_found',
+      message: 'Este serviço não tem o pacote Premium.',
+    });
+    services.packagesByServiceIds.mockResolvedValue(new Map());
+    await expect(contractsService.create(1, proposal)).rejects.toMatchObject({
+      code: 'package_not_found',
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('valor diferente do pacote, ao centavo: 409 package_changed com o preço de agora', async () => {
+    await expect(contractsService.create(1, { ...proposal, price: 350.49 })).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'package_changed',
+      message: 'O pacote Premium agora custa R$ 350,50. Confira o pacote e envie de novo.',
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('prazo escolhido: vale do último dia do pacote em diante; antes dele, 422 deadline_before_package', async () => {
+    await expect(
+      contractsService.create(1, { ...proposal, deadlineAt: '2026-10-25T02:59:59.000Z' }),
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'deadline_before_package',
+      message: 'O pacote Premium entrega em 10 dias: escolha um prazo a partir de 25/10/2026.',
+    });
+    expect(repo.create).not.toHaveBeenCalled();
+
+    await contractsService.create(1, { ...proposal, deadlineAt: '2026-10-30T02:59:59.000Z' });
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ deadlineAt: '2026-10-30T02:59:59.000Z' }),
+    );
+  });
+
+  it('o dia é contado no fuso de quem entrega: em Noronha, o fim do dia do pacote é uma hora antes', async () => {
+    const { userZone } = await import('../auth/user-zone');
+    vi.mocked(userZone).mockImplementation(async (id: number) =>
+      id === 2 ? 'America/Noronha' : 'America/Sao_Paulo',
+    );
+    try {
+      await contractsService.create(1, { ...proposal, packageTier: 'basic', price: 100 });
+      // 15/10 + 3 = 18/10, 23:59:59 em Noronha (UTC-2) = 01:59:59 UTC do dia 19.
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ deadlineAt: '2026-10-19T01:59:59.000Z', revisionLimit: 2 }),
+      );
+    } finally {
+      vi.mocked(userZone).mockResolvedValue('America/Sao_Paulo');
+    }
+  });
+
+  it('em créditos, o pacote com centavos é recusado como antes (créditos são inteiros)', async () => {
+    await expect(
+      contractsService.create(1, { ...proposal, paymentMode: 'credits' }),
+    ).rejects.toMatchObject({ statusCode: 422, code: 'invalid_offer' });
+    await contractsService.create(1, {
+      ...proposal,
+      paymentMode: 'credits',
+      packageTier: 'standard',
+      price: 200,
+    });
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentMode: 'credits',
+        packageTier: 'standard',
+        revisionLimit: 2,
+      }),
+    );
+  });
+
+  it('sem data, marco com prazo depois do prazo do pacote é 422 milestone_after_deadline', async () => {
+    const milestones = (dueAt: string) => [
+      { title: 'Logo', amount: 150.5, dueAt },
+      { title: 'Manual', amount: 200, dueAt: null },
+    ];
+    // O Premium entrega em 10 dias: até 25/10, 23:59:59 em Brasília.
+    await expect(
+      contractsService.create(1, {
+        ...proposal,
+        deadlineAt: undefined,
+        milestones: milestones('2026-10-26T12:00:00.000Z'),
+      }),
+    ).rejects.toMatchObject({ statusCode: 422, code: 'milestone_after_deadline' });
+    expect(repo.create).not.toHaveBeenCalled();
+    await contractsService.create(1, {
+      ...proposal,
+      deadlineAt: undefined,
+      milestones: milestones('2026-10-26T02:59:59.000Z'),
+    });
+    expect(repo.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('serviço sem pacotes e sem nível segue como antes: 2 revisões e nada de pacote', async () => {
+    services.packagesByServiceIds.mockResolvedValue(new Map());
+    await contractsService.create(1, { ...proposal, packageTier: undefined, price: 1000 });
+    const data = repo.create.mock.calls[0]![0];
+    expect(data).not.toHaveProperty('revisionLimit');
+    expect(data).not.toHaveProperty('packageTier');
+    expect(data).not.toHaveProperty('packageSnapshot');
+  });
+
+  it('a contratação devolve o pacote da cópia; sem nível, null (mesmo com cópia sobrando)', async () => {
+    repo.findById.mockResolvedValue(
+      fakeRow({
+        package_tier: 'premium',
+        package_snapshot: JSON.stringify(three[2]),
+      } as never),
+    );
+    expect((await contractsService.getById(1, 1)).package).toEqual(three[2]);
+    repo.findById.mockResolvedValue(
+      fakeRow({ package_tier: null, package_snapshot: three[2] } as never),
+    );
+    expect((await contractsService.getById(1, 1)).package).toBeNull();
   });
 });

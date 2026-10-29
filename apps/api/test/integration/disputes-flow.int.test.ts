@@ -5,6 +5,7 @@ import { pool } from '../../src/config/db';
 import { setClockForTests } from '../../src/utils/clock';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Disputa e mediação: uma das partes abre a disputa numa contratação em andamento/entregue,
@@ -35,6 +36,7 @@ async function registerAndLogin(
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken, ulid: login.body.user.ulid };
 }
 

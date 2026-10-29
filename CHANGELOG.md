@@ -5,6 +5,98 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.54.0] — 2026-10-28
+
+Login com Google (RF-002, ADR 72), pronto e **desligado até o dono configurar** as credenciais. RF: 90 implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Entrar com Google:** com `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` configurados, o login e o cadastro mostram "Entrar com Google" / "Criar conta com Google". O botão é um link para a API, sem SDK nem script do Google no app (a CSP não muda), que faz o fluxo de servidor OAuth 2.0 com PKCE (S256), `state` e `nonce`. A volta confere o ID token (emissor, público, validade, idade e nonce) e exige o e-mail confirmado pelo Google. Sem as duas variáveis, o botão não aparece e as rotas do Google respondem 404; `GET /api/auth/providers` diz o que está ligado.
+- A sessão nunca vai no endereço: a volta deixa um código de uso único no fragmento (`#codigo=`), amarrado ao navegador por um cookie, que o web troca por `POST /api/auth/google/exchange`. Com 2FA, o próximo passo é o código do app, como no login por senha.
+- **Conta nova pelo Google:** "Concluir cadastro" pede o papel (cliente ou freelancer) e o aceite dos Termos e da Política, e a conta nasce com o e-mail confirmado e sem senha. Empresa continua pelo cadastro com CNPJ.
+- **Conta que já existe:** com o e-mail confirmado, o Google é vinculado e o titular recebe um aviso por e-mail. Com o e-mail não confirmado, o Google prova a posse: a conta fica confirmada, todas as sessões caem e a senha antiga deixa de valer (fica na auditoria). Uma conta Google entra numa conta só, e a conta já vinculada a outra conta Google é recusada.
+- No Perfil, o cartão "Entrar com Google: Vinculado"; a conta sem senha vê como criar uma pelo "Esqueci minha senha".
+- Migration 0053: `users.google_sub` (único) e a tabela `google_login_tickets` dos passes de uso único (só o hash).
+- O guia "Ligar o login com Google" no `DEPLOY.md`, com o passo a passo no Google Cloud Console.
+
+### Alterado
+
+- A cópia de dados LGPD passa ao formato 1.15, com a conta Google vinculada; a anonimização apaga o vínculo.
+- O log das requisições tira o code e o state da volta do Google, o código de uso único e o valor dos cookies.
+- O e2e do CI sobe um Google falso local (só em 127.0.0.1) para cobrir o login com conta existente e o cadastro de conta nova.
+
+### Para atualizar
+
+Rodar a migration 0053 (o job `migrate` do deploy faz isso). Sem variável nova obrigatória: o Google fica desligado até `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` entrarem no `.env`. Ver "Atualizar para a 1.54.0" e "Ligar o login com Google" no `DEPLOY.md`.
+
+## [1.53.0] — 2026-10-26
+
+CPF do freelancer para receber (RF-020, RN-009, RN-075) e conta de empresa com CNPJ (RF-018, RN-006), ADR 71. RF: 89 implementados, 1 não implementado e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **CPF do freelancer:** em Perfil, "Dados para receber", o freelancer informa o CPF e a data de nascimento. A API confere os dígitos verificadores, se o CPF já está em outra conta e se a pessoa tem 18 anos completos no dia de hoje, no fuso da conta. Não é consulta à Receita, e a tela diz isso. O CPF é gravado só cifrado (AES-256-GCM, `FIELD_ENCRYPTION_KEY`), com um índice cego (HMAC-SHA256 com chave derivada) e chave única no banco para recusar o mesmo CPF em duas contas; aparece só mascarado (`***.456.789-**`) e, validado, não se altera pela tela.
+- **Saque com CPF validado:** quem entrega trabalho (papel freelancer, algum serviço ou alguma contratação como freelancer, ADR 56) só saca com o CPF validado (403 `cpf_required`); a Carteira mostra o motivo e leva ao Perfil. Sem a chave de cifragem, a validação fica indisponível e esse saque também (503 `cpf_unavailable`). Quem só contrata saca o que depositou como antes.
+- **Atendimento:** a busca de conta mostra o CPF mascarado, e o admin pode apagá-lo para correção, com motivo, registro em `admin_actions` e na auditoria (sem o CPF) e e-mail ao titular.
+- **Conta de empresa:** no cadastro, "Eu sou" oferece "Empresa", com razão social, nome fantasia e CNPJ obrigatórios. O CNPJ é aceito com ou sem máscara, numérico ou alfanumérico (IN RFB 2.229/2024, vigente desde julho de 2026), com os dígitos verificadores conferidos e único entre contas. No Perfil, a empresa edita os dados, o logo (com o mesmo recorte da foto), o site e uma descrição curta.
+- **Página pública da empresa** em `/empresas/:ulid` e o selo "Empresa" com o nome fantasia onde quem contrata aparece: na Sala, nas contratações do Início e nas avaliações.
+- Migration 0052: as colunas do CPF em `profiles_freelancer` (`cpf_encrypted`, `cpf_index` com chave única, `birth_date`, `cpf_verified_at`) e `trade_name` em `profiles_company`.
+
+### Alterado
+
+- A cópia de dados LGPD passa ao formato 1.14: o CPF inteiro, a data de nascimento e a validação no perfil de freelancer (só para o próprio titular), e os dados da empresa. A anonimização apaga o CPF, o índice e a data, e troca os dados da empresa por "Empresa removida".
+- O log censura `cpf`, `birthDate` e `cpf_encrypted`. Validar o CPF tem o mesmo limite de tentativas do login, porque a resposta diz se o CPF já está em outra conta.
+- Onde a conta não tem perfil de cliente (denúncias, remoções, saques no admin, fila de exclusão), o nome exibido da empresa é o nome fantasia. O logo da empresa entra na moderação de imagens e no expurgo.
+- O seed da demo valida o CPF de Marina e Bruno antes dos saques e pula os saques, com aviso, se o servidor não tiver a chave.
+
+### Para atualizar
+
+Rodar a migration 0052 (o job `migrate` do deploy faz isso) e conferir a `FIELD_ENCRYPTION_KEY`: sem ela, nenhum freelancer saca. Ver "Atualizar para a 1.53.0" no `DEPLOY.md`.
+
+## [1.52.0] — 2026-10-26
+
+Ações críticas só com e-mail confirmado (RF-006, RN-004) e chat só com contratação ou troca em aberto (RF-062, RN-082), ADR 70. RF: 87 implementados, 3 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Conversa encerrada:** a conversa continua uma só por par (ADR 31), e enviar texto ou anexo, pela rota ou pelo socket, só vale enquanto há uma contratação que não terminou (proposta, aceita, em andamento, entregue, em revisão ou em disputa) ou uma troca proposta ou em andamento entre as duas pessoas. Sem ela, a API responde 409 `conversation_closed`, conferido antes de criar a conversa ou gravar o arquivo. Ler o histórico, baixar anexos e marcar como lida continuam; disputa aberta mantém o chat aberto; não há carência depois do fim.
+- Na Sala, a conversa encerrada troca o compositor por uma faixa só de leitura, com "Contratar de novo" (cliente) ou "Propor outra troca", e reabre sozinha quando chega uma proposta nova. O histórico do chat traz `closed`.
+- **Aviso "Confirme seu e-mail"** no lugar da ação, com o botão "Reenviar e-mail": em Contratar, Impulsionar, Depositar, Novo serviço, Reativar, propor e aceitar troca.
+
+### Alterado
+
+- **E-mail confirmado nas ações críticas:** sem e-mail confirmado, contratar, publicar serviço (criar ou reativar um pausado), depositar ou pagar, propor ou aceitar troca, impulsionar e sacar respondem 403 `email_not_verified`, sempre com a mesma frase. Navegar, editar o perfil, responder ao que já existe (aceitar, recusar, contrapropor, entregar, aprovar, disputar), suporte, LGPD e segurança da conta continuam livres. A confirmação é lida na mesma consulta do status da conta e conferida na rota por uma regra só, para todos os papéis; as rotas de equipe do admin não mudam.
+- O saque passa a usar essa regra e essa frase ("Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo."); antes a checagem ficava no serviço do saque.
+- O lembrete do topo diz que confirmar o e-mail libera "contratar, publicar e movimentar dinheiro".
+- O seed da demo manda os anexos da "Landing page" com a contratação aberta e para com uma mensagem clara se não achar o link de confirmação.
+
+### Para atualizar
+
+Sem migration e sem variável nova. Antes de subir, confira que o e-mail chega: quem não confirmou não contrata nem publica. Ver "Atualizar para a 1.52.0" no `DEPLOY.md`.
+
+## [1.51.0] — 2026-10-26
+
+Pacotes Básico, Padrão e Premium por serviço (RF-086, RN-068, ADR 69). RF: 85 implementados, 1 parcial, 4 não implementados e 2 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Pacotes por serviço:** o freelancer pode oferecer até três níveis (Básico, Padrão e Premium) num serviço de preço fixo, cada um com nome, descrição, preço, prazo em dias, número de revisões sem custo (1 a 10) e itens inclusos. O Básico é obrigatório, não há nível pulado e o preço cresce do Básico ao Premium; cada preço respeita o mínimo do painel e o mínimo de R$ 10,00 da contratação.
+- **Detalhe do serviço** com um cartão de pacotes em abas (setas, Home e End pelo teclado), "Continuar" com o valor do nível e uma tabela "Comparar pacotes" com preço, entrega, revisões e cada item incluso.
+- **Contratação de um pacote:** o modal mostra os níveis para escolher, trava o valor no do pacote, preenche o prazo com os dias dele (sem aceitar data mais cedo) e diz quantas revisões estão incluídas. A contratação guarda uma cópia do pacote (nome, preço, prazo, revisões e itens): editar ou apagar o pacote depois não muda o que foi contratado. A Sala mostra o pacote contratado.
+- O número de revisões do pacote vira o limite da contratação e de cada marco (RN-023: "2 por padrão; com pacote, o do pacote").
+- Migration 0051: garante a tabela `service_packages` (já existia no baseline, sem uso) e acrescenta `package_tier` e `package_snapshot` em `contracts`.
+
+### Alterado
+
+- Um serviço com pacotes aparece na busca e nos cartões **a partir do** preço e do prazo do Básico, que a API grava no próprio serviço: busca, filtros de preço e prazo, ordenação e buscas salvas continuam no índice de cobertura (ADR 63). O cartão ganha o selo "N pacotes".
+- A troca de um serviço com pacotes vale o preço do Básico, com 2 revisões, e a tela diz isso.
+- A cópia de dados LGPD passa ao formato 1.13, com os pacotes dos serviços e o pacote de cada contratação.
+- Contratar um serviço com pacotes sem escolher o nível, com um nível que não existe ou com um valor diferente do publicado é recusado (`package_required`, `package_not_found`, `package_changed`); marco com prazo depois do prazo final também (`milestone_after_deadline`).
+
+### Para atualizar
+
+Rodar a migration 0051 (o job `migrate` do deploy faz isso). Sem variável nova. Ver "Atualizar para a 1.51.0" no `DEPLOY.md`.
+
 ## [1.50.0] — 2026-10-26
 
 Marca própria, gráficos refeitos e o Admin redesenhado por dentro (ADR 68): fecha o que a 1.49.0 deixou para depois. A situação dos requisitos não muda: RF 84 implementados, 1 parcial, 5 não implementados e 2 fora do escopo; RNF 32, 7, 1 e 2.

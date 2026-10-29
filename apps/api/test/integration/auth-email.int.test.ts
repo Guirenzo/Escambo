@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { confirmEmail } from './mail.helpers';
 import { fundWallet } from './wallet.helpers';
 
 const app = createApp();
@@ -165,6 +166,8 @@ describe('E-mail transacional, confirmação de e-mail e recuperação de senha'
     const admin = await registerAndLogin('client', 'admin.escambo.test');
     const client = await registerAndLogin('client');
     const freelancer = await registerAndLogin('freelancer');
+    // Depositar e contratar exigem e-mail confirmado (RF-006).
+    await confirmEmail(app, client.id);
     await fundWallet(app, client.token, 100);
     const created = await request(app).post('/api/contracts').set(auth(client.token)).send({
       freelancerId: freelancer.id,

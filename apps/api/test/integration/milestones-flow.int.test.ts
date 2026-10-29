@@ -6,6 +6,7 @@ import { runTacitApproval } from '../../src/jobs/tacit-approval';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
 import { fromNow, HOUR, now, startDaytimeClock, stopClock } from './clock.helpers';
+import { confirmEmail } from './mail.helpers';
 
 const app = createApp();
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
@@ -28,6 +29,7 @@ async function registerAndLogin(
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 

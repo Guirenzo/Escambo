@@ -333,6 +333,23 @@ describe('FreelancerView: o que o visitante lê', () => {
     expect(within(second).queryByText('Resposta do freelancer')).toBeNull();
   });
 
+  it('avaliação feita por empresa (RF-018): o nome fantasia leva à página dela, com o selo', async () => {
+    api.reviews.mockResolvedValue(
+      page([
+        review({ id: 1, reviewerCompany: { ulid: '01EMPRESA', tradeName: 'Pão Bom' } }),
+        review({ id: 2 }),
+      ]),
+    );
+    renderAt();
+    const tag = await screen.findByTestId('company-tag');
+    expect(tag).toHaveTextContent('Pão Bom Empresa');
+    expect(within(tag).getByRole('link', { name: 'Pão Bom' })).toHaveAttribute(
+      'href',
+      '/empresas/01EMPRESA',
+    );
+    expect(screen.getAllByTestId('company-tag')).toHaveLength(1);
+  });
+
   it('avaliações que não carregam: o erro fica no cartão e dá para tentar de novo', async () => {
     const user = userEvent.setup({ delay: null });
     api.reviews.mockRejectedValueOnce(new Error('Avaliações indisponíveis'));

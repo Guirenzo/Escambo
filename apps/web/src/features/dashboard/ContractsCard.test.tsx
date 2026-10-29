@@ -145,6 +145,33 @@ describe('ContractsCard', () => {
     expect(screen.getByRole('heading', { level: 3, name: 'Aula de violão' })).toBeInTheDocument();
   });
 
+  it('proposta de empresa (RF-018): quem entrega vê o nome fantasia, com o link e o selo; o cliente não se vê', () => {
+    const company = { ulid: '01EMPRESA', tradeName: 'Pão Bom' };
+    auth.user = { id: FREELANCER, timezone: 'America/Sao_Paulo' };
+    show([
+      contract({ id: 1, title: 'Logo', clientCompany: company }),
+      contract({ id: 2, title: 'Aula' }),
+    ]);
+    const tag = within(cardOf('Logo')).getByTestId('company-tag');
+    expect(tag).toHaveTextContent('Contratante: Pão Bom Empresa');
+    expect(within(tag).getByRole('link', { name: 'Pão Bom' })).toHaveAttribute(
+      'href',
+      '/empresas/01EMPRESA',
+    );
+    expect(within(cardOf('Aula')).queryByTestId('company-tag')).not.toBeInTheDocument();
+  });
+
+  it('a própria empresa não vê o selo de si mesma nos cartões', () => {
+    show([
+      contract({
+        id: 1,
+        title: 'Logo',
+        clientCompany: { ulid: '01EMPRESA', tradeName: 'Pão Bom' },
+      }),
+    ]);
+    expect(screen.queryByTestId('company-tag')).not.toBeInTheDocument();
+  });
+
   it('lista vazia: a lista sem nenhum cartão', () => {
     show([]);
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);

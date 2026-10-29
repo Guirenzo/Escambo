@@ -35,6 +35,7 @@ import {
   processWithdrawal,
   reactivateUser,
   rejectDeletionRequest,
+  resetUserCpf,
   resetUserMfa,
   resolveDispute,
   suspendUser,
@@ -67,9 +68,11 @@ adminRoutes.post('/disputes/:id/resolve', asyncHandler(resolveDispute));
 adminRoutes.post('/users/:ulid/suspend', asyncHandler(suspendUser));
 adminRoutes.post('/users/:ulid/ban', asyncHandler(banUser));
 adminRoutes.post('/users/:ulid/reactivate', asyncHandler(reactivateUser));
-// Atendimento (ADR 66): achar a conta pelo e-mail e desativar a 2FA de quem perdeu o acesso.
+// Atendimento (ADR 66): achar a conta pelo e-mail e desativar a 2FA de quem perdeu o acesso; e
+// apagar o CPF validado para o titular corrigir (RF-020).
 adminRoutes.get('/users/lookup', asyncHandler(lookupUser));
 adminRoutes.post('/users/:ulid/mfa/reset', asyncHandler(resetUserMfa));
+adminRoutes.post('/users/:ulid/cpf/reset', asyncHandler(resetUserCpf));
 adminRoutes.get('/withdrawals', asyncHandler(listWithdrawals));
 adminRoutes.post('/withdrawals/:id/process', asyncHandler(processWithdrawal));
 adminRoutes.post('/withdrawals/:id/complete', asyncHandler(completeWithdrawal));

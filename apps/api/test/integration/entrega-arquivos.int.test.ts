@@ -8,6 +8,7 @@ import { pool } from '../../src/config/db';
 import { runPurgeAttachments } from '../../src/jobs/purge-attachments';
 import { attachmentPath, listUploadedFiles } from '../../src/modules/messaging/attachments.storage';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Entrega com arquivo (RF-035) contra o MySQL e o disco de verdade: a entrega única, a reentrega e
@@ -53,6 +54,7 @@ async function registerAndLogin(role: 'client' | 'freelancer', admin = false): P
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 

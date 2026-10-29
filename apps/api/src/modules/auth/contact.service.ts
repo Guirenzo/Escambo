@@ -86,6 +86,8 @@ export const contactService = {
       pendingEmail: pending
         ? { email: pending.new_email, expiresAt: new Date(pending.expires_at).toISOString() }
         : null,
+      hasPassword: Number(contact.has_password) === 1,
+      googleLinked: Number(contact.google_linked) === 1,
     };
   },
 

@@ -1,3 +1,4 @@
+import type { ServicePackage } from '@escambo/types';
 import { servicesRepository, type ServiceRow } from './services.repository';
 
 /**
@@ -9,5 +10,10 @@ export const servicesFacade = {
   /** O serviço não excluído. */
   findById(id: number): Promise<ServiceRow | undefined> {
     return servicesRepository.findById(id);
+  },
+
+  /** Os pacotes ativos de cada serviço (RF-086), do Básico ao Premium; sem pacote, fora do mapa. */
+  packagesByServiceIds(ids: number[]): Promise<Map<number, ServicePackage[]>> {
+    return servicesRepository.packagesByServiceIds(ids);
   },
 };

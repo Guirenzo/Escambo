@@ -1,5 +1,6 @@
 import { deflateSync } from 'node:zlib';
 import type { APIRequestContext, Page } from '@playwright/test';
+import type { ServicePackage } from '@escambo/types';
 import { expect } from '@playwright/test';
 
 /**
@@ -36,13 +37,12 @@ async function api<T>(
   return (await res.json()) as T;
 }
 
-/** Registra um usuário novo (e-mail único) e faz login pela API. */
-export async function createUser(
+/** Cadastro e login pela API, sem mais nada. */
+async function registerAndLogin(
   request: APIRequestContext,
   role: 'client' | 'freelancer',
-  opts: { profile?: boolean; email?: string } = {},
+  email: string,
 ): Promise<TestUser> {
-  const email = opts.email ?? `e2e-${role}-${unique()}@escambo.test`;
   await api(request, 'post', '/auth/register', {
     data: { email, password: PASSWORD, role, legalAccepted: true },
   });
@@ -54,7 +54,41 @@ export async function createUser(
       data: { email, password: PASSWORD },
     },
   );
-  const user = { id: auth.user.id, email, token: auth.accessToken };
+  return { id: auth.user.id, email, token: auth.accessToken };
+}
+
+/**
+ * O admin que lê a caixa de saída para confirmar os e-mails das contas de teste: um por execução
+ * (o worker é um só), trocado antes de o token de acesso vencer. Ler a caixa de saída é trabalho de
+ * equipe e não pede e-mail confirmado; sem confirmar, ele também não entra na lista de quem recebe
+ * os avisos da equipe (os chamados de suporte avisam todo admin ativo).
+ */
+let outboxReader: { admin: TestUser; since: number } | null = null;
+async function mailReader(request: APIRequestContext): Promise<TestUser> {
+  if (!outboxReader || Date.now() - outboxReader.since > 30 * 60_000) {
+    const admin = await registerAndLogin(
+      request,
+      'client',
+      `e2e-admin-${unique()}@admin.escambo.test`,
+    );
+    outboxReader = { admin, since: Date.now() };
+  }
+  return outboxReader.admin;
+}
+
+/**
+ * Registra um usuário novo (e-mail único) e faz login pela API. A conta sai com o e-mail
+ * confirmado pelo caminho do produto (o link da caixa de saída): contratar, publicar, pagar,
+ * trocar, impulsionar e sacar exigem isso (RF-006). `verified: false` deixa sem confirmar.
+ */
+export async function createUser(
+  request: APIRequestContext,
+  role: 'client' | 'freelancer',
+  opts: { profile?: boolean; email?: string; verified?: boolean } = {},
+): Promise<TestUser> {
+  const email = opts.email ?? `e2e-${role}-${unique()}@escambo.test`;
+  const user = await registerAndLogin(request, role, email);
+  if (opts.verified !== false) await verifyEmail(request, user, await mailReader(request));
   // Freelancer de verdade tem perfil (nome, cidade): é nele que moram nota média e Score.
   if (role === 'freelancer' && opts.profile !== false) {
     await api(request, 'put', '/profiles/freelancer', {
@@ -65,13 +99,16 @@ export async function createUser(
   return user;
 }
 
-/** Cria um serviço para o freelancer (título único para a busca achar só ele). */
+/**
+ * Cria um serviço para o freelancer (título único para a busca achar só ele). Com `packages`
+ * (RF-086), o preço e o prazo do serviço saem do Básico: `price` e `deliveryDays` não vão.
+ */
 export async function createService(
   request: APIRequestContext,
   owner: TestUser,
   price = 300,
   categoryIndex = 0,
-  opts: { title?: string; deliveryDays?: number } = {},
+  opts: { title?: string; deliveryDays?: number; packages?: ServicePackage[] } = {},
 ): Promise<{ id: number; title: string; categoryId: number }> {
   const categories = await api<{ id: number }[]>(request, 'get', '/categories');
   const categoryId = categories[categoryIndex]?.id ?? categories[0]?.id;
@@ -84,8 +121,9 @@ export async function createService(
       title,
       description: 'Serviço criado automaticamente pelos testes ponta a ponta.',
       priceType: 'fixed',
-      price,
-      deliveryDays: opts.deliveryDays ?? 3,
+      ...(opts.packages
+        ? { packages: opts.packages }
+        : { price, deliveryDays: opts.deliveryDays ?? 3 }),
       isRemote: true,
     },
   });
@@ -135,28 +173,135 @@ export async function latestEmail(
 /** Primeiro link http(s) de um texto de e-mail. */
 export const linkIn = (text: string): string => /https?:\/\/\S+/.exec(text)?.[0] ?? '';
 
-/** Admin de teste: e-mail no domínio liberado por ADMIN_EMAILS (@admin.escambo.test). */
-export function createAdmin(request: APIRequestContext): Promise<TestUser> {
+/**
+ * Admin de teste: e-mail no domínio liberado por ADMIN_EMAILS (@admin.escambo.test). Age como
+ * equipe, que não pede e-mail confirmado (RF-006): nasce sem confirmar, como antes, para não entrar
+ * na lista de avisos da equipe de todos os testes; `verified: true` confirma.
+ */
+export function createAdmin(
+  request: APIRequestContext,
+  opts: { verified?: boolean } = {},
+): Promise<TestUser> {
   return createUser(request, 'client', {
     email: `e2e-admin-${unique()}@admin.escambo.test`,
     profile: false,
+    verified: opts.verified ?? false,
   });
 }
 
 /**
  * Confirma o e-mail de `user` pelo mesmo caminho do produto: lê o link na caixa de saída
- * (com uma conta admin) e consome o token. Saque exige e-mail confirmado.
+ * (com uma conta admin) e consome o token. As ações críticas exigem e-mail confirmado (RF-006).
+ * Conta já confirmada fica como está.
  */
 export async function verifyEmail(
   request: APIRequestContext,
   user: TestUser,
   admin?: TestUser,
 ): Promise<void> {
-  const reader = admin ?? (await createAdmin(request));
+  const me = await api<{ emailVerified: boolean }>(request, 'get', '/auth/me', {
+    token: user.token,
+  });
+  if (me.emailVerified) return;
+  const reader = admin ?? (await mailReader(request));
   const mail = await latestEmail(request, reader, user.id, 'verify_email');
   const token = /token=([A-Za-z0-9_-]+)/.exec(mail.text)?.[1] ?? '';
   expect(token, 'token de confirmação no e-mail').not.toBe('');
   await api(request, 'post', '/auth/verify-email', { data: { token } });
+}
+
+let docSeq = 0;
+/** Base de 9 caracteres que não se repete na execução (relógio + contador). */
+const docBase = (): string =>
+  `${(Date.now() % 1_000_000_000) + docSeq++ * 7919}`.padStart(9, '1').slice(-9);
+
+/** Um CPF válido e único por chamada (RF-020: o CPF é único entre contas). */
+export function uniqueCpf(): string {
+  const digit = (b: string, n: number): number => {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += Number(b[i]) * (n + 1 - i);
+    const rest = (sum * 10) % 11;
+    return rest === 10 ? 0 : rest;
+  };
+  let base = docBase();
+  if (/^(\d)\1{8}$/.test(base)) base = `${base.slice(0, 8)}${(Number(base[8]) + 1) % 10}`;
+  const first = digit(base, 9);
+  return `${base}${first}${digit(`${base}${first}`, 10)}`;
+}
+
+/** Um CNPJ alfanumérico válido e único (IN RFB 2.229/2024): "AB" + 10 caracteres e os verificadores. */
+export function uniqueCnpj(): string {
+  const dv = (b: string): number => {
+    let sum = 0;
+    let weight = 2;
+    for (let i = b.length - 1; i >= 0; i--) {
+      sum += (b.charCodeAt(i) - 48) * weight;
+      weight = weight === 9 ? 2 : weight + 1;
+    }
+    const rest = sum % 11;
+    return rest < 2 ? 0 : 11 - rest;
+  };
+  const base = `AB${unique()
+    .toUpperCase()
+    .replace(/[^0-9A-Z]/g, '0')}`
+    .padEnd(12, '7')
+    .slice(0, 12);
+  const first = dv(base);
+  return `${base}${first}${dv(`${base}${first}`)}`;
+}
+
+/**
+ * Valida o CPF de quem vai sacar pelo caminho do produto (RF-020): o perfil de freelancer (criado
+ * se faltar) e o CPF com a data de nascimento de um adulto. Devolve o CPF.
+ */
+export async function verifyCpf(request: APIRequestContext, user: TestUser): Promise<string> {
+  const mine = await api<{ freelancer: unknown }>(request, 'get', '/profiles/me', {
+    token: user.token,
+  });
+  if (!mine.freelancer) {
+    await api(request, 'put', '/profiles/freelancer', {
+      token: user.token,
+      data: { fullName: `Freela ${user.id}` },
+    });
+  }
+  const cpf = uniqueCpf();
+  await api(request, 'put', '/profiles/me/cpf', {
+    token: user.token,
+    data: { cpf, birthDate: '1990-05-17' },
+  });
+  return cpf;
+}
+
+/**
+ * Conta de empresa (RF-018) com a razão social, o nome fantasia e um CNPJ único. Como em
+ * `createUser`, sai com o e-mail confirmado (RF-006: contratar e pagar exigem); `verified: false`
+ * deixa sem confirmar.
+ */
+export async function createCompany(
+  request: APIRequestContext,
+  opts: { tradeName?: string; legalName?: string; verified?: boolean } = {},
+): Promise<TestUser & { ulid: string; cnpj: string; tradeName: string }> {
+  const email = `e2e-company-${unique()}@escambo.test`;
+  const cnpj = uniqueCnpj();
+  const tradeName = opts.tradeName ?? `Empresa ${unique()}`;
+  await api(request, 'post', '/auth/register', {
+    data: {
+      email,
+      password: PASSWORD,
+      role: 'company',
+      legalAccepted: true,
+      company: { legalName: opts.legalName ?? `${tradeName} Ltda`, tradeName, cnpj },
+    },
+  });
+  const auth = await api<{ accessToken: string; user: { id: number; ulid: string } }>(
+    request,
+    'post',
+    '/auth/login',
+    { data: { email, password: PASSWORD } },
+  );
+  const user = { id: auth.user.id, email, token: auth.accessToken };
+  if (opts.verified !== false) await verifyEmail(request, user, await mailReader(request));
+  return { ...user, ulid: auth.user.ulid, cnpj, tradeName };
 }
 
 /** Contratação levada até 'delivered' pela API (create → accept → deliver). */
@@ -185,20 +330,24 @@ export async function deliveredContract(
   return created.id;
 }
 
-/** Contratação levada até 'completed' pela API (create → accept → deliver → approve). */
+/**
+ * Contratação levada até 'completed' pela API (create → accept → deliver → approve). Com `service`
+ * null, é a proposta direta ao freelancer, sem serviço publicado (quem ainda não confirmou o e-mail
+ * não publica, mas recebe, entrega e é pago).
+ */
 export async function completeContract(
   request: APIRequestContext,
   client: TestUser,
   freelancer: TestUser,
-  service: { id: number; title: string },
+  service: { id: number; title: string } | null,
 ): Promise<number> {
   await topUp(request, client, 250);
   const created = await api<{ id: number }>(request, 'post', '/contracts', {
     token: client.token,
     data: {
       freelancerId: freelancer.id,
-      serviceId: service.id,
-      title: service.title,
+      ...(service ? { serviceId: service.id } : {}),
+      title: service?.title ?? 'Contratação direta e2e',
       description: 'Contratação criada pelos testes ponta a ponta e levada até a conclusão.',
       price: 250,
     },

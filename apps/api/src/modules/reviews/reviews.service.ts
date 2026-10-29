@@ -77,7 +77,14 @@ export const reviewsService = {
       (input.page - 1) * input.limit,
     );
     return {
-      items: rows.map((r) => toReview(r, r.response)),
+      items: rows.map((r) => ({
+        ...toReview(r, r.response),
+        // RF-018: quem avaliou é empresa (nome fantasia e selo); pessoa continua sem nome.
+        reviewerCompany:
+          r.reviewer_company_name && r.reviewer_company_ulid
+            ? { ulid: r.reviewer_company_ulid, tradeName: r.reviewer_company_name }
+            : null,
+      })),
       page: input.page,
       limit: input.limit,
     };

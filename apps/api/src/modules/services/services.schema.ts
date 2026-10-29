@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { packagesSchema } from './service-packages';
 import { tagsSchema } from './service-tags';
 
 const priceType = z.enum(['fixed', 'hourly', 'negotiable']);
@@ -20,10 +21,13 @@ export const createServiceSchema = z
     modality: modality.optional(),
     // RN-018: até 10, de 2 a 30 caracteres, normalizadas e sem repetir.
     tags: tagsSchema.optional(),
+    // RF-086/RN-068: até 3 pacotes (Básico obrigatório); com eles, preço e prazo saem do Básico.
+    packages: packagesSchema.optional(),
   })
   .superRefine((data, ctx) => {
     // RN-016: preço fixo exige preço; o mínimo vem de platform_settings e é checado no serviço.
-    if (data.priceType === 'fixed' && data.price == null) {
+    // Com pacotes, o preço é o do Básico (o service confere e grava).
+    if (data.priceType === 'fixed' && data.price == null && !data.packages?.length) {
       ctx.addIssue({
         code: 'custom',
         path: ['price'],
@@ -45,6 +49,8 @@ export const updateServiceSchema = z
     modality,
     // A lista inteira substitui as tags do serviço; [] tira todas.
     tags: tagsSchema,
+    // A lista inteira substitui os pacotes; [] tira todos (o preço volta a ser o do serviço).
+    packages: packagesSchema,
     isActive: z.boolean(),
   })
   .partial();

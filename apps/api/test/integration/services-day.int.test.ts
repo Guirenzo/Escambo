@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Busca por dia de atendimento (ADR 30): `day=0..6` filtra pelos dias que o prestador marcou no
@@ -25,6 +26,7 @@ async function registerFreelancer(availableDays: number[] | null): Promise<Actor
     .send({ legalAccepted: true, email, password, role: 'freelancer' })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
+  await confirmEmail(app, login.body.user.id);
   const actor = { id: login.body.user.id as number, token: login.body.accessToken as string };
   await request(app)
     .put('/api/profiles/freelancer')

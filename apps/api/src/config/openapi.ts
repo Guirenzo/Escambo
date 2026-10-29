@@ -8,6 +8,7 @@ import type {
   DropoutStatus,
   NegotiationTurn,
   OfferOutcome,
+  PackageTier,
   WithdrawalStatus,
 } from '@escambo/types';
 import { buildInfo } from './build-info';
@@ -94,6 +95,10 @@ const errorResponse = (description: string) => ({
   description,
   content: { 'application/json': { schema: ref('Error') } },
 });
+/** Ação crítica sem e-mail confirmado (RF-006, RN-004): a mesma recusa em todas as rotas. */
+const emailNotVerified = errorResponse(
+  'email_not_verified: a conta ainda não confirmou o e-mail (RF-006). Contratar, publicar serviço, depositar ou pagar, propor ou aceitar troca, impulsionar e sacar esperam a confirmação; a mensagem é sempre "Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo."',
+);
 const pageParameters = [
   {
     name: 'page',
@@ -323,6 +328,53 @@ const preparedContractSchemas = {
       ),
     ],
   }),
+};
+
+const packageTiers = ['basic', 'standard', 'premium'] as const satisfies readonly PackageTier[];
+
+/** Pacotes Básico, Padrão e Premium por serviço (RF-086, RN-068, ADR 69). */
+const packageSchemas = {
+  PackageTier: {
+    type: 'string',
+    enum: packageTiers,
+    description: 'Nível do pacote: basic (Básico), standard (Padrão) e premium (Premium).',
+  },
+  ServicePackage: {
+    ...obj(
+      {
+        tier: ref('PackageTier'),
+        name: { type: 'string', minLength: 3, maxLength: 60 },
+        description: { type: 'string', maxLength: 600, nullable: true },
+        price: { type: 'number', minimum: 10, maximum: 99_999_999.99, multipleOf: 0.01 },
+        deliveryDays: { type: 'integer', minimum: 1, maximum: 365 },
+        revisions: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 10,
+          default: 2,
+          description: 'Revisões sem custo por entrega ou por marco (RN-023); sem ilimitado.',
+        },
+        features: {
+          type: 'array',
+          maxItems: 10,
+          default: [],
+          items: { type: 'string', minLength: 2, maxLength: 80 },
+          description: 'Itens inclusos, na ordem escrita; repetido (sem caixa) é 422.',
+        },
+      },
+      ['tier', 'name', 'price', 'deliveryDays'],
+    ),
+    additionalProperties: false,
+    description:
+      'Um pacote do serviço. Na resposta, description é null sem descrição e revisions e features vêm sempre. Na contratação, é a cópia do pacote como estava publicado.',
+  },
+  ServicePackages: {
+    type: 'array',
+    maxItems: 3,
+    items: ref('ServicePackage'),
+    description:
+      'RF-086/RN-068: até 3 pacotes, um por nível, com o Básico e sem pular nível (o Premium exige o Padrão), só no preço fixo (422 packages_require_fixed_price). Cada preço vale pelo menos o maior entre R$ 10,00 e o mínimo do serviço (422 price_below_minimum) e não desce do Básico ao Premium (422 package_price_order). Com pacotes, price e deliveryDays não vêm (422 price_from_packages): o serviço guarda os do Básico, que a busca, a ordenação e a troca usam ("a partir de"). Na edição, a lista substitui a anterior; [] tira os pacotes.',
+  },
 };
 
 /** Leitura no chat (RF-059): o pedido, a resposta e o evento Socket.IO message:read. */
@@ -841,8 +893,137 @@ export const openapiDocument: Record<string, any> = {
             description:
               'Fuso do aparelho (ADR 51); sem ele a conta fica em Brasília e marcada como não escolhida (timezoneChosen)',
           },
+          company: {
+            ...ref('RegisterCompany'),
+            description:
+              'RF-018: obrigatório com role company e recusado nas outras (422 validation_error: details.company).',
+          },
         },
         ['email', 'password'],
+      ),
+      RegisterCompany: obj(
+        {
+          legalName: { type: 'string', minLength: 2, maxLength: 150, description: 'Razão social' },
+          tradeName: {
+            type: 'string',
+            minLength: 2,
+            maxLength: 150,
+            description: 'Nome fantasia: o nome exibido',
+          },
+          cnpj: {
+            type: 'string',
+            maxLength: 30,
+            description:
+              'Com ou sem máscara; numérico ou alfanumérico (IN RFB 2.229/2024: 12 posições A–Z ou 0–9 e 2 dígitos verificadores). Sai normalizado: 14 caracteres em maiúsculas.',
+          },
+        },
+        ['legalName', 'tradeName', 'cnpj'],
+      ),
+      CompanyRef: obj({ ulid: { type: 'string' }, tradeName: { type: 'string' } }, [
+        'ulid',
+        'tradeName',
+      ]),
+      CompanyProfile: obj(
+        {
+          legalName: { type: 'string', description: 'Razão social' },
+          tradeName: { type: 'string', description: 'Nome fantasia' },
+          cnpj: {
+            type: 'string',
+            pattern: '^[0-9A-Z]{12}[0-9]{2}$',
+            description: 'Dado público: 14 caracteres, maiúsculas, sem máscara.',
+          },
+          logoUrl: { type: 'string', nullable: true },
+          bio: { type: 'string', nullable: true, maxLength: 280, description: 'Descrição curta' },
+          website: { type: 'string', nullable: true },
+          city: { type: 'string', nullable: true },
+          state: { type: 'string', nullable: true },
+        },
+        ['legalName', 'tradeName', 'cnpj', 'logoUrl', 'bio', 'website', 'city', 'state'],
+      ),
+      PublicCompanyProfile: {
+        allOf: [
+          ref('CompanyProfile'),
+          obj({ userUlid: { type: 'string' }, memberSince: timestamp }, [
+            'userUlid',
+            'memberSince',
+          ]),
+        ],
+      },
+      UpsertCompanyProfile: obj(
+        {
+          legalName: { type: 'string', minLength: 2, maxLength: 150 },
+          tradeName: { type: 'string', minLength: 2, maxLength: 150 },
+          cnpj: { type: 'string', maxLength: 30 },
+          logoUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'URL externa ou imagem enviada pela plataforma (/api/media/..., ADR 36)',
+          },
+          bio: { type: 'string', nullable: true, maxLength: 280 },
+          website: {
+            type: 'string',
+            nullable: true,
+            maxLength: 255,
+            description: 'Só http(s); vazio apaga',
+          },
+          city: { type: 'string', nullable: true, maxLength: 100 },
+          state: { type: 'string', nullable: true, minLength: 2, maxLength: 2 },
+        },
+        ['legalName', 'tradeName', 'cnpj'],
+      ),
+      CpfStatus: obj(
+        {
+          available: {
+            type: 'boolean',
+            description: 'O servidor guarda o CPF cifrado (sem FIELD_ENCRYPTION_KEY, false)',
+          },
+          required: {
+            type: 'boolean',
+            description:
+              'A conta entrega trabalho (ADR 56: papel freelancer, algum serviço ou alguma contratação como freelancer): o saque pede o CPF validado',
+          },
+          hasFreelancerProfile: { type: 'boolean' },
+          verified: { type: 'boolean' },
+          maskedCpf: {
+            type: 'string',
+            nullable: true,
+            description: '***.456.789-**; null antes de validar',
+          },
+          birthDate: { type: 'string', format: 'date', nullable: true },
+          verifiedAt: nullableTimestamp,
+        },
+        [
+          'available',
+          'required',
+          'hasFreelancerProfile',
+          'verified',
+          'maskedCpf',
+          'birthDate',
+          'verifiedAt',
+        ],
+      ),
+      VerifyCpf: obj(
+        {
+          cpf: { type: 'string', maxLength: 20, description: 'Com ou sem máscara' },
+          birthDate: {
+            type: 'string',
+            format: 'date',
+            description: 'AAAA-MM-DD, de 1900 em diante',
+          },
+        },
+        ['cpf', 'birthDate'],
+      ),
+      AdminCpfSummary: obj(
+        {
+          verified: { type: 'boolean' },
+          maskedCpf: {
+            type: 'string',
+            nullable: true,
+            description: 'Só mascarado; "[indisponível]" se o cifrado não abriu',
+          },
+          verifiedAt: nullableTimestamp,
+        },
+        ['verified', 'maskedCpf', 'verifiedAt'],
       ),
       Login: obj({ email: { type: 'string' }, password: { type: 'string' } }, [
         'email',
@@ -862,6 +1043,7 @@ export const openapiDocument: Record<string, any> = {
           },
           modality: ref('ServiceModality'),
           tags: ref('ServiceTags'),
+          packages: ref('ServicePackages'),
         },
         ['categoryId', 'title', 'description'],
       ),
@@ -886,6 +1068,11 @@ export const openapiDocument: Record<string, any> = {
           description: { type: 'string' },
           price: { type: 'number', minimum: 10 },
           deadlineAt: { type: 'string', format: 'date-time', nullable: true },
+          packageTier: {
+            ...ref('PackageTier'),
+            description:
+              'RF-086: o pacote escolhido, com serviceId. Obrigatório quando o serviço tem pacotes (422 package_required); nível que o serviço não tem é 422 package_not_found. O price precisa ser o do pacote, ao centavo (409 package_changed). Sem deadlineAt, o prazo é o fim do dia daqui a deliveryDays dias no fuso de quem entrega (marco com prazo depois dele: 422 milestone_after_deadline); data antes disso é 422 deadline_before_package. As revisões da contratação (e de cada marco) são as do pacote.',
+          },
         },
         ['freelancerId', 'title', 'description', 'price'],
       ),
@@ -1067,6 +1254,16 @@ export const openapiDocument: Record<string, any> = {
           ...nullableRef('RevisionState'),
           description:
             'Entrega única: revisões usadas e limite. null por marcos; limit null no legado ilimitado. Ausente nas versões anteriores.',
+        },
+        package: {
+          ...nullableRef('ServicePackage'),
+          description:
+            'RF-086: o pacote contratado, como estava publicado na proposta (editar o serviço depois não muda). null sem pacote; ausente nas versões anteriores.',
+        },
+        clientCompany: {
+          ...nullableRef('CompanyRef'),
+          description:
+            'RF-018: quem contrata é conta de empresa (nome fantasia e ulid do perfil público); null quando é pessoa. Ausente nas versões anteriores.',
         },
         disputeOpensAt: {
           ...nullableTimestamp,
@@ -1312,6 +1509,59 @@ export const openapiDocument: Record<string, any> = {
         'accessToken',
         'refreshToken',
       ]),
+      // Login com Google (RF-002): desligado até configurar o cliente OAuth.
+      AuthProviders: {
+        ...obj(
+          {
+            google: {
+              type: 'boolean',
+              description:
+                'Login com Google ligado (GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET configurados)',
+            },
+          },
+          ['google'],
+        ),
+        additionalProperties: false,
+      },
+      GoogleExchange: obj({ code: { type: 'string', minLength: 16, maxLength: 255 } }, ['code']),
+      GoogleSignupChallenge: {
+        ...obj(
+          {
+            signupRequired: { type: 'boolean', enum: [true] },
+            signupToken: {
+              type: 'string',
+              description:
+                'Passe de uso único, só para POST /auth/google/signup: não serve como token de acesso.',
+            },
+            expiresInSeconds: { type: 'integer', minimum: 1 },
+            email: {
+              type: 'string',
+              format: 'email',
+              description: 'O e-mail confirmado pelo Google',
+            },
+            name: {
+              type: 'string',
+              nullable: true,
+              description: 'O nome da conta Google, sugestão para o perfil',
+            },
+          },
+          ['signupRequired', 'signupToken', 'expiresInSeconds', 'email', 'name'],
+        ),
+        additionalProperties: false,
+      },
+      GoogleSignup: obj(
+        {
+          signupToken: { type: 'string', minLength: 16, maxLength: 255 },
+          role: { type: 'string', enum: ['client', 'freelancer'] },
+          timezone: { type: 'string', enum: brazilTimezones },
+          legalAccepted: {
+            type: 'boolean',
+            enum: [true],
+            description: 'O aceite dos Termos e da Política, gravado na versão vigente (ADR 54)',
+          },
+        },
+        ['signupToken', 'role', 'legalAccepted'],
+      ),
       // Verificação em duas etapas (RF-090, RNF-042, ADR 66).
       MfaChallenge: {
         ...obj(
@@ -1405,8 +1655,18 @@ export const openapiDocument: Record<string, any> = {
           status: ref('UserStatus'),
           mfaEnabled: { type: 'boolean' },
           createdAt: timestamp,
+          cpf: {
+            ...nullableRef('AdminCpfSummary'),
+            description: 'RF-020: o CPF do perfil de freelancer, só mascarado; null sem o perfil',
+          },
+          company: {
+            type: 'object',
+            nullable: true,
+            properties: { tradeName: { type: 'string' }, cnpj: { type: 'string' } },
+            description: 'RF-018: na conta de empresa, o nome fantasia e o CNPJ (dado público)',
+          },
         },
-        ['ulid', 'email', 'role', 'status', 'mfaEnabled', 'createdAt'],
+        ['ulid', 'email', 'role', 'status', 'mfaEnabled', 'createdAt', 'cpf', 'company'],
       ),
       ResetMfa: obj({ reason: { type: 'string', minLength: 10, maxLength: 500 } }, ['reason']),
       // Contato da conta (RF-017): só o titular vê; o perfil público não traz e-mail nem telefone.
@@ -1425,8 +1685,17 @@ export const openapiDocument: Record<string, any> = {
             description: 'E.164 (+55, DDD e número); null quando não informado',
           },
           pendingEmail: nullableRef('PendingEmailChange'),
+          hasPassword: {
+            type: 'boolean',
+            description:
+              'A conta tem senha. A criada pelo Google (RF-002) nasce sem; para ter uma, "Esqueci minha senha"',
+          },
+          googleLinked: {
+            type: 'boolean',
+            description: 'A conta entra também com a conta Google do e-mail (RF-002)',
+          },
         },
-        ['email', 'emailVerified', 'phone', 'pendingEmail'],
+        ['email', 'emailVerified', 'phone', 'pendingEmail', 'hasPassword', 'googleLinked'],
       ),
       ChangeEmail: obj(
         {
@@ -1471,6 +1740,13 @@ export const openapiDocument: Record<string, any> = {
             items: { type: 'string' },
             description: 'Tags do serviço (RF-024), em ordem alfabética.',
           },
+          packages: {
+            type: 'array',
+            maxItems: 3,
+            items: ref('ServicePackage'),
+            description:
+              'Pacotes (RF-086), do Básico ao Premium; [] sem pacotes. Com pacotes, price e deliveryDays são os do Básico ("a partir de").',
+          },
           viewsCount: {
             type: 'integer',
             minimum: 0,
@@ -1506,10 +1782,11 @@ export const openapiDocument: Record<string, any> = {
           isRemote: { type: 'boolean' },
           modality: ref('ServiceModality'),
           tags: ref('ServiceTags'),
+          packages: ref('ServicePackages'),
           isActive: { type: 'boolean', description: 'false pausa o serviço; true reativa.' },
         }),
         description:
-          'Campos a mudar, todos opcionais: a edição manda o serviço inteiro; pausar e reativar mandam só isActive.',
+          'Campos a mudar, todos opcionais: a edição manda o serviço inteiro; pausar e reativar mandam só isActive. Sem packages, os pacotes ficam como estão (e mudar o tipo de preço para outro que não o fixo é 422 packages_require_fixed_price).',
       },
       WalletTransaction: obj(
         {
@@ -1641,6 +1918,7 @@ export const openapiDocument: Record<string, any> = {
         ['resolution'],
       ),
       ...preparedContractSchemas,
+      ...packageSchemas,
       ...supportSchemas,
       ...withdrawalSchemas,
       ...chatReadSchemas,
@@ -1732,10 +2010,18 @@ export const openapiDocument: Record<string, any> = {
     '/health/live': { get: op('Health', 'Liveness — processo responde (sem tocar no banco)') },
 
     '/auth/register': {
-      post: op('Auth', 'Cria conta', {
-        body: { $ref: '#/components/schemas/Register' },
-        responses: res201,
-      }),
+      post: op(
+        'Auth',
+        'Cria conta. Conta de empresa (role company, RF-018) nasce com o perfil da empresa: razão social, nome fantasia e CNPJ únicos entre contas',
+        {
+          body: { $ref: '#/components/schemas/Register' },
+          responses: {
+            ...res201,
+            '409': errorResponse('email_taken ou cnpj_taken'),
+            '422': errorResponse('validation_error (CNPJ: dígitos verificadores, todos iguais)'),
+          },
+        },
+      ),
     },
     '/auth/login': {
       post: op(
@@ -1803,6 +2089,90 @@ export const openapiDocument: Record<string, any> = {
       }),
     },
 
+    // Login com Google (RF-002): sem GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET, as rotas do Google
+    // respondem 404 e /auth/providers diz { google: false }.
+    '/auth/providers': {
+      get: op('Auth', 'Jeitos de entrar ligados neste servidor (o botão do Google só com true)', {
+        responses: jsonResponse('200', 'AuthProviders'),
+      }),
+    },
+    '/auth/google/start': {
+      get: op(
+        'Auth',
+        'Login com Google: grava o cookie da ida (state, nonce e PKCE, cifrado, 10 min) e redireciona ao Google (OAuth 2.0 com PKCE S256, escopos openid email profile). É um link de navegação, não uma chamada do app',
+        {
+          responses: {
+            '302': { description: 'Para a tela de consentimento do Google' },
+            '404': errorResponse('not_found: login com Google desligado neste servidor'),
+            '429': errorResponse('too_many_requests (o limite do login, por IP)'),
+          },
+        },
+      ),
+    },
+    '/auth/google/callback': {
+      get: op(
+        'Auth',
+        'Volta do Google (o endereço registrado no Google Cloud): confere o state com o cookie (uma vez só), troca o código, confere o ID token (iss, aud, exp, iat, nonce, email_verified) e decide a conta. Nunca põe sessão no endereço',
+        {
+          responses: {
+            '302': {
+              description:
+                'Para o web: /entrar/google#codigo=... (código de uso único, 2 min, para POST /auth/google/exchange) com o cookie da volta (escambo_google_volta, httpOnly), que amarra o código a este navegador; ou /login?google=motivo (negado, expirado, email_nao_verificado, conta_banida, conta_excluida, conta_vinculada, falhou)',
+            },
+            '404': errorResponse('not_found: login com Google desligado neste servidor'),
+            '429': errorResponse('too_many_requests (o limite do login, por IP)'),
+          },
+        },
+      ),
+    },
+    '/auth/google/exchange': {
+      post: op(
+        'Auth',
+        'Troca o código de uso único da volta do Google pela resposta do login: a sessão, o MfaChallenge (a 2FA nunca é pulada) ou o GoogleSignupChallenge (conta nova: concluir o cadastro). Só no navegador que voltou do Google: pede o cookie da volta, que a resposta apaga',
+        {
+          body: ref('GoogleExchange'),
+          responses: {
+            '200': {
+              description: 'OK',
+              content: {
+                'application/json': {
+                  schema: {
+                    oneOf: [ref('AuthResponse'), ref('MfaChallenge'), ref('GoogleSignupChallenge')],
+                  },
+                },
+              },
+            },
+            '400': errorResponse(
+              'invalid_google_code (vencido, já usado, inexistente ou fora do navegador que voltou do Google, sem o cookie da volta)',
+            ),
+            '403': errorResponse('account_banned ou account_deleted (as mesmas do login)'),
+            '404': errorResponse('not_found: login com Google desligado neste servidor'),
+            '422': errorResponse('validation_error: details.code'),
+            '429': errorResponse('too_many_requests (o limite do login, por IP)'),
+          },
+        },
+      ),
+    },
+    '/auth/google/signup': {
+      post: op(
+        'Auth',
+        'Conclui a conta nova que veio do Google: papel (cliente ou freelancer; empresa pelo cadastro com CNPJ) e aceite dos Termos e da Política. Nasce com o e-mail confirmado, sem senha',
+        {
+          body: ref('GoogleSignup'),
+          responses: {
+            ...jsonResponse('201', 'AuthResponse'),
+            '400': errorResponse('invalid_signup_token (vencido, já usado ou inexistente)'),
+            '404': errorResponse('not_found: login com Google desligado neste servidor'),
+            '409': errorResponse(
+              'email_taken: o e-mail ou a conta Google ganhou conta no meio tempo (entrar com o Google de novo resolve)',
+            ),
+            '422': errorResponse('validation_error: details.role ou details.legalAccepted'),
+            '429': errorResponse('too_many_requests (o limite do login, por IP)'),
+          },
+        },
+      ),
+    },
+
     '/categories': { get: op('Categorias', 'Árvore de categorias') },
 
     '/profiles/me': { get: op('Perfis', 'Meus perfis', { auth: true }) },
@@ -1837,6 +2207,59 @@ export const openapiDocument: Record<string, any> = {
       put: op('Perfis', 'Cria/edita perfil de freelancer', { auth: true }),
     },
     '/profiles/client': { put: op('Perfis', 'Cria/edita perfil de cliente', { auth: true }) },
+    '/profiles/company': {
+      put: op(
+        'Perfis',
+        'Edita os dados da empresa (RF-018), só de conta de empresa: razão social, nome fantasia e CNPJ continuam obrigatórios; logo, site, descrição curta, cidade e UF. A troca do CNPJ vai para a auditoria',
+        {
+          auth: true,
+          body: ref('UpsertCompanyProfile'),
+          responses: {
+            ...jsonResponse('200', 'CompanyProfile'),
+            '403': errorResponse('not_company ou conta bloqueada'),
+            '409': errorResponse('cnpj_taken'),
+            '422': errorResponse('validation_error'),
+          },
+        },
+      ),
+    },
+    '/profiles/company/{ulid}': {
+      get: {
+        ...op(
+          'Perfis',
+          'Página pública da empresa (RF-018): logo, nome fantasia, razão social, CNPJ (dado público), site, descrição curta e cidade',
+          {
+            responses: {
+              ...jsonResponse('200', 'PublicCompanyProfile'),
+              '404': errorResponse('company_not_found'),
+            },
+          },
+        ),
+        parameters: [{ name: 'ulid', in: 'path', required: true, schema: { type: 'string' } }],
+      },
+    },
+    '/profiles/me/cpf': {
+      get: op(
+        'Perfis',
+        'CPF do freelancer (RF-020): se o servidor valida, se o saque pede, e o CPF só mascarado (nunca inteiro)',
+        { auth: true, responses: jsonResponse('200', 'CpfStatus') },
+      ),
+      put: op(
+        'Perfis',
+        'Valida e grava o CPF e a data de nascimento (RF-020, RN-009, RN-075): dígitos verificadores, unicidade entre contas pelo índice cego e 18 anos no dia de hoje do fuso da conta; não é consulta à Receita. O CPF é gravado só cifrado e, validado, não se altera pela tela (a correção é pelo atendimento). Mesmo limite do login',
+        {
+          auth: true,
+          body: ref('VerifyCpf'),
+          responses: {
+            ...jsonResponse('200', 'CpfStatus'),
+            '409': errorResponse('no_freelancer_profile, cpf_locked ou cpf_taken'),
+            '422': errorResponse('validation_error, underage ou invalid_birth_date'),
+            '429': errorResponse('too_many_requests'),
+            '503': errorResponse('cpf_unavailable (sem FIELD_ENCRYPTION_KEY)'),
+          },
+        },
+      ),
+    },
     '/profiles/portfolio': {
       get: op('Perfis', 'Meu portfólio', { auth: true }),
       post: op('Perfis', 'Adiciona item ao portfólio (máx. 12; imagem e/ou link)', { auth: true }),
@@ -1891,10 +2314,16 @@ export const openapiDocument: Record<string, any> = {
           },
         ],
       },
-      post: op('Serviços', 'Cria serviço', {
+      post: op('Serviços', 'Cria serviço (publicar exige e-mail confirmado, RF-006)', {
         auth: true,
         body: { $ref: '#/components/schemas/CreateService' },
-        responses: res201,
+        responses: {
+          ...jsonResponse('201', 'Service'),
+          '403': emailNotVerified,
+          '422': errorResponse(
+            'validation_error, price_below_minimum, invalid_category; com pacotes (RF-086): packages_require_fixed_price, price_from_packages, package_price_order',
+          ),
+        },
       }),
     },
     '/services/mine': {
@@ -1930,10 +2359,24 @@ export const openapiDocument: Record<string, any> = {
           },
         ),
       },
-      patch: op('Serviços', 'Atualiza (dono): edita o serviço inteiro ou pausa/reativa', {
-        auth: true,
-        body: ref('UpdateService'),
-      }),
+      patch: op(
+        'Serviços',
+        'Atualiza (dono): edita o serviço inteiro ou pausa/reativa. isActive true (deixar no ar, reativar um pausado) é publicar e exige e-mail confirmado (RF-006); editar e pausar, não',
+        {
+          auth: true,
+          body: ref('UpdateService'),
+          responses: {
+            ...jsonResponse('200', 'Service'),
+            '403': errorResponse(
+              'forbidden: o serviço não é seu; email_not_verified: isActive true sem e-mail confirmado (RF-006)',
+            ),
+            '404': errorResponse('service_not_found'),
+            '422': errorResponse(
+              'validation_error, price_required, price_below_minimum, invalid_category; com pacotes (RF-086): packages_require_fixed_price, price_from_packages, package_price_order',
+            ),
+          },
+        },
+      ),
       delete: op('Serviços', 'Remove (dono, soft delete)', { auth: true, responses: res204 }),
     },
 
@@ -1982,20 +2425,30 @@ export const openapiDocument: Record<string, any> = {
           },
         ],
       },
-      post: op('Contratações', 'Cria proposta e reserva o valor', {
-        auth: true,
-        body: { $ref: '#/components/schemas/CreateContract' },
-        responses: {
-          ...jsonResponse('201', 'Contract'),
-          '409': {
-            description:
-              'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive.',
-            content: {
-              'application/json': { schema: { anyOf: [ref('ActiveContractError'), ref('Error')] } },
+      post: op(
+        'Contratações',
+        'Cria proposta e reserva o valor (exige e-mail confirmado, RF-006)',
+        {
+          auth: true,
+          body: { $ref: '#/components/schemas/CreateContract' },
+          responses: {
+            ...jsonResponse('201', 'Contract'),
+            '403': emailNotVerified,
+            '409': {
+              description:
+                'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive e, com pacote (RF-086), package_changed: o preço do pacote mudou.',
+              content: {
+                'application/json': {
+                  schema: { anyOf: [ref('ActiveContractError'), ref('Error')] },
+                },
+              },
             },
+            '422': errorResponse(
+              'validation_error; com pacotes (RF-086): package_required, package_not_found, deadline_before_package, milestone_after_deadline',
+            ),
           },
         },
-      }),
+      ),
     },
     '/contracts/{id}': {
       get: op(
@@ -2618,17 +3071,23 @@ export const openapiDocument: Record<string, any> = {
     },
     '/wallet/deposits': {
       get: op('Carteira', 'Meus depósitos', { auth: true }),
-      post: op('Carteira', 'Gera cobrança PIX de depósito na carteira', {
-        auth: true,
-        body: { $ref: '#/components/schemas/CreateDeposit' },
-        responses: res201,
-      }),
+      post: op(
+        'Carteira',
+        'Gera cobrança PIX de depósito na carteira (exige e-mail confirmado, RF-006)',
+        {
+          auth: true,
+          body: { $ref: '#/components/schemas/CreateDeposit' },
+          responses: { ...res201, '403': emailNotVerified },
+        },
+      ),
     },
     '/wallet/deposits/{id}': { get: op('Carteira', 'Situação da cobrança', { auth: true }) },
     '/wallet/deposits/{id}/simulate': {
-      post: op('Carteira', 'Demo: confirma a cobrança sem gateway (PAYMENTS_SIMULATE)', {
-        auth: true,
-      }),
+      post: op(
+        'Carteira',
+        'Demo: confirma a cobrança sem gateway (PAYMENTS_SIMULATE). Pagar exige e-mail confirmado (RF-006)',
+        { auth: true, responses: { '200': { description: 'OK' }, '403': emailNotVerified } },
+      ),
     },
     '/payments/webhook': {
       post: op(
@@ -2667,10 +3126,11 @@ export const openapiDocument: Record<string, any> = {
     },
     '/boosts': {
       get: op('Impulsionamento', 'Meus impulsionamentos', { auth: true }),
-      post: op('Impulsionamento', 'Impulsiona um serviço meu (paga em créditos)', {
-        auth: true,
-        responses: res201,
-      }),
+      post: op(
+        'Impulsionamento',
+        'Impulsiona um serviço meu (paga em créditos; exige e-mail confirmado, RF-006)',
+        { auth: true, responses: { ...res201, '403': emailNotVerified } },
+      ),
     },
     '/withdrawals': {
       get: {
@@ -2689,8 +3149,13 @@ export const openapiDocument: Record<string, any> = {
           responses: {
             ...jsonResponse('201', 'Withdrawal'),
             '400': errorResponse('insufficient_balance'),
-            '403': errorResponse('email_not_verified ou conta bloqueada'),
+            '403': errorResponse(
+              'email_not_verified (ADR 20, RF-006: "Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo."); cpf_required (RF-020: quem entrega trabalho saca com o CPF validado no Perfil); ou conta bloqueada',
+            ),
             '422': errorResponse('below_minimum ou validation_error'),
+            '503': errorResponse(
+              'cpf_unavailable (quem entrega trabalho, num servidor sem FIELD_ENCRYPTION_KEY)',
+            ),
           },
         },
       ),
@@ -2794,6 +3259,7 @@ export const openapiDocument: Record<string, any> = {
           responses: {
             ...res201,
             '402': errorResponse('insufficient_balance: sem saldo para reservar a torna'),
+            '403': emailNotVerified,
             '422': errorResponse(
               'validation_error, estimate_mismatch (valor diferente do catálogo), estimate_required (lado sem preço fechado sem valor), invalid_offered_service, invalid_requested_service',
             ),
@@ -2805,8 +3271,8 @@ export const openapiDocument: Record<string, any> = {
     '/barters/{id}/accept': {
       post: op(
         'Troca (Escambo)',
-        'Aceita a troca (gera 2 contratos recíprocos; reserva a torna se o receptor paga — 402 sem saldo)',
-        { auth: true },
+        'Aceita a troca (gera 2 contratos recíprocos; reserva a torna se o receptor paga — 402 sem saldo). Exige e-mail confirmado (RF-006); recusar e cancelar, não',
+        { auth: true, responses: { ...res201, '403': emailNotVerified } },
       ),
     },
     '/barters/{id}/reject': {
@@ -2864,13 +3330,21 @@ export const openapiDocument: Record<string, any> = {
     '/messaging/contracts/{id}': {
       get: op(
         'Chat',
-        'Histórico do chat do contrato (partes). Cada mensagem traz readAt: quando o destinatário leu (RF-059), null enquanto não lida',
+        'Histórico do chat do contrato (partes). Cada mensagem traz readAt: quando o destinatário leu (RF-059), null enquanto não lida. closed: true quando a conversa está encerrada (RF-062): nenhuma contratação aberta (proposta, aceita, em andamento, entregue, em revisão ou em disputa) nem troca proposta ou em andamento entre as duas pessoas; ler, baixar anexos e marcar como lida continuam permitidos',
         { auth: true },
       ),
       post: op(
         'Chat',
-        'Envia mensagem (persiste + broadcast Socket.IO). Texto com sinal de negociação por fora (chave Pix, CPF, telefone, e-mail, WhatsApp, "por fora") sai com signals para as duas partes e entra sozinho na fila de denúncias, sem ser barrado (ADR 45)',
-        { auth: true, responses: res201 },
+        'Envia mensagem (persiste + broadcast Socket.IO). Texto com sinal de negociação por fora (chave Pix, CPF, telefone, e-mail, WhatsApp, "por fora") sai com signals para as duas partes e entra sozinho na fila de denúncias, sem ser barrado (ADR 45). Só com relação aberta entre as duas pessoas (RF-062)',
+        {
+          auth: true,
+          responses: {
+            ...res201,
+            '409': errorResponse(
+              'conversation_closed: conversa encerrada (RF-062), sem contratação nem troca em aberto entre as duas pessoas; uma nova proposta reabre',
+            ),
+          },
+        },
       ),
     },
     '/messaging/contracts/{id}/read': {
@@ -2893,8 +3367,16 @@ export const openapiDocument: Record<string, any> = {
     '/messaging/contracts/{id}/attachments': {
       post: op(
         'Chat',
-        'Envia imagem ou arquivo (multipart: file + content opcional). JPG, PNG, GIF, WebP, PDF ou ZIP, reconhecidos pelo conteúdo, até UPLOAD_MAX_MB',
-        { auth: true, responses: res201 },
+        'Envia imagem ou arquivo (multipart: file + content opcional). JPG, PNG, GIF, WebP, PDF ou ZIP, reconhecidos pelo conteúdo, até UPLOAD_MAX_MB. Só com relação aberta entre as duas pessoas (RF-062)',
+        {
+          auth: true,
+          responses: {
+            ...res201,
+            '409': errorResponse(
+              'conversation_closed: conversa encerrada (RF-062); o arquivo não chega a ser gravado',
+            ),
+          },
+        },
       ),
     },
     '/messaging/attachments/{id}': {
@@ -3211,6 +3693,26 @@ export const openapiDocument: Record<string, any> = {
               '403': errorResponse('admin_only ou mfa_required (ADMIN_MFA_REQUIRED)'),
               '404': errorResponse('user_not_found'),
               '409': errorResponse('mfa_not_enabled'),
+              '422': errorResponse('validation_error: details.reason (10 a 500 caracteres)'),
+            },
+          },
+        ),
+        parameters: [idPathParameter('ulid', { type: 'string' })],
+      },
+    },
+    '/admin/users/{ulid}/cpf/reset': {
+      post: {
+        ...op(
+          'Admin',
+          'Atendimento (RF-020): apaga o CPF validado para o titular informar de novo, com o motivo; a ação fica em admin_actions (sem o CPF) e o titular é avisado por e-mail. Até ele informar, o saque de quem entrega trabalho fica travado',
+          {
+            auth: true,
+            body: ref('ResetMfa'),
+            responses: {
+              ...res204,
+              '403': errorResponse('admin_only ou mfa_required (ADMIN_MFA_REQUIRED)'),
+              '404': errorResponse('user_not_found'),
+              '409': errorResponse('cpf_not_set'),
               '422': errorResponse('validation_error: details.reason (10 a 500 caracteres)'),
             },
           },

@@ -1,10 +1,11 @@
 import type { AdminAccountLookup, UserRole, UserStatus } from '@escambo/types';
-import { Search, ShieldOff, UserCog } from 'lucide-react';
-import { useId, useRef, useState, type FormEvent } from 'react';
+import { IdCard, Search, ShieldOff, UserCog } from 'lucide-react';
+import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Button, ErrorState, Field, Modal, Skeleton } from '../../components/ui';
 import { errorMessage } from '../../lib/errors';
+import { formatCnpj } from '../../lib/documents';
 import { dt } from '../../lib/format';
-import { useAdminAccountLookup, useAdminResetMfa } from '../../lib/hooks';
+import { useAdminAccountLookup, useAdminResetCpf, useAdminResetMfa } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { SectionHead } from './SectionHead';
 
@@ -31,12 +32,15 @@ const isNotFound = (er: unknown): boolean => (er as { status?: unknown } | null)
 /**
  * Atendimento: conta (RF-090, ADR 66). O admin acha a conta pelo e-mail e, para quem perdeu o
  * celular e os códigos de recuperação, tira a verificação em duas etapas. A API derruba as sessões
- * da conta, avisa o titular por e-mail e registra quem fez e por quê.
+ * da conta, avisa o titular por e-mail e registra quem fez e por quê. Também apaga o CPF validado
+ * para o titular corrigir (RF-020): a tela não altera um CPF validado, e o atendimento só o vê
+ * mascarado. Na conta de empresa (RF-018), mostra o nome fantasia e o CNPJ.
  */
 export function AccountSupportSection() {
   const [draft, setDraft] = useState('');
   const [email, setEmail] = useState<string | null>(null);
   const [resetting, setResetting] = useState<AdminAccountLookup | null>(null);
+  const [resettingCpf, setResettingCpf] = useState<AdminAccountLookup | null>(null);
   const lookup = useAdminAccountLookup(email);
   const resultId = useId();
 
@@ -65,7 +69,7 @@ export function AccountSupportSection() {
         tone="blue"
         title="Atendimento: conta"
         titleId="atendimento-conta-title"
-        subtitle="Ache a conta pelo e-mail. Desativar a verificação em duas etapas é para quem perdeu o celular e os códigos de recuperação: confirme antes que é o titular (pelo chamado de suporte, por exemplo) e registre o motivo."
+        subtitle="Ache a conta pelo e-mail. Desativar a verificação em duas etapas é para quem perdeu o celular e os códigos de recuperação; apagar o CPF, para quem o informou errado. Nos dois casos, confirme antes que é o titular (pelo chamado de suporte, por exemplo) e registre o motivo."
       />
       <form className="lookup-form" onSubmit={search} aria-label="Buscar conta por e-mail">
         <Field label="E-mail da conta">
@@ -116,25 +120,122 @@ export function AccountSupportSection() {
               <dt className="muted tiny">Verificação em duas etapas</dt>
               <dd data-testid="lookup-mfa">{found.mfaEnabled ? 'Ativa' : 'Desativada'}</dd>
             </div>
+            {found.cpf && (
+              <div>
+                <dt className="muted tiny">CPF</dt>
+                <dd data-testid="lookup-cpf">
+                  {found.cpf.maskedCpf
+                    ? `${found.cpf.maskedCpf} · ${found.cpf.verified ? 'validado' : 'não validado'}${
+                        found.cpf.verifiedAt ? ` em ${dt(found.cpf.verifiedAt)}` : ''
+                      }`
+                    : 'Não informado'}
+                </dd>
+              </div>
+            )}
+            {found.company && (
+              <div>
+                <dt className="muted tiny">Empresa</dt>
+                <dd data-testid="lookup-company">
+                  {found.company.tradeName} · CNPJ {formatCnpj(found.company.cnpj)}
+                </dd>
+              </div>
+            )}
           </dl>
-          {found.mfaEnabled && (
-            <div>
-              <Button type="button" variant="danger" onClick={() => setResetting(found)}>
-                <ShieldOff size={14} /> Desativar verificação em duas etapas
-              </Button>
+          {(found.mfaEnabled || found.cpf?.maskedCpf) && (
+            <div className="svc-actions">
+              {found.mfaEnabled && (
+                <Button type="button" variant="danger" onClick={() => setResetting(found)}>
+                  <ShieldOff size={14} /> Desativar verificação em duas etapas
+                </Button>
+              )}
+              {found.cpf?.maskedCpf && (
+                <Button type="button" variant="danger" onClick={() => setResettingCpf(found)}>
+                  <IdCard size={14} /> Apagar o CPF para correção
+                </Button>
+              )}
             </div>
           )}
         </div>
       )}
       {resetting && <ResetMfaModal account={resetting} onClose={() => setResetting(null)} />}
+      {resettingCpf && (
+        <ResetCpfModal account={resettingCpf} onClose={() => setResettingCpf(null)} />
+      )}
     </section>
   );
 }
 
-/** Confirmação com o motivo obrigatório: o titular recebe o aviso e o registro guarda o porquê. */
+/** Desativa a 2FA de quem perdeu o celular e os códigos de recuperação (ADR 66). */
 function ResetMfaModal({ account, onClose }: { account: AdminAccountLookup; onClose: () => void }) {
-  const toast = useToast();
   const reset = useAdminResetMfa();
+  return (
+    <ReasonModal
+      account={account}
+      onClose={onClose}
+      run={(reason) => reset.mutateAsync({ ulid: account.ulid, reason })}
+      pending={reset.isPending}
+      title="Desativar a verificação em duas etapas"
+      formLabel="Desativar a 2FA da conta"
+      intro="A verificação sai na hora, as sessões abertas da conta caem e o titular recebe um e-mail avisando. Para voltar a usar, ele ativa de novo no Perfil."
+      example="Ex.: perdeu o celular; titularidade confirmada no chamado de suporte."
+      icon={<ShieldOff size={16} />}
+      submit={['Desativar', 'Desativando…']}
+      success="Verificação em duas etapas desativada. As sessões da conta caíram e o titular foi avisado por e-mail."
+      failure="Não foi possível desativar. Tente de novo."
+    />
+  );
+}
+
+/** Apaga o CPF validado para o titular informar o certo no Perfil (RF-020). */
+function ResetCpfModal({ account, onClose }: { account: AdminAccountLookup; onClose: () => void }) {
+  const reset = useAdminResetCpf();
+  return (
+    <ReasonModal
+      account={account}
+      onClose={onClose}
+      run={(reason) => reset.mutateAsync({ ulid: account.ulid, reason })}
+      pending={reset.isPending}
+      title="Apagar o CPF para correção"
+      formLabel="Apagar o CPF da conta"
+      intro="O CPF, a data de nascimento e a validação saem na hora, e o titular recebe um e-mail para informar o CPF certo no Perfil. Até lá, o saque do que ele recebe por trabalhos fica bloqueado. Confira o documento antes, fora do sistema."
+      example="Ex.: titular digitou o CPF errado; documento conferido no chamado de suporte."
+      icon={<IdCard size={16} />}
+      submit={['Apagar o CPF', 'Apagando…']}
+      success="CPF apagado. O titular foi avisado por e-mail para informar de novo."
+      failure="Não foi possível apagar o CPF. Tente de novo."
+    />
+  );
+}
+
+/** Confirmação com o motivo obrigatório: o titular recebe o aviso e o registro guarda o porquê. */
+function ReasonModal({
+  account,
+  onClose,
+  run,
+  pending,
+  title,
+  formLabel,
+  intro,
+  example,
+  icon,
+  submit: [submitLabel, pendingLabel],
+  success,
+  failure,
+}: {
+  account: AdminAccountLookup;
+  onClose: () => void;
+  run: (reason: string) => Promise<unknown>;
+  pending: boolean;
+  title: string;
+  formLabel: string;
+  intro: string;
+  example: string;
+  icon: ReactNode;
+  submit: [string, string];
+  success: string;
+  failure: string;
+}) {
+  const toast = useToast();
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [invalid, setInvalid] = useState(false);
@@ -157,27 +258,19 @@ function ResetMfaModal({ account, onClose }: { account: AdminAccountLookup; onCl
     setError(null);
     setInvalid(false);
     try {
-      await reset.mutateAsync({ ulid: account.ulid, reason: text });
-      toast.success(
-        'Verificação em duas etapas desativada. As sessões da conta caíram e o titular foi avisado por e-mail.',
-      );
+      await run(text);
+      toast.success(success);
       onClose();
     } catch (er) {
-      fail(errorMessage(er, 'Não foi possível desativar. Tente de novo.'), false);
+      fail(errorMessage(er, failure), false);
     }
   }
 
   return (
-    <Modal title="Desativar a verificação em duas etapas" onClose={onClose}>
-      <form
-        className="stack"
-        onSubmit={(e) => void submit(e)}
-        aria-label="Desativar a 2FA da conta"
-      >
+    <Modal title={title} onClose={onClose}>
+      <form className="stack" onSubmit={(e) => void submit(e)} aria-label={formLabel}>
         <p className="muted tiny">
-          Conta <strong className="email-addr">{account.email}</strong>. A verificação sai na hora,
-          as sessões abertas da conta caem e o titular recebe um e-mail avisando. Para voltar a
-          usar, ele ativa de novo no Perfil.
+          Conta <strong className="email-addr">{account.email}</strong>. {intro}
         </p>
         <label>
           Motivo (fica no registro do atendimento)
@@ -194,16 +287,15 @@ function ResetMfaModal({ account, onClose }: { account: AdminAccountLookup; onCl
           />
         </label>
         <span className="muted tiny" id={hintId}>
-          De {REASON_MIN} a {REASON_MAX} caracteres. Ex.: perdeu o celular; titularidade confirmada
-          no chamado de suporte.
+          De {REASON_MIN} a {REASON_MAX} caracteres. {example}
         </span>
         {error && (
           <p className="error" id={errorId} role="alert">
             {error}
           </p>
         )}
-        <Button type="submit" variant="danger" disabled={reset.isPending}>
-          <ShieldOff size={16} /> {reset.isPending ? 'Desativando…' : 'Desativar'}
+        <Button type="submit" variant="danger" disabled={pending}>
+          {icon} {pending ? pendingLabel : submitLabel}
         </Button>
       </form>
     </Modal>

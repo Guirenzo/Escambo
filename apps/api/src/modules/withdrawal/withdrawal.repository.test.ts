@@ -30,7 +30,7 @@ const steps = (): string[] => fakeDb.sqls().map((s) => s.split(' ').slice(0, 3).
 const COLUMNS =
   'w.id, w.user_id, w.amount, w.status, w.pix_key, w.bank_name, w.bank_agency, w.bank_account, w.gateway_ref, w.created_at, w.processed_at, w.due_at';
 const HOLDER_JOINS =
-  'FROM withdrawals w JOIN users u ON u.id = w.user_id LEFT JOIN profiles_freelancer fp ON fp.user_id = w.user_id LEFT JOIN profiles_client cp ON cp.user_id = w.user_id';
+  'FROM withdrawals w JOIN users u ON u.id = w.user_id LEFT JOIN profiles_freelancer fp ON fp.user_id = w.user_id LEFT JOIN profiles_client cp ON cp.user_id = w.user_id LEFT JOIN profiles_company co ON co.user_id = w.user_id';
 
 /** A ordem global de chamada (a do vitest) de tudo o que a transação executou: SQL e ledger. */
 const workOrder = (): number[] =>
@@ -274,9 +274,9 @@ describe('withdrawalRepository', () => {
 
       const { sql, params } = fakeDb.calls[0]!;
       expect(sql).toContain(HOLDER_JOINS);
-      // O nome vem do perfil de freelancer, ou do de cliente quando não há.
+      // O nome vem do perfil de freelancer, ou do de cliente, ou do da empresa (RF-018).
       expect(sql).toContain(
-        'u.ulid AS user_ulid, u.email AS user_email, COALESCE(fp.full_name, cp.full_name) AS user_name',
+        'u.ulid AS user_ulid, u.email AS user_email, COALESCE(fp.full_name, cp.full_name, co.trade_name) AS user_name',
       );
       // O que vence antes vem primeiro; saque antigo sem prazo entra pela data do pedido, e o
       // pedido mais antigo (depois o id) desempata.
@@ -301,7 +301,9 @@ describe('withdrawalRepository', () => {
 
     const { sql } = fakeDb.calls[0]!;
     expect(sql).toContain(`SELECT ${COLUMNS}, u.ulid AS user_ulid`);
-    expect(sql).toContain('COALESCE(fp.full_name, cp.full_name) AS user_name FROM withdrawals w');
+    expect(sql).toContain(
+      'COALESCE(fp.full_name, cp.full_name, co.trade_name) AS user_name FROM withdrawals w',
+    );
     // O filtro é só o id: o admin abre o saque em qualquer status.
     expect(sql.endsWith(`${HOLDER_JOINS} WHERE w.id = :id LIMIT 1`)).toBe(true);
     expect(fakeDb.calls[0]!.params).toEqual({ id: 42 });

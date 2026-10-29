@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Chaves restantes de platform_settings ligadas (ADR 33): modo de manutenção, trocas on/off e
@@ -26,6 +27,7 @@ async function registerAndLogin(
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 const put = (token: string, key: string, value: unknown) =>

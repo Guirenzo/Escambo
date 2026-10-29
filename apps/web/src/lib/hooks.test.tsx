@@ -966,7 +966,7 @@ describe('gravações: o que vai para a API e o que é recarregado depois', () =
       'proposeBarter',
       [{ receiverId: 8, estimatedValueOffered: 200, estimatedValueRequested: 180 }],
       { id: 4 },
-      [['barters']],
+      [['barters'], ['chat']],
     ],
     [
       'useBarterAction',
@@ -975,7 +975,7 @@ describe('gravações: o que vai para a API e o que é recarregado depois', () =
       'barterAction',
       [4, 'accept'],
       { id: 4 },
-      [['barters'], ['contracts']],
+      [['barters'], ['contracts'], ['chat']],
     ],
     [
       'usePutFreelancerProfile',
@@ -1002,7 +1002,7 @@ describe('gravações: o que vai para a API e o que é recarregado depois', () =
       'createContract',
       [{ freelancerId: 5, title: 'Site', description: 'Página', price: 300 }],
       { id: 7 },
-      [['contracts'], ['wallet']],
+      [['contracts'], ['wallet'], ['chat']],
     ],
     [
       'useCreateBoost',

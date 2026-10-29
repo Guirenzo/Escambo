@@ -563,3 +563,37 @@ describe('ServiceCard: visual de marketplace', () => {
     expect(heading.closest('article')).toHaveClass('card', 'service', 'svc-card');
   });
 });
+
+describe('ServiceCard: pacotes (RF-086)', () => {
+  it('com pacotes, o card diz quantos e mostra "a partir de" com o preço e o prazo do Básico', () => {
+    const basic = {
+      tier: 'basic' as const,
+      name: 'Essencial',
+      description: null,
+      price: 150,
+      deliveryDays: 3,
+      revisions: 2,
+      features: [],
+    };
+    renderCard({
+      service: service({
+        price: 150,
+        deliveryDays: 3,
+        packages: [
+          basic,
+          { ...basic, tier: 'standard', price: 300 },
+          { ...basic, tier: 'premium', price: 600 },
+        ],
+      }),
+    });
+    expect(screen.getByTestId('packages-count')).toHaveTextContent('3 pacotes');
+    expect(screen.getByText('a partir de')).toBeVisible();
+    expect(screen.getByText('R$ 150,00')).toBeVisible();
+    expect(screen.getByText('3 dias')).toBeVisible();
+  });
+
+  it('um pacote só (ou nenhum) não ganha a contagem', () => {
+    renderCard({ service: service({ packages: [] }) });
+    expect(screen.queryByTestId('packages-count')).toBeNull();
+  });
+});

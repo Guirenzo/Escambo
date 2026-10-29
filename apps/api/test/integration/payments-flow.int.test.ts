@@ -4,7 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { runExpireDeposits } from '../../src/jobs/expire-deposits';
-import { verifyEmailOf } from './mail.helpers';
+import { verifyCpfOf } from './cpf.helpers';
+import { confirmEmail, verifyEmailOf } from './mail.helpers';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
 
@@ -18,9 +19,11 @@ interface Actor {
 }
 
 let seq = 0;
+/** Cadastro e login; o e-mail sai confirmado pelo link (RF-006), menos com `confirmed` false. */
 async function registerAndLogin(
   role: 'client' | 'freelancer',
   domain = 'escambo.test',
+  confirmed = true,
 ): Promise<Actor> {
   const email = `int_pay_${role}_${Date.now()}_${seq++}@${domain}`;
   const password = 'senha-integracao-123';
@@ -30,6 +33,7 @@ async function registerAndLogin(
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status).toBe(200);
+  if (confirmed) await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 
@@ -217,19 +221,34 @@ describe('Pagamentos: depósito PIX, carteira pré-paga, reembolso e saques', ()
   });
 
   it('saques: fila do admin, processar/concluir, falhar (estorno) e cancelar pelo titular', async () => {
-    const freelancer = await registerAndLogin('freelancer');
+    const freelancer = await registerAndLogin('freelancer', 'escambo.test', false);
     const admin = await registerAndLogin('client', 'admin.escambo.test');
-    await fundWallet(app, freelancer.token, 300);
 
-    // Saque é ação sensível: sem e-mail confirmado é 403 e o saldo fica intacto.
+    // Dinheiro é ação sensível (ADR 20, RF-006): sem e-mail confirmado, nem depósito nem saque.
+    const deposit = await request(app)
+      .post('/api/wallet/deposits')
+      .set(auth(freelancer.token))
+      .send({ amount: 300, method: 'pix' });
+    expect(deposit.status).toBe(403);
+    expect(deposit.body.error).toBe('email_not_verified');
     const locked = await request(app)
       .post('/api/withdrawals')
       .set(auth(freelancer.token))
       .send({ amount: 100, method: 'pix', pixKey: 'chave-100@escambo.test' });
     expect(locked.status).toBe(403);
     expect(locked.body.error).toBe('email_not_verified');
-    expect(await wallet(freelancer.token)).toMatchObject({ balance: 300, balancePending: 0 });
+    expect(await wallet(freelancer.token)).toMatchObject({ balance: 0, balancePending: 0 });
     await verifyEmailOf(app, admin.token, freelancer.id);
+    await fundWallet(app, freelancer.token, 300);
+    // Com o e-mail, ainda falta o CPF validado de quem entrega trabalho (RF-020).
+    const noCpf = await request(app)
+      .post('/api/withdrawals')
+      .set(auth(freelancer.token))
+      .send({ amount: 100, method: 'pix', pixKey: 'chave-100@escambo.test' });
+    expect(noCpf.status).toBe(403);
+    expect(noCpf.body.error).toBe('cpf_required');
+    expect(await wallet(freelancer.token)).toMatchObject({ balance: 300, balancePending: 0 });
+    await verifyCpfOf(app, freelancer.token);
 
     const ask = async (amount: number) => {
       const res = await request(app)

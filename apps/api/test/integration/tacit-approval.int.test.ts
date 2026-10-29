@@ -17,6 +17,7 @@ import { setClockForTests } from '../../src/utils/clock';
 import { formatDue } from '../../src/utils/timezone';
 import { DAY, fromNow, HOUR, now, startDaytimeClock, stopClock } from './clock.helpers';
 import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Aprovação tácita (RN-024, ADR 57): a hora é gravada na entrega (5 dias corridos, nunca de noite
@@ -52,6 +53,7 @@ async function registerAndLogin(
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status, JSON.stringify(login.body)).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   const id = login.body.user.id as number;
   if (timezone)
     await pool.query('UPDATE users SET timezone = :timezone WHERE id = :id', { id, timezone });

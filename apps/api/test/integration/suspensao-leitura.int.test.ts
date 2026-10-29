@@ -36,8 +36,8 @@ async function actor(role: Actor['role'] = 'client'): Promise<Actor> {
   const key = ulid();
   const email = `readonly-${key}@escambo.test`;
   const [result] = await pool.query<ResultSetHeader>(
-    `INSERT INTO users (ulid, email, password_hash, role, status, timezone)
-     VALUES (:key, :email, :passwordHash, :role, 'active', 'America/Sao_Paulo')`,
+    `INSERT INTO users (ulid, email, password_hash, role, status, timezone, email_verified_at)
+     VALUES (:key, :email, :passwordHash, :role, 'active', 'America/Sao_Paulo', NOW())`,
     { key, email, passwordHash, role },
   );
   return {

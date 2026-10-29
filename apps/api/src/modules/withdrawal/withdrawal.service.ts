@@ -7,11 +7,11 @@ import type {
 } from '@escambo/types';
 import { businessDueAt } from '../../utils/business-days';
 import { clock } from '../../utils/clock';
-import { FIELD_UNAVAILABLE } from '../../utils/field-crypto';
+import { FIELD_UNAVAILABLE, fieldEncryptionEnabled } from '../../utils/field-crypto';
 import { HttpError } from '../../utils/http-error';
 import { adminFacade } from '../admin/admin.facade';
-import { authFacade } from '../auth/auth.facade';
 import { notificationsService } from '../notifications/notifications.service';
+import { profilesFacade } from '../profiles/profiles.facade';
 import {
   withdrawalRepository,
   type AdminWithdrawalRow,
@@ -75,6 +75,31 @@ function toAdminWithdrawal(row: AdminWithdrawalRow, now: Date): AdminWithdrawal 
   };
 }
 
+/**
+ * RF-020: quem entrega trabalho (ADR 56: papel freelancer, algum serviço ou alguma contratação como
+ * freelancer) só saca com o CPF validado no Perfil. Quem só contrata (cliente, empresa) e saca o que
+ * depositou não precisa de CPF nesta versão. Sem a FIELD_ENCRYPTION_KEY o CPF não pode ser
+ * validado, e o saque de quem entrega trabalho fica travado até o servidor ter a chave.
+ */
+async function assertPayoutCpf(userId: number): Promise<void> {
+  const state = await profilesFacade.payoutState(userId);
+  if (Number(state?.delivers_work ?? 0) !== 1) return;
+  if (!fieldEncryptionEnabled()) {
+    throw new HttpError(
+      503,
+      'O saque de quem recebe por trabalhos pede o CPF validado, e a validação de CPF ainda não está disponível neste servidor. Fale com o suporte.',
+      'cpf_unavailable',
+    );
+  }
+  if (Number(state?.cpf_verified ?? 0) !== 1) {
+    throw new HttpError(
+      403,
+      'Para sacar, valide seu CPF em Perfil, "Dados para receber".',
+      'cpf_required',
+    );
+  }
+}
+
 async function loadOr404(id: number): Promise<WithdrawalRow> {
   const row = await withdrawalRepository.findById(id);
   if (!row) throw new HttpError(404, 'Saque não encontrado', 'withdrawal_not_found');
@@ -87,12 +112,9 @@ export const withdrawalService = {
     if (input.amount < min) {
       throw new HttpError(422, `Saque mínimo é ${brl(min)} (RN-034)`, 'below_minimum');
     }
-    // Saque é a única ação que tira dinheiro da plataforma: exige e-mail confirmado (ADR 20),
-    // para que uma sessão roubada não mande o saldo para uma chave PIX de terceiro sem aviso.
-    const user = await authFacade.findById(userId);
-    if (!user?.email_verified_at) {
-      throw new HttpError(403, 'Confirme seu e-mail para sacar', 'email_not_verified');
-    }
+    // E-mail confirmado (ADR 20, RF-006) é conferido na rota (requireVerifiedEmail), como nas
+    // outras ações críticas: uma sessão roubada não manda o saldo para um PIX de terceiro sem aviso.
+    await assertPayoutCpf(userId);
     // Prazo (RN-035) com o parâmetro que vale agora: gravado no saque, não muda se o admin mexer.
     const businessDays = await settingsService.withdrawalBusinessDays(input.method);
     const id = await withdrawalRepository.createIfSufficient({

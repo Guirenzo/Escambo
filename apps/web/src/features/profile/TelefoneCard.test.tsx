@@ -21,6 +21,8 @@ const contact = (phone: string | null): AccountContact => ({
   emailVerified: true,
   phone,
   pendingEmail: null,
+  hasPassword: true,
+  googleLinked: false,
 });
 
 function renderCard(status: 'active' | 'suspended' = 'active'): void {

@@ -11,6 +11,7 @@ import { missionsService } from '../../src/modules/gamification/gamification.mis
 import { addDaysToDay, dayIn, localInstant, localParts } from '../../src/utils/timezone';
 import { DAY, fromNow, HOUR, noonBrasilia, startDaytimeClock, stopClock } from './clock.helpers';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Missões com prazo e ranking por categoria e local (RF-066, RN-054, RF-067, RN-056) contra o MySQL
@@ -40,6 +41,7 @@ async function registerAndLogin(role: 'client' | 'freelancer'): Promise<Actor> {
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status, JSON.stringify(login.body)).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id as number, token: login.body.accessToken as string };
 }
 

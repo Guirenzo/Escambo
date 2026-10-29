@@ -6,6 +6,7 @@ import type { Readable } from 'node:stream';
 import type { RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { env } from '../../config/env';
+import { FIELD_UNAVAILABLE, openField } from '../../utils/field-crypto';
 import { openDestination } from '../withdrawal/withdrawal.fields';
 import { parseStoredRecoveryCodes, recoveryCodesLeft } from '../auth/recovery-codes';
 
@@ -28,9 +29,25 @@ import { parseStoredRecoveryCodes, recoveryCodesLeft } from '../auth/recovery-co
  * Formato 1.11 (1.45.0): os pedidos de troca de e-mail (RF-017), sem o token do link.
  * Formato 1.12 (1.48.0): a verificação em duas etapas (ADR 66) — se está ativa, desde quando e
  * quantos códigos de recuperação sobram; nunca o segredo nem os hashes dos códigos.
+ * Formato 1.13 (1.51.0): cada serviço traz os pacotes (RF-086) e cada contratação, o pacote
+ * contratado (package_tier e a cópia package_snapshot), ou null sem pacote.
+ * Formato 1.14 (1.53.0): o perfil de freelancer traz o CPF completo, a data de nascimento e quando
+ * foram validados (RF-020: direito de acesso; o índice cego não entra), e há perfis.empresa, com a
+ * razão social, o nome fantasia, o CNPJ e o resto dos dados da conta de empresa (RF-018).
+ * Formato 1.15 (1.54.0): contaGoogle diz se a conta entra com o Google (RF-002) e traz o `sub`, o
+ * identificador da conta Google vinculada: é dado do titular que a plataforma guarda (art. 18, II),
+ * como o CPF na 1.14, e não é credencial (sozinho não entra em conta nenhuma). Nenhum token do
+ * Google é guardado, então nenhum entra.
  */
 
-export const EXPORT_FORMAT_VERSION = '1.12';
+export const EXPORT_FORMAT_VERSION = '1.15';
+
+/** O CPF do titular, legível como ele o informou; o que não decifra sai como "[indisponível]". */
+function openCpf(stored: unknown): string | null {
+  if (typeof stored !== 'string' || stored === '') return null;
+  const opened = openField(stored);
+  return opened.ok ? opened.value : FIELD_UNAVAILABLE;
+}
 
 const q = async (sql: string, params: { userId: number }): Promise<RowDataPacket[]> => {
   const [rows] = await pool.query<RowDataPacket[]>(sql, params);
@@ -41,14 +58,27 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
   const p = { userId };
   const [user] = await q(
     `SELECT ulid, email, phone, role, status, email_verified_at, email_frequency, digest_hour, timezone,
-            push_quiet_start, push_quiet_end, push_quiet_pass, last_digest_at, last_login_at, created_at
+            push_quiet_start, push_quiet_end, push_quiet_pass, last_digest_at, last_login_at, created_at,
+            google_sub
        FROM users WHERE id = :userId`,
     p,
   );
-  const [freelancer] = await q(
+  const [freelancerRow] = await q(
     `SELECT full_name, avatar_url, bio, headline, city, state, latitude, longitude, avg_rating,
-            total_reviews, total_contracts, response_time_hours, is_available, created_at
+            total_reviews, total_contracts, response_time_hours, is_available, cpf_encrypted,
+            DATE_FORMAT(birth_date, '%Y-%m-%d') AS birth_date, cpf_verified, cpf_verified_at,
+            created_at
        FROM profiles_freelancer WHERE user_id = :userId`,
+    p,
+  );
+  // O CPF vai inteiro, decifrado, só aqui: a cópia é do próprio titular (art. 18, II).
+  const freelancer = freelancerRow
+    ? (({ cpf_encrypted, ...rest }) => ({ ...rest, cpf: openCpf(cpf_encrypted) }))(freelancerRow)
+    : null;
+  const [company] = await q(
+    `SELECT company_name AS razao_social, trade_name AS nome_fantasia, cnpj, logo_url, bio, website,
+            city, state, created_at
+       FROM profiles_company WHERE user_id = :userId`,
     p,
   );
   const [client] = await q(
@@ -66,14 +96,20 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
             is_active, views_count, created_at, deleted_at,
             (SELECT GROUP_CONCAT(st.name ORDER BY st.name SEPARATOR ', ')
                FROM service_tag_pivot stp JOIN service_tags st ON st.id = stp.tag_id
-              WHERE stp.service_id = services.id) AS tags
+              WHERE stp.service_id = services.id) AS tags,
+            (SELECT JSON_ARRAYAGG(JSON_OBJECT('tier', sp.tier, 'name', sp.name,
+                      'description', sp.description, 'price', sp.price,
+                      'delivery_days', sp.delivery_days, 'revisions', sp.revisions,
+                      'features', sp.features))
+               FROM service_packages sp
+              WHERE sp.service_id = services.id) AS packages
        FROM services WHERE user_id = :userId ORDER BY id`,
     p,
   );
   const contracts = await q(
     `SELECT id, ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee,
             freelancer_net, payment_mode, status, deadline_at, accepted_at, completed_at,
-            cancelled_at, created_at
+            cancelled_at, created_at, package_tier, package_snapshot
        FROM contracts WHERE client_id = :userId OR freelancer_id = :userId ORDER BY id`,
     p,
   );
@@ -259,8 +295,16 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
   return {
     formato: `escambo-export/${EXPORT_FORMAT_VERSION}`,
     exportadoEm: new Date().toISOString(),
-    titular: { id: userId, ...(user ?? {}), push_quiet_pass: quietPassOf(user?.push_quiet_pass) },
-    perfis: { freelancer: freelancer ?? null, cliente: client ?? null },
+    titular: {
+      id: userId,
+      ...(user ? (({ google_sub: _sub, ...rest }) => rest)(user) : {}),
+      push_quiet_pass: quietPassOf(user?.push_quiet_pass),
+    },
+    contaGoogle: {
+      vinculada: typeof user?.google_sub === 'string',
+      sub: typeof user?.google_sub === 'string' ? user.google_sub : null,
+    },
+    perfis: { freelancer, cliente: client ?? null, empresa: company ?? null },
     consentimentos: consents,
     servicos: services,
     contratacoes: contracts,

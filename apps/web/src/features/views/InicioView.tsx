@@ -18,7 +18,8 @@ import { Avatar } from '../../components/Avatar';
 import { Stat } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
-import { brl, displayName } from '../../lib/format';
+import { brl } from '../../lib/format';
+import { identityName, profileIdentity } from '../../lib/documents';
 import { useNotifications, useProfilesMe, useWallet } from '../../lib/hooks';
 import { MissionsCard } from '../dashboard/MissionsCard';
 import { MyContracts } from '../dashboard/MyContracts';
@@ -111,12 +112,9 @@ export function InicioView() {
   const profiles = useProfilesMe();
   const notifications = useNotifications();
   const w = wallet.data;
-  const name = displayName(
-    profiles.data?.freelancer?.fullName ?? profiles.data?.client?.fullName,
-    user?.email,
-  );
-  const avatarUrl =
-    profiles.data?.freelancer?.avatarUrl ?? profiles.data?.client?.avatarUrl ?? null;
+  const identity = profileIdentity(profiles.data);
+  const name = identityName(profiles.data, user?.email);
+  const avatarUrl = identity.avatarUrl;
   // Freelancer sem perfil não tem nome nos cards, nem Score, nem aparece em "Perto de mim".
   const needsProfile =
     user?.role === 'freelancer' && profiles.data != null && !profiles.data.freelancer;

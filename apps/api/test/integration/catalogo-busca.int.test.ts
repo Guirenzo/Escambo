@@ -5,6 +5,7 @@ import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { serviceViews, VIEW_WINDOW_MS } from '../../src/modules/services/service-views';
 import { setClockForTests } from '../../src/utils/clock';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Catálogo e busca (1.44.0) contra o MySQL real: tags no serviço (RF-024, limites da RN-018),
@@ -46,6 +47,7 @@ async function register(role: 'freelancer' | 'client', fullName: string): Promis
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
+  await confirmEmail(app, login.body.user.id);
   const actor = { id: login.body.user.id as number, token: login.body.accessToken as string };
   if (role === 'freelancer') {
     await request(app)

@@ -48,6 +48,63 @@ export interface PublicFreelancerRow extends FreelancerRow {
   total_xp: number;
 }
 
+/** Conta de empresa (RF-018): company_name é a razão social; trade_name, o nome fantasia. */
+export interface CompanyRow extends RowDataPacket {
+  company_name: string;
+  trade_name: string | null;
+  cnpj: string | null;
+  logo_url: string | null;
+  bio: string | null;
+  website: string | null;
+  city: string | null;
+  state: string | null;
+}
+
+export interface PublicCompanyRow extends CompanyRow {
+  ulid: string;
+  created_at: Date;
+}
+
+/** O CPF do perfil de freelancer (RF-020): o cifrado só sai daqui para ser aberto no service. */
+export interface CpfRow extends RowDataPacket {
+  cpf_verified: number;
+  cpf_encrypted: string | null;
+  /** AAAA-MM-DD (DATE_FORMAT: sem o Date do driver, que mudaria o dia pelo fuso). */
+  birth_date: string | null;
+  cpf_verified_at: Date | null;
+}
+
+/** O que o saque confere (RF-020): a conta entrega trabalho (ADR 56) e o CPF está validado. */
+export interface PayoutStateRow extends RowDataPacket {
+  delivers_work: number;
+  cpf_verified: number;
+}
+
+/** O que gravar quando o CPF passa na validação (RF-020). */
+export interface VerifiedCpfData {
+  sealedCpf: string;
+  index: string;
+  birthDate: string;
+  verifiedAt: Date;
+}
+
+export interface CompanyData {
+  legalName: string;
+  tradeName: string;
+  cnpj: string;
+}
+
+export interface CompanyDetails extends CompanyData {
+  logoUrl: string | null;
+  bio: string | null;
+  website: string | null;
+  city: string | null;
+  state: string | null;
+}
+
+const COMPANY_COLS = `pco.company_name, pco.trade_name, pco.cnpj, pco.logo_url, pco.bio, pco.website,
+              pco.city, pco.state`;
+
 /** Badge conquistada, como o perfil público mostra (RF-015). */
 export interface PublicBadgeRow extends RowDataPacket {
   slug: string;
@@ -244,6 +301,139 @@ export const profilesRepository = {
       { ulid },
     );
     return rows[0];
+  },
+
+  // ---------- CPF do freelancer (RF-020, RN-009, RN-075) ----------
+
+  async findCpf(userId: number): Promise<CpfRow | undefined> {
+    const [rows] = await pool.query<CpfRow[]>(
+      `SELECT cpf_verified, cpf_encrypted, DATE_FORMAT(birth_date, '%Y-%m-%d') AS birth_date,
+              cpf_verified_at
+         FROM profiles_freelancer WHERE user_id = :userId LIMIT 1`,
+      { userId },
+    );
+    return rows[0];
+  },
+
+  /** Algum dos índices (o da chave atual e os das antigas) já está em outra conta? */
+  async cpfIndexTaken(indexes: string[], userId: number): Promise<boolean> {
+    if (indexes.length === 0) return false;
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT 1 FROM profiles_freelancer
+        WHERE cpf_index IN (:indexes) AND user_id <> :userId LIMIT 1`,
+      { indexes, userId },
+    );
+    return rows.length > 0;
+  },
+
+  /**
+   * Grava o CPF validado, só se o perfil ainda não tem um: outra aba que validou no meio ganha, e
+   * esta volta false. O mesmo CPF em outra conta estoura a chave única (ER_DUP_ENTRY), para o
+   * service traduzir.
+   */
+  async saveVerifiedCpf(userId: number, d: VerifiedCpfData): Promise<boolean> {
+    const [res] = await pool.query<ResultSetHeader>(
+      `UPDATE profiles_freelancer
+          SET cpf_encrypted = :sealedCpf, cpf_index = :index, birth_date = :birthDate,
+              cpf_verified = 1, cpf_verified_at = :verifiedAt
+        WHERE user_id = :userId AND cpf_verified = 0`,
+      { userId, ...d },
+    );
+    return res.affectedRows > 0;
+  },
+
+  /** Apaga o CPF (o atendimento corrige um CPF errado, RF-020). Devolve se havia o que apagar. */
+  async clearCpf(userId: number): Promise<boolean> {
+    const [res] = await pool.query<ResultSetHeader>(
+      `UPDATE profiles_freelancer
+          SET cpf_encrypted = NULL, cpf_index = NULL, birth_date = NULL, cpf_verified = 0,
+              cpf_verified_at = NULL
+        WHERE user_id = :userId AND (cpf_verified = 1 OR cpf_encrypted IS NOT NULL)`,
+      { userId },
+    );
+    return res.affectedRows > 0;
+  },
+
+  /**
+   * Para o saque (RF-020): a conta entrega trabalho pela mesma definição dos avisos (ADR 56: papel
+   * freelancer, algum serviço, ou alguma contratação como freelancer) e o CPF está validado.
+   */
+  async payoutState(userId: number): Promise<PayoutStateRow | undefined> {
+    const [rows] = await pool.query<PayoutStateRow[]>(
+      `SELECT (u.role = 'freelancer'
+               OR EXISTS (SELECT 1 FROM services s WHERE s.user_id = u.id)
+               OR EXISTS (SELECT 1 FROM contracts c WHERE c.freelancer_id = u.id)) AS delivers_work,
+              COALESCE(pf.cpf_verified, 0) AS cpf_verified
+         FROM users u
+         LEFT JOIN profiles_freelancer pf ON pf.user_id = u.id
+        WHERE u.id = :userId`,
+      { userId },
+    );
+    return rows[0];
+  },
+
+  // ---------- Empresa (RF-018) ----------
+
+  async findCompanyByUserId(userId: number): Promise<CompanyRow | undefined> {
+    const [rows] = await pool.query<CompanyRow[]>(
+      `SELECT ${COMPANY_COLS} FROM profiles_company pco WHERE pco.user_id = :userId LIMIT 1`,
+      { userId },
+    );
+    return rows[0];
+  },
+
+  /** A página pública: só de conta de empresa viva. */
+  async findPublicCompanyByUlid(ulid: string): Promise<PublicCompanyRow | undefined> {
+    const [rows] = await pool.query<PublicCompanyRow[]>(
+      `SELECT ${COMPANY_COLS}, u.ulid, u.created_at
+         FROM users u
+         JOIN profiles_company pco ON pco.user_id = u.id
+        WHERE u.ulid = :ulid AND u.role = 'company' AND u.deleted_at IS NULL LIMIT 1`,
+      { ulid },
+    );
+    return rows[0];
+  },
+
+  /** O CNPJ já é de outra conta? (sem `userId`, de qualquer conta) */
+  async cnpjTaken(cnpj: string, userId = 0): Promise<boolean> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT 1 FROM profiles_company WHERE cnpj = :cnpj AND user_id <> :userId LIMIT 1`,
+      { cnpj, userId },
+    );
+    return rows.length > 0;
+  },
+
+  /** O perfil da empresa no cadastro. O CNPJ repetido estoura a chave única (ER_DUP_ENTRY). */
+  async createCompany(userId: number, d: CompanyData): Promise<void> {
+    await pool.query<ResultSetHeader>(
+      `INSERT INTO profiles_company (user_id, company_name, trade_name, cnpj)
+       VALUES (:userId, :legalName, :tradeName, :cnpj)`,
+      { userId, ...d },
+    );
+  },
+
+  /**
+   * Grava os dados da empresa. Cria a linha se faltar: conta de empresa aberta pela API antes da
+   * 1.53.0 nasceu sem ela. O CNPJ de outra conta estoura a chave única (ER_DUP_ENTRY). Sem ON
+   * DUPLICATE KEY UPDATE de propósito: com duas chaves únicas (user_id e cnpj), o CNPJ repetido
+   * atualizaria a linha da OUTRA empresa. O UPDATE conta a linha encontrada mesmo sem mudança
+   * (CLIENT_FOUND_ROWS, ligado por padrão no mysql2).
+   */
+  async upsertCompany(userId: number, d: CompanyDetails): Promise<void> {
+    const [res] = await pool.query<ResultSetHeader>(
+      `UPDATE profiles_company
+          SET company_name = :legalName, trade_name = :tradeName, cnpj = :cnpj, logo_url = :logoUrl,
+              bio = :bio, website = :website, city = :city, state = :state
+        WHERE user_id = :userId`,
+      { userId, ...d },
+    );
+    if (res.affectedRows > 0) return;
+    await pool.query<ResultSetHeader>(
+      `INSERT INTO profiles_company
+         (user_id, company_name, trade_name, cnpj, logo_url, bio, website, city, state)
+       VALUES (:userId, :legalName, :tradeName, :cnpj, :logoUrl, :bio, :website, :city, :state)`,
+      { userId, ...d },
+    );
   },
 
   /**

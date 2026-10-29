@@ -29,6 +29,7 @@ const {
     moderateUser: vi.fn(),
     lookupAccount: vi.fn(),
     resetMfa: vi.fn(),
+    resetCpf: vi.fn(),
   },
   finance: { report: vi.fn(), exportCsv: vi.fn() },
   usage: { report: vi.fn() },
@@ -142,6 +143,7 @@ describe('admin: quem pode chamar', () => {
     ['post', `/users/${ULID}/reactivate`],
     ['get', '/users/lookup'],
     ['post', `/users/${ULID}/mfa/reset`],
+    ['post', `/users/${ULID}/cpf/reset`],
     ['get', '/withdrawals'],
     ['post', '/withdrawals/8/process'],
     ['post', '/withdrawals/8/complete'],
@@ -989,6 +991,39 @@ describe('admin: atendimento da verificação em duas etapas (ADR 66)', () => {
       .expect(422);
     expect(badUlid.body.details).toHaveProperty('ulid');
     expect(adminSvc.resetMfa).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it('POST /users/:ulid/cpf/reset (RF-020) manda o motivo, em nome do admin, audita sem o CPF e responde 204', async () => {
+    adminSvc.resetCpf.mockResolvedValue(undefined);
+
+    const res = await asAdmin('post', `/users/${ULID}/cpf/reset`)
+      .send({ reason: `  ${REASON}  ` })
+      .expect(204);
+
+    expect(res.text).toBe('');
+    expect(adminSvc.resetCpf).toHaveBeenCalledWith(ADMIN_ID, ULID, REASON);
+    expect(audit).toHaveBeenCalledWith({
+      userId: ADMIN_ID,
+      action: 'cpf_reset_by_admin',
+      entityType: 'user',
+      newValue: { ulid: ULID },
+      ...ORIGIN,
+    });
+  });
+
+  it('apagar o CPF também pede o motivo; a recusa do service (sem CPF) chega como veio e não é auditada', async () => {
+    for (const body of [undefined, { reason: 'curto' }]) {
+      const res = await asAdmin('post', `/users/${ULID}/cpf/reset`).send(body).expect(422);
+      expect(res.body.details).toHaveProperty('reason');
+    }
+    adminSvc.resetCpf.mockRejectedValue(
+      new HttpError(409, 'Esta conta não tem CPF informado.', 'cpf_not_set'),
+    );
+    const res = await asAdmin('post', `/users/${ULID}/cpf/reset`)
+      .send({ reason: REASON })
+      .expect(409);
+    expect(res.body.error).toBe('cpf_not_set');
     expect(audit).not.toHaveBeenCalled();
   });
 

@@ -123,7 +123,9 @@ test('links que chegam por e-mail: confirmar e-mail, redefinir senha e confirmar
 }) => {
   const { check, done } = collector();
   const admin = await createAdmin(request);
-  const user = await createUser(request, 'client');
+  // O link de confirmação só vale para quem ainda não confirmou (as contas de teste já nascem
+  // confirmadas, RF-006).
+  const user = await createUser(request, 'client', { verified: false });
 
   await page.goto(await tokenFrom(request, admin, user, 'verify_email'));
   await expect(page.getByTestId('verify-ok')).toBeVisible();
@@ -255,6 +257,41 @@ test('serviço de outra pessoa e o modal de contratação', async ({ page, reque
   await page.getByRole('button', { name: 'Contratar' }).first().click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await check(page, 'modal de contratação');
+  done();
+});
+
+test('serviço com pacotes: abas, comparação e o modal com o nível (RF-086)', async ({
+  page,
+  request,
+}) => {
+  const freelancer = await createUser(request, 'freelancer');
+  const tier = (t: 'basic' | 'standard' | 'premium', price: number, features: string[]) => ({
+    tier: t,
+    name: `Pacote ${t}`,
+    description: t === 'basic' ? 'Um conceito de logo.' : null,
+    price,
+    deliveryDays: t === 'premium' ? 10 : 3,
+    revisions: 2,
+    features,
+  });
+  const service = await createService(request, freelancer, 0, 0, {
+    packages: [
+      tier('basic', 150, ['Logo']),
+      tier('standard', 320, ['Logo', 'Paleta de cores']),
+      tier('premium', 649.9, ['Logo', 'Paleta de cores', 'Manual da marca']),
+    ],
+  });
+  const client = await createUser(request, 'client');
+  await topUp(request, client, 700);
+  await openAs(page, client, `/servicos/${service.id}`);
+  await settled(page);
+  const { check, done } = collector();
+  await check(page, 'detalhe com pacotes');
+  await page.getByRole('tab', { name: 'Premium' }).click();
+  await check(page, 'aba Premium');
+  await page.getByRole('button', { name: /^Continuar/ }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await check(page, 'modal de contratação do pacote');
   done();
 });
 

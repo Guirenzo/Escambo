@@ -43,8 +43,21 @@ export const createContractSchema = z
     deadlineAt: z.string().datetime().nullable().optional(),
     // Escrow por marcos (RN-069): 2 a 10 marcos, só em dinheiro, soma igual ao valor.
     milestones: z.array(milestoneSchema).min(2).max(10).optional(),
+    // RF-086: o pacote escolhido; obrigatório quando o serviço tem pacotes (o service confere).
+    packageTier: z
+      .enum(['basic', 'standard', 'premium'], {
+        error: 'Pacote: basic, standard ou premium',
+      })
+      .optional(),
   })
   .superRefine((d, ctx) => {
+    if (d.packageTier && d.serviceId == null) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['packageTier'],
+        message: 'O pacote é de um serviço: envie também o serviceId',
+      });
+    }
     if (d.deadlineAt && new Date(d.deadlineAt).getTime() <= nowMs()) {
       ctx.addIssue({
         code: 'custom',

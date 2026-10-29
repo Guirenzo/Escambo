@@ -66,6 +66,14 @@ const MESSAGE_COLUMNS = `id, conversation_id, sender_id, type, content, file_url
 export type MarkReadResult =
   { marked: 0; upToId: null; readAt: null } | { marked: number; upToId: number; readAt: Date };
 
+/**
+ * Contratação que ainda não terminou: proposta pendente, aceita, em andamento, entregue, em revisão
+ * ou em disputa. É a mesma lista que segura os anexos (ADR 31) e que mantém o chat aberto (RF-062).
+ */
+const OPEN_CONTRACT_STATUSES = `('pending', 'accepted', 'in_progress', 'delivered', 'revision_requested', 'disputed')`;
+/** Troca proposta (à espera de resposta), aceita, em andamento ou em disputa (RF-062). */
+const OPEN_BARTER_STATUSES = `('proposed', 'accepted', 'active', 'disputed')`;
+
 /** Normaliza o par (a<b) para casar com a unique key uq_conversation. */
 function orderPair(x: number, y: number): [number, number] {
   return x <= y ? [x, y] : [y, x];
@@ -101,6 +109,30 @@ export const messagingRepository = {
       { contractId, a, b },
     );
     return res.insertId;
+  },
+
+  /**
+   * Existe relação aberta entre as duas pessoas (RF-062)? Uma contratação que não terminou, em
+   * qualquer direção, ou uma troca proposta ou em andamento. A conversa é uma só por par e atravessa
+   * as contratações (ADR 31): basta uma relação aberta para escrever, em qualquer Sala do par.
+   */
+  async hasOpenRelation(uidA: number, uidB: number): Promise<boolean> {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT (
+          EXISTS (
+            SELECT 1 FROM contracts c
+             WHERE ((c.client_id = :a AND c.freelancer_id = :b)
+                 OR (c.client_id = :b AND c.freelancer_id = :a))
+               AND c.status IN ${OPEN_CONTRACT_STATUSES})
+          OR EXISTS (
+            SELECT 1 FROM barter_agreements ba
+             WHERE ((ba.proposer_id = :a AND ba.receiver_id = :b)
+                 OR (ba.proposer_id = :b AND ba.receiver_id = :a))
+               AND ba.status IN ${OPEN_BARTER_STATUSES})
+        ) AS open_relation`,
+      { a: uidA, b: uidB },
+    );
+    return Number(rows[0]?.open_relation ?? 0) === 1;
   },
 
   /** Mensagem imediatamente anterior a `beforeId` na conversa (para medir tempo de resposta). */
@@ -327,7 +359,7 @@ export const messagingRepository = {
             SELECT 1 FROM contracts c
              WHERE ((c.client_id = cv.participant_a AND c.freelancer_id = cv.participant_b)
                  OR (c.client_id = cv.participant_b AND c.freelancer_id = cv.participant_a))
-               AND c.status IN ('pending', 'accepted', 'in_progress', 'delivered', 'revision_requested', 'disputed'))
+               AND c.status IN ${OPEN_CONTRACT_STATUSES})
         ORDER BY m.id
         LIMIT ${Math.trunc(limit)}`,
       { cutoff },

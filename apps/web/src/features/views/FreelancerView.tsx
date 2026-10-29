@@ -18,6 +18,7 @@ import { useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Service } from '@escambo/types';
 import { Avatar } from '../../components/Avatar';
+import { CompanyTag } from '../../components/CompanyTag';
 import { PortfolioGallery } from '../../components/PortfolioGallery';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { Stars } from '../../components/Stars';
@@ -404,6 +405,7 @@ export function FreelancerView() {
                             <li key={r.id} className="review">
                               <div className="review-head">
                                 <Stars value={r.rating} showValue={false} size={14} />
+                                {r.reviewerCompany && <CompanyTag company={r.reviewerCompany} />}
                                 <span className="muted tiny">{dtm(r.createdAt)}</span>
                               </div>
                               <p>{r.comment ?? <span className="muted">Sem comentário.</span>}</p>

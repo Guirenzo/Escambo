@@ -143,6 +143,13 @@ export interface AccountContact {
   /** E.164 (+55 com DDD); null = não informado. */
   phone: string | null;
   pendingEmail: PendingEmailChange | null;
+  /**
+   * A conta tem senha. A criada pelo Google (RF-002) nasce sem, e a que o Google retomou perde a
+   * antiga: para ter uma, "Esqueci minha senha".
+   */
+  hasPassword: boolean;
+  /** A conta entra também com a conta Google do e-mail (RF-002). */
+  googleLinked: boolean;
 }
 /** Pedido de troca de e-mail: a senha atual confirma o titular. */
 export interface ChangeEmailRequest {
@@ -183,10 +190,24 @@ export interface AdminEmail {
   createdAt: string;
 }
 
+/**
+ * Dados da empresa no cadastro (RF-018): obrigatórios quando `role` é 'company'. O CNPJ vai com ou
+ * sem máscara, numérico ou alfanumérico (IN RFB 2.229/2024).
+ */
+export interface RegisterCompanyData {
+  /** Razão social. */
+  legalName: string;
+  /** Nome fantasia: o nome que aparece para os freelancers. */
+  tradeName: string;
+  cnpj: string;
+}
+
 export interface RegisterRequest {
   email: string;
   password: string;
   role?: Exclude<UserRole, 'admin'>;
+  /** Só com role 'company', e aí obrigatório. */
+  company?: RegisterCompanyData;
   /** Fuso do aparelho, quando é um dos do Brasil (ADR 51); sem ele, a conta fica em Brasília. */
   timezone?: BrazilTimezone;
   /** O aceite dos Termos e da Política: a API grava o consentimento na versão vigente (ADR 54). */
@@ -227,6 +248,59 @@ export interface MfaChallenge {
 
 /** POST /auth/login: a sessão, ou o pedido do segundo fator. */
 export type LoginResponse = AuthResponse | MfaChallenge;
+
+// --- Login com Google (RF-002) ---
+
+/** GET /auth/providers: os jeitos de entrar ligados neste servidor (o botão só aparece com true). */
+export interface AuthProviders {
+  google: boolean;
+}
+
+/** POST /auth/google/exchange: o código de uso único que a volta do Google deixou no endereço. */
+export interface GoogleExchangeRequest {
+  code: string;
+}
+
+/**
+ * Conta Google sem conta no Escambo: falta concluir o cadastro (papel e aceite dos Termos e da
+ * Política). O `signupToken` vale alguns minutos, uma vez, só para POST /auth/google/signup.
+ */
+export interface GoogleSignupChallenge {
+  signupRequired: true;
+  signupToken: string;
+  expiresInSeconds: number;
+  /** O e-mail confirmado pelo Google: é o da conta nova. */
+  email: string;
+  /** O nome da conta Google, sugestão para o perfil; null se o Google não mandou. */
+  name: string | null;
+}
+
+/** A troca do código: a sessão, o pedido do segundo fator (2FA) ou o cadastro por concluir. */
+export type GoogleExchangeResponse = LoginResponse | GoogleSignupChallenge;
+
+/** POST /auth/google/signup: conclui a conta nova (empresa continua pelo cadastro com CNPJ). */
+export interface GoogleSignupRequest {
+  signupToken: string;
+  role: 'client' | 'freelancer';
+  /** Fuso do aparelho, quando é um dos do Brasil (ADR 51). */
+  timezone?: BrazilTimezone;
+  /** O mesmo aceite do cadastro: a API grava o consentimento na versão vigente (ADR 54). */
+  legalAccepted: true;
+}
+
+/**
+ * Por que a volta do Google não entrou: vai no endereço do login (/login?google=...), sem detalhe
+ * técnico. `negado`: a pessoa desistiu na tela do Google; `expirado`: a ida venceu, foi usada ou
+ * não é deste navegador; `conta_vinculada`: o e-mail tem conta ligada a outra conta Google.
+ */
+export type GoogleLoginFailure =
+  | 'negado'
+  | 'expirado'
+  | 'email_nao_verificado'
+  | 'conta_banida'
+  | 'conta_excluida'
+  | 'conta_vinculada'
+  | 'falhou';
 
 export interface MfaLoginRequest {
   mfaToken: string;
@@ -273,6 +347,18 @@ export interface AdminAccountLookup {
   status: UserStatus;
   mfaEnabled: boolean;
   createdAt: string;
+  /** CPF do perfil de freelancer (RF-020), só mascarado; null sem perfil de freelancer. */
+  cpf: AdminCpfSummary | null;
+  /** Conta de empresa (RF-018): o nome fantasia e o CNPJ (dado público); null nas outras. */
+  company: { tradeName: string; cnpj: string } | null;
+}
+
+/** O CPF como o atendimento vê: validado ou não, e só mascarado (RN-075). */
+export interface AdminCpfSummary {
+  verified: boolean;
+  /** ***.456.789-**; null sem CPF; "[indisponível]" se o cifrado não abriu. */
+  maskedCpf: string | null;
+  verifiedAt: string | null;
 }
 
 // --- Favoritos ---
@@ -1024,6 +1110,77 @@ export interface ClientProfile {
 export interface MyProfiles {
   freelancer: FreelancerProfile | null;
   client: ClientProfile | null;
+  /** Só nas contas de empresa (RF-018). */
+  company: CompanyProfile | null;
+}
+
+/**
+ * Conta de empresa (RF-018): contrata como o cliente. Razão social, nome fantasia e CNPJ vêm do
+ * cadastro; logo, site e descrição curta, do Perfil.
+ */
+export interface CompanyProfile {
+  /** Razão social. */
+  legalName: string;
+  /** Nome fantasia: o nome exibido. */
+  tradeName: string;
+  /** 14 caracteres, maiúsculas, sem máscara (dado público; a tela põe a máscara). */
+  cnpj: string;
+  logoUrl: string | null;
+  /** Descrição curta. */
+  bio: string | null;
+  website: string | null;
+  city: string | null;
+  state: string | null;
+}
+
+/** GET /profiles/company/:ulid — a página pública da empresa. */
+export interface PublicCompanyProfile extends CompanyProfile {
+  userUlid: string;
+  /** Desde quando está no Escambo (a criação da conta). */
+  memberSince: string;
+}
+
+/** PUT /profiles/company — a razão social, o nome fantasia e o CNPJ continuam obrigatórios. */
+export interface UpsertCompanyProfileRequest {
+  legalName: string;
+  tradeName: string;
+  cnpj: string;
+  logoUrl?: string | null;
+  bio?: string | null;
+  website?: string | null;
+  city?: string | null;
+  state?: string | null;
+}
+
+/** Quem contrata é empresa (RF-018): o nome fantasia e o endereço do perfil público. */
+export interface CompanyRef {
+  ulid: string;
+  tradeName: string;
+}
+
+/**
+ * GET /profiles/me/cpf — o CPF do freelancer (RF-020, RN-009, RN-075). A validação confere os
+ * dígitos verificadores, a unicidade entre contas e a maioridade: não é consulta à Receita.
+ */
+export interface CpfStatus {
+  /** O servidor guarda o CPF cifrado (sem a FIELD_ENCRYPTION_KEY, não: o recurso fica indisponível). */
+  available: boolean;
+  /** A conta entrega trabalho (ADR 56): o saque pede o CPF validado. */
+  required: boolean;
+  /** O CPF mora no perfil de freelancer: sem ele, primeiro o perfil. */
+  hasFreelancerProfile: boolean;
+  verified: boolean;
+  /** ***.456.789-**; null antes de validar. */
+  maskedCpf: string | null;
+  /** AAAA-MM-DD; null antes de validar. */
+  birthDate: string | null;
+  verifiedAt: string | null;
+}
+
+/** PUT /profiles/me/cpf — CPF com ou sem máscara e a data de nascimento (AAAA-MM-DD). */
+export interface VerifyCpfRequest {
+  cpf: string;
+  birthDate: string;
 }
 
 export interface PublicFreelancerProfile extends FreelancerProfile {
@@ -1082,6 +1239,26 @@ export type ServicePriceType = 'fixed' | 'hourly' | 'negotiable';
 /** Modalidade (RF-023): remoto, presencial ou os dois ("both" é remoto e presencial). */
 export type ServiceModality = 'remote' | 'onsite' | 'both';
 
+/** Nível do pacote (RF-086, RN-068): Básico, Padrão e Premium. */
+export type PackageTier = 'basic' | 'standard' | 'premium';
+
+/**
+ * Um pacote do serviço (RF-086, RN-068): o que entra em cada nível, com preço, prazo e revisões
+ * próprios. Na contratação, é a cópia do pacote como estava publicado.
+ */
+export interface ServicePackage {
+  tier: PackageTier;
+  name: string;
+  description: string | null;
+  price: number;
+  /** Prazo de entrega em dias, contado a partir do dia da proposta. */
+  deliveryDays: number;
+  /** Revisões sem custo por entrega (ou por marco), de 1 a 10 (RN-023). */
+  revisions: number;
+  /** Itens inclusos, na ordem em que o freelancer escreveu (até 10). */
+  features: string[];
+}
+
 export interface Service {
   id: number;
   categoryId: number;
@@ -1097,6 +1274,11 @@ export interface Service {
   modality?: ServiceModality;
   /** Tags (RF-024, RN-018): até 10, normalizadas em minúsculas, em ordem alfabética. */
   tags?: string[];
+  /**
+   * Pacotes (RF-086), do Básico ao Premium; [] = serviço sem pacotes. Com pacotes, price e
+   * deliveryDays são os do Básico ("a partir de"). Ausente nas versões anteriores da API.
+   */
+  packages?: ServicePackage[];
   /** Visualizações do detalhe (RF-029): só em "Meus serviços", para o dono. */
   viewsCount?: number;
   isActive: boolean;
@@ -1166,6 +1348,12 @@ export interface CreateServiceRequest {
   modality?: ServiceModality;
   /** RN-018: até 10, de 2 a 30 caracteres, sem repetir; na edição, a lista substitui a anterior. */
   tags?: string[];
+  /**
+   * RF-086/RN-068: até 3 pacotes, Básico obrigatório e sem pular nível, só no preço fixo. Com
+   * pacotes, price e deliveryDays não vêm: saem do Básico. Na edição, a lista substitui a anterior
+   * ([] tira os pacotes, e aí price volta a ser obrigatório).
+   */
+  packages?: ServicePackage[];
 }
 
 export type UpdateServiceRequest = Partial<CreateServiceRequest> & { isActive?: boolean };
@@ -1235,6 +1423,16 @@ export interface Contract {
   deadlineZone: BrazilTimezone;
   /** Revisão em aberto (entrega única): quando o cliente pediu; null fora de revisão (ADR 58). */
   revisionRequestedAt: string | null;
+  /**
+   * O pacote contratado (RF-086), como estava publicado na proposta; null sem pacote. Ausente nas
+   * versões anteriores da API.
+   */
+  package?: ServicePackage | null;
+  /**
+   * Quem contrata é empresa (RF-018): nome fantasia e perfil público; null quando é pessoa. Ausente
+   * nas versões anteriores da API.
+   */
+  clientCompany?: CompanyRef | null;
 }
 
 /**
@@ -1505,6 +1703,11 @@ export interface CreateContractRequest {
   paymentMode?: 'cash' | 'credits';
   /** Escrow por marcos (só em dinheiro): 2 a 10 marcos cuja soma é o valor da contratação. */
   milestones?: MilestoneInput[];
+  /**
+   * O pacote escolhido (RF-086): obrigatório quando o serviço tem pacotes. O price precisa ser o
+   * do pacote; sem deadlineAt, o prazo é o do pacote.
+   */
+  packageTier?: PackageTier;
 }
 
 export interface ExtensionRequest {
@@ -1603,6 +1806,12 @@ export interface ChatHistory {
   contractId: number;
   otherPartyId: number;
   messages: ChatMessage[];
+  /**
+   * Conversa encerrada (RF-062): nenhuma contratação aberta nem troca proposta ou em andamento entre
+   * as duas pessoas. O histórico continua legível; enviar responde 409 `conversation_closed`.
+   * Ausente nas versões anteriores da API.
+   */
+  closed?: boolean;
 }
 
 export interface SendMessageRequest {
@@ -1814,6 +2023,11 @@ export interface Review {
   createdAt: string;
   /** Removida pela moderação (ADR 44): só a contratação mostra, sem comentário nem resposta. */
   removedAt: string | null;
+  /**
+   * Quem avaliou é empresa (RF-018): nome fantasia e perfil público; null quando é pessoa. Ausente
+   * nas versões anteriores da API.
+   */
+  reviewerCompany?: CompanyRef | null;
 }
 
 export interface CreateReviewRequest {

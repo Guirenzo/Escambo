@@ -19,9 +19,10 @@ const api = vi.hoisted(() => ({
   publicSettings: vi.fn(),
 }));
 vi.mock('../../lib/api', () => ({ api }));
-vi.mock('../../lib/auth', () => ({
-  useAuth: () => ({ user: { id: 3, timezone: 'America/Sao_Paulo' } }),
+const auth = vi.hoisted(() => ({
+  user: { id: 3, email: 'bruno@escambo.test', timezone: 'America/Sao_Paulo', emailVerified: true },
 }));
+vi.mock('../../lib/auth', () => ({ useAuth: () => auth }));
 
 const service = (o: Partial<Service> = {}): Service => ({
   id: 21,
@@ -72,6 +73,7 @@ const found = async (title: string) =>
 const dialog = () => within(screen.getByRole('dialog', { name: 'Editar serviço' }));
 
 beforeEach(() => {
+  auth.user.emailVerified = true;
   for (const fn of Object.values(api)) fn.mockReset();
   api.categories.mockResolvedValue(categories);
   api.publicSettings.mockResolvedValue({ minServicePrice: 10, barterEnabled: true });
@@ -202,6 +204,22 @@ describe('MyServices: pausar e reativar (RF-030)', () => {
 
     await user.click(card('Logo pausado').getByRole('button', { name: 'Reativar' }));
     expect(await screen.findByText('Não foi possível salvar.')).toBeVisible();
+  });
+
+  it('sem e-mail confirmado, "Reativar" abre o aviso (publicar de novo, RF-006); "Pausar" segue', async () => {
+    const user = userEvent.setup();
+    auth.user.emailVerified = false;
+    renderList();
+    await user.click((await found('Logo pausado')).getByRole('button', { name: 'Reativar' }));
+    const notice = screen.getByRole('dialog', { name: 'Confirme seu e-mail' });
+    expect(notice).toHaveTextContent('Confirme seu e-mail para reativar o serviço.');
+    expect(within(notice).getByRole('button', { name: 'Reenviar e-mail' })).toBeEnabled();
+    expect(api.updateService).not.toHaveBeenCalled();
+    await user.click(within(notice).getByRole('button', { name: 'Fechar' }));
+
+    await user.click(card('Aula de violão').getByRole('button', { name: 'Pausar' }));
+    expect(api.updateService).toHaveBeenCalledWith(21, { isActive: false });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
 

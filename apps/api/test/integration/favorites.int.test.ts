@@ -2,6 +2,7 @@ import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { confirmEmail } from './mail.helpers';
 
 /** Favoritos contra o MySQL real: só se favorita o que existe, e nunca a si mesmo. */
 
@@ -22,6 +23,7 @@ async function register(role: 'client' | 'freelancer'): Promise<Actor> {
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   const actor = { id: login.body.user.id as number, token: login.body.accessToken as string };
   if (role === 'freelancer') {
     await request(app)

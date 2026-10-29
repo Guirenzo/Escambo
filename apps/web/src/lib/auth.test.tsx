@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import {
   ACCOUNT_STATUS_EVENT,
   api,
+  EMAIL_UNVERIFIED_EVENT,
   getRefreshToken,
   getToken,
   SESSION_EXPIRED_EVENT,
@@ -33,6 +34,8 @@ vi.mock('./api', async (importOriginal) => {
       register: vi.fn(),
       logout: vi.fn(),
       pushUnsubscribe: vi.fn(),
+      googleExchange: vi.fn(),
+      googleSignup: vi.fn(),
     },
   };
 });
@@ -48,7 +51,14 @@ vi.mock('./timezones', async (importOriginal) => {
 });
 
 const apiMock = api as unknown as Record<
-  'me' | 'login' | 'loginMfa' | 'register' | 'logout' | 'pushUnsubscribe',
+  | 'me'
+  | 'login'
+  | 'loginMfa'
+  | 'register'
+  | 'logout'
+  | 'pushUnsubscribe'
+  | 'googleExchange'
+  | 'googleSignup',
   Mock
 >;
 
@@ -304,6 +314,118 @@ describe('entrar com verificação em duas etapas (RF-090)', () => {
       await pending;
     });
 
+    expect(result.current.user).toBeNull();
+    expect(getToken()).toBeNull();
+  });
+});
+
+describe('entrar com Google (RF-002)', () => {
+  const challenge = { mfaRequired: true as const, mfaToken: 'mfa-1', expiresInSeconds: 300 };
+  const signup = {
+    signupRequired: true as const,
+    signupToken: 'cadastro-1',
+    expiresInSeconds: 900,
+    email: 'ana@gmail.com',
+    name: 'Ana',
+  };
+
+  it('conta que já existe, sem 2FA: troca o código, guarda os tokens e devolve null', async () => {
+    apiMock.googleExchange.mockResolvedValue({ ...tokens, user: ana });
+    const { result } = mountHook();
+    let returned: unknown = 'nada';
+    await act(async () => {
+      returned = await result.current.loginWithGoogle('codigo-1');
+    });
+    expect(apiMock.googleExchange).toHaveBeenCalledWith('codigo-1');
+    expect(returned).toBeNull();
+    expect(result.current.user).toEqual(ana);
+    expect(getToken()).toBe('acesso-1');
+    expect(getRefreshToken()).toBe('refresh-1');
+  });
+
+  it('com 2FA ou conta nova: devolve o pedido, sem abrir a sessão', async () => {
+    const { result } = mountHook();
+    for (const next of [challenge, signup]) {
+      apiMock.googleExchange.mockResolvedValueOnce(next);
+      let returned: unknown;
+      await act(async () => {
+        returned = await result.current.loginWithGoogle('codigo-1');
+      });
+      expect(returned).toEqual(next);
+    }
+    expect(result.current.user).toBeNull();
+    expect(getToken()).toBeNull();
+  });
+
+  it('código recusado: o erro vai para quem chamou, não para o contexto', async () => {
+    apiMock.googleExchange.mockRejectedValue(new Error('O login com o Google expirou.'));
+    const { result } = mountHook();
+    await act(async () => {
+      await expect(result.current.loginWithGoogle('velho')).rejects.toThrow('expirou');
+    });
+    expect(result.current.error).toBeNull();
+    expect(result.current.user).toBeNull();
+  });
+
+  it('saiu enquanto o código era trocado: a resposta que chega depois não abre a sessão', async () => {
+    let resolve!: (v: unknown) => void;
+    apiMock.googleExchange.mockReturnValue(new Promise((r) => (resolve = r)));
+    const { result } = mountHook();
+    let pending!: Promise<unknown>;
+    act(() => {
+      pending = result.current.loginWithGoogle('codigo-1');
+    });
+    act(() => result.current.logout());
+    let returned: unknown = 'nada';
+    await act(async () => {
+      resolve({ ...tokens, user: ana });
+      returned = await pending;
+    });
+    expect(returned).toBeNull();
+    expect(result.current.user).toBeNull();
+    expect(getToken()).toBeNull();
+  });
+
+  it('concluir o cadastro manda o fuso do aparelho e entra', async () => {
+    vi.mocked(browserBrazilZone).mockReturnValue('America/Manaus');
+    apiMock.googleSignup.mockResolvedValue({ ...tokens, user: ana });
+    const { result } = mountHook();
+    await act(async () => {
+      await result.current.completeGoogleSignup({
+        signupToken: 'cadastro-1',
+        role: 'freelancer',
+        legalAccepted: true,
+      });
+    });
+    expect(apiMock.googleSignup).toHaveBeenCalledWith({
+      signupToken: 'cadastro-1',
+      role: 'freelancer',
+      legalAccepted: true,
+      timezone: 'America/Manaus',
+    });
+    expect(result.current.user).toEqual(ana);
+    expect(getToken()).toBe('acesso-1');
+  });
+
+  it('sem fuso do Brasil, não manda fuso; saiu no meio: não entra', async () => {
+    let resolve!: (v: unknown) => void;
+    apiMock.googleSignup.mockReturnValue(new Promise((r) => (resolve = r)));
+    const { result } = mountHook();
+    const input = {
+      signupToken: 'cadastro-1',
+      role: 'client' as const,
+      legalAccepted: true as const,
+    };
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.completeGoogleSignup(input);
+    });
+    expect(apiMock.googleSignup).toHaveBeenCalledWith(input);
+    act(() => result.current.logout());
+    await act(async () => {
+      resolve({ ...tokens, user: ana });
+      await pending;
+    });
     expect(result.current.user).toBeNull();
     expect(getToken()).toBeNull();
   });
@@ -620,5 +742,36 @@ describe('useAuth fora do provider', () => {
     );
     window.removeEventListener('error', swallow);
     quiet.mockRestore();
+  });
+});
+
+describe('AuthProvider: e-mail não confirmado (RF-006)', () => {
+  it('a recusa da API marca a conta como não confirmada, sem derrubar a sessão', async () => {
+    setSession(tokens);
+    apiMock.me.mockResolvedValue({ ...ana, emailVerified: true });
+    const view = mountHook();
+    await waitFor(() => expect(view.result.current.user?.emailVerified).toBe(true));
+    act(() => window.dispatchEvent(new CustomEvent(EMAIL_UNVERIFIED_EVENT)));
+    expect(view.result.current.user).toMatchObject({ id: 1, emailVerified: false });
+    expect(getToken()).toBe('acesso-1');
+    expect(disconnectSocket).not.toHaveBeenCalled();
+  });
+
+  it('sem sessão, o aviso não cria usuário', async () => {
+    const view = mountHook();
+    await waitFor(() => expect(view.result.current.loading).toBe(false));
+    act(() => window.dispatchEvent(new CustomEvent(EMAIL_UNVERIFIED_EVENT)));
+    expect(view.result.current.user).toBeNull();
+  });
+
+  it('conta já não confirmada continua igual (nada muda na tela)', async () => {
+    setSession(tokens);
+    const unverified = { ...ana, emailVerified: false };
+    apiMock.me.mockResolvedValue(unverified);
+    const view = mountHook();
+    await waitFor(() => expect(view.result.current.user).toEqual(unverified));
+    const before = view.result.current.user;
+    act(() => window.dispatchEvent(new CustomEvent(EMAIL_UNVERIFIED_EVENT)));
+    expect(view.result.current.user).toBe(before);
   });
 });

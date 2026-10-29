@@ -3,24 +3,28 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { MfaChallenge } from '@escambo/types';
 import { Button, Field, Input, Select } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
+import { isValidCnpj } from '../../lib/documents';
 import { errorMessage } from '../../lib/errors';
+import { googleFailureMessage } from '../../lib/google';
 import { normalizeRecoveryCode, normalizeTotp } from '../../lib/mfa';
 import { usePageTitle } from '../../lib/title';
 import { AuthPanel } from './AuthPanel';
+import { GoogleButton } from './GoogleButton';
 import './auth.css';
 import { BrandMark } from '../../components/BrandMark';
 
 /**
- * Passo 2 do login numa conta com verificação em duas etapas (RF-090): a senha já foi conferida e
- * falta o código do app autenticador, ou um de recuperação para quem está sem o celular.
+ * Passo 2 do login numa conta com verificação em duas etapas (RF-090): a senha (ou o Google,
+ * RF-002) já foi conferida e falta o código do app autenticador, ou um de recuperação para quem
+ * está sem o celular. Sem `email` (a volta do Google), diz que a entrada é pela conta Google.
  */
-function MfaStep({
+export function MfaStep({
   email,
   challenge,
   onBack,
   onExpired,
 }: {
-  email: string;
+  email: string | null;
   challenge: MfaChallenge;
   onBack: () => void;
   onExpired: () => void;
@@ -89,7 +93,13 @@ function MfaStep({
         Verificação em duas etapas
       </h1>
       <p className="au-sub">
-        Entrando como <strong className="email-addr">{email}</strong>.
+        {email ? (
+          <>
+            Entrando como <strong className="email-addr">{email}</strong>.
+          </>
+        ) : (
+          'Entrando com a sua conta Google.'
+        )}
       </p>
       <Field label={recovery ? 'Código de recuperação' : 'Código do app autenticador'}>
         <input
@@ -136,7 +146,12 @@ function MfaStep({
 }
 
 export type AuthMode = 'login' | 'register';
-export type SignupRole = 'client' | 'freelancer';
+export type SignupRole = 'client' | 'freelancer' | 'company';
+
+export const CNPJ_HINT =
+  'Com ou sem pontos, barra e hífen. Vale também o CNPJ com letras (alfanumérico).';
+export const CNPJ_INVALID =
+  'CNPJ inválido: confira os 14 caracteres e os dois dígitos verificadores.';
 
 /**
  * Entrar e criar conta no mesmo formulário. /login abre em "Entrar"; /cadastro, em "Criar conta",
@@ -158,14 +173,37 @@ export function LoginForm({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<SignupRole>(initialRole);
+  // Conta de empresa (RF-018): razão social, nome fantasia e CNPJ já no cadastro.
+  const [legalName, setLegalName] = useState('');
+  const [tradeName, setTradeName] = useState('');
+  const [cnpj, setCnpj] = useState('');
+  const [cnpjError, setCnpjError] = useState<string | null>(null);
+  const cnpjRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [accepted, setAccepted] = useState(false);
   /** Senha certa numa conta com 2FA: o passo 2 toma o lugar do formulário. */
   const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
-  /** Aviso ao voltar do passo 2 sem entrar (o pedido do código venceu). */
-  const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * Aviso ao voltar do passo 2 sem entrar (o pedido do código venceu), ou da volta do Google que
+   * não entrou (/login?google=motivo, RF-002).
+   */
+  const [notice, setNotice] = useState<string | null>(() =>
+    googleFailureMessage(new URLSearchParams(location.search).get('google')),
+  );
   const [focusPassword, setFocusPassword] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
+
+  // O motivo da volta do Google já virou aviso: sai do endereço (recarregar não o repete).
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (!params.has('google')) return;
+    params.delete('google');
+    const search = params.toString();
+    navigate(`${location.pathname}${search ? `?${search}` : ''}`, {
+      replace: true,
+      state: location.state,
+    });
+  }, [location.pathname, location.search, location.state, navigate]);
 
   // De volta do passo 2, o e-mail continua preenchido: o foco vai para a senha.
   useEffect(() => {
@@ -182,6 +220,20 @@ export function LoginForm({
       if (mode === 'login') {
         const next = await login({ email, password });
         if (next) setChallenge(next);
+      } else if (role === 'company') {
+        // O CNPJ errado avisa no campo, sem ir à API (que confere de novo).
+        if (!isValidCnpj(cnpj)) {
+          setCnpjError(CNPJ_INVALID);
+          cnpjRef.current?.focus();
+          return;
+        }
+        await register({
+          email,
+          password,
+          role,
+          company: { legalName: legalName.trim(), tradeName: tradeName.trim(), cnpj },
+          legalAccepted: true,
+        });
       } else await register({ email, password, role, legalAccepted: true });
     } catch {
       /* erro exibido pelo contexto */
@@ -280,8 +332,64 @@ export function LoginForm({
                   <Select value={role} onChange={(e) => setRole(e.target.value as SignupRole)}>
                     <option value="client">Cliente — quero contratar</option>
                     <option value="freelancer">Freelancer — quero oferecer</option>
+                    <option value="company">Empresa — quero contratar</option>
                   </Select>
                 </Field>
+              )}
+              {mode === 'register' && role === 'company' && (
+                <fieldset className="au-company" data-testid="signup-company">
+                  <legend>Dados da empresa</legend>
+                  <Field label="Razão social">
+                    <Input
+                      value={legalName}
+                      onChange={(e) => setLegalName(e.target.value)}
+                      required
+                      minLength={2}
+                      maxLength={150}
+                      autoComplete="organization"
+                    />
+                  </Field>
+                  <Field label="Nome fantasia">
+                    <Input
+                      value={tradeName}
+                      onChange={(e) => setTradeName(e.target.value)}
+                      required
+                      minLength={2}
+                      maxLength={150}
+                      aria-describedby="signup-trade-hint"
+                    />
+                  </Field>
+                  <p className="muted tiny" id="signup-trade-hint">
+                    É o nome que os freelancers veem.
+                  </p>
+                  <Field label="CNPJ">
+                    <input
+                      ref={cnpjRef}
+                      value={cnpj}
+                      onChange={(e) => {
+                        setCnpj(e.target.value);
+                        setCnpjError(null);
+                      }}
+                      required
+                      maxLength={18}
+                      autoCapitalize="characters"
+                      spellCheck={false}
+                      placeholder="12.ABC.345/01DE-35"
+                      aria-invalid={cnpjError !== null}
+                      aria-describedby={
+                        cnpjError ? 'signup-cnpj-erro signup-cnpj-hint' : 'signup-cnpj-hint'
+                      }
+                    />
+                  </Field>
+                  <p className="muted tiny" id="signup-cnpj-hint">
+                    {CNPJ_HINT}
+                  </p>
+                  {cnpjError && (
+                    <p className="error" id="signup-cnpj-erro" role="alert">
+                      {cnpjError}
+                    </p>
+                  )}
+                </fieldset>
               )}
               {mode === 'register' && (
                 <label className="consent">
@@ -326,6 +434,11 @@ export function LoginForm({
               >
                 {loading ? '…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
               </Button>
+              {/* Login com Google (RF-002): só com ele ligado no servidor; empresa continua pelo
+                  cadastro com CNPJ. */}
+              {(mode === 'login' || role !== 'company') && (
+                <GoogleButton mode={mode} role={role === 'company' ? undefined : role} />
+              )}
               <p className="au-alt">
                 {mode === 'login' ? 'Novo por aqui? ' : 'Já tem conta? '}
                 <button

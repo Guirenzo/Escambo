@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Resposta do gateway guardada para auditoria (RF-050) contra o MySQL real: a criação da cobrança
@@ -26,6 +27,7 @@ async function cliente(): Promise<string> {
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return login.body.accessToken as string;
 }
 

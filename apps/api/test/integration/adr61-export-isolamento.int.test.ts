@@ -7,6 +7,7 @@ import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
 import { deleteExportFile } from '../../src/modules/lgpd/lgpd.export';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 const app = createApp();
 const auth = (actor: Actor) => ({ Authorization: `Bearer ${actor.token}` });
@@ -52,6 +53,7 @@ async function actor(role: 'client' | 'freelancer'): Promise<Actor> {
     .send({ legalAccepted: true, email, password, role })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, email, token: login.body.accessToken };
 }
 
@@ -166,7 +168,7 @@ describe('ADR 61 / G.6.11: exportação 1.8 preenchida e isolada pelo titular', 
       [bySecond, second],
       [byClient, client],
     ] as const) {
-      expect(exported.data.formato).toBe('escambo-export/1.12');
+      expect(exported.data.formato).toBe('escambo-export/1.15');
       expect(exported.data.titular.email).toBe(owner.email);
     }
 

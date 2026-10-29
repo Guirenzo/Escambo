@@ -31,13 +31,21 @@ vi.mock('./notifications/push.repository', () => ({
   pushRepository: { removeAllForUser: vi.fn() },
 }));
 vi.mock('./profiles/profiles.repository', () => ({
-  profilesRepository: { findFreelancerByUserId: vi.fn(), blendResponseTime: vi.fn() },
+  profilesRepository: {
+    findFreelancerByUserId: vi.fn(),
+    blendResponseTime: vi.fn(),
+    payoutState: vi.fn(),
+    cnpjTaken: vi.fn(),
+    createCompany: vi.fn(),
+  },
 }));
 vi.mock('./reports/reports.repository', () => ({ reportsRepository: { create: vi.fn() } }));
 vi.mock('./reviews/reviews.repository', () => ({
   reviewsRepository: { findByContractIdWithResponse: vi.fn() },
 }));
-vi.mock('./services/services.repository', () => ({ servicesRepository: { findById: vi.fn() } }));
+vi.mock('./services/services.repository', () => ({
+  servicesRepository: { findById: vi.fn(), packagesByServiceIds: vi.fn() },
+}));
 vi.mock('./settings/settings.repository', () => ({
   settingsRepository: { getNumber: vi.fn(), get: vi.fn(), set: vi.fn() },
 }));
@@ -213,6 +221,29 @@ const CASES: [string, () => Promise<unknown>, unknown, unknown[]][] = [
     profilesRepository.blendResponseTime,
     [3, 1.5],
   ],
+  [
+    'profilesFacade.payoutState',
+    () => profilesFacade.payoutState(3),
+    profilesRepository.payoutState,
+    [3],
+  ],
+  [
+    'profilesFacade.cnpjTaken',
+    () => profilesFacade.cnpjTaken('12ABC34501DE35'),
+    profilesRepository.cnpjTaken,
+    ['12ABC34501DE35'],
+  ],
+  [
+    'profilesFacade.createCompany',
+    () =>
+      profilesFacade.createCompany(3, {
+        legalName: 'Padaria Pão Bom Ltda',
+        tradeName: 'Pão Bom',
+        cnpj: '12ABC34501DE35',
+      }),
+    profilesRepository.createCompany,
+    [3, { legalName: 'Padaria Pão Bom Ltda', tradeName: 'Pão Bom', cnpj: '12ABC34501DE35' }],
+  ],
   ['reportsFacade.create', () => reportsFacade.create(REPORT), reportsRepository.create, [REPORT]],
   [
     'reviewsFacade.findByContractIdWithResponse',
@@ -221,6 +252,12 @@ const CASES: [string, () => Promise<unknown>, unknown, unknown[]][] = [
     [9],
   ],
   ['servicesFacade.findById', () => servicesFacade.findById(8), servicesRepository.findById, [8]],
+  [
+    'servicesFacade.packagesByServiceIds',
+    () => servicesFacade.packagesByServiceIds([8]),
+    servicesRepository.packagesByServiceIds,
+    [[8]],
+  ],
   [
     'settingsFacade.getNumber',
     () => settingsFacade.getNumber('ranking_radius_km', 50),

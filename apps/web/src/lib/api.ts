@@ -24,6 +24,7 @@ import type {
   FinanceGranularity,
   AdminWithdrawal,
   AppealDecision,
+  AuthProviders,
   AuthResponse,
   AvailabilityPeriod,
   BarterAgreement,
@@ -79,12 +80,20 @@ import type {
   LoginRequest,
   LoginResponse,
   MfaChallenge,
+  GoogleExchangeResponse,
+  GoogleSignupChallenge,
+  GoogleSignupRequest,
   MfaEnabledResponse,
   MfaLoginRequest,
   MfaRecoveryCodesResponse,
   MfaSetup,
   MfaStatus,
   AdminAccountLookup,
+  CompanyProfile,
+  CpfStatus,
+  PublicCompanyProfile,
+  UpsertCompanyProfileRequest,
+  VerifyCpfRequest,
   MediaPurpose,
   MediaUpload,
   ModerationHealth,
@@ -125,6 +134,11 @@ import type {
 } from '@escambo/types';
 
 const BASE_URL = '/api';
+/**
+ * Login com Google (RF-002): o botão é um link de navegação para a API, que leva ao Google. Nada
+ * do Google roda no app (sem SDK nem script de terceiro: a CSP continua 'self').
+ */
+export const GOOGLE_START_URL = `${BASE_URL}/auth/google/start`;
 const TOKEN_KEY = 'escambo_token';
 const REFRESH_KEY = 'escambo_refresh';
 
@@ -132,6 +146,8 @@ const REFRESH_KEY = 'escambo_refresh';
 export const SESSION_TOKEN_EVENT = 'escambo:token';
 export const SESSION_EXPIRED_EVENT = 'escambo:session-expired';
 export const ACCOUNT_STATUS_EVENT = 'escambo:account-status';
+/** A API recusou uma ação crítica por e-mail não confirmado (RF-006): a tela mostra o aviso. */
+export const EMAIL_UNVERIFIED_EVENT = 'escambo:email-unverified';
 /** A API respondeu 503 em modo de manutenção (ADR 33): o app mostra a tela de manutenção. */
 export const MAINTENANCE_EVENT = 'escambo:maintenance';
 /** O proxy (nginx ou Caddy) não alcançou a API ou o web (RNF-010): o app mostra a tela de fora do ar. */
@@ -271,6 +287,7 @@ function accountErrorResponse(res: Response, token: string | null, data: unknown
   if (res.status !== 403 || !token || token !== accessToken) return;
   const code = (data as { error?: string }).error ?? '';
   if (code === 'account_suspended') emit(ACCOUNT_STATUS_EVENT, 'suspended');
+  else if (code === 'email_not_verified') emit(EMAIL_UNVERIFIED_EVENT);
   else if (BLOCKED_CODES.has(code)) expireSession();
 }
 
@@ -280,13 +297,20 @@ const NO_REFRESH = [
   '/auth/login',
   '/auth/login/mfa',
   '/auth/register',
+  '/auth/google/exchange',
+  '/auth/google/signup',
   '/auth/refresh',
   '/auth/logout',
 ];
 
 /** A resposta do login é o pedido do segundo fator (conta com 2FA), e não a sessão. */
-export function isMfaChallenge(res: LoginResponse): res is MfaChallenge {
+export function isMfaChallenge(res: LoginResponse | GoogleExchangeResponse): res is MfaChallenge {
   return (res as Partial<MfaChallenge>).mfaRequired === true;
+}
+
+/** A volta do Google trouxe uma conta Google sem conta no Escambo: falta concluir o cadastro. */
+export function isGoogleSignup(res: GoogleExchangeResponse): res is GoogleSignupChallenge {
+  return (res as Partial<GoogleSignupChallenge>).signupRequired === true;
 }
 
 /** O que a 2FA pede para mexer nela: a senha da conta e um código do app ou de recuperação. */
@@ -542,6 +566,18 @@ export const api = {
   /** Segundo passo do login (RF-090): o código do app ou um de recuperação abre a sessão. */
   loginMfa: (body: MfaLoginRequest) =>
     request<AuthResponse>('/auth/login/mfa', { method: 'POST', body: JSON.stringify(body) }),
+  // login com Google (RF-002)
+  /** Os jeitos de entrar ligados no servidor: o botão do Google só aparece com google: true. */
+  authProviders: () => request<AuthProviders>('/auth/providers'),
+  /** Troca o código de uso único da volta do Google: a sessão, a 2FA ou o cadastro por concluir. */
+  googleExchange: (code: string) =>
+    request<GoogleExchangeResponse>('/auth/google/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  /** Conclui a conta nova que veio do Google (papel e aceite): devolve a sessão. */
+  googleSignup: (body: GoogleSignupRequest) =>
+    request<AuthResponse>('/auth/google/signup', { method: 'POST', body: JSON.stringify(body) }),
   // verificação em duas etapas da própria conta (RF-090, ADR 66)
   mfaStatus: () => request<MfaStatus>('/auth/mfa'),
   /** Começa a ativação: um segredo novo, ainda inativo, para o app autenticador. */
@@ -967,6 +1003,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
+  /** Apaga o CPF validado para o titular corrigir (RF-020); o motivo fica no registro. */
+  adminResetCpf: (ulid: string, reason: string) =>
+    request<void>(`/admin/users/${encodeURIComponent(ulid)}/cpf/reset`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
   // moderação (ADR 39)
   adminReports: (status: 'pending' | 'resolved' = 'pending') =>
     request<AdminReportGroup[]>(`/admin/reports?status=${status}`),
@@ -1038,6 +1080,15 @@ export const api = {
     }),
   putClientProfile: (body: UpsertClientProfileRequest) =>
     request<ClientProfile>('/profiles/client', { method: 'PUT', body: JSON.stringify(body) }),
+  /** Dados da empresa (RF-018), só de conta de empresa. */
+  putCompanyProfile: (body: UpsertCompanyProfileRequest) =>
+    request<CompanyProfile>('/profiles/company', { method: 'PUT', body: JSON.stringify(body) }),
+  publicCompany: (ulid: string) =>
+    request<PublicCompanyProfile>(`/profiles/company/${encodeURIComponent(ulid)}`),
+  /** CPF do freelancer (RF-020): a situação, com o CPF só mascarado. */
+  cpfStatus: () => request<CpfStatus>('/profiles/me/cpf'),
+  verifyCpf: (body: VerifyCpfRequest) =>
+    request<CpfStatus>('/profiles/me/cpf', { method: 'PUT', body: JSON.stringify(body) }),
 
   // avaliações (fecham o ciclo: aprovação → nota → Escambo Score)
   reviews: (freelancerId: number) =>

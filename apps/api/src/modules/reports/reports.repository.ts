@@ -76,10 +76,11 @@ export interface GroupRef {
 const COLS = `id, reporter_id, target_type, target_id, image_url, reason, description, status,
               reviewed_at, resolution_note, created_at`;
 
-/** Dono e nome de exibição: perfil de freelancer, senão o de cliente. */
-const OWNER = `u.id AS owner_id, u.ulid AS owner_ulid, COALESCE(pf.full_name, pc.full_name) AS owner_name`;
+/** Dono e nome de exibição: perfil de freelancer, senão o de cliente, senão o da empresa (RF-018). */
+const OWNER = `u.id AS owner_id, u.ulid AS owner_ulid, COALESCE(pf.full_name, pc.full_name, pco.trade_name) AS owner_name`;
 const OWNER_JOINS = `LEFT JOIN profiles_freelancer pf ON pf.user_id = u.id
-                     LEFT JOIN profiles_client pc ON pc.user_id = u.id`;
+                     LEFT JOIN profiles_client pc ON pc.user_id = u.id
+                     LEFT JOIN profiles_company pco ON pco.user_id = u.id`;
 
 /** Fecha as denúncias abertas do grupo; todas ganham o mesmo reviewed_at e a mesma nota. */
 async function closeOpen(
@@ -140,7 +141,7 @@ export const reportsRepository = {
   async imageTarget(type: ImageTarget, id: number): Promise<ImageTargetRow | undefined> {
     const sql =
       type === 'avatar'
-        ? `SELECT u.id AS owner_id, COALESCE(pf.avatar_url, pc.avatar_url) AS image_url, NULL AS title
+        ? `SELECT u.id AS owner_id, COALESCE(pf.avatar_url, pc.avatar_url, pco.logo_url) AS image_url, NULL AS title
              FROM users u ${OWNER_JOINS}
             WHERE u.id = :id AND u.deleted_at IS NULL
             LIMIT 1`
@@ -190,7 +191,7 @@ export const reportsRepository = {
   async usersByIds(ids: number[]): Promise<TargetInfoRow[]> {
     if (ids.length === 0) return [];
     const [rows] = await pool.query<TargetInfoRow[]>(
-      `SELECT u.id, ${OWNER}, NULL AS title, COALESCE(pf.avatar_url, pc.avatar_url) AS image_url
+      `SELECT u.id, ${OWNER}, NULL AS title, COALESCE(pf.avatar_url, pc.avatar_url, pco.logo_url) AS image_url
          FROM users u ${OWNER_JOINS}
         WHERE u.id IN (:ids)`,
       { ids },

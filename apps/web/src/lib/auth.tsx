@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from 'react';
 import type {
+  GoogleSignupChallenge,
+  GoogleSignupRequest,
   LoginRequest,
   MfaChallenge,
   MfaLoginRequest,
@@ -17,9 +19,11 @@ import type {
 import {
   ACCOUNT_STATUS_EVENT,
   api,
+  EMAIL_UNVERIFIED_EVENT,
   getRefreshToken,
   getToken,
   isAccountStatus,
+  isGoogleSignup,
   isMfaChallenge,
   SESSION_EXPIRED_EVENT,
   setSession,
@@ -41,6 +45,14 @@ interface AuthState {
   /** Segundo passo do login (RF-090): o erro fica com quem chama, que o mostra junto do campo. */
   loginMfa: (input: MfaLoginRequest) => Promise<void>;
   register: (input: RegisterRequest) => Promise<void>;
+  /**
+   * Entra com o código de uso único da volta do Google (RF-002). Conta com 2FA: devolve o pedido do
+   * segundo fator (a sessão sai de `loginMfa`); conta Google sem conta no Escambo: devolve o
+   * cadastro por concluir; senão, entra e devolve null. O erro fica com quem chama.
+   */
+  loginWithGoogle: (code: string) => Promise<MfaChallenge | GoogleSignupChallenge | null>;
+  /** Conclui a conta nova que veio do Google (papel e aceite) e entra. O erro fica com quem chama. */
+  completeGoogleSignup: (input: GoogleSignupRequest) => Promise<void>;
   logout: () => void;
   /** Recarrega o usuário da sessão (ex.: depois de confirmar o e-mail). */
   refreshUser: () => Promise<void>;
@@ -133,6 +145,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(ACCOUNT_STATUS_EVENT, onStatus);
   }, []);
 
+  // A API recusou uma ação por e-mail não confirmado (RF-006): a tela achava que estava confirmado
+  // (sessão antiga), então passa a mostrar os avisos no lugar das ações críticas.
+  useEffect(() => {
+    const onUnverified = (): void => {
+      if (!getToken() && !getRefreshToken()) return;
+      setUser((current) =>
+        current && current.emailVerified ? { ...current, emailVerified: false } : current,
+      );
+    };
+    window.addEventListener(EMAIL_UNVERIFIED_EVENT, onUnverified);
+    return () => window.removeEventListener(EMAIL_UNVERIFIED_EVENT, onUnverified);
+  }, []);
+
   const userId = user?.id;
   useEffect(() => {
     if (userId === undefined) return;
@@ -184,6 +209,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }
 
+  async function loginWithGoogle(
+    code: string,
+  ): Promise<MfaChallenge | GoogleSignupChallenge | null> {
+    const session = ++generation.current;
+    refreshingUser.current = null;
+    setError(null);
+    const res = await api.googleExchange(code);
+    if (session !== generation.current) return null;
+    if (isMfaChallenge(res) || isGoogleSignup(res)) return res;
+    setSession({ accessToken: res.accessToken, refreshToken: res.refreshToken });
+    setUser(res.user);
+    return null;
+  }
+
+  async function completeGoogleSignup(input: GoogleSignupRequest): Promise<void> {
+    const session = ++generation.current;
+    refreshingUser.current = null;
+    // O fuso do aparelho vai junto (ADR 51), como no cadastro com senha.
+    const timezone = input.timezone ?? browserBrazilZone() ?? undefined;
+    const res = await api.googleSignup(timezone ? { ...input, timezone } : input);
+    if (session !== generation.current) return;
+    setSession({ accessToken: res.accessToken, refreshToken: res.refreshToken });
+    setUser(res.user);
+  }
+
   async function register(input: RegisterRequest): Promise<void> {
     setError(null);
     try {
@@ -220,7 +270,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, error, login, loginMfa, register, logout, refreshUser }}
+      value={{
+        user,
+        loading,
+        error,
+        login,
+        loginMfa,
+        register,
+        loginWithGoogle,
+        completeGoogleSignup,
+        logout,
+        refreshUser,
+      }}
     >
       <AccountAccessProvider status={user?.status}>{children}</AccountAccessProvider>
     </AuthContext.Provider>

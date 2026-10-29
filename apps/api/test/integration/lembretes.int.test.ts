@@ -31,6 +31,7 @@ import {
 import { DAY, HOUR, startDaytimeClock, stopClock } from './clock.helpers';
 import { withLegacyParallelContracts } from './helpers/legacy-parallel-contracts';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * O motor dos lembretes (ADR 58, RN-079 e RN-081) contra o MySQL real: o job
@@ -102,6 +103,7 @@ async function user(
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status, JSON.stringify(login.body)).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   const id = login.body.user.id as number;
   if (timezone) await setTimezone(id, timezone);
   return { id, token: login.body.accessToken };

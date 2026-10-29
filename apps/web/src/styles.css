@@ -2168,6 +2168,33 @@ button.toggle.on {
   flex: none;
   margin-top: 2px;
 }
+/* Conversa encerrada (RF-062): a faixa só de leitura no lugar do compositor. É informação, não
+   alerta: o mesmo azul da sugestão de fuso. */
+.chat-closed {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--blue-soft);
+  color: var(--blue-ink);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.chat-closed svg {
+  flex: none;
+  margin-top: 3px;
+}
+.chat-closed p {
+  min-width: 0;
+  margin: 0;
+}
+.chat-closed a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}
 /* Hora + leitura (RF-059) no pé da bolha: ✓ Enviada, ✓✓ Lida. */
 .bubble-meta {
   align-self: flex-end;
@@ -4519,6 +4546,34 @@ body.is-dragging-list {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* Ação crítica sem e-mail confirmado (RF-006): o aviso no lugar do formulário, com o reenvio do
+   link. Mesma linguagem do lembrete do topo e do saque bloqueado. */
+.verify-notice {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px dashed var(--amber);
+  border-radius: var(--r);
+  background: var(--amber-soft);
+  color: var(--amber-ink);
+}
+.verify-notice-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+.verify-notice-msg svg {
+  flex: none;
+  margin-top: 2px;
+}
+.verify-notice-msg span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .done-ico.err {
   background: var(--red-soft);
   color: var(--red);
@@ -5739,6 +5794,51 @@ button.link.mfa-link {
 .lookup-list dd {
   margin: 2px 0 0;
   font-weight: 600;
+}
+
+/* Documentos (RF-018, RF-020): o CPF validado no Perfil, os fatos da página da empresa e o selo
+   "Empresa" onde quem contrata aparece (o nome fantasia leva à página pública). */
+.cpf-ok {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--green-ink);
+  font-weight: 600;
+}
+.cpf-ok svg {
+  flex: none;
+}
+.cpf-ok strong {
+  font-variant-numeric: tabular-nums;
+}
+.card.profile-card .company-facts {
+  padding: 0 24px 24px;
+}
+.company-facts a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.company-tag {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.company-tag-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.deal-company {
+  margin: 0;
+}
+@media (max-width: 560px) {
+  .card.profile-card .company-facts {
+    padding: 0 18px 18px;
+  }
 }
 
 /* =====================================================================
@@ -9559,4 +9659,335 @@ button.mini.q-danger:hover:not(:disabled) {
   .fin-kpi.lead strong {
     font-size: 1.375rem;
   }
+}
+
+/* ---------- Pacotes por serviço (RF-086, ADR 69) ---------- */
+/* Detalhe com pacotes: o título, o cartão dos pacotes e, depois, a descrição e a comparação. No
+   celular, uma coluna nessa ordem (os pacotes logo depois do título); na tela larga, os pacotes
+   ficam numa coluna à direita, presos no topo ao rolar quando a janela tem altura para eles. */
+.svc-detail-pkgs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.svc-detail-pkgs > * {
+  min-width: 0;
+}
+@media (min-width: 960px) {
+  .svc-detail-pkgs {
+    grid-template-columns: minmax(0, 1fr) minmax(19rem, 23rem);
+    grid-template-areas:
+      'head side'
+      'body side'
+      'compare side';
+  }
+  .svc-detail-head {
+    grid-area: head;
+  }
+  .svc-detail-side {
+    grid-area: side;
+  }
+  .svc-detail-body {
+    grid-area: body;
+  }
+  .svc-detail-pkgs > .pkg-compare-card {
+    grid-area: compare;
+  }
+}
+@media (min-width: 960px) and (min-height: 760px) {
+  .svc-detail-side {
+    position: sticky;
+    top: calc(var(--topbar-h) + 16px);
+  }
+}
+.svc-detail-body h2,
+.pkg-compare-card h2 {
+  font-size: var(--fs-lg);
+}
+
+/* O cartão dos pacotes: abas por nível, o painel do nível e o botão largo. */
+.pkg-card {
+  gap: 14px;
+  border-color: var(--border-strong);
+  box-shadow: var(--sh-sm);
+}
+.pkg-card-title {
+  font-size: var(--fs-md);
+}
+.tabs.tabs-mini.pkg-tabs button {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 32px;
+  font-size: var(--fs-sm);
+}
+.pkg-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pkg-panel[hidden] {
+  display: none;
+}
+.pkg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.pkg-head h3 {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pkg-tier {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+.pkg-name {
+  font-weight: 600;
+}
+.pkg-price {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-variant-numeric: tabular-nums;
+  color: var(--green-ink);
+}
+.pkg-desc {
+  margin: 0;
+  color: var(--muted);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.pkg-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.pkg-facts li,
+.pkg-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.pkg-facts svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.pkg-features {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.pkg-features svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--green);
+}
+.pkg-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pkg-continue,
+.pkg-actions > button {
+  justify-content: center;
+}
+.pkg-compare-link {
+  align-self: center;
+  display: inline-block;
+  padding: 4px 2px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+/* "Comparar pacotes": uma coluna por nível; o item incluso leva o ✓ verde, o que falta, o traço. */
+/* contain: paint: no celular, o Chrome alargava a página inteira até a largura da tabela, mesmo
+   com ela rolando dentro da região; assim a rolagem fica só na região. */
+.pkg-compare-card .table-wrap {
+  contain: paint;
+}
+.pkg-compare {
+  width: 100%;
+  min-width: 26rem;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.pkg-compare th,
+.pkg-compare td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.pkg-compare thead th {
+  text-align: center;
+  vertical-align: bottom;
+}
+.pkg-compare thead th .pkg-tier,
+.pkg-compare thead th .pkg-name {
+  display: block;
+}
+/* O nome do item não quebra no meio da palavra: a tabela rola dentro da própria região. */
+.pkg-compare tbody th {
+  min-width: 9rem;
+  text-align: left;
+  font-weight: 500;
+  overflow-wrap: break-word;
+}
+.pkg-compare thead th {
+  min-width: 7rem;
+}
+.pkg-compare td {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pkg-compare-price {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--green-ink);
+}
+.pkg-compare .pkg-yes svg {
+  color: var(--green);
+}
+.pkg-compare .pkg-no svg {
+  color: var(--muted);
+}
+.pkg-compare tr:last-child > * {
+  border-bottom: 0;
+}
+
+/* Editor dos pacotes no formulário do serviço: um grupo por nível, lado a lado quando cabem. */
+.pkg-editor {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.pkg-editor > p {
+  margin: 0;
+}
+.pkg-editor-grid {
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 12px;
+}
+.pkg-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+}
+.pkg-edit legend {
+  padding: 0 6px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--green-ink);
+}
+.pkg-edit-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+  gap: 8px;
+}
+.pkg-feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pkg-feature-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 2px 2px 10px;
+  border-radius: var(--r-sm);
+  background: var(--green-soft);
+  color: var(--green-ink);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.pkg-feature-list .tag-chip-remove {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 28px;
+  min-height: 28px;
+}
+.pkg-feature-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pkg-feature-add input {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+.pkg-remove {
+  align-self: flex-start;
+}
+
+/* Contratar um pacote: a escolha do nível e o valor só de leitura. */
+.pkg-choice legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+.pkg-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.pkg-value strong {
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  color: var(--green-ink);
+}
+
+/* Sala: o pacote contratado na tabela de valores, alinhado à direita como os outros valores. */
+.pkg-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.pkg-features.compact {
+  align-items: flex-end;
+  gap: 2px;
 }

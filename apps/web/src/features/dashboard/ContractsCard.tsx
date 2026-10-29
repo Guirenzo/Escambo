@@ -1,7 +1,9 @@
 import { ArrowRight, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { Contract } from '@escambo/types';
+import { CompanyTag } from '../../components/CompanyTag';
 import { Pill } from '../../components/ui';
+import { useAuth } from '../../lib/auth';
 import { dayIn, deadlinePill } from '../../lib/deadline';
 import { statusLabel, brl } from '../../lib/format';
 import { DEFAULT_TIMEZONE } from '../../lib/timezones';
@@ -105,6 +107,7 @@ export function DateBlock({ contract: c }: { contract: Contract }) {
  */
 export function ContractsCard({ contracts }: { contracts: Contract[] }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   return (
     <ul className="deals" aria-label="Contratações">
@@ -120,6 +123,12 @@ export function ContractsCard({ contracts }: { contracts: Contract[] }) {
                 </h3>
                 <Pill status={c.status}>{statusLabel(c)}</Pill>
               </div>
+              {/* RF-018: na proposta de uma empresa, quem entrega vê o nome fantasia e o selo. */}
+              {c.clientCompany && c.clientId !== user?.id && (
+                <p className="deal-company">
+                  <CompanyTag company={c.clientCompany} label="Contratante:" />
+                </p>
+              )}
               <div className="deal-body">
                 <DateBlock contract={c} />
                 <dl className="deal-meta">

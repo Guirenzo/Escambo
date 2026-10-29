@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
+  createCompany,
   createService,
   createUser,
   deliveredContract,
@@ -150,6 +151,10 @@ for (const { width, height, layout } of WIDTHS) {
       await page.goto('/cadastro?perfil=cliente');
       await expect(page.getByRole('heading', { name: 'Crie sua conta' })).toBeVisible();
       await noHorizontalScroll(page, `cadastro a ${width} px`);
+      // Cadastro de empresa (RF-018): os dados da empresa cabem na largura.
+      await page.goto('/cadastro?perfil=empresa');
+      await expect(page.getByRole('group', { name: 'Dados da empresa' })).toBeVisible();
+      await noHorizontalScroll(page, `cadastro de empresa a ${width} px`);
     });
 
     test(`telas principais a ${width} px: sem rolagem horizontal e com a navegação na tela`, async ({
@@ -161,6 +166,9 @@ for (const { width, height, layout } of WIDTHS) {
       const client = await createUser(request, 'client');
       // Entregue: a sala mostra a entrega, as ações do cliente e o chat, o caso mais cheio.
       const contractId = await deliveredContract(request, client, freelancer, service);
+      const company = await createCompany(request, {
+        tradeName: 'Padaria e Confeitaria Pão Quentinho do Bairro',
+      });
 
       await openAs(page, client, '/');
       await settled(page);
@@ -179,6 +187,7 @@ for (const { width, height, layout } of WIDTHS) {
         ['sala da contratação', `/contratos/${contractId}`, { level: 1, name: service.title }],
         ['carteira', '/carteira', { level: 1, name: 'Carteira' }],
         ['perfil', '/perfil', { level: 1, name: 'Perfil' }],
+        ['página da empresa', `/empresas/${company.ulid}`, { level: 1, name: company.tradeName }],
       ] as const) {
         await page.goto(path);
         await expect(page.getByRole('heading', heading).first()).toBeVisible();

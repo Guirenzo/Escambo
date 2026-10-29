@@ -15,41 +15,32 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { displayName } from '../../lib/format';
+import { identityName, profileIdentity } from '../../lib/documents';
 import { Avatar } from '../../components/Avatar';
 import { SkipLink } from '../../components/ui';
 import { useConsents, useNotifications, useProfilesMe } from '../../lib/hooks';
 import { useRealtimeNotifications } from '../../lib/realtime';
 import { browserBrazilZone } from '../../lib/timezones';
-import { useToast } from '../../lib/toast';
 import { pickBanner } from './banners';
 import { LegalUpdateBanner } from './LegalUpdateBanner';
 import { TimezoneBanner } from './TimezoneBanner';
 import { TopBar, unreadLabel } from './TopBar';
 import { BrandMark } from '../../components/BrandMark';
+import { useResendVerification } from '../../components/VerifyEmail';
 
-/** Conta ainda sem e-mail confirmado: lembrete discreto com reenvio do link. */
+/**
+ * Conta ainda sem e-mail confirmado: lembrete discreto com reenvio do link. Contratar, publicar,
+ * pagar, trocar, impulsionar e sacar esperam a confirmação (RF-006); o resto do app funciona.
+ */
 function VerifyEmailBanner({ email }: { email: string }) {
-  const toast = useToast();
-  const [sending, setSending] = useState(false);
-  async function resend(): Promise<void> {
-    setSending(true);
-    try {
-      await api.resendVerification();
-      toast.success(`Link reenviado para ${email}.`);
-    } catch (er) {
-      toast.error(er instanceof Error ? er.message : 'Não foi possível reenviar');
-    } finally {
-      setSending(false);
-    }
-  }
+  const { resend, sending } = useResendVerification();
   return (
     <div className="verify-banner" role="status" data-testid="verify-banner">
       <MailWarning size={16} />
       <span>
-        Confirme seu e-mail: enviamos um link para <strong>{email}</strong>.
+        Confirme seu e-mail para contratar, publicar e movimentar dinheiro: enviamos um link para{' '}
+        <strong>{email}</strong>.
       </span>
       <button type="button" className="link" onClick={() => void resend()} disabled={sending}>
         {sending ? 'Reenviando…' : 'Reenviar e-mail'}
@@ -117,6 +108,7 @@ const SECONDARY_PATHS = SECONDARY.flatMap((g) => g.items.map((i) => i.to));
 export const ROLE_LABEL: Record<string, string> = {
   client: 'Cliente',
   freelancer: 'Freelancer',
+  company: 'Empresa',
   admin: 'Admin',
 };
 
@@ -131,12 +123,10 @@ export function Shell() {
 
   // Badge de não lidas + push em tempo real (socket) para qualquer tela.
   const profiles = useProfilesMe();
-  const avatarUrl =
-    profiles.data?.freelancer?.avatarUrl ?? profiles.data?.client?.avatarUrl ?? null;
-  const name = displayName(
-    profiles.data?.freelancer?.fullName ?? profiles.data?.client?.fullName,
-    user?.email,
-  );
+  // Na conta de empresa, o nome fantasia e o logo (RF-018).
+  const identity = profileIdentity(profiles.data);
+  const avatarUrl = identity.avatarUrl;
+  const name = identityName(profiles.data, user?.email);
   const notifications = useNotifications();
   const unread = notifications.data?.unreadCount ?? 0;
   useRealtimeNotifications();

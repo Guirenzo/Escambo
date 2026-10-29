@@ -26,6 +26,8 @@ const contact = (o: Partial<AccountContact> = {}): AccountContact => ({
   emailVerified: true,
   phone: null,
   pendingEmail: null,
+  hasPassword: true,
+  googleLinked: false,
   ...o,
 });
 const PENDING = { email: 'nova@escambo.test', expiresAt: '2026-10-20T15:00:00.000Z' };

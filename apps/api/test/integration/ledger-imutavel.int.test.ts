@@ -9,6 +9,7 @@ import { purgeAuditLogsOlderThan } from '../../src/modules/audit/audit.purge';
 import { AUDIT_LOG_MIN_RETENTION_DAYS } from '../../src/modules/audit/audit.retention';
 import { migrate } from '../../src/scripts/migrate-core';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 /**
  * Registro imutável das transações (RNF-036) e retenção mínima da auditoria (RNF-037) no MySQL
@@ -46,6 +47,7 @@ async function registerAndLogin(): Promise<{ id: number; token: string }> {
     .send({ legalAccepted: true, email, password, role: 'client' })
     .expect(201);
   const login = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken };
 }
 

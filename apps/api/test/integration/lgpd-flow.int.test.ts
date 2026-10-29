@@ -8,6 +8,7 @@ import { runExpireExports } from '../../src/jobs/expire-exports';
 import { exportFilePath } from '../../src/modules/lgpd/lgpd.export';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
+import { confirmEmail } from './mail.helpers';
 
 const app = createApp();
 const auth = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
@@ -32,6 +33,7 @@ async function registerAndLogin(
   expect(reg.status, JSON.stringify(reg.body)).toBe(201);
   const login = await request(app).post('/api/auth/login').send({ email, password });
   expect(login.status).toBe(200);
+  await confirmEmail(app, login.body.user.id);
   return { id: login.body.user.id, token: login.body.accessToken, email, password };
 }
 
@@ -95,7 +97,7 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       sessoes: unknown[];
       registrosDeSeguranca: unknown[];
     };
-    expect(data.formato).toBe('escambo-export/1.12');
+    expect(data.formato).toBe('escambo-export/1.15');
     expect(data).toHaveProperty('ofertas', []);
     expect(data).toHaveProperty('desistencias', []);
     // Formato 1.7 (ADR 56): o que a pessoa deixa sair no silêncio; nunca escolheu = null.

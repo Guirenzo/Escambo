@@ -113,12 +113,14 @@ describe('maskEmail', () => {
 });
 
 describe('contactService.get', () => {
-  it('e-mail, se está confirmado, telefone e a troca pendente', async () => {
+  it('e-mail, se está confirmado, telefone, a troca pendente e como a conta entra', async () => {
     repo.findContact.mockResolvedValue({
       email: 'ana@escambo.test',
       email_verified_at: new Date(),
       phone: '+5547999991234',
-    });
+      has_password: 1,
+      google_linked: 0,
+    } as never);
     changes.findPending.mockResolvedValue({
       id: 3,
       new_email: 'nova@escambo.test',
@@ -130,6 +132,8 @@ describe('contactService.get', () => {
       emailVerified: true,
       phone: '+5547999991234',
       pendingEmail: { email: 'nova@escambo.test', expiresAt: '2026-10-20T12:00:00.000Z' },
+      hasPassword: true,
+      googleLinked: false,
     });
   });
 
@@ -138,17 +142,35 @@ describe('contactService.get', () => {
       email: 'ana@escambo.test',
       email_verified_at: null,
       phone: null,
-    });
+      has_password: 1,
+      google_linked: 0,
+    } as never);
     changes.findPending.mockResolvedValue(undefined);
     expect(await contactService.get(7)).toEqual({
       email: 'ana@escambo.test',
       emailVerified: false,
       phone: null,
       pendingEmail: null,
+      hasPassword: true,
+      googleLinked: false,
     });
 
     repo.findContact.mockResolvedValue(undefined);
     expect(await codeOf(contactService.get(7))).toBe('user_not_found');
+  });
+});
+
+describe('contactService.get: como a conta entra (RF-002)', () => {
+  it('conta do Google sem senha: hasPassword false e googleLinked true (o MySQL devolve 0 e 1)', async () => {
+    repo.findContact.mockResolvedValue({
+      email: 'ana@gmail.com',
+      email_verified_at: new Date(),
+      phone: null,
+      has_password: 0,
+      google_linked: 1,
+    } as never);
+    changes.findPending.mockResolvedValue(undefined);
+    expect(await contactService.get(7)).toMatchObject({ hasPassword: false, googleLinked: true });
   });
 });
 
@@ -418,7 +440,9 @@ describe('contactService.updatePhone', () => {
       email: 'ana@escambo.test',
       email_verified_at: null,
       phone: '+5547999991234',
-    });
+      has_password: 1,
+      google_linked: 0,
+    } as never);
     changes.findPending.mockResolvedValue(undefined);
 
     const out = await contactService.updatePhone(7, '+5547999991234', CTX);

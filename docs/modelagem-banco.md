@@ -58,7 +58,8 @@
 
 ```
 users (base)
- ├── user_social_logins      (OAuth2 providers)
+ ├── user_social_logins      (OAuth2 providers; sem uso: o Google vincula por users.google_sub)
+ ├── google_login_tickets    (passes de uso único do login com Google, só o hash)
  ├── user_sessions           (tokens ativos)
  ├── user_mfa                (2FA / TOTP — segredo cifrado)
  ├── profiles_client         (1:1)
@@ -126,7 +127,7 @@ report_snapshots              (relatórios)
 
 ### `users`
 
-Tabela central de todos os usuários da plataforma. A preferência de e-mail (`email_frequency`, ADR 27) e a hora do resumo do dia (`digest_hour`, ADR 42) e o fuso da conta (`timezone`, ADR 46; é nele que a agenda de atendimento do freelancer vale, ADR 48) moram aqui, junto com `last_digest_at`, a trava de um resumo por dia.
+Tabela central de todos os usuários da plataforma. A preferência de e-mail (`email_frequency`, ADR 27) e a hora do resumo do dia (`digest_hour`, ADR 42) e o fuso da conta (`timezone`, ADR 46; é nele que a agenda de atendimento do freelancer vale, ADR 48) moram aqui, junto com `last_digest_at`, a trava de um resumo por dia. O login com Google (RF-002, migration 0053, 1.54.0) vincula a conta pela `google_sub`, a claim `sub` do ID token, que não muda quando a pessoa troca o e-mail no Google: única (uma conta Google entra em uma conta só), em ASCII com comparação exata (`ascii_bin`), NULL na conta sem Google e apagada na anonimização (RN-072). A conta criada pelo Google nasce com `email_verified_at` preenchido e `password_hash` NULL (o login com senha a recusa como a senha errada); a conta não confirmada que o Google retoma também fica com `password_hash` NULL.
 
 ```sql
 CREATE TABLE users (
@@ -145,6 +146,7 @@ CREATE TABLE users (
   push_quiet_end    TINYINT UNSIGNED NULL,                    -- fim (exclusivo); NULL nos dois = desligado; início > fim cruza a meia-noite; CHECK recusa meia janela e início = fim
   push_quiet_pass   SET('deadline') NULL,                     -- o que sai durante o silêncio, escolha da pessoa numa lista fechada (migration 0026, ADR 56); NULL = nunca escolheu (vale como nada); '' = nada
   push_quiet_summary_id BIGINT UNSIGNED NULL,                -- marca d'água do resumo ao fim do silêncio: avisos retidos até este id já foram resumidos (ou descartados ao desligar)
+  google_sub        VARCHAR(255) CHARACTER SET ascii COLLATE ascii_bin NULL, -- conta Google vinculada (claim sub, RF-002); UNIQUE uq_users_google_sub (migration 0053)
   last_digest_at    DATETIME    NULL,                          -- último resumo diário (trava de um por dia)
   phone_verified_at DATETIME    NULL,
   last_login_at     DATETIME    NULL,
@@ -164,7 +166,7 @@ CREATE TABLE users (
 
 ### `user_social_logins`
 
-Vínculos de login social (Google, Facebook etc).
+Vínculos de login social (Google, Facebook etc). Existe desde o baseline e continua **sem uso**: o login com Google (1.54.0) vincula pela coluna única `users.google_sub`, que resolve o vínculo de um provedor só numa consulta e não convida a guardar o token do Google (a coluna `token` daqui), que o Escambo não usa depois do login.
 
 ```sql
 CREATE TABLE user_social_logins (
@@ -262,6 +264,32 @@ CREATE TABLE user_mfa (
 
 ---
 
+### `google_login_tickets`
+
+Os passes de uso único do login com Google (RF-002, migration 0053, 1.54.0), guardados só como hash SHA-256. `state`: o `state` de cada ida ao Google, gravado na volta, para a mesma volta não passar duas vezes, nem com o cookie copiado. `exchange`: o código que a volta deixa no endereço do web (2 minutos), trocado em POST /auth/google/exchange pela sessão, pelo passe da 2FA ou pelo de conta nova. `signup`: o passe de "Concluir cadastro" (15 minutos), com o `sub`, o e-mail e o nome que o Google mandou. O passe sai da tabela quando é usado, e os vencidos saem a cada passe novo: o e-mail e o nome de quem não concluiu o cadastro não ficam. Nenhum token do Google é guardado.
+
+```sql
+CREATE TABLE google_login_tickets (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  ticket_hash CHAR(64)        CHARACTER SET ascii COLLATE ascii_bin NOT NULL, -- SHA-256 do passe
+  purpose     ENUM('state', 'exchange', 'signup') NOT NULL,
+  user_id     BIGINT UNSIGNED NULL,          -- exchange de conta que já existe
+  google_sub  VARCHAR(255)    CHARACTER SET ascii COLLATE ascii_bin NULL, -- conta nova
+  email       VARCHAR(255)    NULL,          -- conta nova: o e-mail confirmado pelo Google
+  name        VARCHAR(150)    NULL,          -- conta nova: o nome da conta Google, sugestão
+  expires_at  DATETIME        NOT NULL,
+  created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_glt_hash (ticket_hash),
+  INDEX idx_glt_expires (expires_at),
+  INDEX idx_glt_user (user_id),
+  CONSTRAINT fk_glt_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+---
+
 ## 4. Módulo 02 — Perfis
 
 ### `profiles_client`
@@ -308,11 +336,16 @@ CREATE TABLE profiles_freelancer (
   total_contracts     INT UNSIGNED    NOT NULL DEFAULT 0,
   response_time_hours INT UNSIGNED    NULL,             -- tempo médio de resposta
   is_available        TINYINT(1)      NOT NULL DEFAULT 1,
-  cpf_verified        TINYINT(1)      NOT NULL DEFAULT 0,
+  cpf_verified        TINYINT(1)      NOT NULL DEFAULT 0,   -- 1 quando o CPF passou na validação (RF-020)
+  cpf_encrypted       VARCHAR(255)    NULL,             -- CPF só cifrado (enc:v1:..., AES-256-GCM, RN-075) (0052)
+  cpf_index           CHAR(64)        NULL,             -- índice cego: HMAC-SHA256 do CPF, hex (0052)
+  birth_date          DATE            NULL,             -- data de nascimento, maioridade (RN-009) (0052)
+  cpf_verified_at     DATETIME        NULL,             -- quando o CPF foi validado (0052)
   created_at          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
   PRIMARY KEY (id),
+  UNIQUE KEY uq_pf_cpf_index (cpf_index),                -- o mesmo CPF não valida em duas contas (0052)
   INDEX idx_pf_user      (user_id),
   INDEX idx_pf_rating    (avg_rating),
   INDEX idx_pf_location  (latitude, longitude),
@@ -320,6 +353,8 @@ CREATE TABLE profiles_freelancer (
   CONSTRAINT fk_pf_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
+
+CPF do freelancer (RF-020, RN-009, RN-075; migration 0052, 1.53.0). O freelancer informa o CPF e a data de nascimento no Perfil; a API confere os dígitos verificadores, a unicidade entre contas e os 18 anos no dia de hoje do fuso da conta (não é consulta à Receita) e grava as quatro colunas num UPDATE só, condicionado a `cpf_verified = 0`: validado, o CPF não se altera pela tela, e a correção é pelo atendimento, que apaga as quatro colunas. `cpf_encrypted` guarda o CPF **só cifrado** com a `FIELD_ENCRYPTION_KEY` (sem a chave, nada é gravado); com IV aleatório, a coluna não se compara, e é `cpf_index` (HMAC-SHA256 do CPF com chave derivada da mesma chave por HKDF, contexto `cpf`) que deixa a chave única recusar o mesmo CPF em duas contas. As telas mostram só o CPF mascarado; inteiro, só na cópia de dados do titular. A anonimização (RN-072) apaga as quatro colunas e devolve `cpf_verified` a 0, o que libera o CPF.
 
 ---
 
@@ -351,8 +386,9 @@ CREATE TABLE freelancer_portfolio_items (
 CREATE TABLE profiles_company (
   id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id      BIGINT UNSIGNED NOT NULL UNIQUE,
-  company_name VARCHAR(150)    NOT NULL,
-  cnpj         VARCHAR(18)     NULL UNIQUE,
+  company_name VARCHAR(150)    NOT NULL,               -- razão social (1.53.0)
+  trade_name   VARCHAR(150)    NULL,                   -- nome fantasia, o nome exibido (0052)
+  cnpj         VARCHAR(18)     NULL UNIQUE,            -- 14 caracteres, maiúsculas, sem máscara; numérico ou alfanumérico
   logo_url     VARCHAR(512)    NULL,
   bio          TEXT            NULL,
   website      VARCHAR(255)    NULL,
@@ -366,6 +402,8 @@ CREATE TABLE profiles_company (
   CONSTRAINT fk_pco_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
+
+Conta de empresa (RF-018; usada desde a 1.53.0, migration 0052). A linha nasce no cadastro da conta de papel `company`, com a razão social em `company_name`, o nome fantasia em `trade_name` e o CNPJ, conferido pelos dígitos verificadores (IN RFB 2.229/2024, que aceita letras nas 12 primeiras posições) e único pela chave da coluna. Logo (`logo_url`, pelo mesmo envio da foto de perfil, e contado no expurgo e na moderação de imagens), site, descrição curta (`bio`, até 280 caracteres), cidade e UF vêm do Perfil. A empresa não tem `profiles_client`: onde o nome de quem contrata aparece, as consultas usam `COALESCE(perfil de freelancer, perfil de cliente, trade_name)`. A anonimização troca a razão social e o nome fantasia por "Empresa removida" e apaga CNPJ, logo, site, descrição, cidade e UF, o que libera o CNPJ.
 
 ---
 
@@ -460,7 +498,7 @@ CREATE TABLE service_tag_pivot (
 
 ### `service_packages`
 
-Pacotes por serviço no estilo Basic / Standard / Premium, cada um com preço, prazo e nº de revisões próprios.
+Pacotes por serviço no estilo Basic / Standard / Premium, cada um com preço, prazo e nº de revisões próprios (RF-086, RN-068). Está no baseline desde o início e passou a ser usada na 1.51.0 (migration 0051, ADR 69): a API grava os pacotes com upsert na chave única por nível e apaga os níveis que saíram, na mesma transação que grava em `services.price` e `services.delivery_days` o preço e o prazo do Básico (o "a partir de" da busca). A API aceita nome de até 60 caracteres, revisões de 1 a 10 e até 10 itens em `features`; `is_active` fica sempre 1.
 
 ```sql
 CREATE TABLE service_packages (
@@ -568,10 +606,12 @@ CREATE TABLE contracts (
   proposal_expires_at    DATETIME     NULL,             -- validade da proposta (RN-021), gravada na criação (migration 0027)
   offer_seq TINYINT UNSIGNED NOT NULL DEFAULT 1,        -- oferta vigente: 1..5, vez pela paridade (0031)
   revision_requested_at DATETIME NULL,                 -- revisão em aberto (0029)
-  revision_limit INT UNSIGNED NULL,                    -- 2 na contratação nova; NULL mantém contrato já registrado ilimitado (0031)
+  revision_limit INT UNSIGNED NULL,                    -- 2 na contratação nova, ou as do pacote (0051); NULL mantém contrato já registrado ilimitado (0031)
   revisions_used INT UNSIGNED NOT NULL DEFAULT 0,      -- consumo por entrega única (0031)
   first_delivery_at DATETIME NULL,                     -- primeira evidência, preservada na reentrega (0031)
   delivery_dispute_opens_at DATETIME NULL,              -- abertura da entrega única, conservada na revisão (0031)
+  package_tier   ENUM('basic', 'standard', 'premium') NULL, -- pacote contratado (RF-086); NULL sem pacote (0051)
+  package_snapshot JSON          NULL,                 -- cópia do pacote na proposta: {tier,name,description,price,deliveryDays,revisions,features}; anda junto do package_tier (0051)
   accepted_at    DATETIME        NULL,
   completed_at   DATETIME        NULL,
   cancelled_at   DATETIME        NULL,
@@ -675,7 +715,7 @@ CREATE TABLE contract_milestones (
   delivered_at    DATETIME    NULL,                    -- última entrega; continua preenchida se o marco voltar para revisão (migration 0006)
   approval_due_at DATETIME    NULL,                    -- aprovação tácita do marco, gravada na entrega; a revisão zera (migration 0028, ADR 57)
   revision_requested_at DATETIME NULL,                -- revisão do marco (0030)
-  revision_limit INT UNSIGNED NULL,                   -- 2 no marco novo; NULL legado ilimitado (0032)
+  revision_limit INT UNSIGNED NULL,                   -- 2 no marco novo, ou as do pacote (0051); NULL legado ilimitado (0032)
   revisions_used INT UNSIGNED NOT NULL DEFAULT 0,     -- contagem própria do marco (0032)
   dispute_opens_at DATETIME NULL,                     -- snapshot preservado em revisão/reentrega (0032)
   released_at DATETIME        NULL,

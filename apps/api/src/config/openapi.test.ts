@@ -162,7 +162,7 @@ describe('documento OpenAPI', () => {
     // Protegida, com corpo e resposta própria.
     expect(operation('/contracts', 'post')).toEqual({
       tags: ['Contratações'],
-      summary: 'Cria proposta e reserva o valor',
+      summary: 'Cria proposta e reserva o valor (exige e-mail confirmado, RF-006)',
       responses: {
         '201': {
           description: 'Criado',
@@ -170,9 +170,13 @@ describe('documento OpenAPI', () => {
             'application/json': { schema: { $ref: '#/components/schemas/Contract' } },
           },
         },
+        '403': {
+          description: expect.stringMatching(/^email_not_verified: /),
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+        },
         '409': {
           description:
-            'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive.',
+            'RN-020: active_contract_exists se há contratação direta aberta no mesmo par cliente→freelancer, independentemente do serviço ou pagamento. Trocas são independentes. Também pode ocorrer service_inactive e, com pacote (RF-086), package_changed: o preço do pacote mudou.',
           content: {
             'application/json': {
               schema: {
@@ -183,6 +187,11 @@ describe('documento OpenAPI', () => {
               },
             },
           },
+        },
+        '422': {
+          description:
+            'validation_error; com pacotes (RF-086): package_required, package_not_found, deadline_before_package, milestone_after_deadline',
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
         },
       },
       security: [{ bearerAuth: [] }],
@@ -242,12 +251,36 @@ describe('documento OpenAPI', () => {
 
   it('sem resposta declarada, a operação responde 200; quem cria responde 201 e quem apaga, 204', () => {
     expect(operation('/health', 'get').responses).toEqual({ '200': { description: 'OK' } });
-    expect(operation('/auth/register', 'post').responses).toEqual({
-      '201': { description: 'Criado' },
+    expect(operation('/auth/register', 'post').responses['201']).toEqual({
+      description: 'Criado',
     });
     expect(operation('/services/{id}', 'delete').responses).toEqual({
       '204': { description: 'Sem conteúdo' },
     });
+  });
+
+  it('documentos (RF-018, RF-020): cadastro de empresa, perfil da empresa, CPF e o atendimento', () => {
+    const { schemas } = openapiDocument.components;
+    expect(schemas.Register.properties.company.$ref).toBe('#/components/schemas/RegisterCompany');
+    expect(schemas.RegisterCompany.required).toEqual(['legalName', 'tradeName', 'cnpj']);
+    expect(operation('/auth/register', 'post').responses['409']?.description).toContain(
+      'cnpj_taken',
+    );
+    expect(schemas.Contract.properties.clientCompany.oneOf[0].$ref).toBe(
+      '#/components/schemas/CompanyRef',
+    );
+    expect(schemas.AdminAccountLookup.required).toEqual(expect.arrayContaining(['cpf', 'company']));
+    expect(operation('/profiles/company', 'put').security).toEqual([{ bearerAuth: [] }]);
+    expect(operation('/profiles/company/{ulid}', 'get').security).toBeUndefined();
+    const verify = operation('/profiles/me/cpf', 'put');
+    expect(verify.requestBody?.content['application/json'].schema.$ref).toBe(
+      '#/components/schemas/VerifyCpf',
+    );
+    expect(Object.keys(verify.responses)).toEqual(['200', '409', '422', '429', '503']);
+    expect(verify.summary).toContain('não é consulta à Receita');
+    expect(operation('/admin/users/{ulid}/cpf/reset', 'post').responses['409']?.description).toBe(
+      'cpf_not_set',
+    );
   });
 
   it('operação com corpo o declara obrigatório, em JSON, com o schema; sem corpo, não há requestBody', () => {
@@ -866,6 +899,8 @@ describe('documento OpenAPI: lacunas de 19/10', () => {
       'emailVerified',
       'phone',
       'pendingEmail',
+      'hasPassword',
+      'googleLinked',
     ]);
     expect(schemas.AccountContact.properties.phone.pattern).toBe('^\\+55\\d{10,11}$');
     expect(schemas.UpdatePhone.properties.phone.nullable).toBe(true);
@@ -1045,5 +1080,109 @@ describe('documento OpenAPI: verificação em duas etapas', () => {
       minLength: 10,
       maxLength: 500,
     });
+  });
+});
+
+/** Pacotes Básico, Padrão e Premium (RF-086, RN-068, ADR 69). */
+describe('documento OpenAPI: pacotes por serviço', () => {
+  const { schemas } = openapiDocument.components;
+  const body = (path: string, method: (typeof METHODS)[number]) =>
+    operation(path, method).requestBody?.content['application/json'].schema;
+
+  it('o pacote tem os limites do schema da API, sem chave a mais, e a lista vai até 3', () => {
+    expect(schemas.PackageTier.enum).toEqual(['basic', 'standard', 'premium']);
+    expect(schemas.ServicePackage.additionalProperties).toBe(false);
+    expect(schemas.ServicePackage.required).toEqual(['tier', 'name', 'price', 'deliveryDays']);
+    expect(schemas.ServicePackage.properties.revisions).toMatchObject({
+      minimum: 1,
+      maximum: 10,
+      default: 2,
+    });
+    expect(schemas.ServicePackage.properties.deliveryDays).toMatchObject({
+      minimum: 1,
+      maximum: 365,
+    });
+    expect(schemas.ServicePackage.properties.features.maxItems).toBe(10);
+    expect(schemas.ServicePackages.maxItems).toBe(3);
+    expect(schemas.ServicePackages.description).toContain('package_price_order');
+  });
+
+  it('cadastro, edição e leitura do serviço levam os pacotes; a contratação escolhe o nível e devolve a cópia', () => {
+    expect(schemas.CreateService.properties.packages).toEqual({
+      $ref: '#/components/schemas/ServicePackages',
+    });
+    expect(schemas.UpdateService.properties.packages).toEqual({
+      $ref: '#/components/schemas/ServicePackages',
+    });
+    expect(schemas.Service.properties.packages.items).toEqual({
+      $ref: '#/components/schemas/ServicePackage',
+    });
+    expect(schemas.CreateContract.properties.packageTier.$ref).toBe(
+      '#/components/schemas/PackageTier',
+    );
+    expect(schemas.CreateContract.properties.packageTier.description).toContain('package_required');
+    expect(schemas.Contract.properties.package.oneOf[0]).toEqual({
+      $ref: '#/components/schemas/ServicePackage',
+    });
+    expect(body('/services', 'post')).toEqual({ $ref: '#/components/schemas/CreateService' });
+  });
+
+  it('os erros novos estão nas respostas de quem os devolve', () => {
+    const described = (path: string, method: (typeof METHODS)[number], status: string) =>
+      String(operation(path, method).responses[status]?.description ?? '');
+    for (const code of [
+      'packages_require_fixed_price',
+      'price_from_packages',
+      'package_price_order',
+    ]) {
+      expect(described('/services', 'post', '422')).toContain(code);
+      expect(described('/services/{id}', 'patch', '422')).toContain(code);
+    }
+    for (const code of ['package_required', 'package_not_found', 'deadline_before_package'])
+      expect(described('/contracts', 'post', '422')).toContain(code);
+    expect(described('/contracts', 'post', '409')).toContain('package_changed');
+  });
+});
+
+describe('documento OpenAPI: travas da 1.52 (RF-006 e RF-062)', () => {
+  const desc = (path: string, method: (typeof METHODS)[number], status: string): string =>
+    (operation(path, method).responses as Record<string, { description: string }>)[status]
+      ?.description ?? '';
+
+  it('toda ação crítica documenta o 403 email_not_verified, com a mesma frase', () => {
+    const critical: [string, (typeof METHODS)[number]][] = [
+      ['/contracts', 'post'],
+      ['/services', 'post'],
+      ['/services/{id}', 'patch'],
+      ['/wallet/deposits', 'post'],
+      ['/wallet/deposits/{id}/simulate', 'post'],
+      ['/barters', 'post'],
+      ['/barters/{id}/accept', 'post'],
+      ['/boosts', 'post'],
+      ['/withdrawals', 'post'],
+    ];
+    for (const [path, method] of critical) {
+      expect(desc(path, method, '403'), `${method} ${path}`).toContain('email_not_verified');
+    }
+    expect(desc('/withdrawals', 'post', '403')).toContain(
+      'Confirme seu e-mail para continuar: abra o link que enviamos ou peça um novo.',
+    );
+  });
+
+  it('o que continua livre não ganha a recusa: recusar troca, cancelar saque, responder proposta', () => {
+    for (const [path, method] of [
+      ['/barters/{id}/reject', 'post'],
+      ['/contracts/{id}/accept', 'post'],
+    ] as const) {
+      expect(desc(path, method, '403'), `${method} ${path}`).not.toContain('email_not_verified');
+    }
+  });
+
+  it('enviar no chat documenta o 409 conversation_closed; o histórico, o campo closed', () => {
+    expect(desc('/messaging/contracts/{id}', 'post', '409')).toMatch(/^conversation_closed: /);
+    expect(desc('/messaging/contracts/{id}/attachments', 'post', '409')).toMatch(
+      /^conversation_closed: /,
+    );
+    expect(operation('/messaging/contracts/{id}', 'get').summary).toContain('closed: true');
   });
 });
