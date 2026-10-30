@@ -193,8 +193,11 @@ jobs:
               printf '\nIMAGE_TAG=%s\n' "$1" >> .env
             fi
           }
+          # No primeiro deploy a pasta ainda não existe (é este deploy que a traz): sem ela, o `find`
+          # falharia e, com `set -euo pipefail`, derrubaria o script antes de qualquer troca.
           monitoring_hash() {
-            find deploy/monitoring -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | cut -d' ' -f1
+            [ -d deploy/monitoring ] || { echo nenhuma; return 0; }
+            find deploy/monitoring -type f -exec sha256sum {} + | sort | sha256sum | cut -d' ' -f1
           }
           # Volta para a versão anterior (tag, compose e configuração) e sai com erro.
           fail() {

@@ -258,12 +258,20 @@ describe('CPF do freelancer (RF-020, RN-009, RN-075)', () => {
     expect(String(row.cpf_index)).toMatch(/^[0-9a-f]{64}$/);
     expect(row.birth_date).toBe('1990-05-17');
     expect(row.cpf_verified_at).not.toBeNull();
-    // A auditoria registra o fato, nunca o CPF.
-    const [audits] = await pool.query<RowDataPacket[]>(
-      `SELECT action, new_value FROM audit_logs WHERE user_id = :userId AND action = 'cpf_verified'`,
-      { userId: freelancer.id },
-    );
-    expect(audits).toHaveLength(1);
+    // A auditoria registra o fato, nunca o CPF. Ela é gravada depois da resposta (best-effort,
+    // sem await no serviço): espera a linha aparecer em vez de ler uma vez só.
+    await expect
+      .poll(
+        async () => {
+          const [audits] = await pool.query<RowDataPacket[]>(
+            `SELECT action FROM audit_logs WHERE user_id = :userId AND action = 'cpf_verified'`,
+            { userId: freelancer.id },
+          );
+          return audits.length;
+        },
+        { timeout: 5000 },
+      )
+      .toBe(1);
     const [anyCpf] = await pool.query<RowDataPacket[]>(
       `SELECT COUNT(*) AS n FROM audit_logs WHERE user_id = :userId
           AND (COALESCE(new_value, '') LIKE :cpf OR COALESCE(old_value, '') LIKE :cpf)`,

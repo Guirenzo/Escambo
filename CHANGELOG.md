@@ -5,6 +5,23 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.54.2] — 2026-10-29
+
+Produção no ar, com deploy pelo GitHub Actions: https://escambo.68-183-49-126.sslip.io
+
+### Corrigido
+
+- **Primeiro deploy de uma VPS nova:** o workflow **Deploy** parava sem mensagem logo depois de puxar as imagens. A conferência da configuração do monitoramento lia `deploy/monitoring`, pasta que é o próprio deploy que traz; sem ela, o `find` falhava e, com `set -euo pipefail`, o script saía antes de qualquer troca (o servidor ficava na versão anterior, intacto). Agora a pasta ausente conta como "nenhuma configuração".
+- **Teste de integração do CPF instável:** ele lia a auditoria `cpf_verified` logo depois da resposta, mas o serviço a grava sem esperar (best-effort, como toda auditoria). Com a máquina do CI carregada, a linha ainda não estava lá. O teste agora espera a linha aparecer, até 5 s.
+
+### Alterado
+
+- O README aponta para a aplicação em produção.
+
+### Para atualizar
+
+Nada a fazer: sem migration nova e sem variável nova.
+
 ## [1.54.1] — 2026-10-29
 
 Correções de engenharia e de documentação, sem mudança para quem usa o app.
