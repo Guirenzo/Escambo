@@ -23,7 +23,7 @@
   "dependencies": {
     "@escambo/types": "*",
     "@prometheus-io/client": "^0.16.1",
-    "@sentry/node": "^11.9.0",
+    "@sentry/node": "^11.10.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.2",
     "cors": "^2.8.5",
