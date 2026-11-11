@@ -48,6 +48,7 @@ const notify = vi.mocked(notificationsService.notify);
 const onBarterCompleted = vi.mocked(gamificationService.onBarterCompleted);
 
 type FakeBarterFields = Partial<{
+  id: number;
   receiver_id: number;
   proposer_id: number;
   status: string;

@@ -16,6 +16,7 @@ import {
   uploadImage,
   type TestUser,
 } from './helpers';
+import { resetLinkForTest } from './reset-link.helpers';
 
 /**
  * Acessibilidade automatizada (axe-core, regras WCAG 2.0/2.1 A e AA) em todas as telas do app,
@@ -53,7 +54,7 @@ async function tokenFrom(
   request: APIRequestContext,
   admin: TestUser,
   user: TestUser,
-  template: 'verify_email' | 'password_reset' | 'email_change',
+  template: 'verify_email' | 'email_change',
 ): Promise<string> {
   const mail = await latestEmail(request, admin, user.id, template);
   const link = new URL(linkIn(mail.text));
@@ -133,7 +134,7 @@ test('links que chegam por e-mail: confirmar e-mail, redefinir senha e confirmar
 
   const forgot = await request.post('/api/auth/forgot-password', { data: { email: user.email } });
   expect(forgot.ok(), await forgot.text()).toBeTruthy();
-  await page.goto(await tokenFrom(request, admin, user, 'password_reset'));
+  await page.goto((await resetLinkForTest(user)).url);
   await expect(page.getByLabel('Nova senha', { exact: true })).toBeVisible();
   await check(page, 'redefinir senha com link válido');
   // Senhas diferentes: o erro aparece ligado ao formulário.
