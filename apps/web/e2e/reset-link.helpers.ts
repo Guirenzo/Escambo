@@ -1,5 +1,5 @@
+import { createHash, randomBytes } from 'node:crypto';
 import type { ResultSetHeader } from 'mysql2/promise';
-import { generateRefreshToken, hashToken } from '../../api/src/utils/tokens';
 import { assertE2eUser, connectE2eDb } from './db.helpers';
 import type { TestUser } from './helpers';
 
@@ -9,7 +9,8 @@ import type { TestUser } from './helpers';
  */
 export async function resetLinkForTest(user: TestUser): Promise<{ url: string; token: string }> {
   assertE2eUser(user);
-  const token = generateRefreshToken();
+  const token = randomBytes(48).toString('base64url');
+  const hash = createHash('sha256').update(token).digest('hex');
   const db = await connectE2eDb();
   try {
     const [updated] = await db.execute<ResultSetHeader>(
@@ -18,7 +19,7 @@ export async function resetLinkForTest(user: TestUser): Promise<{ url: string; t
          SET r.token = ?
        WHERE u.id = ? AND u.email = ? AND u.deleted_at IS NULL
          AND r.used_at IS NULL AND r.expires_at > NOW()`,
-      [hashToken(token), user.id, user.email],
+      [hash, user.id, user.email],
     );
     if (updated.affectedRows !== 1) {
       throw new Error('Esperava um pedido ativo de redefinição para a conta descartável.');
