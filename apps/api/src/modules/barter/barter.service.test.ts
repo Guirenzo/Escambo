@@ -829,7 +829,7 @@ describe('onLinkedContractCompleted: quando não conclui e o que avisa', () => {
   });
 
   it('proponente pagou a torna: o receptor é avisado do crédito líquido e da taxa, o proponente do pagamento', async () => {
-    repo.findById.mockResolvedValue(active({ cash_payer_id: 1 }));
+    repo.findById.mockResolvedValue(active({ id: 7, cash_payer_id: 1 }));
     contracts.findById.mockResolvedValue(contractStatus('completed'));
     repo.completeAndRelease.mockResolvedValue(true);
 
@@ -902,7 +902,7 @@ describe('onLinkedContractCancelled: quando não disputa e o que avisa', () => {
   });
 
   it('com torna reservada, os dois lados são avisados de que o valor voltou a quem pagou', async () => {
-    repo.findById.mockResolvedValue(fakeBarter({ status: 'active', torna_status: 'held' }));
+    repo.findById.mockResolvedValue(fakeBarter({ id: 7, status: 'active', torna_status: 'held' }));
     repo.disputeAndRefund.mockResolvedValue(true);
 
     await barterService.onLinkedContractCancelled(7);

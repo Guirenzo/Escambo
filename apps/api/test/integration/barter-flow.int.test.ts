@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { setClockForTests } from '../../src/utils/clock';
 import { waitForNotification } from './notifications.helpers';
 import { fundWallet } from './wallet.helpers';
 import { confirmEmail } from './mail.helpers';
@@ -64,6 +65,24 @@ async function completeLinked(contractId: number, freelancer: Actor, client: Act
   expect(ok.status, JSON.stringify(ok.body)).toBe(200);
 }
 
+async function openLinkedDispute(contractId: number, client: Actor): Promise<number> {
+  setClockForTests(new Date(Date.now() + 49 * 3_600_000), { frozen: true });
+  try {
+    const opened = await request(app)
+      .post('/api/disputes')
+      .set(auth(client.token))
+      .send({
+        contractId,
+        reason: 'quality',
+        description: 'O serviço não foi entregue como combinado.',
+      })
+      .expect(201);
+    return opened.body.id as number;
+  } finally {
+    setClockForTests(null);
+  }
+}
+
 beforeAll(async () => {
   const res = await request(app).get('/api/health');
   expect(res.status).toBe(200);
@@ -71,6 +90,76 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await pool.end();
+});
+
+describe('Mediação de contratos vinculados à troca', () => {
+  it.each(['release_freelancer', 'partial_split', 'refund_client'] as const)(
+    '%s sincroniza a troca e a torna com o resultado do contrato',
+    async (resolution) => {
+      const a = await registerAndLogin('freelancer');
+      const b = await registerAndLogin('freelancer');
+      const admin = await registerAndLogin('client', 'admin.escambo.test');
+      await fundWallet(app, a.token, 150);
+      const proposal = await propose(a, b, 300, 400);
+      expect(proposal.status, JSON.stringify(proposal.body)).toBe(201);
+      const barterId = proposal.body.id as number;
+      const accepted = await request(app)
+        .post(`/api/barters/${barterId}/accept`)
+        .set(auth(b.token))
+        .expect(200);
+      const { contractOfferedId, contractRequestedId } = accepted.body as {
+        contractOfferedId: number;
+        contractRequestedId: number;
+      };
+      const refunded = resolution === 'refund_client';
+      if (!refunded) await completeLinked(contractOfferedId, a, b);
+      const disputeId = await openLinkedDispute(contractRequestedId, a);
+      const decision = () =>
+        request(app)
+          .post(`/api/admin/disputes/${disputeId}/resolve`)
+          .set(auth(admin.token))
+          .send({
+            resolution,
+            ...(resolution === 'partial_split' ? { refundPercentage: 40 } : {}),
+          });
+
+      if (refunded) {
+        // Simula um retido inconsistente no banco de teste. A disputa continua disponível
+        // para nova tentativa depois que o saldo é restaurado.
+        await pool.query('UPDATE wallets SET balance_pending = 0 WHERE user_id = ?', [a.id]);
+        await decision().expect(500);
+        const [rows] = await pool.query<RowDataPacket[]>(
+          'SELECT status FROM disputes WHERE id = ?',
+          [disputeId],
+        );
+        expect(rows[0]?.status).toBe('open');
+        const contract = await request(app)
+          .get(`/api/contracts/${contractRequestedId}`)
+          .set(auth(a.token));
+        expect(contract.body.status).toBe('disputed');
+        const held = await request(app).get(`/api/barters/${barterId}`).set(auth(a.token));
+        expect(held.body).toMatchObject({ status: 'active', tornaStatus: 'held' });
+        await pool.query('UPDATE wallets SET balance_pending = 100 WHERE user_id = ?', [a.id]);
+      }
+
+      const resolved = await decision().expect(200);
+      expect(resolved.body.status).toBe('resolved');
+      const agreement = await request(app).get(`/api/barters/${barterId}`).set(auth(a.token));
+      expect(agreement.body).toMatchObject({
+        status: refunded ? 'disputed' : 'completed',
+        tornaStatus: refunded ? 'refunded' : 'paid',
+      });
+      expect(await wallet(a.token)).toMatchObject({
+        balance: refunded ? 150 : 50,
+        balancePending: 0,
+      });
+      expect(await wallet(b.token)).toMatchObject({
+        balance: refunded ? 0 : 85,
+        balancePending: 0,
+      });
+      await decision().expect(409);
+    },
+  );
 });
 
 describe('Troca de serviços com torna de verdade (RN-066/RN-067)', () => {

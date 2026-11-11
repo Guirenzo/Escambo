@@ -64,8 +64,8 @@ export const REPOSITORY_EXCEPTIONS = [
   },
   {
     file: 'modules/disputes/disputes.repository.ts',
-    allow: ['contracts/contracts.repository'],
-    why: 'ADR 2: abrir e resolver a disputa lê a contratação com a conexão da transação que congela ou divide o escrow.',
+    allow: ['contracts/contracts.repository', 'barter/barter.repository'],
+    why: 'ADRs 2 e 16: a disputa, a contratação e a torna do acordo são encerradas na mesma transação.',
   },
   {
     file: 'modules/dropouts/dropouts.repository.ts',
