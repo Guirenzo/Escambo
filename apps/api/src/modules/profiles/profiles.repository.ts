@@ -166,7 +166,7 @@ export const profilesRepository = {
     return Number(rows[0]?.n ?? 0);
   },
 
-  /** Insere pelo perfil do usuário (INSERT … SELECT); null se ele não tem perfil de freelancer. */
+  /** Insere pelo perfil do usuário; null sem perfil ou após a anonimização da conta. */
   async createPortfolioItem(
     userId: number,
     d: {
@@ -180,7 +180,9 @@ export const profilesRepository = {
       `INSERT INTO freelancer_portfolio_items (freelancer_id, title, description, image_url, external_url, sort_order)
        SELECT pf.id, :title, :description, :imageUrl, :externalUrl,
               (SELECT COALESCE(MAX(x.sort_order), 0) + 1 FROM freelancer_portfolio_items x WHERE x.freelancer_id = pf.id)
-         FROM profiles_freelancer pf WHERE pf.user_id = :userId`,
+         FROM profiles_freelancer pf
+         JOIN users u ON u.id = pf.user_id
+        WHERE pf.user_id = :userId AND u.deleted_at IS NULL`,
       { userId, ...d },
     );
     return res.affectedRows > 0 ? res.insertId : null;

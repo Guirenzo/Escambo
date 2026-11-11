@@ -578,7 +578,7 @@ describe('LGPD', () => {
     const who = person('lgpd');
     const { id, token } = await signupViaGoogle(who, 'freelancer');
     const copy = await buildExport(id);
-    expect(copy.formato).toBe('escambo-export/1.15');
+    expect(copy.formato).toBe('escambo-export/1.16');
     expect(copy.contaGoogle).toEqual({ vinculada: true, sub: who.sub });
     expect(copy.titular).not.toHaveProperty('google_sub');
 

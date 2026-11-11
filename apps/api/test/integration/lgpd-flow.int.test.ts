@@ -55,6 +55,16 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       .set(auth(user.token))
       .send({ fullName: 'Titular Exportável', city: 'Joinville' })
       .expect((r) => expect(r.status).toBeLessThan(300));
+    const portfolio = await request(app)
+      .post('/api/profiles/portfolio')
+      .set(auth(user.token))
+      .send({
+        title: 'Projeto de portfólio',
+        description: 'Detalhes do trabalho',
+        imageUrl: 'https://midia.escambo.test/portfolio.png',
+        externalUrl: 'https://portfolio.escambo.test/projeto',
+      })
+      .expect(201);
     await fundWallet(app, user.token, 40);
     await request(app)
       .post('/api/saved-searches')
@@ -97,7 +107,7 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       sessoes: unknown[];
       registrosDeSeguranca: unknown[];
     };
-    expect(data.formato).toBe('escambo-export/1.15');
+    expect(data.formato).toBe('escambo-export/1.16');
     expect(data).toHaveProperty('ofertas', []);
     expect(data).toHaveProperty('desistencias', []);
     // Formato 1.7 (ADR 56): o que a pessoa deixa sair no silêncio; nunca escolheu = null.
@@ -124,6 +134,16 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       timezone: null,
     });
     expect(data.perfis.freelancer?.full_name).toBe('Titular Exportável');
+    expect(data).toHaveProperty('portfolio', [
+      expect.objectContaining({
+        id: portfolio.body[0].id,
+        title: 'Projeto de portfólio',
+        description: 'Detalhes do trabalho',
+        image_url: 'https://midia.escambo.test/portfolio.png',
+        external_url: 'https://portfolio.escambo.test/projeto',
+        sort_order: 1,
+      }),
+    ]);
     expect(data.carteira.extratoReais.map((t) => t.reason)).toEqual(['deposit']);
     expect(data.carteira.depositos).toHaveLength(1);
     // Buscas salvas também são dados do titular (formato 1.1).
@@ -170,6 +190,12 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       .expect((r) => expect(r.status).toBeLessThan(300));
     const me = await request(app).get('/api/auth/me').set(auth(freelancer.token));
     const freelancerUlid = me.body.ulid as string;
+    const portfolio = await request(app)
+      .post('/api/profiles/portfolio')
+      .set(auth(freelancer.token))
+      .send({ title: 'Trabalho publicado', externalUrl: 'https://portfolio.escambo.test/antigo' })
+      .expect(201);
+    const portfolioItemId = portfolio.body[0].id as number;
 
     // Cliente com contratação aberta não consegue pedir exclusão (nem com saldo parado).
     await fundWallet(app, client.token, 100);
@@ -240,6 +266,11 @@ describe('LGPD: direitos do titular processados de verdade', () => {
       .set(auth(admin.token));
     expect(done.status, JSON.stringify(done.body)).toBe(200);
     expect(done.body.status).toBe('completed');
+    const [portfolioRows] = await pool.query<RowDataPacket[]>(
+      'SELECT id FROM freelancer_portfolio_items WHERE id = :id',
+      { id: portfolioItemId },
+    );
+    expect(portfolioRows).toHaveLength(0);
     await request(app).get('/api/auth/me').set(auth(freelancer.token)).expect(403);
     const login = await request(app)
       .post('/api/auth/login')

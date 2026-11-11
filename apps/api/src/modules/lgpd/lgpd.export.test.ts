@@ -59,8 +59,8 @@ describe('cópia de dados 1.15: a conta Google (RF-002)', () => {
 describe('cópia de dados 1.12 (ADR 54, 56, 61, 66, RF-059 e RF-017)', () => {
   it('declara o formato novo e as seções novas, mesmo vazias', async () => {
     const out = await buildExport(7);
-    expect(EXPORT_FORMAT_VERSION).toBe('1.15');
-    expect(out.formato).toBe('escambo-export/1.15');
+    expect(EXPORT_FORMAT_VERSION).toBe('1.16');
+    expect(out.formato).toBe('escambo-export/1.16');
     // 1.15: a conta Google vinculada (RF-002); sem vínculo, false e sem sub.
     expect(out).toHaveProperty('contaGoogle', { vinculada: false, sub: null });
     // 1.12: a verificação em duas etapas; sem a linha, desligada e sem códigos.
@@ -277,6 +277,9 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
     ]) {
       expect(sentQuery(`FROM ${table} WHERE`)).toContain(`FROM ${table} WHERE user_id = :userId`);
     }
+    expect(sentQuery('FROM freelancer_portfolio_items')).toContain(
+      'JOIN profiles_freelancer pf ON pf.id = i.freelancer_id WHERE pf.user_id = :userId ORDER BY i.sort_order, i.id',
+    );
     // As solicitações LGPD do titular: exclusão e exportação, juntas, em ordem de data.
     const requests = sentQuery('FROM data_deletion_requests');
     expect(requests).toContain(
@@ -405,6 +408,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
       ['FROM profiles_company', [{ razao_social: 'Ana Ltda' }]],
       ['FROM lgpd_consents', [{ t: 'consents' }]],
       ['FROM services', [{ t: 'services' }]],
+      ['FROM freelancer_portfolio_items', [{ t: 'portfolio' }]],
       ['FROM contracts WHERE', [{ t: 'contracts' }]],
       ['FROM contract_status_history', [{ t: 'history' }]],
       ['FROM messages m', [{ t: 'messages' }]],
@@ -456,7 +460,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
     }
 
     expect(out).toEqual({
-      formato: 'escambo-export/1.15',
+      formato: 'escambo-export/1.16',
       exportadoEm: '2026-10-01T12:00:00.000Z',
       titular: { id: 7, ulid: '01USER', email: 'ana@escambo.test', push_quiet_pass: null },
       contaGoogle: { vinculada: false, sub: null },
@@ -468,6 +472,7 @@ describe('cópia de dados: de quem é cada coisa (LGPD art. 18, V)', () => {
       },
       consentimentos: [{ t: 'consents' }],
       servicos: [{ t: 'services' }],
+      portfolio: [{ t: 'portfolio' }],
       contratacoes: [{ t: 'contracts' }],
       historicoDeContratacoes: [{ t: 'history' }],
       ofertas: [],

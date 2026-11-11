@@ -181,7 +181,8 @@ describe('profilesRepository', () => {
         expect(sql).toContain(
           '(SELECT COALESCE(MAX(x.sort_order), 0) + 1 FROM freelancer_portfolio_items x WHERE x.freelancer_id = pf.id)',
         );
-        expect(sql).toContain('FROM profiles_freelancer pf WHERE pf.user_id = :userId');
+        expect(sql).toContain('JOIN users u ON u.id = pf.user_id');
+        expect(sql).toContain('WHERE pf.user_id = :userId AND u.deleted_at IS NULL');
         expect(params).toEqual({ userId: 7, ...data });
       });
 
