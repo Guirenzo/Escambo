@@ -17,6 +17,7 @@ vi.setConfig({ testTimeout: 20_000 });
 
 const api = vi.hoisted(() => ({
   service: vi.fn(),
+  categories: vi.fn(),
   favorites: vi.fn(),
   addFavorite: vi.fn(),
   removeFavorite: vi.fn(),
@@ -104,6 +105,11 @@ beforeEach(() => {
     platformFeePercentage: 15,
   });
   api.publicFreelancer.mockResolvedValue(null);
+  // A árvore de categorias: o serviço do teste é da categoria 2 (Design).
+  api.categories.mockResolvedValue([
+    { id: 1, parentId: null, name: 'Tecnologia', slug: 'tecnologia', iconUrl: null, children: [] },
+    { id: 2, parentId: null, name: 'Design', slug: 'design', iconUrl: null, children: [] },
+  ]);
   api.wallet.mockResolvedValue({ balance: 0, pending: 0, credits: 0 });
 });
 
@@ -127,6 +133,43 @@ describe('ServicoView', () => {
     expect(screen.getByText(/Cobertura completa\.\s+Entrega em galeria online\./)).toBeVisible();
     // O número de visualizações é do dono, em "Meus serviços": nunca no detalhe.
     expect(screen.queryByText(/visualiza/)).toBeNull();
+  });
+
+  it('a figurinha do serviço é enfeite (brilhante no destaque) e o resumo diz tudo em texto', async () => {
+    api.service.mockResolvedValue(service({ ownerCity: 'Joinville', ownerAvailableNow: true }));
+    renderAt();
+    await screen.findByRole('heading', { level: 1, name: 'Fotografia de eventos' });
+
+    const sticker = (): Element => document.querySelector('.svc-sticker')!;
+    expect(sticker()).toHaveAttribute('aria-hidden', 'true');
+    // Em destaque: a brilhante. Sem imagem do portfólio, a foto é a da categoria, e a faixa diz.
+    expect(sticker()).toHaveClass('al-foil');
+    await waitFor(() => expect(sticker()).toHaveTextContent('Design'));
+    expect(sticker()).toHaveTextContent('foto ilustrativa');
+    expect(sticker()).toHaveAttribute('data-cover', 'category');
+    // A cor é a da categoria na ordem do catálogo (a segunda).
+    expect(sticker()).toHaveClass('al-g-lilac');
+
+    const facts = screen.getByRole('list', { name: 'Resumo' });
+    expect(
+      within(facts)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['Design', 'Joinville', 'entrega em 1 dia', 'atende agora']);
+  });
+
+  it('sem destaque a figurinha não é brilhante; com imagem do portfólio, a faixa diz de onde veio', async () => {
+    api.service.mockResolvedValue(
+      service({ boosted: false, ownerCoverUrl: 'https://cdn.exemplo.test/capa.jpg' }),
+    );
+    renderAt();
+    await screen.findByRole('heading', { level: 1, name: 'Fotografia de eventos' });
+
+    const sticker = document.querySelector('.svc-sticker')!;
+    expect(sticker).not.toHaveClass('al-foil');
+    expect(sticker).toHaveAttribute('data-cover', 'portfolio');
+    expect(sticker).toHaveTextContent('do portfólio');
+    expect(sticker.querySelector('img')).toHaveAttribute('alt', '');
   });
 
   it('as tags levam à busca por elas', async () => {

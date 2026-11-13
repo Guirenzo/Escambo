@@ -142,6 +142,8 @@ const contractOf = (o: Partial<Contract> & { id: number }): Contract => ({
 const page = (items: Contract[], total = items.length) => ({ items, page: 1, limit: 20, total });
 
 beforeEach(() => {
+  // A escolha de esconder os valores fica no aparelho: cada teste começa com eles à mostra.
+  localStorage.clear();
   auth.user = { id: 1, email: 'bruno@escambo.test', role: 'freelancer' };
   wallet.mockReset();
   wallet.mockResolvedValue(walletOf());
@@ -232,10 +234,11 @@ describe('InicioView', () => {
       'href',
       '/ranking',
     );
-    expect(screen.getByRole('progressbar', { name: 'Progresso de nível' })).toHaveAttribute(
-      'aria-valuenow',
-      '62',
-    );
+    const slots = screen.getByRole('progressbar', { name: 'Progresso de nível' });
+    expect(slots).toHaveAttribute('aria-valuenow', '62');
+    // A página do nível tem dez quadros: 62% cola seis.
+    expect(slots.querySelectorAll('.lv-slot')).toHaveLength(10);
+    expect(slots.querySelectorAll('.lv-slot.on')).toHaveLength(6);
     expect(document.title).toBe('Início · Escambo');
   });
 
@@ -268,6 +271,7 @@ describe('InicioView', () => {
     expect(card).toHaveTextContent('nível máximo');
     expect(card).not.toHaveTextContent('para o nível');
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+    expect(screen.getByRole('progressbar').querySelectorAll('.lv-slot.on')).toHaveLength(10);
   });
 
   it('quem ainda não tem posição vê que está fora do ranking, com o link para ele', async () => {
@@ -491,12 +495,59 @@ describe('InicioView', () => {
     ]);
   });
 
-  it('a faixa de boas-vindas traz a ilustração decorativa e o selo do pagamento protegido', () => {
+  it('a faixa de boas-vindas traz a figurinha de quem está logado, só como enfeite', () => {
     renderView();
     const art = document.querySelector('.welcome-art')!;
+    // Decorativa: o nome já está no título da faixa e o nível, no cartão de progresso.
     expect(art).toHaveAttribute('aria-hidden', 'true');
-    expect(art.querySelector('img')).toHaveAttribute('alt', '');
-    expect(art).toHaveTextContent('Pagamento protegido');
+    const sticker = art.querySelector('.me-sticker')!;
+    expect(sticker.querySelector('.al-sticker-title')?.textContent).toBeTruthy();
+    expect(sticker.querySelector('.al-sticker-who')?.textContent).toMatch(/^Freelancer/);
+  });
+
+  it('"Ocultar valores" esconde a carteira e o saldo do atalho, e a escolha fica no aparelho', async () => {
+    const user = userEvent.setup();
+    const first = renderView();
+    expect(await screen.findByText('R$ 1.234,56')).toBeInTheDocument();
+    const eye = screen.getByRole('button', { name: 'Ocultar valores' });
+    expect(eye).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(eye);
+    expect(eye).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText('R$ 1.234,56')).not.toBeInTheDocument();
+    expect(kpi('Saldo disponível')).toHaveTextContent('Saldo disponível•••••ocultopara saque');
+    expect(kpi('Em escrow')).toHaveTextContent('oculto');
+    expect(kpi('Créditos Escambo')).toHaveTextContent('oculto');
+    expect(screen.getByRole('link', { name: /^Sacar meus ganhos/ })).toHaveTextContent(
+      'saldo e extrato',
+    );
+    first.unmount();
+
+    // Abrindo de novo no mesmo aparelho continua escondido; clicar outra vez mostra.
+    renderView();
+    const again = screen.getByRole('button', { name: 'Ocultar valores' });
+    expect(again).toHaveAttribute('aria-pressed', 'true');
+    await user.click(again);
+    expect(again).toHaveAttribute('aria-pressed', 'false');
+    expect(await screen.findByText('R$ 1.234,56')).toBeInTheDocument();
+  });
+
+  it('quem presta serviço vê as contratações antes do catálogo; quem contrata começa pelo catálogo', async () => {
+    const sections = (): string[] =>
+      screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent ?? '');
+    const first = renderView();
+    await screen.findByText('0 no total');
+    expect(sections().indexOf('Minhas contratações')).toBeLessThan(
+      sections().indexOf('Explore por categoria'),
+    );
+    first.unmount();
+
+    auth.user = { id: 1, email: 'bruno@escambo.test', role: 'client' };
+    renderView();
+    await screen.findByText('0 no total');
+    expect(sections().indexOf('Explore por categoria')).toBeLessThan(
+      sections().indexOf('Minhas contratações'),
+    );
   });
 
   it('o passo a passo do escrow fala com quem lê: cliente aprova, freelancer entrega', async () => {

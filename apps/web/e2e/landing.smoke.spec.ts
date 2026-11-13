@@ -53,11 +53,11 @@ test('a busca do topo filtra a vitrine sem login, e o cartão leva ao serviço d
   await expect(page.getByRole('heading', { level: 1, name: title })).toBeVisible();
 });
 
-test('atalho de categoria filtra a vitrine, a busca sem resultado tem saída e tudo volta ao limpar', async ({
+test('a categoria filtra a vitrine, a busca sem resultado tem saída e tudo volta ao limpar', async ({
   page,
 }) => {
   await openLanding(page);
-  const shortcuts = page.getByRole('group', { name: 'Atalhos' });
+  const shortcuts = page.getByRole('group', { name: 'Categorias' });
   const first = shortcuts.getByRole('button').first();
   const name = (await first.textContent())!.trim();
   await first.click();

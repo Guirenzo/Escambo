@@ -5,6 +5,39 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [1.55.0] — 2026-11-13
+
+Identidade visual nova ("Álbum de troca") e as correções dos três defeitos achados na revisão por pares da N2.
+
+### Adicionado
+
+- **Identidade "Álbum de troca":** cada serviço é uma figurinha. Fonte Anybody nos títulos e números, mesa verde e âmbar para a ação e a torna. A direção e o porquê de cada escolha estão em `docs/design/album-de-troca.md`.
+  - **Página inicial:** topo com a parede de figurinhas e a busca, pacotinho que abre com serviços reais, categorias como filtro da vitrine, cartões que viram nos três jeitos de fechar negócio e a calculadora da torna com balança.
+  - **Login e cadastro:** a parede ao fundo e a figurinha de quem chega, que se imprime enquanto o e-mail é digitado.
+  - **Início:** a figurinha de quem está logado, a carteira com botão para esconder os valores, a página do nível em dez quadros e as missões em fileira, cada uma com ícone. Quem presta serviço vê as contratações antes do catálogo.
+  - **Serviços, Trocas, Carteira e Ranking:** figurinhas de ofício no lugar das fotos repetidas; nas trocas, os quadros mostram se a proposta espera resposta, se foi fechada ou se não foi adiante; no ranking, os três primeiros são figurinhas laminadas.
+  - **Página de um serviço:** a figurinha grande do serviço (a brilhante, quando ele está em destaque), o resumo com ícones e a faixa do preço com as ações.
+- **SonarCloud:** a análise roda no CI a cada push e pull request, com o quality gate no PR.
+
+### Corrigido
+
+- **Mediação de disputa ligada a uma troca** (#57): a decisão do admin agora atualiza também a troca vinculada ao contrato.
+- **Link de redefinição de senha na caixa de saída** (#58): o link de uso único não fica mais gravado nem aparece na listagem do admin; a caixa de saída guarda só os dados da entrega. A migration 0054 limpa os registros antigos.
+- **Portfólio na exclusão e na exportação de dados (LGPD)** (#59): a exportação inclui o portfólio do freelancer, e a exclusão da conta o apaga. A migration 0055 remove os itens que ficaram de contas já excluídas.
+- **Acessibilidade das telas novas:** texto a 200%, espaçamento de texto, foco visível pelo teclado e telas de 320 px conferidos pelos testes de ponta a ponta.
+- **Texto a 200% no app:** os seletores "Status", "Ordenar" e a categoria do ranking, as abas pequenas da Carteira e a linha dos saques passavam da largura da tela no celular. Agora quebram a linha e encolhem até caber.
+
+### Alterado
+
+- Dependências de produção atualizadas pelo dependabot: @sentry/node 11.10.0, nodemailer 10.3.1, swagger-ui-dist 5.34.1, @tanstack/react-query 5.106.0, lucide-react 1.68.0 e react-router-dom 7.18.5.
+- Dependências de desenvolvimento atualizadas pelo dependabot: vitest e @vitest/coverage-v8 5.1.0, vite 6.4.5 e typescript-eslint 8.72.1. O lock passa a deixar o vitest na raiz do monorepo: aninhado em cada app, os tipos dos matchers do jest-dom não se aplicavam.
+- Dependência nova no front: `@fontsource-variable/anybody` (fonte, licença OFL-1.1).
+
+### Para atualizar
+
+- **Migrations novas:** 0054 e 0055. O `deploy.sh` aplica as pendentes.
+- **Redefinição de senha precisa de e-mail de verdade:** com `MAIL_PROVIDER=simulated`, o pedido é aceito, mas o link não chega a lugar nenhum (antes ele ficava legível na caixa de saída do admin). Para a redefinição funcionar, configure o SMTP (`MAIL_PROVIDER=smtp` e as variáveis `SMTP_*`).
+
 ## [1.54.2] — 2026-10-29
 
 Produção no ar, com deploy pelo GitHub Actions: https://escambo.68-183-49-126.sslip.io

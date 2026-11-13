@@ -1,0 +1,286 @@
+/* =====================================================================
+   Entrar e criar conta no álbum: atrás, a parede do álbum (quadros numerados e figurinhas de
+   serviço sendo coladas); no centro, o formulário numa página de papel, com o quadro da figurinha
+   de quem chega no alto (impressa enquanto a pessoa digita o e-mail). Vem depois de auth.css.
+   Tokens em album-app.css.
+   ===================================================================== */
+
+.au {
+  container: au / inline-size;
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+  background: var(--al-cover);
+  isolation: isolate;
+}
+.au-side {
+  position: relative;
+  z-index: 1;
+}
+
+/* A marca sobre o escuro, em qualquer largura. */
+.au-top {
+  padding: 18px clamp(16px, 4vw, 40px);
+  background: transparent;
+}
+.au .au-brand,
+.au .au-brand:hover {
+  color: #fff;
+}
+.au .au-brand .brand-mark-a {
+  fill: #fff;
+}
+.au .au-brand .brand-mark-b {
+  fill: var(--al-amber);
+}
+.au .au-brand .brand-name {
+  font-size: 1.5rem;
+  font-stretch: 75%;
+  font-weight: 850;
+}
+.au .au-brand:focus-visible {
+  outline: 3px solid var(--al-amber);
+}
+
+/* ---------- A página de papel ---------- */
+.au-body {
+  align-items: center;
+  padding: 8px 16px 56px;
+}
+.au .au-card {
+  max-width: 27rem;
+  margin-top: 4.25rem;
+  padding: clamp(20px, 3.4vw, 32px);
+  border-radius: 18px;
+  background: var(--al-paper);
+  box-shadow:
+    0 2px 2px rgba(0, 0, 0, 0.25),
+    0 40px 70px -24px rgba(0, 0, 0, 0.85);
+}
+.au-head h1,
+.au .au-title {
+  font-size: clamp(2rem, 1.6rem + 1.4vw, 2.625rem);
+  font-stretch: 72%;
+  font-weight: 850;
+  line-height: 0.98;
+  letter-spacing: 0;
+}
+
+/* ---------- A figurinha de quem chega ---------- */
+.au-mint {
+  display: grid;
+  place-items: center;
+  height: 5.25rem;
+  margin-top: calc(-4.25rem - clamp(20px, 3.4vw, 32px) + 0.5rem);
+  margin-bottom: 0.25rem;
+}
+.au-mint > * {
+  transform-origin: 50% 100%;
+}
+/* Dois níveis de classe: a regra base da figurinha (album-app.css) vem depois na cascata. */
+.au-mint .au-mint-sticker {
+  --st-w: 6.5rem;
+  --tilt: 5deg;
+  width: 6.5rem;
+  translate: 0 -1.9rem;
+}
+.au-mint .au-slot {
+  gap: 4px;
+  width: 6.5rem;
+  border-color: var(--al-dot);
+  background: var(--al-print);
+  color: var(--al-green);
+  font-size: 0.75rem;
+  box-shadow: var(--al-shadow);
+  transform: translateY(-1.9rem) rotate(-4deg);
+}
+.au-mint-sticker .al-sticker-title {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.au-mint-sticker .al-sticker-who {
+  overflow: hidden;
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.au-mint-sticker .al-sticker-band {
+  padding: 4px 6px 5px;
+}
+.au-mint-sticker .me-sticker-initial {
+  font-size: 3.5rem;
+}
+.au-slot {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  aspect-ratio: 5 / 7;
+  border: 2px dashed #9fd0b4;
+  border-radius: 9px;
+  font-family: var(--al-display);
+  font-stretch: 78%;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* ---------- A cena: a parede do álbum ---------- */
+.au-panel-glow {
+  display: none;
+}
+.au .au-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: var(--al-cover);
+  overflow: hidden;
+  pointer-events: none;
+}
+/* A luz: escurece o centro (onde fica a página), o topo (a marca) e o pé (a frase). */
+.au-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 46% 62% at 50% 50%,
+      rgba(6, 42, 27, 0.9) 0%,
+      rgba(6, 42, 27, 0.6) 55%,
+      rgba(6, 42, 27, 0) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(6, 42, 27, 0.92) 0%,
+      rgba(6, 42, 27, 0.25) 16%,
+      rgba(6, 42, 27, 0.25) 50%,
+      rgba(6, 42, 27, 0.98) 80%
+    );
+}
+
+/* ---------- A frase e as garantias, no pé (só em tela larga) ---------- */
+.au-pitch {
+  display: none;
+}
+/* Só com espaço dos dois lados do cartão. A medida é a largura da tela de entrada em rem (consulta
+   de contêiner): com o texto maior, a frase some antes de encostar no cartão ou passar da borda. */
+@container au (min-width: 72rem) {
+  .au-pitch {
+    position: absolute;
+    right: clamp(20px, 4vw, 56px);
+    bottom: clamp(18px, 4vh, 40px);
+    left: clamp(20px, 4vw, 56px);
+    z-index: 2;
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  /* Cada lado ocupa só o que sobra ao lado do cartão (27rem, mais a folga). */
+  .au-quote,
+  .au-assure {
+    max-width: calc((100% - 30rem) / 2);
+  }
+}
+.au-quote {
+  max-width: 17ch;
+  color: #fff;
+  font-family: var(--al-display);
+  font-size: clamp(1.625rem, 0.7rem + 1.7vw, 2.5rem);
+  font-stretch: 74%;
+  font-weight: 900;
+  line-height: 0.96;
+  text-wrap: balance;
+}
+.au-quote span {
+  color: var(--al-amber);
+}
+.au-assure {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: #fff;
+  list-style: none;
+}
+.au-assure li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--al-display);
+  font-stretch: 90%;
+  font-weight: 650;
+}
+.au-assure svg {
+  flex: none;
+  color: var(--al-amber);
+}
+
+/* ---------- Movimento: as figurinhas vão sendo coladas; a de quem chega é carimbada ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .au-mint-sticker {
+    animation: au-stamp 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .au-mint-sticker .me-sticker-initial {
+    animation: au-letter 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes au-stamp {
+    from {
+      transform: rotate(-14deg) scale(1.5);
+    }
+  }
+  @keyframes au-letter {
+    from {
+      transform: scale(1.35);
+    }
+  }
+}
+
+/* ---------- Celular e tablet: a página sobre a parede ---------- */
+@media (max-width: 59.99rem) {
+  .au-top {
+    background: transparent;
+  }
+  .au-body {
+    align-items: start;
+    padding-top: 12px;
+  }
+}
+
+/* O cartão tem a largura da tela, e não a da maior palavra dele: com o texto a 200% no celular,
+   o título quebra em vez de empurrar o cartão para fora. */
+.au-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.au .au-card {
+  min-width: 0;
+}
+.au .au-title {
+  overflow-wrap: anywhere;
+}
+
+/* Em tela estreita o campo não impõe a largura natural dele ao grupo (ela muda de um sistema para
+   outro): a coluna e os campos podem encolher até caber. */
+.au .au-company {
+  grid-template-columns: minmax(0, 1fr);
+}
+.au .au-card label,
+.au .au-card input,
+.au .au-card select {
+  min-width: 0;
+  max-width: 100%;
+}
+@media (max-width: 22.5rem) {
+  .au-body {
+    padding-inline: 10px;
+  }
+  .au .au-card {
+    padding: 16px;
+  }
+}

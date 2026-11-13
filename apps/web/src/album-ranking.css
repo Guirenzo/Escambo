@@ -1,0 +1,163 @@
+/* =====================================================================
+   Álbum de troca: o Ranking. O pódio é a página das brilhantes: os três primeiros são figurinhas
+   laminadas (ouro, prata e bronze na borda), em pé nos degraus. A lista dos demais é uma folha de
+   papel. O movimento só responde ao ponteiro.
+   ===================================================================== */
+:root {
+  --al-foil-silver: linear-gradient(
+    125deg,
+    #f4f7f6,
+    #aebbb5 30%,
+    #ffffff 50%,
+    #93a39c 70%,
+    #dfe7e3
+  );
+  --al-foil-bronze: linear-gradient(
+    125deg,
+    #f6d2b3,
+    #c47f4a 30%,
+    #ffe7d1 50%,
+    #a8622f 70%,
+    #e6b48a
+  );
+}
+
+/* ---------- O palco ---------- */
+.podium-stage {
+  border-radius: 20px;
+  background: var(--al-cover);
+  box-shadow: var(--al-shadow-soft);
+}
+
+/* ---------- As três brilhantes ---------- */
+/* A figurinha: as iniciais sobre a cor chapada, com a borda laminada do lugar no pódio. */
+.podium-stage .podium-avatar {
+  width: 5.5rem;
+  height: auto;
+  aspect-ratio: 5 / 7;
+  border: 5px solid transparent;
+  border-radius: 10px;
+  background:
+    linear-gradient(var(--g), var(--g)) padding-box,
+    var(--foil) border-box;
+  background-color: var(--g);
+  color: var(--al-cover);
+  font-family: var(--al-display);
+  font-size: 2.25rem;
+  font-stretch: 68%;
+  font-weight: 900;
+  box-shadow: var(--al-shadow-lift);
+  rotate: var(--tilt, 0deg);
+  transition:
+    rotate 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    translate 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.podium-stage .p1 .podium-avatar {
+  --g: #f6b73c;
+  --foil: var(--al-foil);
+  width: 7rem;
+  height: auto;
+  font-size: 3rem;
+  box-shadow: var(--al-shadow-lift);
+}
+.podium-stage .p2 .podium-avatar {
+  --g: #8ecff5;
+  --foil: var(--al-foil-silver);
+  --tilt: -4deg;
+}
+.podium-stage .p3 .podium-avatar {
+  --g: #f27b62;
+  --foil: var(--al-foil-bronze);
+  --tilt: 4deg;
+  box-shadow: var(--al-shadow-lift);
+}
+/* Passando o ponteiro, a figurinha endireita e sobe. */
+.podium-col:hover .podium-avatar {
+  rotate: 0deg;
+  translate: 0 -4px;
+}
+/* A posição: a etiqueta de número da figurinha, no pé dela. */
+.podium-stage .medal {
+  position: relative;
+  margin-top: -16px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--al-paper);
+  color: var(--al-cover);
+  font-family: var(--al-display);
+  font-size: 0.9375rem;
+  font-stretch: 66%;
+  font-weight: 900;
+  box-shadow: 0 2px 6px -2px rgba(0, 0, 0, 0.5);
+}
+.podium-stage .p1 .medal,
+.podium-stage .p3 .medal {
+  background: var(--al-paper);
+  color: var(--al-cover);
+}
+.podium .pname,
+.podium .xp {
+  font-family: var(--al-display);
+  font-stretch: 80%;
+}
+.podium-stage .pname {
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+.podium-stage .xp {
+  color: var(--al-amber);
+  font-weight: 850;
+}
+.podium-level {
+  border-radius: 6px;
+}
+.podium-stage .stand {
+  border-radius: 12px;
+  font-stretch: 66%;
+  font-weight: 900;
+}
+.podium-stage .p1 .stand {
+  background: var(--al-amber);
+  color: var(--al-cover);
+}
+
+/* ---------- Os demais: uma folha de papel ---------- */
+.page:has(.podium-stage) .card {
+  border: 0;
+  border-radius: 16px;
+  box-shadow: var(--al-shadow-soft);
+}
+.rank-list .pos {
+  border-radius: 6px;
+  background: var(--al-print);
+  color: var(--al-green);
+  font-family: var(--al-display);
+  font-stretch: 66%;
+  font-weight: 900;
+}
+.rank-list .price {
+  font-stretch: 80%;
+  font-weight: 850;
+}
+
+@media (max-width: 560px) {
+  .podium-stage .podium-avatar,
+  .podium-stage .p1 .podium-avatar {
+    width: 4.25rem;
+    height: auto;
+    border-width: 4px;
+    font-size: 1.625rem;
+  }
+  .podium-stage .pname {
+    font-size: 0.875rem;
+    overflow-wrap: anywhere;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .podium-stage .podium-avatar {
+    transition: none;
+  }
+  .podium-col:hover .podium-avatar {
+    translate: none;
+  }
+}

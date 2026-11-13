@@ -6,13 +6,12 @@ import {
   createService,
   createUser,
   deliveredContract,
-  latestEmail,
-  linkIn,
   openAs,
   openLanding,
   settled,
   type TestUser,
 } from './helpers';
+import { resetLinkForTest } from './reset-link.helpers';
 
 /**
  * O que o axe não decide sozinho e dá para provar no navegador (docs/acessibilidade.md):
@@ -560,11 +559,12 @@ test('página inicial: contraste das chamadas em repouso, hover e foco, no claro
   const targets: [string, Locator][] = [
     ['topo: Entrar', banner.getByRole('link', { name: 'Entrar', exact: true })],
     ['topo: Criar conta', banner.getByRole('link', { name: 'Criar conta', exact: true })],
-    ['hero: Criar conta (âmbar)', hero.getByRole('link', { name: 'Criar conta', exact: true })],
-    ['hero: Ver como funciona (contorno)', hero.getByRole('link', { name: 'Ver como funciona' })],
-    ['hero: Entrar (link no texto)', hero.getByRole('link', { name: 'Entrar', exact: true })],
+    ['topo da página: Ver como funciona', hero.getByRole('link', { name: 'Ver como funciona' })],
     ['caminho: Criar conta de cliente', page.getByRole('link', { name: /Criar conta de cliente/ })],
-    ['categoria (chip)', page.locator('.lp-chip').first()],
+    [
+      'categoria (figurinha)',
+      page.getByRole('group', { name: 'Categorias' }).getByRole('button').first(),
+    ],
     ['final: Criar conta (âmbar)', final.getByRole('link', { name: 'Criar conta', exact: true })],
     ['final: Entrar (contorno)', final.getByRole('link', { name: 'Entrar', exact: true })],
     ['rodapé: Termos de Uso', footer.getByRole('link', { name: 'Termos de Uso' })],
@@ -574,6 +574,9 @@ test('página inicial: contraste das chamadas em repouso, hover e foco, no claro
     name: 'Garantia',
   });
   if (await anchor.isVisible()) targets.push(['topo: âncora', anchor]);
+  // O pacotinho só tem botão quando o catálogo passa da primeira página da vitrine.
+  const pack = page.getByRole('button', { name: 'Abrir pacotinho' });
+  if (await pack.isVisible()) targets.push(['pacotinho: Abrir pacotinho (âmbar)', pack]);
 
   const rows: string[] = [];
   const problems: string[] = [];
@@ -690,11 +693,9 @@ test('erros de campo ficam marcados e ligados ao campo, e os avisos vão para re
   await expect(status).not.toContainText('Serviço de e-mail fora do ar');
 
   // Redefinir senha: senhas diferentes.
-  const admin = await createAdmin(request);
   const forgot = await request.post('/api/auth/forgot-password', { data: { email: user.email } });
   expect(forgot.ok()).toBeTruthy();
-  const link = new URL(linkIn((await latestEmail(request, admin, user.id, 'password_reset')).text));
-  await page.goto(`${link.pathname}${link.search}`);
+  await page.goto((await resetLinkForTest(user)).url);
   await page.getByLabel('Nova senha', { exact: true }).fill('NovaSenha@456');
   await page.getByLabel('Confirmar nova senha').fill('OutraSenha@789');
   await page.getByRole('button', { name: 'Salvar nova senha' }).click();

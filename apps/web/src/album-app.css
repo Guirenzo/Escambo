@@ -1,0 +1,325 @@
+/* =====================================================================
+   Escambo — identidade "Álbum de troca" (proposta; ver docs/design/album-de-troca.md)
+   Global: os tokens do álbum, a figurinha (.al-sticker) e o app vestido com a mesma voz.
+   Vem depois de styles.css. A página pública completa o mundo em features/landing/album*.css.
+   ===================================================================== */
+:root {
+  --al-display: 'Anybody Variable', 'Sora', system-ui, sans-serif;
+  --al-cover: #062a1b; /* capa e mesa: branco 15,5:1, --al-on-cover-2 9:1 */
+  --al-green: #0d5c3a; /* página impressa: branco 7,5:1, --al-on-green-2 5,6:1, âmbar 5:1 */
+  --al-green-2: #0b4f32;
+  --al-print: #e8f3ec; /* página clara impressa: --al-ink 15:1, --al-ink-2 7,9:1 */
+  --al-dot: #6fa486; /* contorno pontilhado dos quadros: decorativo */
+  --al-ink: #0f1a14;
+  --al-ink-2: #3a4d43;
+  --al-on-cover-2: #c2d6cb;
+  --al-on-green-2: #d3e8dc;
+  --al-amber: #f6b73c;
+  --al-amber-2: #ffc95c;
+  --al-amber-ink: #7a4300; /* texto âmbar sobre claro: 6,4:1 no branco */
+  --al-paper: #ffffff;
+  --al-shadow: 0 1px 1px rgba(6, 42, 27, 0.12), 0 14px 28px -12px rgba(6, 42, 27, 0.5);
+  --al-shadow-lift: 0 2px 2px rgba(6, 42, 27, 0.12), 0 22px 36px -14px rgba(6, 42, 27, 0.55);
+}
+
+/* A figurinha */
+.al-sticker {
+  /* Mede pela mesa (contêiner), não pela janela: as duas figurinhas e o ⇄ sempre cabem. */
+  --st-w: clamp(7rem, 35cqi, 12.5rem);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: var(--st-w);
+  aspect-ratio: 5 / 7;
+  padding: 6px;
+  border-radius: 9px;
+  background: var(--al-paper);
+  color: var(--al-ink);
+  box-shadow: var(--al-shadow);
+  transform: rotate(var(--tilt, 0deg));
+  container-type: inline-size;
+}
+.al-sticker-photo {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 5px 5px 0 0;
+  background: var(--g, #ccc);
+}
+.al-sticker-photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 18%;
+}
+.al-g-amber {
+  --g: #f6b73c;
+}
+.al-g-sky {
+  --g: #8ecff5;
+}
+.al-g-tomato {
+  --g: #f27b62;
+}
+.al-g-lime {
+  --g: #c4e46a;
+}
+.al-g-lilac {
+  --g: #c9b3f5;
+}
+.al-sticker-n {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  padding: 3px 7px 2px;
+  border-radius: 5px;
+  background: var(--al-cover);
+  color: #fff;
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 62;
+  font-weight: 900;
+  font-size: 1.125rem;
+  line-height: 1;
+}
+.al-sticker-band {
+  display: grid;
+  gap: 1px;
+  padding: 7px 8px 8px;
+  border-radius: 0 0 5px 5px;
+  background: var(--al-green);
+  color: #fff;
+}
+.al-sticker-title {
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 78;
+  font-weight: 800;
+  font-size: clamp(0.9375rem, 0.8rem + 0.35vw, 1.0625rem);
+  line-height: 1.05;
+  text-wrap: balance;
+}
+.al-sticker-who {
+  color: var(--al-on-green-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.al-sticker-value {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  padding: 4px 8px 3px;
+  border-radius: 6px;
+  background: var(--al-paper);
+  color: var(--al-ink);
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 80;
+  font-weight: 850;
+  font-size: 1rem;
+  line-height: 1;
+  box-shadow: 0 2px 6px -2px rgba(6, 42, 27, 0.45);
+}
+/* Figurinha estreita (celular): número e preço encolhem para não se cobrirem. Fica depois das
+   regras base, para ganhar delas na cascata. */
+@container (max-width: 9.5rem) {
+  .al-sticker-n {
+    top: 8px;
+    left: 8px;
+    padding: 2px 5px 1px;
+    font-size: 0.9375rem;
+  }
+  .al-sticker-value {
+    top: 8px;
+    right: 8px;
+    padding: 3px 5px 2px;
+    font-size: 0.8125rem;
+  }
+}
+
+/* A brilhante: laminado dourado no papel da borda. */
+.al-foil {
+  background: linear-gradient(
+    125deg,
+    #fbe9a8 0%,
+    #d7a733 22%,
+    #fff6cf 40%,
+    #c8901d 58%,
+    #f6d978 78%,
+    #b9831b 100%
+  );
+  /* O laminado é maior que a figurinha e desliza com o ponteiro (--hx/--hy, de 0 a 1). */
+  --hx: 0.5;
+  --hy: 0.5;
+  background-size: 240% 240%;
+  background-position: calc(var(--hx) * 100%) calc(var(--hy) * 100%);
+}
+.al-foil .al-sticker-band {
+  background: var(--al-cover);
+}
+/* O reflexo que corre sobre a foto: faixa clara com um fio de arco-íris, como na figurinha
+   holográfica. Fica por cima de tudo, sem pegar clique. */
+.al-foil::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border-radius: inherit;
+  background: linear-gradient(
+    112deg,
+    transparent 28%,
+    rgba(255, 255, 255, 0.7) 44%,
+    rgba(140, 225, 255, 0.5) 49%,
+    rgba(255, 170, 225, 0.45) 54%,
+    rgba(255, 240, 170, 0.5) 59%,
+    transparent 74%
+  );
+  background-size: 300% 300%;
+  background-position: calc(100% - var(--hx) * 100%) calc(100% - var(--hy) * 100%);
+  mix-blend-mode: soft-light;
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 240ms;
+}
+.al-foil:hover::after {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .al-foil {
+    transform: perspective(46rem) rotate(var(--tilt, 0deg)) rotateY(calc((var(--hx) - 0.5) * 18deg))
+      rotateX(calc((0.5 - var(--hy)) * 18deg));
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+/* Figurinha pequena, no montinho de repetidas. */
+.al-sticker-sm {
+  --st-w: clamp(4.75rem, 21cqi, 6.25rem);
+  padding: 4px;
+  border-radius: 7px;
+}
+.al-sticker-sm .al-sticker-n {
+  top: 7px;
+  left: 7px;
+  padding: 2px 4px 1px;
+  font-size: 0.8125rem;
+}
+.al-sticker-sm .al-sticker-band {
+  padding: 4px 5px 5px;
+}
+.al-sticker-sm .al-sticker-title {
+  font-size: 0.75rem;
+  line-height: 1.05;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.al-sticker-sm .al-sticker-value {
+  display: none;
+}
+
+/* =====================================================================
+   O app no álbum: mesma voz da página pública, com a contenção de uma tela de trabalho. A marca
+   mora nos detalhes (títulos, números, figurinhas), não em enfeite.
+   ===================================================================== */
+
+/* ---------- Voz: Anybody nos títulos e números ---------- */
+:root {
+  --font-display: var(--al-display);
+}
+/* A largura condensada vale só para a Anybody: a Inter (sem eixo de largura) segue normal. */
+body {
+  font-stretch: 84%;
+}
+::selection {
+  background: var(--al-amber);
+  color: var(--al-cover);
+}
+html {
+  scrollbar-color: var(--al-green) var(--al-print);
+}
+
+/* ---------- Indicadores: o número em Anybody ---------- */
+.kpi-value {
+  font-family: var(--al-display);
+  font-weight: 850;
+  font-stretch: 78%;
+  letter-spacing: 0;
+}
+
+/* ---------- Cartão de serviço: a figurinha do catálogo ---------- */
+.svc-card {
+  padding: 6px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--al-paper);
+  box-shadow: var(--al-shadow);
+  transition:
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 260ms;
+}
+.svc-card:hover,
+.svc-card:focus-within {
+  transform: translateY(-3px);
+  box-shadow: var(--al-shadow-lift);
+}
+.svc-card .svc-cover {
+  overflow: hidden;
+  border-radius: 6px;
+}
+.svc-title {
+  font-family: var(--al-display);
+  font-weight: 800;
+  font-stretch: 80%;
+  letter-spacing: 0;
+}
+.svc-price .price {
+  font-family: var(--al-display);
+  font-weight: 850;
+  font-stretch: 80%;
+}
+.svc-barter {
+  border-radius: 6px;
+  background: var(--al-amber);
+  color: var(--al-cover);
+  font-weight: 700;
+}
+
+/* ---------- Trocas: os dois lados como figurinhas, o ⇄ como a moeda da troca ---------- */
+.trade-card {
+  border-radius: 16px;
+}
+.trade-side {
+  border: 2px dashed var(--al-dot);
+  border-radius: 12px;
+  background: var(--al-print);
+}
+.trade-label {
+  color: var(--al-green);
+  font-family: var(--al-display);
+  font-weight: 800;
+  font-stretch: 80%;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.trade-title {
+  font-family: var(--al-display);
+  font-weight: 800;
+  font-stretch: 80%;
+}
+.trade-arrow {
+  background: var(--al-amber);
+  color: var(--al-cover);
+}
+.trade-torna {
+  border-radius: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .svc-card {
+    transition: none;
+  }
+}

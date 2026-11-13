@@ -1,4 +1,5 @@
-import { createConnection, type ResultSetHeader, type RowDataPacket } from 'mysql2/promise';
+import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import { assertE2eUser, connectE2eDb } from './db.helpers';
 import type { TestUser } from './helpers';
 
 const HOUR = 3_600_000;
@@ -18,25 +19,8 @@ export async function historicalDisputeDelivery(
   opensAt: string;
   approvalDueAt: string;
 }> {
-  const required = ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'] as const;
-  for (const key of required) {
-    if (!process.env[key]?.trim()) throw new Error(`Fixture histórica E2E exige ${key} explícito.`);
-  }
-  const port = Number(process.env.DB_PORT);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error('DB_PORT inválido para a fixture histórica E2E.');
-  }
-  for (const user of [client, freelancer]) {
-    if (
-      !Number.isSafeInteger(user.id) ||
-      user.id <= 0 ||
-      !/^e2e-[^@]+@escambo\.test$/.test(user.email)
-    ) {
-      throw new Error(
-        'A fixture histórica só aceita os usuários descartáveis e2e-* @escambo.test.',
-      );
-    }
-  }
+  assertE2eUser(client);
+  assertE2eUser(freelancer);
   if (!Number.isSafeInteger(contractId) || contractId <= 0 || client.id === freelancer.id) {
     throw new Error('Contratação ou participantes inválidos para a fixture histórica E2E.');
   }
@@ -57,14 +41,7 @@ export async function historicalDisputeDelivery(
   const created = new Date(accepted.getTime() - HOUR);
   const opens = new Date(firstDelivery.getTime() + 48 * HOUR);
   const params = [contractId, client.id, freelancer.id];
-  const conn = await createConnection({
-    host: process.env.DB_HOST,
-    port,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    timezone: 'Z',
-  });
+  const conn = await connectE2eDb();
   try {
     await conn.beginTransaction();
     const [contracts] = await conn.query<RowDataPacket[]>(

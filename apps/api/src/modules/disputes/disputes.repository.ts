@@ -3,6 +3,7 @@ import type { PoolConnection } from 'mysql2/promise';
 import type { BrazilTimezone } from '@escambo/types';
 import { pool } from '../../config/db';
 import { clock } from '../../utils/clock';
+import { barterRepository, type BarterSettlement } from '../barter/barter.repository';
 import { CLOSE_PENDING_EXTENSION } from '../contracts/deadline-sql';
 import { contractsRepository } from '../contracts/contracts.repository';
 import { clientZoneOf, freelancerZoneOf } from '../contracts/contract-zones';
@@ -201,16 +202,30 @@ export const disputesRepository = {
     releaseToFreelancer: number;
     refundToClient: number;
     contractFinalStatus: 'completed' | 'cancelled';
+    barterAgreementId?: number;
     resolution: string;
     refundPercentage: number | null;
     note: string | null;
     /** A decisão do admin é ação de pessoa (`user`); o relatório de uso tira admins pelo papel. */
     source: StatusChangeSource;
-  }): Promise<boolean> {
+  }): Promise<false | { barterSettlement: BarterSettlement | null }> {
+    if (p.barterAgreementId !== undefined && p.contractFinalStatus === 'completed') {
+      await barterRepository.ensureTornaRecipient(p.barterAgreementId);
+    }
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
 
+      // Ordem das travas em uma troca: acordo, contratos, disputa, contas e carteiras.
+      const barterSettlement =
+        p.barterAgreementId === undefined
+          ? null
+          : await barterRepository.prepareDisputeSettlement(
+              conn,
+              p.barterAgreementId,
+              p.contractId,
+              p.contractFinalStatus,
+            );
       // O agregado vem antes da disputa e das contas; resolved_by também referencia users.
       await conn.query('SELECT id FROM contracts WHERE id = :contractId FOR UPDATE', {
         contractId: p.contractId,
@@ -227,6 +242,9 @@ export const disputesRepository = {
         ['cash', 'credits'].includes(p.paymentMode) && p.escrowNet > 0
           ? [p.freelancerId, ...(p.refundToClient > 0 ? [p.clientId] : [])]
           : [];
+      if (barterSettlement) {
+        await barterRepository.applyDisputeSettlement(conn, barterSettlement, p.adminId);
+      }
       await lockWallets(conn, walletUserIds, [p.adminId]);
       const [upd] = await conn.query<ResultSetHeader>(
         `UPDATE disputes
@@ -335,7 +353,7 @@ export const disputesRepository = {
       );
 
       await conn.commit();
-      return true;
+      return { barterSettlement };
     } catch (err) {
       await conn.rollback();
       throw err;

@@ -1348,15 +1348,18 @@ describe('ServicosView: faixa de busca e pílulas de categoria', () => {
     expect(pressed()).toEqual(['Todas']);
   });
 
-  it('as fotos ao lado da busca são decorativas', async () => {
+  it('as figurinhas ao lado da busca são decorativas: três ofícios em desenho, sem foto', async () => {
     await openView();
     const art = document.querySelector('.search-hero-art')!;
     expect(art).toHaveAttribute('aria-hidden', 'true');
-    expect(Array.from(art.querySelectorAll('img')).map((i) => i.getAttribute('alt'))).toEqual([
-      '',
-      '',
-      '',
+    const stickers = Array.from(art.querySelectorAll('.sh-sticker'));
+    expect(stickers.map((s) => s.className)).toEqual([
+      'sh-sticker al-g-sky',
+      'sh-sticker al-g-lilac',
+      'sh-sticker al-g-tomato',
     ]);
+    expect(stickers.every((s) => s.querySelector('svg'))).toBe(true);
+    expect(art.querySelector('img')).toBeNull();
   });
 });
 

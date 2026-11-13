@@ -1,6 +1,18 @@
 import { BusinessButton } from '../../components/BusinessActions';
 import { useEmailVerified, VerifyEmailNotice } from '../../components/VerifyEmail';
-import { Heart, MapPin, Plus, Search, SearchX, SlidersHorizontal, X } from 'lucide-react';
+import {
+  CalendarClock,
+  CircleDollarSign,
+  Heart,
+  MapPin,
+  MapPinned,
+  Plus,
+  Search,
+  SearchX,
+  SlidersHorizontal,
+  Star,
+  X,
+} from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
 import type { AvailabilityPeriod, SavedSearch, SavedSearchFilters, Service } from '@escambo/types';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -27,7 +39,7 @@ import {
 } from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { BoostModal } from '../services/BoostModal';
-import { rootsById } from '../services/categoryArt';
+import { categoryArt, rootsById } from '../services/categoryArt';
 import { CategoryStrip } from '../services/CategoryStrip';
 import { ContratarModal } from '../services/ContratarModal';
 import { MyServices } from '../services/MyServices';
@@ -52,6 +64,12 @@ const DELIVERY_OPTIONS = [3, 7, 15, 30];
 /** Dia da semana de hoje (0=domingo), para marcar "(hoje)" no filtro de atendimento. */
 const TODAY = new Date().getDay();
 const RATING_OPTIONS = [3, 4, 4.5];
+/** As três figurinhas da faixa de busca: o ofício e a cor chapada dele (.al-g-*). */
+const HERO_STICKERS = [
+  ['tecnologia', 'sky'],
+  ['design', 'lilac'],
+  ['reformas-reparos', 'tomato'],
+] as const;
 
 interface Filters {
   minPrice: string;
@@ -408,8 +426,8 @@ export function ServicosView() {
         <MyServices onBoost={setBoost} />
       ) : (
         <>
-          {/* Faixa de busca: texto sobre o verde sólido, o campo branco e, ao lado, fotos das
-              categorias (ilustração, some no celular). */}
+          {/* Faixa de busca: texto sobre o verde sólido, o campo branco e, ao lado, três figurinhas
+              de ofício em leque (ilustração, some no celular). */}
           <div className="search-hero">
             <div className="search-hero-main">
               <div className="search-hero-text">
@@ -453,9 +471,14 @@ export function ServicosView() {
               </form>
             </div>
             <div className="search-hero-art" aria-hidden="true">
-              {['dev', 'designer', 'eletricista'].map((p) => (
-                <img key={p} src={`/img/pessoas/${p}-400.webp`} alt="" width={400} height={500} />
-              ))}
+              {HERO_STICKERS.map(([slug, ground]) => {
+                const { Icon } = categoryArt(slug);
+                return (
+                  <span key={slug} className={`sh-sticker al-g-${ground}`}>
+                    <Icon strokeWidth={1.75} />
+                  </span>
+                );
+              })}
             </div>
           </div>
 
@@ -489,7 +512,10 @@ export function ServicosView() {
 
               {/* Descoberta local (diferencial #2) */}
               <fieldset className="filter-group">
-                <legend>Onde</legend>
+                <legend>
+                  <MapPinned size={14} aria-hidden="true" />
+                  Onde
+                </legend>
                 <Button
                   variant="ghost"
                   className={`toggle ${geo ? 'on' : ''}`}
@@ -534,7 +560,10 @@ export function ServicosView() {
               </fieldset>
 
               <fieldset className="filter-group">
-                <legend>Agenda</legend>
+                <legend>
+                  <CalendarClock size={14} aria-hidden="true" />
+                  Agenda
+                </legend>
                 {/* Atende agora (ADR 34 e 48): aceitando pedidos, no dia e no período de agora no fuso de cada freelancer */}
                 <Button
                   variant="ghost"
@@ -584,7 +613,10 @@ export function ServicosView() {
               </fieldset>
 
               <fieldset className="filter-group">
-                <legend>Preço e prazo</legend>
+                <legend>
+                  <CircleDollarSign size={14} aria-hidden="true" />
+                  Preço e prazo
+                </legend>
                 <div className="filter-pair">
                   <label className="filter">
                     <span>De</span>
@@ -629,7 +661,10 @@ export function ServicosView() {
               </fieldset>
 
               <fieldset className="filter-group">
-                <legend>Reputação</legend>
+                <legend>
+                  <Star size={14} aria-hidden="true" />
+                  Reputação
+                </legend>
                 <label className="filter">
                   <span>Nota</span>
                   <Select

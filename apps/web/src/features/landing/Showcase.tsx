@@ -5,8 +5,13 @@ import { Link } from 'react-router-dom';
 import type { Category } from '@escambo/types';
 import { Button, ErrorState } from '../../components/ui';
 import { api, type ServiceQuery } from '../../lib/api';
-import { rootsById } from '../services/categoryArt';
+import { categoryArt, rootsById } from '../services/categoryArt';
 import { ServiceCard } from '../services/ServiceCard';
+import './discover.css';
+import './covers.css';
+
+/** As cores chapadas das figurinhas de categoria (.al-g-*), na ordem da fileira. */
+const CATEGORY_GROUNDS = ['sky', 'lilac', 'tomato', 'amber', 'lime'] as const;
 
 /** Quantos serviços a vitrine mostra; o resto está na busca do app. */
 export const SHOWCASE_LIMIT = 8;
@@ -54,7 +59,8 @@ function CardSkeleton() {
 
 /**
  * Vitrine da página inicial: serviços de verdade (GET /api/services é pública), filtrados pela
- * busca do topo. Sem localização, os mais recentes; com ela (pedida só no clique, e só para
+ * busca do topo e pelas categorias (a fileira de figurinhas no alto; a escolhida mostra as
+ * subcategorias dela). Sem localização, os mais recentes; com ela (pedida só no clique, e só para
  * ordenar: não é gravada), do mais perto para o mais longe. O cartão é o mesmo do app e leva ao
  * serviço, onde o app pede o login e volta. Sem resultado, um estado vazio com saída, nunca número
  * inventado.
@@ -62,11 +68,14 @@ function CardSkeleton() {
 export function Showcase({
   filter,
   categories,
+  onCategory,
   onClearQuery,
   onClearCategory,
 }: {
   filter: ShowcaseFilter;
   categories: Category[];
+  /** Escolher (ou desfazer, com null) a categoria do filtro: raiz ou subcategoria. */
+  onCategory: (id: number | null) => void;
   onClearQuery: () => void;
   onClearCategory: () => void;
 }) {
@@ -74,6 +83,8 @@ export function Showcase({
   const [locating, setLocating] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
   const roots = useMemo(() => rootsById(categories), [categories]);
+  // A raiz da categoria filtrada (ela mesma, ou a da subcategoria escolhida).
+  const selectedRoot = filter.categoryId === null ? undefined : roots.get(filter.categoryId);
   const categoryName =
     filter.categoryId === null ? null : (nameOf(categories, filter.categoryId) ?? null);
 
@@ -151,6 +162,57 @@ export function Showcase({
             </Link>
           </div>
         </div>
+
+        {/* As categorias são o filtro: cada uma é uma figurinha; a escolhida abre as subcategorias. */}
+        {categories.length > 0 && (
+          <div className="cf" id="categorias" role="group" aria-label="Categorias">
+            {categories.map((c, i) => {
+              const { Icon } = categoryArt(c.slug);
+              const on = selectedRoot?.id === c.id;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="cf-item"
+                  aria-pressed={on}
+                  onClick={() => onCategory(on ? null : c.id)}
+                >
+                  {/* O desenho do ofício sobre a cor chapada, como as figurinhas da parede do topo:
+                      as fotos ficam para os serviços. */}
+                  <span
+                    className={`cf-art al-g-${CATEGORY_GROUNDS[i % CATEGORY_GROUNDS.length]}`}
+                    aria-hidden="true"
+                  >
+                    <Icon strokeWidth={1.75} />
+                  </span>
+                  <span className="cf-name">{c.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {selectedRoot && (selectedRoot.children ?? []).length > 0 && (
+          <div
+            className="cf-subs"
+            role="group"
+            aria-label={`Subcategorias de ${selectedRoot.name}`}
+          >
+            {(selectedRoot.children ?? []).map((sub) => {
+              const on = filter.categoryId === sub.id;
+              return (
+                <button
+                  key={sub.id}
+                  type="button"
+                  className="cf-sub"
+                  aria-pressed={on}
+                  onClick={() => onCategory(on ? selectedRoot.id : sub.id)}
+                >
+                  {sub.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {(filter.q || categoryName || geo) && (
           <ul className="lp-filters" aria-label="Filtros da vitrine">

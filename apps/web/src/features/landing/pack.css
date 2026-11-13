@@ -1,0 +1,333 @@
+/* =====================================================================
+   Álbum de troca: o pacotinho (features/landing/Pack.tsx) e a faixa "tenho, tenho, falta, troco".
+   O pacote fica na mesa, logo abaixo do álbum; abrir distribui cinco serviços de verdade nos
+   quadros. Um momento só, coreografado; sem movimento, as figurinhas só aparecem.
+   ===================================================================== */
+
+.pk {
+  padding-block: clamp(20px, 3vw, 44px) clamp(48px, 6vw, 88px);
+  background: var(--al-cover);
+  color: #fff;
+}
+.pk-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+}
+@media (min-width: 56rem) {
+  .pk-grid {
+    grid-template-columns: 13.5rem minmax(0, 1fr);
+    grid-template-areas:
+      'pack copy'
+      'row row';
+    gap: 36px 48px;
+  }
+  .pk-pack {
+    grid-area: pack;
+  }
+  .pk-copy {
+    grid-area: copy;
+  }
+  .pk-row {
+    grid-area: row;
+  }
+}
+
+/* ---------- O pacote ---------- */
+.pk-pack {
+  width: min(11rem, 46vw);
+  justify-self: center;
+  transform: rotate(-5deg);
+}
+@media (min-width: 56rem) {
+  .pk-pack {
+    width: 100%;
+  }
+}
+.pk-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 20px 22px rgba(0, 0, 0, 0.5));
+}
+.pk-fill {
+  fill: var(--al-amber);
+}
+.pk-crimp {
+  stroke: #c98a12;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.pk-badge {
+  fill: var(--al-cover);
+}
+.pk-arrows {
+  stroke: var(--al-amber);
+}
+.pk-word {
+  fill: var(--al-cover);
+  font-family: var(--al-display);
+  font-size: 35px;
+  font-stretch: 70%;
+  font-weight: 900;
+}
+.pk-count {
+  fill: var(--al-cover);
+  font-family: var(--al-display);
+  font-size: 15px;
+  font-stretch: 100%;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.pk-art-top {
+  transform-box: fill-box;
+  transform-origin: 15% 100%;
+}
+/* Aberto: a aba de cima já saiu (parado, para quem pediu menos movimento). */
+.pk-pack.is-open .pk-art-top {
+  opacity: 0;
+}
+
+/* ---------- Texto e ação ---------- */
+.pk h2 {
+  color: #fff;
+  font-family: var(--al-display);
+  font-size: clamp(2.5rem, 1.5rem + 3.4vw, 4.75rem);
+  font-stretch: 68%;
+  font-weight: 900;
+  line-height: 0.94;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+.pk-sub {
+  max-width: 44ch;
+  margin-top: 14px;
+  color: var(--al-on-cover-2);
+  font-size: 1.125rem;
+  line-height: 1.55;
+}
+.pk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+}
+.pk-actions button {
+  border: 0;
+  cursor: pointer;
+}
+.pk-actions .lp-btn-light {
+  border: 2px solid #fff;
+}
+/* Aqui os botões são <button>: o hover verde do app (styles.css) perde para o do álbum. */
+.lp .pk-actions .lp-btn-amber:hover:not(:disabled) {
+  background: var(--al-amber-2);
+  color: var(--al-cover);
+}
+.lp .pk-actions .lp-btn-light,
+.lp .pk-actions .lp-btn-light:hover:not(:disabled) {
+  background: transparent;
+  color: #fff;
+  box-shadow: none;
+}
+.lp .pk-actions .lp-btn-light:hover:not(:disabled) {
+  background: #fff;
+  color: var(--al-cover);
+}
+.pk-actions button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+.pk-status {
+  min-height: 1.6em;
+  margin-top: 12px;
+  color: var(--al-on-cover-2);
+  font-size: 0.9375rem;
+}
+.lp .pk a:focus-visible,
+.lp .pk button:focus-visible {
+  outline: 3px solid var(--al-amber);
+  outline-offset: 3px;
+}
+
+/* ---------- Os quadros e as figurinhas ---------- */
+.pk-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: clamp(10px, 1.6vw, 22px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pk-slot {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 5 / 7;
+  border: 2px dashed #3f7a5c;
+  border-radius: 12px;
+  background: #0a3826;
+}
+.pk-sticker {
+  --st-w: 90%;
+  color: var(--al-ink);
+  text-decoration: none;
+}
+.pk-slot:nth-child(1) .pk-sticker {
+  --tilt: -2.5deg;
+}
+.pk-slot:nth-child(2) .pk-sticker {
+  --tilt: 1.5deg;
+}
+.pk-slot:nth-child(3) .pk-sticker {
+  --tilt: -1deg;
+}
+.pk-slot:nth-child(4) .pk-sticker {
+  --tilt: 2.5deg;
+}
+.pk-slot:nth-child(5) .pk-sticker {
+  --tilt: -1.5deg;
+}
+.pk-sticker .al-sticker-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.pk-sticker .al-sticker-who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pk-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--al-cover);
+}
+.pk-sticker:hover {
+  box-shadow: var(--al-shadow-lift);
+}
+
+/* Celular: os quadros viram uma fileira que rola para o lado. */
+@media (max-width: 55.99rem) {
+  .pk-copy {
+    text-align: center;
+  }
+  .pk-sub {
+    margin-inline: auto;
+  }
+  .pk-actions {
+    justify-content: center;
+  }
+  .pk-row {
+    grid-auto-columns: 9.75rem;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    overflow-x: auto;
+    padding: 6px 2px 14px;
+    scroll-snap-type: x proximity;
+  }
+  .pk-slot {
+    scroll-snap-align: start;
+  }
+}
+
+/* ---------- A coreografia: rasga, treme, distribui ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .pk-pack.is-open .pk-art-top {
+    animation: pk-tear 560ms cubic-bezier(0.3, 0, 0.2, 1) both;
+  }
+  .pk-pack.is-open .pk-art-body {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: pk-jolt 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .pk-slot.is-filled .pk-sticker {
+    animation: pk-deal 760ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i) * 120ms + 300ms);
+  }
+  @keyframes pk-tear {
+    from {
+      opacity: 1;
+      transform: none;
+    }
+    35% {
+      opacity: 1;
+      transform: rotate(-12deg);
+    }
+    to {
+      opacity: 0;
+      transform: translate(70px, -90px) rotate(34deg);
+    }
+  }
+  @keyframes pk-jolt {
+    30% {
+      transform: rotate(3deg) scale(1.03);
+    }
+    60% {
+      transform: rotate(-2deg);
+    }
+  }
+  /* Cada figurinha sai da boca do pacote (em cima, à esquerda) e pousa no seu quadro. */
+  @keyframes pk-deal {
+    from {
+      transform: translate(calc(var(--i) * -112% - 40%), -120%) rotate(-16deg) scale(0.5);
+    }
+  }
+}
+
+/* ---------- A faixa: tenho, tenho, falta, troco ---------- */
+.al-ribbon-wrap {
+  overflow: hidden;
+  padding-block: 20px;
+  background: linear-gradient(var(--al-cover) 50%, var(--al-print) 50%);
+}
+.al-ribbon {
+  margin-inline: -3%;
+  background: var(--al-amber);
+  color: var(--al-cover);
+  box-shadow: 0 12px 24px -14px rgba(0, 0, 0, 0.55);
+  transform: rotate(-1.4deg);
+}
+.al-ribbon-track {
+  display: flex;
+  width: max-content;
+  padding-block: 12px 9px;
+}
+.al-ribbon-run {
+  display: flex;
+}
+.al-ribbon-run > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 22px;
+  padding-right: 22px;
+}
+.al-ribbon-run b {
+  font-family: var(--al-display);
+  font-size: clamp(1.5rem, 1rem + 2vw, 2.75rem);
+  font-stretch: 150%;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.al-ribbon-miss {
+  padding: 4px 14px 1px;
+  border-radius: 8px;
+  background: var(--al-cover);
+  color: var(--al-amber);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .al-ribbon-track {
+    animation: al-marquee 40s linear infinite;
+  }
+  @keyframes al-marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+}

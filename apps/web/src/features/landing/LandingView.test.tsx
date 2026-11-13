@@ -140,7 +140,6 @@ describe('LandingView: estrutura', () => {
     renderLanding();
     const names = [
       'Descubra serviços',
-      'O que dá para contratar (ou trocar)',
       'Do primeiro contato ao pagamento',
       'Três jeitos de fechar negócio',
       'Como funciona uma troca',
@@ -155,18 +154,6 @@ describe('LandingView: estrutura', () => {
       .map((h) => h.textContent)
       .filter((t) => names.includes(t ?? ''));
     expect(order).toEqual(names);
-  });
-
-  it('as telas do topo são ilustração: legenda que diz isso e nada lido dentro delas', () => {
-    renderLanding();
-    const figure = screen.getByRole('figure', {
-      name: 'Telas do app Escambo. Nomes e valores são ilustrativos.',
-    });
-    const stage = figure.querySelector('.lp-stage')!;
-    expect(stage).toHaveAttribute('aria-hidden', 'true');
-    expect(text(stage as HTMLElement)).toContain('Torna: você completa R$ 400');
-    expect(text(stage as HTMLElement)).toContain('Pagamento liberado');
-    expect(text(stage as HTMLElement)).toContain('Nova proposta de troca');
   });
 
   it('a faixa de garantias do topo: regras, nenhum número', () => {
@@ -255,9 +242,6 @@ describe('LandingView: regras vindas da API', () => {
       'Contrate freelancers com o pagamento protegido.',
     );
     expect(document.getElementById('troca')).toBeNull();
-    const figure = screen.getByRole('figure', { name: /Telas do app Escambo/ });
-    expect(text(figure)).not.toContain('Proposta de troca');
-    expect(text(figure)).toContain('Valor em garantia');
     expect(
       within(screen.getByRole('navigation', { name: 'Seções da página' })).queryByRole('link', {
         name: 'Troca',
@@ -273,7 +257,6 @@ describe('LandingView: regras vindas da API', () => {
         name: 'Troca de serviços',
       }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'O que dá para contratar' })).toBeInTheDocument();
     expect(screen.queryByText('O que é torna?')).not.toBeInTheDocument();
     expect(text(section('Perguntas frequentes'))).not.toContain('torna');
     expect(text(section('Comece com o que você já sabe fazer.'))).toContain(
@@ -306,10 +289,10 @@ describe('LandingView: busca do topo e vitrine', () => {
     expect(screen.getByRole('list', { name: 'Filtros da vitrine' })).toHaveTextContent('“logo”');
   });
 
-  it('os atalhos são as categorias raiz: um clique filtra, outro desfaz', async () => {
+  it('as categorias raiz filtram a vitrine: um clique filtra, outro desfaz', async () => {
     const user = userEvent.setup();
     renderLanding();
-    const shortcuts = screen.getByRole('group', { name: 'Atalhos' });
+    const shortcuts = screen.getByRole('group', { name: 'Categorias' });
     expect(
       within(shortcuts)
         .getAllByRole('button')
@@ -341,33 +324,38 @@ describe('LandingView: busca do topo e vitrine', () => {
     await waitFor(() => expect(api.listServices).toHaveBeenLastCalledWith({ limit: 8 }));
   });
 
-  it('sem categorias, sem atalhos e sem a seção de categorias', () => {
+  it('sem categorias, a vitrine fica sem a fileira de categorias', () => {
     categories.data = undefined;
     renderLanding();
-    expect(screen.queryByRole('group', { name: 'Atalhos' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Categorias' })).not.toBeInTheDocument();
     expect(document.getElementById('categorias')).toBeNull();
   });
 });
 
 describe('LandingView: categorias', () => {
-  it('as categorias reais viram blocos com foto, e as subcategorias, atalhos', () => {
+  it('as categorias são o filtro da vitrine: a raiz abre as subcategorias, e a subcategoria filtra por ela', async () => {
+    const user = userEvent.setup();
     renderLanding();
-    const cats = section('O que dá para contratar (ou trocar)');
-    expect(within(cats).getByRole('link', { name: 'Tecnologia' })).toHaveAttribute(
-      'href',
-      '/servicos?categoria=1',
+    const cats = screen.getByRole('group', { name: 'Categorias' });
+    expect(cats).toHaveAttribute('id', 'categorias');
+    // Categoria nova também aparece, com o desenho dela.
+    expect(within(cats).getByRole('button', { name: 'Jardinagem' })).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /Subcategorias de/ })).not.toBeInTheDocument();
+    await user.click(within(cats).getByRole('button', { name: 'Tecnologia' }));
+    const subs = screen.getByRole('group', { name: 'Subcategorias de Tecnologia' });
+    await user.click(within(subs).getByRole('button', { name: 'Desenvolvimento Web' }));
+    await waitFor(() =>
+      expect(api.listServices).toHaveBeenLastCalledWith({ categoryId: 10, limit: 8 }),
     );
-    expect(within(cats).getByRole('link', { name: 'Desenvolvimento Web' })).toHaveAttribute(
-      'href',
-      '/servicos?categoria=10',
+    // A raiz segue marcada; clicar de novo na subcategoria volta para a raiz.
+    expect(within(cats).getByRole('button', { name: 'Tecnologia' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     );
-    expect(within(cats).getByRole('link', { name: 'Desenvolvimento Web' })).toHaveClass('lp-chip');
-    // Categoria nova (sem foto própria) também aparece, com o desenho da categoria.
-    expect(within(cats).getByRole('link', { name: 'Jardinagem' })).toHaveAttribute(
-      'href',
-      '/servicos?categoria=7',
+    await user.click(within(subs).getByRole('button', { name: 'Desenvolvimento Web' }));
+    await waitFor(() =>
+      expect(api.listServices).toHaveBeenLastCalledWith({ categoryId: 1, limit: 8 }),
     );
-    expect(within(cats).getByRole('list', { name: 'Subcategorias' })).toBeInTheDocument();
   });
 });
 

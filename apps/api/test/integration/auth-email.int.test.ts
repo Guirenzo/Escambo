@@ -1,7 +1,9 @@
+import type { RowDataPacket } from 'mysql2';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app';
 import { pool } from '../../src/config/db';
+import { simulatedProvider } from '../../src/modules/mail/mail.provider';
 import { confirmEmail } from './mail.helpers';
 import { fundWallet } from './wallet.helpers';
 
@@ -125,11 +127,33 @@ describe('E-mail transacional, confirmação de e-mail e recuperação de senha'
       .body as { to: string; template: string }[];
     expect(before.some((e) => e.to === 'ninguem@escambo.test')).toBe(false);
 
-    const asked = await request(app).post('/api/auth/forgot-password').send({ email: user.email });
-    expect(asked.status).toBe(202);
-    const mail = await outbox(admin, user.id, 'password_reset');
-    expect(mail.text).toContain('http://app.escambo.test/redefinir-senha?token=');
-    const token = tokenIn(mail.text);
+    const send = vi.spyOn(simulatedProvider, 'send');
+    let token: string;
+    try {
+      const asked = await request(app)
+        .post('/api/auth/forgot-password')
+        .send({ email: user.email });
+      expect(asked.status).toBe(202);
+      const mail = await outbox(admin, user.id, 'password_reset');
+      expect(mail.text).toBe('Link de redefinição protegido.');
+      const [stored] = await pool.query<RowDataPacket[]>(
+        "SELECT text_body, html_body FROM email_outbox WHERE user_id = ? AND template = 'password_reset'",
+        [user.id],
+      );
+      expect(stored[0]).toMatchObject({ text_body: mail.text, html_body: '' });
+
+      token = await vi.waitFor(() => {
+        const sent = send.mock.calls.find(
+          ([message]) =>
+            message.to === user.email && message.text.includes('/redefinir-senha?token='),
+        );
+        expect(sent).toBeDefined();
+        return tokenIn(sent![0].text);
+      });
+      expect(token.length).toBeGreaterThan(20);
+    } finally {
+      send.mockRestore();
+    }
 
     // Senha fraca → 422; válida → 204; token não vale de novo.
     await request(app)

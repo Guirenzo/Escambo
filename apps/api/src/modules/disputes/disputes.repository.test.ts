@@ -452,7 +452,7 @@ describe('disputesRepository', () => {
     it('em R$: resolve a disputa, encerra a contratação, move as duas carteiras e registra tudo numa transação', async () => {
       fakeDb.reply({ affectedRows: 1 }, { affectedRows: 1 }, { affectedRows: 1 }, {});
 
-      expect(await disputesRepository.resolve(base)).toBe(true);
+      expect(await disputesRepository.resolve(base)).toEqual({ barterSettlement: null });
       expect(fakeDb.calls[0]!.sql).toBe(
         'SELECT id FROM contracts WHERE id = :contractId FOR UPDATE',
       );
@@ -613,7 +613,7 @@ describe('disputesRepository', () => {
           paymentMode: 'barter',
           contractFinalStatus: 'cancelled',
         }),
-      ).toBe(true);
+      ).toEqual({ barterSettlement: null });
 
       // Só 'cash' usa o ledger de R$ e só 'credits' mexe nas carteiras de créditos.
       expect(resolveSteps()).toEqual([
@@ -637,7 +637,7 @@ describe('disputesRepository', () => {
           refundToClient: 0,
           refundPercentage: 0,
         }),
-      ).toBe(true);
+      ).toEqual({ barterSettlement: null });
 
       expect(ledger.applyWalletEffect).toHaveBeenCalledTimes(1);
       expect(fakeDb.calls[4]!.params).toEqual({
@@ -667,7 +667,7 @@ describe('disputesRepository', () => {
       async (status) => {
         fakeDb.reset();
         fakeDb.reply([{ id: 8 }], [{ status }], { affectedRows: 1 }, {}, {}, {});
-        expect(await disputesRepository.resolve(base)).toBe(true);
+        expect(await disputesRepository.resolve(base)).toEqual({ barterSettlement: null });
         expectCommitted();
       },
     );
@@ -724,7 +724,7 @@ describe('disputesRepository', () => {
             releaseToFreelancer: 0,
             refundToClient: 0,
           }),
-        ).toBe(true);
+        ).toEqual({ barterSettlement: null });
 
         expect(resolveSteps()).toEqual([
           'UPDATE disputes SET',
@@ -762,7 +762,7 @@ describe('disputesRepository', () => {
           {},
         );
 
-        expect(await disputesRepository.resolve(credits)).toBe(true);
+        expect(await disputesRepository.resolve(credits)).toEqual({ barterSettlement: null });
 
         expect(resolveSteps()).toEqual([
           'UPDATE disputes SET',
@@ -842,7 +842,7 @@ describe('disputesRepository', () => {
             releaseToFreelancer: 10,
             refundToClient: 0,
           }),
-        ).toBe(true);
+        ).toEqual({ barterSettlement: null });
 
         expect(resolveSteps()).toEqual([
           'UPDATE disputes SET',

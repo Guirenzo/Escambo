@@ -1,4 +1,12 @@
-import { ArrowLeft, ArrowLeftRight, Heart, Rocket } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowLeftRight,
+  CalendarCheck,
+  Clock,
+  Heart,
+  MapPin,
+  Rocket,
+} from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { PackageTier, Service } from '@escambo/types';
@@ -9,17 +17,20 @@ import { Button, QueryState } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
 import { useFavorites, usePublicSettings, useService, useToggleFavorite } from '../../lib/hooks';
 import { usePageTitle } from '../../lib/title';
+import { categoryArt, useCategoryRoots } from '../services/categoryArt';
 import { ContratarModal } from '../services/ContratarModal';
 import { modalityTag, servicePrice, ServiceTags } from '../services/ServiceCard';
 import { PackageCompare, PackagePicker } from '../services/PackagePicker';
 import { packagesOf } from '../services/packages';
+import { ServiceSticker } from '../services/ServiceSticker';
 
 /**
  * Detalhe do serviço (/servicos/:id): a descrição inteira, quem presta, preço, prazo, modalidade e
  * as tags, que levam à busca por elas (RF-024). Abrir a página soma uma visualização para o dono
  * (RF-029), que a API conta só quando quem abre não é ele; o número fica em "Meus serviços". Com
  * pacotes (RF-086), o cartão dos pacotes fica ao lado (embaixo do título no celular), e a tabela
- * "Comparar pacotes" vem depois da descrição.
+ * "Comparar pacotes" vem depois da descrição. Ao lado do título vai a figurinha grande do serviço
+ * (decorativa) e, abaixo de quem presta, o resumo com ícones: categoria, cidade, prazo e agenda.
  */
 export function ServicoView({ serviceId }: { serviceId: number }) {
   const navigate = useNavigate();
@@ -60,6 +71,40 @@ function ServiceDetail({ service: s }: { service: Service }) {
   const [contratar, setContratar] = useState<false | true | PackageTier>(false);
   const packages = packagesOf(s);
   const canHire = !mine && s.isActive;
+  const root = useCategoryRoots().get(s.categoryId);
+  const CategoryIcon = categoryArt(root?.slug).Icon;
+  // O resumo: a categoria, a cidade de quem presta, o prazo (sem pacotes: com eles o prazo é de
+  // cada pacote) e se a pessoa atende agora.
+  const facts = (
+    <ul className="svc-facts-row" aria-label="Resumo">
+      {root && (
+        <li>
+          <CategoryIcon size={16} aria-hidden="true" />
+          <span>{root.name}</span>
+        </li>
+      )}
+      {s.ownerCity && (
+        <li>
+          <MapPin size={16} aria-hidden="true" />
+          <span>{s.ownerCity}</span>
+        </li>
+      )}
+      {packages.length === 0 && s.deliveryDays != null && (
+        <li>
+          <Clock size={16} aria-hidden="true" />
+          <span>
+            entrega em {s.deliveryDays} {s.deliveryDays === 1 ? 'dia' : 'dias'}
+          </span>
+        </li>
+      )}
+      {s.ownerAvailableNow && (
+        <li>
+          <CalendarCheck size={16} aria-hidden="true" />
+          <span>atende agora</span>
+        </li>
+      )}
+    </ul>
+  );
   const favButton = (
     <BusinessIconButton
       type="button"
@@ -122,15 +167,19 @@ function ServiceDetail({ service: s }: { service: Service }) {
   if (packages.length > 0) {
     return (
       <article className="svc-detail-pkgs" aria-labelledby="svc-detail-title">
-        <div className="card svc-detail svc-detail-head">
-          <div className="svc-top">
-            <h1 id="svc-detail-title">{s.title}</h1>
-            <span className="svc-actions">
-              {flags}
-              {canHire && favButton}
-            </span>
+        <div className="card svc-detail svc-detail-head svc-page">
+          <ServiceSticker service={s} />
+          <div className="svc-page-main">
+            <div className="svc-top">
+              <h1 id="svc-detail-title">{s.title}</h1>
+              <span className="svc-actions">
+                {flags}
+                {canHire && favButton}
+              </span>
+            </div>
+            {owner}
+            {facts}
           </div>
-          {owner}
         </div>
         <div className="svc-detail-side">
           <PackagePicker
@@ -155,33 +204,35 @@ function ServiceDetail({ service: s }: { service: Service }) {
   }
 
   return (
-    <article className="card svc-detail" aria-labelledby="svc-detail-title">
-      <div className="svc-top">
-        <h1 id="svc-detail-title">{s.title}</h1>
-        <span className="svc-actions">{flags}</span>
-      </div>
-
-      {owner}
-
-      <div className="svc-foot">
-        <span className="price">{servicePrice(s)}</span>
-        {s.deliveryDays != null && (
-          <span className="muted tiny">
-            entrega em {s.deliveryDays} {s.deliveryDays === 1 ? 'dia' : 'dias'}
-          </span>
-        )}
-      </div>
-
-      <p className="svc-description">{s.description}</p>
-      <ServiceTags tags={s.tags} />
-
-      {unavailable ?? (
-        <div className="svc-actions">
-          <BusinessButton onClick={() => setContratar(true)}>Contratar</BusinessButton>
-          {barter}
-          {favButton}
+    <article className="card svc-detail svc-page" aria-labelledby="svc-detail-title">
+      <ServiceSticker service={s} />
+      <div className="svc-page-main">
+        <div className="svc-top">
+          <h1 id="svc-detail-title">{s.title}</h1>
+          <span className="svc-actions">{flags}</span>
         </div>
-      )}
+
+        {owner}
+        {facts}
+
+        <p className="svc-description">{s.description}</p>
+        <ServiceTags tags={s.tags} />
+
+        {/* O preço e o que dá para fazer com o serviço, numa faixa só. */}
+        <div className="svc-buy">
+          <div className="svc-buy-price">
+            <span className="svc-buy-label">Preço</span>
+            <span className="price">{servicePrice(s)}</span>
+          </div>
+          {unavailable ?? (
+            <div className="svc-actions">
+              <BusinessButton onClick={() => setContratar(true)}>Contratar</BusinessButton>
+              {barter}
+              {favButton}
+            </div>
+          )}
+        </div>
+      </div>
 
       {modal}
     </article>

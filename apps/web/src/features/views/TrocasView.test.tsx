@@ -26,6 +26,8 @@ const deposit = vi.fn();
 vi.mock('../../lib/api', () => ({
   api: {
     barters: () => barters(),
+    // O desenho de cada lado vem da categoria do serviço; aqui, sem categorias (ícone neutro).
+    categories: () => Promise.resolve([]),
     listServices: (params: unknown) => listServices(params),
     wallet: () => wallet(),
     publicSettings: () => publicSettings(),
@@ -286,6 +288,15 @@ describe('TrocasView: lista de trocas', () => {
     // A torna que recebo vem na faixa verde; o cartão aberto fica marcado.
     expect(card.querySelector('.trade-torna')).toHaveClass('get');
     expect(card).toHaveClass('trade-card', 'is-open');
+    expect(card).not.toHaveClass('is-stuck');
+    // Cada lado tem o desenho do ofício, só como enfeite: o que eu entrego e o que recebo.
+    const arts = Array.from(card.querySelectorAll('.trade-side-art'));
+    expect(arts).toHaveLength(2);
+    expect(
+      arts.every((a) => a.getAttribute('aria-hidden') === 'true' && a.querySelector('svg')),
+    ).toBe(true);
+    expect(card.querySelector('.trade-side-give')).toHaveTextContent('Você oferece');
+    expect(card.querySelector('.trade-side-get')).toHaveTextContent('Você recebe');
   });
 
   it('serviço fora do catálogo aparece pelo número; sem serviço nem descrição, um travessão', async () => {
@@ -356,6 +367,11 @@ describe('TrocasView: lista de trocas', () => {
     expect(within(screen.getByTestId('barter-6')).getByText('Cancelada')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Aceitar' })).not.toBeInTheDocument();
+    // Os quadros acompanham a situação: colados na troca fechada, apagados na que não foi adiante.
+    expect(screen.getByTestId('barter-5')).toHaveClass('is-stuck');
+    expect(screen.getByTestId('barter-5')).not.toHaveClass('is-open');
+    expect(rejected).toHaveClass('is-off');
+    expect(screen.getByTestId('barter-6')).toHaveClass('is-off');
   });
 
   it('falha ao buscar as trocas: mostra o erro e "Tentar de novo" busca outra vez', async () => {

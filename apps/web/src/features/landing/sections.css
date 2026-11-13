@@ -1,0 +1,285 @@
+/* =====================================================================
+   Álbum de troca: as seções do meio da página inicial. As categorias como figurinhas grandes
+   numeradas, o "como funciona" sobre a mesa escura, os jeitos de fechar negócio como figurinhas
+   que viram e as regras com os recortes soltos. Vem por último. Tokens em album-app.css.
+   ===================================================================== */
+
+/* ---------- Como funciona: a página de papel sobre a mesa ---------- */
+.lp-how {
+  background: var(--al-cover);
+}
+.lp-how .lp-head h2 {
+  color: #fff;
+}
+.lp-how .lp-sub {
+  color: var(--al-on-cover-2);
+}
+.lp-how .lp-tabs {
+  border: 0;
+  background: #0a3826;
+}
+.lp-how .lp-tab {
+  background: transparent;
+  color: #fff;
+}
+/* A aba escolhida é a etiqueta colada. */
+.lp-how .lp-tab[aria-selected='true'] {
+  background: var(--al-amber);
+  color: var(--al-cover);
+  box-shadow: var(--al-shadow);
+  rotate: -1.5deg;
+}
+.lp-how .lp-tab svg {
+  color: var(--al-amber);
+}
+.lp-how .lp-tab[aria-selected='true'] svg {
+  color: var(--al-cover);
+}
+.lp-how .lp-panel {
+  background: var(--al-paper);
+}
+/* Os passos: o número como figurinha âmbar, torta. */
+.lp-how .lp-step-n {
+  border: 0;
+  background: var(--al-amber);
+  color: var(--al-cover);
+  box-shadow: var(--al-shadow);
+  rotate: -4deg;
+}
+.lp-how .lp-steps > li:nth-child(even) .lp-step-n {
+  rotate: 3deg;
+}
+.lp-how-cta p {
+  color: #fff;
+}
+.lp-how-cta .lp-btn-primary {
+  background: var(--al-amber);
+  color: var(--al-cover);
+}
+.lp-how-cta .lp-btn-primary:hover {
+  background: var(--al-amber-2);
+  color: var(--al-cover);
+}
+.lp-how-cta .lp-btn-outline {
+  border-color: #fff;
+  background: transparent;
+  color: #fff;
+}
+.lp-how-cta .lp-btn-outline:hover {
+  background: #fff;
+  color: var(--al-cover);
+}
+/* No escuro, o anel de foco é o âmbar; dentro da página de papel, o verde. */
+.lp .lp-how a:focus-visible,
+.lp .lp-how button:focus-visible {
+  outline-color: var(--al-amber);
+}
+.lp .lp-how .lp-panel a:focus-visible,
+.lp .lp-how .lp-panel button:focus-visible {
+  outline-color: var(--al-green);
+}
+/* Trocar de aba: os passos entram um depois do outro e a tela pousa. */
+@media (prefers-reduced-motion: no-preference) {
+  .lp-panel:not([hidden]) .lp-steps > li {
+    animation: hw-step 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .lp-panel:not([hidden]) .lp-steps > li:nth-child(2) {
+    animation-delay: 90ms;
+  }
+  .lp-panel:not([hidden]) .lp-steps > li:nth-child(3) {
+    animation-delay: 180ms;
+  }
+  .lp-panel:not([hidden]) .lp-steps > li:nth-child(4) {
+    animation-delay: 270ms;
+  }
+  .lp-panel:not([hidden]) .lp-screen-fig {
+    animation: hw-screen 640ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+  }
+  @keyframes hw-step {
+    from {
+      translate: -16px 0;
+    }
+  }
+  @keyframes hw-screen {
+    from {
+      rotate: 3deg;
+      translate: 0 20px;
+    }
+  }
+}
+
+/* ---------- Jeitos de fechar negócio: figurinhas que viram ---------- */
+.wy-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17.5rem), 1fr));
+  gap: clamp(18px, 2.6vw, 32px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wy {
+  position: relative;
+  perspective: 1400px;
+}
+.wy-amber {
+  --wy-ground: #f6b73c;
+}
+.wy-green {
+  --wy-ground: var(--al-green);
+  --wy-ink: #fff;
+}
+.wy-sky {
+  --wy-ground: #8ecff5;
+}
+/* As duas faces ocupam a mesma célula: a figurinha tem a altura da face mais alta. */
+.wy-inner {
+  display: grid;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.wy.is-flipped .wy-inner {
+  transform: rotateY(180deg);
+}
+.wy-face {
+  display: flex;
+  flex-direction: column;
+  grid-area: 1 / 1;
+  gap: 12px;
+  min-height: 18rem;
+  padding: 22px 22px 66px;
+  border: 8px solid #fff;
+  border-radius: 14px;
+  box-shadow: var(--al-shadow);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.wy-front {
+  background: var(--wy-ground);
+  color: var(--wy-ink, var(--al-ink));
+}
+.wy-ico {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--al-cover);
+}
+.lp-band .wy-front h3 {
+  margin-top: auto;
+  color: inherit;
+  font-size: clamp(1.75rem, 1.4rem + 1vw, 2.25rem);
+  line-height: 0.98;
+}
+.wy .lp-cost {
+  margin: 0;
+  padding: 9px 12px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--al-ink);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-stretch: 100%;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.wy .lp-cost span {
+  display: block;
+  color: var(--al-green);
+  font-family: var(--al-display);
+  font-size: 0.75rem;
+  font-stretch: 85%;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+/* O verso: papel branco, com o quadro pontilhado do álbum. */
+.wy-back {
+  justify-content: center;
+  background: #fff;
+  color: var(--al-ink);
+  outline: 2px dashed var(--al-dot);
+  outline-offset: -16px;
+  transform: rotateY(180deg);
+}
+.wy-back p {
+  padding-inline: 10px;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+}
+/* O botão cobre a figurinha inteira (um alvo só); a etiqueta "Virar" fica no canto. */
+.wy-flip {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 22px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  cursor: pointer;
+}
+.wy-flip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 13px 6px;
+  border-radius: 999px;
+  background: var(--al-cover);
+  color: #fff;
+  font-family: var(--al-display);
+  font-size: 0.875rem;
+  font-stretch: 88%;
+  font-weight: 800;
+}
+/* É um <button>: sem o fundo e o relevo do botão do app (nem no hover). */
+.lp .wy .wy-flip,
+.lp .wy .wy-flip:hover:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
+}
+.lp .wy-flip:focus-visible {
+  outline: 3px solid var(--al-green);
+  outline-offset: 4px;
+}
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .wy:hover .wy-inner {
+    transform: rotateY(-9deg);
+  }
+  .wy.is-flipped:hover .wy-inner {
+    transform: rotateY(171deg);
+  }
+  .wy:hover .wy-flip-pill svg {
+    rotate: 180deg;
+  }
+  .wy-flip-pill svg {
+    transition: rotate 500ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wy-inner {
+    transition: none;
+  }
+}
+
+/* ---------- Combinado é garantido: os recortes soltos, que endireitam no ponteiro ---------- */
+.lp-art-card {
+  rotate: -1.4deg;
+  transition: rotate 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.lp-bento > li:nth-child(even) .lp-art-card {
+  rotate: 1.4deg;
+}
+.lp-bento > li:hover .lp-art-card {
+  rotate: 0deg;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-art-card {
+    transition: none;
+  }
+}

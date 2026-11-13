@@ -86,17 +86,21 @@ export function notificationLink(data: Record<string, unknown> | null | undefine
   return `${base}/notificacoes`;
 }
 
+const PASSWORD_RESET_PREVIEW = 'Link de redefinição protegido.';
+const PASSWORD_RESET_ERROR = 'Falha no envio do e-mail de redefinição.';
+
 function toAdminEmail(r: OutboxRow): AdminEmail {
+  const isPasswordReset = r.template === 'password_reset';
   return {
     id: r.id,
     userId: r.user_id,
     to: r.to_email,
     subject: r.subject,
     template: r.template as MailTemplate,
-    text: r.text_body,
+    text: isPasswordReset ? PASSWORD_RESET_PREVIEW : r.text_body,
     status: r.status as AdminEmail['status'],
     provider: r.provider,
-    error: r.error,
+    error: isPasswordReset && r.error !== null ? PASSWORD_RESET_ERROR : r.error,
     sentAt: r.sent_at ? new Date(r.sent_at).toISOString() : null,
     createdAt: new Date(r.created_at).toISOString(),
   };
@@ -139,13 +143,15 @@ export const mailService = {
     let delivered = false;
     try {
       const mail = renderEmail(params.template, params.vars);
+      const isPasswordReset = params.template === 'password_reset';
+      // A caixa de saída registra a entrega. A credencial de uso único vai só ao provedor.
       const draft = {
         userId: params.userId,
         to: params.to,
         subject: mail.subject,
         template: params.template,
-        text: mail.text,
-        html: mail.html,
+        text: isPasswordReset ? PASSWORD_RESET_PREVIEW : mail.text,
+        html: isPasswordReset ? '' : mail.html,
         provider: provider.name,
       };
       id = params.requireActiveUser
@@ -158,9 +164,17 @@ export const mailService = {
         await provider.send({ to: params.to, ...mail });
         delivered = true;
       } catch (err) {
-        logger.warn({ err, to: params.to, template: params.template }, 'envio de e-mail falhou');
+        logger.warn(
+          { err: isPasswordReset ? undefined : err, to: params.to, template: params.template },
+          'envio de e-mail falhou',
+        );
         try {
-          await mailRepository.markFailed(id, err instanceof Error ? err.message : String(err));
+          const error = isPasswordReset
+            ? PASSWORD_RESET_ERROR
+            : err instanceof Error
+              ? err.message
+              : String(err);
+          await mailRepository.markFailed(id, error);
         } catch (markErr) {
           // A linha existe, mas a falha não coube nela: fica 'queued', nem sent nem failed.
           logger.warn(

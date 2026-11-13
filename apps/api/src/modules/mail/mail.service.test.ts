@@ -236,6 +236,49 @@ describe('mailService.send', () => {
     expect(repo.markSent).toHaveBeenCalledWith(11);
   });
 
+  it('redefinição entrega o link ao provedor e registra só o resumo da mensagem', async () => {
+    const link = 'https://app.escambo.test/redefinir-senha?token=credencial-ficticia';
+    const send = vi.fn().mockResolvedValue(undefined);
+    provider.mockReturnValue({ name: 'smtp', send });
+
+    await mailService.send({
+      userId: 1,
+      to: 'ana@escambo.test',
+      template: 'password_reset',
+      vars: { link },
+    });
+
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Link de redefinição protegido.', html: '' }),
+    );
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'ana@escambo.test',
+        text: expect.stringContaining(link),
+        html: expect.stringContaining(link),
+      }),
+    );
+    expect(repo.markSent).toHaveBeenCalledWith(11);
+  });
+
+  it('protege a credencial se a resposta do provedor ecoar o corpo de redefinição', async () => {
+    const link = 'https://app.escambo.test/redefinir-senha?token=credencial-ficticia';
+    const send = vi.fn().mockRejectedValue(new Error(link));
+    const warn = vi.spyOn(logger, 'warn');
+    provider.mockReturnValue({ name: 'smtp', send });
+
+    await mailService.send({
+      userId: 1,
+      to: 'ana@escambo.test',
+      template: 'password_reset',
+      vars: { link },
+    });
+
+    expect(repo.markFailed).toHaveBeenCalledWith(11, 'Falha no envio do e-mail de redefinição.');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(link);
+    expect(repo.markSent).not.toHaveBeenCalled();
+  });
+
   it('provedor falhou: fica registrado como falha e não lança', async () => {
     provider.mockReturnValue(fake(vi.fn().mockRejectedValue(new Error('SMTP 535'))));
     await expect(
@@ -599,6 +642,34 @@ describe('mailService: registro, falhas e caixa de saída do admin', () => {
     expect(await mailService.listRecent(10, null)).toEqual([]);
 
     expect(repo.listRecent).toHaveBeenCalledWith(10, null);
+  });
+
+  it('oculta corpo e erro de mensagens antigas de redefinição no painel', async () => {
+    const link = 'https://app.escambo.test/redefinir-senha?token=credencial-antiga';
+    repo.listRecent.mockResolvedValue([
+      {
+        id: 3,
+        user_id: 7,
+        to_email: 'ana@escambo.test',
+        subject: 'Redefina sua senha',
+        template: 'password_reset',
+        text_body: link,
+        status: 'failed',
+        provider: 'simulated',
+        error: link,
+        sent_at: null,
+        created_at: new Date('2026-09-15T12:00:00Z'),
+      },
+    ] as never);
+
+    const [email] = await mailService.listRecent(30, 7);
+
+    expect(email).toMatchObject({
+      template: 'password_reset',
+      text: 'Link de redefinição protegido.',
+      status: 'failed',
+      error: 'Falha no envio do e-mail de redefinição.',
+    });
   });
 
   it('listRecent repassa o limite e o usuário e devolve os e-mails no formato do painel', async () => {

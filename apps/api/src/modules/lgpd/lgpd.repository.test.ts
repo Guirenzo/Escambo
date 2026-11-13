@@ -348,6 +348,7 @@ describe('lgpdRepository', () => {
           'UPDATE support_ticket_messages m',
           'UPDATE profiles_freelancer SET',
           'UPDATE profiles_client SET',
+          'DELETE i FROM',
           'UPDATE profiles_company SET',
           'UPDATE services SET',
           'DELETE FROM favorites',
@@ -442,6 +443,12 @@ describe('lgpdRepository', () => {
           'UPDATE user_sessions SET revoked_at = NOW() WHERE user_id = :userId AND revoked_at IS NULL',
         );
 
+        const portfolio = stmt('DELETE i FROM freelancer_portfolio_items');
+        expect(portfolio.sql).toBe(
+          'DELETE i FROM freelancer_portfolio_items i JOIN profiles_freelancer pf ON pf.id = i.freelancer_id WHERE pf.user_id = :userId',
+        );
+        expect(portfolio.params).toEqual({ userId: 7 });
+
         // O que é apagado de vez, sempre e só do titular.
         for (const table of [
           'push_subscriptions',
@@ -481,7 +488,7 @@ describe('lgpdRepository', () => {
         // Tudo dentro da mesma transação: ela abre antes da primeira instrução, só confirma depois
         // da última (o registro da ação do admin) e a conexão só volta ao pool depois do commit.
         const statements = fakeDb.conn.query.mock.invocationCallOrder;
-        expect(statements).toHaveLength(24);
+        expect(statements).toHaveLength(25);
         const begun = fakeDb.conn.beginTransaction.mock.invocationCallOrder[0]!;
         const committed = fakeDb.conn.commit.mock.invocationCallOrder[0]!;
         expect(begun).toBeLessThan(statements[0]!);
@@ -558,13 +565,13 @@ describe('lgpdRepository', () => {
 
       it('falha na última etapa (o registro da ação do admin) também desfaz a anonimização inteira', async () => {
         const boom = new Error('ER_NO_REFERENCED_ROW');
-        // As 23 primeiras instruções passam; o INSERT em admin_actions falha.
-        fakeDb.reply([], [], { affectedRows: 1 }, ...Array.from({ length: 20 }, () => ({})), boom);
+        // As 24 primeiras instruções passam; o INSERT em admin_actions falha.
+        fakeDb.reply([], [], { affectedRows: 1 }, ...Array.from({ length: 21 }, () => ({})), boom);
 
         await expect(lgpdRepository.completeDeletion(5, 7, 99)).rejects.toBe(boom);
 
-        expect(fakeDb.calls).toHaveLength(24);
-        expect(fakeDb.calls[23]!.sql.startsWith('INSERT INTO admin_actions')).toBe(true);
+        expect(fakeDb.calls).toHaveLength(25);
+        expect(fakeDb.calls.at(-1)!.sql.startsWith('INSERT INTO admin_actions')).toBe(true);
         expect(fakeDb.conn.commit).not.toHaveBeenCalled();
         expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
         expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
@@ -577,7 +584,7 @@ describe('lgpdRepository', () => {
 
         await expect(lgpdRepository.completeDeletion(5, 7, 99)).rejects.toBe(boom);
 
-        expect(fakeDb.calls).toHaveLength(24);
+        expect(fakeDb.calls).toHaveLength(25);
         expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
         expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
       });

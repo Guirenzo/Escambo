@@ -1,0 +1,38 @@
+/* =====================================================================
+   Álbum de troca: o movimento de rolagem. As figurinhas sobem para o lugar quando entram na tela,
+   uma coluna depois da outra (uma onda, da esquerda para a direita). Retas: nada de girar ou
+   crescer, que deixava umas por cima das outras. Só movimento, sem transparência (o texto mantém
+   o contraste o tempo todo). Tudo aqui é reforço: sem suporte ou com menos movimento, fica parado.
+   ===================================================================== */
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .lp-show .svc-card,
+    .wy,
+    .lp-final-photos img {
+      animation: al-rise cubic-bezier(0.16, 1, 0.3, 1) both;
+      animation-range: entry 0% entry 62%;
+      animation-timeline: view();
+    }
+    /* A onda: cada coluna começa um pouco depois da anterior. */
+    .lp-show .svc-card:nth-child(4n + 2),
+    .wy:nth-child(2),
+    .lp-final-photos img:nth-child(2) {
+      animation-range: entry 9% entry 71%;
+    }
+    .lp-show .svc-card:nth-child(4n + 3),
+    .wy:nth-child(3),
+    .lp-final-photos img:nth-child(3) {
+      animation-range: entry 18% entry 80%;
+    }
+    .lp-show .svc-card:nth-child(4n) {
+      animation-range: entry 27% entry 89%;
+    }
+    @keyframes al-rise {
+      from {
+        scale: 0.94;
+        translate: 0 64px;
+      }
+    }
+  }
+}

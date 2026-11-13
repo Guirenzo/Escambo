@@ -258,6 +258,13 @@ export const lgpdRepository = {
           WHERE user_id = :userId`,
         { userId },
       );
+      // As imagens locais que ficaram sem referência seguem o expurgo de órfãos da mídia.
+      await conn.query<ResultSetHeader>(
+        `DELETE i FROM freelancer_portfolio_items i
+          JOIN profiles_freelancer pf ON pf.id = i.freelancer_id
+          WHERE pf.user_id = :userId`,
+        { userId },
+      );
       // Conta de empresa (RF-018): sai o que a identifica, como nos outros perfis; contratações e
       // extratos ficam, sem nome. O CNPJ livre pode abrir outra conta.
       await conn.query<ResultSetHeader>(

@@ -14,6 +14,7 @@ import { notificationsService } from '../notifications/notifications.service';
 import {
   barterRepository,
   type BarterRow,
+  type BarterSettlement,
   type CatalogService,
   type TornaHold,
 } from './barter.repository';
@@ -359,6 +360,45 @@ export const barterService = {
       return;
     }
     if (!done) return;
+    await this.notifySettlement({ row, status: 'completed' });
+  },
+
+  /** Hook: um contrato da troca foi cancelado — a troca inteira entra em disputa (RN-067) e a torna volta. */
+  async onLinkedContractCancelled(agreementId: number): Promise<void> {
+    const row = await barterRepository.findById(agreementId);
+    if (!row || row.status !== 'active') return;
+    let done: boolean;
+    try {
+      done = await barterRepository.disputeAndRefund(agreementId);
+    } catch (err) {
+      // Mesma situação da conclusão: a troca segue 'active' com a torna presa no retido.
+      logger.error(
+        { err, barterId: agreementId },
+        'troca: falha ao abrir disputa e devolver a torna',
+      );
+      return;
+    }
+    if (!done) return;
+    await this.notifySettlement({ row, status: 'disputed' });
+  },
+
+  /** Avisa as partes depois de confirmar a transação da troca. */
+  async notifySettlement({ row, status }: BarterSettlement): Promise<void> {
+    const agreementId = row.id;
+    if (status === 'disputed') {
+      const refunded = row.torna_status === 'held' && Number(row.cash_difference) > 0;
+      for (const uid of [row.proposer_id, row.receiver_id]) {
+        void notificationsService.notify(uid, {
+          type: 'barter_disputed',
+          title: 'Troca em disputa',
+          body: refunded
+            ? `Um dos contratos foi cancelado. A torna de ${brl(Number(row.cash_difference))} voltou para a carteira de quem pagou.`
+            : 'Um dos contratos foi cancelado; o outro segue o próprio fluxo.',
+          data: { barterId: agreementId },
+        });
+      }
+      return;
+    }
     const torna = Number(row.cash_difference);
     const net = money(torna - Number(row.platform_fee));
     const receiverId = tornaReceiverOf(row);
@@ -384,35 +424,6 @@ export const barterService = {
       } catch (err) {
         logger.warn({ err, barterId: agreementId }, 'gamificação (onBarterCompleted) falhou');
       }
-    }
-  },
-
-  /** Hook: um contrato da troca foi cancelado — a troca inteira entra em disputa (RN-067) e a torna volta. */
-  async onLinkedContractCancelled(agreementId: number): Promise<void> {
-    const row = await barterRepository.findById(agreementId);
-    if (!row || row.status !== 'active') return;
-    let done: boolean;
-    try {
-      done = await barterRepository.disputeAndRefund(agreementId);
-    } catch (err) {
-      // Mesma situação da conclusão: a troca segue 'active' com a torna presa no retido.
-      logger.error(
-        { err, barterId: agreementId },
-        'troca: falha ao abrir disputa e devolver a torna',
-      );
-      return;
-    }
-    if (!done) return;
-    const refunded = row.torna_status === 'held' && Number(row.cash_difference) > 0;
-    for (const uid of [row.proposer_id, row.receiver_id]) {
-      void notificationsService.notify(uid, {
-        type: 'barter_disputed',
-        title: 'Troca em disputa',
-        body: refunded
-          ? `Um dos contratos foi cancelado. A torna de ${brl(Number(row.cash_difference))} voltou para a carteira de quem pagou.`
-          : 'Um dos contratos foi cancelado; o outro segue o próprio fluxo.',
-        data: { barterId: agreementId },
-      });
     }
   },
 };

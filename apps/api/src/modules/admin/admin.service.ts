@@ -7,10 +7,12 @@ import type {
 } from '@escambo/types';
 import { blocklist } from '../../config/blocklist';
 import { env } from '../../config/env';
+import { logger } from '../../config/logger';
 import { realtime } from '../../config/realtime';
 import { clock } from '../../utils/clock';
 import { HttpError } from '../../utils/http-error';
 import { authFacade } from '../auth/auth.facade';
+import { barterService } from '../barter/barter.service';
 import { contractsFacade } from '../contracts/contracts.facade';
 import { cashSettlement } from '../contracts/contracts.service';
 import { disputesFacade } from '../disputes/disputes.facade';
@@ -105,7 +107,7 @@ export const adminService = {
       }
     }
 
-    const ok = await disputesFacade.resolve({
+    const resolved = await disputesFacade.resolve({
       disputeId,
       adminId,
       contractId: contract.id,
@@ -116,15 +118,28 @@ export const adminService = {
       releaseToFreelancer,
       refundToClient,
       contractFinalStatus: finalStatus,
+      ...(contract.barter_agreement_id == null
+        ? {}
+        : { barterAgreementId: contract.barter_agreement_id }),
       resolution: input.resolution,
       refundPercentage,
       note: input.note ?? null,
       source: 'user',
     });
-    if (!ok) throw new HttpError(409, 'Não foi possível resolver a disputa', 'conflict');
+    if (!resolved) throw new HttpError(409, 'Não foi possível resolver a disputa', 'conflict');
+    if (resolved.barterSettlement) {
+      try {
+        await barterService.notifySettlement(resolved.barterSettlement);
+      } catch (err) {
+        logger.warn({ err, disputeId }, 'falha ao notificar a troca depois da mediação');
+      }
+    }
 
-    const outcome =
-      input.resolution === 'release_freelancer'
+    const outcome = isBarter
+      ? finalStatus === 'completed'
+        ? 'Contrato da troca concluído pela mediação.'
+        : 'Contrato da troca cancelado pela mediação.'
+      : input.resolution === 'release_freelancer'
         ? 'Valor do escrow liberado ao freelancer.'
         : input.resolution === 'refund_client'
           ? 'Valor do escrow devolvido ao cliente.'

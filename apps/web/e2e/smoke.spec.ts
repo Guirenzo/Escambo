@@ -34,7 +34,7 @@ test('login pelo formulário leva ao dashboard', async ({ page, request }) => {
   await expect(page.getByText('Créditos Escambo').first()).toBeVisible();
 });
 
-test('página inicial: criar conta pelo lado escolhido, e a categoria volta filtrada depois do login', async ({
+test('página inicial: criar conta pelo lado escolhido; a busca por categoria volta filtrada depois do login', async ({
   page,
   request,
 }) => {
@@ -49,14 +49,13 @@ test('página inicial: criar conta pelo lado escolhido, e a categoria volta filt
   await page.getByRole('link', { name: 'Escambo' }).click();
   await expect(page).toHaveURL(/\/$/);
 
-  // Categoria sem sessão: pede o login e, depois de entrar, abre a busca já filtrada por ela.
+  // Busca por categoria sem sessão: pede o login e, depois de entrar, abre a busca já filtrada por
+  // ela. (Na página inicial as categorias filtram a vitrine ali mesmo: landing.smoke.spec.ts.)
   const user = await createUser(request, 'client');
-  await expect(page.locator('#categorias')).toBeVisible();
-  const chip = page.locator('#categorias .lp-chip').first();
-  const href = (await chip.getAttribute('href')) ?? '';
-  const id = new URL(href, 'http://localhost').searchParams.get('categoria') ?? '';
-  expect(id, 'a categoria vai no endereço').toMatch(/^\d+$/);
-  await chip.click();
+  const categories = (await (await request.get('/api/categories')).json()) as { id: number }[];
+  const id = String(categories[0]?.id ?? '');
+  expect(id, 'o seed de referência tem categorias').toMatch(/^\d+$/);
+  await page.goto(`/servicos?categoria=${id}`);
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel('E-mail').fill(user.email);
   await page.getByLabel('Senha').fill(PASSWORD);

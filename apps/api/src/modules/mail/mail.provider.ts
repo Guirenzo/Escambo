@@ -5,7 +5,7 @@ import { logger } from '../../config/logger';
 /**
  * Provedor de e-mail atrás de interface (mesmo desenho do gateway de pagamento).
  * - `simulated`: nada sai da máquina; a caixa de saída (email_outbox) é a entrega — o admin
- *   lê os e-mails no painel e a demo/os testes pegam os links de lá.
+ *   lê as mensagens no painel; redefinição de senha exige entrega por um provedor real.
  * - `smtp`: nodemailer com SMTP_* (qualquer provedor: Gmail, SES, Mailgun, Resend…).
  * - `off`: não registra nem envia (testes unitários).
  */

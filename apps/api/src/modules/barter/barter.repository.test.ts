@@ -587,7 +587,7 @@ describe('barterRepository', () => {
     it('as partes imutáveis e a carteira de quem recebe são preparadas antes da conexão', async () => {
       ready(barterRow({ status: 'active' }));
       expect(await barterRepository.completeAndRelease(5)).toBe(true);
-      expect(lockWallets).toHaveBeenCalledExactlyOnceWith(fakeDb.conn, [2, 1]);
+      expect(lockWallets).toHaveBeenCalledExactlyOnceWith(fakeDb.conn, [2, 1], []);
       expect(fakeDb.conn.query.mock.invocationCallOrder[2]!).toBeLessThan(
         firstOrder(vi.mocked(lockWallets)),
       );
