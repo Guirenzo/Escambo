@@ -25,10 +25,12 @@ Identidade visual nova ("Álbum de troca") e as correções dos três defeitos a
 - **Link de redefinição de senha na caixa de saída** (#58): o link de uso único não fica mais gravado nem aparece na listagem do admin; a caixa de saída guarda só os dados da entrega. A migration 0054 limpa os registros antigos.
 - **Portfólio na exclusão e na exportação de dados (LGPD)** (#59): a exportação inclui o portfólio do freelancer, e a exclusão da conta o apaga. A migration 0055 remove os itens que ficaram de contas já excluídas.
 - **Acessibilidade das telas novas:** texto a 200%, espaçamento de texto, foco visível pelo teclado e telas de 320 px conferidos pelos testes de ponta a ponta.
+- **Texto a 200% no app:** os seletores "Status", "Ordenar" e a categoria do ranking, as abas pequenas da Carteira e a linha dos saques passavam da largura da tela no celular. Agora quebram a linha e encolhem até caber.
 
 ### Alterado
 
 - Dependências de produção atualizadas pelo dependabot: @sentry/node 11.10.0, nodemailer 10.3.1, swagger-ui-dist 5.34.1, @tanstack/react-query 5.106.0, lucide-react 1.68.0 e react-router-dom 7.18.5.
+- Dependências de desenvolvimento atualizadas pelo dependabot: vitest e @vitest/coverage-v8 5.1.0, vite 6.4.5 e typescript-eslint 8.72.1. O lock passa a deixar o vitest na raiz do monorepo: aninhado em cada app, os tipos dos matchers do jest-dom não se aplicavam.
 - Dependência nova no front: `@fontsource-variable/anybody` (fonte, licença OFL-1.1).
 
 ### Para atualizar

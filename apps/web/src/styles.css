@@ -9786,3 +9786,30 @@ button.mini.q-danger:hover:not(:disabled) {
   align-items: flex-end;
   gap: 2px;
 }
+
+/* ---------- Texto a 200% (WCAG 1.4.4): nada passa da largura da tela ---------- */
+/* Os seletores com rótulo ao lado ("Status", "Ordenar") quebram a linha e encolhem até caber; o
+   seletor nativo nunca é mais largo que o espaço que tem. */
+.inline-filter,
+.results-tools .sort {
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}
+.inline-filter select,
+.results-tools .sort select,
+.geo-bar select {
+  min-width: 0;
+  max-width: 100%;
+}
+/* Linha de lista com ações (saques e depósitos da Carteira): a etiqueta e os botões descem para
+   baixo do texto quando não cabem ao lado. */
+.list li:has(> .acts) {
+  flex-wrap: wrap;
+}
+/* Abas pequenas ("30 dias | 12 semanas | 12 meses", "Reais | Créditos"): quebram em duas linhas
+   em vez de alargar o cartão. */
+.tabs.tabs-mini {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
