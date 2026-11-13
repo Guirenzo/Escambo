@@ -1,4 +1,12 @@
-import { CircleCheck, Target } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  CalendarCheck,
+  CircleCheck,
+  PackageCheck,
+  Target,
+  Zap,
+  type LucideIcon,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Mission } from '@escambo/types';
 import { ErrorState } from '../../components/ui';
@@ -9,6 +17,14 @@ const KIND: Record<Mission['type'], string> = {
   daily: 'Diária',
   weekly: 'Semanal',
   achievement: 'Conquista',
+};
+
+/** O desenho de cada missão no quadro dela: o que é preciso fazer para colar a figurinha. */
+const ACTION_ICON: Record<Mission['action'], LucideIcon> = {
+  complete_contracts: PackageCheck,
+  fast_response_hours: Zap,
+  daily_login: CalendarCheck,
+  complete_barter: ArrowLeftRight,
 };
 
 /** O instante em que o período da missão acaba: o segundo seguinte ao 23:59:59 (null sem prazo). */
@@ -26,7 +42,8 @@ export function missionDeadline(m: Mission, now: number): string {
  * Missões do período vigente (RF-066, RN-054), no Início. Abrir o cartão conta como o acesso do dia.
  * O "expira em" anda a cada minuto, e quando um período vira as missões são buscadas de novo (o
  * progresso da diária ou da semana recomeça). Quem não tem missões (cliente, conta sem perfil de
- * freelancer) não vê o cartão.
+ * freelancer) não vê o cartão. Cada missão tem um quadro do álbum com o desenho dela: pontilhado
+ * enquanto falta, figurinha colada quando cumprida (decorativo: o estado está no texto ao lado).
  */
 export function MissionsCard() {
   const missions = useMissions();
@@ -78,8 +95,12 @@ export function MissionsCard() {
       <ul className="list">
         {data.map((m) => {
           const percent = Math.min(100, Math.round((m.progress / m.target) * 100));
+          const Icon = ACTION_ICON[m.action] ?? Target;
           return (
             <li key={m.id} className={m.completed ? 'done' : undefined}>
+              <span className={m.completed ? 'ms-slot on' : 'ms-slot'} aria-hidden="true">
+                <Icon size={20} />
+              </span>
               <div className="grow">
                 <strong>{m.title}</strong> <span className="chip level tiny">{KIND[m.type]}</span>
                 {m.description && <div className="muted tiny">{m.description}</div>}

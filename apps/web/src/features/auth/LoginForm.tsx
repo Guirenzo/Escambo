@@ -8,7 +8,7 @@ import { errorMessage } from '../../lib/errors';
 import { googleFailureMessage } from '../../lib/google';
 import { normalizeRecoveryCode, normalizeTotp } from '../../lib/mfa';
 import { usePageTitle } from '../../lib/title';
-import { AuthPanel } from './AuthPanel';
+import { AuthPanel, MintSticker } from './AuthPanel';
 import { GoogleButton } from './GoogleButton';
 import './auth.css';
 import { BrandMark } from '../../components/BrandMark';
@@ -148,6 +148,13 @@ export function MfaStep({
 export type AuthMode = 'login' | 'register';
 export type SignupRole = 'client' | 'freelancer' | 'company';
 
+/** O papel na faixa da figurinha de quem está criando a conta. */
+const MINT_LABEL: Record<SignupRole, string> = {
+  client: 'Cliente',
+  freelancer: 'Freelancer',
+  company: 'Empresa',
+};
+
 export const CNPJ_HINT =
   'Com ou sem pontos, barra e hífen. Vale também o CNPJ com letras (alfanumérico).';
 export const CNPJ_INVALID =
@@ -277,6 +284,7 @@ export function LoginForm({
             />
           ) : (
             <form className="au-card" onSubmit={handleSubmit}>
+              <MintSticker email={email} label={mode === 'login' ? 'De volta' : MINT_LABEL[role]} />
               {/* Os dois modos são botões de alternância: o estado sai em aria-pressed, não só na cor. */}
               <div className="au-switch" role="group" aria-label="Entrar ou criar conta">
                 <button

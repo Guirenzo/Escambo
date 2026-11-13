@@ -560,11 +560,12 @@ test('página inicial: contraste das chamadas em repouso, hover e foco, no claro
   const targets: [string, Locator][] = [
     ['topo: Entrar', banner.getByRole('link', { name: 'Entrar', exact: true })],
     ['topo: Criar conta', banner.getByRole('link', { name: 'Criar conta', exact: true })],
-    ['hero: Criar conta (âmbar)', hero.getByRole('link', { name: 'Criar conta', exact: true })],
-    ['hero: Ver como funciona (contorno)', hero.getByRole('link', { name: 'Ver como funciona' })],
-    ['hero: Entrar (link no texto)', hero.getByRole('link', { name: 'Entrar', exact: true })],
+    ['topo da página: Ver como funciona', hero.getByRole('link', { name: 'Ver como funciona' })],
     ['caminho: Criar conta de cliente', page.getByRole('link', { name: /Criar conta de cliente/ })],
-    ['categoria (chip)', page.locator('.lp-chip').first()],
+    [
+      'categoria (figurinha)',
+      page.getByRole('group', { name: 'Categorias' }).getByRole('button').first(),
+    ],
     ['final: Criar conta (âmbar)', final.getByRole('link', { name: 'Criar conta', exact: true })],
     ['final: Entrar (contorno)', final.getByRole('link', { name: 'Entrar', exact: true })],
     ['rodapé: Termos de Uso', footer.getByRole('link', { name: 'Termos de Uso' })],
@@ -574,6 +575,9 @@ test('página inicial: contraste das chamadas em repouso, hover e foco, no claro
     name: 'Garantia',
   });
   if (await anchor.isVisible()) targets.push(['topo: âncora', anchor]);
+  // O pacotinho só tem botão quando o catálogo passa da primeira página da vitrine.
+  const pack = page.getByRole('button', { name: 'Abrir pacotinho' });
+  if (await pack.isVisible()) targets.push(['pacotinho: Abrir pacotinho (âmbar)', pack]);
 
   const rows: string[] = [];
   const problems: string[] = [];

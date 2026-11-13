@@ -1,0 +1,41 @@
+/* =====================================================================
+   Álbum de troca: a capa das figurinhas de serviço sem imagem própria (vitrine e pacotinho). Em vez
+   da foto genérica da categoria, o desenho do ofício sobre uma cor chapada, que muda de figurinha
+   em figurinha. Vem depois de styles.css na cascata só pela especificidade (.lp-show ...).
+   ===================================================================== */
+
+.lp-show .svc-card .svc-cover[data-cover='icon'] {
+  background: var(--cv, #8ecff5);
+}
+.lp-show .svc-card:nth-child(5n + 1) .svc-cover[data-cover='icon'] {
+  --cv: #8ecff5;
+}
+.lp-show .svc-card:nth-child(5n + 2) .svc-cover[data-cover='icon'] {
+  --cv: #f6b73c;
+}
+.lp-show .svc-card:nth-child(5n + 3) .svc-cover[data-cover='icon'] {
+  --cv: #c9b3f5;
+}
+.lp-show .svc-card:nth-child(5n + 4) .svc-cover[data-cover='icon'] {
+  --cv: #c4e46a;
+}
+.lp-show .svc-card:nth-child(5n) .svc-cover[data-cover='icon'] {
+  --cv: #f27b62;
+}
+.lp-show .svc-cover[data-cover='icon'] .svc-cover-art {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--al-cover);
+}
+.lp-show .svc-cover[data-cover='icon'] .svc-cover-art svg {
+  width: 4.25rem;
+  height: 4.25rem;
+}
+
+/* No pacotinho, a imagem do portfólio cobre o desenho que fica por baixo. */
+.pk-sticker .al-sticker-photo img {
+  z-index: 1;
+}

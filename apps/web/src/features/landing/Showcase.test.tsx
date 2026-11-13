@@ -87,6 +87,7 @@ function renderShowcase(filter: ShowcaseFilter = { q: '', categoryId: null }) {
         <Showcase
           filter={filter}
           categories={CATALOG}
+          onCategory={() => undefined}
           onClearQuery={onClearQuery}
           onClearCategory={onClearCategory}
         />

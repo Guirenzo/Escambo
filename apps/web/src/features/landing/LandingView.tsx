@@ -1,51 +1,56 @@
 import {
+  ArrowDown,
   ArrowLeftRight,
   BadgeCheck,
   Banknote,
   Coins,
+  RefreshCw,
   Scale,
   Search,
   ShieldCheck,
+  type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import type { Category } from '@escambo/types';
+import { AlbumWall } from '../../components/AlbumWall';
 import { SkipLink } from '../../components/ui';
 import { useCategories, usePublicSettings } from '../../lib/hooks';
 import { scrollBehavior } from '../../lib/motion';
 import { usePageTitle } from '../../lib/title';
-import { categoryArt } from '../services/categoryArt';
-import { DeviceShowcase } from './AppMock';
-import { CategoryGrid } from './CategoryGrid';
+import { Ribbon } from './album';
 import { factsFrom, percent, type LandingFacts } from './facts';
 import { GuaranteeBento } from './GuaranteeBento';
 import { HowItWorks } from './HowItWorks';
 import { LandingFaq } from './LandingFaq';
+import { Pack } from './Pack';
 import { PORTRAITS } from './photos';
 import { PublicFooter } from './PublicFooter';
 import { PublicHeader, type SectionLink } from './PublicHeader';
 import { Showcase, type ShowcaseFilter } from './Showcase';
 import { TradeSection } from './TradeSection';
 import './landing.css';
+import './album.css';
+import './album-pages.css';
+import './pack.css';
+import './album-motion.css';
+import './hero.css';
+import './trade.css';
+import './sections.css';
 
 /**
- * Topo: a promessa, a busca (filtra a vitrine logo abaixo, sem pedir login), atalhos das categorias
- * reais, as duas portas de entrada e as telas do app. Fundo escuro sólido; o brilho decorativo fica
- * numa camada à parte, escura o bastante para o texto manter o contraste no pior ponto.
+ * Topo: uma mensagem e uma ação. A promessa em letra grande e a busca (filtra a vitrine logo
+ * abaixo, sem pedir login), sobre a parede do álbum. As categorias ficam na vitrine, como filtro.
  */
 function Hero({
   barter,
-  categories,
   filter,
   onSearch,
 }: {
   barter: boolean;
-  categories: Category[];
   filter: ShowcaseFilter;
   onSearch: (next: ShowcaseFilter) => void;
 }) {
   const inputId = useId();
-  const quickId = useId();
   const [text, setText] = useState(filter.q);
   // A busca limpa pela vitrine (o "x" do filtro) também limpa o campo.
   useEffect(() => setText(filter.q), [filter.q]);
@@ -57,94 +62,47 @@ function Hero({
 
   return (
     <section className="lp-hero" aria-labelledby="lp-hero-title">
-      <div className="lp-hero-glow" aria-hidden="true" />
-      <div className="lp-wrap lp-hero-grid">
-        <div className="lp-hero-copy">
-          <p className="lp-eyebrow">
-            <span className="lp-eyebrow-ico">
-              {barter ? <ArrowLeftRight size={14} /> : <ShieldCheck size={14} />}
-            </span>
-            {barter
-              ? 'Marketplace de freelancers com troca de serviços'
-              : 'Marketplace de freelancers com pagamento protegido'}
-          </p>
-          {barter ? (
-            <h1 id="lp-hero-title">
-              <span className="lp-accent">Troque</span> o que você sabe fazer pelo que você precisa.
-            </h1>
-          ) : (
-            <h1 id="lp-hero-title">
-              Contrate freelancers com o pagamento <span className="lp-accent">protegido</span>.
-            </h1>
-          )}
-          <p className="lp-lead">
-            {barter
-              ? 'Contrate com o pagamento guardado até você aprovar a entrega, ou pague com o seu trabalho: troque serviço por serviço, e o app calcula a diferença.'
-              : 'O valor fica guardado na plataforma até você aprovar a entrega. Também dá para pagar com créditos Escambo, a moeda do banco de tempo, sem taxa.'}
-          </p>
+      <AlbumWall />
+      <div className="lp-wrap hx">
+        {barter ? (
+          <h1 id="lp-hero-title">
+            <span className="lp-accent">Troque</span> o que você sabe fazer pelo que você precisa.
+          </h1>
+        ) : (
+          <h1 id="lp-hero-title">
+            Contrate freelancers com o pagamento <span className="lp-accent">protegido</span>.
+          </h1>
+        )}
+        <p className="lp-lead">
+          {barter
+            ? 'Contrate com o pagamento guardado até você aprovar a entrega, ou pague com o seu trabalho: troque serviço por serviço, e o app calcula a diferença.'
+            : 'O valor fica guardado na plataforma até você aprovar a entrega. Também dá para pagar com créditos Escambo, a moeda do banco de tempo, sem taxa.'}
+        </p>
 
-          <form className="lp-search" role="search" aria-label="Buscar serviços" onSubmit={submit}>
-            <label htmlFor={inputId} className="lp-search-label">
-              O que você precisa?
-            </label>
-            <div className="lp-search-row">
-              <Search size={20} aria-hidden="true" className="lp-search-ico" />
-              <input
-                id={inputId}
-                type="search"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder="Ex.: logo, faxina, aulas"
-                autoComplete="off"
-                enterKeyHint="search"
-              />
-              <button type="submit" className="lp-search-btn">
-                Buscar
-              </button>
-            </div>
-          </form>
-          {categories.length > 0 && (
-            <div className="lp-quick" role="group" aria-labelledby={quickId}>
-              <span className="lp-quick-label" id={quickId}>
-                Atalhos
-              </span>
-              {categories.map((c) => {
-                const { Icon } = categoryArt(c.slug);
-                const on = filter.categoryId === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className="lp-quick-btn"
-                    aria-pressed={on}
-                    onClick={() => onSearch({ q: text.trim(), categoryId: on ? null : c.id })}
-                  >
-                    <Icon size={15} aria-hidden="true" />
-                    {c.name}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="lp-hero-actions">
-            <Link to="/cadastro" className="lp-btn lp-btn-amber lp-btn-lg">
-              Criar conta
-            </Link>
-            <a
-              href={barter ? '#troca' : '#como-funciona'}
-              className="lp-btn lp-btn-light lp-btn-lg"
-            >
-              Ver como funciona
-            </a>
+        <form className="lp-search" role="search" aria-label="Buscar serviços" onSubmit={submit}>
+          <label htmlFor={inputId} className="lp-search-label">
+            O que você precisa?
+          </label>
+          <div className="lp-search-row">
+            <Search size={20} aria-hidden="true" className="lp-search-ico" />
+            <input
+              id={inputId}
+              type="search"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Ex.: logo, faxina, aulas"
+              autoComplete="off"
+              enterKeyHint="search"
+            />
+            <button type="submit" className="lp-search-btn">
+              Buscar
+            </button>
           </div>
-          <p className="lp-hero-login">
-            Já tem conta? <Link to="/login">Entrar</Link>
-          </p>
-        </div>
-        <div className="lp-hero-art">
-          <DeviceShowcase barter={barter} />
-        </div>
+        </form>
+        <a href={barter ? '#troca' : '#como-funciona'} className="hx-more">
+          Ver como funciona
+          <ArrowDown size={18} aria-hidden="true" />
+        </a>
       </div>
       <div className="lp-wrap">
         <ul className="lp-assure">
@@ -177,69 +135,108 @@ function Hero({
   );
 }
 
+/**
+ * Um jeito de fechar negócio, como figurinha que vira: a frente diz o nome e o custo; o verso
+ * explica como funciona. O botão cobre a figurinha inteira (um alvo só, também no teclado), e a
+ * face que está para trás sai da leitura.
+ */
+function Way({
+  Icon,
+  title,
+  cost,
+  tone,
+  children,
+}: {
+  Icon: LucideIcon;
+  title: string;
+  cost: string;
+  tone: 'amber' | 'green' | 'sky';
+  children: string;
+}) {
+  const [flipped, setFlipped] = useState(false);
+  const backId = useId();
+  return (
+    <li className={`wy wy-${tone}${flipped ? ' is-flipped' : ''}`}>
+      <div className="wy-inner">
+        <div className="wy-face wy-front" aria-hidden={flipped}>
+          <span className="wy-ico">
+            <Icon size={30} aria-hidden="true" />
+          </span>
+          <h3>{title}</h3>
+          <p className="lp-cost">
+            <span>Custo</span>
+            {cost}
+          </p>
+        </div>
+        <div className="wy-face wy-back" id={backId} aria-hidden={!flipped}>
+          <p>{children}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="wy-flip"
+        aria-pressed={flipped}
+        aria-controls={backId}
+        aria-label={`Virar: ${title}`}
+        onClick={() => setFlipped((f) => !f)}
+      >
+        {/* O nome não muda com o estado: quem diz se está virada é o aria-pressed. */}
+        <span className="wy-flip-pill">
+          <RefreshCw size={16} aria-hidden="true" />
+          Virar
+        </span>
+      </button>
+    </li>
+  );
+}
+
 function Ways({ facts }: { facts: LandingFacts }) {
   const { fee, barter } = facts;
   return (
     <section className="lp-band lp-ways-band" id="jeitos" aria-labelledby="lp-ways-title">
       <div className="lp-wrap">
         <div className="lp-head">
-          <p className="lp-kicker">Formas de pagamento</p>
           <h2 id="lp-ways-title">
             {barter ? 'Três jeitos de fechar negócio' : 'Dois jeitos de fechar negócio'}
           </h2>
           <p className="lp-sub">
-            Você escolhe na proposta, e o valor de cada lado aparece antes de você confirmar.
+            Você escolhe na proposta, e o valor de cada lado aparece antes de você confirmar. Vire a
+            figurinha para ver como cada um funciona.
           </p>
         </div>
-        <ul className="lp-ways">
-          <li className="lp-way">
-            <span className="lp-ico">
-              <Banknote size={22} aria-hidden="true" />
-            </span>
-            <h3>Dinheiro, com garantia</h3>
-            <p>
-              Você paga ao contratar e o valor fica guardado na plataforma. O freelancer recebe
-              quando você aprova a entrega, ou por etapas em projetos maiores.
-            </p>
-            <p className="lp-cost">
-              <span>Custo</span>
-              {fee !== null
+        <ul className="wy-list">
+          <Way
+            Icon={Banknote}
+            title="Dinheiro, com garantia"
+            tone="amber"
+            cost={
+              fee !== null
                 ? `${percent(fee)} sobre o valor, descontados de quem recebe`
-                : 'Uma taxa sobre o valor, descontada de quem recebe'}
-            </p>
-          </li>
+                : 'Uma taxa sobre o valor, descontada de quem recebe'
+            }
+          >
+            Você paga ao contratar e o valor fica guardado na plataforma. O freelancer recebe quando
+            você aprova a entrega, ou por etapas em projetos maiores.
+          </Way>
           {barter && (
-            <li className="lp-way lp-way-featured">
-              <span className="lp-ico">
-                <ArrowLeftRight size={22} aria-hidden="true" />
-              </span>
-              <h3>Troca de serviços</h3>
-              <p>
-                Você faz um trabalho para outra pessoa e ela faz um para você. Cada lado vira uma
-                contratação, com prazo, chat e aprovação.
-              </p>
-              <p className="lp-cost">
-                <span>Custo</span>
-                {fee !== null
+            <Way
+              Icon={ArrowLeftRight}
+              title="Troca de serviços"
+              tone="green"
+              cost={
+                fee !== null
                   ? `Troca equilibrada não paga taxa. Com torna, ${percent(fee)} só sobre a torna`
-                  : 'Troca equilibrada não paga taxa. Com torna, a taxa vale só sobre a torna'}
-              </p>
-            </li>
+                  : 'Troca equilibrada não paga taxa. Com torna, a taxa vale só sobre a torna'
+              }
+            >
+              Você faz um trabalho para outra pessoa e ela faz um para você. Cada lado vira uma
+              contratação, com prazo, chat e aprovação.
+            </Way>
           )}
-          <li className="lp-way">
-            <span className="lp-ico">
-              <Coins size={22} aria-hidden="true" />
-            </span>
-            <h3>Créditos Escambo</h3>
-            <p>
-              A moeda do banco de tempo. Você ganha créditos trabalhando e usa para contratar ou
-              para destacar o seu serviço na busca.
-            </p>
-            <p className="lp-cost">
-              <span>Custo</span>
-              Sem taxa
-            </p>
-          </li>
+          <Way Icon={Coins} title="Créditos Escambo" tone="sky" cost="Sem taxa">
+            A moeda do banco de tempo. Você ganha créditos trabalhando e usa para contratar ou para
+            destacar o seu serviço na busca.
+          </Way>
         </ul>
       </div>
     </section>
@@ -338,20 +335,21 @@ export function LandingView() {
       <main className="main lp-main" id="conteudo" tabIndex={-1}>
         <Hero
           barter={barter}
-          categories={roots}
           filter={filter}
           onSearch={(next) => {
             setFilter(next);
             setSearches((n) => n + 1);
           }}
         />
+        <Pack categories={roots} />
+        <Ribbon />
         <Showcase
           filter={filter}
           categories={roots}
+          onCategory={(id) => setFilter((f) => ({ ...f, categoryId: id }))}
           onClearQuery={() => setFilter((f) => ({ ...f, q: '' }))}
           onClearCategory={() => setFilter((f) => ({ ...f, categoryId: null }))}
         />
-        {roots.length > 0 && <CategoryGrid categories={roots} barter={barter} />}
         <HowItWorks barter={barter} fee={facts.fee} />
         <Ways facts={facts} />
         {barter && <TradeSection fee={facts.fee} />}

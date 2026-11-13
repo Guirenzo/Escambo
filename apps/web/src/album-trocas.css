@@ -1,0 +1,180 @@
+/* =====================================================================
+   Álbum de troca: a tela de Trocas. A faixa de cima explica a troca com duas figurinhas de ofício
+   e a moeda da torna no meio. Em cada troca, os dois lados são quadros do álbum: pontilhados
+   enquanto a proposta espera resposta, figurinhas coladas quando a troca foi fechada, apagados
+   quando não foi adiante. Tela de trabalho: o movimento só responde a quem mexe.
+   A base (quadro pontilhado, rótulos, moeda âmbar) está em album-app.css.
+   ===================================================================== */
+
+/* ---------- Como funciona a troca ---------- */
+.trade-hero {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 40px;
+  padding: 28px 44px 28px 28px;
+  border-radius: 20px;
+  background: var(--al-cover);
+  box-shadow: var(--al-shadow-soft);
+}
+.trade-hero h2 {
+  font-size: 2rem;
+  font-weight: 850;
+  font-stretch: 72%;
+  line-height: 1;
+  letter-spacing: -0.005em;
+}
+.trade-hero-text > p {
+  color: var(--al-on-cover-2);
+}
+.trade-hero-text b {
+  color: var(--al-amber);
+}
+.trade-steps li {
+  align-items: center;
+  border-radius: 12px;
+}
+.trade-steps li > span {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--al-amber);
+  color: var(--al-cover);
+}
+/* Duas figurinhas de ofício e a moeda da troca no meio (decorativas). */
+.trade-hero-art {
+  display: flex;
+  align-items: center;
+}
+.th-sticker {
+  display: grid;
+  place-items: center;
+  width: 6.25rem;
+  aspect-ratio: 5 / 7;
+  border: 5px solid var(--al-paper);
+  border-radius: 9px;
+  background: var(--g, var(--al-print));
+  color: var(--al-cover);
+  box-shadow: var(--al-shadow);
+  transition: translate 300ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.th-sticker svg {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+.th-sticker:first-child {
+  rotate: -6deg;
+}
+.th-sticker:last-child {
+  rotate: 6deg;
+}
+.th-coin {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  margin: 0 -12px;
+  border-radius: 50%;
+  background: var(--al-amber);
+  color: var(--al-cover);
+  box-shadow: var(--al-shadow);
+  transition: rotate 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* Passando o ponteiro na faixa, as duas se aproximam e a moeda vira. */
+.trade-hero:hover .th-sticker:first-child {
+  translate: 10px 0;
+}
+.trade-hero:hover .th-sticker:last-child {
+  translate: -10px 0;
+}
+.trade-hero:hover .th-coin {
+  rotate: 180deg;
+}
+/* Sem espaço para as figurinhas ao lado: uma coluna só. */
+@media (max-width: 1100px) {
+  .trade-hero {
+    grid-template-columns: 1fr;
+    padding-right: 28px;
+  }
+  .trade-hero-art {
+    display: none;
+  }
+}
+@media (max-width: 720px) {
+  .trade-hero {
+    padding: 18px;
+  }
+  .trade-hero h2 {
+    font-size: 1.5rem;
+  }
+}
+
+/* ---------- O cartão de uma troca ---------- */
+.trade-card {
+  border: 0;
+  box-shadow: var(--al-shadow-soft);
+}
+/* Esperando resposta: o contorno âmbar chama para a ação (o estado está escrito na etiqueta). */
+.trade-card.is-open {
+  box-shadow:
+    0 0 0 3px var(--al-amber),
+    var(--al-shadow-soft);
+}
+.trade-side {
+  gap: 4px;
+  padding: 14px;
+}
+.trade-side:last-child {
+  background: var(--al-print);
+}
+/* O desenho do ofício de cada lado: quadro pontilhado enquanto a troca não fechou. */
+.trade-side-art {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin-bottom: 8px;
+  border: 1.5px dashed var(--al-dot);
+  border-radius: 9px;
+  background: var(--al-paper);
+  color: var(--al-green);
+}
+/* Troca fechada (aceita, em andamento ou concluída): os dois lados viram figurinhas coladas. */
+.trade-card.is-stuck .trade-side {
+  border: 0;
+  padding: 16px;
+  background: var(--al-paper);
+  box-shadow: var(--al-shadow);
+}
+.trade-card.is-stuck .trade-side-art {
+  border: 0;
+  background: var(--al-amber);
+  color: var(--al-cover);
+}
+.trade-card.is-stuck .trade-side-get .trade-side-art {
+  background: #8ecff5;
+}
+/* Recusada ou cancelada: os quadros ficam vazios e a moeda apaga. */
+.trade-card.is-off .trade-side {
+  background: transparent;
+}
+.trade-card.is-off .trade-arrow {
+  background: var(--border);
+  color: var(--muted);
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .th-sticker,
+  .th-coin {
+    transition: none;
+  }
+  .trade-hero:hover .th-sticker:first-child,
+  .trade-hero:hover .th-sticker:last-child {
+    translate: none;
+  }
+  .trade-hero:hover .th-coin {
+    rotate: none;
+  }
+}

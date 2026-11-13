@@ -1,15 +1,29 @@
-import { Award, ChevronRight, Flame, HandCoins, PackageCheck, ShieldCheck } from 'lucide-react';
+import {
+  Award,
+  ChevronRight,
+  Flame,
+  HandCoins,
+  PackageCheck,
+  ShieldCheck,
+  Trophy,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useGamification } from '../../lib/hooks';
 
+/** Os quadros da página do nível: cada um vale um décimo do caminho até o próximo. */
+const LEVEL_SLOTS = 10;
+
 /**
- * "Seu progresso" no Início: o nível num anel (a parte acesa é o quanto do nível já foi), o XP, o
- * que falta para o próximo, a posição no ranking, os dias seguidos de atividade e as conquistas.
- * O anel é um progressbar com nome; o número dentro dele é o nível, em texto sobre fundo sólido.
+ * "Seu progresso" no Início: a página do nível no álbum. O número do nível é uma figurinha, o XP
+ * vem ao lado e o caminho até o próximo nível é uma fileira de dez quadros: os colados são o
+ * quanto já foi, os pontilhados o que falta. Abaixo, a posição no ranking, os dias seguidos de
+ * atividade e as conquistas (as brilhantes). A fileira é um progressbar com nome; o número da
+ * figurinha repete o nível que já está no texto.
  */
 export function ProgressCard() {
   const { data: g } = useGamification();
   const percent = Math.round(g?.progress.percent ?? 0);
+  const filled = Math.round((percent / 100) * LEVEL_SLOTS);
   return (
     <section className="card progress-card" aria-labelledby="progress-title">
       <div className="card-head">
@@ -22,34 +36,39 @@ export function ProgressCard() {
       </div>
       {g ? (
         <>
-          <div className="level-row-v3">
-            <div
-              className="level-ring"
-              role="progressbar"
-              aria-label="Progresso de nível"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={percent}
-              style={{ ['--p' as string]: `${percent}%` }}
-            >
-              <span className="level-ring-num" aria-hidden="true">
-                {g.level}
-              </span>
-            </div>
+          <div className="lv">
+            <span className="lv-num" aria-hidden="true">
+              {g.level}
+            </span>
             <div className="level-text">
               <span className="level-name">
                 Nível {g.level} · {g.levelName}
               </span>
               <strong className="level-xp">{g.totalXp.toLocaleString('pt-BR')} XP</strong>
-              <span className="muted tiny">
-                {g.progress.xpToNextLevel != null
-                  ? `faltam ${g.progress.xpToNextLevel} XP para o nível ${g.level + 1}`
-                  : 'nível máximo'}
-              </span>
             </div>
+          </div>
+          <div className="lv-page">
+            <div
+              className="lv-slots"
+              role="progressbar"
+              aria-label="Progresso de nível"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={percent}
+            >
+              {Array.from({ length: LEVEL_SLOTS }, (_, i) => (
+                <span key={i} className={i < filled ? 'lv-slot on' : 'lv-slot'} />
+              ))}
+            </div>
+            <span className="muted tiny">
+              {g.progress.xpToNextLevel != null
+                ? `faltam ${g.progress.xpToNextLevel} XP para o nível ${g.level + 1}`
+                : 'nível máximo'}
+            </span>
           </div>
           <Link to="/ranking" className="progress-rank">
             <span>
+              <Trophy size={16} aria-hidden="true" />
               {g.rank != null ? (
                 <>
                   Você é <strong>#{g.rank}</strong> no ranking
@@ -58,7 +77,7 @@ export function ProgressCard() {
                 'Ainda fora do ranking'
               )}
             </span>
-            <ChevronRight size={16} aria-hidden="true" />
+            <ChevronRight size={16} className="progress-rank-go" aria-hidden="true" />
           </Link>
           <div className="progress-badges">
             <h4>Conquistas</h4>
@@ -68,7 +87,7 @@ export function ProgressCard() {
               ) : (
                 g.badges.map((b) => (
                   <span key={b.slug} className="badge" title={b.name}>
-                    <Award size={12} aria-hidden="true" /> {b.name}
+                    <Award size={14} aria-hidden="true" /> {b.name}
                   </span>
                 ))
               )}

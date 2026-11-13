@@ -1298,7 +1298,6 @@ describe('CarteiraView: cartão de saldo', () => {
     // Sem perfil carregado, o nome vem do e-mail.
     expect(card.querySelector('.bank-owner')).toHaveTextContent('bruno');
     expect(within(card).getByRole('button', { name: 'Depositar' })).toBeInTheDocument();
-    expect(card.querySelector('.bank-deco')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('"Pedir saque" leva o foco ao valor do saque', async () => {

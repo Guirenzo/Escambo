@@ -1,0 +1,175 @@
+/* =====================================================================
+   Álbum de troca: a página de um serviço. À esquerda, a figurinha grande do serviço (a brilhante,
+   quando ele está em destaque); à direita, o título, quem presta, o resumo com ícones, a descrição
+   e a faixa do preço com as ações. Com pacotes, a figurinha fica no cartão do título e os pacotes
+   continuam ao lado. Tela de trabalho: só a figurinha responde ao ponteiro.
+   ===================================================================== */
+
+/* ---------- A folha do serviço ---------- */
+.page:has(.svc-page) .card {
+  border: 0;
+  border-radius: 16px;
+  box-shadow: var(--al-shadow-soft);
+}
+.svc-page {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 32px;
+  padding: 28px;
+}
+.svc-page-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* ---------- A figurinha grande ---------- */
+.svc-sticker {
+  --st-w: 15rem;
+  --tilt: -2deg;
+  position: sticky;
+  top: calc(var(--topbar-h) + 16px);
+}
+.svc-sticker .al-sticker-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.0625rem;
+}
+.svc-sticker .al-sticker-title svg {
+  flex: none;
+  color: var(--al-amber);
+}
+/* Sem foto: o desenho do ofício, grande, sobre a cor da categoria. */
+.svc-sticker-art {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--al-cover);
+}
+.svc-sticker-art svg {
+  width: 42%;
+  height: auto;
+}
+
+/* ---------- Título, quem presta e o resumo ---------- */
+.svc-page .svc-top {
+  align-items: flex-start;
+}
+.svc-detail.svc-page h1,
+.svc-page h1 {
+  font-size: 2.125rem;
+  font-weight: 850;
+  font-stretch: 76%;
+  line-height: 1.02;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+/* O resumo: uma linha de fatos, cada um com o seu ícone. */
+.svc-facts-row {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.svc-facts-row li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 5px 12px 5px 9px;
+  border-radius: 9px;
+  background: var(--al-print);
+  color: var(--al-ink);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.svc-facts-row svg {
+  flex: none;
+  color: var(--al-green);
+}
+.svc-page .svc-description {
+  max-width: 68ch;
+  color: var(--al-ink-2);
+  font-size: var(--fs-md);
+  line-height: 1.6;
+}
+
+/* ---------- A faixa do preço e das ações ---------- */
+.svc-buy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+  margin-top: 6px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--al-print);
+}
+.svc-buy-price {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.svc-buy-label {
+  color: var(--al-ink-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.svc-buy .price {
+  font-family: var(--al-display);
+  font-size: 2rem;
+  font-stretch: 76%;
+  font-weight: 850;
+  line-height: 1;
+}
+.svc-buy .svc-actions {
+  align-items: center;
+  gap: 8px;
+}
+.svc-buy > p {
+  margin: 0;
+  max-width: 34ch;
+}
+
+/* ---------- Com pacotes: a figurinha menor, no cartão do título ---------- */
+.svc-detail-head.svc-page {
+  gap: 24px;
+}
+.svc-detail-head .svc-sticker {
+  --st-w: 9.5rem;
+  position: relative;
+  top: auto;
+}
+.svc-detail-head .svc-sticker .al-sticker-title {
+  font-size: 0.9375rem;
+}
+
+/* ---------- Celular: a figurinha em cima, menor ---------- */
+@media (max-width: 760px) {
+  .svc-page,
+  .svc-detail-head.svc-page {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding: 20px;
+  }
+  .svc-sticker,
+  .svc-detail-head .svc-sticker {
+    --st-w: 9.5rem;
+    position: relative;
+    top: auto;
+  }
+  .svc-detail.svc-page h1,
+  .svc-page h1 {
+    font-size: 1.625rem;
+  }
+  .svc-buy .svc-actions {
+    width: 100%;
+  }
+}

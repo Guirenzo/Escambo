@@ -58,17 +58,18 @@ describe('CategoryStrip', () => {
     ]);
   });
 
-  it('a foto é decorativa (sem texto alternativo); categoria sem foto mostra o ícone no tom neutro', async () => {
+  it('ladrilhos: o desenho do ofício é decorativo, sobre uma cor chapada, sem foto', async () => {
     show(<CategoryStrip variant="tiles" />);
     const tech = await screen.findByRole('link', { name: 'Tecnologia' });
-    const photo = tech.querySelector('.cat-photo')!;
-    expect(photo).toHaveAttribute('aria-hidden', 'true');
-    expect(photo).toHaveClass('cover-blue');
-    expect(photo.querySelector('img')).toHaveAttribute('src', '/img/pessoas/dev-400.webp');
-    expect(photo.querySelector('img')).toHaveAttribute('alt', '');
-    const pets = screen.getByRole('link', { name: 'Pets' }).querySelector('.cat-photo')!;
-    expect(pets).toHaveClass('cover-neutral');
-    expect(pets.querySelector('img')).toBeNull();
+    const art = tech.querySelector('.cat-art')!;
+    expect(art).toHaveAttribute('aria-hidden', 'true');
+    expect(art).toHaveClass('al-g-sky');
+    expect(art.querySelector('svg')).not.toBeNull();
+    // Sem foto nos ladrilhos: a mesma foto repetida pela tela cansa.
+    expect(tech.querySelector('img')).toBeNull();
+    // A cor segue a ordem das categorias; uma categoria nova usa o ícone neutro.
+    const pets = screen.getByRole('link', { name: 'Pets' }).querySelector('.cat-art')!;
+    expect(pets).toHaveClass('al-g-tomato');
     expect(pets.querySelector('svg')).not.toBeNull();
   });
 
