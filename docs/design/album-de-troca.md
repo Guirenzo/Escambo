@@ -70,6 +70,14 @@ Tela de dinheiro: nada se mexe sozinho e os números ficam onde estavam. A mudan
 - **A posição** é a etiqueta de número da figurinha, no pé dela. Os degraus continuam.
 - **Os demais** ficam numa folha de papel sem contorno, com a posição numa etiqueta.
 
+## A página de um serviço
+
+- **A figurinha grande.** À esquerda do título vai a figurinha do serviço: a primeira imagem do portfólio de quem presta; sem ela, a foto da categoria; sem foto, o desenho do ofício sobre a cor da categoria. A faixa diz a categoria e de onde a imagem veio ("do portfólio", "foto ilustrativa" ou "desenho do ofício"), para a foto da categoria não passar por foto de quem presta.
+- **Destaque é a brilhante.** O serviço impulsionado ganha a borda laminada e o reflexo que segue o ponteiro. O selo "Destaque" continua escrito ao lado.
+- **O resumo com ícones.** Categoria, cidade de quem presta, prazo e "atende agora", cada um com o seu ícone, em texto (a figurinha é só enfeite).
+- **A faixa do preço.** O preço grande e as ações (contratar, propor troca, favoritar) numa faixa só, no fim.
+- **Com pacotes,** a figurinha fica menor, no cartão do título, e o cartão dos pacotes continua ao lado.
+
 ## O que saiu, e por quê
 
 - **O livro aberto no topo** (duas páginas, com a mesa de troca à direita). Com a parede atrás, o topo ficava com coisa demais; a simulação de troca foi para a seção da troca.

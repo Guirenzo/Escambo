@@ -34,6 +34,12 @@ const BY_SLUG: Record<string, CategoryArt> = {
   marketing: { Icon: Megaphone, tone: 'rose', photos: ['social-media', 'fotografa'] },
 };
 
+/**
+ * As cores chapadas das figurinhas (classes `.al-g-*`), na ordem em que as categorias raiz
+ * aparecem: a mesma categoria tem a mesma cor no Início, em Serviços e na página do serviço.
+ */
+export const CATEGORY_GROUNDS = ['sky', 'lilac', 'tomato', 'amber', 'lime'] as const;
+
 const NEUTRAL: CategoryArt = { Icon: Briefcase, tone: 'neutral' };
 
 export const categoryArt = (slug?: string | null): CategoryArt =>

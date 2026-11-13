@@ -40,6 +40,7 @@ import './styles.css';
 import './album-app.css';
 import './album-inicio.css';
 import './album-servicos.css';
+import './album-servico.css';
 import './album-trocas.css';
 import './album-carteira.css';
 import './album-ranking.css';

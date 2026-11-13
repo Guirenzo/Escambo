@@ -1,10 +1,7 @@
 import { LayoutGrid } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useCategories } from '../../lib/hooks';
-import { categoryArt } from './categoryArt';
-
-/** As cores chapadas das figurinhas (.al-g-*), na ordem em que as categorias aparecem. */
-const TILE_GROUNDS = ['sky', 'lilac', 'tomato', 'amber', 'lime'] as const;
+import { CATEGORY_GROUNDS, categoryArt } from './categoryArt';
 
 /**
  * As categorias raiz do catálogo, cada uma com o desenho do ofício sobre uma cor chapada (o mesmo
@@ -35,7 +32,7 @@ export function CategoryStrip({
             <li key={c.id}>
               <Link to={`/servicos?categoria=${c.id}`} className="cat-tile">
                 <span
-                  className={`cat-art al-g-${TILE_GROUNDS[i % TILE_GROUNDS.length]}`}
+                  className={`cat-art al-g-${CATEGORY_GROUNDS[i % CATEGORY_GROUNDS.length]}`}
                   aria-hidden="true"
                 >
                   <Icon strokeWidth={1.75} />
@@ -75,7 +72,7 @@ export function CategoryStrip({
               onClick={() => onSelect?.(c.id)}
             >
               <span
-                className={`cat-ico al-g-${TILE_GROUNDS[i % TILE_GROUNDS.length]}`}
+                className={`cat-ico al-g-${CATEGORY_GROUNDS[i % CATEGORY_GROUNDS.length]}`}
                 aria-hidden="true"
               >
                 <Icon size={18} strokeWidth={1.9} />
