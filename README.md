@@ -47,7 +47,7 @@ explicável**.
 
 ---
 
-## Situação atual: 1.54.2
+## Situação atual: 1.55.0
 
 **No ar:** https://escambo.68-183-49-126.sslip.io (VPS na DigitalOcean, HTTPS automático pelo Caddy, deploy pelo GitHub Actions a cada merge na `main`, monitoramento com Prometheus e Grafana). Pagamentos e e-mails são simulados: é uma instância de demonstração, sem dinheiro de verdade.
 
