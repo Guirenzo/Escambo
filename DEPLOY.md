@@ -30,6 +30,9 @@ Tags publicadas: `latest`, o sha curto do commit (ex.: `a1b2c3d`) e a versão do
 - Portas **80** e **443** abertas (o Caddy precisa da 80 para emitir o certificado).
 - Um SMTP para os e-mails transacionais (confirmação de e-mail, redefinição de senha, avisos). Qualquer
   provedor com SMTP serve; sem ele, `MAIL_PROVIDER=simulated` guarda os e-mails na caixa de saída do admin.
+  **Na DigitalOcean as portas de saída 25, 465 e 587 vêm bloqueadas**: o SMTP do Gmail não funciona de lá.
+  Use um provedor com porta alternativa. A produção usa o Brevo em `smtp-relay.brevo.com:2525` (plano
+  gratuito, remetente verificado sem domínio próprio); o Resend aceita 2587 e 2465, mas exige domínio.
 
 ```bash
 # Docker (script oficial) + usuário no grupo docker
@@ -94,7 +97,8 @@ A ordem é `db` (healthy) → `migrate` (baseline + migrations + seed do catálo
 (painel `/admin`: métricas, mediação, fila de saques, caixa de saída de e-mails, pedidos LGPD).
 
 > Para operar sem um SMTP no começo, use `MAIL_PROVIDER=simulated`: os e-mails ficam na caixa de saída do
-> painel admin (com os links de confirmação e de redefinição de senha), e nada é enviado.
+> painel admin (com os links de confirmação), e nada é enviado. Desde a 1.55.0 o link de redefinição de
+> senha não fica na caixa de saída: sem SMTP de verdade, ninguém consegue redefinir a senha.
 
 > O relatório diário da meta da moderação (ADR 55) vai por e-mail a **toda conta admin** que consegue entrar,
 > a partir das `DIGEST_HOUR` de Brasília, só quando a meta estoura — inclusive antes de o e-mail ser

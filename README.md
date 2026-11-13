@@ -49,7 +49,7 @@ explicável**.
 
 ## Situação atual: 1.55.0
 
-**No ar:** https://escambo.68-183-49-126.sslip.io (VPS na DigitalOcean, HTTPS automático pelo Caddy, deploy pelo GitHub Actions a cada merge na `main`, monitoramento com Prometheus e Grafana). Pagamentos e e-mails são simulados: é uma instância de demonstração, sem dinheiro de verdade.
+**No ar:** https://escambo.68-183-49-126.sslip.io (VPS na DigitalOcean, HTTPS automático pelo Caddy, deploy pelo GitHub Actions a cada merge na `main`, monitoramento com Prometheus e Grafana). Os pagamentos são simulados (é uma instância de demonstração, sem dinheiro de verdade); os e-mails saem de verdade, pelo SMTP do Brevo.
 
 **90 dos 92 requisitos funcionais estão implementados**; os 2 restantes ficaram fora do escopo por decisão registrada. A situação de cada requisito, com o código e o teste que provam, está em [rastreabilidade](./docs/rastreabilidade.md); o que mudou em cada versão, no [CHANGELOG](./CHANGELOG.md); e o porquê de cada escolha, nas [decisões de arquitetura](./docs/decisoes.md) (72 ADRs).
 
