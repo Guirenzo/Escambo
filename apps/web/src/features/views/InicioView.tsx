@@ -3,19 +3,20 @@ import {
   Bell,
   ChevronRight,
   Coins,
+  Eye,
+  EyeOff,
   LifeBuoy,
   Lock,
   Plus,
   Search,
-  ShieldCheck,
   UserCog,
   UserRound,
   Wallet,
   type LucideIcon,
 } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Avatar } from '../../components/Avatar';
-import { Stat } from '../../components/ui';
+import type { UserRole } from '@escambo/types';
 import { useAuth } from '../../lib/auth';
 import { usePageTitle } from '../../lib/title';
 import { brl } from '../../lib/format';
@@ -23,6 +24,7 @@ import { identityName, profileIdentity } from '../../lib/documents';
 import { useNotifications, useProfilesMe, useWallet } from '../../lib/hooks';
 import { MissionsCard } from '../dashboard/MissionsCard';
 import { MyContracts } from '../dashboard/MyContracts';
+import { MySticker } from '../dashboard/MySticker';
 import { HowItWorks, ProgressCard } from '../dashboard/ProgressCard';
 import { NearbyServices } from '../dashboard/NearbyServices';
 import { CategoryStrip } from '../services/CategoryStrip';
@@ -36,7 +38,7 @@ export function greetingFor(date: Date): string {
   return 'Boa noite';
 }
 
-/** "Terça-feira, 20 de outubro": a data por extenso acima do cumprimento. */
+/** "Terça-feira, 20 de outubro": a data por extenso, na linha abaixo do cumprimento. */
 export function todayLabel(date: Date): string {
   const text = new Intl.DateTimeFormat('pt-BR', {
     weekday: 'long',
@@ -52,7 +54,6 @@ interface Shortcut {
   /** A linha de baixo: o porquê do atalho, ou um número de agora (saldo, não lidas). */
   hint: string;
   Icon: LucideIcon;
-  tone: 'green' | 'amber' | 'blue' | 'violet';
 }
 
 /**
@@ -69,14 +70,12 @@ export function shortcutsFor(
     label: 'Notificações',
     hint: unread > 0 ? unreadLabel(unread) : 'tudo em dia',
     Icon: Bell,
-    tone: 'blue',
   };
   const help: Shortcut = {
     to: '/suporte',
     label: 'Pedir ajuda',
     hint: 'fale com o suporte',
     Icon: LifeBuoy,
-    tone: 'violet',
   };
   return role === 'freelancer'
     ? [
@@ -85,24 +84,76 @@ export function shortcutsFor(
           label: 'Propor uma troca',
           hint: 'serviço por serviço',
           Icon: ArrowLeftRight,
-          tone: 'amber',
         },
-        { to: '/carteira', label: 'Sacar meus ganhos', hint: money, Icon: Wallet, tone: 'green' },
+        { to: '/carteira', label: 'Sacar meus ganhos', hint: money, Icon: Wallet },
         bell,
         help,
       ]
     : [
-        { to: '/carteira', label: 'Adicionar saldo', hint: money, Icon: Wallet, tone: 'green' },
+        { to: '/carteira', label: 'Adicionar saldo', hint: money, Icon: Wallet },
         bell,
         {
           to: '/perfil',
           label: 'Meu perfil',
           hint: 'foto, cidade e segurança',
           Icon: UserRound,
-          tone: 'amber',
         },
         help,
       ];
+}
+
+/** O papel na faixa da figurinha de quem está logado. */
+const ROLE_LABEL: Record<UserRole, string> = {
+  client: 'Cliente',
+  freelancer: 'Freelancer',
+  company: 'Empresa',
+  admin: 'Equipe Escambo',
+};
+
+/** A escolha de esconder os valores fica no aparelho (não é dado da conta). */
+const HIDE_MONEY_KEY = 'escambo_hide_money';
+
+function readHideMoney(): boolean {
+  try {
+    return localStorage.getItem(HIDE_MONEY_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Um valor da carteira na faixa: ícone e rótulo, o número grande e a dica de para que serve. */
+function Money({
+  Icon,
+  label,
+  value,
+  hint,
+  hidden,
+}: {
+  Icon: LucideIcon;
+  label: string;
+  value: ReactNode;
+  hint: ReactNode;
+  hidden: boolean;
+}) {
+  return (
+    <div className="money">
+      <span className="money-label">
+        <Icon size={15} aria-hidden="true" />
+        {label}
+      </span>
+      <strong className="money-value">
+        {hidden ? (
+          <>
+            <span aria-hidden="true">•••••</span>
+            <span className="sr-only">oculto</span>
+          </>
+        ) : (
+          value
+        )}
+      </strong>
+      <span className="money-hint">{hint}</span>
+    </div>
+  );
 }
 
 export function InicioView() {
@@ -111,6 +162,7 @@ export function InicioView() {
   const wallet = useWallet();
   const profiles = useProfilesMe();
   const notifications = useNotifications();
+  const [hideMoney, setHideMoney] = useState(readHideMoney);
   const w = wallet.data;
   const identity = profileIdentity(profiles.data);
   const name = identityName(profiles.data, user?.email);
@@ -120,28 +172,80 @@ export function InicioView() {
     user?.role === 'freelancer' && profiles.data != null && !profiles.data.freelancer;
   const isFreelancer = user?.role === 'freelancer';
   const now = new Date();
+  // Com os valores escondidos, o atalho do dinheiro também não mostra o saldo.
   const shortcuts = shortcutsFor(isFreelancer ? 'freelancer' : 'client', {
-    balance: w ? w.balance : null,
+    balance: w && !hideMoney ? w.balance : null,
     unread: notifications.data?.unreadCount ?? 0,
   });
 
+  function toggleMoney(): void {
+    const next = !hideMoney;
+    setHideMoney(next);
+    try {
+      localStorage.setItem(HIDE_MONEY_KEY, next ? '1' : '0');
+    } catch {
+      // Sem armazenamento (janela anônima): a escolha vale só nesta visita.
+    }
+  }
+
+  // O que é de quem está logado: as contratações com o progresso ao lado e, embaixo, as missões
+  // em fileira (quem não tem missões não vê a fileira).
+  const work = (
+    <>
+      <div className="home-grid">
+        <div className="home-main">
+          <MyContracts />
+        </div>
+
+        <div className="home-side">
+          <ProgressCard />
+          <HowItWorks freelancer={isFreelancer} />
+        </div>
+      </div>
+      <div className="home-missions">
+        <MissionsCard />
+      </div>
+    </>
+  );
+  // O catálogo: por onde começar a procurar e o que há de novo.
+  const discover = (
+    <>
+      <section className="section" aria-labelledby="categories-title">
+        <div className="section-head">
+          <div>
+            <h2 id="categories-title">Explore por categoria</h2>
+            <p>Do reparo em casa ao app sob medida: escolha por onde começar.</p>
+          </div>
+        </div>
+        <CategoryStrip variant="tiles" />
+      </section>
+
+      <NearbyServices />
+    </>
+  );
+
   return (
     <div className="page">
-      {/* Faixa de boas-vindas: texto sempre sobre o verde sólido; a foto é ilustração (pessoas
-          fictícias), fica numa coluna própria e some no celular. */}
+      {/* A capa do álbum de quem está logado: a figurinha da pessoa, o cumprimento com a ação
+          principal, a carteira e os atalhos. Texto sempre sobre cor sólida. */}
       <section className="welcome" aria-labelledby="welcome-title">
+        {/* Decorativa: o nome está no título e o nível, no cartão de progresso. */}
+        <div className="welcome-art" aria-hidden="true">
+          <MySticker
+            name={name}
+            avatarUrl={avatarUrl ?? null}
+            roleLabel={ROLE_LABEL[user?.role ?? 'client']}
+          />
+        </div>
         <div className="welcome-main">
-          <div className="welcome-who">
-            <Avatar url={avatarUrl} name={name} size="lg" />
-            <div className="welcome-text">
-              <span className="welcome-eyebrow">{todayLabel(now)}</span>
-              <h1 id="welcome-title">{`${greetingFor(now)}, ${name}`}</h1>
-              <p>
-                {isFreelancer
-                  ? 'Seus serviços, contratos e ganhos num lugar só.'
-                  : 'Encontre quem faz, acompanhe as contratações e pague com segurança.'}
-              </p>
-            </div>
+          <div className="welcome-text">
+            <h1 id="welcome-title">{`${greetingFor(now)}, ${name}`}</h1>
+            <p>
+              {todayLabel(now)}.{' '}
+              {isFreelancer
+                ? 'Seus serviços, contratos e ganhos num lugar só.'
+                : 'Encontre quem faz, acompanhe as contratações e pague com segurança.'}
+            </p>
           </div>
           <div className="welcome-cta">
             {isFreelancer ? (
@@ -154,42 +258,64 @@ export function InicioView() {
               </Link>
             )}
           </div>
-          <ul className="quick-actions" aria-label="Atalhos">
-            {shortcuts.map(({ to, label, hint, Icon, tone }) => (
-              <li key={to}>
-                <Link to={to} className="quick-action">
-                  <span className={`quick-ico tone-${tone}`} aria-hidden="true">
-                    <Icon size={18} />
-                  </span>
-                  <span className="quick-text">
-                    <strong>{label}</strong>
-                    <span>{hint}</span>
-                  </span>
-                  <ChevronRight size={16} className="quick-go" aria-hidden="true" />
-                </Link>
-              </li>
-            ))}
-          </ul>
         </div>
-        <div className="welcome-art" aria-hidden="true">
-          <img
-            src="/img/pessoas/dupla-troca-400.webp"
-            srcSet="/img/pessoas/dupla-troca-400.webp 400w, /img/pessoas/dupla-troca.webp 800w"
-            sizes="22rem"
-            alt=""
-            width={800}
-            height={533}
+        <div className="welcome-money" role="group" aria-label="Carteira">
+          <Money
+            Icon={Wallet}
+            label="Saldo disponível"
+            value={w ? brl(w.balance) : '—'}
+            hint="para saque"
+            hidden={hideMoney}
           />
-          <span className="welcome-badge">
-            <span className="welcome-badge-ico">
-              <ShieldCheck size={18} />
-            </span>
-            <span>
-              <strong>Pagamento protegido</strong>
-              <span>o valor fica em escrow até a aprovação</span>
-            </span>
-          </span>
+          <Money
+            Icon={Lock}
+            label="Em escrow"
+            value={w ? brl(w.balancePending) : '—'}
+            hint="retido em contratações"
+            hidden={hideMoney}
+          />
+          <Money
+            Icon={Coins}
+            label="Créditos Escambo"
+            value={w ? String(w.credits) : '—'}
+            hint={
+              w && w.creditsPending > 0
+                ? `${w.creditsPending} em escrow`
+                : 'para contratar ou impulsionar'
+            }
+            hidden={hideMoney}
+          />
+          <button
+            type="button"
+            className="money-eye"
+            aria-pressed={hideMoney}
+            aria-label="Ocultar valores"
+            title={hideMoney ? 'Mostrar valores' : 'Ocultar valores'}
+            onClick={toggleMoney}
+          >
+            {hideMoney ? (
+              <EyeOff size={18} aria-hidden="true" />
+            ) : (
+              <Eye size={18} aria-hidden="true" />
+            )}
+          </button>
         </div>
+        <ul className="quick-actions" aria-label="Atalhos">
+          {shortcuts.map(({ to, label, hint, Icon }) => (
+            <li key={to}>
+              <Link to={to} className="quick-action">
+                <span className="quick-ico" aria-hidden="true">
+                  <Icon size={18} />
+                </span>
+                <span className="quick-text">
+                  <strong>{label}</strong>
+                  <span>{hint}</span>
+                </span>
+                <ChevronRight size={16} className="quick-go" aria-hidden="true" />
+              </Link>
+            </li>
+          ))}
+        </ul>
       </section>
 
       {needsProfile && (
@@ -200,55 +326,19 @@ export function InicioView() {
         </p>
       )}
 
-      <div className="kpis">
-        <Stat
-          Icon={Wallet}
-          label="Saldo disponível"
-          value={w ? brl(w.balance) : '—'}
-          hint="para saque"
-        />
-        <Stat
-          Icon={Lock}
-          label="Em escrow"
-          value={w ? brl(w.balancePending) : '—'}
-          hint="retido em contratações"
-          tone="amber"
-        />
-        <Stat
-          Icon={Coins}
-          label="Créditos Escambo"
-          value={w ? String(w.credits) : '—'}
-          hint={
-            w && w.creditsPending > 0
-              ? `${w.creditsPending} em escrow`
-              : 'para contratar ou impulsionar'
-          }
-        />
-      </div>
-
-      <section className="section" aria-labelledby="categories-title">
-        <div className="section-head">
-          <div>
-            <h2 id="categories-title">Explore por categoria</h2>
-            <p>Do reparo em casa ao app sob medida: escolha por onde começar.</p>
-          </div>
-        </div>
-        <CategoryStrip variant="tiles" />
-      </section>
-
-      <NearbyServices />
-
-      <div className="home-grid">
-        <div className="home-main">
-          <MyContracts />
-        </div>
-
-        <div className="home-side">
-          <ProgressCard />
-          <MissionsCard />
-          <HowItWorks freelancer={isFreelancer} />
-        </div>
-      </div>
+      {/* Quem presta serviço abre o app para tocar o trabalho: as contratações vêm antes do
+          catálogo. Quem contrata começa procurando. */}
+      {isFreelancer ? (
+        <>
+          {work}
+          {discover}
+        </>
+      ) : (
+        <>
+          {discover}
+          {work}
+        </>
+      )}
     </div>
   );
 }

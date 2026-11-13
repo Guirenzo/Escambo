@@ -1,0 +1,169 @@
+/* =====================================================================
+   Álbum de troca: a tela de Serviços. A faixa de busca é a capa (três figurinhas de ofício em
+   leque no lugar das fotos), as categorias são pílulas com o desenho do ofício, os filtros ficam
+   numa folha de papel com um ícone por grupo e o resultado é a grade de figurinhas. Tela de
+   trabalho: o movimento só responde a quem mexe. Vem depois de album-inicio.css.
+   ===================================================================== */
+
+/* ---------- A faixa de busca ---------- */
+.search-hero {
+  gap: 32px;
+  padding: 28px 36px 28px 28px;
+  border-radius: 20px;
+  background: var(--al-green);
+  box-shadow: var(--al-shadow-soft);
+}
+.search-hero h2 {
+  font-size: 2.125rem;
+  font-weight: 850;
+  font-stretch: 72%;
+  line-height: 1;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+.search-hero-text p {
+  color: var(--al-on-green-2);
+}
+.search-hero .search-panel {
+  border-radius: 14px;
+  box-shadow: var(--al-shadow);
+}
+.search-hero .search-panel button[type='submit'] {
+  border-radius: 10px;
+}
+/* Três figurinhas de ofício em leque (decorativas): papel na borda, cor chapada e o desenho. */
+.search-hero-art {
+  padding-right: 0;
+}
+.sh-sticker {
+  display: grid;
+  place-items: center;
+  width: 5.75rem;
+  aspect-ratio: 5 / 7;
+  border: 5px solid var(--al-paper);
+  border-radius: 9px;
+  background: var(--g, var(--al-print));
+  color: var(--al-cover);
+  box-shadow: var(--al-shadow);
+  transition: translate 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sh-sticker svg {
+  width: 2.25rem;
+  height: 2.25rem;
+}
+.sh-sticker:first-child {
+  rotate: -8deg;
+  translate: 18px 6px;
+}
+.sh-sticker:nth-child(2) {
+  position: relative;
+  z-index: 1;
+  width: 6.5rem;
+}
+.sh-sticker:last-child {
+  rotate: 8deg;
+  translate: -18px 6px;
+}
+/* Passando o ponteiro na faixa, o leque abre um pouco. */
+.search-hero:hover .sh-sticker:first-child {
+  translate: 6px 6px;
+}
+.search-hero:hover .sh-sticker:last-child {
+  translate: -6px 6px;
+}
+@media (max-width: 720px) {
+  .search-hero {
+    padding: 18px;
+  }
+  .search-hero h2 {
+    font-size: 1.5rem;
+  }
+}
+
+/* ---------- Categorias: pílulas com o desenho do ofício ---------- */
+/* São <button>: o hover leva :not(:disabled) para ganhar do botão do app (styles.css). */
+.cat-chip {
+  gap: 9px;
+  padding: 4px 16px 4px 5px;
+  border: 0;
+  background: var(--al-paper);
+  box-shadow: var(--al-shadow-soft);
+  transition:
+    translate 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    background var(--t) var(--ease);
+}
+.cat-chip:hover:not(:disabled) {
+  background: var(--al-paper);
+  translate: 0 -2px;
+}
+.cat-chip[aria-pressed='true'],
+.cat-chip[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--al-cover);
+  color: #fff;
+  translate: none;
+}
+.cat-ico {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--g, var(--al-print));
+  color: var(--al-cover);
+}
+.cat-ico.cat-all {
+  background: var(--al-print);
+  color: var(--al-green);
+}
+.cat-chip[aria-pressed='true'] .cat-ico {
+  box-shadow: 0 0 0 2px var(--al-amber);
+}
+
+/* ---------- Filtros: uma folha de papel, um ícone por grupo ---------- */
+.filters-panel {
+  border: 0;
+  border-radius: 16px;
+  box-shadow: var(--al-shadow-soft);
+}
+.filters-panel h2 {
+  font-size: 1.125rem;
+}
+.filter-group legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--al-ink-2);
+}
+.filter-group legend svg {
+  flex: none;
+  color: var(--al-green);
+}
+/* O que está ligado fica na cor da capa, com o texto claro. */
+.filters-panel button.toggle.on,
+.filters-panel button.toggle.on:hover:not(:disabled) {
+  border-color: var(--al-cover);
+  background: var(--al-cover);
+  color: #fff;
+}
+
+/* ---------- Resultado ---------- */
+.results-title {
+  font-size: 1.375rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sh-sticker,
+  .cat-chip {
+    transition: none;
+  }
+  .cat-chip:hover:not(:disabled) {
+    translate: none;
+  }
+  .search-hero:hover .sh-sticker:first-child {
+    translate: 18px 6px;
+  }
+  .search-hero:hover .sh-sticker:last-child {
+    translate: -18px 6px;
+  }
+}

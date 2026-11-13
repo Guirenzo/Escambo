@@ -1,0 +1,237 @@
+/* =====================================================================
+   Álbum de troca: as páginas depois do topo (vitrine, seções, quadros, regulamento, troca,
+   garantia, dúvidas, contracapa e rodapé). Tokens em album.css.
+   ===================================================================== */
+
+/* ---------- Vitrine: a página das figurinhas disponíveis ---------- */
+.lp-show {
+  background: var(--al-print);
+}
+.lp-show .lp-filter {
+  border-radius: 8px;
+}
+.lp-show-grid {
+  counter-reset: al-fig;
+}
+.lp-show .svc-card {
+  counter-increment: al-fig;
+  padding: 6px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--al-paper);
+  box-shadow: var(--al-shadow);
+  /* Retas: têm título, dono e preço para ler (tortas ficam as figurinhas sem texto corrido). */
+  transition:
+    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 260ms;
+}
+.lp-show .svc-card:hover,
+.lp-show .svc-card:focus-within {
+  transform: translateY(-4px);
+  box-shadow: var(--al-shadow-lift);
+}
+.lp-show .svc-cover {
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+}
+/* O número da figurinha é a ordem na vitrine: decorativo, fora da leitura. */
+.lp-show .svc-cover::before {
+  content: counter(al-fig, decimal-leading-zero) / '';
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 3px 7px 2px;
+  border-radius: 5px;
+  background: var(--al-cover);
+  color: #fff;
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 62;
+  font-weight: 900;
+  font-size: 1rem;
+  line-height: 1;
+}
+.lp-show .svc-title {
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 80;
+  font-weight: 800;
+  font-size: 1.0625rem;
+  line-height: 1.1;
+  color: var(--al-ink);
+}
+.lp-show .svc-price .price {
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 80;
+  font-weight: 850;
+  font-size: 1.25rem;
+}
+.lp-show .svc-barter {
+  border-radius: 6px;
+  background: var(--al-amber);
+  color: var(--al-cover);
+  font-weight: 700;
+}
+
+/* ---------- Como funciona: os quadros numerados de uma contratação ---------- */
+.lp-how {
+  background: var(--al-print);
+}
+.lp-tabs {
+  border-radius: 12px;
+  background: var(--al-paper);
+}
+.lp-tab {
+  border-radius: 9px;
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 85;
+  font-weight: 800;
+  font-size: 1.0625rem;
+}
+.lp-tab[aria-selected='true'] {
+  background: var(--al-green);
+  color: #fff;
+}
+.lp-panel {
+  border: 0;
+  border-radius: 18px;
+  background: var(--al-paper);
+  box-shadow: var(--al-shadow);
+}
+.lp-panel-copy h3 {
+  font-size: clamp(1.625rem, 1.2rem + 1vw, 2.125rem);
+  color: var(--al-green);
+}
+.lp-step-n {
+  border: 2px dashed var(--al-dot);
+  border-radius: 10px;
+  background: var(--al-print);
+  color: var(--al-green);
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 62;
+  font-weight: 900;
+  font-size: 1.5rem;
+}
+.lp-steps h4 {
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 85;
+  font-weight: 800;
+  font-size: 1.1875rem;
+}
+/* A tela do app entra no álbum como uma figurinha grande, colada torta. */
+.lp-screen-fig .am-browser {
+  border: 6px solid var(--al-paper);
+  border-radius: 12px;
+  box-shadow: var(--al-shadow-lift);
+  transform: rotate(1deg);
+}
+
+/* ---------- Garantia ---------- */
+.lp-bento > li {
+  border: 0;
+  border-radius: 18px;
+  background: var(--al-print);
+  box-shadow: none;
+}
+.lp-bento .lp-ico {
+  border-radius: 12px;
+  background: var(--al-paper);
+}
+/* A regra principal (pagamento em garantia) é a página verde do bloco. */
+.lp-bento > li.lp-tile-dark {
+  background: var(--al-green);
+  color: #fff;
+}
+.lp .lp-tile-dark .lp-tile-body p {
+  color: var(--al-on-green-2);
+}
+.lp-bento .lp-tile-dark .lp-ico {
+  background: var(--al-amber);
+  color: var(--al-cover);
+}
+.lp-tile-dark .lp-tile-art {
+  background-color: var(--al-cover);
+  background-image: none;
+}
+.lp-bento h3 {
+  font-size: 1.5rem;
+}
+.lp-art-card {
+  border: 0;
+  border-radius: 10px;
+  box-shadow: var(--al-shadow);
+}
+
+/* ---------- Dúvidas ---------- */
+.lp-faq-band {
+  background: var(--al-print);
+}
+.lp-qa {
+  border-radius: 12px;
+}
+.lp-qa summary {
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 88;
+  font-weight: 750;
+  font-size: 1.125rem;
+}
+.lp-help {
+  border: 2px dashed var(--al-dot);
+  border-radius: 16px;
+  background: var(--al-paper);
+}
+
+/* ---------- Chamada final: a contracapa ---------- */
+.lp-final {
+  background: var(--al-paper);
+}
+.lp-final-card {
+  border-radius: 22px;
+  background: var(--al-cover);
+}
+.lp-final-glow {
+  display: none;
+}
+.lp-final h2 {
+  color: #fff;
+  font-size: clamp(2.5rem, 1.6rem + 3vw, 4.5rem);
+}
+.lp-final-photos img {
+  border: 7px solid var(--al-paper);
+  border-radius: 10px;
+  box-shadow: var(--al-shadow-lift);
+}
+.lp-final-photos img:nth-child(1) {
+  transform: rotate(-4deg);
+}
+.lp-final-photos img:nth-child(2) {
+  transform: rotate(3deg) translateY(-10px);
+}
+.lp-final-photos img:nth-child(3) {
+  transform: rotate(-1.5deg);
+}
+
+/* ---------- Rodapé ---------- */
+.lp-footer {
+  background: var(--al-cover);
+}
+.lp-footer .brand-name {
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 75;
+  font-weight: 850;
+  font-size: 1.5rem;
+}
+.lp-footer h2 {
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 85;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-show .svc-card,
+  .lp-btn {
+    transition: none;
+  }
+}

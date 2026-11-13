@@ -96,7 +96,7 @@ describe('TornaCalculator', () => {
 });
 
 describe('TradeSection', () => {
-  it('título, a regra da taxa vinda da API e a foto decorativa', () => {
+  it('título, a regra da taxa vinda da API e as figurinhas decorativas', () => {
     render(<TradeSection fee={12.5} />);
     const region = screen.getByRole('region', { name: 'Como funciona uma troca' });
     expect(region).toHaveAttribute('id', 'troca');
@@ -104,6 +104,7 @@ describe('TradeSection', () => {
     const img = region.querySelector('img')!;
     expect(img).toHaveAttribute('alt', '');
     expect(img).toHaveAttribute('loading', 'lazy');
-    expect(region.querySelector('.lp-trade-tag')).toHaveAttribute('aria-hidden', 'true');
+    expect(region.querySelectorAll('img')).toHaveLength(2);
+    expect(img.closest('.tx-photo')).toHaveAttribute('aria-hidden', 'true');
   });
 });

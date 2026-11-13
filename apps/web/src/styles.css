@@ -6705,30 +6705,11 @@ button.amber:focus-visible {
   gap: 22px;
   min-width: 0;
 }
-.welcome-who {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-.welcome .avatar.lg {
-  width: 68px;
-  height: 68px;
-  font-size: 1.5rem;
-  background: var(--green-ink-raised);
-  box-shadow:
-    0 0 0 3px var(--green-deep),
-    0 0 0 5px var(--amber-bright);
-}
 .welcome-text {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-}
-.welcome-eyebrow {
-  color: var(--on-dark-muted);
-  font-size: var(--fs-sm);
-  font-weight: 500;
 }
 .welcome h1 {
   color: var(--on-dark);
@@ -6839,8 +6820,8 @@ button.amber:focus-visible {
   margin-left: auto;
   color: var(--muted);
 }
-/* A ilustração: foto em moldura, um brilho âmbar atrás dela e o selo de confiança num cartão
-   branco sólido por cima (o texto nunca fica sobre a foto). */
+/* A ilustração da faixa (a figurinha de quem está logado; o desenho dela está em
+   album-inicio.css). */
 .welcome-art {
   position: relative;
   display: flex;
@@ -6866,43 +6847,6 @@ button.amber:focus-visible {
   border-radius: 18px;
   box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.06);
 }
-.welcome-badge {
-  position: absolute;
-  left: -18px;
-  bottom: 18px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: calc(100% - 8px);
-  padding: 10px 14px 10px 10px;
-  border-radius: var(--r-xl);
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--sh-lg);
-  line-height: 1.25;
-}
-.welcome-badge > span:last-child {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.welcome-badge strong {
-  font-size: 0.875rem;
-}
-.welcome-badge span span {
-  color: var(--muted);
-  font-size: var(--fs-sm);
-}
-.welcome-badge-ico {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--green-soft);
-  color: var(--green);
-}
 @media (max-width: 1100px) {
   .welcome {
     grid-template-columns: 1fr;
@@ -6919,15 +6863,6 @@ button.amber:focus-visible {
   }
   .welcome-main {
     gap: 18px;
-  }
-  .welcome-who {
-    gap: 14px;
-    align-items: flex-start;
-  }
-  .welcome .avatar.lg {
-    width: 52px;
-    height: 52px;
-    font-size: 1.2rem;
   }
   .welcome h1 {
     font-size: 1.625rem;
@@ -6989,25 +6924,6 @@ button.amber:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
 }
-.cat-tile .cat-photo {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  border-radius: inherit;
-  overflow: hidden;
-}
-.cat-photo img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center 25%;
-  transition: transform 0.45s var(--ease);
-}
-.cat-tile:hover img {
-  transform: scale(1.05);
-}
 .cat-name {
   position: absolute;
   left: 8px;
@@ -7024,8 +6940,7 @@ button.amber:focus-visible {
   box-shadow: var(--sh-sm);
 }
 @media (prefers-reduced-motion: reduce) {
-  .cat-tile:hover,
-  .cat-tile:hover img {
+  .cat-tile:hover {
     transform: none;
   }
 }
@@ -7045,7 +6960,7 @@ button.amber:focus-visible {
     scroll-snap-align: start;
   }
 }
-/* Serviços: fileira de pílulas com a foto redonda; a ligada fica no verde escuro. */
+/* Serviços: fileira de pílulas com o desenho do ofício; a ligada fica no verde escuro. */
 /* Uma fileira só, que rola de lado quando não cabe (o Tab leva cada pílula para a vista). */
 .cat-chips {
   list-style: none;
@@ -7083,22 +6998,6 @@ button.amber:focus-visible {
   background: var(--green-deep);
   border-color: var(--green-deep);
   color: var(--on-dark);
-}
-.cat-chip .cat-photo {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  overflow: hidden;
-}
-.cat-chip .cat-photo.cat-all {
-  background: var(--green-soft);
-  color: var(--green);
-}
-.cat-chip[aria-pressed='true'] .cat-photo {
-  box-shadow: 0 0 0 2px var(--amber-bright);
 }
 
 /* ---------- Cartão de serviço: foto da categoria na capa sem portfólio ---------- */
@@ -7353,35 +7252,8 @@ button.deal-open:hover:not(:disabled) {
   }
 }
 
-/* ---------- Início: seu progresso (anel de nível) e o passo a passo do escrow ---------- */
-.level-row-v3 {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-/* O anel: a parte acesa (conic) é o quanto do nível já foi; o número fica num círculo sólido. */
-.level-ring {
-  --p: 0%;
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 76px;
-  height: 76px;
-  border-radius: 50%;
-  background: conic-gradient(var(--green) var(--p), var(--green-soft) 0);
-}
-.level-ring-num {
-  display: grid;
-  place-items: center;
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--green-ink);
-  font-family: var(--font-display);
-  font-size: 1.625rem;
-  font-weight: 700;
-}
+/* ---------- Início: seu progresso e o passo a passo do escrow ---------- */
+/* A página do nível (a figurinha e os dez quadros) está em album-inicio.css. */
 .level-text {
   display: flex;
   flex-direction: column;
@@ -7541,33 +7413,11 @@ button.deal-open:hover:not(:disabled) {
 .search-hero .search-panel button[type='submit'] {
   border-radius: 12px;
 }
-/* Três fotos de categoria em leque (decorativas). */
+/* As três figurinhas em leque estão em album-servicos.css. */
 .search-hero-art {
   display: flex;
   align-items: center;
   padding-right: 6px;
-}
-.search-hero-art img {
-  width: 96px;
-  height: 124px;
-  object-fit: cover;
-  object-position: center 25%;
-  border-radius: 18px;
-  box-shadow:
-    0 0 0 4px var(--green-deep),
-    var(--sh-lg);
-}
-.search-hero-art img:first-child {
-  transform: rotate(-7deg) translateX(14px);
-}
-.search-hero-art img:nth-child(2) {
-  position: relative;
-  z-index: 1;
-  width: 108px;
-  height: 140px;
-}
-.search-hero-art img:last-child {
-  transform: rotate(7deg) translateX(-14px);
 }
 @media (max-width: 1100px) {
   .search-hero {
@@ -7981,31 +7831,6 @@ button.deal-open:hover:not(:disabled) {
 .trade-hero-art {
   position: relative;
 }
-.trade-hero-art img {
-  display: block;
-  width: 100%;
-  height: 12rem;
-  object-fit: cover;
-  border-radius: 18px;
-}
-.trade-hero-badge {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  box-shadow: var(--sh-md);
-}
-.trade-hero-badge svg {
-  color: var(--green);
-}
 @media (max-width: 1100px) {
   .trade-hero {
     grid-template-columns: 1fr;
@@ -8177,36 +8002,6 @@ button.deal-open:hover:not(:disabled) {
   color: var(--on-dark);
   box-shadow: var(--sh-lg);
   isolation: isolate;
-}
-/* Enfeite: dois círculos claros de opacidade baixa no canto (o texto continua sobre verde). Ficam
-   numa camada própria, sem texto, que corta o que passa da borda do cartão. */
-.bank-deco {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  overflow: hidden;
-  pointer-events: none;
-}
-.bank-deco::before,
-.bank-deco::after {
-  content: '';
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-}
-.bank-deco::before {
-  width: 22rem;
-  height: 22rem;
-  top: -11rem;
-  right: -7rem;
-}
-.bank-deco::after {
-  width: 14rem;
-  height: 14rem;
-  bottom: -9rem;
-  right: 4rem;
 }
 .bank-card-top {
   display: flex;

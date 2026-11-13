@@ -1,0 +1,94 @@
+/* =====================================================================
+   A parede do álbum (components/AlbumWall.tsx): cenário atrás do login e do topo da página
+   inicial. Tokens e os fundos das figurinhas (.al-g-*) em album-app.css.
+   ===================================================================== */
+
+/* A parede é maior que o espaço e levemente girada: os quadros saem pelas bordas. */
+.aw-wall {
+  position: absolute;
+  inset: -14% -9%;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--aw-cell, clamp(5rem, 8.4vw, 8rem)), 1fr));
+  align-content: start;
+  gap: clamp(10px, 1.3vw, 18px);
+  pointer-events: none;
+  rotate: -7deg;
+}
+/* O quadro: pontilhado, com o número da figurinha que entra ali. */
+.aw {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 5 / 7;
+  border: 2px dashed #2b6549;
+  border-radius: 9px;
+  color: #3b7c5b;
+  font-family: var(--al-display);
+  font-size: clamp(1.125rem, 0.8rem + 0.9vw, 1.75rem);
+  font-stretch: 64%;
+  font-weight: 900;
+}
+/* A figurinha colada no quadro. */
+.aw-st {
+  position: absolute;
+  inset: 4%;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 12px 18px -10px rgba(0, 0, 0, 0.7);
+  rotate: var(--t, 0deg);
+}
+.aw-foil {
+  background: linear-gradient(125deg, #fbe9a8, #d7a733 28%, #fff6cf 48%, #c8901d 68%, #f6d978);
+}
+.aw-art {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  border-radius: 4px 4px 0 0;
+  background: var(--g, #ccc);
+  color: var(--al-cover);
+}
+.aw-art svg {
+  width: 46%;
+  height: auto;
+}
+/* A faixa do nome, com um traço no lugar do texto (é ilustração). */
+.aw-band {
+  position: relative;
+  height: 17%;
+  border-radius: 0 0 4px 4px;
+  background: var(--al-green);
+}
+.aw-foil .aw-band {
+  background: var(--al-cover);
+}
+.aw-band::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 10%;
+  width: 54%;
+  height: 3px;
+  border-radius: 2px;
+  background: #fff;
+  opacity: 0.85;
+  translate: 0 -50%;
+}
+
+/* As figurinhas vão sendo coladas (cada uma no seu tempo). */
+@media (prefers-reduced-motion: no-preference) {
+  .aw-st {
+    animation: aw-stick 640ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: var(--d, 0ms);
+  }
+  @keyframes aw-stick {
+    from {
+      opacity: 0;
+      rotate: calc(var(--t, 0deg) - 14deg);
+      scale: 1.35;
+    }
+  }
+}

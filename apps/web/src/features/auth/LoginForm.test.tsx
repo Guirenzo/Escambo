@@ -115,7 +115,7 @@ describe('LoginForm: entrar', () => {
     expect(screen.queryByText('Já tem conta?')).not.toBeInTheDocument();
   });
 
-  it('o painel ao lado: a frase, as três garantias e os recortes do app só como ilustração', () => {
+  it('a cena atrás: a frase, as três garantias e a parede do álbum só como ilustração', () => {
     renderForm();
     expect(screen.getByRole('link', { name: 'Escambo' })).toHaveAttribute('href', '/');
     const quote = screen.getByText(/Contrate com o pagamento guardado/);
@@ -132,12 +132,30 @@ describe('LoginForm: entrar', () => {
       'Torna calculada pelo app',
       'Disputa com mediação da equipe',
     ]);
-    const collage = panel.querySelector('.au-collage')!;
-    expect(collage).toHaveAttribute('aria-hidden', 'true');
-    expect(collage.textContent?.replace(/\s/g, ' ')).toContain('Torna: você completa R$ 400');
-    expect(collage.querySelector('img')).toHaveAttribute('alt', '');
+    // A parede do álbum é só cenário: quadros numerados, parte deles com figurinha colada.
+    const wall = panel.querySelector('.aw-wall')!;
+    expect(wall).toHaveAttribute('aria-hidden', 'true');
+    const slots = wall.querySelectorAll('.aw').length;
+    const stuck = wall.querySelectorAll('.aw-st').length;
+    expect(slots).toBe(120);
+    expect(stuck).toBeGreaterThan(60);
+    expect(stuck).toBeLessThan(slots);
     // Nada no painel recebe foco: ele não atrapalha o caminho até o formulário.
     expect(within(panel).queryAllByRole('link')).toHaveLength(0);
+  });
+
+  it('a figurinha de quem chega: vazia, é o quadro que falta; com o e-mail, ganha inicial e nome', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const mint = document.querySelector('.au-mint') as HTMLElement;
+    // Decorativa: repete o que está no campo.
+    expect(mint).toHaveAttribute('aria-hidden', 'true');
+    expect(mint).toHaveTextContent('Falta a sua');
+    await user.type(screen.getByLabelText('E-mail'), 'ana@escambo.test');
+    expect(mint).not.toHaveTextContent('Falta a sua');
+    expect(mint.querySelector('.me-sticker-initial')).toHaveTextContent('A');
+    expect(mint.querySelector('.al-sticker-title')).toHaveTextContent('ana');
+    expect(mint.querySelector('.al-sticker-who')).toHaveTextContent('De volta');
   });
 
   it('entrar manda só e-mail e senha para o login, e não cadastra', async () => {

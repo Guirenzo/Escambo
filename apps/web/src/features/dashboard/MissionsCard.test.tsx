@@ -115,6 +115,12 @@ describe('MissionsCard', () => {
     const achievement = within(card).getByText('Primeira troca').closest('li')!;
     expect(within(achievement).getByText('Conquista')).toBeInTheDocument();
     expect(within(achievement).getByText('0/1 · Sem prazo')).toBeInTheDocument();
+
+    // O quadro de cada missão é enfeite: figurinha colada na cumprida, pontilhado nas outras.
+    expect(daily.querySelector('.ms-slot')).toHaveClass('on');
+    expect(weekly.querySelector('.ms-slot')).not.toHaveClass('on');
+    expect(weekly.querySelector('.ms-slot')).toHaveAttribute('aria-hidden', 'true');
+    expect(weekly.querySelector('.ms-slot svg')).not.toBeNull();
   });
 
   it('sem missões (cliente, conta sem perfil de freelancer) não mostra o cartão', async () => {

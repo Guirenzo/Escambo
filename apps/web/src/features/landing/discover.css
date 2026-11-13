@@ -1,0 +1,148 @@
+/* =====================================================================
+   Álbum de troca: "Descubra serviços". As categorias são o filtro da vitrine: uma fileira de
+   figurinhas; a escolhida sobe, ganha o contorno âmbar e abre as subcategorias dela.
+   São <button>: as regras levam as classes da página para ganhar do botão do app (styles.css).
+   Tokens em album-app.css.
+   ===================================================================== */
+
+.lp .cf {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
+  gap: clamp(12px, 1.8vw, 22px);
+  margin-block: 4px 22px;
+}
+.lp .cf .cf-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 6px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--al-paper);
+  color: var(--al-ink);
+  box-shadow: var(--al-shadow);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  rotate: var(--tilt, 0deg);
+  transition:
+    rotate 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    translate 260ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 260ms;
+}
+.lp .cf .cf-item:nth-child(odd) {
+  --tilt: -1.6deg;
+}
+.lp .cf .cf-item:nth-child(even) {
+  --tilt: 1.4deg;
+}
+/* O desenho do ofício sobre a cor chapada (.al-g-*), como as figurinhas da parede do topo. */
+.cf-art {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 5 / 4;
+  border-radius: 5px 5px 0 0;
+  background: var(--g, var(--al-print));
+  color: var(--al-cover);
+}
+.cf-art svg {
+  width: 36%;
+  height: auto;
+}
+.cf-name {
+  padding: 8px 9px 9px;
+  border-radius: 0 0 5px 5px;
+  background: var(--al-green);
+  color: #fff;
+  font-family: var(--al-display);
+  font-size: 1.0625rem;
+  font-stretch: 78%;
+  font-weight: 800;
+  line-height: 1.05;
+}
+.lp .cf .cf-item:hover:not(:disabled) {
+  background: var(--al-paper);
+  box-shadow: var(--al-shadow-lift);
+  rotate: 0deg;
+  translate: 0 -4px;
+}
+/* A escolhida: reta, mais alta e com o contorno âmbar. */
+.lp .cf .cf-item[aria-pressed='true'],
+.lp .cf .cf-item[aria-pressed='true']:hover:not(:disabled) {
+  outline: 4px solid var(--al-amber);
+  outline-offset: 2px;
+  box-shadow: var(--al-shadow-lift);
+  rotate: 0deg;
+  translate: 0 -8px;
+}
+.cf-item[aria-pressed='true'] .cf-name {
+  background: var(--al-cover);
+}
+.lp .cf .cf-item:focus-visible {
+  outline: 3px solid var(--al-green);
+  outline-offset: 4px;
+}
+
+/* ---------- As subcategorias da escolhida ---------- */
+.lp .cf-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.lp .cf-subs .cf-sub {
+  padding: 7px 14px;
+  border: 1.5px solid var(--al-dot);
+  border-radius: 999px;
+  background: var(--al-paper);
+  color: var(--al-ink);
+  box-shadow: none;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.lp .cf-subs .cf-sub:hover:not(:disabled) {
+  border-color: var(--al-green);
+  background: var(--al-print);
+}
+.lp .cf-subs .cf-sub[aria-pressed='true'],
+.lp .cf-subs .cf-sub[aria-pressed='true']:hover:not(:disabled) {
+  border-color: var(--al-green);
+  background: var(--al-green);
+  color: #fff;
+}
+
+/* Celular: a fileira rola para o lado, sangrando até a borda da tela. */
+@media (max-width: 47.99rem) {
+  .lp .cf {
+    grid-auto-columns: 8.75rem;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    margin-inline: -16px;
+    overflow-x: auto;
+    padding: 12px 16px 16px;
+    scroll-snap-type: x proximity;
+  }
+  .cf-item {
+    scroll-snap-align: start;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cf-subs {
+    animation: cf-subs 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes cf-subs {
+    from {
+      translate: 0 -8px;
+    }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp .cf .cf-item {
+    transition: none;
+  }
+}

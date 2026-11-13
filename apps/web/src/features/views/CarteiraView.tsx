@@ -233,10 +233,9 @@ export function CarteiraView() {
       />
 
       <div className="wallet-top">
-        {/* O saldo como um cartão de banco: texto branco sobre o verde sólido; os círculos do fundo
-            são enfeite claro de opacidade baixa (o contraste continua acima de 12:1). */}
+        {/* O saldo como a figurinha brilhante da carteira: texto branco sobre o verde sólido, com a
+            borda laminada (album-carteira.css). */}
         <section className="bank-card" aria-labelledby="bank-card-label">
-          <span className="bank-deco" aria-hidden="true" />
           <div className="bank-card-top">
             <span className="bank-brand">
               <BrandMark onDark className="bank-brand-mark" />

@@ -1,0 +1,164 @@
+/* =====================================================================
+   Álbum de troca: o topo da página inicial. Uma mensagem e uma ação: a promessa em letra grande e
+   a busca, sobre a parede do álbum (components/AlbumWall). O centro é escurecido para o texto; a
+   parede aparece nas bordas. Tokens em album-app.css.
+   ===================================================================== */
+
+.lp-hero {
+  padding-block: clamp(36px, 7vh, 84px) clamp(22px, 4vh, 40px);
+  background: var(--al-cover);
+  overflow: hidden;
+}
+/* A parede, com quadros maiores que os do login: menos figurinhas, mais calma. */
+.lp-hero > .aw-wall {
+  --aw-cell: clamp(6rem, 10.5vw, 10.5rem);
+  z-index: -2;
+}
+.lp-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(
+      ellipse 64% 96% at 50% 50%,
+      rgba(6, 42, 27, 0.985) 0%,
+      rgba(6, 42, 27, 0.96) 58%,
+      rgba(6, 42, 27, 0.42) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(6, 42, 27, 0.78) 0%,
+      rgba(6, 42, 27, 0) 22%,
+      rgba(6, 42, 27, 0) 70%,
+      rgba(6, 42, 27, 0.98) 97%
+    );
+  pointer-events: none;
+}
+/* Celular: o texto ocupa a largura toda; a parede fica só no alto e no pé. */
+@media (max-width: 47.99rem) {
+  .lp-hero::before {
+    background: radial-gradient(
+      ellipse 140% 58% at 50% 48%,
+      rgba(6, 42, 27, 0.98) 0%,
+      rgba(6, 42, 27, 0.95) 62%,
+      rgba(6, 42, 27, 0.55) 100%
+    );
+  }
+}
+
+/* ---------- A promessa ---------- */
+.hx {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+.lp-hero h1 {
+  max-width: 18ch;
+  color: #fff;
+  font-size: clamp(2.75rem, 1rem + 5.6vw, 6.75rem);
+  font-stretch: 64%;
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+/* A palavra da promessa, como etiqueta colada. */
+.lp-hero .lp-accent {
+  display: inline-block;
+  padding: 0.02em 0.14em 0;
+  border-radius: 0.1em;
+  background: var(--al-amber);
+  color: var(--al-cover);
+  rotate: -2deg;
+}
+.lp-hero .lp-lead {
+  max-width: 50ch;
+  margin-top: clamp(18px, 2.6vh, 28px);
+  color: var(--al-on-cover-2);
+  font-size: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+  line-height: 1.5;
+}
+
+/* ---------- A busca: a única ação do topo ---------- */
+.lp-hero .lp-search {
+  width: min(100%, 41rem);
+  margin-top: clamp(22px, 3.4vh, 36px);
+  padding: 12px 12px 12px 18px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow:
+    0 2px 2px rgba(0, 0, 0, 0.25),
+    0 34px 54px -22px rgba(0, 0, 0, 0.8);
+  text-align: left;
+}
+.lp-hero .lp-search-label {
+  color: var(--al-ink);
+  font-family: var(--al-display);
+  font-size: 1rem;
+  font-stretch: 85%;
+  font-weight: 800;
+}
+.lp-hero .lp-search-btn {
+  border-radius: 10px;
+  background: var(--al-amber);
+  color: var(--al-cover);
+  font-family: var(--al-display);
+  font-stretch: 88%;
+  font-weight: 800;
+}
+.lp-hero .lp-search-btn:hover {
+  background: var(--al-amber-2);
+}
+
+.hx-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  color: #fff;
+  font-family: var(--al-display);
+  font-size: 1.0625rem;
+  font-stretch: 88%;
+  font-weight: 750;
+  text-decoration: underline;
+  text-decoration-color: var(--al-amber);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.3em;
+}
+.hx-more:hover {
+  color: var(--al-amber);
+}
+.hx-more svg {
+  color: var(--al-amber);
+}
+
+/* ---------- As garantias, quietas, no pé ---------- */
+.lp-hero .lp-assure {
+  justify-content: center;
+  gap: 10px 28px;
+  margin-top: clamp(30px, 6vh, 64px);
+  padding-top: 0;
+  border-top: 0;
+  color: var(--al-on-cover-2);
+}
+.lp-hero .lp-assure li {
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+.lp-hero .lp-assure svg {
+  color: var(--al-amber);
+}
+
+/* A etiqueta é carimbada ao abrir a página (uma vez). */
+@media (prefers-reduced-motion: no-preference) {
+  .lp-hero .lp-accent {
+    animation: hx-stamp 520ms cubic-bezier(0.16, 1, 0.3, 1) 250ms both;
+  }
+  @keyframes hx-stamp {
+    from {
+      rotate: -14deg;
+      scale: 1.7;
+    }
+  }
+}

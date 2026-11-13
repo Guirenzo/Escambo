@@ -1,0 +1,385 @@
+/* =====================================================================
+   Álbum de troca: "Como funciona uma troca". O texto à esquerda; à direita, a simulação: duas
+   figurinhas com o preço editável e, logo abaixo, o recibo da torna. Sem caixa em volta: tudo
+   direto na página verde. Tokens em album-app.css.
+   ===================================================================== */
+
+.lp-trade {
+  background: var(--al-green);
+}
+.tx {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(36px, 5vw, 80px);
+}
+@media (min-width: 60rem) {
+  .tx {
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  }
+}
+.lp-trade h2 {
+  color: #fff;
+}
+
+/* A simulação: sem o cartão branco de antes. */
+.lp-trade .lp-calc {
+  display: grid;
+  gap: 18px;
+  width: min(100%, 35rem);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  justify-self: center;
+}
+.tx-head h3 {
+  color: #fff;
+  font-size: clamp(1.75rem, 1.3rem + 1.2vw, 2.375rem);
+  line-height: 1;
+}
+.tx-head p {
+  margin-top: 6px;
+  color: var(--al-on-green-2);
+}
+
+/* ---------- As duas figurinhas ---------- */
+.tx-pair {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(14px, 2.6vw, 30px);
+}
+.tx-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 7px;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--al-ink);
+  box-shadow: var(--al-shadow-lift);
+}
+.tx-photo {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 7px 7px 0 0;
+  background: var(--g, #ccc);
+}
+.tx-photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 22%;
+}
+.tx-band {
+  padding: 7px 10px 8px;
+  border-radius: 0 0 7px 7px;
+  background: var(--al-cover);
+  color: #fff;
+  font-family: var(--al-display);
+  font-size: 1.0625rem;
+  font-stretch: 80%;
+  font-weight: 800;
+  line-height: 1.05;
+}
+/* A moeda da troca, entre as duas. */
+.tx-coin {
+  position: absolute;
+  top: 27%;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--al-amber);
+  color: var(--al-cover);
+  box-shadow: var(--al-shadow);
+  translate: -50% -50%;
+}
+
+/* O preço: a etiqueta da figurinha, editável. */
+.tx-card .lp-calc-field {
+  display: grid;
+  gap: 2px;
+  padding: 12px 8px 8px;
+}
+.tx-card .lp-calc-field label {
+  color: var(--al-green);
+  font-family: var(--al-display);
+  font-size: 0.8125rem;
+  font-stretch: 85%;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tx-card .lp-calc-input {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  order: 2;
+  margin-top: 2px;
+  padding: 2px 0 4px;
+  border: 0;
+  border-bottom: 2px solid var(--al-ink);
+  border-radius: 0;
+  background: transparent;
+}
+.tx-card .lp-calc-input > span {
+  position: static;
+  transform: none;
+  color: var(--al-ink-2);
+  font-family: var(--al-display);
+  font-size: 1.125rem;
+  font-weight: 800;
+}
+.tx-card .lp-calc-input input {
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  border: 0;
+  background: transparent;
+  color: var(--al-ink);
+  font-family: var(--al-display);
+  font-size: clamp(1.625rem, 1.2rem + 1.4vw, 2.25rem);
+  font-stretch: 80%;
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  line-height: 1.1;
+  outline: none;
+}
+/* O foco fica no conjunto (cifrão e número), com anel inteiro. */
+.tx-card .lp-calc-input:focus-within {
+  border-bottom-color: var(--al-green);
+  border-radius: 4px;
+  outline: 3px solid var(--al-green);
+  outline-offset: 4px;
+}
+.tx-card .lp-calc-input:has(input[aria-invalid='true']) {
+  border-bottom-color: var(--red);
+}
+.tx-card .lp-calc-hint {
+  order: 3;
+  color: var(--al-ink-2);
+  font-size: 0.8125rem;
+}
+.tx-card .lp-calc-error {
+  order: 4;
+  color: var(--red-ink);
+  font-size: 0.8125rem;
+}
+
+/* ---------- O recibo da torna ---------- */
+.tx-ticket {
+  display: grid;
+  gap: 12px;
+  padding: 20px 22px 18px;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--al-ink);
+  box-shadow: var(--al-shadow-lift);
+}
+.tx-ticket .lp-calc-headline {
+  padding-bottom: 14px;
+  border-bottom: 2px dashed var(--al-dot);
+  color: var(--al-ink);
+  font-family: var(--al-display);
+  font-size: clamp(1.625rem, 1.2rem + 1.3vw, 2.25rem);
+  font-stretch: 78%;
+  font-weight: 850;
+  line-height: 1;
+}
+.tx-ticket .lp-calc-headline strong {
+  color: var(--al-green);
+  font-weight: 900;
+}
+.tx-ticket .lp-calc-note {
+  color: var(--al-ink-2);
+}
+.tx-ticket .lp-calc-rows {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+}
+.tx-ticket .lp-calc-rows > div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+}
+/* A linha pontilhada liga o nome ao valor, como num recibo. */
+.tx-ticket .lp-calc-rows dt {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  color: var(--al-ink-2);
+}
+.tx-ticket .lp-calc-rows dt::after {
+  content: '';
+  flex: 1;
+  min-width: 12px;
+  border-bottom: 2px dotted var(--al-dot);
+  translate: 0 -4px;
+}
+.tx-ticket .lp-calc-rows dd {
+  margin: 0;
+  color: var(--al-ink);
+  font-family: var(--al-display);
+  font-size: 1.0625rem;
+  font-stretch: 85%;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.tx-ticket .lp-calc-net dt {
+  color: var(--al-ink);
+  font-weight: 700;
+}
+.tx-ticket .lp-calc-net dd {
+  color: var(--al-green);
+  font-size: 1.5rem;
+  font-weight: 900;
+}
+.tx-ticket .lp-calc-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--al-ink-2);
+  font-size: 0.875rem;
+}
+.tx-ticket .lp-calc-foot svg {
+  flex: none;
+  color: var(--al-green);
+}
+.tx-note {
+  color: var(--al-on-green-2);
+  font-size: 0.8125rem;
+}
+
+/* ---------- A balança: as figurinhas são os pratos ---------- */
+/* --tip vai de -12 a 12 (graus da trave x 0,3). Cada figurinha sobe ou desce o mesmo que o ponto
+   da trave onde a haste dela se apoia (a um quarto da largura): 0,25 x sen(0,3°) = 0,131% por
+   unidade, medido pela largura da própria balança (cqi). */
+.tx-balance {
+  --tip: 0;
+  display: grid;
+  container-type: inline-size;
+}
+.tx-card {
+  position: relative;
+}
+.tx-pair > .tx-card {
+  /* Passa um pouco do ponto e volta, como quem senta numa gangorra. */
+  transition: translate 720ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.tx-pair > .tx-card:first-of-type {
+  translate: 0 calc(var(--tip) * -0.131cqi);
+}
+.tx-pair > .tx-card:last-of-type {
+  translate: 0 calc(var(--tip) * 0.131cqi);
+}
+.tx-scale {
+  position: relative;
+  height: 3.25rem;
+  margin-top: 16px;
+}
+.tx-beam {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--al-cover);
+  rotate: calc(var(--tip) * 0.3deg);
+  transition: rotate 720ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* As hastes que seguram cada figurinha na trave. */
+.tx-stem {
+  position: absolute;
+  bottom: 100%;
+  width: 6px;
+  height: 16px;
+  border-radius: 3px 3px 0 0;
+  background: var(--al-cover);
+  translate: -50% 0;
+}
+.tx-stem-l {
+  left: 25%;
+}
+.tx-stem-r {
+  left: 75%;
+}
+/* O apoio: um triângulo âmbar. */
+.tx-fulcrum {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border: solid transparent;
+  border-width: 0 1.5rem 2.4rem;
+  border-bottom-color: var(--al-amber);
+  translate: -50% 0;
+}
+/* A torna, em cima da figurinha mais leve. */
+.tx-torna {
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  z-index: 3;
+  padding: 6px 11px 4px;
+  border-radius: 999px;
+  background: var(--al-amber);
+  color: var(--al-cover);
+  box-shadow: var(--al-shadow);
+  font-family: var(--al-display);
+  font-size: 0.875rem;
+  font-stretch: 88%;
+  font-weight: 800;
+  translate: -50% 0;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tx-torna {
+    animation: tx-drop 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  @keyframes tx-drop {
+    from {
+      translate: -50% -18px;
+    }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tx-pair > .tx-card,
+  .tx-beam {
+    transition: none;
+  }
+}
+
+@media (max-width: 30rem) {
+  .tx-coin {
+    width: 44px;
+    height: 44px;
+  }
+  .tx-band {
+    font-size: 0.9375rem;
+  }
+  .tx-ticket {
+    padding: 16px 16px 14px;
+  }
+}

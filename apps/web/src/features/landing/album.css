@@ -1,0 +1,143 @@
+/* =====================================================================
+   Escambo — identidade "Álbum de troca" (proposta; ver docs/design/album-de-troca.md)
+   Vem depois de landing.css e troca o mundo visual: a página é o álbum aberto, cada serviço é uma
+   figurinha. Anybody (largura variável) nos títulos e números; Inter no texto. Verde Escambo nas
+   páginas impressas, branco nas figurinhas, âmbar na ação e na torna. Contraste medido no pior
+   ponto de cada fundo; texto sobre cor sempre em cor sólida.
+   ===================================================================== */
+
+.lp {
+  /* O resto da landing.css passa a ler o mundo do álbum. */
+  --font-display: var(--al-display);
+  --paper: var(--al-paper);
+  --mint: var(--al-print);
+  --green-deep: var(--al-cover);
+  --text: var(--al-ink);
+  --muted: var(--al-ink-2);
+  --green-soft: var(--al-print);
+  --r-lg: 10px;
+  --r-xl: 12px;
+  --r-2xl: 16px;
+
+  background: var(--al-paper);
+}
+
+/* As partes do navegador também são do álbum. */
+.lp ::selection {
+  background: var(--al-amber);
+  color: var(--al-cover);
+}
+html:has(.lp) {
+  scrollbar-color: var(--al-green) var(--al-print);
+  accent-color: var(--al-green);
+}
+.lp a {
+  text-underline-offset: 0.2em;
+}
+.lp a:focus-visible,
+.lp summary:focus-visible,
+.lp button:focus-visible {
+  outline-width: 3px;
+}
+
+/* ---------- Títulos: Anybody condensada, pesada ---------- */
+.lp h1,
+.lp-band h2,
+.lp-final h2,
+.lp-band h3,
+.al-table-title {
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 72;
+  font-weight: 850;
+  letter-spacing: -0.005em;
+}
+.lp-band h2,
+.lp-final h2 {
+  font-size: clamp(2.25rem, 1.5rem + 2.6vw, 3.75rem);
+  line-height: 0.98;
+  text-wrap: balance;
+}
+.lp-band h3 {
+  font-weight: 800;
+  font-variation-settings: 'wdth' 80;
+  letter-spacing: 0;
+}
+/* Sem rótulo em cima do título: o título fala sozinho. */
+.lp-kicker {
+  display: none;
+}
+.lp-sub {
+  font-size: 1.125rem;
+}
+
+/* ---------- Botões: a etiqueta grossa do álbum ---------- */
+.lp-btn {
+  border-radius: 10px;
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 88;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  box-shadow:
+    0 1px 1px rgba(6, 42, 27, 0.15),
+    0 8px 16px -10px rgba(6, 42, 27, 0.6);
+  transition:
+    transform var(--t, 160ms) cubic-bezier(0.16, 1, 0.3, 1),
+    background-color var(--t, 160ms),
+    box-shadow var(--t, 160ms);
+}
+.lp-btn:hover {
+  transform: translateY(-1px);
+}
+.lp-btn:active {
+  transform: translateY(1px);
+}
+.lp-btn-amber {
+  background: var(--al-amber);
+  color: var(--al-cover);
+}
+.lp-btn-amber:hover {
+  background: var(--al-amber-2);
+  color: var(--al-cover);
+}
+.lp-btn-primary {
+  background: var(--al-green);
+  color: #fff;
+}
+.lp-btn-primary:hover {
+  background: var(--al-green-2);
+}
+.lp-btn-outline {
+  border: 2px solid var(--al-green);
+  background: var(--al-paper);
+  color: var(--al-green);
+  box-shadow: none;
+}
+.lp-btn-light {
+  border: 2px solid #fff;
+  background: transparent;
+  color: #fff;
+  box-shadow: none;
+}
+.lp-btn-light:hover {
+  background: #fff;
+  color: var(--al-cover);
+}
+
+/* ---------- Cabeçalho: a lombada da capa ---------- */
+.lp-header {
+  background: var(--al-cover);
+  border-bottom: 0;
+}
+.lp-header .brand-name {
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 75;
+  font-weight: 850;
+  font-size: 1.5rem;
+  letter-spacing: 0;
+}
+.lp-nav a {
+  font-family: var(--al-display);
+  font-variation-settings: 'wdth' 90;
+  font-weight: 650;
+  font-size: 1rem;
+}

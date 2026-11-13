@@ -37,6 +37,12 @@ import { SuporteView } from './features/views/SuporteView';
 import { useAuth } from './lib/auth';
 import { RouteAnnouncer } from './lib/title';
 import './styles.css';
+import './album-app.css';
+import './album-inicio.css';
+import './album-servicos.css';
+import './album-trocas.css';
+import './album-carteira.css';
+import './album-ranking.css';
 import { MaintenanceGate } from './components/MaintenanceGate';
 
 /**

@@ -1,0 +1,76 @@
+/* =====================================================================
+   Álbum de troca: a Carteira. O cartão do saldo é a figurinha brilhante da tela (borda laminada);
+   o que está retido fica num quadro pontilhado, porque ainda não é seu; o resto são folhas de
+   papel sem contorno. Tela de dinheiro: nada se mexe sozinho e os números ficam onde estavam.
+   ===================================================================== */
+
+/* ---------- O cartão do saldo ---------- */
+.bank-card {
+  border: 4px solid transparent;
+  border-radius: 18px;
+  background:
+    linear-gradient(var(--al-cover), var(--al-cover)) padding-box,
+    var(--al-foil) border-box;
+  box-shadow: var(--al-shadow);
+}
+.bank-brand {
+  font-stretch: 78%;
+  font-weight: 850;
+}
+.bank-chip {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--al-amber);
+  color: var(--al-cover);
+}
+.bank-label {
+  color: var(--al-on-cover-2);
+}
+.bank-value {
+  font-family: var(--al-display);
+  font-size: 2.75rem;
+  font-stretch: 74%;
+  font-weight: 850;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.bank-hint {
+  color: var(--al-on-cover-2);
+}
+
+/* ---------- Ao lado: retido e créditos ---------- */
+.wallet-side .kpi {
+  border: 0;
+  border-radius: 16px;
+  box-shadow: var(--al-shadow-soft);
+}
+.wallet-side .kpi-ico {
+  border-radius: 10px;
+}
+/* Retido: quadro pontilhado, ainda não colado na carteira. */
+.wallet-side .kpi.amber {
+  border: 2px dashed var(--al-dot);
+  background: var(--al-print);
+  box-shadow: none;
+}
+.wallet-side .kpi.amber .kpi-ico {
+  background: var(--al-amber);
+  color: var(--al-cover);
+}
+
+/* ---------- As folhas da carteira: ganhos, extrato, saque, saques e depósitos ---------- */
+.page:has(.wallet-top) .card {
+  border: 0;
+  border-radius: 16px;
+  box-shadow: var(--al-shadow-soft);
+}
+/* Entrada, saída e retido: o desenho num quadro de canto arredondado, como os outros do app. */
+.tx-ico {
+  border-radius: 10px;
+}
+.tx-ico.held {
+  border: 1.5px dashed var(--al-dot);
+  background: var(--al-print);
+  color: var(--al-amber-ink);
+}
