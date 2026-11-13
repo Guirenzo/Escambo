@@ -360,6 +360,8 @@ html:has(.lp-header) {
 /* Busca do topo: um bloco branco por cima do escuro (padrão dos marketplaces), rótulo visível. */
 .lp-search {
   display: grid;
+  /* A coluna tem a largura do formulário, e não a largura natural do campo. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   max-width: 36rem;
   margin-top: 24px;

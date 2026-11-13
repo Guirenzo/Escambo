@@ -253,6 +253,18 @@
   }
 }
 
+/* O cartão tem a largura da tela, e não a da maior palavra dele: com o texto a 200% no celular,
+   o título quebra em vez de empurrar o cartão para fora. */
+.au-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+.au .au-card {
+  min-width: 0;
+}
+.au .au-title {
+  overflow-wrap: anywhere;
+}
+
 /* Em tela estreita o campo não impõe a largura natural dele ao grupo (ela muda de um sistema para
    outro): a coluna e os campos podem encolher até caber. */
 .au .au-company {

@@ -50,6 +50,9 @@
 /* ---------- A promessa ---------- */
 .hx {
   display: grid;
+  /* Uma coluna da largura da seção (e não da maior palavra do título): com o texto a 200% no
+     celular, nada empurra a coluna para fora da tela. */
+  grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   text-align: center;
 }
@@ -62,6 +65,8 @@
   line-height: 0.9;
   letter-spacing: -0.005em;
   text-wrap: balance;
+  /* Só quebra dentro da palavra quando ela sozinha é maior que a tela (texto a 200% no celular). */
+  overflow-wrap: anywhere;
 }
 /* A palavra da promessa, como etiqueta colada. */
 .lp-hero .lp-accent {
