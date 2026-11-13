@@ -33,6 +33,11 @@ export interface BarterRow extends RowDataPacket {
   created_at: Date;
 }
 
+export interface BarterSettlement {
+  row: BarterRow;
+  status: 'completed' | 'disputed';
+}
+
 interface ContractSpec {
   ulid: string;
   clientId: number;
@@ -110,9 +115,13 @@ async function holdTorna(
  * recusa devolver um retido que deveria existir se ela está inconsistente (sem carteira ou retido
  * menor que a torna): isso é erro, não "o status mudou", e sobe como exceção para o rollback.
  */
-async function refundTorna(conn: PoolConnection, row: BarterRow): Promise<void> {
+async function refundTorna(
+  conn: PoolConnection,
+  row: BarterRow,
+  relatedUserIds: readonly number[] = [],
+): Promise<void> {
   if (row.torna_status !== 'held' || !row.cash_payer_id) return;
-  await lockWallets(conn, [row.cash_payer_id]);
+  await lockWallets(conn, [row.cash_payer_id], relatedUserIds);
   const amount = Number(row.cash_difference);
   const ok = await applyWalletEffect(conn, {
     userId: row.cash_payer_id,
@@ -145,7 +154,109 @@ async function lockRow(conn: PoolConnection, id: number): Promise<BarterRow | un
   return rows[0];
 }
 
+async function ensureTornaRecipient(id: number): Promise<boolean> {
+  // As partes e o pagador são imutáveis; estado e valores continuam sob lockRow.
+  const [parties] = await pool.query<RowDataPacket[]>(
+    `SELECT proposer_id, receiver_id, cash_payer_id FROM barter_agreements WHERE id = :id`,
+    { id },
+  );
+  const party = parties[0];
+  if (!party) return false;
+  if (party.cash_payer_id) {
+    const recipientId =
+      party.cash_payer_id === party.proposer_id ? party.receiver_id : party.proposer_id;
+    await walletRepository.ensure(Number(recipientId));
+  }
+  return true;
+}
+
+async function completeWithTorna(
+  conn: PoolConnection,
+  row: BarterRow,
+  relatedUserIds: readonly number[] = [],
+): Promise<void> {
+  await conn.query<ResultSetHeader>(
+    `UPDATE barter_agreements SET status = 'completed', completed_at = NOW() WHERE id = :id`,
+    { id: row.id },
+  );
+  if (row.torna_status === 'held' && row.cash_payer_id) {
+    const torna = Number(row.cash_difference);
+    const fee = Number(row.platform_fee);
+    const receiverId = row.cash_payer_id === row.proposer_id ? row.receiver_id : row.proposer_id;
+    await lockWallets(conn, [row.cash_payer_id, receiverId], relatedUserIds);
+    const paid = await applyWalletEffect(conn, {
+      userId: row.cash_payer_id,
+      balanceDelta: 0,
+      pendingDelta: -torna,
+      reason: 'barter_payment',
+    });
+    const received = await applyWalletEffect(conn, {
+      userId: receiverId,
+      balanceDelta: Math.max(0, Math.round((torna - fee) * 100) / 100),
+      pendingDelta: 0,
+      reason: 'barter_in',
+    });
+    if (!paid || !received) {
+      // Retido do pagador menor que a torna (ou carteira sumida): inconsistência, não corrida.
+      throw new Error(
+        `Troca ${row.id}: a carteira recusou a liquidação da torna de ${torna} (retido inconsistente)`,
+      );
+    }
+    await conn.query<ResultSetHeader>(
+      `UPDATE barter_agreements SET torna_status = 'paid' WHERE id = :id`,
+      { id: row.id },
+    );
+  }
+}
+
+async function disputeWithRefund(
+  conn: PoolConnection,
+  row: BarterRow,
+  relatedUserIds: readonly number[] = [],
+): Promise<void> {
+  await conn.query<ResultSetHeader>(
+    `UPDATE barter_agreements SET status = 'disputed' WHERE id = :id`,
+    { id: row.id },
+  );
+  await refundTorna(conn, row, relatedUserIds);
+}
+
 export const barterRepository = {
+  ensureTornaRecipient,
+
+  /** Trava o acordo e, para conclusão, os dois contratos antes de ler o estado do outro lado. */
+  async prepareDisputeSettlement(
+    conn: PoolConnection,
+    agreementId: number,
+    contractId: number,
+    finalStatus: 'completed' | 'cancelled',
+  ): Promise<BarterSettlement | null> {
+    const row = await lockRow(conn, agreementId);
+    if (row?.status !== 'active') return null;
+    if (finalStatus === 'cancelled') return { row, status: 'disputed' };
+
+    const ids = [row.contract_offered_id, row.contract_requested_id];
+    if (ids.some((id) => id == null) || !ids.includes(contractId)) return null;
+    const [linked] = await conn.query<RowDataPacket[]>(
+      `SELECT id, status FROM contracts WHERE id IN (:ids) ORDER BY id FOR UPDATE`,
+      { ids },
+    );
+    const other = linked.find((contract) => Number(contract.id) !== contractId);
+    return linked.length === 2 && other?.status === 'completed'
+      ? { row, status: 'completed' }
+      : null;
+  },
+
+  /** Executa a liquidação na transação de quem resolveu a disputa. */
+  async applyDisputeSettlement(
+    conn: PoolConnection,
+    { row, status }: BarterSettlement,
+    adminId: number,
+  ): Promise<void> {
+    if (status === 'completed') await completeWithTorna(conn, row, [adminId]);
+    else await disputeWithRefund(conn, row, [adminId]);
+  },
+
   /**
    * Cria a proposta; quando o proponente é quem paga a torna, reserva o valor na mesma
    * transação (retorna null se não há saldo — nada é criado).
@@ -376,18 +487,7 @@ export const barterRepository = {
    * se a carteira recusar a liquidação.
    */
   async completeAndRelease(id: number): Promise<boolean> {
-    // As partes e o pagador são imutáveis; estado e valores continuam sob lockRow.
-    const [parties] = await pool.query<RowDataPacket[]>(
-      `SELECT proposer_id, receiver_id, cash_payer_id FROM barter_agreements WHERE id = :id`,
-      { id },
-    );
-    const party = parties[0];
-    if (!party) return false;
-    if (party.cash_payer_id) {
-      const recipientId =
-        party.cash_payer_id === party.proposer_id ? party.receiver_id : party.proposer_id;
-      await walletRepository.ensure(Number(recipientId));
-    }
+    if (!(await ensureTornaRecipient(id))) return false;
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -396,39 +496,7 @@ export const barterRepository = {
         await conn.rollback();
         return false;
       }
-      await conn.query<ResultSetHeader>(
-        `UPDATE barter_agreements SET status = 'completed', completed_at = NOW() WHERE id = :id`,
-        { id },
-      );
-      if (row.torna_status === 'held' && row.cash_payer_id) {
-        const torna = Number(row.cash_difference);
-        const fee = Number(row.platform_fee);
-        const receiverId =
-          row.cash_payer_id === row.proposer_id ? row.receiver_id : row.proposer_id;
-        await lockWallets(conn, [row.cash_payer_id, receiverId]);
-        const paid = await applyWalletEffect(conn, {
-          userId: row.cash_payer_id,
-          balanceDelta: 0,
-          pendingDelta: -torna,
-          reason: 'barter_payment',
-        });
-        const received = await applyWalletEffect(conn, {
-          userId: receiverId,
-          balanceDelta: Math.max(0, Math.round((torna - fee) * 100) / 100),
-          pendingDelta: 0,
-          reason: 'barter_in',
-        });
-        if (!paid || !received) {
-          // Retido do pagador menor que a torna (ou carteira sumida): inconsistência, não corrida.
-          throw new Error(
-            `Troca ${id}: a carteira recusou a liquidação da torna de ${torna} (retido inconsistente)`,
-          );
-        }
-        await conn.query<ResultSetHeader>(
-          `UPDATE barter_agreements SET torna_status = 'paid' WHERE id = :id`,
-          { id },
-        );
-      }
+      await completeWithTorna(conn, row);
       await conn.commit();
       return true;
     } catch (err) {
@@ -453,11 +521,7 @@ export const barterRepository = {
         await conn.rollback();
         return false;
       }
-      await conn.query<ResultSetHeader>(
-        `UPDATE barter_agreements SET status = 'disputed' WHERE id = :id`,
-        { id },
-      );
-      await refundTorna(conn, row);
+      await disputeWithRefund(conn, row);
       await conn.commit();
       return true;
     } catch (err) {

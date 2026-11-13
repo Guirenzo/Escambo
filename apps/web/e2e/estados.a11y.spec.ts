@@ -6,13 +6,12 @@ import {
   createService,
   createUser,
   deliveredContract,
-  latestEmail,
-  linkIn,
   openAs,
   openLanding,
   settled,
   type TestUser,
 } from './helpers';
+import { resetLinkForTest } from './reset-link.helpers';
 
 /**
  * O que o axe não decide sozinho e dá para provar no navegador (docs/acessibilidade.md):
@@ -694,11 +693,9 @@ test('erros de campo ficam marcados e ligados ao campo, e os avisos vão para re
   await expect(status).not.toContainText('Serviço de e-mail fora do ar');
 
   // Redefinir senha: senhas diferentes.
-  const admin = await createAdmin(request);
   const forgot = await request.post('/api/auth/forgot-password', { data: { email: user.email } });
   expect(forgot.ok()).toBeTruthy();
-  const link = new URL(linkIn((await latestEmail(request, admin, user.id, 'password_reset')).text));
-  await page.goto(`${link.pathname}${link.search}`);
+  await page.goto((await resetLinkForTest(user)).url);
   await page.getByLabel('Nova senha', { exact: true }).fill('NovaSenha@456');
   await page.getByLabel('Confirmar nova senha').fill('OutraSenha@789');
   await page.getByRole('button', { name: 'Salvar nova senha' }).click();

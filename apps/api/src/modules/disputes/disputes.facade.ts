@@ -21,7 +21,7 @@ export const disputesFacade = {
     return disputesRepository.listOpen();
   },
 
-  /** Resolve aplicando a decisão de escrow em uma transação; false se a disputa já mudou. */
+  /** Resolve o escrow e a troca vinculada em uma transação; false se a disputa já mudou. */
   resolve(...args: Parameters<typeof disputesRepository.resolve>) {
     return disputesRepository.resolve(...args);
   },

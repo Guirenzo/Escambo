@@ -38,9 +38,10 @@ import { parseStoredRecoveryCodes, recoveryCodesLeft } from '../auth/recovery-co
  * identificador da conta Google vinculada: é dado do titular que a plataforma guarda (art. 18, II),
  * como o CPF na 1.14, e não é credencial (sozinho não entra em conta nenhuma). Nenhum token do
  * Google é guardado, então nenhum entra.
+ * Formato 1.16: os itens do portfólio do titular, com imagem, link e ordem de exibição.
  */
 
-export const EXPORT_FORMAT_VERSION = '1.15';
+export const EXPORT_FORMAT_VERSION = '1.16';
 
 /** O CPF do titular, legível como ele o informou; o que não decifra sai como "[indisponível]". */
 function openCpf(stored: unknown): string | null {
@@ -84,6 +85,15 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
   const [client] = await q(
     `SELECT full_name, avatar_url, bio, city, state, latitude, longitude, created_at
        FROM profiles_client WHERE user_id = :userId`,
+    p,
+  );
+  const portfolio = await q(
+    `SELECT i.id, i.title, i.description, i.image_url, i.external_url,
+            i.sort_order, i.created_at, i.updated_at
+       FROM freelancer_portfolio_items i
+       JOIN profiles_freelancer pf ON pf.id = i.freelancer_id
+      WHERE pf.user_id = :userId
+      ORDER BY i.sort_order, i.id`,
     p,
   );
   const consents = await q(
@@ -307,6 +317,7 @@ export async function buildExport(userId: number): Promise<Record<string, unknow
     perfis: { freelancer, cliente: client ?? null, empresa: company ?? null },
     consentimentos: consents,
     servicos: services,
+    portfolio,
     contratacoes: contracts,
     historicoDeContratacoes: history,
     ofertas: offers,

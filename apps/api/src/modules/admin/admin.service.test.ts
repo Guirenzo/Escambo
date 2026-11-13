@@ -83,7 +83,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   disputes.findById.mockResolvedValue(disputeRow());
   contracts.findById.mockResolvedValue(contractRow());
-  disputes.resolve.mockResolvedValue(true);
+  disputes.resolve.mockResolvedValue({ barterSettlement: null });
 });
 
 describe('adminService.resolveDispute (escrow)', () => {

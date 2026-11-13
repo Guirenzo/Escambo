@@ -10,6 +10,7 @@ import {
   pngFixture,
   navTo,
 } from './helpers';
+import { resetLinkForTest } from './reset-link.helpers';
 
 /**
  * Contas e conformidade: cadastro com aceite dos termos (consentimento registrado), páginas
@@ -73,7 +74,7 @@ test('confirmação de e-mail: banner no app, link do e-mail confirma e o banner
   await expect(page.getByTestId('verify-banner')).toHaveCount(0);
 });
 
-test('esqueci minha senha: link por e-mail redefine a senha e encerra as sessões antigas', async ({
+test('esqueci minha senha: formulário redefine a senha e encerra as sessões antigas', async ({
   page,
   request,
 }) => {
@@ -91,9 +92,9 @@ test('esqueci minha senha: link por e-mail redefine a senha e encerra as sessõe
   await expect(page.getByTestId('forgot-sent')).toContainText(user.email);
 
   const mail = await latestEmail(request, admin, user.id, 'password_reset');
-  const link = linkIn(mail.text);
-  expect(link).toContain('/redefinir-senha?token=');
-  await page.goto(new URL(link).pathname + new URL(link).search);
+  expect(mail.text).toBe('Link de redefinição protegido.');
+  const { url, token } = await resetLinkForTest(user);
+  await page.goto(url);
   await page.getByLabel('Nova senha', { exact: true }).fill('NovaSenha@456');
   await page.getByLabel('Confirmar nova senha').fill('NovaSenha@456');
   await page.getByRole('button', { name: 'Salvar nova senha' }).click();
@@ -101,7 +102,7 @@ test('esqueci minha senha: link por e-mail redefine a senha e encerra as sessõe
 
   // Link é de uso único; senha antiga já não entra; a nova entra.
   const reuse = await request.post('/api/auth/reset-password', {
-    data: { token: new URL(link).searchParams.get('token'), password: 'OutraSenha@789' },
+    data: { token, password: 'OutraSenha@789' },
   });
   expect(reuse.status()).toBe(400);
   const old = await request.post('/api/auth/login', {
