@@ -11,6 +11,9 @@
   background:
     linear-gradient(var(--al-cover), var(--al-cover)) padding-box,
     var(--al-foil) border-box;
+  /* A mesma cor de dentro como cor de fundo: é o que conta para medir o contraste do que está em
+     cima (o anel de foco dos botões). */
+  background-color: var(--al-cover);
   box-shadow: var(--al-shadow);
 }
 .bank-brand {

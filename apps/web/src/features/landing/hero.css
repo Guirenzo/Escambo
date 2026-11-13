@@ -10,7 +10,7 @@
   overflow: hidden;
 }
 /* A parede, com quadros maiores que os do login: menos figurinhas, mais calma. */
-.lp-hero > .aw-wall {
+.lp-hero > .aw-clip {
   --aw-cell: clamp(6rem, 10.5vw, 10.5rem);
   z-index: -2;
 }
@@ -152,13 +152,17 @@
 
 /* A etiqueta é carimbada ao abrir a página (uma vez). */
 @media (prefers-reduced-motion: no-preference) {
+  /* O destaque se revela da esquerda para a direita, como marca-texto. Só o recorte anda: a
+     palavra não muda de tamanho nem de lugar, então nunca passa por cima do resto do título. */
   .lp-hero .lp-accent {
     animation: hx-stamp 520ms cubic-bezier(0.16, 1, 0.3, 1) 250ms both;
   }
   @keyframes hx-stamp {
     from {
-      rotate: -14deg;
-      scale: 1.7;
+      clip-path: inset(0 100% 0 0 round 0.1em);
+    }
+    to {
+      clip-path: inset(0 0 0 0 round 0.1em);
     }
   }
 }

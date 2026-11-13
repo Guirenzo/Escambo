@@ -237,68 +237,70 @@ export function InicioView() {
             roleLabel={ROLE_LABEL[user?.role ?? 'client']}
           />
         </div>
-        <div className="welcome-main">
-          <div className="welcome-text">
-            <h1 id="welcome-title">{`${greetingFor(now)}, ${name}`}</h1>
-            <p>
-              {todayLabel(now)}.{' '}
-              {isFreelancer
-                ? 'Seus serviços, contratos e ganhos num lugar só.'
-                : 'Encontre quem faz, acompanhe as contratações e pague com segurança.'}
-            </p>
+        <div className="welcome-body">
+          <div className="welcome-main">
+            <div className="welcome-text">
+              <h1 id="welcome-title">{`${greetingFor(now)}, ${name}`}</h1>
+              <p>
+                {todayLabel(now)}.{' '}
+                {isFreelancer
+                  ? 'Seus serviços, contratos e ganhos num lugar só.'
+                  : 'Encontre quem faz, acompanhe as contratações e pague com segurança.'}
+              </p>
+            </div>
+            <div className="welcome-cta">
+              {isFreelancer ? (
+                <Link to="/servicos?novo=1" className="btn amber">
+                  <Plus size={16} aria-hidden="true" /> Publicar um serviço
+                </Link>
+              ) : (
+                <Link to="/servicos" className="btn amber">
+                  <Search size={16} aria-hidden="true" /> Encontrar um profissional
+                </Link>
+              )}
+            </div>
           </div>
-          <div className="welcome-cta">
-            {isFreelancer ? (
-              <Link to="/servicos?novo=1" className="btn amber">
-                <Plus size={16} aria-hidden="true" /> Publicar um serviço
-              </Link>
-            ) : (
-              <Link to="/servicos" className="btn amber">
-                <Search size={16} aria-hidden="true" /> Encontrar um profissional
-              </Link>
-            )}
+          <div className="welcome-money" role="group" aria-label="Carteira">
+            <Money
+              Icon={Wallet}
+              label="Saldo disponível"
+              value={w ? brl(w.balance) : '—'}
+              hint="para saque"
+              hidden={hideMoney}
+            />
+            <Money
+              Icon={Lock}
+              label="Em escrow"
+              value={w ? brl(w.balancePending) : '—'}
+              hint="retido em contratações"
+              hidden={hideMoney}
+            />
+            <Money
+              Icon={Coins}
+              label="Créditos Escambo"
+              value={w ? String(w.credits) : '—'}
+              hint={
+                w && w.creditsPending > 0
+                  ? `${w.creditsPending} em escrow`
+                  : 'para contratar ou impulsionar'
+              }
+              hidden={hideMoney}
+            />
+            <button
+              type="button"
+              className="money-eye"
+              aria-pressed={hideMoney}
+              aria-label="Ocultar valores"
+              title={hideMoney ? 'Mostrar valores' : 'Ocultar valores'}
+              onClick={toggleMoney}
+            >
+              {hideMoney ? (
+                <EyeOff size={18} aria-hidden="true" />
+              ) : (
+                <Eye size={18} aria-hidden="true" />
+              )}
+            </button>
           </div>
-        </div>
-        <div className="welcome-money" role="group" aria-label="Carteira">
-          <Money
-            Icon={Wallet}
-            label="Saldo disponível"
-            value={w ? brl(w.balance) : '—'}
-            hint="para saque"
-            hidden={hideMoney}
-          />
-          <Money
-            Icon={Lock}
-            label="Em escrow"
-            value={w ? brl(w.balancePending) : '—'}
-            hint="retido em contratações"
-            hidden={hideMoney}
-          />
-          <Money
-            Icon={Coins}
-            label="Créditos Escambo"
-            value={w ? String(w.credits) : '—'}
-            hint={
-              w && w.creditsPending > 0
-                ? `${w.creditsPending} em escrow`
-                : 'para contratar ou impulsionar'
-            }
-            hidden={hideMoney}
-          />
-          <button
-            type="button"
-            className="money-eye"
-            aria-pressed={hideMoney}
-            aria-label="Ocultar valores"
-            title={hideMoney ? 'Mostrar valores' : 'Ocultar valores'}
-            onClick={toggleMoney}
-          >
-            {hideMoney ? (
-              <EyeOff size={18} aria-hidden="true" />
-            ) : (
-              <Eye size={18} aria-hidden="true" />
-            )}
-          </button>
         </div>
         <ul className="quick-actions" aria-label="Atalhos">
           {shortcuts.map(({ to, label, hint, Icon }) => (

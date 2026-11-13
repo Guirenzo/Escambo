@@ -3,6 +3,14 @@
    inicial. Tokens e os fundos das figurinhas (.al-g-*) em album-app.css.
    ===================================================================== */
 
+/* O invólucro ocupa o espaço de quem usa a parede e corta o que sai dele. Fica fora da árvore de
+   acessibilidade, como a parede: o corte é só do cenário, nunca de conteúdo. */
+.aw-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
 /* A parede é maior que o espaço e levemente girada: os quadros saem pelas bordas. */
 .aw-wall {
   position: absolute;

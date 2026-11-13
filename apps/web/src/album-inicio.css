@@ -13,22 +13,25 @@
 }
 
 /* ---------- A capa: figurinha, cumprimento, carteira e atalhos ---------- */
+/* Três blocos numa linha que quebram sozinhos quando falta largura. As medidas são em rem: com o
+   texto maior (zoom de texto a 200%), eles quebram antes, em vez de um texto passar por cima do
+   outro. Por isso a faixa não depende do tamanho da janela. */
 .welcome {
-  grid-template-columns: auto minmax(0, 1fr) minmax(15.5rem, 18rem);
-  grid-template-areas:
-    'art main quick'
-    'art money quick';
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 20px 32px;
+  gap: 24px 32px;
   padding: 28px 28px 28px 40px;
   border-radius: 20px;
   background: var(--al-green);
   box-shadow: var(--al-shadow-soft);
 }
 .welcome-art {
-  grid-area: art;
+  flex: none;
   display: grid;
   place-items: center;
+  min-width: 0;
+  max-width: 100%;
   min-height: 0;
 }
 .welcome-art::before {
@@ -37,6 +40,7 @@
 .welcome-art .me-sticker {
   --st-w: 11.5rem;
   --tilt: -3deg;
+  max-width: 100%;
 }
 .welcome-art .al-sticker-photo img {
   position: absolute;
@@ -60,9 +64,15 @@
   font-size: 6rem;
   line-height: 1;
 }
+/* O cumprimento com a ação e, embaixo, a carteira: o bloco que fica com a largura que sobra. */
+.welcome-body {
+  flex: 1000 1 30rem;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
 .welcome-main {
-  grid-area: main;
-  align-self: end;
   gap: 16px;
 }
 .welcome-text {
@@ -81,41 +91,30 @@
   color: var(--al-on-green-2);
 }
 
-/* A carteira: três números lado a lado, separados por um fio, e o botão de esconder os valores. */
+/* A carteira: os números lado a lado enquanto couberem, e o botão de esconder os valores. */
 .welcome-money {
-  grid-area: money;
-  align-self: start;
   position: relative;
   display: grid;
-  /* As duas primeiras colunas têm a largura do que mostram; a terceira fica com o resto. */
-  grid-template-columns: max-content max-content minmax(0, 1fr);
-  grid-template-rows: repeat(3, auto);
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 3px 28px;
   padding-top: 20px;
   border-top: 1px solid var(--al-rule);
 }
-/* Rótulo, número e dica dividem as mesmas três linhas nas três colunas: um rótulo que quebra em
-   duas linhas não desalinha os números. */
+/* Rótulo, número e dica dividem as mesmas três linhas entre os vizinhos: um rótulo que quebra em
+   duas linhas não desalinha os números. O espaço embaixo separa as fileiras quando elas quebram. */
 .money {
   display: grid;
   grid-row: span 3;
   grid-template-rows: subgrid;
   row-gap: 3px;
   min-width: 0;
-  padding: 0 18px;
-  border-left: 1px solid var(--al-rule);
-}
-.money:first-child {
-  padding-left: 0;
-  border-left: 0;
-}
-.money:nth-child(3) {
-  padding-right: 0;
+  margin-bottom: 10px;
 }
 .money-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   align-self: end;
+  gap: 6px;
   color: var(--al-on-green-2);
   font-size: var(--fs-sm);
   font-weight: 600;
@@ -141,8 +140,8 @@
   font-size: var(--fs-sm);
   line-height: 1.25;
 }
-/* É <button>: as regras levam a classe da faixa para ganhar do botão do app (styles.css). */
-/* O botão de esconder os valores fica sobre o fio, na ponta direita. */
+/* O botão de esconder os valores fica sobre o fio, na ponta direita.
+   É <button>: as regras levam a classe da faixa para ganhar do botão do app (styles.css). */
 .welcome .money-eye {
   position: absolute;
   top: -18px;
@@ -177,21 +176,23 @@
   outline-offset: 2px;
 }
 
-/* Os atalhos: uma lista num painel mais escuro, com o ícone em âmbar. No hover o ícone acende e
-   a seta anda. */
+/* Os atalhos: num painel mais escuro, com o ícone em âmbar. Ao lado da capa são uma lista; quando
+   descem para uma linha só deles, ficam lado a lado. No hover o ícone acende e a seta anda. */
 .welcome .quick-actions {
-  grid-area: quick;
+  flex: 1 1 16rem;
   align-self: stretch;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-content: center;
   gap: 2px;
+  min-width: 0;
   padding: 6px;
   border-radius: 14px;
   background: var(--al-inset);
 }
 .welcome .quick-actions > li {
   display: flex;
-  flex: 1;
+  flex: 1 1 13rem;
   min-width: 0;
 }
 .welcome .quick-action {
@@ -240,30 +241,9 @@
   translate: 3px 0;
 }
 
-/* Sem espaço para as três colunas: os atalhos descem para uma fileira embaixo. */
-@media (max-width: 1360px) {
-  .welcome {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas:
-      'art main'
-      'art money'
-      'quick quick';
-  }
-  .welcome .quick-actions {
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-  .welcome .quick-actions > li {
-    flex: 1 1 13rem;
-  }
-}
-/* Celular: a figurinha pequena ao lado do cumprimento; carteira e atalhos na largura toda. */
+/* Celular: a figurinha pequena em cima, e o resto na largura toda. */
 @media (max-width: 720px) {
   .welcome {
-    grid-template-areas:
-      'art main'
-      'money money'
-      'quick quick';
     gap: 18px 16px;
     padding: 20px;
   }
@@ -283,22 +263,14 @@
     font-size: 3.25rem;
   }
   .welcome-main {
-    align-self: center;
     gap: 12px;
   }
   .welcome h1 {
     font-size: 1.75rem;
   }
   .welcome-money {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    row-gap: 14px;
     margin-top: 8px;
     padding-top: 26px;
-  }
-  .welcome-money .money:nth-child(3) {
-    grid-column: 1 / -1;
-    padding-left: 0;
-    border-left: 0;
   }
   .welcome .money-eye {
     top: -22px;
@@ -307,9 +279,6 @@
   }
   .money-value {
     font-size: 1.375rem;
-  }
-  .welcome .quick-actions > li {
-    flex: 1 1 100%;
   }
 }
 
@@ -339,6 +308,7 @@
   background:
     linear-gradient(var(--al-amber), var(--al-amber)) padding-box,
     var(--al-foil) border-box;
+  background-color: var(--al-amber);
   color: var(--al-cover);
   font-family: var(--al-display);
   font-stretch: 68%;
@@ -415,6 +385,7 @@
   background:
     linear-gradient(var(--al-paper), var(--al-paper)) padding-box,
     var(--al-foil) border-box;
+  background-color: var(--al-paper);
   color: var(--al-ink);
   font-size: var(--fs-sm);
   font-weight: 650;

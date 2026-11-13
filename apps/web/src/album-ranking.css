@@ -40,6 +40,7 @@
   background:
     linear-gradient(var(--g), var(--g)) padding-box,
     var(--foil) border-box;
+  background-color: var(--g);
   color: var(--al-cover);
   font-family: var(--al-display);
   font-size: 2.25rem;

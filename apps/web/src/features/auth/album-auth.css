@@ -6,6 +6,7 @@
    ===================================================================== */
 
 .au {
+  container: au / inline-size;
   position: relative;
   grid-template-columns: minmax(0, 1fr);
   background: var(--al-cover);
@@ -166,7 +167,9 @@
 .au-pitch {
   display: none;
 }
-@media (min-width: 60rem) {
+/* Só com espaço dos dois lados do cartão. A medida é a largura da tela de entrada em rem (consulta
+   de contêiner): com o texto maior, a frase some antes de encostar no cartão ou passar da borda. */
+@container au (min-width: 72rem) {
   .au-pitch {
     position: absolute;
     right: clamp(20px, 4vw, 56px);
@@ -176,7 +179,12 @@
     display: flex;
     align-items: end;
     justify-content: space-between;
-    gap: 34rem;
+    gap: 24px;
+  }
+  /* Cada lado ocupa só o que sobra ao lado do cartão (27rem, mais a folga). */
+  .au-quote,
+  .au-assure {
+    max-width: calc((100% - 30rem) / 2);
   }
 }
 .au-quote {
@@ -242,5 +250,25 @@
   .au-body {
     align-items: start;
     padding-top: 12px;
+  }
+}
+
+/* Em tela estreita o campo não impõe a largura natural dele ao grupo (ela muda de um sistema para
+   outro): a coluna e os campos podem encolher até caber. */
+.au .au-company {
+  grid-template-columns: minmax(0, 1fr);
+}
+.au .au-card label,
+.au .au-card input,
+.au .au-card select {
+  min-width: 0;
+  max-width: 100%;
+}
+@media (max-width: 22.5rem) {
+  .au-body {
+    padding-inline: 10px;
+  }
+  .au .au-card {
+    padding: 16px;
   }
 }

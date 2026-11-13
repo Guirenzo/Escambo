@@ -383,3 +383,14 @@
     padding: 16px 16px 14px;
   }
 }
+
+/* O anel de foco fica no próprio campo, e não na moldura em volta: quem anda pelo teclado vê
+   exatamente onde está digitando. */
+.tx-card .lp-calc-input:focus-within {
+  outline: 0;
+}
+.tx-card .lp-calc-input input:focus-visible {
+  border-radius: 4px;
+  outline: 3px solid var(--al-green);
+  outline-offset: 5px;
+}
