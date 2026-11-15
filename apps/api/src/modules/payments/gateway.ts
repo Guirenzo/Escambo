@@ -1,20 +1,26 @@
 import { env } from '../../config/env';
+import { createCheckoutPreference } from './mercadopago';
 
 /**
- * Gateway de pagamento (depósitos na carteira via PIX).
+ * Gateway de pagamento (depósitos na carteira).
  *
- * A API fala com o gateway por esta interface; a única implementação neste estágio é a
- * SIMULADA: gera uma cobrança PIX sintaticamente válida (BR Code EMV com CRC16) e o pagamento
- * é confirmado pelo endpoint de simulação (PAYMENTS_SIMULATE) ou pelo webhook
- * (`POST /api/payments/webhook`, protegido por PAYMENT_WEBHOOK_SECRET) — exatamente o caminho
- * que um gateway real (Mercado Pago, Pagar.me…) usaria para avisar "pago".
+ * A API fala com o gateway por esta interface, e PAYMENT_GATEWAY escolhe qual (ADR 73):
+ *
+ * - **Simulado** (padrão; demo, dev e testes): gera uma cobrança PIX sintaticamente válida (BR
+ *   Code EMV com CRC16), confirmada pelo endpoint de simulação (PAYMENTS_SIMULATE) ou pelo webhook
+ *   `POST /api/payments/webhook` (protegido por PAYMENT_WEBHOOK_SECRET).
+ * - **Mercado Pago** (Checkout Pro, em sandbox com as credenciais de teste): a cobrança é uma
+ *   página de pagamento do Mercado Pago (Pix, cartão ou boleto), e a confirmação chega pelo
+ *   webhook assinado `POST /api/payments/webhook/mercadopago`.
  */
 
-export interface PixCharge {
+export interface GatewayCharge {
   /** Identificador da cobrança no gateway (chave de idempotência do webhook). */
   externalId: string;
-  /** Payload "copia e cola" (BR Code). */
-  pixCode: string;
+  /** Payload PIX "copia e cola" (BR Code), quando o gateway devolve um (o simulado). */
+  pixCode: string | null;
+  /** Página de pagamento do gateway, quando a pessoa paga fora do app (o Mercado Pago). */
+  checkoutUrl: string | null;
   expiresAt: Date;
   /**
    * Corpo original da resposta do provedor, quando há um (RF-050): guardado higienizado com a
@@ -25,7 +31,7 @@ export interface PixCharge {
 
 export interface PaymentGateway {
   readonly name: string;
-  createPixCharge(input: { amount: number; reference: string }): Promise<PixCharge>;
+  createCharge(input: { amount: number; reference: string }): Promise<GatewayCharge>;
 }
 
 /** CRC16-CCITT (polinômio 0x1021, inicial 0xFFFF) exigido pelo BR Code do PIX. */
@@ -67,9 +73,12 @@ export function buildPixPayload(p: {
   return base + crc16(base);
 }
 
+export const SIMULATED_GATEWAY = 'simulado';
+export const MERCADOPAGO_GATEWAY = 'mercadopago';
+
 export const simulatedGateway: PaymentGateway = {
-  name: 'simulado',
-  async createPixCharge({ amount, reference }) {
+  name: SIMULATED_GATEWAY,
+  async createCharge({ amount, reference }) {
     return {
       externalId: `sim_${reference}`,
       pixCode: buildPixPayload({
@@ -79,10 +88,40 @@ export const simulatedGateway: PaymentGateway = {
         merchant: 'ESCAMBO SERVICOS',
         city: 'JOINVILLE',
       }),
+      checkoutUrl: null,
       expiresAt: new Date(Date.now() + env.DEPOSIT_EXPIRES_MINUTES * 60_000),
     };
   },
 };
 
-/** Ponto único de troca do provedor (Mercado Pago, Pagar.me…). */
-export const paymentGateway: PaymentGateway = simulatedGateway;
+/**
+ * Checkout Pro: a referência do depósito é o `external_reference` da preferência e o id da
+ * cobrança aqui. O id do pagamento do Mercado Pago só existe quando a pessoa paga; o webhook o
+ * traz, e a consulta dele devolve a nossa referência.
+ */
+export const mercadoPagoGateway: PaymentGateway = {
+  name: MERCADOPAGO_GATEWAY,
+  async createCharge({ amount, reference }) {
+    const expiresAt = new Date(Date.now() + env.MERCADOPAGO_DEPOSIT_EXPIRES_HOURS * 3_600_000);
+    const preference = await createCheckoutPreference({ amount, reference, expiresAt });
+    return {
+      externalId: reference,
+      pixCode: null,
+      checkoutUrl: preference.checkoutUrl,
+      expiresAt,
+      raw: preference.raw,
+    };
+  },
+};
+
+/** O gateway que PAYMENT_GATEWAY escolhe, lido a cada uso (os testes trocam o env). */
+const selected = (): PaymentGateway =>
+  env.PAYMENT_GATEWAY === 'mercadopago' ? mercadoPagoGateway : simulatedGateway;
+
+/** Ponto único de troca do provedor: quem cria as cobranças novas. */
+export const paymentGateway: PaymentGateway = {
+  get name() {
+    return selected().name;
+  },
+  createCharge: (input) => selected().createCharge(input),
+};

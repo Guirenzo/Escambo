@@ -64,7 +64,7 @@ test('login suspenso mantém consultas, banner e ações comerciais desabilitada
   await settled(page);
   await expect(page.getByTestId('wallet-balance')).toHaveText('R$ 100,00');
   await expect(page.getByRole('button', { name: 'Depositar', exact: true })).toBeDisabled();
-  await expect(page.getByTestId('ledger')).toContainText('Depósito via PIX');
+  await expect(page.getByTestId('ledger')).toContainText('Depósito na carteira');
 
   await page.goto('/servicos');
   await settled(page);

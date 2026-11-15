@@ -5,6 +5,25 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [Não lançado]
+
+Vai para a 1.56.0. Depósito pelo Mercado Pago de verdade, em sandbox (RF-041, ADR 73). RF: 91 implementados e 1 fora do escopo; RNF: 32, 7, 1 e 2.
+
+### Adicionado
+
+- **Mercado Pago (Checkout Pro):** com `PAYMENT_GATEWAY=mercadopago`, o depósito na carteira é pago na página do Mercado Pago, numa aba nova, com Pix, cartão ou boleto. Nenhum dado de cartão passa pelo Escambo. Com as credenciais de teste, tudo roda no sandbox, sem dinheiro de verdade; o modal avisa quando é o ambiente de teste.
+- **Webhook do Mercado Pago** (`POST /api/payments/webhook/mercadopago`): confere a assinatura `x-signature` e consulta o pagamento na API do Mercado Pago antes de creditar. Só credita o aprovado, do nosso depósito, em reais e no mesmo valor, uma vez só. O boleto pago no prazo que compensar depois de o depósito vencer ainda credita.
+- **Forma do depósito no extrato:** PIX, cartão de crédito, cartão de débito, boleto ou saldo Mercado Pago.
+
+### Alterado
+
+- O gateway simulado (ADR 15) continua o padrão, para a demo, o CI e os testes de ponta a ponta. A simulação nunca paga uma cobrança do Mercado Pago.
+- `Deposit` ganha `checkoutUrl` e o `method` passa a aceitar as outras formas (nulo até o depósito do Mercado Pago ser pago); `GET /api/settings/public` ganha `paymentGateway`.
+
+### Para atualizar
+
+- **Sem migration e sem variável obrigatória:** a API sobe com o gateway simulado de sempre. Para ligar o Mercado Pago, siga "Ligar o Mercado Pago em sandbox" no `DEPLOY.md` (credenciais de teste, webhook no painel e três variáveis no `.env`). Com `PAYMENT_GATEWAY=mercadopago`, sem o token ou sem a assinatura secreta, a API não sobe.
+
 ## [1.55.0] — 2026-11-13
 
 Identidade visual nova ("Álbum de troca") e as correções dos três defeitos achados na revisão por pares da N2.

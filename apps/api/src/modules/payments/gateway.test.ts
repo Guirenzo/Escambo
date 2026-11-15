@@ -1,6 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env } from '../../config/env';
-import { buildPixPayload, crc16, paymentGateway, simulatedGateway } from './gateway';
+import {
+  buildPixPayload,
+  crc16,
+  mercadoPagoGateway,
+  paymentGateway,
+  simulatedGateway,
+} from './gateway';
+import { setMercadoPagoFetchForTests } from './mercadopago';
 
 describe('BR Code do PIX (gateway simulado)', () => {
   it('crc16-ccitt bate com o vetor de referência', () => {
@@ -27,7 +34,7 @@ describe('BR Code do PIX (gateway simulado)', () => {
   });
 
   it('gateway simulado gera cobrança com id, código e validade futura', async () => {
-    const charge = await simulatedGateway.createPixCharge({ amount: 80, reference: 'REF123' });
+    const charge = await simulatedGateway.createCharge({ amount: 80, reference: 'REF123' });
     expect(charge.externalId).toBe('sim_REF123');
     expect(charge.pixCode).toContain('540580.00');
     expect(charge.expiresAt.getTime()).toBeGreaterThan(Date.now());
@@ -69,7 +76,7 @@ describe('BR Code do PIX (gateway simulado)', () => {
     vi.setSystemTime(new Date('2026-10-02T15:00:00.000Z'));
     env.DEPOSIT_EXPIRES_MINUTES = 45;
     try {
-      const charge = await simulatedGateway.createPixCharge({ amount: 19.99, reference: 'REF123' });
+      const charge = await simulatedGateway.createCharge({ amount: 19.99, reference: 'REF123' });
 
       expect(charge.expiresAt).toEqual(new Date('2026-10-02T15:45:00.000Z'));
       expect(charge.externalId).toBe('sim_REF123');
@@ -82,8 +89,60 @@ describe('BR Code do PIX (gateway simulado)', () => {
     }
   });
 
-  it('o provedor em uso é o simulado (ponto único de troca do gateway)', () => {
-    expect(paymentGateway).toBe(simulatedGateway);
+  it('o provedor em uso é o simulado por padrão (ponto único de troca do gateway)', async () => {
+    expect(env.PAYMENT_GATEWAY).toBe('simulated');
     expect(paymentGateway.name).toBe('simulado');
+    const charge = await paymentGateway.createCharge({ amount: 10, reference: 'R1' });
+    expect(charge).toMatchObject({ externalId: 'sim_R1', checkoutUrl: null });
+  });
+});
+
+describe('gateway do Mercado Pago (Checkout Pro)', () => {
+  afterEach(() => {
+    env.PAYMENT_GATEWAY = 'simulated';
+    setMercadoPagoFetchForTests(null);
+    vi.useRealTimers();
+  });
+
+  it('PAYMENT_GATEWAY=mercadopago troca o provedor das cobranças novas, sem reiniciar nada', async () => {
+    env.PAYMENT_GATEWAY = 'mercadopago';
+    expect(paymentGateway.name).toBe('mercadopago');
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        id: 'pref-1',
+        init_point: 'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-1',
+        sandbox_init_point:
+          'https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-1',
+      }),
+    );
+    setMercadoPagoFetchForTests(fetchMock as unknown as typeof fetch);
+    const charge = await paymentGateway.createCharge({ amount: 10, reference: 'R1' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(charge.externalId).toBe('R1');
+  });
+
+  it('a cobrança é a página do sandbox, vence no prazo do Mercado Pago e guarda a resposta', async () => {
+    const configured = env.MERCADOPAGO_DEPOSIT_EXPIRES_HOURS;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-02T15:00:00.000Z'));
+    env.MERCADOPAGO_DEPOSIT_EXPIRES_HOURS = 48;
+    const body = {
+      id: 'pref-2',
+      init_point: 'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-2',
+      sandbox_init_point: 'https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-2',
+    };
+    setMercadoPagoFetchForTests((async () => Response.json(body)) as unknown as typeof fetch);
+    try {
+      const charge = await mercadoPagoGateway.createCharge({ amount: 25.5, reference: 'REF9' });
+      expect(charge).toEqual({
+        externalId: 'REF9',
+        pixCode: null,
+        checkoutUrl: body.sandbox_init_point,
+        expiresAt: new Date('2026-10-04T15:00:00.000Z'),
+        raw: body,
+      });
+    } finally {
+      env.MERCADOPAGO_DEPOSIT_EXPIRES_HOURS = configured;
+    }
   });
 });

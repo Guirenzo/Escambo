@@ -88,6 +88,7 @@ describe('chargeResponse', () => {
   const charge = {
     externalId: 'sim_ABC',
     pixCode: '000201...6304ABCD',
+    checkoutUrl: null,
     expiresAt: new Date('2026-10-02T15:30:00.000Z'),
   };
 
@@ -96,6 +97,21 @@ describe('chargeResponse', () => {
       externalId: 'sim_ABC',
       pixCode: '000201...6304ABCD',
       expiresAt: '2026-10-02T15:30:00.000Z',
+    });
+  });
+
+  it('a do Mercado Pago guarda a página de pagamento no topo, sem código PIX', () => {
+    expect(
+      chargeResponse({
+        externalId: '01JREF',
+        pixCode: null,
+        checkoutUrl: 'https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=1',
+        expiresAt: new Date('2026-10-05T15:30:00.000Z'),
+      }),
+    ).toEqual({
+      externalId: '01JREF',
+      checkoutUrl: 'https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=1',
+      expiresAt: '2026-10-05T15:30:00.000Z',
     });
   });
 

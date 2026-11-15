@@ -269,6 +269,20 @@ UPDATE contracts SET grace_ends_at = NULL WHERE overdue_notified_at >= @desde;
 As entregas voltam a contar da última entrega registrada, os pedidos feitos na 1.38.0 ganham as 48 h
 a partir do deploy, e os avisos dados nela ganham a carência a partir deles.
 
+### Atualizar para a 1.56.0 (Mercado Pago em sandbox, ADR 73)
+
+Sem migration e sem variável obrigatória: **a API sobe com o gateway simulado de sempre** e só passa a cobrar pelo
+Mercado Pago quando você configurar as credenciais de teste (seção 5, "Ligar o Mercado Pago em sandbox").
+
+**1. Deploy normal** (workflow ou à mão, acima).
+
+**2. Conferir.** `curl -s https://SEU_DOMINIO/api/settings/public` traz `"paymentGateway":"simulated"`. Uma
+cobrança simulada antiga continua igual; a simulação nunca paga uma cobrança do Mercado Pago.
+
+**3. Voltar para a 1.55.0** é seguro enquanto nenhum depósito foi feito pelo Mercado Pago. Se já houve, os pendentes
+deixam de ser confirmados pela API antiga (que não tem o webhook do Mercado Pago): confira-os no painel dele e acerte
+a carteira pelo admin.
+
 ### Atualizar para a 1.54.0 (login com Google)
 
 Uma migration (0053, aditiva e segura de rodar de novo) e nenhuma variável obrigatória: **o login com Google sobe desligado** e só liga quando você configurar o cliente OAuth do Google (seção 5, "Ligar o login com Google"). Sem isso, nada muda para quem usa: o botão "Entrar com Google" não aparece e as rotas do Google respondem 404.
@@ -756,6 +770,65 @@ pulada. Empresa continua pelo cadastro com CNPJ. Desvincular a conta Google aind
 
 **Desligar:** apague as duas variáveis do `.env` e rode o `up -d`. O botão some na hora. Quem criou a conta pelo Google
 não tem senha: entra pelo "Esqueci minha senha", que manda o link ao e-mail da conta.
+
+### Ligar o Mercado Pago em sandbox (RF-041, ADR 73)
+
+O depósito na carteira passa a ser pago na página do Mercado Pago (Checkout Pro), com Pix, cartão ou boleto. Com as
+credenciais de **teste**, tudo roda no sandbox: ninguém paga de verdade. A API cria a cobrança, a pessoa paga numa aba
+nova, o Mercado Pago avisa o webhook `https://SEU_DOMINIO/api/payments/webhook/mercadopago` e a API confere o pagamento
+na API dele antes de creditar. Os nomes do painel mudam de tempos em tempos.
+
+**1. Aplicação.** Entre em <https://www.mercadopago.com.br/developers/panel/app> com a conta Mercado Pago que vai ser
+a dona (pessoa física serve) e clique em **Criar aplicação**. Nome: `Escambo`. Tipo de solução: **Pagamentos online**;
+produto: **Checkout Pro**; não é loja de plataforma pronta. Crie.
+
+**2. Credenciais de teste.** Na aplicação, abra **Credenciais de teste** e copie o **Access Token** (o de teste). Ele
+fica só na API; a Public Key não é usada.
+
+**3. Contas de teste.** Em **Contas de teste**, crie uma conta **Comprador** (país Brasil). É com ela que se paga no
+sandbox: o Mercado Pago não deixa a mesma conta vender e comprar. Anote o usuário e a senha que ele mostra.
+
+**4. Webhook.** Na aplicação, **Webhooks** → **Configurar notificações**. Nos dois modos (teste e produção), a URL
+`https://SEU_DOMINIO/api/payments/webhook/mercadopago` e o evento **Pagamentos**. Salve e copie a **Assinatura secreta**
+(é com ela que a API confere que o aviso veio do Mercado Pago).
+
+**5. Colar na VPS.** No `.env` ao lado do `docker-compose.prod.yml` (nunca no repositório):
+
+```bash
+PAYMENT_GATEWAY=mercadopago
+MERCADOPAGO_ACCESS_TOKEN=o-access-token-de-teste
+MERCADOPAGO_WEBHOOK_SECRET=a-assinatura-secreta-do-webhook
+MERCADOPAGO_SANDBOX=true
+PAYMENTS_SIMULATE=false
+```
+
+Sem o token ou sem a assinatura, a API não sobe (e diz qual falta). Depois:
+
+```bash
+chmod 600 .env
+docker compose -f docker-compose.prod.yml up -d    # recria a API com as variáveis novas
+```
+
+**6. Conferir.** `curl -s https://SEU_DOMINIO/api/settings/public` traz `"paymentGateway":"mercadopago"`. No painel do
+Mercado Pago, **Webhooks** → **Simular**: a resposta é `200` com `"outcome":"not_found"` (o pagamento simulado não
+existe), o que prova que a assinatura confere. Depois, de ponta a ponta: na Carteira, **Depositar**, R$ 10, **Gerar
+cobrança de R$ 10,00 no Mercado Pago** e **Pagar no Mercado Pago**. Numa janela anônima, entre com a conta compradora de
+teste e pague com um cartão de teste do Mercado Pago (Mastercard `5031 4332 1540 6351`, CVV `123`, validade `11/30`,
+titular `APRO` para aprovado; `OTHE` recusa). Em segundos o modal mostra "Depósito confirmado" e o extrato, a forma
+"Cartão de crédito". `docker compose -f docker-compose.prod.yml logs api | grep -i "mercado pago"` não deve mostrar erro.
+
+**Se a página do sandbox recusar as credenciais** (o painel às vezes entrega credenciais de uma conta vendedora de teste
+em vez das "de teste"), ponha `MERCADOPAGO_SANDBOX=false` e repita: a conta de teste já isola o dinheiro, e o aviso
+"Ambiente de teste" some do modal porque a página deixa de ser a `sandbox.`.
+
+**Como funciona** (ADR 73): o aviso do Mercado Pago só diz qual pagamento mudou; a API consulta o pagamento com o token e
+só credita o aprovado, do nosso depósito, em reais e no mesmo valor. Recusado ou pendente fica no histórico da cobrança
+e a pessoa pode tentar de novo na mesma página. O depósito vale 72 horas (`MERCADOPAGO_DEPOSIT_EXPIRES_HOURS`); um boleto
+pago no prazo que compensar depois disso ainda credita. Estorno e chargeback são pelo painel do Mercado Pago, com o
+acerto da carteira pelo admin.
+
+**Desligar:** `PAYMENT_GATEWAY=simulated` e `up -d`. Deixe o token e a assinatura no `.env` até os depósitos pendentes
+do Mercado Pago vencerem: o webhook continua confirmando enquanto eles estiverem lá.
 
 ## 6. Checklist de segurança
 

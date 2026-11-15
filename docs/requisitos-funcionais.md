@@ -97,7 +97,7 @@
 
 | ID     | Descrição                                                                                        | Prioridade | Status   |
 | ------ | ------------------------------------------------------------------------------------------------ | ---------- | -------- |
-| RF-041 | O sistema deve processar pagamentos via MercadoPago (PIX, cartão de crédito, boleto)             | Alta       | Fora do escopo |
+| RF-041 | O sistema deve processar pagamentos via MercadoPago (PIX, cartão de crédito, boleto)             | Alta       | Implementado |
 | RF-042 | O pagamento do cliente deve ficar retido em escrow até a conclusão confirmada do serviço         | Alta       | Implementado |
 | RF-043 | O sistema deve calcular e exibir a taxa da plataforma de forma transparente antes da confirmação | Alta       | Implementado |
 | RF-044 | O freelancer deve ter uma carteira digital com saldo disponível e saldo pendente separados       | Alta       | Implementado |
@@ -215,7 +215,7 @@ Requisitos distribuídos por módulos existentes (Serviços, Contratações, Sup
 | Recursos avançados (RF-086–092)  | 7            | 4      | 3      | 0     |
 | **Total**                        | **92**       | **67** | **23** | **2** |
 
-> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.54.0: **90 implementados, nenhum não implementado e 2 fora do escopo**. Na 1.54.0 (ADR 72), passou a implementado o RF-002 (login com Google, desligado até o dono criar as credenciais no Google Cloud). Na 1.53.0 (ADR 71), passaram a implementados o RF-018 (conta de empresa: cadastro com razão social, nome fantasia e CNPJ, numérico ou alfanumérico, único entre contas; logo, site e descrição curta no Perfil; página pública e o selo "Empresa" onde quem contrata aparece) e o RF-020 (CPF do freelancer validado por dígitos verificadores, unicidade entre contas e maioridade, guardado cifrado; o saque de quem entrega trabalho passa a pedi-lo). A validação do CPF é de formato, unicidade e idade: não é consulta à Receita. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
+> ℹ️ Situação conferida no código e nos testes em 19/10/2026 e atualizada com a v1.56.0: **91 implementados, nenhum não implementado e 1 fora do escopo**. Na 1.56.0 (ADR 73), passou a implementado o RF-041 (depósito pelo Checkout Pro do Mercado Pago, com Pix, cartão e boleto, em sandbox com as credenciais de teste; o webhook é conferido pela assinatura e pela consulta do pagamento na API). Na 1.54.0 (ADR 72), passou a implementado o RF-002 (login com Google, desligado até o dono criar as credenciais no Google Cloud). Na 1.53.0 (ADR 71), passaram a implementados o RF-018 (conta de empresa: cadastro com razão social, nome fantasia e CNPJ, numérico ou alfanumérico, único entre contas; logo, site e descrição curta no Perfil; página pública e o selo "Empresa" onde quem contrata aparece) e o RF-020 (CPF do freelancer validado por dígitos verificadores, unicidade entre contas e maioridade, guardado cifrado; o saque de quem entrega trabalho passa a pedi-lo). A validação do CPF é de formato, unicidade e idade: não é consulta à Receita. A evidência de cada um e o que falta estão em [rastreabilidade](./rastreabilidade.md).
 
 > ℹ️ O total ficou em **92 requisitos funcionais**, superando os 72 planejados inicialmente — resultado do detalhamento granular e da inclusão da **troca de serviços (escambo)** e de recursos avançados de confiança e segurança (v1.1.0), com dois requisitos de desistência e revisão humana acrescentados pelo ADR 61 (v1.2.0).
 

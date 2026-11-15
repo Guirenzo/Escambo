@@ -874,6 +874,7 @@ describe('TrocasView: saldo para a torna', () => {
     gateway: 'simulated',
     reference: null,
     pixCode: '00020126PIX-31',
+    checkoutUrl: null,
     expiresAt: null,
     paidAt: null,
     createdAt: '2026-09-20T15:00:00.000Z',

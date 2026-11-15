@@ -42,7 +42,7 @@ test('cliente deposita via PIX (simulado) e o saldo e o extrato aparecem na Cart
   await modal.getByRole('button', { name: 'Concluir' }).click();
   await expect(page.getByTestId('wallet-balance')).toHaveText('R$ 200,00');
   await expect(
-    page.getByTestId('ledger').locator('li', { hasText: 'Depósito via PIX' }),
+    page.getByTestId('ledger').locator('li', { hasText: 'Depósito na carteira' }),
   ).toBeVisible();
   await expect(page.getByTestId('deposits').locator('li', { hasText: 'Confirmado' })).toBeVisible();
 });

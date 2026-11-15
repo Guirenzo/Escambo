@@ -1,4 +1,10 @@
-import type { AvailabilityPeriod, AvailablePeriods, Contract } from '@escambo/types';
+import type {
+  AvailabilityPeriod,
+  AvailablePeriods,
+  Contract,
+  Deposit,
+  DepositMethod,
+} from '@escambo/types';
 
 export const brl = (v: number): string =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -223,7 +229,7 @@ export const RESOLUTION_LABEL: Record<string, string> = {
 
 /** Linhas do extrato de R$ (wallet_transactions.reason). */
 export const WALLET_REASON_LABEL: Record<string, string> = {
-  deposit: 'Depósito via PIX',
+  deposit: 'Depósito na carteira',
   hold: 'Reservado para a proposta',
   hold_release: 'Reserva devolvida na negociação',
   payment: 'Pagamento da contratação',
@@ -271,6 +277,28 @@ export const DEPOSIT_STATUS_LABEL: Record<string, string> = {
   refunded: 'Estornado',
   cancelled: 'Vencido',
 };
+
+const DEPOSIT_METHOD_LABEL: Record<DepositMethod, string> = {
+  pix: 'PIX',
+  credit_card: 'Cartão de crédito',
+  debit_card: 'Cartão de débito',
+  boleto: 'Boleto',
+  wallet: 'Saldo Mercado Pago',
+};
+
+/** Quanto falta para vencer, na unidade que se lê: minutos, horas ou dias. */
+export function timeLeftLabel(minutes: number): string {
+  if (minutes < 120) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours} h`;
+  return `${Math.floor(hours / 24)} dias`;
+}
+
+/** Como o depósito foi (ou vai ser) pago: no Mercado Pago, a forma só existe depois de pagar. */
+export function depositMethodLabel(d: Pick<Deposit, 'method' | 'gateway'>): string {
+  if (d.method) return DEPOSIT_METHOD_LABEL[d.method] ?? d.method;
+  return d.gateway === 'mercadopago' ? 'Mercado Pago' : 'PIX';
+}
 
 export const EXPORT_STATUS_LABEL: Record<string, string> = {
   pending: 'gerando',

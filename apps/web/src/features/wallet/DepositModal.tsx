@@ -1,12 +1,18 @@
 import { BusinessButton, BusinessForm } from '../../components/BusinessActions';
-import { CheckCircle2, Copy, QrCode, RefreshCw, Zap } from 'lucide-react';
+import { CheckCircle2, Copy, CreditCard, ExternalLink, QrCode, RefreshCw, Zap } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import QRCode from 'qrcode';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Deposit } from '@escambo/types';
 import { Button, Field, Input, Modal } from '../../components/ui';
-import { brl, DEPOSIT_STATUS_LABEL } from '../../lib/format';
-import { qk, useCreateDeposit, useDeposit, useSimulateDeposit } from '../../lib/hooks';
+import { brl, DEPOSIT_STATUS_LABEL, timeLeftLabel } from '../../lib/format';
+import {
+  qk,
+  useCreateDeposit,
+  useDeposit,
+  usePublicSettings,
+  useSimulateDeposit,
+} from '../../lib/hooks';
 import { useToast } from '../../lib/toast';
 import { useReadOnlyAccount } from '../../lib/account-access';
 import { useEmailVerified, VerifyEmailModal } from '../../components/VerifyEmail';
@@ -14,10 +20,20 @@ import { useEmailVerified, VerifyEmailModal } from '../../components/VerifyEmail
 const PRESETS = [50, 100, 200, 500];
 const MIN = 10;
 
+/** A página do Mercado Pago é a do sandbox: credenciais de teste, nada é cobrado de verdade. */
+function isSandboxCheckout(url: string): boolean {
+  try {
+    return new URL(url).hostname.startsWith('sandbox.');
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Depósito na carteira via PIX: escolhe o valor → cobrança (QR + copia e cola) → aguarda a
- * confirmação do gateway (a tela consulta a API sozinha). No ambiente de demonstração o
- * gateway é simulado e o próprio usuário confirma o pagamento.
+ * Depósito na carteira: escolhe o valor → cobrança → aguarda a confirmação do gateway (a tela
+ * consulta a API sozinha). Com o gateway simulado (demonstração), a cobrança é um PIX (QR + copia
+ * e cola) e o próprio usuário confirma o pagamento. Com o Mercado Pago (ADR 73), a cobrança é a
+ * página do Checkout Pro, aberta numa aba nova: lá a pessoa paga com Pix, cartão ou boleto.
  */
 export function DepositModal({
   onClose,
@@ -35,6 +51,7 @@ export function DepositModal({
 }) {
   const toast = useToast();
   const qc = useQueryClient();
+  const mercadoPago = usePublicSettings().data?.paymentGateway === 'mercadopago';
   const create = useCreateDeposit();
   const simulate = useSimulateDeposit();
   const [amount, setAmount] = useState(
@@ -134,8 +151,9 @@ export function DepositModal({
       {!current && (
         <BusinessForm onSubmit={generate} className="stack">
           <p className="muted">
-            Escolha o valor. Você recebe um PIX (QR Code e copia e cola); o saldo entra assim que o
-            pagamento é confirmado.
+            {mercadoPago
+              ? 'Escolha o valor. Você paga na página do Mercado Pago, com Pix, cartão ou boleto; o saldo entra assim que o pagamento é confirmado.'
+              : 'Escolha o valor. Você recebe um PIX (QR Code e copia e cola); o saldo entra assim que o pagamento é confirmado.'}
           </p>
           <div className="presets" role="group" aria-label="Valores sugeridos">
             {PRESETS.map((v) => (
@@ -161,13 +179,59 @@ export function DepositModal({
             />
           </Field>
           <Button type="submit" disabled={create.isPending || value < MIN}>
-            <QrCode size={16} />{' '}
-            {create.isPending ? 'Gerando…' : `Gerar cobrança PIX de ${brl(value)}`}
+            {mercadoPago ? <CreditCard size={16} /> : <QrCode size={16} />}{' '}
+            {create.isPending
+              ? 'Gerando…'
+              : mercadoPago
+                ? `Gerar cobrança de ${brl(value)} no Mercado Pago`
+                : `Gerar cobrança PIX de ${brl(value)}`}
           </Button>
         </BusinessForm>
       )}
 
-      {current && current.status === 'pending' && (
+      {current && current.status === 'pending' && current.checkoutUrl && (
+        <div className="stack">
+          <div className="pix-box">
+            <div className="pix-info">
+              <strong className="pix-amount">{brl(current.amount)}</strong>
+              <span className="muted tiny">
+                {minutesLeft != null ? `Vence em ${timeLeftLabel(minutesLeft)}` : 'Cobrança'}
+                {current.reference ? ` · ref. ${current.reference}` : ''}
+              </span>
+              <p className="muted tiny" style={{ margin: 0 }}>
+                O pagamento é na página segura do Mercado Pago, numa aba nova: Pix, cartão ou
+                boleto. Nenhum dado de cartão passa pelo Escambo.
+              </p>
+              {/* Link de verdade (não window.open depois do await): o navegador não bloqueia. */}
+              <a
+                className="btn"
+                href={current.checkoutUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink size={16} /> Pagar {brl(current.amount)} no Mercado Pago
+              </a>
+            </div>
+          </div>
+          <p className="muted tiny">
+            Aguardando a confirmação do pagamento… esta tela atualiza sozinha. Boleto pode levar até
+            3 dias úteis para compensar.
+          </p>
+          {isSandboxCheckout(current.checkoutUrl) && (
+            <div className="demo-box">
+              <div>
+                <strong>Ambiente de teste do Mercado Pago</strong>
+                <div className="muted tiny">
+                  Use uma conta compradora e um cartão de teste do Mercado Pago: nenhum dinheiro de
+                  verdade é cobrado.
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {current && current.status === 'pending' && !current.checkoutUrl && (
         <div className="stack">
           <div className="pix-box">
             <canvas

@@ -61,6 +61,7 @@ const pendingDeposit: Deposit = {
   gateway: 'mock',
   reference: 'DEP-42',
   pixCode: '00020126PIX42',
+  checkoutUrl: null,
   expiresAt: null,
   paidAt: null,
   createdAt: '2026-10-01T15:00:00.000Z',
