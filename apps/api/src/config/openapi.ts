@@ -3620,7 +3620,7 @@ export const openapiDocument: Record<string, any> = {
     '/settings/public': {
       get: op(
         'Plataforma',
-        'Parâmetros públicos: comissão, aprovação tácita, validade da proposta, horas para responder a contraproposta e extensão, mínimos, prazo do saque em dias úteis por forma de recebimento (withdrawalBusinessDays: { pix, bank }, RN-035), trocas, manutenção com a hora prevista da volta (maintenanceReturnAt, RNF-010; nula sem previsão), o gateway dos depósitos (paymentGateway: simulated | mercadopago, ADR 73) e regras fixas das contratações (somente leitura)',
+        'Parâmetros públicos: comissão, aprovação tácita, validade da proposta, horas para responder a contraproposta e extensão, mínimos, prazo do saque em dias úteis por forma de recebimento (withdrawalBusinessDays: { pix, bank }, RN-035), trocas, manutenção com a hora prevista da volta (maintenanceReturnAt, RNF-010; nula sem previsão), o gateway dos depósitos (paymentGateway: simulated | mercadopago, ADR 73), se o Mercado Pago está com credenciais de teste (paymentSandbox) e regras fixas das contratações (somente leitura)',
       ),
     },
     '/client-errors': {

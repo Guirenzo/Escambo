@@ -141,26 +141,27 @@ beforeEach(() => {
   wallet.mockReset();
   wallet.mockResolvedValue(walletWith(0));
   publicSettings.mockReset();
-  publicSettings.mockResolvedValue({ paymentGateway: 'simulated' });
+  publicSettings.mockResolvedValue({ paymentGateway: 'simulated', paymentSandbox: false });
   toCanvas.mockReset();
   toCanvas.mockResolvedValue(undefined);
 });
 
 /** Depósito pelo Mercado Pago (ADR 73): a cobrança é a página do Checkout Pro, numa aba nova. */
 describe('DepositModal: com o Mercado Pago', () => {
-  const SANDBOX_URL = 'https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=p1';
+  // Com credenciais de teste o link também é o init_point (www): o aviso vem de paymentSandbox.
+  const CHECKOUT_URL = 'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=p1';
   const mpDeposit = (o: Partial<Deposit> = {}) =>
     deposit({
       gateway: 'mercadopago',
       method: null,
       pixCode: null,
-      checkoutUrl: SANDBOX_URL,
+      checkoutUrl: CHECKOUT_URL,
       reference: '01JREF',
       ...o,
     });
 
   beforeEach(() => {
-    publicSettings.mockResolvedValue({ paymentGateway: 'mercadopago' });
+    publicSettings.mockResolvedValue({ paymentGateway: 'mercadopago', paymentSandbox: true });
   });
 
   it('o formulário fala do Mercado Pago e gera a cobrança com o valor escolhido', async () => {
@@ -177,7 +178,7 @@ describe('DepositModal: com o Mercado Pago', () => {
 
     expect(createDeposit).toHaveBeenCalledWith({ amount: 100, method: 'pix' });
     const pay = await screen.findByRole('link', { name: /^Pagar R\$\s100,00 no Mercado Pago$/ });
-    expect(pay).toHaveAttribute('href', SANDBOX_URL);
+    expect(pay).toHaveAttribute('href', CHECKOUT_URL);
     // Aba nova, sem dar à página do Mercado Pago acesso a esta janela.
     expect(pay).toHaveAttribute('target', '_blank');
     expect(pay).toHaveAttribute('rel', 'noopener noreferrer');
@@ -186,14 +187,19 @@ describe('DepositModal: com o Mercado Pago', () => {
     expect(screen.getByText('Ambiente de teste do Mercado Pago')).toBeInTheDocument();
   });
 
-  it('cobrança de produção (fora do sandbox) não mostra o aviso de teste', () => {
-    renderModal({
-      initial: mpDeposit({
-        checkoutUrl: 'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=p1',
-      }),
-    });
-    expect(screen.getByRole('link', { name: /no Mercado Pago/ })).toBeInTheDocument();
+  it('com credenciais de produção (paymentSandbox falso) não mostra o aviso de teste', async () => {
+    publicSettings.mockResolvedValue({ paymentGateway: 'mercadopago', paymentSandbox: false });
+    depositStatus.mockResolvedValue(mpDeposit());
+    renderModal({ initial: mpDeposit() });
+    expect(await screen.findByRole('link', { name: /no Mercado Pago/ })).toBeInTheDocument();
+    await waitFor(() => expect(publicSettings).toHaveBeenCalled());
     expect(screen.queryByText('Ambiente de teste do Mercado Pago')).not.toBeInTheDocument();
+  });
+
+  it('com credenciais de teste o aviso aparece, mesmo com o link do Checkout Pro normal', async () => {
+    depositStatus.mockResolvedValue(mpDeposit());
+    renderModal({ initial: mpDeposit() });
+    expect(await screen.findByText('Ambiente de teste do Mercado Pago')).toBeInTheDocument();
   });
 
   it('a validade longa aparece em horas ou dias, com a referência', () => {

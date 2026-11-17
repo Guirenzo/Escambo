@@ -136,7 +136,8 @@ const envSchema = z.object({
   // das credenciais de teste) e a assinatura secreta dos webhooks (painel > Webhooks). Só na API.
   MERCADOPAGO_ACCESS_TOKEN: z.string().trim().default(''),
   MERCADOPAGO_WEBHOOK_SECRET: z.string().trim().default(''),
-  // true = a pessoa vai para a página de pagamento do sandbox (sandbox_init_point).
+  // true = credenciais de teste: o modal de depósito avisa que nada é cobrado de verdade. O link de
+  // pagamento é sempre o init_point (ver mercadopago.ts).
   MERCADOPAGO_SANDBOX: z
     .enum(['true', 'false'])
     .default('true')

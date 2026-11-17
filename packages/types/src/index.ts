@@ -933,6 +933,8 @@ export interface PublicSettings {
   maintenanceReturnAt: string | null;
   /** Quem cobra os depósitos: muda o modal de depósito (PIX simulado ou página do Mercado Pago). */
   paymentGateway: PaymentGatewayKind;
+  /** Mercado Pago com credenciais de teste: o modal avisa que nada é cobrado de verdade. */
+  paymentSandbox: boolean;
 }
 
 /** Para que a imagem vai (ADR 38): avatar sai quadrado; portfólio cabe em 1600 px e pode animar. */

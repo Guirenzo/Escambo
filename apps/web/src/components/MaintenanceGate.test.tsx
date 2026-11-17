@@ -46,6 +46,7 @@ const settings = (
   maintenanceMode,
   maintenanceReturnAt,
   paymentGateway: 'simulated',
+  paymentSandbox: false,
 });
 
 function show() {

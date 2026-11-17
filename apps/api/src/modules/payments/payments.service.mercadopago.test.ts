@@ -105,7 +105,7 @@ describe('createDeposit com PAYMENT_GATEWAY=mercadopago', () => {
     expect(arg.gatewayPaymentId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(arg.response).toMatchObject({
       externalId: arg.gatewayPaymentId,
-      checkoutUrl: 'https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=p1',
+      checkoutUrl: 'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=p1',
       raw: { id: 'p1', collector_id: 99 },
     });
     expect(arg.response).not.toHaveProperty('pixCode');

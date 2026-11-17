@@ -63,7 +63,7 @@ describe('createCheckoutPreference', () => {
 
     expect(pref).toEqual({
       id: '123-abc',
-      checkoutUrl: PREFERENCE.sandbox_init_point,
+      checkoutUrl: PREFERENCE.init_point,
       raw: PREFERENCE,
     });
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -103,24 +103,20 @@ describe('createCheckoutPreference', () => {
     });
   });
 
-  it('fora do sandbox, a página é a de produção (init_point)', async () => {
-    env.MERCADOPAGO_SANDBOX = false;
-    fakeFetch(PREFERENCE);
-    const pref = await createCheckoutPreference({
-      amount: 10,
-      reference: 'R',
-      expiresAt: new Date(),
-    });
-    expect(pref.checkoutUrl).toBe(PREFERENCE.init_point);
+  it('com ou sem sandbox, a página é sempre o init_point (o sandbox_init_point quebra com o vendedor de teste)', async () => {
+    for (const sandbox of [true, false]) {
+      env.MERCADOPAGO_SANDBOX = sandbox;
+      fakeFetch(PREFERENCE);
+      const pref = await createCheckoutPreference({
+        amount: 10,
+        reference: 'R',
+        expiresAt: new Date(),
+      });
+      expect(pref.checkoutUrl).toBe(PREFERENCE.init_point);
+    }
   });
 
-  it('sem a página do modo pedido, usa a outra que vier', async () => {
-    fakeFetch({ id: 'p', init_point: PREFERENCE.init_point });
-    expect(
-      (await createCheckoutPreference({ amount: 10, reference: 'R', expiresAt: new Date() }))
-        .checkoutUrl,
-    ).toBe(PREFERENCE.init_point);
-    env.MERCADOPAGO_SANDBOX = false;
+  it('sem o init_point, usa o sandbox_init_point que vier', async () => {
     fakeFetch({ id: 'p', sandbox_init_point: PREFERENCE.sandbox_init_point });
     expect(
       (await createCheckoutPreference({ amount: 10, reference: 'R', expiresAt: new Date() }))

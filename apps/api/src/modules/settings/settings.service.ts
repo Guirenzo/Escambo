@@ -216,6 +216,7 @@ export const settingsService = {
       maintenanceMode: maintenance,
       maintenanceReturnAt: returnAt?.toISOString() ?? null,
       paymentGateway: env.PAYMENT_GATEWAY,
+      paymentSandbox: env.PAYMENT_GATEWAY === 'mercadopago' && env.MERCADOPAGO_SANDBOX,
     };
   },
 

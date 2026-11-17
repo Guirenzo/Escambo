@@ -131,9 +131,12 @@ export async function createCheckoutPreference(input: {
     input.reference,
   );
   const id = typeof body.id === 'string' ? body.id : null;
-  const sandbox = typeof body.sandbox_init_point === 'string' ? body.sandbox_init_point : null;
+  // Sempre o init_point. As credenciais de teste do painel são de um vendedor de teste: o pagamento
+  // é na página normal, logado com um comprador de teste, e o sandbox_init_point dá erro para elas.
+  // O sandbox_init_point só serve se a resposta não trouxer o init_point.
   const live = typeof body.init_point === 'string' ? body.init_point : null;
-  const checkoutUrl = env.MERCADOPAGO_SANDBOX ? (sandbox ?? live) : (live ?? sandbox);
+  const sandbox = typeof body.sandbox_init_point === 'string' ? body.sandbox_init_point : null;
+  const checkoutUrl = live ?? sandbox;
   if (!id || !checkoutUrl) throw new MercadoPagoError('invalid_response');
   return { id, checkoutUrl, raw: body };
 }
