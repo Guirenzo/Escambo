@@ -4,6 +4,7 @@ vi.mock('./settings.repository', () => ({
   settingsRepository: { list: vi.fn(), set: vi.fn(), get: vi.fn(), getNumber: vi.fn() },
 }));
 
+import { env } from '../../config/env';
 import { settingsRepository } from './settings.repository';
 import { SETTING_KEYS } from './settings.schema';
 import { settingsService, validateSettingValue } from './settings.service';
@@ -400,6 +401,7 @@ describe('settingsService (ADR 32/33)', () => {
       barterEnabled: false,
       maintenanceMode: true,
       maintenanceReturnAt: null,
+      paymentGateway: 'simulated',
     });
   });
 
@@ -484,6 +486,16 @@ describe('settingsService (ADR 32/33)', () => {
       barterEnabled: true,
       maintenanceMode: false,
       maintenanceReturnAt: null,
+      paymentGateway: 'simulated',
     });
+  });
+
+  it('o gateway dos depósitos vem do ambiente (PAYMENT_GATEWAY), para o modal de depósito', async () => {
+    env.PAYMENT_GATEWAY = 'mercadopago';
+    try {
+      expect((await settingsService.publicSettings()).paymentGateway).toBe('mercadopago');
+    } finally {
+      env.PAYMENT_GATEWAY = 'simulated';
+    }
   });
 });

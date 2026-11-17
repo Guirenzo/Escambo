@@ -1,6 +1,6 @@
 import type { ResultSetHeader } from 'mysql2';
 import type { Connection } from 'mysql2/promise';
-import type { PixCharge } from './gateway';
+import type { GatewayCharge } from './gateway';
 
 /**
  * Histórico do gateway por cobrança (RF-050): a resposta da criação e o corpo de cada webhook
@@ -71,13 +71,15 @@ export const shortText = (value: unknown, max: number): string | null =>
 
 /**
  * A resposta da criação da cobrança como fica guardada (em `payments.gateway_response` e no
- * histórico): identificador, código PIX, validade e, se o provedor devolveu, o corpo original
- * higienizado. O `pixCode` fica no topo, que é onde o depósito o lê.
+ * histórico): identificador, código PIX ou página de pagamento, validade e, se o provedor
+ * devolveu, o corpo original higienizado. `pixCode` e `checkoutUrl` ficam no topo, que é onde o
+ * depósito os lê.
  */
-export function chargeResponse(charge: PixCharge): Record<string, unknown> {
+export function chargeResponse(charge: GatewayCharge): Record<string, unknown> {
   return {
     externalId: charge.externalId,
-    pixCode: charge.pixCode,
+    ...(charge.pixCode ? { pixCode: charge.pixCode } : {}),
+    ...(charge.checkoutUrl ? { checkoutUrl: charge.checkoutUrl } : {}),
     expiresAt: charge.expiresAt.toISOString(),
     ...(charge.raw ? { raw: sanitizeGatewayPayload(charge.raw) } : {}),
   };

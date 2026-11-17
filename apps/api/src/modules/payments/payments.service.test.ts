@@ -232,10 +232,12 @@ describe('paymentsService.getDeposit (dono e tipo)', () => {
       gateway: 'pagarme',
       reference: 'ch_9Z',
       pixCode: '000201…6304ABCD',
+      checkoutUrl: null,
       expiresAt: expiresAt.toISOString(),
       paidAt: null,
       createdAt: '2026-09-01T00:00:00.000Z',
-      canSimulate: true,
+      // Cobrança de outro gateway nunca se paga pela simulação.
+      canSimulate: false,
     });
   });
 });
@@ -397,7 +399,7 @@ describe('paymentsService.createDeposit: o que vai para o banco', () => {
 
   it('se o gateway não gera a cobrança, nada é gravado nem devolvido', async () => {
     const boom = new Error('gateway fora do ar');
-    const charge = vi.spyOn(paymentGateway, 'createPixCharge').mockRejectedValueOnce(boom);
+    const charge = vi.spyOn(paymentGateway, 'createCharge').mockRejectedValueOnce(boom);
     try {
       await expect(paymentsService.createDeposit(5, { amount: 150, method: 'pix' })).rejects.toBe(
         boom,
@@ -412,9 +414,10 @@ describe('paymentsService.createDeposit: o que vai para o banco', () => {
 
   it('o que é gravado é o que o gateway devolveu: referência, código PIX e validade da cobrança dele', async () => {
     const expiresAt = new Date('2026-10-02T16:00:00.000Z');
-    const charge = vi.spyOn(paymentGateway, 'createPixCharge').mockResolvedValueOnce({
+    const charge = vi.spyOn(paymentGateway, 'createCharge').mockResolvedValueOnce({
       externalId: 'gw_777',
       pixCode: '000201GATEWAY6304FFFF',
+      checkoutUrl: null,
       expiresAt,
     });
     try {
@@ -764,9 +767,10 @@ describe('paymentsService: histórico do gateway (RF-050)', () => {
 
   it('a criação guarda o corpo original do provedor, quando há um, higienizado', async () => {
     const expiresAt = new Date('2026-10-02T16:00:00.000Z');
-    const charge = vi.spyOn(paymentGateway, 'createPixCharge').mockResolvedValueOnce({
+    const charge = vi.spyOn(paymentGateway, 'createCharge').mockResolvedValueOnce({
       externalId: 'gw_1',
       pixCode: '000201X',
+      checkoutUrl: null,
       expiresAt,
       raw: { id: 'gw_1', status: 'pending', customer: { document: '123' }, qr: { url: 'u' } },
     });

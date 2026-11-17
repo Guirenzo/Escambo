@@ -43,6 +43,16 @@ function isLoopbackUrl(value: string): boolean {
   }
 }
 
+/** https absoluto, sem usuário e senha. */
+function isHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.username === '' && url.password === '';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Validação das variáveis de ambiente (RNF-034: configs externalizadas).
  * Se faltar/estiver inválida, a API não sobe — falha cedo e claro.
@@ -109,16 +119,40 @@ const envSchema = z.object({
     .max(JOBS_INTERVAL_MAX_MS)
     .default(5 * 60_000),
 
-  // Pagamentos (depósitos na carteira). Só existe o gateway simulado neste estágio:
-  // PAYMENTS_SIMULATE libera o endpoint que "paga" a cobrança PIX (demo/dev/testes) —
-  // DESLIGUE em produção. PAYMENT_WEBHOOK_SECRET protege o webhook do gateway (vazio = desligado).
+  // Pagamentos (depósitos na carteira, ADR 73). PAYMENT_GATEWAY escolhe quem cobra: 'simulated'
+  // (padrão: o PIX simulado do ADR 15, para a demo, o dev e os testes) ou 'mercadopago' (Checkout Pro
+  // do Mercado Pago, em sandbox com as credenciais de teste).
+  PAYMENT_GATEWAY: z.enum(['simulated', 'mercadopago']).default('simulated'),
+  // PAYMENTS_SIMULATE libera o endpoint que "paga" a cobrança PIX simulada (demo/dev/testes) —
+  // DESLIGUE em produção. PAYMENT_WEBHOOK_SECRET protege o webhook do gateway simulado (vazio = desligado).
   PAYMENTS_SIMULATE: z
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
   PAYMENT_WEBHOOK_SECRET: z.string().default(''),
-  // Validade da cobrança PIX de um depósito.
+  // Validade da cobrança PIX simulada de um depósito.
   DEPOSIT_EXPIRES_MINUTES: z.coerce.number().int().positive().default(30),
+  // Mercado Pago (PAYMENT_GATEWAY=mercadopago): o Access Token da aplicação (o de teste, APP_USR-…
+  // das credenciais de teste) e a assinatura secreta dos webhooks (painel > Webhooks). Só na API.
+  MERCADOPAGO_ACCESS_TOKEN: z.string().trim().default(''),
+  MERCADOPAGO_WEBHOOK_SECRET: z.string().trim().default(''),
+  // true = a pessoa vai para a página de pagamento do sandbox (sandbox_init_point).
+  MERCADOPAGO_SANDBOX: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  // Endereço da API; só muda nos testes. Precisa ser https (o token vai no cabeçalho), salvo na
+  // própria máquina.
+  MERCADOPAGO_API_URL: z
+    .string()
+    .trim()
+    .default('https://api.mercadopago.com')
+    .refine((v) => isLoopbackUrl(v) || isHttpsUrl(v), {
+      message: 'MERCADOPAGO_API_URL deve ser https (ou um endereço da própria máquina, nos testes)',
+    }),
+  // Validade do depósito pelo Mercado Pago, em horas: o boleto compensa em até 3 dias úteis, então
+  // a cobrança vive mais que o PIX simulado.
+  MERCADOPAGO_DEPOSIT_EXPIRES_HOURS: z.coerce.number().int().positive().max(720).default(72),
 
   // Arquivos gerados pela API (cópias de dados LGPD). No Docker é um volume.
   DATA_DIR: z.string().default('data'),
@@ -258,6 +292,19 @@ const envChecked = envSchema.superRefine((e, ctx) => {
       path: [missing],
       message: `O login com Google precisa de GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET juntos: falta ${missing} (ou deixe os dois vazios para desligar)`,
     });
+  }
+  // Mercado Pago sem o token não cobra, e sem a assinatura secreta o webhook não tem como conferir
+  // quem avisa: os dois juntos, ou a API não sobe.
+  if (e.PAYMENT_GATEWAY === 'mercadopago') {
+    for (const key of ['MERCADOPAGO_ACCESS_TOKEN', 'MERCADOPAGO_WEBHOOK_SECRET'] as const) {
+      if (e[key] === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `PAYMENT_GATEWAY=mercadopago exige ${key} (credenciais de teste do painel do Mercado Pago)`,
+        });
+      }
+    }
   }
   if (e.ADMIN_MFA_REQUIRED && e.FIELD_ENCRYPTION_KEY === '') {
     ctx.addIssue({

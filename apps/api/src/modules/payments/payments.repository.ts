@@ -8,6 +8,19 @@ import { insertPaymentEvent, type PaymentEventInput } from './payment-events';
 /** O que chegou do gateway (ou da simulação) e liquidou a cobrança: vira linha do histórico. */
 export type SettleNotice = Pick<PaymentEventInput, 'source' | 'event' | 'payload'>;
 
+/** Valores da coluna `payments.method`. */
+export type PaymentMethod = 'pix' | 'credit_card' | 'debit_card' | 'boleto' | 'wallet';
+
+export interface SettleOptions {
+  /** Como foi pago, quando o gateway diz (o Mercado Pago: Pix, cartão ou boleto). */
+  method?: PaymentMethod | null;
+  /**
+   * Aceita também a cobrança que o job já cancelou por vencer: o Mercado Pago pode confirmar um
+   * boleto pago no prazo dias depois (compensação), e o dinheiro entrou de verdade.
+   */
+  reopenExpired?: boolean;
+}
+
 export interface PaymentRow extends RowDataPacket {
   id: number;
   kind: string;
@@ -115,13 +128,22 @@ export const paymentsRepository = {
    * credita a carteira do pagador e grava o extrato na mesma transação (RNF-038). Com `notice`, o
    * que chegou do gateway entra no histórico (RF-050) também na mesma transação, como `applied`.
    * Retorna false se a cobrança já não estava pendente (ou não é um depósito); aí nada é gravado
-   * aqui, e quem chama registra a repetição.
+   * aqui, e quem chama registra a repetição. Com `reopenExpired`, a cancelada por vencer também
+   * liquida (só como paga).
    */
-  async settle(id: number, status: 'paid' | 'failed', notice?: SettleNotice): Promise<boolean> {
+  async settle(
+    id: number,
+    status: 'paid' | 'failed',
+    notice?: SettleNotice,
+    opts: SettleOptions = {},
+  ): Promise<boolean> {
+    const reopen = opts.reopenExpired === true && status === 'paid';
+    const open = (s: string): boolean => s === 'pending' || (reopen && s === 'cancelled');
     if (status === 'paid') {
       // O pagador é imutável. O status será conferido de novo sob a trava da cobrança.
+      const statusFilter = reopen ? "status IN ('pending', 'cancelled')" : "status = 'pending'";
       const [payers] = await pool.query<RowDataPacket[]>(
-        `SELECT payer_id FROM payments WHERE id = :id AND kind = 'topup' AND status = 'pending'`,
+        `SELECT payer_id FROM payments WHERE id = :id AND kind = 'topup' AND ${statusFilter}`,
         { id },
       );
       if (!payers[0]) return false;
@@ -135,15 +157,23 @@ export const paymentsRepository = {
         { id },
       );
       const row = rows[0];
-      if (!row || row.status !== 'pending') {
+      if (!row || !open(row.status)) {
         await conn.rollback();
         return false;
       }
       if (status === 'paid') await lockWallets(conn, [row.payer_id]);
-      await conn.query<ResultSetHeader>(
-        `UPDATE payments SET status = :status, paid_at = :paidAt WHERE id = :id`,
-        { status, paidAt: status === 'paid' ? new Date() : null, id },
-      );
+      const paidAt = status === 'paid' ? new Date() : null;
+      if (opts.method) {
+        await conn.query<ResultSetHeader>(
+          `UPDATE payments SET status = :status, paid_at = :paidAt, method = :method WHERE id = :id`,
+          { status, paidAt, method: opts.method, id },
+        );
+      } else {
+        await conn.query<ResultSetHeader>(
+          `UPDATE payments SET status = :status, paid_at = :paidAt WHERE id = :id`,
+          { status, paidAt, id },
+        );
+      }
       if (status === 'paid') {
         const ok = await applyWalletEffect(conn, {
           userId: row.payer_id,

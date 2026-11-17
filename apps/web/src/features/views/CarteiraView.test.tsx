@@ -141,6 +141,7 @@ const depositOf = (o: Partial<Deposit> & { id: number }): Deposit => ({
   gateway: 'simulated',
   reference: null,
   pixCode: null,
+  checkoutUrl: null,
   expiresAt: null,
   paidAt: '2026-09-15T09:00:00.000Z',
   createdAt: '2026-09-15T08:00:00.000Z',
@@ -270,7 +271,7 @@ describe('CarteiraView: saldos e estados', () => {
     expect(await screen.findByText('Nenhum saque ainda.')).toBeInTheDocument();
 
     await user.click(within(alert).getByRole('button', { name: 'Tentar de novo' }));
-    expect(await within(card('Extrato')).findByText('Depósito via PIX')).toBeInTheDocument();
+    expect(await within(card('Extrato')).findByText('Depósito na carteira')).toBeInTheDocument();
     expect(walletTransactions).toHaveBeenCalledTimes(2);
   });
 
@@ -336,11 +337,11 @@ describe('CarteiraView: extrato', () => {
     );
     renderView();
 
-    await within(card('Extrato')).findByText('Depósito via PIX');
+    await within(card('Extrato')).findByText('Depósito na carteira');
     const rows = within(card('Extrato')).getAllByRole('listitem');
     expect(rows).toHaveLength(3);
 
-    expect(rows[0]).toHaveTextContent('Depósito via PIX');
+    expect(rows[0]).toHaveTextContent('Depósito na carteira');
     expect(rows[0]).toHaveTextContent(
       `${dtm('2026-09-20T15:30:00.000Z')} · depósito #2 · disponível R$ 100,00`,
     );
@@ -419,7 +420,7 @@ describe('CarteiraView: extrato', () => {
       'aria-selected',
       'true',
     );
-    await within(card('Extrato')).findByText('Depósito via PIX');
+    await within(card('Extrato')).findByText('Depósito na carteira');
 
     await user.click(within(tabs).getByRole('tab', { name: 'Créditos' }));
 
@@ -431,7 +432,7 @@ describe('CarteiraView: extrato', () => {
       'aria-selected',
       'false',
     );
-    expect(within(card('Extrato')).queryByText('Depósito via PIX')).not.toBeInTheDocument();
+    expect(within(card('Extrato')).queryByText('Depósito na carteira')).not.toBeInTheDocument();
     const rows = within(card('Extrato')).getAllByRole('listitem');
     expect(rows).toHaveLength(3);
     expect(rows[0]).toHaveTextContent('Bônus de boas-vindas');
@@ -444,7 +445,7 @@ describe('CarteiraView: extrato', () => {
     expect(rows[2]).toHaveTextContent(/-10$/);
 
     await user.click(within(tabs).getByRole('tab', { name: 'Reais' }));
-    expect(within(card('Extrato')).getByText('Depósito via PIX')).toBeInTheDocument();
+    expect(within(card('Extrato')).getByText('Depósito na carteira')).toBeInTheDocument();
   });
 });
 
@@ -484,7 +485,7 @@ describe('CarteiraView: extrato por período e "Carregar mais" (RF-047)', () => 
     await waitFor(() => expect(within(card('Extrato')).getAllByRole('listitem')).toHaveLength(3));
     expect(walletTransactions).toHaveBeenLastCalledWith({ page: 2, limit: 20 });
     const rows = within(card('Extrato')).getAllByRole('listitem');
-    expect(rows[0]).toHaveTextContent('Depósito via PIX');
+    expect(rows[0]).toHaveTextContent('Depósito na carteira');
     expect(rows[1]).toHaveTextContent('Saque solicitado');
     expect(rows[2]).toHaveTextContent('Pagamento da contratação');
     // Última página: o botão some.
@@ -513,7 +514,7 @@ describe('CarteiraView: extrato por período e "Carregar mais" (RF-047)', () => 
     walletTransactions.mockResolvedValue(ledgerPage([tx({ id: 1 })], 1, false));
     renderView();
 
-    await within(card('Extrato')).findByText('Depósito via PIX');
+    await within(card('Extrato')).findByText('Depósito na carteira');
     expect(
       within(card('Extrato')).queryByRole('button', { name: 'Carregar mais' }),
     ).not.toBeInTheDocument();

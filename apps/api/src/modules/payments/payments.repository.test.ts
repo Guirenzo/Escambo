@@ -440,6 +440,63 @@ describe('paymentsRepository', () => {
       expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
       expect(fakeDb.conn.release).toHaveBeenCalledTimes(1);
     });
+
+    it('com a forma do pagamento (Mercado Pago), ela vai para a coluna method junto com o status', async () => {
+      preparePaid();
+      fakeDb.reply({ affectedRows: 1 }, [{ balance: '150.00', balance_pending: '0.00' }], {});
+
+      expect(await paymentsRepository.settle(7, 'paid', undefined, { method: 'boleto' })).toBe(
+        true,
+      );
+
+      expect(fakeDb.calls[3]!.sql).toBe(
+        'UPDATE payments SET status = :status, paid_at = :paidAt, method = :method WHERE id = :id',
+      );
+      expect(fakeDb.calls[3]!.params).toEqual({
+        status: 'paid',
+        paidAt: NOW,
+        method: 'boleto',
+        id: 7,
+      });
+    });
+
+    it('reopenExpired: a cobrança que o job cancelou por vencer ainda liquida como paga (boleto compensado depois)', async () => {
+      const cancelled = pending({ status: 'cancelled' });
+      preparePaid(cancelled);
+      fakeDb.reply({ affectedRows: 1 }, [{ balance: '150.00', balance_pending: '0.00' }], {});
+
+      expect(await paymentsRepository.settle(7, 'paid', undefined, { reopenExpired: true })).toBe(
+        true,
+      );
+
+      expect(fakeDb.calls[0]!.sql).toBe(
+        "SELECT payer_id FROM payments WHERE id = :id AND kind = 'topup' AND status IN ('pending', 'cancelled')",
+      );
+      expect(fakeDb.calls[3]!.params).toEqual({ status: 'paid', paidAt: NOW, id: 7 });
+      expect(fakeDb.conn.commit).toHaveBeenCalledTimes(1);
+    });
+
+    it('reopenExpired não reabre paga nem falhada, e sem ele a cancelada fica como está', async () => {
+      for (const status of ['paid', 'failed']) {
+        fakeDb.reset();
+        fakeDb.reply([pending()], {}, [pending({ status })]);
+        expect(await paymentsRepository.settle(7, 'paid', undefined, { reopenExpired: true })).toBe(
+          false,
+        );
+        expect(fakeDb.sqls().some((sql) => sql.startsWith('UPDATE'))).toBe(false);
+      }
+      fakeDb.reset();
+      fakeDb.reply([pending()], {}, [pending({ status: 'cancelled' })]);
+      expect(await paymentsRepository.settle(7, 'paid')).toBe(false);
+    });
+
+    it('reopenExpired só vale para pago: a falha de uma cancelada não muda nada', async () => {
+      fakeDb.reply([pending({ status: 'cancelled' })]);
+      expect(await paymentsRepository.settle(7, 'failed', undefined, { reopenExpired: true })).toBe(
+        false,
+      );
+      expect(fakeDb.conn.rollback).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('expirePending cancela só depósito pendente com prazo vencido e devolve quantos foram', async () => {

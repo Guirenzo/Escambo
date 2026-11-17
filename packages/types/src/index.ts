@@ -931,6 +931,8 @@ export interface PublicSettings {
   maintenanceMode: boolean;
   /** Hora prevista da volta da manutenção (RNF-010); nula sem previsão ou fora de manutenção. */
   maintenanceReturnAt: string | null;
+  /** Quem cobra os depósitos: muda o modal de depósito (PIX simulado ou página do Mercado Pago). */
+  paymentGateway: PaymentGatewayKind;
 }
 
 /** Para que a imagem vai (ADR 38): avatar sai quadrado; portfólio cabe em 1600 px e pode animar. */
@@ -1961,16 +1963,25 @@ export interface WalletEarnings {
 
 export type DepositStatus = 'pending' | 'processing' | 'paid' | 'failed' | 'refunded' | 'cancelled';
 
-/** Depósito na carteira (cobrança PIX gerada pelo gateway de pagamento). */
+/** Como o depósito foi pago (no Mercado Pago, a pessoa escolhe na página dele). */
+export type DepositMethod = 'pix' | 'credit_card' | 'debit_card' | 'boleto' | 'wallet';
+
+/** Quem cobra os depósitos: o PIX simulado (demo) ou o Checkout Pro do Mercado Pago (ADR 73). */
+export type PaymentGatewayKind = 'simulated' | 'mercadopago';
+
+/** Depósito na carteira (cobrança gerada pelo gateway de pagamento). */
 export interface Deposit {
   id: number;
   amount: number;
   status: DepositStatus;
-  method: 'pix';
+  /** Nulo enquanto o depósito do Mercado Pago não foi pago (a forma é escolhida lá). */
+  method: DepositMethod | null;
   gateway: string;
   /** Identificador da cobrança no gateway (referência para suporte/webhook). */
   reference: string | null;
-  pixCode: string | null; // "copia e cola" (BR Code)
+  pixCode: string | null; // "copia e cola" (BR Code), só no gateway simulado
+  /** Página de pagamento do Mercado Pago, enquanto o depósito está pendente. */
+  checkoutUrl: string | null;
   expiresAt: string | null;
   paidAt: string | null;
   createdAt: string;

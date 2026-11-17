@@ -6,6 +6,7 @@ import {
   brl,
   brlAxis,
   dateInputValue,
+  depositMethodLabel,
   DIGEST_HOURS,
   digestHourLabel,
   displayName,
@@ -19,7 +20,37 @@ import {
   formatPeriods,
   hm,
   STATUS_LABEL,
+  timeLeftLabel,
 } from './format';
+
+describe('depositMethodLabel', () => {
+  it('a forma gravada, e antes de pagar no Mercado Pago só o nome dele', () => {
+    expect(depositMethodLabel({ method: 'pix', gateway: 'simulado' })).toBe('PIX');
+    expect(depositMethodLabel({ method: 'credit_card', gateway: 'mercadopago' })).toBe(
+      'Cartão de crédito',
+    );
+    expect(depositMethodLabel({ method: 'debit_card', gateway: 'mercadopago' })).toBe(
+      'Cartão de débito',
+    );
+    expect(depositMethodLabel({ method: 'boleto', gateway: 'mercadopago' })).toBe('Boleto');
+    expect(depositMethodLabel({ method: 'wallet', gateway: 'mercadopago' })).toBe(
+      'Saldo Mercado Pago',
+    );
+    expect(depositMethodLabel({ method: null, gateway: 'mercadopago' })).toBe('Mercado Pago');
+    expect(depositMethodLabel({ method: null, gateway: 'simulado' })).toBe('PIX');
+  });
+});
+
+describe('timeLeftLabel', () => {
+  it('minutos até 2 h, horas até 2 dias, depois dias', () => {
+    expect(timeLeftLabel(0)).toBe('0 min');
+    expect(timeLeftLabel(119)).toBe('119 min');
+    expect(timeLeftLabel(120)).toBe('2 h');
+    expect(timeLeftLabel(47 * 60 + 59)).toBe('47 h');
+    expect(timeLeftLabel(48 * 60)).toBe('2 dias');
+    expect(timeLeftLabel(72 * 60)).toBe('3 dias');
+  });
+});
 
 describe('dayLabel', () => {
   it('mostra o dia da data sem hora como está, sem cair no dia anterior pelo UTC', () => {

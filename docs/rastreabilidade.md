@@ -1,7 +1,7 @@
 # Rastreabilidade dos requisitos — Escambo
 
-> **Versão do código:** 1.54.0
-> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0, a 1.48.0, a 1.49.0, a 1.50.0, a 1.51.0, a 1.52.0, a 1.53.0 e a 1.54.0
+> **Versão do código:** 1.56.0
+> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0, a 1.48.0, a 1.49.0, a 1.50.0, a 1.51.0, a 1.52.0, a 1.53.0, a 1.54.0 e a 1.56.0
 > **Autor:** Guilherme Renzo
 
 Os documentos de requisitos foram escritos no planejamento, e a coluna de situação ficou para trás conforme o sistema crescia. Esta página registra o que existe **de verdade** em cada requisito: onde está no código, qual teste prova e, quando não está completo, o que falta ou qual decisão registrada (ADR) explica a lacuna. As situações aqui são as mesmas da coluna **Status** de [requisitos funcionais](./requisitos-funcionais.md) e da coluna **Situação** de [requisitos não funcionais](./requisitos-nao-funcionais.md).
@@ -15,7 +15,7 @@ Os documentos de requisitos foram escritos no planejamento, e a coluna de situa�
 
 | | Implementado | Parcial | Não implementado | Fora do escopo | Total |
 |---|---|---|---|---|---|
-| Requisitos funcionais | 90 | 0 | 0 | 2 | 92 |
+| Requisitos funcionais | 91 | 0 | 0 | 1 | 92 |
 | Requisitos não funcionais | 32 | 7 | 1 | 2 | 42 |
 
 As regras de negócio têm a própria matriz de situação, em [regras de negócio](./regras-de-negocio.md), seção 11.
@@ -64,7 +64,7 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 | RF-038 | Implementado | contracts/cancel-policy.ts (cancelTerms/cashSettlement), contracts.service.ts (cancel com expectedRefund); web CancelModal.tsx. Testes: cancelamento.int.test.ts (50%/0%/100%, marcos, créditos, desistência, corridas), cancel-policy.test.ts, CancelModal.test.tsx, e2e cancelamento.smoke.spec.ts | — |
 | RF-039 | Implementado | Avisos em contracts.service.ts, offer-notices.ts, deadline-notices.ts, approval-notices.ts, reminder-notices.ts, jobs (tacit-approval, overdue-contracts, expire-proposals) e disputes; socket user:<id>. Testes: realtime-notifications.int.test.ts, tacit-approval.int.test.ts, offer-notices.test.ts, approval-notices.test.ts, deadline-notices.test.ts, contracts.service.test.ts | Ressalva de leitura: cada mudança feita por uma pessoa avisa só a outra parte (quem agiu vê na tela). Só os eventos automáticos avisam as duas partes, como diz a nota ℹ️ do próprio documento. |
 | RF-040 | Implementado | GET /api/contracts com status e total; MyContracts.tsx com filtro, total e Carregar mais. Testes: MyContracts.test.tsx, contracts.http.test.ts, entregas-lista.int.test.ts | Desde a 1.43.0. |
-| RF-041 | Fora do escopo | ADR 15 e ADR 20 (pagamento real fora do escopo acadêmico); payments/gateway.ts (interface PaymentGateway, só a implementação simulada com BR Code EMV+CRC16); webhook com segredo. Testes: gateway.test.ts, payments-flow.int.test.ts | Não há Mercado Pago, cartão nem boleto. Existe só depósito PIX simulado na carteira pré-paga, atrás de interface pronta para trocar de gateway e confirmar por webhook. A decisão de não integrar o gateway real está no ADR 15. |
+| RF-041 | Implementado | payments/mercadopago.ts (Checkout Pro sem SDK: preferência com external_reference e chave de idempotência, consulta GET /v1/payments/{id}, assinatura x-signature por HMAC-SHA256 em tempo constante, fetch injetável); gateway.ts (PAYMENT_GATEWAY escolhe simulated ou mercadopago a cada cobrança); payments.service.ts settleFromMercadoPago (só aprovado, do nosso depósito, em BRL e no mesmo valor; forma gravada em payments.method; boleto compensado depois de vencer ainda credita); rota POST /api/payments/webhook/mercadopago (401 sem assinatura, 200 a todo aviso conferido, 502 com o Mercado Pago fora do ar); config/env.ts (sem token ou assinatura não sobe); web DepositModal.tsx (link para a página do Mercado Pago numa aba nova, aviso de sandbox), CarteiraView.tsx (forma do depósito). Testes: mercadopago.test.ts, gateway.test.ts, payments.service.mercadopago.test.ts, payments.mercadopago.http.test.ts, payments.repository.test.ts, env.mercadopago.test.ts, DepositModal.test.tsx | Desde a 1.56.0 (ADR 73), em sandbox: credenciais de teste do Mercado Pago, sem dinheiro de verdade (passo a passo no DEPLOY.md). O gateway simulado (ADR 15) continua para a demo, o CI e o e2e. Estorno, chargeback e saque pelo Mercado Pago ficaram de fora. |
 | RF-042 | Implementado | Reserva na proposta, escrow no aceite e liberação na aprovação: contracts.repository.ts (transition), wallet/wallet.ledger.ts, wallet_transactions (ADR 2 e 15). Testes: contract-flow.int.test.ts (balancePending 1000, depois 850), payments-flow.int.test.ts (402 e devolução), carteira-travas.int.test.ts, credits-flow.int.test.ts | Em créditos, a retenção acontece só no aceite (ADR 15). |
 | RF-043 | Implementado | ContratarModal.tsx usa a taxa de /settings/public e mostra taxa e líquido antes de enviar. Testes: ContratarModal.test.tsx | Desde a 1.43.0 (antes, "85%" fixo). |
 | RF-044 | Implementado | wallets.balance / balance_pending; GET /api/wallet (wallet.service getBalance); CarteiraView.tsx (KPIs Disponível e Retido). Testes: wallet.http.test.ts, CarteiraView.test.tsx ('mostra o saldo disponível, o retido e os créditos'), contract-flow.int.test.ts | — |

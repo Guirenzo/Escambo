@@ -1,4 +1,5 @@
 import type { PlatformSetting, PublicSettings, WithdrawalMethod } from '@escambo/types';
+import { env } from '../../config/env';
 import { HttpError } from '../../utils/http-error';
 import { INCLUDED_REVISIONS } from '../contracts/deadline-grace';
 import { DISPUTE_TACIT_MARGIN_MS, DISPUTE_WAIT_MS } from '../contracts/dispute-window';
@@ -214,6 +215,7 @@ export const settingsService = {
       barterEnabled: barter,
       maintenanceMode: maintenance,
       maintenanceReturnAt: returnAt?.toISOString() ?? null,
+      paymentGateway: env.PAYMENT_GATEWAY,
     };
   },
 

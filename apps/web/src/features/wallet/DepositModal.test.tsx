@@ -13,12 +13,14 @@ const createDeposit = vi.fn();
 const depositStatus = vi.fn();
 const simulateDeposit = vi.fn();
 const wallet = vi.fn();
+const publicSettings = vi.fn();
 vi.mock('../../lib/api', () => ({
   api: {
     createDeposit: (body: unknown) => createDeposit(body),
     deposit: (id: number) => depositStatus(id),
     simulateDeposit: (id: number) => simulateDeposit(id),
     wallet: () => wallet(),
+    publicSettings: () => publicSettings(),
   },
 }));
 
@@ -42,6 +44,7 @@ const deposit = (o: Partial<Deposit> = {}): Deposit => ({
   gateway: 'mock',
   reference: 'DEP-42',
   pixCode: PIX_CODE,
+  checkoutUrl: null,
   expiresAt: null,
   paidAt: null,
   createdAt: '2026-10-01T15:00:00.000Z',
@@ -137,8 +140,83 @@ beforeEach(() => {
   );
   wallet.mockReset();
   wallet.mockResolvedValue(walletWith(0));
+  publicSettings.mockReset();
+  publicSettings.mockResolvedValue({ paymentGateway: 'simulated' });
   toCanvas.mockReset();
   toCanvas.mockResolvedValue(undefined);
+});
+
+/** Depósito pelo Mercado Pago (ADR 73): a cobrança é a página do Checkout Pro, numa aba nova. */
+describe('DepositModal: com o Mercado Pago', () => {
+  const SANDBOX_URL = 'https://sandbox.mercadopago.com.br/checkout/v1/redirect?pref_id=p1';
+  const mpDeposit = (o: Partial<Deposit> = {}) =>
+    deposit({
+      gateway: 'mercadopago',
+      method: null,
+      pixCode: null,
+      checkoutUrl: SANDBOX_URL,
+      reference: '01JREF',
+      ...o,
+    });
+
+  beforeEach(() => {
+    publicSettings.mockResolvedValue({ paymentGateway: 'mercadopago' });
+  });
+
+  it('o formulário fala do Mercado Pago e gera a cobrança com o valor escolhido', async () => {
+    const user = userEvent.setup();
+    createDeposit.mockResolvedValue(mpDeposit());
+    depositStatus.mockResolvedValue(mpDeposit());
+    renderModal();
+
+    const button = await screen.findByRole('button', {
+      name: /^Gerar cobrança de R\$\s100,00 no Mercado Pago$/,
+    });
+    expect(screen.getByText(/Você paga na página do Mercado Pago/)).toBeInTheDocument();
+    await user.click(button);
+
+    expect(createDeposit).toHaveBeenCalledWith({ amount: 100, method: 'pix' });
+    const pay = await screen.findByRole('link', { name: /^Pagar R\$\s100,00 no Mercado Pago$/ });
+    expect(pay).toHaveAttribute('href', SANDBOX_URL);
+    // Aba nova, sem dar à página do Mercado Pago acesso a esta janela.
+    expect(pay).toHaveAttribute('target', '_blank');
+    expect(pay).toHaveAttribute('rel', 'noopener noreferrer');
+    // Sem QR nem copia e cola: o PIX, se for o caso, é na página do Mercado Pago.
+    expect(screen.queryByLabelText('PIX copia e cola')).not.toBeInTheDocument();
+    expect(screen.getByText('Ambiente de teste do Mercado Pago')).toBeInTheDocument();
+  });
+
+  it('cobrança de produção (fora do sandbox) não mostra o aviso de teste', () => {
+    renderModal({
+      initial: mpDeposit({
+        checkoutUrl: 'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=p1',
+      }),
+    });
+    expect(screen.getByRole('link', { name: /no Mercado Pago/ })).toBeInTheDocument();
+    expect(screen.queryByText('Ambiente de teste do Mercado Pago')).not.toBeInTheDocument();
+  });
+
+  it('a validade longa aparece em horas ou dias, com a referência', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-15T12:00:00.000Z'));
+    renderModal({ initial: mpDeposit({ expiresAt: '2026-11-18T12:00:00.000Z' }) });
+    expect(screen.getByText('Vence em 3 dias · ref. 01JREF')).toBeInTheDocument();
+  });
+
+  it('quando o webhook confirma, a tela consultando a API mostra o depósito pago', async () => {
+    depositStatus.mockResolvedValue(
+      mpDeposit({ status: 'paid', method: 'credit_card', checkoutUrl: null, paidAt: 'x' }),
+    );
+    const { onPaid } = renderModal({ initial: mpDeposit() });
+    expect(await screen.findByText(/^Depósito de R\$\s100,00 confirmado$/)).toBeInTheDocument();
+    expect(onPaid).toHaveBeenCalledTimes(1);
+  });
+
+  it('sem os parâmetros públicos (falha ao carregar), cai no texto do PIX simulado', async () => {
+    publicSettings.mockRejectedValue(new Error('fora do ar'));
+    renderModal();
+    expect(generateButton()).toBeInTheDocument();
+  });
 });
 
 afterEach(() => {

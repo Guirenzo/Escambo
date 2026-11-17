@@ -1482,6 +1482,11 @@ export const openapiDocument: Record<string, any> = {
         },
         ['gatewayPaymentId', 'status'],
       ),
+      MercadoPagoWebhook: obj({
+        action: { type: 'string', description: 'Ex.: payment.created, payment.updated' },
+        type: { type: 'string', description: 'Só "payment" interessa; o resto responde ignored' },
+        data: obj({ id: { type: 'string', description: 'Id do pagamento no Mercado Pago' } }),
+      }),
       CreateWithdrawal: obj(
         {
           amount: { type: 'number', minimum: 20 },
@@ -3073,7 +3078,7 @@ export const openapiDocument: Record<string, any> = {
       get: op('Carteira', 'Meus depósitos', { auth: true }),
       post: op(
         'Carteira',
-        'Gera cobrança PIX de depósito na carteira (exige e-mail confirmado, RF-006)',
+        'Gera a cobrança de um depósito na carteira (exige e-mail confirmado, RF-006): com o gateway simulado, o código PIX (pixCode); com o Mercado Pago (PAYMENT_GATEWAY=mercadopago, ADR 73), a página do Checkout Pro (checkoutUrl), onde a pessoa paga com Pix, cartão ou boleto. 502 se o Mercado Pago não responder',
         {
           auth: true,
           body: { $ref: '#/components/schemas/CreateDeposit' },
@@ -3085,16 +3090,25 @@ export const openapiDocument: Record<string, any> = {
     '/wallet/deposits/{id}/simulate': {
       post: op(
         'Carteira',
-        'Demo: confirma a cobrança sem gateway (PAYMENTS_SIMULATE). Pagar exige e-mail confirmado (RF-006)',
+        'Demo: confirma a cobrança sem gateway (PAYMENTS_SIMULATE). Só a do gateway simulado: a do Mercado Pago responde 409 deposit_not_simulated. Pagar exige e-mail confirmado (RF-006)',
         { auth: true, responses: { '200': { description: 'OK' }, '403': emailNotVerified } },
       ),
     },
     '/payments/webhook': {
       post: op(
         'Carteira',
-        'Webhook do gateway (header x-webhook-secret). Liquida uma vez (idempotente), mas todo corpo recebido com o segredo certo fica no histórico da cobrança (RF-050), sem dados pessoais: aplicado, repetido, de cobrança desconhecida ou fora do formato',
+        'Webhook do gateway simulado (header x-webhook-secret). Liquida uma vez (idempotente), mas todo corpo recebido com o segredo certo fica no histórico da cobrança (RF-050), sem dados pessoais: aplicado, repetido, de cobrança desconhecida ou fora do formato. Não liquida cobrança do Mercado Pago (404)',
         {
           body: { $ref: '#/components/schemas/PaymentWebhook' },
+        },
+      ),
+    },
+    '/payments/webhook/mercadopago': {
+      post: op(
+        'Carteira',
+        'Webhook do Mercado Pago (ADR 73), conferido pela assinatura x-signature (HMAC-SHA256 com a chave secreta do painel sobre data.id, x-request-id e ts). O aviso só diz qual pagamento mudou: a API consulta o pagamento no Mercado Pago e só credita o aprovado, do nosso depósito (external_reference), em BRL e no mesmo valor. Responde 200 com outcome applied, ignored, not_found ou mismatch; 401 com assinatura inválida; 502 se o Mercado Pago não responder (ele repete); 503 sem as credenciais',
+        {
+          body: { $ref: '#/components/schemas/MercadoPagoWebhook' },
         },
       ),
     },
@@ -3606,7 +3620,7 @@ export const openapiDocument: Record<string, any> = {
     '/settings/public': {
       get: op(
         'Plataforma',
-        'Parâmetros públicos: comissão, aprovação tácita, validade da proposta, horas para responder a contraproposta e extensão, mínimos, prazo do saque em dias úteis por forma de recebimento (withdrawalBusinessDays: { pix, bank }, RN-035), trocas, manutenção com a hora prevista da volta (maintenanceReturnAt, RNF-010; nula sem previsão) e regras fixas das contratações (somente leitura)',
+        'Parâmetros públicos: comissão, aprovação tácita, validade da proposta, horas para responder a contraproposta e extensão, mínimos, prazo do saque em dias úteis por forma de recebimento (withdrawalBusinessDays: { pix, bank }, RN-035), trocas, manutenção com a hora prevista da volta (maintenanceReturnAt, RNF-010; nula sem previsão), o gateway dos depósitos (paymentGateway: simulated | mercadopago, ADR 73) e regras fixas das contratações (somente leitura)',
       ),
     },
     '/client-errors': {

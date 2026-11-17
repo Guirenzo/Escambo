@@ -104,7 +104,14 @@ services:
       # O web é servido no mesmo domínio (o nginx faz proxy de /api): CORS só para a própria origem.
       CORS_ORIGINS: https://${DOMAIN:?defina DOMAIN no .env}
       ADMIN_EMAILS: ${ADMIN_EMAILS:?defina ADMIN_EMAILS no .env}
-      # Não existe gateway real ainda (ADR 15): o simulador fica DESLIGADO por padrão.
+      # Depósitos (ADR 73): PAYMENT_GATEWAY=mercadopago cobra pelo Checkout Pro do Mercado Pago (em
+      # sandbox com as credenciais de teste); o webhook dele é https://DOMAIN/api/payments/webhook/mercadopago.
+      # O simulador (ADR 15) fica DESLIGADO por padrão.
+      PAYMENT_GATEWAY: ${PAYMENT_GATEWAY:-simulated}
+      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-}
+      MERCADOPAGO_WEBHOOK_SECRET: ${MERCADOPAGO_WEBHOOK_SECRET:-}
+      MERCADOPAGO_SANDBOX: ${MERCADOPAGO_SANDBOX:-true}
+      MERCADOPAGO_DEPOSIT_EXPIRES_HOURS: ${MERCADOPAGO_DEPOSIT_EXPIRES_HOURS:-72}
       PAYMENTS_SIMULATE: ${PAYMENTS_SIMULATE:-false}
       PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
       DATA_DIR: /repo/apps/api/data

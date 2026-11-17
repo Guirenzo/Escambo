@@ -53,5 +53,5 @@ test('freelancer saca por transferência bancária e filtra o extrato por perío
 
   await period.getByRole('button', { name: 'Limpar período' }).click();
   await expect(ledger.locator('li', { hasText: 'Saque solicitado' })).toBeVisible();
-  await expect(ledger.locator('li', { hasText: 'Depósito via PIX' })).toBeVisible();
+  await expect(ledger.locator('li', { hasText: 'Depósito na carteira' })).toBeVisible();
 });

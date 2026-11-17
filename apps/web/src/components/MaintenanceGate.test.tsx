@@ -45,6 +45,7 @@ const settings = (
   },
   maintenanceMode,
   maintenanceReturnAt,
+  paymentGateway: 'simulated',
 });
 
 function show() {

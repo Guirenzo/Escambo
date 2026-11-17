@@ -4,6 +4,8 @@ import { env } from '../../config/env';
 import { logger } from '../../config/logger';
 import { HttpError } from '../../utils/http-error';
 import { auditService } from '../audit/audit.service';
+import { MercadoPagoError, verifyWebhookSignature } from './mercadopago';
+import { shortText } from './payment-events';
 import {
   createDepositSchema,
   depositIdParamSchema,
@@ -17,7 +19,7 @@ const audit = (req: Request) => ({
   userAgent: req.headers['user-agent'] ?? null,
 });
 
-/** POST /api/wallet/deposits — gera a cobrança PIX de um depósito na carteira. */
+/** POST /api/wallet/deposits — gera a cobrança (PIX simulado ou Mercado Pago) de um depósito. */
 export async function createDeposit(req: Request, res: Response): Promise<void> {
   const input = createDepositSchema.parse(req.body);
   const deposit = await paymentsService.createDeposit(req.user!.uid, input);
@@ -101,4 +103,78 @@ export async function webhook(req: Request, res: Response): Promise<void> {
     ...audit(req),
   });
   res.json({ ok: true, applied: result.applied, status: result.deposit.status });
+}
+
+const firstHeader = (req: Request, name: string): string | undefined => {
+  const value = req.headers[name];
+  return Array.isArray(value) ? value[0] : value;
+};
+
+/** O id do pagamento que o aviso anuncia: na query (`data.id`, o que a assinatura cobre) ou no corpo. */
+function announcedId(req: Request): string | null {
+  const fromQuery = shortText(req.query['data.id'], 64);
+  if (fromQuery) return fromQuery;
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as {
+    data?: { id?: unknown };
+  };
+  const id = body.data?.id;
+  return typeof id === 'string' || typeof id === 'number' ? String(id).slice(0, 64) : null;
+}
+
+/**
+ * POST /api/payments/webhook/mercadopago — aviso do Mercado Pago (ADR 73). Sem sessão de usuário:
+ * vale a assinatura `x-signature` (HMAC com a chave secreta do painel). O aviso só diz qual
+ * pagamento mudou; o service consulta o pagamento na API antes de creditar qualquer coisa.
+ * Responde 200 a todo aviso conferido, mesmo o que não muda nada (senão o Mercado Pago repete),
+ * e 502 se a API dele não responder (aí ele repete mais tarde, que é o que se quer).
+ */
+export async function mercadoPagoWebhook(req: Request, res: Response): Promise<void> {
+  if (!env.MERCADOPAGO_ACCESS_TOKEN || !env.MERCADOPAGO_WEBHOOK_SECRET) {
+    throw new HttpError(503, 'Webhook do Mercado Pago não configurado', 'webhook_disabled');
+  }
+  const dataId = announcedId(req);
+  const signed = verifyWebhookSignature({
+    signature: firstHeader(req, 'x-signature'),
+    requestId: firstHeader(req, 'x-request-id'),
+    dataId: dataId ?? undefined,
+    secret: env.MERCADOPAGO_WEBHOOK_SECRET,
+  });
+  if (!signed) {
+    throw new HttpError(401, 'Assinatura do webhook inválida', 'invalid_webhook_signature');
+  }
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<
+    string,
+    unknown
+  >;
+  const type = shortText(req.query.type, 40) ?? shortText(body.type, 40);
+  // Só pagamento interessa (merchant_order e outros tópicos chegam se ligados no painel).
+  if (type !== 'payment' || !dataId || !/^[A-Za-z0-9_-]+$/.test(dataId)) {
+    res.json({ ok: true, outcome: 'ignored' });
+    return;
+  }
+  let result: Awaited<ReturnType<typeof paymentsService.settleFromMercadoPago>>;
+  try {
+    result = await paymentsService.settleFromMercadoPago(dataId, {
+      event: shortText(body.action, 60),
+      body: req.body,
+    });
+  } catch (err) {
+    if (err instanceof MercadoPagoError) {
+      throw new HttpError(
+        502,
+        'Mercado Pago indisponível; o aviso será repetido',
+        'gateway_unavailable',
+      );
+    }
+    throw err;
+  }
+  void auditService.log({
+    userId: null,
+    action: 'payment_webhook',
+    entityType: 'payment',
+    entityId: result.depositId,
+    newValue: { gateway: 'mercadopago', outcome: result.outcome },
+    ...audit(req),
+  });
+  res.json({ ok: true, outcome: result.outcome });
 }

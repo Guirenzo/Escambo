@@ -44,6 +44,7 @@ import { scrollBehavior } from '../../lib/motion';
 import {
   brl,
   DEPOSIT_STATUS_LABEL,
+  depositMethodLabel,
   dtm,
   WALLET_REASON_LABEL,
   WITHDRAWAL_STATUS_LABEL,
@@ -620,7 +621,9 @@ export function CarteiraView() {
                     <li key={x.id}>
                       <div>
                         <strong>{brl(x.amount)}</strong>
-                        <div className="muted tiny">PIX · {dtm(x.paidAt ?? x.createdAt)}</div>
+                        <div className="muted tiny">
+                          {depositMethodLabel(x)} · {dtm(x.paidAt ?? x.createdAt)}
+                        </div>
                       </div>
                       <div className="acts">
                         <span
