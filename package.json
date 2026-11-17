@@ -19,6 +19,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "coverage:merge": "node scripts/coverage-merge.mjs",
+    "audit:deps": "node scripts/audit.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "db:up": "docker compose up -d db",

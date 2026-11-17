@@ -27,7 +27,7 @@ jobs:
       # ADR 74: o npm audit reprova vulnerabilidade alta ou crítica, menos as exceções com motivo e
       # data-limite em scripts/audit-excecoes.json, que só valem fora das dependências de produção.
       - name: Dependências sem vulnerabilidade alta (npm audit)
-        run: node scripts/audit.mjs
+        run: npm run audit:deps
 
       - name: Lint (ESLint)
         run: npm run lint

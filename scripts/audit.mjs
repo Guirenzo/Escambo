@@ -3,7 +3,10 @@
  * Gate de dependências do CI (ADR 74): reprova vulnerabilidade alta ou crítica do `npm audit`,
  * menos as listadas em scripts/audit-excecoes.json, cada uma com o motivo e uma data-limite.
  *
- *   node scripts/audit.mjs
+ *   npm run audit:deps
+ *
+ * Roda pelo npm (`npm run`), que informa onde está o próprio CLI (`npm_execpath`): o script chama
+ * esse arquivo com o mesmo Node, por caminho absoluto, sem procurar `npm` no PATH nem abrir shell.
  *
  * Uma exceção só vale para alerta que não aparece nas dependências de produção (`--omit=dev`): o
  * que vai para o servidor nunca passa com vulnerabilidade alta. Exceção vencida reprova (é hora de
@@ -11,19 +14,23 @@
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BLOQUEIA = new Set(['high', 'critical']);
 
+const npmCli = process.env.npm_execpath;
+if (!npmCli || !isAbsolute(npmCli)) {
+  console.error('Rode pelo npm: npm run audit:deps');
+  process.exit(2);
+}
+
 function audit(extra) {
-  const r = spawnSync('npm', ['audit', '--json', ...extra], {
+  const r = spawnSync(process.execPath, [npmCli, 'audit', '--json', ...extra], {
     cwd: root,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
-    // No Windows o npm é um .cmd, que o Node só roda por um shell (os argumentos aqui são fixos).
-    shell: process.platform === 'win32',
   });
   let json;
   try {
