@@ -1,0 +1,8 @@
+[
+  {
+    "id": "GHSA-fc5q-39xc-vjpf",
+    "pacote": "picomatch",
+    "ate": "2026-12-31",
+    "motivo": "ReDoS em extglob repetido, sem versão corrigida publicada (a 4.0.7 é a última). Só chega pelo vite e pelo vitest, que casam padrões de arquivo do próprio repositório, nunca entrada de usuário."
+  }
+]

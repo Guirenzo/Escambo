@@ -19,6 +19,11 @@ Vai para a 1.56.0. Depósito pelo Mercado Pago de verdade, em sandbox (RF-041, A
 
 - O gateway simulado (ADR 15) continua o padrão, para a demo, o CI e os testes de ponta a ponta. A simulação nunca paga uma cobrança do Mercado Pago.
 - `Deposit` ganha `checkoutUrl` e o `method` passa a aceitar as outras formas (nulo até o depósito do Mercado Pago ser pago); `GET /api/settings/public` ganha `paymentGateway`.
+- **Gate do `npm audit` no CI** (ADR 74): passa a ser `scripts/audit.mjs`, que reprova alerta alto ou crítico menos as exceções com motivo e data-limite em `scripts/audit-excecoes.json`, e só fora das dependências de produção. A única é a do `picomatch` (GHSA-fc5q-39xc-vjpf, sem versão corrigida, só no vite e no vitest), até 31/12/2026.
+
+### Segurança
+
+- `npm audit fix` nos alertas com correção publicada: `qs` 6.16.0 → 6.17.1 (negação de serviço no `stringify`, chega pelo Express) e o `minimatch` do `typescript-eslint` (10.2.6 → 11.0.9). Ficam alertas moderados, sem correção dentro das faixas, no `glob` e no `minimatch` que o `@sentry/node` traz.
 
 ### Para atualizar
 

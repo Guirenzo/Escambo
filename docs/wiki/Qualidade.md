@@ -89,7 +89,8 @@ deixa de ser aviso e passa a ser erro, para o verde não esconder uma entrega de
 - **Tipos compartilhados** (`packages/types`): mudar um contrato de API quebra o `tsc` do lado que não acompanhou.
 - **Relógio único** nos prazos, com um teste que proíbe `NOW()` do MySQL nesses arquivos (ADR 57).
 - **Migrations** só aditivas, aplicadas pelo mesmo runner no CI (E2E) e em produção, com ledger e checksum.
-- **Dependências:** `npm audit --audit-level=high` roda no CI e barra vulnerabilidade alta; o Dependabot abre,
+- **Dependências:** o `npm audit` roda no CI (`scripts/audit.mjs`) e barra vulnerabilidade alta, menos as
+  exceções datadas de `scripts/audit-excecoes.json`, que nunca valem para produção (ADR 74); o Dependabot abre,
   toda semana, os PRs de versões menores e correções do npm e das actions (versão maior é atualizada de
   propósito, num bloco próprio) (`.github/dependabot.yml`).
 - **Revisão por pares:** o fluxo é Pull Request com revisão e bugs em Issues, com os modelos em `.github/`

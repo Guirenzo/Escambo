@@ -24,8 +24,10 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      # ADR 74: o npm audit reprova vulnerabilidade alta ou crítica, menos as exceções com motivo e
+      # data-limite em scripts/audit-excecoes.json, que só valem fora das dependências de produção.
       - name: Dependências sem vulnerabilidade alta (npm audit)
-        run: npm audit --audit-level=high
+        run: node scripts/audit.mjs
 
       - name: Lint (ESLint)
         run: npm run lint
