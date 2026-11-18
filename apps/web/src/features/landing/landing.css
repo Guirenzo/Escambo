@@ -235,12 +235,16 @@ html:has(.lp-header) {
     display: none;
   }
 }
+/* Entre o tablet e o desktop, as cinco âncoras ficam numa linha só (com duas, a âncora pararia
+   atrás do cabeçalho grudado): a letra estreita da identidade e menos respiro entre elas. */
 @media (min-width: 48rem) and (max-width: 63.99rem) {
   .lp-header-inner {
     column-gap: 8px;
   }
   .lp .lp-nav a {
-    padding: 0 8px;
+    padding: 0 6px;
+    font-size: 0.9375rem;
+    font-variation-settings: 'wdth' 76;
   }
 }
 .lp-header-actions {
