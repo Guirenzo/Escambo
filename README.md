@@ -47,13 +47,13 @@ explicável**.
 
 ---
 
-## Situação atual: 1.55.0
+## Situação atual: 1.56.0
 
-**No ar:** https://escambo.68-183-49-126.sslip.io (VPS na DigitalOcean, HTTPS automático pelo Caddy, deploy pelo GitHub Actions a cada merge na `main`, monitoramento com Prometheus e Grafana). Os pagamentos são simulados (é uma instância de demonstração, sem dinheiro de verdade); os e-mails saem de verdade, pelo SMTP do Brevo.
+**No ar:** https://escambo.68-183-49-126.sslip.io (VPS na DigitalOcean, HTTPS automático pelo Caddy, deploy pelo GitHub Actions a cada merge na `main`, monitoramento com Prometheus e Grafana). Os depósitos são pelo Mercado Pago em sandbox (credenciais de teste, sem dinheiro de verdade); o login com Google e os avisos push no navegador estão ligados; os e-mails saem de verdade, pelo SMTP do Brevo.
 
 **91 dos 92 requisitos funcionais estão implementados**; o que resta ficou fora do escopo por decisão registrada. A situação de cada requisito, com o código e o teste que provam, está em [rastreabilidade](./docs/rastreabilidade.md); o que mudou em cada versão, no [CHANGELOG](./CHANGELOG.md); e o porquê de cada escolha, nas [decisões de arquitetura](./docs/decisoes.md) (75 ADRs).
 
-Na 1.54.0, o CI rodou 5.848 testes de unidade na API, 2.901 de componente no web, 742 de integração contra um MySQL real e 308 cenários de ponta a ponta (desktop e celular).
+Na 1.56.0, o CI rodou 5.950 testes de unidade na API, 2.921 de componente no web, 749 de integração contra um MySQL real e 308 cenários de ponta a ponta (desktop e celular).
 
 ## 🚀 Rodar em 2 minutos
 

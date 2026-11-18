@@ -5,9 +5,9 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
-## [Não lançado]
+## [1.56.0] — 2026-11-17
 
-Vai para a 1.56.0. Depósito pelo Mercado Pago de verdade, em sandbox (RF-041, ADR 73). RF: 91 implementados e 1 fora do escopo; RNF: 33, 6, 0 e 3.
+Depósito pelo Mercado Pago de verdade, em sandbox (RF-041, ADR 73), com o primeiro depósito de ponta a ponta em produção. Na mesma data, a produção ligou o login com Google e o push no navegador. RF: 91 implementados e 1 fora do escopo; RNF: 33, 6, 0 e 3.
 
 ### Adicionado
 
@@ -21,6 +21,7 @@ Vai para a 1.56.0. Depósito pelo Mercado Pago de verdade, em sandbox (RF-041, A
 - `Deposit` ganha `checkoutUrl` e o `method` passa a aceitar as outras formas (nulo até o depósito do Mercado Pago ser pago); `GET /api/settings/public` ganha `paymentGateway`.
 - **Gate do `npm audit` no CI** (ADR 74): passa a ser `scripts/audit.mjs`, que reprova alerta alto ou crítico menos as exceções com motivo e data-limite em `scripts/audit-excecoes.json`, e só fora das dependências de produção. A única é a do `picomatch` (GHSA-fc5q-39xc-vjpf, sem versão corrigida, só no vite e no vitest), até 31/12/2026.
 - **Documentação (#70):** o ADR 75 registra que, sem domínio próprio, não há Cloudflare na frente nem WAF ou anti-DDoS nesta fase, e lista a mitigação que existe; o RNF-019 passa a Fora do escopo. A rastreabilidade traz o estado da produção em 17/11/2026, e o RNF-017 passa a Implementado, com a `FIELD_ENCRYPTION_KEY` configurada na VPS. O RFC ganha a revisão 2.7, com o que mudou desde a aprovação.
+- **Dependências:** de produção, `@sentry/node` 11.12.0, `nodemailer` 10.5.0, `swagger-ui-dist` 5.35.0, `@tanstack/react-query` 5.107.1 e `lucide-react` 1.73.0 (#74); de desenvolvimento, `prettier` 3.10.1, `supertest` 7.3.2, `@playwright/test` 1.65.1 e `@testing-library/user-event` 14.6.10 (#73).
 
 ### Corrigido
 
