@@ -26,6 +26,7 @@ import { Pack } from './Pack';
 import { PORTRAITS } from './photos';
 import { PublicFooter } from './PublicFooter';
 import { PublicHeader, type SectionLink } from './PublicHeader';
+import { SecuritySection } from './SecuritySection';
 import { Showcase, type ShowcaseFilter } from './Showcase';
 import { TradeSection } from './TradeSection';
 import './landing.css';
@@ -36,6 +37,7 @@ import './album-motion.css';
 import './hero.css';
 import './trade.css';
 import './sections.css';
+import './security.css';
 
 /**
  * Topo: uma mensagem e uma ação. A promessa em letra grande e a busca (filtra a vitrine logo
@@ -289,8 +291,8 @@ function FinalCta({ barter }: { barter: boolean }) {
 
 /**
  * Página inicial pública (`/` sem sessão): a busca e a vitrine com serviços de verdade, as
- * categorias, como funciona para cada lado, os jeitos de pagar, a troca com a calculadora da torna
- * e as regras que protegem os dois lados. Taxa, prazos e saque mínimo vêm da API
+ * categorias, como funciona para cada lado, os jeitos de pagar, a troca com a calculadora da torna,
+ * as regras que protegem os dois lados e a segurança da conta. Taxa, prazos e saque mínimo vêm da API
  * (`/api/settings/public`); as categorias, de `/api/categories`; os serviços, de `/api/services`.
  */
 export function LandingView() {
@@ -316,6 +318,7 @@ export function LandingView() {
     { href: '#como-funciona', label: 'Como funciona' },
     ...(barter ? [{ href: '#troca', label: 'Troca' }] : []),
     { href: '#garantia', label: 'Garantia' },
+    { href: '#seguranca', label: 'Segurança' },
     { href: '#duvidas', label: 'Dúvidas' },
   ];
 
@@ -354,6 +357,7 @@ export function LandingView() {
         <Ways facts={facts} />
         {barter && <TradeSection fee={facts.fee} />}
         <GuaranteeBento tacitDays={facts.tacitDays} />
+        <SecuritySection mercadoPago={settings.data?.paymentGateway === 'mercadopago'} />
         <LandingFaq facts={facts} />
         <FinalCta barter={barter} />
       </main>

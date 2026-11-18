@@ -1,0 +1,157 @@
+/* =====================================================================
+   Álbum de troca: a segurança da conta (#78). A mesa verde e, sobre ela, uma ficha de papel com
+   um carimbo por linha. Vem depois de sections.css. Tokens em album-app.css.
+   ===================================================================== */
+
+.lp-sec {
+  background: var(--al-cover);
+  color: #fff;
+}
+.lp-sec-grid {
+  display: grid;
+  gap: clamp(28px, 4vw, 56px);
+  align-items: center;
+}
+@media (min-width: 56rem) {
+  .lp-sec-grid {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  }
+}
+.lp-sec .lp-head {
+  margin-bottom: 0;
+}
+.lp-sec .lp-head h2 {
+  color: #fff;
+}
+.lp-sec .lp-sub,
+.lp-sec-links {
+  color: var(--al-on-cover-2);
+}
+.lp-sec-links {
+  max-width: 60ch;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+.lp .lp-sec-links a {
+  color: var(--al-amber-2);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+.lp .lp-sec-links a:hover {
+  color: #fff;
+}
+.lp .lp-sec a:focus-visible {
+  outline: 3px solid var(--al-amber);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* A ficha: papel branco, torta, com o quadro pontilhado do álbum. Endireita no ponteiro. */
+.lp-sec-sheet {
+  padding: clamp(20px, 3vw, 32px);
+  border-radius: 14px;
+  background: var(--al-paper);
+  color: var(--al-ink);
+  box-shadow: var(--al-shadow-lift);
+  outline: 2px dashed var(--al-dot);
+  outline-offset: -12px;
+  rotate: -1.2deg;
+  transition: rotate 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.lp-sec-sheet:hover {
+  rotate: 0deg;
+}
+.lp-sec-sheet-title {
+  margin: 0 0 6px;
+  padding-inline: 4px;
+  color: var(--al-green);
+  font-family: var(--al-display);
+  font-size: 0.8125rem;
+  font-variation-settings: 'wdth' 85;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.lp-sec-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lp-sec-rows > li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  align-items: start;
+  padding: 16px 4px;
+}
+.lp-sec-rows > li + li {
+  border-top: 1px solid #dde8e1;
+}
+.lp-sec-ico {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--al-print);
+  color: var(--al-green);
+}
+.lp-band .lp-sec-rows h3 {
+  margin: 2px 0 4px;
+  color: var(--al-ink);
+  font-size: 1.1875rem;
+  line-height: 1.2;
+}
+.lp-sec-rows p {
+  margin: 0;
+  max-width: 52ch;
+  color: var(--al-ink-2);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+/* O carimbo: a etiqueta âmbar, torta; "Opcional" é só o contorno. */
+.lp-sec-stamp {
+  align-self: center;
+  padding: 6px 10px 4px;
+  border: 2px solid var(--al-amber);
+  border-radius: 6px;
+  background: var(--al-amber);
+  color: var(--al-cover);
+  font-family: var(--al-display);
+  font-size: 0.75rem;
+  font-variation-settings: 'wdth' 85;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  rotate: -4deg;
+}
+.lp-sec-rows > li:nth-child(even) .lp-sec-stamp {
+  rotate: 3deg;
+}
+.lp-sec-stamp.is-opt {
+  border-color: var(--al-green);
+  background: transparent;
+  color: var(--al-green);
+}
+
+/* No celular, o carimbo desce para baixo do texto, alinhado com ele. */
+@media (max-width: 30rem) {
+  .lp-sec-rows > li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .lp-sec-stamp {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-sec-sheet {
+    transition: none;
+  }
+}

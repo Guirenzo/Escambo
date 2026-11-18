@@ -128,6 +128,7 @@ describe('LandingView: estrutura', () => {
       'Como funciona',
       'Troca',
       'Garantia',
+      'Segurança',
       'Dúvidas',
     ]);
     for (const a of links) {
@@ -144,6 +145,7 @@ describe('LandingView: estrutura', () => {
       'Três jeitos de fechar negócio',
       'Como funciona uma troca',
       'Combinado é garantido',
+      'Sua conta e o seu dinheiro, trancados',
       'Perguntas frequentes',
       'Comece com o que você já sabe fazer.',
     ];
