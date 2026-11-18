@@ -5,6 +5,18 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [Não lançado]
+
+### Adicionado
+
+- **Segurança da conta na página inicial** (#78): a seção "Sua conta e o seu dinheiro, trancados", uma ficha com um carimbo por linha, ganha âncora no topo ("Segurança"). Diz só o que o sistema faz:
+  - o cartão fica fora do Escambo (página do Mercado Pago, ou depósito por PIX no gateway simulado);
+  - um e-mail avisa quando a senha, o e-mail ou o login com Google mudam;
+  - o CPF e os dados de saque ficam cifrados;
+  - a verificação em duas etapas é opcional.
+
+  Pedida na validação com a comunidade do PAC VIII.
+
 ## [1.56.0] — 2026-11-17
 
 Depósito pelo Mercado Pago de verdade, em sandbox (RF-041, ADR 73), com o primeiro depósito de ponta a ponta em produção. Na mesma data, a produção ligou o login com Google e o push no navegador. RF: 91 implementados e 1 fora do escopo; RNF: 33, 6, 0 e 3.
