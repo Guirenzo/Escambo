@@ -786,7 +786,9 @@ produto: **Checkout Pro**; não é loja de plataforma pronta. Crie.
 fica só na API; a Public Key não é usada.
 
 **3. Contas de teste.** Em **Contas de teste**, crie uma conta **Comprador** (país Brasil). É com ela que se paga no
-sandbox: o Mercado Pago não deixa a mesma conta vender e comprar. Anote o usuário e a senha que ele mostra.
+sandbox: o Mercado Pago não deixa a mesma conta vender e comprar. As credenciais de teste do passo 2 são de uma conta
+**vendedora** de teste (o "Usuário de teste" que aparece embaixo delas): não use essa para pagar, o botão **Pagar**
+fica desabilitado. O usuário, a senha e o código de verificação do comprador ficam no cartão dele, em Contas de teste.
 
 **4. Webhook.** Na aplicação, **Webhooks** → **Configurar notificações**. Nos dois modos (teste e produção), a URL
 `https://SEU_DOMINIO/api/payments/webhook/mercadopago` e o evento **Pagamentos**. Salve e copie a **Assinatura secreta**
@@ -812,14 +814,17 @@ docker compose -f docker-compose.prod.yml up -d    # recria a API com as variáv
 **6. Conferir.** `curl -s https://SEU_DOMINIO/api/settings/public` traz `"paymentGateway":"mercadopago"`. No painel do
 Mercado Pago, **Webhooks** → **Simular**: a resposta é `200` com `"outcome":"not_found"` (o pagamento simulado não
 existe), o que prova que a assinatura confere. Depois, de ponta a ponta: na Carteira, **Depositar**, R$ 10, **Gerar
-cobrança de R$ 10,00 no Mercado Pago** e **Pagar no Mercado Pago**. Numa janela anônima, entre com a conta compradora de
-teste e pague com um cartão de teste do Mercado Pago (Mastercard `5031 4332 1540 6351`, CVV `123`, validade `11/30`,
-titular `APRO` para aprovado; `OTHE` recusa). Em segundos o modal mostra "Depósito confirmado" e o extrato, a forma
-"Cartão de crédito". `docker compose -f docker-compose.prod.yml logs api | grep -i "mercado pago"` não deve mostrar erro.
+cobrança de R$ 10,00 no Mercado Pago** e **Pagar no Mercado Pago**. Abra o link numa **janela anônima** (na janela
+normal o Mercado Pago usa a sua conta de verdade, com os seus cartões) e, nela, permita os cookies de terceiros no
+ícone do olho da barra de endereço: sem eles o botão **Pagar** não habilita. Entre com a conta **compradora** de teste
+("Com sua conta Mercado Pago") e pague com um dos cartões de teste que já vêm nela, CVV `123`. Em segundos o modal
+mostra "Depósito confirmado" e o extrato, a forma "Cartão de crédito".
+`docker compose -f docker-compose.prod.yml logs api | grep -i "mercado pago"` não deve mostrar erro.
 
-**Se a página do sandbox recusar as credenciais** (o painel às vezes entrega credenciais de uma conta vendedora de teste
-em vez das "de teste"), ponha `MERCADOPAGO_SANDBOX=false` e repita: a conta de teste já isola o dinheiro, e o aviso
-"Ambiente de teste" some do modal porque a página deixa de ser a `sandbox.`.
+**O link é sempre o `init_point`** (a página normal do Checkout Pro), mesmo com credenciais de teste: com as credenciais
+da conta vendedora de teste, o `sandbox_init_point` dá "Ops, ocorreu um erro". O dinheiro fica isolado porque vendedor e
+comprador são contas de teste. `MERCADOPAGO_SANDBOX=true` só liga o aviso "Ambiente de teste" no modal (`paymentSandbox`
+em `/api/settings/public`).
 
 **Como funciona** (ADR 73): o aviso do Mercado Pago só diz qual pagamento mudou; a API consulta o pagamento com o token e
 só credita o aprovado, do nosso depósito, em reais e no mesmo valor. Recusado ou pendente fica no histórico da cobrança

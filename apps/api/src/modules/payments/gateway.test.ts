@@ -121,7 +121,7 @@ describe('gateway do Mercado Pago (Checkout Pro)', () => {
     expect(charge.externalId).toBe('R1');
   });
 
-  it('a cobrança é a página do sandbox, vence no prazo do Mercado Pago e guarda a resposta', async () => {
+  it('a cobrança é a página do Checkout Pro (init_point), vence no prazo do Mercado Pago e guarda a resposta', async () => {
     const configured = env.MERCADOPAGO_DEPOSIT_EXPIRES_HOURS;
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-02T15:00:00.000Z'));
@@ -137,7 +137,7 @@ describe('gateway do Mercado Pago (Checkout Pro)', () => {
       expect(charge).toEqual({
         externalId: 'REF9',
         pixCode: null,
-        checkoutUrl: body.sandbox_init_point,
+        checkoutUrl: body.init_point,
         expiresAt: new Date('2026-10-04T15:00:00.000Z'),
         raw: body,
       });

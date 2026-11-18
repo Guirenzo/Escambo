@@ -402,6 +402,7 @@ describe('settingsService (ADR 32/33)', () => {
       maintenanceMode: true,
       maintenanceReturnAt: null,
       paymentGateway: 'simulated',
+      paymentSandbox: false,
     });
   });
 
@@ -487,6 +488,7 @@ describe('settingsService (ADR 32/33)', () => {
       maintenanceMode: false,
       maintenanceReturnAt: null,
       paymentGateway: 'simulated',
+      paymentSandbox: false,
     });
   });
 
@@ -496,6 +498,21 @@ describe('settingsService (ADR 32/33)', () => {
       expect((await settingsService.publicSettings()).paymentGateway).toBe('mercadopago');
     } finally {
       env.PAYMENT_GATEWAY = 'simulated';
+    }
+  });
+
+  it('paymentSandbox só com o Mercado Pago em credenciais de teste (MERCADOPAGO_SANDBOX)', async () => {
+    const saved = env.MERCADOPAGO_SANDBOX;
+    try {
+      env.MERCADOPAGO_SANDBOX = true;
+      expect((await settingsService.publicSettings()).paymentSandbox).toBe(false);
+      env.PAYMENT_GATEWAY = 'mercadopago';
+      expect((await settingsService.publicSettings()).paymentSandbox).toBe(true);
+      env.MERCADOPAGO_SANDBOX = false;
+      expect((await settingsService.publicSettings()).paymentSandbox).toBe(false);
+    } finally {
+      env.PAYMENT_GATEWAY = 'simulated';
+      env.MERCADOPAGO_SANDBOX = saved;
     }
   });
 });

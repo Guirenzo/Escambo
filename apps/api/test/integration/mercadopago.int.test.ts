@@ -132,7 +132,8 @@ describe('depósito pelo Mercado Pago (ADR 73)', () => {
     const token = await cliente();
     const dep = await deposito(token, 90);
 
-    expect(dep.checkoutUrl).toMatch(/^https:\/\/sandbox\.mercadopago\.com\.br\//);
+    // Sempre o init_point, mesmo em sandbox (o sandbox_init_point quebra com o vendedor de teste).
+    expect(dep.checkoutUrl).toMatch(/^https:\/\/www\.mercadopago\.com\.br\//);
     expect(dep.method).toBeNull();
     const pref = preferences.at(-1)!;
     expect(pref).toMatchObject({

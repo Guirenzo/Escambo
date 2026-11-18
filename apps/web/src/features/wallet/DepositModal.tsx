@@ -20,15 +20,6 @@ import { useEmailVerified, VerifyEmailModal } from '../../components/VerifyEmail
 const PRESETS = [50, 100, 200, 500];
 const MIN = 10;
 
-/** A página do Mercado Pago é a do sandbox: credenciais de teste, nada é cobrado de verdade. */
-function isSandboxCheckout(url: string): boolean {
-  try {
-    return new URL(url).hostname.startsWith('sandbox.');
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Depósito na carteira: escolhe o valor → cobrança → aguarda a confirmação do gateway (a tela
  * consulta a API sozinha). Com o gateway simulado (demonstração), a cobrança é um PIX (QR + copia
@@ -51,7 +42,11 @@ export function DepositModal({
 }) {
   const toast = useToast();
   const qc = useQueryClient();
-  const mercadoPago = usePublicSettings().data?.paymentGateway === 'mercadopago';
+  const settings = usePublicSettings().data;
+  const mercadoPago = settings?.paymentGateway === 'mercadopago';
+  // Credenciais de teste do Mercado Pago: o link é o mesmo da produção (init_point), então o aviso
+  // vem da configuração, não do endereço.
+  const sandbox = settings?.paymentSandbox === true;
   const create = useCreateDeposit();
   const simulate = useSimulateDeposit();
   const [amount, setAmount] = useState(
@@ -217,7 +212,7 @@ export function DepositModal({
             Aguardando a confirmação do pagamento… esta tela atualiza sozinha. Boleto pode levar até
             3 dias úteis para compensar.
           </p>
-          {isSandboxCheckout(current.checkoutUrl) && (
+          {sandbox && (
             <div className="demo-box">
               <div>
                 <strong>Ambiente de teste do Mercado Pago</strong>
