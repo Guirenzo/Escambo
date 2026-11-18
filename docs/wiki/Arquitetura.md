@@ -48,15 +48,18 @@ flowchart LR
 
 **Diferenças do desenho-alvo da RFC** (os ADRs estão em [Decisões de Arquitetura](Decisões-de-Arquitetura)):
 
-- **Pagamentos:** não há gateway real ainda; o depósito PIX é simulado e o webhook já existe (ADR 15).
+- **Pagamentos:** o gateway fica atrás de uma interface (ADR 15): simulado na demo e no CI, e o Mercado Pago pelo
+  Checkout Pro em sandbox, só para o depósito (ADR 73).
 - **Arquivos:** ficam num volume da própria VPS, não num storage S3 (anexos do chat no ADR 29, imagens de perfil e portfólio no ADR 36).
-- **Borda:** Caddy na VPS no lugar do Cloudflare; HTTPS e HSTS resolvidos nele (ADR 20).
+- **Borda:** Caddy na VPS no lugar do Cloudflare; HTTPS e HSTS resolvidos nele (ADR 20). Sem domínio próprio não
+  há Cloudflare na frente, e nesta fase não há CDN, WAF nem anti-DDoS (ADR 75).
 - **Processo e deploy:** contêineres com Docker Compose e imagens no GHCR, postas no ar pelo workflow Deploy, no
   lugar de PM2 com `git pull` no servidor (ADR 59).
 - **Testes:** Vitest no lugar do Jest (mesma API, e o mesmo runner no back e no front).
 - **Monitoramento:** Prometheus, Grafana e sonda blackbox na própria VPS, com um monitor externo recomendado, no
   lugar de depender só do UptimeRobot (ADR 59). Analytics de produto não foi entregue.
-- **Login social (OAuth2):** fora do escopo entregue (sem ADR próprio); sessão por JWT com refresh rotativo.
+- **Login social (OAuth2):** só o Google, pelo fluxo de servidor com PKCE (ADR 72); sessão por JWT com refresh
+  rotativo.
 - **Mobile:** o Web é um PWA instalável com avisos push; o app nativo segue como Fase 2 (sem ADR próprio).
 
 ## Componentes da API (C4 nível 3)

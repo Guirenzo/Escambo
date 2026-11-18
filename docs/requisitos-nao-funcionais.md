@@ -68,9 +68,9 @@ Confiabilidade    → integridade de dados, tratamento de erros
 | RNF-014 | O sistema deve implementar rate limiting para prevenir abuso e ataques de força bruta | Máximo de 10 tentativas de login por IP em 5 minutos | Alta | Implementado |
 | RNF-015 | O sistema deve validar e sanitizar todos os dados de entrada para prevenir injeção | Validação via schema (Zod/Joi) em 100% das rotas | Alta | Implementado |
 | RNF-016 | O sistema deve implementar proteção contra CSRF nas rotas autenticadas | Tokens CSRF ou uso exclusivo de JWT no header Authorization | Alta | Implementado |
-| RNF-017 | Dados sensíveis (CPF, dados bancários) devem ser armazenados com criptografia adicional | AES-256 para campos sensíveis no banco | Alta | Parcial |
+| RNF-017 | Dados sensíveis (CPF, dados bancários) devem ser armazenados com criptografia adicional | AES-256 para campos sensíveis no banco | Alta | Implementado |
 | RNF-018 | O sistema deve registrar tentativas de acesso não autorizado | Log de erros 401/403 com IP e timestamp | Alta | Implementado |
-| RNF-019 | A plataforma deve utilizar CDN com proteção contra DDoS | Cloudflare com WAF ativado | Alta | Não implementado |
+| RNF-019 | A plataforma deve utilizar CDN com proteção contra DDoS | Cloudflare com WAF ativado | Alta | Fora do escopo |
 | RNF-020 | Segredos e variáveis de ambiente nunca devem estar no repositório | Uso de `.env` + secrets manager; `.gitignore` validado | Alta | Parcial |
 
 ---
