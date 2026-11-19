@@ -126,7 +126,7 @@ Confiabilidade    → integridade de dados, tratamento de erros
 | ID | Descrição | Métrica | Prioridade | Situação |
 |---|---|---|---|---|
 | RNF-039 | O sistema deve tratar erros inesperados sem expor stack traces ao usuário | Try/catch global com resposta padronizada em formato JSON | Alta | Implementado |
-| RNF-040 | O sistema deve ter monitoramento de erros em produção | Integração com ferramenta de APM/error tracking (ex: Sentry) | Média | Parcial |
+| RNF-040 | O sistema deve ter monitoramento de erros em produção | Integração com ferramenta de APM/error tracking (ex: Sentry) | Média | Implementado |
 
 ---
 

@@ -1,7 +1,7 @@
 # Rastreabilidade dos requisitos — Escambo
 
-> **Versão do código:** 1.56.0
-> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0, a 1.48.0, a 1.49.0, a 1.50.0, a 1.51.0, a 1.52.0, a 1.53.0, a 1.54.0 e a 1.56.0, e revista em 17/11/2026 com o estado da produção
+> **Versão do código:** 1.57.0
+> **Auditoria:** 19/10/2026, requisito por requisito, contra o código e os testes do repositório, atualizada com a 1.43.0, a 1.44.0, a 1.45.0, a 1.46.0, a 1.47.0, a 1.48.0, a 1.49.0, a 1.50.0, a 1.51.0, a 1.52.0, a 1.53.0, a 1.54.0, a 1.56.0 e a 1.57.0, e revista em 19/11/2026 com o estado da produção
 > **Autor:** Guilherme Renzo
 
 Os documentos de requisitos foram escritos no planejamento, e a coluna de situação ficou para trás conforme o sistema crescia. Esta página registra o que existe **de verdade** em cada requisito: onde está no código, qual teste prova e, quando não está completo, o que falta ou qual decisão registrada (ADR) explica a lacuna. As situações aqui são as mesmas da coluna **Status** de [requisitos funcionais](./requisitos-funcionais.md) e da coluna **Situação** de [requisitos não funcionais](./requisitos-nao-funcionais.md).
@@ -16,11 +16,11 @@ Os documentos de requisitos foram escritos no planejamento, e a coluna de situa�
 | | Implementado | Parcial | Não implementado | Fora do escopo | Total |
 |---|---|---|---|---|---|
 | Requisitos funcionais | 91 | 0 | 0 | 1 | 92 |
-| Requisitos não funcionais | 33 | 6 | 0 | 3 | 42 |
+| Requisitos não funcionais | 34 | 5 | 0 | 3 | 42 |
 
 As regras de negócio têm a própria matriz de situação, em [regras de negócio](./regras-de-negocio.md), seção 11.
 
-**Produção em 17/11/2026** (https://escambo.68-183-49-126.sslip.io, droplet da DigitalOcean, Caddy na borda): a `FIELD_ENCRYPTION_KEY` está configurada; o monitoramento (Prometheus, sonda blackbox, node-exporter e Grafana) está no ar; o login com Google está ligado (issue #67, fechada); o push no navegador está ligado com as chaves VAPID e falta o teste num navegador de verdade (#68); o Mercado Pago em sandbox está implantado e falta o depósito de ponta a ponta com as credenciais de teste (#66); o Sentry ainda não está ligado (#69). Não há WAF nem anti-DDoS, por decisão (ADR 75).
+**Produção em 19/11/2026** (https://escambo.68-183-49-126.sslip.io, droplet da DigitalOcean, Caddy na borda): a `FIELD_ENCRYPTION_KEY` está configurada; o monitoramento (Prometheus, sonda blackbox, node-exporter e Grafana) está no ar; o login com Google está ligado (issue #67); o push no navegador está ligado com as chaves VAPID e foi testado num aparelho de verdade (#68); o primeiro depósito pelo Mercado Pago em sandbox foi creditado de ponta a ponta (#66); o Sentry está ligado e recebeu o evento de teste (#69). As quatro issues estão fechadas. Não há WAF nem anti-DDoS, por decisão (ADR 75).
 
 ## Requisitos funcionais
 
@@ -162,7 +162,7 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 | RNF-037 | Implementado | audit_logs só aceita DELETE de linha com mais de 90 dias (trigger da 0046); AUDIT_LOG_MIN_RETENTION_DAYS = 90 no código e no env; expurgo opcional purge-audit-logs (N ≥ 90, desligado); rotação do log dos containers no docker-compose.prod.yml. Testes: audit.purge.test.ts, env.audit.test.ts, compose.retention.test.ts, ledger-imutavel.int.test.ts | Desde a 1.45.0 (ADR 63). Os 90 dias valem no banco; o log dos containers gira por tamanho (cerca de 115 dias com 10 mil requisições por dia). |
 | RNF-038 | Implementado | payments.repository.ts settle, withdrawal.repository.ts createIfSufficient/closeAndRefund e contracts/disputes/barter repositories (beginTransaction/commit/rollback); payments.repository.test.ts 'settle (..., RNF-038)', withdrawal.repository.test.ts 'createIfSufficient (RN-034, RNF-038)', disputes.repository.test.ts; carteira-travas.int.test.ts, payments-flow.int.test.ts | — |
 | RNF-039 | Implementado | apps/api/src/middlewares/error-handler.ts (500 genérico em JSON, sem stack), 404 JSON em app.ts, unhandledRejection/uncaughtException em server.ts; error-handler.test.ts 'falha do servidor responde 500 sem detalhe nenhum...' e os testes *.http.test.ts marcados RNF-039 | — |
-| RNF-040 | Parcial | apps/api/src/config/sentry.ts (servidor e captureClientError); POST /api/client-errors com log, métrica escambo_client_errors_total e alerta ErrosNoApp; report-error.ts e ErrorBoundary.tsx no web. Testes: sentry.test.ts, client-errors.http.test.ts, report-error.test.ts, ErrorBoundary.test.tsx | Os erros do servidor e do navegador chegam ao log, à métrica e ao Sentry. Falta só ligar o SENTRY_DSN no .env da VPS, que depende do dono (ADR 59, issue #69). |
+| RNF-040 | Implementado | apps/api/src/config/sentry.ts (servidor e captureClientError); POST /api/client-errors com log, métrica escambo_client_errors_total e alerta ErrosNoApp; report-error.ts e ErrorBoundary.tsx no web. Testes: sentry.test.ts, client-errors.http.test.ts, report-error.test.ts, ErrorBoundary.test.tsx | Os erros do servidor e do navegador chegam ao log, à métrica e ao Sentry. O SENTRY_DSN está ligado na produção desde 18/11/2026, e o evento de teste chegou ao projeto no Sentry (ADR 59, issue #69, fechada). |
 | RNF-041 | Implementado | apps/api/src/modules/lgpd/lgpd.export.ts (cópia JSON gerada na hora do pedido, ADR 17); lgpd-flow.int.test.ts 'portabilidade: cópia gerada na hora, download só do titular...'; adr61-export-isolamento.int.test.ts | O prazo fica bem abaixo de 15 dias úteis porque a cópia sai na hora. O RF-090 continua 'Pendente' em requisitos-funcionais.md: a parte de exportação está desatualizada. |
 | RNF-042 | Parcial | TOTP (RF-090, ADR 66); segredo do TOTP gravado só cifrado com AES-256-GCM (field-crypto, enc:v1:), 503 mfa_unavailable sem a chave, leitura que falha fechada; códigos de recuperação só como hash; chave PIX e dados bancários cifrados (RNF-017, ADR 62). Testes: dois-fatores.int.test.ts (SELECT direto mostra enc:v1:), mfa.service.test.ts, field-crypto.test.ts | Desde a 1.48.0, MFA via TOTP e os segredos cifrados. A FIELD_ENCRYPTION_KEY está configurada, mas no .env da VPS: falta o secrets manager. |
 
@@ -170,6 +170,6 @@ As regras de negócio têm a própria matriz de situação, em [regras de negóc
 
 <div align="center">
 
-*rastreabilidade.md — Escambo v1.56.0 — Católica SC — 2026*
+*rastreabilidade.md — Escambo v1.57.0 — Católica SC — 2026*
 
 </div>

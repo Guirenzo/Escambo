@@ -135,7 +135,7 @@ commit. Erro do cliente (validação, origem recusada pelo CORS, URL ou corpo ma
 **Nenhum dado pessoal vai junto**: sem usuário, cookies, cabeçalhos, corpos, query string, SQL, variáveis locais
 nem o rastro das chamadas anteriores (a URL de um push identifica o aparelho); a mensagem de erro do banco vira só
 o código (`ER_DUP_ENTRY`), e qualquer e-mail no texto vira `[email]`. É o mesmo cuidado de LGPD do log. Sem o
-DSN, o pacote nem é carregado.
+DSN, o pacote nem é carregado. Na produção, o DSN está ligado desde 18/11/2026 (issue #69).
 
 1. Crie um projeto Node.js em [sentry.io](https://sentry.io) (plano gratuito) e copie o DSN.
 2. No `.env` da VPS: `SENTRY_DSN=https://…` (e, se quiser, `SENTRY_ENVIRONMENT=producao`).
