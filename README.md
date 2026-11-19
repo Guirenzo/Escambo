@@ -47,11 +47,13 @@ explicável**.
 
 ---
 
-## Situação atual: 1.56.0
+## Situação atual: 1.57.0
 
-**No ar:** https://escambo.68-183-49-126.sslip.io (VPS na DigitalOcean, HTTPS automático pelo Caddy, deploy pelo GitHub Actions a cada merge na `main`, monitoramento com Prometheus e Grafana). Os depósitos são pelo Mercado Pago em sandbox (credenciais de teste, sem dinheiro de verdade); o login com Google e os avisos push no navegador estão ligados; os e-mails saem de verdade, pelo SMTP do Brevo.
+**No ar:** https://escambo.68-183-49-126.sslip.io (VPS na DigitalOcean, HTTPS automático pelo Caddy, deploy pelo GitHub Actions a cada merge na `main`, monitoramento com Prometheus e Grafana, erros no Sentry). Os depósitos são pelo Mercado Pago em sandbox (credenciais de teste, sem dinheiro de verdade); o login com Google e os avisos push no navegador estão ligados; os e-mails saem de verdade, pelo SMTP do Brevo.
 
-**91 dos 92 requisitos funcionais estão implementados**; o que resta ficou fora do escopo por decisão registrada. A situação de cada requisito, com o código e o teste que provam, está em [rastreabilidade](./docs/rastreabilidade.md); o que mudou em cada versão, no [CHANGELOG](./CHANGELOG.md); e o porquê de cada escolha, nas [decisões de arquitetura](./docs/decisoes.md) (75 ADRs).
+A 1.57.0 traz a seção de segurança na página inicial, pedida na validação com usuários reais do PAC VIII. O relatório das sessões, das correções e da devolutiva está em [validação com a comunidade](./docs/validacao-pac-viii.md).
+
+**91 dos 92 requisitos funcionais estão implementados**; o que resta ficou fora do escopo por decisão registrada. Dos 42 não funcionais, 34 estão implementados, 5 são parciais e 3 ficaram fora do escopo, cada um com o que falta. A situação de cada requisito, com o código e o teste que provam, está em [rastreabilidade](./docs/rastreabilidade.md); o que mudou em cada versão, no [CHANGELOG](./CHANGELOG.md); e o porquê de cada escolha, nas [decisões de arquitetura](./docs/decisoes.md) (75 ADRs).
 
 Na 1.56.0, o CI rodou 5.950 testes de unidade na API, 2.921 de componente no web, 749 de integração contra um MySQL real e 308 cenários de ponta a ponta (desktop e celular).
 
@@ -313,7 +315,8 @@ escambo/
 | [📋 RFC Completa](./docs/RFC.md)                                    | Request for Comments — proposta técnica completa                                                                                                                                                                                                                                                                                     |
 | [✅ Requisitos Funcionais](./docs/requisitos-funcionais.md)         | 92 RFs especificados                                                                                                                                                                                                                                                                                                                 |
 | [🔒 Requisitos Não Funcionais](./docs/requisitos-nao-funcionais.md) | 42 RNFs especificados                                                                                                                                                                                                                                                                                                                |
-| [🧭 Rastreabilidade](./docs/rastreabilidade.md) | Situação real de cada RF e RNF na 1.54.0, com o código e o teste que provam e o que falta |
+| [🧭 Rastreabilidade](./docs/rastreabilidade.md) | Situação real de cada RF e RNF na 1.57.0, com o código e o teste que provam e o que falta |
+| [🤝 Validação com a comunidade](./docs/validacao-pac-viii.md) | PAC VIII: as três sessões com usuários reais, os pedidos que viraram issues e PRs, o reteste, a devolutiva e a declaração da comunidade |
 | [♿ Acessibilidade](./docs/acessibilidade.md) | Os critérios WCAG 2.1 A e AA um a um: como o app atende cada um, o teste ou a revisão que prova e o roteiro da verificação manual |
 | [🗄️ Modelagem do Banco](./docs/modelagem-banco.md)                  | 60 tabelas de aplicação MySQL (schema + migrations)                                                                                                                                                                                                                                                                                  |
 | [⚖️ Regras de Negócio](./docs/regras-de-negocio.md)                 | 81 RNs especificadas                                                                                                                                                                                                                                                                                                                 |

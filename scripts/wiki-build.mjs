@@ -48,6 +48,8 @@ const PAGES = {
   'docs/benchmarking.md': 'Benchmarking',
   'docs/trabalhos-relacionados.md': 'Trabalhos-Relacionados',
   'docs/evidencias-validacao.md': 'Evidências-de-Validação',
+  'docs/validacao-pac-viii.md': 'Validação-com-a-Comunidade',
+  'docs/rastreabilidade.md': 'Rastreabilidade',
   'DEPLOY.md': 'Guia-de-Deploy',
   'CONTRIBUTING.md': 'Como-Contribuir',
   'CHANGELOG.md': 'Changelog',

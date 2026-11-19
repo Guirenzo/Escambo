@@ -16,6 +16,7 @@
 - [RFC](RFC)
 - [Requisitos Funcionais](Requisitos-Funcionais)
 - [Requisitos Não Funcionais](Requisitos-Não-Funcionais)
+- [Rastreabilidade](Rastreabilidade)
 - [Regras de Negócio](Regras-de-Negócio)
 - [Casos de Uso](Casos-de-Uso)
 - [Modelagem do Banco](Modelagem-do-Banco)
@@ -28,3 +29,4 @@
 - [Benchmarking](Benchmarking)
 - [Trabalhos Relacionados](Trabalhos-Relacionados)
 - [Evidências de Validação](Evidências-de-Validação)
+- [Validação com a Comunidade (PAC VIII)](Validação-com-a-Comunidade)
