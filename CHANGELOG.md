@@ -5,7 +5,9 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
-## [Não lançado]
+## [1.57.0] — 2026-11-19
+
+Fecha a validação com a comunidade do PAC VIII: a seção de segurança pedida numa das sessões entra na página inicial, e o relatório da validação entra na documentação. O Sentry ligado na produção leva o RNF-040 a implementado. RF: 91 implementados e 1 fora do escopo; RNF: 34, 5, 0 e 3.
 
 ### Adicionado
 
@@ -16,6 +18,19 @@ com as tags `latest`, o sha curto e a versão.
   - a verificação em duas etapas é opcional.
 
   Pedida na validação com a comunidade do PAC VIII.
+
+- **Relatório da validação com a comunidade** (`docs/validacao-pac-viii.md`, também na Wiki):
+  - as três sessões com usuários reais;
+  - os pedidos que viraram o PR #61 e a issue #78;
+  - o reteste com quem pediu;
+  - a devolutiva e a declaração do representante.
+
+  Os participantes aparecem só por código.
+- **Wiki:** ganha as páginas Rastreabilidade e Validação com a Comunidade.
+
+### Alterado
+
+- **RNF-040 (monitoramento de erros) passa a implementado.** O Sentry está ligado na produção desde 18/11/2026, e o evento de teste chegou ao projeto (#69). A rastreabilidade registra o estado da produção em 19/11/2026: o push foi testado num aparelho de verdade, e o primeiro depósito pelo Mercado Pago em sandbox foi creditado.
 
 ## [1.56.0] — 2026-11-17
 
