@@ -55,7 +55,7 @@
     "@types/nodemailer": "^6.4.17",
     "@types/supertest": "^7.2.1",
     "@types/web-push": "^3.6.4",
-    "@vitest/coverage-v8": "^5.1.0",
+    "@vitest/coverage-v8": "^5.1.1",
     "socket.io-client": "^4.8.4",
     "supertest": "^7.3.2",
     "tsx": "^4.23.15",
