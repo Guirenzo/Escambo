@@ -27,6 +27,12 @@ export function googleFailureMessage(reason: string | null): string | null {
 
 const ROLE_KEY = 'escambo:google-papel';
 const NAME_KEY = 'escambo:google-nome';
+const ROLES = { client: 'client', freelancer: 'freelancer' } as const;
+/** Tamanho máximo do nome sugerido (o mesmo limite do nome do perfil). */
+const NAME_MAX = 150;
+// Caracteres de controle (quebra de linha, tabulação, NUL...) não fazem parte de um nome.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
 
 function read(key: string): string | null {
   try {
@@ -46,7 +52,9 @@ function write(key: string, value: string | null): void {
 
 /** Saindo do cadastro para o Google: o "Eu sou" escolhido (null quando sai do login). */
 export function rememberGoogleRole(role: 'client' | 'freelancer' | null): void {
-  write(ROLE_KEY, role);
+  // Grava só um dos dois valores conhecidos (o tipo não vale em tempo de execução: o papel vem de
+  // um campo da tela). Qualquer outra coisa esquece (Sonar S8475).
+  write(ROLE_KEY, role === 'client' || role === 'freelancer' ? ROLES[role] : null);
 }
 
 /**
@@ -65,7 +73,10 @@ export function forgetGoogleRole(): void {
 
 /** O nome da conta Google, sugestão para o perfil da conta nova. */
 export function rememberSuggestedName(name: string | null): void {
-  write(NAME_KEY, name && name.trim() ? name.trim().slice(0, 150) : null);
+  // O nome vem do Google pela API: sem caracteres de controle, aparado e no tamanho do perfil.
+  const clean =
+    typeof name === 'string' ? name.replace(CONTROL_CHARS, ' ').trim().slice(0, NAME_MAX) : '';
+  write(NAME_KEY, clean || null);
 }
 
 /** A sugestão de nome, se houver (o Perfil a usa só enquanto o perfil não tem nome). */

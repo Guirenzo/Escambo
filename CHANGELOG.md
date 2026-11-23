@@ -5,6 +5,33 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [Não lançado]
+
+Triagem dos 127 alertas de segurança e de confiabilidade do SonarCloud (`docs/triagem-sonar.md`, também na Wiki): 108 corrigidos no código e 19 que não procedem, registrados com o motivo em `sonar-project.properties`. Nenhuma regra de negócio muda.
+
+### Adicionado
+
+- **Triagem do SonarCloud** (`docs/triagem-sonar.md`): cada alerta, o que mudou ou por que não procede.
+- **Revisão por pares** (`docs/revisao-por-pares.md`, também na Wiki): as evidências do PAC VIII nos dois sentidos.
+  - O Escambo revisado por um colega: os comentários nos PRs #2 a #4 e os três defeitos da N2 (#57, #58 e #59), corrigidos no PR #60.
+  - O autor revisando o projeto do colega: a revisão de um PR e as duas issues abertas no teste cruzado, ambas corrigidas.
+
+### Alterado
+
+- **RN-005:** o texto da regra passa a dizer 60 minutos de validade do link de redefinição, o padrão do código (`PASSWORD_RESET_TTL_MINUTES`). Antes dizia 30, e a rastreabilidade registrava a divergência.
+- **README:** a seção de qualidade traz a cobertura do CI da 1.57.0 (98,3% na API só com unidade, 99,3% somando a integração e 98,9% no web).
+
+### Segurança
+
+- **Chat:** a detecção de e-mail na mensagem (aviso de contato fora da plataforma) deixa a regex, que tinha retrocesso super-linear e podia travar a API com uma mensagem montada para isso (ReDoS), e passa a uma leitura em tempo linear com o mesmo resultado. O mesmo vale para as outras regex sobre texto de fora (busca, e-mail do Google, URLs e cabeçalhos do Mercado Pago, Sentry).
+- **CI e imagens:** `npm ci --ignore-scripts`, actions de terceiros fixadas no SHA do commit, Playwright instalado na versão do lockfile, nenhuma senha nos comandos do MySQL do CI, e o deploy automático só a partir de push neste repositório.
+- **Web:** o que vai para o armazenamento do navegador a partir de URL ou de resposta é validado antes.
+
+### Corrigido
+
+- **Acessibilidade:** nas abas, o teclado (setas, Home e End) fica em cada aba, onde está o foco, e não no contêiner, como no padrão da WAI-ARIA; o visualizador de anexo do chat fecha só com clique no fundo, sem `stopPropagation`.
+- **Scripts:** testes de shell com `[[ ]]` nos scripts bash de backup e restauração; teste de carga sem laço de parada invisível nem promessa sem tratamento; ordenações com comparador explícito.
+
 ## [1.57.0] — 2026-11-19
 
 Fecha a validação com a comunidade do PAC VIII: a seção de segurança pedida numa das sessões entra na página inicial, e o relatório da validação entra na documentação. O Sentry ligado na produção leva o RNF-040 a implementado. RF: 91 implementados e 1 fora do escopo; RNF: 34, 5, 0 e 3.

@@ -208,15 +208,11 @@ export function ReportsSection() {
           )
         }
       >
-        <div
-          className="tabs tabs-mini"
-          role="tablist"
-          onKeyDown={onTablistKeyDown}
-          aria-label="Filtro de denúncias"
-        >
+        <div className="tabs tabs-mini" role="tablist" aria-label="Filtro de denúncias">
           <button
             type="button"
             role="tab"
+            onKeyDown={onTablistKeyDown}
             aria-selected={scope === 'pending'}
             className={scope === 'pending' ? 'active' : ''}
             onClick={() => setScope('pending')}
@@ -226,6 +222,7 @@ export function ReportsSection() {
           <button
             type="button"
             role="tab"
+            onKeyDown={onTablistKeyDown}
             aria-selected={scope === 'resolved'}
             className={scope === 'resolved' ? 'active' : ''}
             onClick={() => setScope('resolved')}

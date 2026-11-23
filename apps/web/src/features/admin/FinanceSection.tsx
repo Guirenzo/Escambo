@@ -124,17 +124,13 @@ export function FinanceSection() {
         subtitle="Receita da plataforma e o dinheiro que entrou e saiu no período, com o ledger em CSV."
       />
       <div className="fin-controls">
-        <div
-          className="tabs tabs-mini"
-          role="tablist"
-          onKeyDown={onTablistKeyDown}
-          aria-label="Período do relatório"
-        >
+        <div className="tabs tabs-mini" role="tablist" aria-label="Período do relatório">
           {PRESETS.map((p) => (
             <button
               key={p.key}
               type="button"
               role="tab"
+              onKeyDown={onTablistKeyDown}
               aria-selected={preset === p.key}
               className={preset === p.key ? 'active' : ''}
               onClick={() => {

@@ -396,15 +396,11 @@ export function ServicosView() {
         />
       )}
 
-      <div
-        className="tabs tabs-page"
-        role="tablist"
-        onKeyDown={onTablistKeyDown}
-        aria-label="Serviços"
-      >
+      <div className="tabs tabs-page" role="tablist" aria-label="Serviços">
         <button
           type="button"
           role="tab"
+          onKeyDown={onTablistKeyDown}
           aria-selected={tab === 'search'}
           className={tab === 'search' ? 'active' : ''}
           onClick={() => setTab('search')}
@@ -414,6 +410,7 @@ export function ServicosView() {
         <button
           type="button"
           role="tab"
+          onKeyDown={onTablistKeyDown}
           aria-selected={tab === 'mine'}
           className={tab === 'mine' ? 'active' : ''}
           onClick={() => setTab('mine')}

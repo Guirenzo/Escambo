@@ -13,6 +13,7 @@ import {
   GoogleAuthError,
   googleEnabled,
   googleRedirectUri,
+  hasEmailShape,
   ID_TOKEN_MAX_AGE_SECONDS,
   logGoogleLoginStatus,
   pkceChallenge,
@@ -339,5 +340,34 @@ describe('o ID token', () => {
     expect(reasonOf(() => check(`${b64([1])}.${b64({})}.y`))).toBe('invalid_id_token');
     expect(reasonOf(() => check(idToken({}, { alg: 'none' })))).toBe('invalid_id_token');
     expect(reasonOf(() => check(idToken({}, { typ: 'JWT' })))).toBe('invalid_id_token');
+  });
+});
+
+describe('hasEmailShape', () => {
+  /** A regex que a função substituiu: o resultado tem de ser o mesmo. */
+  const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const PIECES = ['a', 'b', '.', '@', ' ', '\n', '-', 'é'];
+
+  it('aceita e recusa o mesmo que a regex', () => {
+    expect(hasEmailShape('ana@gmail.com')).toBe(true);
+    expect(hasEmailShape('ana@gmail')).toBe(false);
+    expect(hasEmailShape('a b@c.d')).toBe(false);
+    let seed = 11;
+    const next = (): number => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let n = 0; n < 5000; n++) {
+      const len = Math.floor(next() * 9);
+      const value = Array.from(
+        { length: len },
+        () => PIECES[Math.floor(next() * PIECES.length)],
+      ).join('');
+      expect(hasEmailShape(value)).toBe(EMAIL_PATTERN.test(value));
+    }
+  });
+
+  it('lê um e-mail longo montado para isso em tempo linear (S8786)', () => {
+    const attack = `a@${'.'.repeat(100_000)} `;
+    const start = performance.now();
+    expect(hasEmailShape(attack)).toBe(false);
+    expect(performance.now() - start).toBeLessThan(200);
   });
 });

@@ -27,7 +27,7 @@ export function parseNumberSetting(
   fallback: number,
   key?: string,
 ): number {
-  const n = raw == null || raw.trim() === '' ? NaN : Number(raw);
+  const n = raw == null || raw.trim() === '' ? Number.NaN : Number(raw);
   // As duas contagens da ADR 61 têm faixa fechada. Dado antigo ou escrito fora do painel
   // não pode reduzir direitos, inventar um prazo nem derrubar o reparo com RangeError.
   // Os prazos de saque (RN-035) também. As outras chaves conservam a leitura legada,

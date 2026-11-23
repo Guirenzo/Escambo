@@ -64,10 +64,10 @@ conteiner=""
 rede=""
 fim() {
   local rc=$?
-  [ -z "$work" ] || rm -rf "$work"
-  if [ "$limpar_no_fim" = 1 ] && [ "${KEEP_TEST_DB:-}" != 1 ]; then limpar >/dev/null 2>&1 || true; fi
-  [ -z "$conteiner" ] || docker rm -f "$conteiner" >/dev/null 2>&1 || true
-  [ -z "$rede" ] || docker network rm "$rede" >/dev/null 2>&1 || true
+  [[ -z "$work" ]] || rm -rf "$work"
+  if [[ "$limpar_no_fim" = 1 ]] && [[ "${KEEP_TEST_DB:-}" != 1 ]]; then limpar >/dev/null 2>&1 || true; fi
+  [[ -z "$conteiner" ]] || docker rm -f "$conteiner" >/dev/null 2>&1 || true
+  [[ -z "$rede" ]] || docker network rm "$rede" >/dev/null 2>&1 || true
   exit "$rc"
 }
 trap fim EXIT
@@ -133,7 +133,7 @@ SQL
 fotografar() { # arquivo
   local tabelas t contagem="" lista=""
   tabelas="$(q "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' ORDER BY table_name")"
-  [ -n "$tabelas" ] || falha "o database $TEST_DB_NAME não tem tabelas"
+  [[ -n "$tabelas" ]] || falha "o database $TEST_DB_NAME não tem tabelas"
   for t in $tabelas; do
     contagem+="SELECT '$t', COUNT(*) FROM \`$t\` UNION ALL "
     lista+="\`$t\`,"
@@ -173,7 +173,7 @@ fotografar() { # arquivo
 
 # A imagem mysql:8.0 (onde o teste roda no modo --docker) não tem diff nem cmp: compara por sha256 e,
 # na diferença, mostra as linhas que só existem de um lado (comm).
-iguais() { [ "$(sha256sum <"$1" | cut -c1-64)" = "$(sha256sum <"$2" | cut -c1-64)" ]; }
+iguais() { [[ "$(sha256sum <"$1" | cut -c1-64)" = "$(sha256sum <"$2" | cut -c1-64)" ]]; }
 # A foto sem a seção dos triggers (do "## triggers" até o cabeçalho seguinte).
 sem_triggers() { awk '/^## / { fora = ($0 == "## triggers") } !fora' "$1"; }
 mostrar_diferenca() {
@@ -221,8 +221,8 @@ verificar() {
   triggers="$(q "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema = DATABASE()")"
   migrations="$(q "SELECT COUNT(*) FROM schema_migrations")"
   esperadas=$(($(find apps/api/db/migrations -maxdepth 1 -name '*.sql' | wc -l) + 1))
-  [ "$migrations" = "$esperadas" ] || falha "schema_migrations tem $migrations linhas; esperado $esperadas (baseline + migrations)"
-  [ "$triggers" -ge 8 ] || falha "só $triggers triggers; a 0046 cria 8"
+  [[ "$migrations" = "$esperadas" ]] || falha "schema_migrations tem $migrations linhas; esperado $esperadas (baseline + migrations)"
+  [[ "$triggers" -ge 8 ]] || falha "só $triggers triggers; a 0046 cria 8"
   q "SELECT DISTINCT definer FROM information_schema.triggers WHERE trigger_schema = DATABASE()" | grep -qx "$APP_USER@%" ||
     falha "os triggers deviam ter DEFINER $APP_USER@%"
   ok "$tabelas tabelas, $triggers triggers (DEFINER $APP_USER@%), $migrations migrations registradas"
@@ -240,7 +240,7 @@ verificar() {
 
   local status arquivo pacote sha
   status="$bk/last-backup.json"
-  [ -f "$status" ] || falha "sem last-backup.json"
+  [[ -f "$status" ]] || falha "sem last-backup.json"
   grep -q '"status": "ok"' "$status" || falha "last-backup.json não diz ok: $(cat "$status")"
   arquivo="$(sed -n 's/^  "db": .*"file": "\([^"]*\)".*/\1/p' "$status")"
   pacote="$(sed -n 's/^  "uploads": .*"file": "\([^"]*\)".*/\1/p' "$status")"
@@ -248,19 +248,19 @@ verificar() {
   [[ "$arquivo" =~ ^escambo-[0-9]{8}-[0-9]{6}\.sql\.gz$ && -f "$bk/$arquivo" ]] || falha "dump não encontrado: '$arquivo'"
   [[ "$pacote" =~ ^uploads-[0-9]{8}-[0-9]{6}\.tgz$ && -f "$bk/$pacote" ]] || falha "pacote não encontrado: '$pacote'"
   (cd "$bk" && sha256sum -c --quiet "$arquivo.sha256" "$pacote.sha256") || falha "checksum dos backups"
-  [ "$sha" = "$(cut -d' ' -f1 "$bk/$arquivo.sha256")" ] || falha "sha256 do last-backup.json diferente do .sha256"
+  [[ "$sha" = "$(cut -d' ' -f1 "$bk/$arquivo.sha256")" ]] || falha "sha256 do last-backup.json diferente do .sha256"
   ok "last-backup.json: $arquivo ($(du -h "$bk/$arquivo" | cut -f1)) e $pacote, checksums conferem"
-  [ "$(gunzip -c "$bk/$arquivo" | grep -c '^/\*!50003 CREATE\*/ /\*!50017 DEFINER=.* TRIGGER ')" = "$triggers" ] ||
+  [[ "$(gunzip -c "$bk/$arquivo" | grep -c '^/\*!50003 CREATE\*/ /\*!50017 DEFINER=.* TRIGGER ')" = "$triggers" ]] ||
     falha "o dump não traz os $triggers triggers"
   if gunzip -c "$bk/$arquivo" | grep -q '; \*/;;$'; then falha "o dump ainda tem trigger com ';' antes do ' */;;' (não reimporta)"; fi
   ok "o dump traz os $triggers triggers (com DEFINER), no formato que o mysql reimporta"
 
   for f in escambo-20000101-000001.sql.gz escambo-20000101-000002.sql.gz escambo-20000101-000003.sql.gz \
     uploads-20000101-000001.tgz uploads-20000101-000002.tgz; do
-    [ -f "$bk/$f" ] || falha "a retenção apagou $f, que devia ficar"
+    [[ -f "$bk/$f" ]] || falha "a retenção apagou $f, que devia ficar"
   done
   for f in escambo-20000101-000004.sql.gz uploads-20000101-000004.tgz; do
-    if [ -e "$bk/$f" ] || [ -e "$bk/$f.sha256" ]; then falha "a retenção não apagou $f (e o .sha256)"; fi
+    if [[ -e "$bk/$f" ]] || [[ -e "$bk/$f.sha256" ]]; then falha "a retenção não apagou $f (e o .sha256)"; fi
   done
   ok "retenção: ficaram os 3 mais recentes e o de 2 dias; saíram os de 10 dias além dos 3"
 
@@ -272,17 +272,17 @@ verificar() {
   bash deploy/backup/agendador.sh saude >/dev/null || falha "agendador.sh saude devia dar ok logo depois do backup"
   BACKUP_MAX_AGE_HOURS=1 bash deploy/backup/agendador.sh saude >/dev/null ||
     falha "com 1 h de tolerância, um backup de agora ainda está em dia"
-  [ "$(BACKUP_HOUR=3 bash deploy/backup/agendador.sh proximo | cut -d' ' -f2)" = 03:00 ] || falha "BACKUP_HOUR=3 devia agendar às 03:00"
+  [[ "$(BACKUP_HOUR=3 bash deploy/backup/agendador.sh proximo | cut -d' ' -f2)" = 03:00 ]] || falha "BACKUP_HOUR=3 devia agendar às 03:00"
   if BACKUP_HOUR=25:00 bash deploy/backup/agendador.sh proximo >/dev/null 2>&1; then falha "BACKUP_HOUR=25:00 devia ser recusado"; fi
   ok "métrica escambo_backup_*, saúde e horário (BACKUP_HOUR) conferem"
 
   mkdir -p "$work/extraido"
   tar xzf "$bk/$pacote" -C "$work/extraido"
-  if [ "$(arvore "$work/dados/uploads")" != "$(arvore "$work/extraido/uploads")" ] ||
-    [ "$(arvore "$work/dados/media")" != "$(arvore "$work/extraido/media")" ]; then
+  if [[ "$(arvore "$work/dados/uploads")" != "$(arvore "$work/extraido/uploads")" ]] ||
+    [[ "$(arvore "$work/dados/media")" != "$(arvore "$work/extraido/media")" ]]; then
     falha "o pacote não traz uploads/ e media/ iguais aos originais"
   fi
-  [ ! -e "$work/extraido/exports" ] || falha "o pacote não devia levar exports/ (cópias LGPD temporárias)"
+  [[ ! -e "$work/extraido/exports" ]] || falha "o pacote não devia levar exports/ (cópias LGPD temporárias)"
   ok "pacote dos arquivos: uploads/ e media/ idênticos, sem exports/"
 
   passo "5. arquivo ruim é recusado antes de tocar no banco"
@@ -299,7 +299,7 @@ verificar() {
   passo "6. apaga o banco, recria vazio e restaura um dump no formato de antes da 1.46.0"
   printf '%s\n' "DROP DATABASE \`$TEST_DB_NAME\`;" \
     "CREATE DATABASE \`$TEST_DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" | root_sql
-  [ "$(q "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")" = 0 ] || falha "o banco devia estar vazio"
+  [[ "$(q "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()")" = 0 ]] || falha "o banco devia estar vazio"
   ok "banco vazio"
   # Os backups feitos entre a 1.45.0 e a 1.46.0 (mysqldump puro) têm os 7 triggers de uma instrução
   # só da 0046, com o ";" dentro do comentário. O dump novo tem esses triggers em BEGIN ... END (0049):
@@ -311,7 +311,7 @@ verificar() {
     { if (tem) print anterior; anterior = $0; tem = 1 }
     END { if (tem) print anterior }
   ' | gzip >"$work/antigo/escambo-formato-antigo.sql.gz"
-  [ "$(gunzip -c "$work/antigo/escambo-formato-antigo.sql.gz" | grep -c '; \*/;;$')" -ge 7 ] ||
+  [[ "$(gunzip -c "$work/antigo/escambo-formato-antigo.sql.gz" | grep -c '; \*/;;$')" -ge 7 ]] ||
     falha "o dump no formato antigo devia ter os 7 triggers com ';' antes do ' */;;'"
   bash scripts/restore-db.sh "$work/antigo/escambo-formato-antigo.sql.gz" --yes | sed 's/^/   /' ||
     falha "a restauração do dump no formato antigo falhou"
@@ -323,7 +323,7 @@ verificar() {
     mostrar_diferenca "$work/antes.txt" "$work/depois-do-antigo.txt"
     falha "o dump no formato antigo voltou diferente do original (linhas acima)"
   fi
-  [ "$(q "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema = DATABASE()")" = "$triggers" ] ||
+  [[ "$(q "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema = DATABASE()")" = "$triggers" ]] ||
     falha "o dump no formato antigo não trouxe os $triggers triggers"
   recusas
   ok "dump antigo restaurado: dados e estrutura iguais ao original, $triggers triggers funcionando"
@@ -363,7 +363,7 @@ modo_docker() {
   for i in $(seq 1 60); do
     # Durante a inicialização o servidor temporário não escuta TCP: ping no 127.0.0.1 = pronto de verdade.
     docker exec "$conteiner" mysqladmin ping -h127.0.0.1 -uroot -p"$senha" --silent >/dev/null 2>&1 && break
-    [ "$i" -lt 60 ] || falha "o MySQL temporário não subiu"
+    [[ "$i" -lt 60 ]] || falha "o MySQL temporário não subiu"
     sleep 2
   done
   porta="$(docker port "$conteiner" 3306/tcp | head -n 1 | sed 's/.*://')"

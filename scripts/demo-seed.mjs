@@ -273,7 +273,7 @@ async function call(method, path, { token, body } = {}) {
 /** Listas paginadas da API vêm como { items, total, ... }; aceita variações. */
 const items = (res) => (Array.isArray(res) ? res : (res?.items ?? res?.data ?? []));
 
-const log = (msg) => console.log(`  ${msg}`);
+const log = (msg) => console.log(`  ${String(msg).replace(/[\r\n]+/g, ' ')}`);
 const step = (msg) => console.log(`\n▶ ${msg}`);
 
 // ---------------------------------------------------------------------------

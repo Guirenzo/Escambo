@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTextSearch } from './service-search';
+import { parseTextSearch, trimEdges } from './service-search';
 
 /**
  * Como o texto da busca vira as três partes da consulta (RNF-004): o MATCH do FULLTEXT, os
@@ -108,5 +108,34 @@ describe('parseTextSearch', () => {
       contains: [long],
     });
     expect(parseTextSearch('b'.repeat(84)).fulltext).toBe(`+${'b'.repeat(84)}*`);
+  });
+});
+
+describe('trimEdges', () => {
+  /** A regex que a função substituiu: o resultado tem de ser o mesmo. */
+  const EDGES = /^[,;:!?.…"'“”‘’()[\]{}<>+\-~*@]+|[,;:!?.…"'“”‘’()[\]{}<>~*@-]+$/gu;
+  const PIECES = ['a', 'c', '+', '-', '#', '.', '(', ')', '"', '…', '“', '%', '@', '~', 'é', '_'];
+
+  it('tira das pontas o mesmo que a regex', () => {
+    expect(trimEdges('(c++)')).toBe('c++');
+    expect(trimEdges('+-()')).toBe('');
+    expect(trimEdges('c#.')).toBe('c#');
+    let seed = 7;
+    const next = (): number => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let n = 0; n < 5000; n++) {
+      const len = Math.floor(next() * 10);
+      const word = Array.from(
+        { length: len },
+        () => PIECES[Math.floor(next() * PIECES.length)],
+      ).join('');
+      expect(trimEdges(word)).toBe(word.replace(EDGES, ''));
+    }
+  });
+
+  it('lê uma palavra longa de pontuação em tempo linear (S8786)', () => {
+    const attack = `${'-'.repeat(100_000)}a${'-'.repeat(100_000)}x`;
+    const start = performance.now();
+    expect(trimEdges(attack)).toBe(attack.slice(100_000));
+    expect(performance.now() - start).toBeLessThan(200);
   });
 });

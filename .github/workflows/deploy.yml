@@ -42,9 +42,11 @@ jobs:
   deploy:
     name: Produção (VPS)
     # À mão, só a partir da main: a configuração que vai para a VPS é sempre a de um commit publicado.
+    # Automático, só o CI de um push neste repositório: código de fork (pull request) nunca chega aqui.
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:

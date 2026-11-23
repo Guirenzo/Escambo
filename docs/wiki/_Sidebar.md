@@ -30,3 +30,4 @@
 - [Trabalhos Relacionados](Trabalhos-Relacionados)
 - [Evidências de Validação](Evidências-de-Validação)
 - [Validação com a Comunidade (PAC VIII)](Validação-com-a-Comunidade)
+- [Revisão por Pares](Revisão-por-Pares)

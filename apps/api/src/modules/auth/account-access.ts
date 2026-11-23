@@ -1,5 +1,6 @@
 import type { UserRole, UserStatus } from '@escambo/types';
 import { HttpError } from '../../utils/http-error';
+import { trimEndChar } from '../../utils/text-scan';
 import { logger } from '../../config/logger';
 import { accountAccessRepository, type AccessIdentity } from './account-access.repository';
 
@@ -94,7 +95,7 @@ export function assertEmailVerified(account: Pick<CurrentAccount, 'emailVerified
  * de leitura do chat.
  */
 export function suspendedRequestAllowed(method: string, originalUrl: string): boolean {
-  const path = originalUrl.split('?')[0]!.replace(/\/+$/, '').toLowerCase();
+  const path = trimEndChar(originalUrl.split('?')[0]!, '/').toLowerCase();
   if (/^\/api\/admin(?:\/|$)/.test(path)) return false;
   if (method === 'GET' || method === 'HEAD') return true;
   if (method === 'POST') {

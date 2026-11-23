@@ -13,14 +13,20 @@ const MAX_FIELD_BYTES = 4096;
 const mb = (bytes: number): string =>
   `${Math.round((bytes / 1024 / 1024) * 10) / 10}`.replace('.', ',');
 
+interface UploadLimits {
+  fields: number;
+  fieldBytes: number;
+  files?: number;
+}
+
+/** Os limites de um upload de arquivo único, quando a rota não informa outros. */
+const SINGLE_FILE_LIMITS: UploadLimits = { fields: MAX_FIELDS, fieldBytes: MAX_FIELD_BYTES };
+
 /** Mensagem de cada recusa do multer: o que passou do limite, e não sempre "um único arquivo". */
 function multerMessage(
   err: multer.MulterError,
   field: string,
-  limits: { fields: number; fieldBytes: number; files?: number } = {
-    fields: MAX_FIELDS,
-    fieldBytes: MAX_FIELD_BYTES,
-  },
+  limits: UploadLimits = SINGLE_FILE_LIMITS,
 ): string {
   if (err.code === 'LIMIT_FIELD_VALUE') {
     // o multer sempre informa o campo nesta recusa

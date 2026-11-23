@@ -16,6 +16,7 @@ retido até a entrega), **troca de serviço por serviço**, **créditos de tempo
 | Ver o que o sistema faz                       | [Requisitos Funcionais](Requisitos-Funcionais) · [Casos de Uso](Casos-de-Uso) · [Regras de Negócio](Regras-de-Negócio) |
 | Ver a situação real de cada requisito         | [Rastreabilidade](Rastreabilidade)                                                                                     |
 | Ver a validação com usuários reais            | [Validação com a Comunidade (PAC VIII)](Validação-com-a-Comunidade)                                                    |
+| Ver a revisão por pares                       | [Revisão por Pares](Revisão-por-Pares)                                                                                 |
 | Saber por que foi feito assim                 | [Decisões de Arquitetura](Decisões-de-Arquitetura) (ADRs)                                                              |
 | Rodar na minha máquina                        | [README](https://github.com/Guirenzo/Escambo#-rodar-em-2-minutos)                                                      |
 | Pôr em produção ou atualizar                  | [Deploy e CI/CD](Deploy-e-CI-CD) · [Guia de Deploy](Guia-de-Deploy)                                                    |
@@ -38,4 +39,4 @@ retido até a entrega), **troca de serviço por serviço**, **créditos de tempo
 
 [RFC](RFC) · [Requisitos Não Funcionais](Requisitos-Não-Funcionais) · [Modelagem do Banco](Modelagem-do-Banco) · [Personas](Personas) · [Fluxo de Navegação](Fluxo-de-Navegação) ·
 [Wireframes](Wireframes) · [Benchmarking](Benchmarking) · [Trabalhos Relacionados](Trabalhos-Relacionados) · [Evidências de Validação](Evidências-de-Validação) ·
-[Validação com a Comunidade (PAC VIII)](Validação-com-a-Comunidade)
+[Validação com a Comunidade (PAC VIII)](Validação-com-a-Comunidade) · [Revisão por Pares](Revisão-por-Pares)

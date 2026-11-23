@@ -24,6 +24,12 @@ const src = join(root, 'apps/api/src');
 const args = new Set(process.argv.slice(2));
 const withTests = args.has('--tests');
 
+/** Ordem por unidade de código, a mesma do sort() sem comparador (a saída não muda). */
+const porCodigo = (a, b) => {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+};
+
 /** Caminho relativo a apps/api/src, sempre com barra normal. */
 const rel = (abs) => relative(src, abs).split(sep).join('/');
 
@@ -166,7 +172,7 @@ function cyclesOf(graph) {
         onStack.delete(w);
         scc.push(w);
       } while (w !== v);
-      if (scc.length > 1) found.push(scc.sort());
+      if (scc.length > 1) found.push(scc.sort(porCodigo));
     }
   };
   for (const v of graph.keys()) if (!index.has(v)) visit(v);
@@ -222,7 +228,7 @@ out();
 out('| Módulo | Arestas | Módulos alcançados |');
 out('| --- | ---: | --- |');
 for (const [mod, m] of perModule(foreignRepoValue)) {
-  out(`| ${mod} | ${m.edges} | ${[...m.targets].sort().join(', ')} |`);
+  out(`| ${mod} | ${m.edges} | ${[...m.targets].sort(porCodigo).join(', ')} |`);
 }
 out(`| **total** | **${foreignRepoValue.length}** | |`);
 out();
@@ -278,6 +284,6 @@ out('Orquestradores fora de `modules/`: não entram na regra de fronteira, ficam
 out();
 const outside = edges.filter((e) => !isModule(e.fromOwner) && e.toLayer === 'repository');
 for (const [mod, m] of perModule(outside.filter((e) => !e.typeOnly))) {
-  out(`- ${mod}: ${m.edges} (${[...m.targets].sort().join(', ')})`);
+  out(`- ${mod}: ${m.edges} (${[...m.targets].sort(porCodigo).join(', ')})`);
 }
 console.log(lines.join('\n'));

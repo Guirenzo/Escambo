@@ -137,7 +137,8 @@ export const notificationsService = {
         isRead: false,
         createdAt: new Date().toISOString(),
       };
-      realtime.emitToUser(userId, 'notification:new', pushed);
+      // A emissão registra a própria falha e nunca rejeita (config/realtime.ts).
+      void realtime.emitToUser(userId, 'notification:new', pushed);
       emailNotification(userId, params).catch((err) =>
         logger.warn({ err, type: params.type }, 'e-mail da notificação falhou'),
       );

@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { trimEndChar } from '../../utils/text-scan';
 
 /**
  * TOTP da verificação em duas etapas (RF-090, RNF-042, ADR 66): RFC 6238 sobre o HOTP da RFC 4226,
@@ -35,7 +36,7 @@ export function base32Encode(data: Buffer): string {
 
 /** O inverso de `base32Encode`; aceita minúsculas e o "=" do fim. Texto fora do alfabeto: null. */
 export function base32Decode(text: string): Buffer | null {
-  const clean = text.toUpperCase().replace(/=+$/, '');
+  const clean = trimEndChar(text.toUpperCase(), '=');
   if (!/^[A-Z2-7]*$/.test(clean)) return null;
   const out: number[] = [];
   let value = 0;

@@ -107,10 +107,13 @@ function Lightbox({
       aria-modal="true"
       aria-label={attachment.name}
       tabIndex={-1}
-      onClick={onClose}
+      // Só o clique no fundo fecha: na imagem e na faixa de botões, o alvo é outro elemento.
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <img src={src} alt={attachment.name} onClick={(e) => e.stopPropagation()} />
-      <div className="lightbox-bar" onClick={(e) => e.stopPropagation()}>
+      <img src={src} alt={attachment.name} />
+      <div className="lightbox-bar">
         <span>
           {attachment.name} · {formatBytes(attachment.size)}
         </span>

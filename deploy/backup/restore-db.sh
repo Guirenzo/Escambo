@@ -19,7 +19,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 arg="${1:?uso: scripts/restore-db.sh <backups/escambo-....sql.gz> [--yes]}"
-[ -f "$arg" ] || {
+[[ -f "$arg" ]] || {
   echo "arquivo não encontrado: $arg" >&2
   exit 1
 }
@@ -30,7 +30,7 @@ cd "$here/../.."
 . "$here/comum.sh"
 
 echo "→ conferindo $file"
-if [ -f "$file.sha256" ]; then
+if [[ -f "$file.sha256" ]]; then
   (cd "$(dirname "$file")" && sha256sum -c --quiet "$(basename "$file").sha256") || {
     echo "o checksum não confere com $(basename "$file").sha256: arquivo alterado ou corrompido" >&2
     exit 1
@@ -42,7 +42,7 @@ if ! gzip -t "$file" 2>/dev/null || ! gunzip -c "$file" | tail -n 1 | grep -q '^
 fi
 banco="$(nome_do_banco)"
 
-if [ "${2:-}" != "--yes" ]; then
+if [[ "${2:-}" != "--yes" ]]; then
   read -r -p "Isto APAGA o banco '$banco' e põe no lugar o conteúdo de $file. Continuar? [s/N] " ok
   case "${ok:-}" in s | S) ;; *)
     echo "cancelado"
@@ -56,7 +56,7 @@ if ! direto; then
   for s in api backup; do
     if docker compose ps --services --status running | grep -qx "$s"; then parados+=("$s"); fi
   done
-  if [ "${#parados[@]}" -gt 0 ]; then
+  if [[ "${#parados[@]}" -gt 0 ]]; then
     echo "→ parando: ${parados[*]}"
     docker compose stop "${parados[@]}" >/dev/null
   fi
@@ -83,7 +83,7 @@ SELECT DISTINCT t.definer FROM information_schema.triggers t
    AND NOT EXISTS (SELECT 1 FROM mysql.user u WHERE CONCAT(u.user, '@', u.host) = t.definer);
 SQL
 )"
-if [ -n "$orfaos" ]; then
+if [[ -n "$orfaos" ]]; then
   echo "AVISO: triggers com DEFINER que não existe neste MySQL: $orfaos" >&2
   echo "       crie o usuário (o mesmo DB_USER da instalação de origem) ou rode as migrations de novo." >&2
 fi
@@ -94,7 +94,7 @@ if ! direto; then
   echo "→ subindo a API"
   docker compose up -d api >/dev/null
   for s in "${parados[@]}"; do
-    if [ "$s" != api ]; then
+    if [[ "$s" != api ]]; then
       echo "→ subindo: $s"
       docker compose start "$s" >/dev/null
     fi

@@ -181,15 +181,11 @@ export function AppealsSection() {
           )
         }
       >
-        <div
-          className="tabs tabs-mini"
-          role="tablist"
-          onKeyDown={onTablistKeyDown}
-          aria-label="Filtro de contestações"
-        >
+        <div className="tabs tabs-mini" role="tablist" aria-label="Filtro de contestações">
           <button
             type="button"
             role="tab"
+            onKeyDown={onTablistKeyDown}
             aria-selected={scope === 'pending'}
             className={scope === 'pending' ? 'active' : ''}
             onClick={() => setScope('pending')}
@@ -199,6 +195,7 @@ export function AppealsSection() {
           <button
             type="button"
             role="tab"
+            onKeyDown={onTablistKeyDown}
             aria-selected={scope === 'decided'}
             className={scope === 'decided' ? 'active' : ''}
             onClick={() => setScope('decided')}

@@ -29,7 +29,44 @@ const PIX = new RegExp(
     String.raw`\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`,
   ].join('|'),
 );
-const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
+/** `[\w-]`: letra ou número ASCII, "_" ou "-". */
+function isDomainChar(code: number): boolean {
+  return (
+    (code >= 48 && code <= 57) || // 0-9
+    (code >= 65 && code <= 90) || // A-Z
+    (code >= 97 && code <= 122) || // a-z
+    code === 95 || // _
+    code === 45 // -
+  );
+}
+
+/** `[\w.+-]`: o que pode vir antes do "@". */
+function isLocalChar(code: number): boolean {
+  return isDomainChar(code) || code === 46 || code === 43; // . +
+}
+
+/** Há um domínio `[\w-]+(?:\.[\w-]+)+` começando em `i`? */
+function hasDomainAt(text: string, i: number): boolean {
+  let pos = i;
+  while (isDomainChar(text.charCodeAt(pos))) pos++;
+  if (pos === i || text.charCodeAt(pos) !== 46) return false;
+  // Um ponto seguido de um rótulo não vazio fecha o domínio; "b..c" não tem.
+  return isDomainChar(text.charCodeAt(pos + 1));
+}
+
+/**
+ * O mesmo que `/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/.test(text)`, lendo o texto uma vez (Sonar S8786: a
+ * regex sem âncora que começa com repetição leva tempo quadrático numa mensagem longa sem "@").
+ * Basta um caractere de nome logo antes de um "@" e um domínio com ponto logo depois. Espelho de
+ * `containsEmail` em apps/api/src/utils/text-scan.ts.
+ */
+function containsEmail(text: string): boolean {
+  for (let at = text.indexOf('@'); at !== -1; at = text.indexOf('@', at + 1)) {
+    if (at > 0 && isLocalChar(text.charCodeAt(at - 1)) && hasDomainAt(text, at + 1)) return true;
+  }
+  return false;
+}
+
 const WHATSAPP = /\bwhats\s?app\b|\bwhats\b|\bwpp\b|\bzap\b|\bzapzap\b|wa\.me\//;
 const OFF_PLATFORM =
   /\bpor fora\b|\bfora d[ao] (?:plataforma|escambo|app|aplicativo|site|sistema)\b|\bfora daqui\b|\bsem (?:a )?taxa\b|\bdireto comigo\b|\bsem (?:o )?escambo\b|\bcombinar direto\b/;
@@ -49,7 +86,7 @@ function hasPhone(text: string): boolean {
 const RULES: [OffPlatformSignal, (text: string) => boolean][] = [
   ['pix', (t) => PIX.test(t)],
   ['phone', hasPhone],
-  ['email', (t) => EMAIL.test(t)],
+  ['email', containsEmail],
   ['whatsapp', (t) => WHATSAPP.test(t)],
   ['off_platform', (t) => OFF_PLATFORM.test(t)],
 ];
