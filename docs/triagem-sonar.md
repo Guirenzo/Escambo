@@ -17,8 +17,8 @@ Painel: [sonarcloud.io/project/overview?id=Guirenzo_Escambo](https://sonarcloud.
 
 | Destino                                     | Alertas | Onde                                                                     |
 | ------------------------------------------- | ------: | ------------------------------------------------------------------------ |
-| Corrigido no código                         |     108 | CI, Dockerfiles, scripts de backup e de carga, API e web                 |
-| Não procede, registrado com o motivo        |      19 | credenciais de teste, migrations já aplicadas, ferramentas do operador, acessibilidade que já está certa |
+| Corrigido no código                         |     107 | CI, Dockerfiles, scripts de backup e de carga, API e web                 |
+| Não procede, registrado com o motivo        |      20 | credenciais de teste, migrations já aplicadas, ferramentas do operador, acessibilidade que já está certa |
 
 ## Corrigidos
 
@@ -61,7 +61,7 @@ repositório (`head_repository.full_name == github.repository`).
 | ------------------------------------------------ | ---: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `typescript:S6852` contêiner interativo sem foco |   11 | O tratador de teclado das abas (setas, Home, End) saiu do contêiner `tablist` e foi para cada `role="tab"`, onde o foco fica, como no padrão de abas da WAI-ARIA. O `onTablistKeyDown` acha a lista por `closest('[role="tablist"]')`. |
 | `typescript:S6848` elemento não nativo clicável  |    2 | No anexo do chat, o fundo do visualizador só fecha quando o clique é nele mesmo (`target === currentTarget`), sem `stopPropagation`. Na galeria, o palco de gestos é `role="presentation"`: tudo tem equivalente no teclado e nos botões. |
-| `tssecurity:S8475` armazenamento envenenado      |    2 | Só vai para o `localStorage` (e só volta dele) o que tem forma de token: base64url e ponto, até 4 KB. Do login com Google, o papel só grava `client` ou `freelancer`, e o nome perde os caracteres de controle e fica em 150. |
+| `tssecurity:S8475` armazenamento envenenado      |    1 | Só vai para o `localStorage` (e só volta dele) o que tem forma de token: base64url e ponto, até 4 KB. Do login com Google, o papel só grava `client` ou `freelancer`, e o nome perde os caracteres de controle e fica em 150 (o alerta desse nome está em "Não procedem"). |
 | `typescript:S8786` regex com retrocesso          |    1 | A mesma detecção de e-mail da API, em leitura linear (`offPlatform.ts`), com teste contra a regex antiga e entrada de 200 mil caracteres.                                                                                          |
 | `typescript:S7773` / `S7737`                     |    3 | `Number.NaN`, `Number.parseFloat` e a constante `ORIGIN` como padrão do parâmetro.                                                                                                                                                 |
 
@@ -78,6 +78,7 @@ repositório (`head_repository.full_name == github.repository`).
 | `typescript:S6845` `tabIndex` em não interativo |    2 | `AvatarCropper.tsx`, `components/ui/index.tsx`                       | De propósito: o recorte do avatar é operado pelo teclado (setas movem, + e − dão zoom), e a tabela rolável precisa de foco para rolar sem mouse (regra `scrollable-region-focusable` do axe, WCAG 2.1.1). |
 | `typescript:S6852` contêiner sem foco          |    1 | `Stars.tsx`                                                          | As estrelas são rádios nativos e o foco fica neles. O grupo só tem `onMouseLeave`, para limpar a prévia; torná-lo focável criaria uma parada de Tab inútil.                                                  |
 | `typescript:S6853` rótulo sem texto            |    3 | `EmailPreferencesCard.tsx`, `ContratarModal.tsx`, `SavedSearches.tsx` | O rótulo tem texto, três níveis abaixo (`span > strong > texto`), e a regra só olha dois. Os testes acham os rádios pelo nome, e `ContratarModal.test.tsx` confere o nome acessível.                        |
+| `tssecurity:S8475` armazenamento envenenado    |    1 | `apps/web/src/lib/google.ts`                                         | O nome da conta Google vem da nossa própria API e fica no `sessionStorage` só durante o retorno do Google, para sugerir o nome do perfil. Ele só preenche o campo (o React escapa) e a API valida ao salvar; mesmo assim sai sem caracteres de controle e com no máximo 150. A análise da `main` depois da triagem acusou só este. |
 
 ## Como conferir
 
