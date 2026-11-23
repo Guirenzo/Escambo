@@ -98,7 +98,7 @@ O documento reúne **82 regras**, de RN-001 a RN-082.
 | Campo              | Detalhe                                                                                                                                                         |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Categoria**      | Segurança                                                                                                                                                       |
-| **Descrição**      | O link de recuperação de senha é válido por **30 minutos** e pode ser utilizado **apenas uma vez**. Após uso ou expiração, o token é invalidado permanentemente |
+| **Descrição**      | O link de recuperação de senha é válido por **60 minutos** (padrão, ajustável em PASSWORD_RESET_TTL_MINUTES) e pode ser utilizado **apenas uma vez**. Após uso ou expiração, o token é invalidado permanentemente |
 | **Impacto**        | Links reutilizados ou expirados devem redirecionar para nova solicitação                                                                                        |
 | **UC Relacionado** | UC-01                                                                                                                                                           |
 

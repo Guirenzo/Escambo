@@ -245,8 +245,8 @@ Todas as variáveis estão documentadas em [`apps/api/.env.example`](./apps/api/
 ## 🧪 Qualidade & Testes
 
 Pirâmide de testes + lint + type-check, tudo no CI a cada push (badge no topo). Em todo PR passam os testes
-(unidade, integração e E2E) e a **cobertura com meta**: no backend, **99,1%** só com os testes de unidade
-(meta de 75%) e **99,3%** somando a integração; no frontend, **99,5%** (meta de 25%). O **SonarCloud**
+(unidade, integração e E2E) e a **cobertura com meta**: no backend, **98,3%** só com os testes de unidade
+(meta de 75%) e **99,3%** somando a integração; no frontend, **98,9%** (meta de 25%), no CI da 1.57.0. O **SonarCloud**
 registra a análise estática e de segurança. Em `main`, com tudo verde, as imagens vão ao GHCR e o workflow
 **Deploy** as põe no ar (ADR 59). Detalhes em [Qualidade](./docs/wiki/Qualidade.md).
 
@@ -317,6 +317,7 @@ escambo/
 | [🔒 Requisitos Não Funcionais](./docs/requisitos-nao-funcionais.md) | 42 RNFs especificados                                                                                                                                                                                                                                                                                                                |
 | [🧭 Rastreabilidade](./docs/rastreabilidade.md) | Situação real de cada RF e RNF na 1.57.0, com o código e o teste que provam e o que falta |
 | [🤝 Validação com a comunidade](./docs/validacao-pac-viii.md) | PAC VIII: as três sessões com usuários reais, os pedidos que viraram issues e PRs, o reteste, a devolutiva e a declaração da comunidade |
+| [🔍 Revisão por pares](./docs/revisao-por-pares.md) | PAC VIII: as revisões de PR e os testes cruzados nos dois sentidos, com os defeitos achados e as correções |
 | [♿ Acessibilidade](./docs/acessibilidade.md) | Os critérios WCAG 2.1 A e AA um a um: como o app atende cada um, o teste ou a revisão que prova e o roteiro da verificação manual |
 | [🗄️ Modelagem do Banco](./docs/modelagem-banco.md)                  | 60 tabelas de aplicação MySQL (schema + migrations)                                                                                                                                                                                                                                                                                  |
 | [⚖️ Regras de Negócio](./docs/regras-de-negocio.md)                 | 81 RNs especificadas                                                                                                                                                                                                                                                                                                                 |

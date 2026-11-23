@@ -5,6 +5,21 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 (`version` e `commit`), e cada release publica as imagens `escambo-api` e `escambo-web` no GHCR
 com as tags `latest`, o sha curto e a versão.
 
+## [Não lançado]
+
+Só documentação: nenhum código da API ou do web muda.
+
+### Adicionado
+
+- **Revisão por pares** (`docs/revisao-por-pares.md`, também na Wiki): as evidências do PAC VIII nos dois sentidos.
+  - O Escambo revisado por um colega: os comentários nos PRs #2 a #4 e os três defeitos da N2 (#57, #58 e #59), corrigidos no PR #60.
+  - O autor revisando o projeto do colega: a revisão de um PR e as duas issues abertas no teste cruzado, ambas corrigidas.
+
+### Alterado
+
+- **RN-005:** o texto da regra passa a dizer 60 minutos de validade do link de redefinição, o padrão do código (`PASSWORD_RESET_TTL_MINUTES`). Antes dizia 30, e a rastreabilidade registrava a divergência.
+- **README:** a seção de qualidade traz a cobertura do CI da 1.57.0 (98,3% na API só com unidade, 99,3% somando a integração e 98,9% no web).
+
 ## [1.57.0] — 2026-11-19
 
 Fecha a validação com a comunidade do PAC VIII: a seção de segurança pedida numa das sessões entra na página inicial, e o relatório da validação entra na documentação. O Sentry ligado na produção leva o RNF-040 a implementado. RF: 91 implementados e 1 fora do escopo; RNF: 34, 5, 0 e 3.
