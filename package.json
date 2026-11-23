@@ -1,6 +1,6 @@
 {
   "name": "escambo",
-  "version": "1.57.0",
+  "version": "1.57.1",
   "private": true,
   "description": "Escambo — monorepo (API + Web + tipos compartilhados)",
   "license": "MIT",

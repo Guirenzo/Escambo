@@ -7,6 +7,8 @@ com as tags `latest`, o sha curto e a versão.
 
 ## [Não lançado]
 
+## [1.57.1] — 2026-11-23
+
 Triagem dos 127 alertas de segurança e de confiabilidade do SonarCloud (`docs/triagem-sonar.md`, também na Wiki): 107 corrigidos no código e 20 que não procedem, registrados com o motivo em `sonar-project.properties`. Nenhuma regra de negócio muda.
 
 ### Adicionado
