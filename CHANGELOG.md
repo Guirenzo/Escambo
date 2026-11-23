@@ -7,7 +7,7 @@ com as tags `latest`, o sha curto e a versão.
 
 ## [Não lançado]
 
-Triagem dos 127 alertas de segurança e de confiabilidade do SonarCloud (`docs/triagem-sonar.md`, também na Wiki): 108 corrigidos no código e 19 que não procedem, registrados com o motivo em `sonar-project.properties`. Nenhuma regra de negócio muda.
+Triagem dos 127 alertas de segurança e de confiabilidade do SonarCloud (`docs/triagem-sonar.md`, também na Wiki): 107 corrigidos no código e 20 que não procedem, registrados com o motivo em `sonar-project.properties`. Nenhuma regra de negócio muda.
 
 ### Adicionado
 
