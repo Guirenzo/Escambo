@@ -791,15 +791,11 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
           title="Fila de saques"
           subtitle="Pagamentos pedidos pelos usuários, pelo prazo: processe, conclua com a referência ou estorne."
         >
-          <div
-            className="tabs tabs-mini"
-            role="tablist"
-            onKeyDown={onTablistKeyDown}
-            aria-label="Filtro de saques"
-          >
+          <div className="tabs tabs-mini" role="tablist" aria-label="Filtro de saques">
             <button
               type="button"
               role="tab"
+              onKeyDown={onTablistKeyDown}
               aria-selected={scope === 'open'}
               className={scope === 'open' ? 'active' : ''}
               onClick={() => setScope('open')}
@@ -809,6 +805,7 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
             <button
               type="button"
               role="tab"
+              onKeyDown={onTablistKeyDown}
               aria-selected={scope === 'all'}
               className={scope === 'all' ? 'active' : ''}
               onClick={() => setScope('all')}
@@ -943,15 +940,11 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
             m.pendingDeletions > 0 && <CountBadge hot>{m.pendingDeletions} pendente(s)</CountBadge>
           }
         >
-          <div
-            className="tabs tabs-mini"
-            role="tablist"
-            onKeyDown={onTablistKeyDown}
-            aria-label="Filtro de exclusões"
-          >
+          <div className="tabs tabs-mini" role="tablist" aria-label="Filtro de exclusões">
             <button
               type="button"
               role="tab"
+              onKeyDown={onTablistKeyDown}
               aria-selected={deletionScope === 'pending'}
               className={deletionScope === 'pending' ? 'active' : ''}
               onClick={() => setDeletionScope('pending')}
@@ -961,6 +954,7 @@ function AdminPanel({ onMfaRequired }: { onMfaRequired: () => void }) {
             <button
               type="button"
               role="tab"
+              onKeyDown={onTablistKeyDown}
               aria-selected={deletionScope === 'all'}
               className={deletionScope === 'all' ? 'active' : ''}
               onClick={() => setDeletionScope('all')}

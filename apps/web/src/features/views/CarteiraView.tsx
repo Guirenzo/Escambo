@@ -304,15 +304,11 @@ export function CarteiraView() {
             <h3>
               <ArrowDownToLine size={16} /> Extrato
             </h3>
-            <div
-              className="tabs tabs-mini"
-              role="tablist"
-              onKeyDown={onTablistKeyDown}
-              aria-label="Moeda do extrato"
-            >
+            <div className="tabs tabs-mini" role="tablist" aria-label="Moeda do extrato">
               <button
                 type="button"
                 role="tab"
+                onKeyDown={onTablistKeyDown}
                 aria-selected={tab === 'brl'}
                 className={tab === 'brl' ? 'active' : ''}
                 onClick={() => setTab('brl')}
@@ -322,6 +318,7 @@ export function CarteiraView() {
               <button
                 type="button"
                 role="tab"
+                onKeyDown={onTablistKeyDown}
                 aria-selected={tab === 'credits'}
                 className={tab === 'credits' ? 'active' : ''}
                 onClick={() => setTab('credits')}

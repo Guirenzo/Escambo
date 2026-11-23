@@ -283,17 +283,13 @@ export function ModerationHealthSection() {
         titleId="health-title"
         subtitle="O que espera agora, quanto a fila demora para decidir e quanto a sinalização automática acerta."
       >
-        <div
-          className="tabs tabs-mini"
-          role="tablist"
-          onKeyDown={onTablistKeyDown}
-          aria-label="Período"
-        >
+        <div className="tabs tabs-mini" role="tablist" aria-label="Período">
           {PERIODS.map((p) => (
             <button
               key={p}
               type="button"
               role="tab"
+              onKeyDown={onTablistKeyDown}
               aria-selected={days === p}
               className={days === p ? 'active' : ''}
               onClick={() => setDays(p)}

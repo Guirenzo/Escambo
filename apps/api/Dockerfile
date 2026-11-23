@@ -6,7 +6,7 @@
 FROM node:22-alpine AS build
 WORKDIR /repo
 COPY . .
-RUN npm ci \
+RUN npm ci --ignore-scripts \
  && npm run build --workspace @escambo/api \
  && npm prune --omit=dev \
  && mkdir -p apps/api/node_modules

@@ -22,11 +22,20 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, normalize, posix, relative } from 'node:path';
+import { basename, dirname, join, normalize, posix, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const out = join(root, process.argv[2] ?? '.wiki-build');
+// Só uma pasta `.wiki-*` na raiz do repositório pode ser apagada e recriada: o argumento é um nome
+// simples, conferido antes de virar caminho.
+const outName = process.argv[2] ?? '.wiki-build';
+if (!/^\.wiki[\w.-]*$/.test(outName) || basename(outName) !== outName) {
+  console.error(
+    `✗ Pasta de saída recusada: ${outName}. Use uma pasta .wiki-* na raiz do repositório.`,
+  );
+  process.exit(1);
+}
+const out = join(root, outName);
 const REPO = 'https://github.com/Guirenzo/Escambo';
 const RAW = 'https://raw.githubusercontent.com/Guirenzo/Escambo/main';
 
@@ -51,6 +60,7 @@ const PAGES = {
   'docs/validacao-pac-viii.md': 'Validação-com-a-Comunidade',
   'docs/rastreabilidade.md': 'Rastreabilidade',
   'docs/revisao-por-pares.md': 'Revisão-por-Pares',
+  'docs/triagem-sonar.md': 'Triagem-do-SonarCloud',
   'DEPLOY.md': 'Guia-de-Deploy',
   'CONTRIBUTING.md': 'Como-Contribuir',
   'CHANGELOG.md': 'Changelog',
@@ -94,7 +104,7 @@ function convertProse(text, from) {
   return (
     text
       .replace(
-        /(!?\[[^\]]*\]\()([^)\s]+)((?:\s+"[^"]*")?\))/g,
+        /(!?\[[^[\]]*\]\()([^)\s]+)((?:\s+"[^"]*")?\))/g,
         (_m, a, t, b) => `${a}${rewrite(t, from)}${b}`,
       )
       // Imagem que é link: [![selo](imagem)](destino). A imagem já foi reescrita acima; falta o destino.
@@ -121,12 +131,6 @@ function convert(text, from) {
     .join('');
 }
 
-// Só uma pasta `.wiki-*` na raiz do repositório pode ser apagada e recriada.
-const outRel = relative(root, out);
-if (!/^\.wiki[\w.-]*$/.test(outRel)) {
-  console.error(`✗ Pasta de saída recusada: ${out}. Use uma pasta .wiki-* na raiz do repositório.`);
-  process.exit(1);
-}
 const missing = Object.keys(PAGES).filter((from) => !existsSync(join(root, from)));
 if (missing.length) {
   console.error(`✗ Documentos da lista PAGES que não existem:\n  ${missing.join('\n  ')}`);

@@ -6,7 +6,7 @@
 FROM node:22-alpine AS build
 WORKDIR /repo
 COPY . .
-RUN npm ci \
+RUN npm ci --ignore-scripts \
  && npm run build --workspace @escambo/web
 
 # --- runtime: nginx sem root (usuário nginx, porta 8080) servindo o SPA + proxy da API ---

@@ -27,11 +27,11 @@ pastas="uploads media quarantine"
 
 # Só as pastas que existem; instância nova, sem nenhuma, não tem o que guardar (e não é erro).
 if direto; then
-  dirs="$(cd "${UPLOADS_DIR:?defina UPLOADS_DIR}" && for d in $pastas; do [ -d "$d" ] && printf '%s ' "$d"; done; true)"
+  dirs="$(cd "${UPLOADS_DIR:?defina UPLOADS_DIR}" && for d in $pastas; do [[ -d "$d" ]] && printf '%s ' "$d"; done; true)"
 else
   dirs="$(docker compose exec -T api sh -c "cd /repo/apps/api/data && for d in $pastas; do [ -d \"\$d\" ] && printf '%s ' \"\$d\"; done; true")"
 fi
-if [ -z "${dirs// /}" ]; then
+if [[ -z "${dirs// /}" ]]; then
   echo "sem uploads, media nem quarantine ainda; nada a fazer"
   resultado
   exit 0
@@ -49,7 +49,7 @@ if direto; then
   rc=0
   # shellcheck disable=SC2086 # $dirs é a lista de pastas, separada por espaço de propósito
   tar czf "$tmp" --warning=no-file-changed --warning=no-file-removed -C "$UPLOADS_DIR" $dirs || rc=$?
-  if [ "$rc" -gt 1 ]; then
+  if [[ "$rc" -gt 1 ]]; then
     echo "tar falhou (código $rc): $out" >&2
     exit 1
   fi

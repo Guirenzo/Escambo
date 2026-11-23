@@ -180,11 +180,16 @@ export class Coletor {
   }
 
   resultado() {
+    /** Ordem por unidade de código, a mesma do sort() sem comparador. */
+    const porCodigo = (a, b) => {
+      if (a < b) return -1;
+      return a > b ? 1 : 0;
+    };
     const segundos = (this.fim - this.inicio) / 1000;
     const rotas = {};
     let total = 0;
     let erros = 0;
-    for (const [rota, s] of [...this.rotas.entries()].sort()) {
+    for (const [rota, s] of [...this.rotas.entries()].sort(([a], [b]) => porCodigo(a, b))) {
       const n = s.lat.length + s.erros;
       total += n;
       erros += s.erros;

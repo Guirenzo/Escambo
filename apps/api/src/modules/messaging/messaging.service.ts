@@ -245,7 +245,8 @@ async function broadcastToPair(
     contractIds = [originContractId];
   }
   for (const contractId of contractIds) {
-    realtime.emitToContract(contractId, event, { ...payload, contractId });
+    // deliver() já registra a falha e nunca rejeita: a emissão não segura a resposta.
+    void realtime.emitToContract(contractId, event, { ...payload, contractId });
   }
 }
 
@@ -317,7 +318,7 @@ export const messagingService = {
     if (!row) return;
     const message = toMessage(row);
     for (const contractId of await messagingRepository.pairContractIds(row.conversation_id)) {
-      realtime.emitToContract(contractId, 'message:updated', { ...message, contractId });
+      void realtime.emitToContract(contractId, 'message:updated', { ...message, contractId });
     }
   },
 

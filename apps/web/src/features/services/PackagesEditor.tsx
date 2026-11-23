@@ -100,7 +100,7 @@ export function PackagesEditor({
       </p>
       <div className={`pkg-editor-grid cols-${value.length}`}>
         {value.map((d, i) => {
-          const lower = i > 0 ? Number(value[i - 1]!.price) : NaN;
+          const lower = i > 0 ? Number(value[i - 1]!.price) : Number.NaN;
           const min = Number.isFinite(lower) && lower > floor ? lower : floor;
           const price = Number(d.price);
           const orderProblem =

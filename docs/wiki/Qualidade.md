@@ -68,6 +68,11 @@ os tipos são analisados, mas ficam fora desse número (`sonar.coverage.exclusio
 cobertura só por projeto, e somar as duas aplicações daria uma média que não é a meta de nenhuma. A do frontend é a
 do job de testes.
 
+Os alertas de segurança e de confiabilidade passam por triagem, registrada em
+[Triagem do SonarCloud](../triagem-sonar.md): o que procede é corrigido no código; o que não procede fica em
+`sonar-project.properties` (`sonar.issue.ignore.multicriteria`), cada regra com o motivo ao lado, para a decisão
+ficar versionada e revisável no PR, e não num clique no painel.
+
 Para ligar (uma vez):
 
 1. Entre em [sonarcloud.io](https://sonarcloud.io) com a conta do GitHub e importe a organização `guirenzo`

@@ -43,17 +43,13 @@ export function PackagePicker({
         {tabs ? 'Escolha o pacote' : 'Pacote'}
       </h2>
       {tabs && (
-        <div
-          className="tabs tabs-mini pkg-tabs"
-          role="tablist"
-          aria-label="Pacotes"
-          onKeyDown={onTablistKeyDown}
-        >
+        <div className="tabs tabs-mini pkg-tabs" role="tablist" aria-label="Pacotes">
           {packages.map((p) => (
             <button
               key={p.tier}
               type="button"
               role="tab"
+              onKeyDown={onTablistKeyDown}
               id={`${base}-tab-${p.tier}`}
               aria-controls={`${base}-panel-${p.tier}`}
               aria-selected={p.tier === current.tier}

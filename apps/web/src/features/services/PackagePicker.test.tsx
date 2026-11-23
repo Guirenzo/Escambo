@@ -66,21 +66,22 @@ describe('PackagePicker', () => {
 
   it('setas, Home e End trocam de aba e mostram o painel dela (ativação automática)', () => {
     render(<PackagePicker packages={THREE} onContinue={vi.fn()} />);
-    const list = screen.getByRole('tablist');
+    // A tecla vai para a aba com o foco (é nela que o tratador está), como no navegador.
+    const key = (k: string) => fireEvent.keyDown(document.activeElement!, { key: k });
     tab('Básico').focus();
-    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    key('ArrowRight');
     expect(tab('Padrão')).toHaveFocus();
     expect(tab('Padrão')).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tabpanel', { name: 'Padrão' })).toHaveTextContent('R$ 320,00');
-    fireEvent.keyDown(list, { key: 'End' });
+    key('End');
     expect(tab('Premium')).toHaveFocus();
     // Prazo de 1 dia no singular; 5 revisões no plural.
     expect(screen.getByRole('tabpanel', { name: 'Premium' })).toHaveTextContent('Entrega em 1 dia');
-    fireEvent.keyDown(list, { key: 'ArrowRight' });
+    key('ArrowRight');
     expect(tab('Básico')).toHaveFocus();
-    fireEvent.keyDown(list, { key: 'ArrowLeft' });
+    key('ArrowLeft');
     expect(tab('Premium')).toHaveFocus();
-    fireEvent.keyDown(list, { key: 'Home' });
+    key('Home');
     expect(tab('Básico')).toHaveAttribute('aria-selected', 'true');
     // Só um painel à vista.
     expect(screen.getAllByRole('tabpanel')).toHaveLength(1);

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
+import { trimEndChar } from '../../utils/text-scan';
 
 /**
  * Cliente do Mercado Pago (RF-041), sem SDK: o Checkout Pro para o depósito na carteira e a consulta
@@ -37,11 +38,11 @@ export function setMercadoPagoFetchForTests(impl: typeof fetch | null): void {
   fetchImpl = impl ?? realFetch;
 }
 
-const baseUrl = (): string => env.MERCADOPAGO_API_URL.replace(/\/+$/, '');
+const baseUrl = (): string => trimEndChar(env.MERCADOPAGO_API_URL, '/');
 
 /** O endereço que o Mercado Pago chama quando um pagamento muda (o mesmo domínio do app). */
 export function mercadoPagoNotificationUrl(): string {
-  return `${env.APP_URL.replace(/\/+$/, '')}/api/payments/webhook/mercadopago`;
+  return `${trimEndChar(env.APP_URL, '/')}/api/payments/webhook/mercadopago`;
 }
 
 async function call(
@@ -102,7 +103,7 @@ export async function createCheckoutPreference(input: {
   reference: string;
   expiresAt: Date;
 }): Promise<CheckoutPreference> {
-  const appUrl = env.APP_URL.replace(/\/+$/, '');
+  const appUrl = trimEndChar(env.APP_URL, '/');
   const back = `${appUrl}/carteira`;
   const body = await call(
     'POST',

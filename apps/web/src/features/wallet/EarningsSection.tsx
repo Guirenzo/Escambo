@@ -169,17 +169,13 @@ export function EarningsSection() {
           <p className="card-sub">O que ficou livre na sua carteira por trabalho feito.</p>
         </div>
         {earnings.data?.hasEarnings && (
-          <div
-            className="tabs tabs-mini"
-            role="tablist"
-            onKeyDown={onTablistKeyDown}
-            aria-label="Período dos ganhos"
-          >
+          <div className="tabs tabs-mini" role="tablist" aria-label="Período dos ganhos">
             {PRESETS.map((p) => (
               <button
                 key={p.key}
                 type="button"
                 role="tab"
+                onKeyDown={onTablistKeyDown}
                 aria-selected={granularity === p.key}
                 className={granularity === p.key ? 'active' : ''}
                 onClick={() => setGranularity(p.key)}

@@ -209,7 +209,7 @@ export function useDragSort({
         from: index,
         to: index,
         mids: rects.map((r) => r.top + scroll + r.height / 2),
-        step: row.height + (parseFloat(getComputedStyle(list).rowGap) || 0),
+        step: row.height + (Number.parseFloat(getComputedStyle(list).rowGap) || 0),
         startY: e.clientY + scroll,
         startClientY: e.clientY,
         moved: false,

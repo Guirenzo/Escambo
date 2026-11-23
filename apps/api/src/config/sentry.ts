@@ -1,6 +1,7 @@
 import type { ErrorEvent, EventHint } from '@sentry/node';
 import { buildInfo } from './build-info';
 import { env } from './env';
+import { replaceEmails } from '../utils/text-scan';
 
 /**
  * Rastreamento de erros (ADR 59). Sem SENTRY_DSN o pacote nem é carregado e nada sai da máquina.
@@ -11,8 +12,6 @@ import { env } from './env';
  */
 type SentryModule = typeof import('@sentry/node');
 let sentry: SentryModule | null = null;
-
-const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 
 /**
  * Última barreira antes do envio. A mensagem de erro do MySQL repete o valor que violou a regra
@@ -27,7 +26,7 @@ export function scrubEvent(event: ErrorEvent, hint: EventHint): ErrorEvent {
       : null;
   for (const ex of event.exception?.values ?? []) {
     if (dbCode) ex.value = dbCode;
-    else if (ex.value) ex.value = ex.value.replace(EMAIL, '[email]');
+    else if (ex.value) ex.value = replaceEmails(ex.value, '[email]');
   }
   delete event.server_name;
   return event;

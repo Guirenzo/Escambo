@@ -1,4 +1,5 @@
 import type { OffPlatformSignal } from '@escambo/types';
+import { containsEmail } from '../../utils/text-scan';
 
 /**
  * Detecção de negociação por fora no chat (ADR 45). São heurísticas, não julgamento: a mensagem não
@@ -33,7 +34,6 @@ const PIX = new RegExp(
     String.raw`\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`,
   ].join('|'),
 );
-const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
 const WHATSAPP = /\bwhats\s?app\b|\bwhats\b|\bwpp\b|\bzap\b|\bzapzap\b|wa\.me\//;
 const OFF_PLATFORM =
   /\bpor fora\b|\bfora d[ao] (?:plataforma|escambo|app|aplicativo|site|sistema)\b|\bfora daqui\b|\bsem (?:a )?taxa\b|\bdireto comigo\b|\bsem (?:o )?escambo\b|\bcombinar direto\b/;
@@ -58,7 +58,7 @@ function hasPhone(text: string): boolean {
 const RULES: [OffPlatformSignal, (text: string) => boolean][] = [
   ['pix', (t) => PIX.test(t)],
   ['phone', hasPhone],
-  ['email', (t) => EMAIL.test(t)],
+  ['email', containsEmail],
   ['whatsapp', (t) => WHATSAPP.test(t)],
   ['off_platform', (t) => OFF_PLATFORM.test(t)],
 ];

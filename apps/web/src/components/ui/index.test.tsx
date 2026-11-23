@@ -496,16 +496,23 @@ describe('SkipLink', () => {
 });
 
 describe('onTablistKeyDown', () => {
-  function Tabs({ disabledLast = false }: { disabledLast?: boolean }) {
+  function Tabs({
+    disabledLast = false,
+    onTabs = false,
+  }: {
+    disabledLast?: boolean;
+    onTabs?: boolean;
+  }) {
     const [tab, setTab] = useState('a');
     return (
       <>
-        <div role="tablist" aria-label="Período" onKeyDown={onTablistKeyDown}>
+        <div role="tablist" aria-label="Período" onKeyDown={onTabs ? undefined : onTablistKeyDown}>
           {['a', 'b', 'c'].map((t) => (
             <button
               key={t}
               type="button"
               role="tab"
+              onKeyDown={onTabs ? onTablistKeyDown : undefined}
               aria-selected={tab === t}
               disabled={disabledLast && t === 'c'}
               onClick={() => setTab(t)}
@@ -536,6 +543,32 @@ describe('onTablistKeyDown', () => {
     expect(tab('A')).toHaveAttribute('aria-selected', 'true');
     await user.keyboard('{End}');
     expect(tab('C')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('posto em cada aba (como nas telas), acha as irmãs pelo tablist e anda igual', async () => {
+    const user = userEvent.setup();
+    render(<Tabs onTabs />);
+    tab('A').focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(tab('C')).toHaveFocus();
+    expect(screen.getByText('escolhida: c')).toBeInTheDocument();
+    await user.keyboard('{Home}');
+    expect(tab('A')).toHaveFocus();
+    expect(tab('A')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('numa aba solta, fora de um tablist, não faz nada', () => {
+    render(
+      <button type="button" role="tab" onKeyDown={onTablistKeyDown}>
+        Solta
+      </button>,
+    );
+    const solta = screen.getByRole('tab', { name: 'Solta' });
+    solta.focus();
+    const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+    solta.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+    expect(solta).toHaveFocus();
   });
 
   it('aba desabilitada fica fora; End na última não aciona de novo; outras teclas passam', async () => {

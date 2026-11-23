@@ -46,3 +46,12 @@ describe('detecção de negociação por fora (ADR 45)', () => {
     expect(parseSignals(null)).toEqual([]);
   });
 });
+
+describe('mensagem longa montada para travar a detecção', () => {
+  it('lê em tempo linear, sem o retrocesso da regex de e-mail (S8786)', () => {
+    const start = performance.now();
+    expect(offPlatformSignals('a.'.repeat(20_000))).toEqual([]);
+    expect(offPlatformSignals(`${'x'.repeat(20_000)}@site.com`)).toContain('email');
+    expect(performance.now() - start).toBeLessThan(500);
+  });
+});

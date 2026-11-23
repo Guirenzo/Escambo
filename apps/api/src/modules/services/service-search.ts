@@ -48,7 +48,20 @@ const STOPWORDS = new Set(
 const TOKEN = /[\p{L}\p{M}\p{N}_]+/gu;
 
 /** Pontuação de frase e operadores nas pontas; "+" e "#" do fim ficam ("c++", "c#"), "%" também. */
-const EDGES = /^[,;:!?.…"'“”‘’()[\]{}<>+\-~*@]+|[,;:!?.…"'“”‘’()[\]{}<>~*@-]+$/gu;
+const LEADING_EDGE = new Set(',;:!?.…"\'“”‘’()[]{}<>+-~*@');
+const TRAILING_EDGE = new Set([...LEADING_EDGE].filter((c) => c !== '+'));
+
+/**
+ * Tira a pontuação das pontas da palavra, lendo cada ponta uma vez. Faz o mesmo que
+ * `/^[…]+|[…]+$/gu`, sem o retrocesso dessa regex numa palavra longa de pontuação (Sonar S8786).
+ */
+export function trimEdges(word: string): string {
+  let start = 0;
+  while (start < word.length && LEADING_EDGE.has(word[start]!)) start++;
+  let end = word.length;
+  while (end > start && TRAILING_EDGE.has(word[end - 1]!)) end--;
+  return word.slice(start, end);
+}
 /** Tem algo além de letra e número: o símbolo precisa valer como texto. */
 const SYMBOL = /[^\p{L}\p{M}\p{N}]/u;
 
@@ -70,7 +83,7 @@ export interface TextSearch {
 export function parseTextSearch(q: string): TextSearch {
   const raw = q.normalize('NFC').toLocaleLowerCase('pt-BR').split(/\s+/).filter(Boolean);
   // Só pontuação ("+-()") não sobra palavra: fica como veio, para ser procurada como texto.
-  const trimmed = raw.map((word) => word.replace(EDGES, '')).filter(Boolean);
+  const trimmed = raw.map((word) => trimEdges(word)).filter(Boolean);
   const words = trimmed.length > 0 ? trimmed : raw;
   const terms = new Set<string>();
   const contains = new Set<string>();

@@ -22,7 +22,7 @@ jobs:
           cache: npm
 
       - name: Instalar dependências
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       # ADR 74: o npm audit reprova vulnerabilidade alta ou crítica, menos as exceções com motivo e
       # data-limite em scripts/audit-excecoes.json, que só valem fora das dependências de produção.
@@ -82,8 +82,10 @@ jobs:
           MYSQL_ROOT_PASSWORD: escambo_root
         ports:
           - 3306:3306
+        # `mysqladmin ping` sai com 0 mesmo com acesso negado: só confere que o servidor responde,
+        # então o comando não precisa da senha.
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pescambo_root"
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -99,7 +101,7 @@ jobs:
           cache: npm
 
       - name: Instalar dependências
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Testes de integração + cobertura
         run: npm run -w @escambo/api test:int:cov
@@ -152,8 +154,10 @@ jobs:
           MYSQL_ROOT_PASSWORD: escambo_root
         ports:
           - 3306:3306
+        # `mysqladmin ping` sai com 0 mesmo com acesso negado: só confere que o servidor responde,
+        # então o comando não precisa da senha.
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pescambo_root"
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -172,7 +176,7 @@ jobs:
           cache: npm
 
       - name: Instalar dependências
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Backup → apaga o banco → restaura → compara
         run: bash scripts/test-backup-restore.sh
@@ -198,7 +202,7 @@ jobs:
           cache: npm
 
       - name: Instalar dependências
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       # O upload guarda a partir do ancestral comum dos caminhos: `coverage-unit` a partir de apps/,
       # `coverage-integration` a partir da própria pasta.
@@ -264,7 +268,7 @@ jobs:
 
       - name: Análise
         if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@2f77a1ec69fb1d595b06f35ab27e97605bdef703 # v5.3.2
         env:
           SONAR_HOST_URL: https://sonarcloud.io
 
@@ -281,8 +285,10 @@ jobs:
           MYSQL_DATABASE: escambo
         ports:
           - 3306:3306
+        # `mysqladmin ping` sai com 0 mesmo com acesso negado: só confere que o servidor responde,
+        # então o comando não precisa da senha.
         options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pescambo_root"
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -323,18 +329,18 @@ jobs:
           cache: npm
 
       - name: Instalar dependências
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Build (API + Web)
         run: npm run build
 
       - name: Chromium do Playwright
-        run: npx playwright install --with-deps chromium
+        run: node_modules/.bin/playwright install --with-deps chromium
 
       - name: Schema (migrations) + seed de referência
         run: |
           node apps/api/dist/scripts/migrate.js
-          mysql -h127.0.0.1 -uroot -pescambo_root escambo < apps/api/db/seed.sql
+          MYSQL_PWD="$DB_PASSWORD" mysql -h127.0.0.1 -u"$DB_USER" escambo < apps/api/db/seed.sql
 
       - name: Sobe API e Web (build servido pelo Vite preview) em background
         run: |
@@ -391,17 +397,17 @@ jobs:
           echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Login no GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: API → GHCR
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: apps/api/Dockerfile
@@ -419,7 +425,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=api
 
       - name: Web → GHCR
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: apps/web/Dockerfile

@@ -375,12 +375,16 @@ export function SkipLink({
 /**
  * Setas, Home e End entre as abas de um `role="tablist"` (padrão de abas do ARIA, com ativação
  * automática): a aba de destino recebe o foco e é acionada. Tab e Shift+Tab seguem normais.
+ *
+ * Vai em cada `role="tab"` (onde o foco está), e não no tablist: o tablist não é focável no padrão
+ * do ARIA, e um tratador de teclado nele o faria parecer um controle sem foco (regra S6852 do
+ * Sonar). Posto no próprio tablist, também funciona: as abas são achadas a partir dele.
  */
 export function onTablistKeyDown(e: ReactKeyboardEvent<HTMLElement>): void {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
-  const tabs = Array.from(
-    e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]:not([disabled])'),
-  );
+  const list = e.currentTarget.closest('[role="tablist"]');
+  if (!list) return;
+  const tabs = Array.from(list.querySelectorAll<HTMLElement>('[role="tab"]:not([disabled])'));
   const at = tabs.indexOf(document.activeElement as HTMLElement);
   if (at < 0) return;
   e.preventDefault();

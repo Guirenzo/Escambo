@@ -31,19 +31,19 @@ done
 for modelo in .env.example .env.prod.example apps/api/.env.example apps/web/.env.example; do
   if git check-ignore -q --no-index "$modelo"; then erro "o .gitignore esconde o modelo $modelo"; fi
 done
-[ "$falhou" = 0 ] && echo "   ok"
+[[ "$falhou" = 0 ]] && echo "   ok"
 
 echo "== 2. nenhum arquivo de segredo versionado"
 versionados="$(git ls-files | grep -E '(^|/)\.env($|\.)|\.(pem|key|p12|pfx)$|(^|/)id_(rsa|ed25519|ecdsa)($|\.)|(^|/)backups/' |
   grep -vE '(^|/)\.env(\.prod)?\.example$' || true)"
-if [ -n "$versionados" ]; then
+if [[ -n "$versionados" ]]; then
   erro "arquivos de segredo no repositório:"
   printf '   %s\n' "$versionados" >&2
 else
   echo "   ok"
 fi
 
-if [ "${1:-}" != --sem-docker ]; then
+if [[ "${1:-}" != --sem-docker ]]; then
   echo "== 3. gitleaks no histórico inteiro"
   # Monta a pasta dona do histórico: num worktree, o .git é um arquivo que aponta para o repositório
   # principal, fora do contêiner. O config vai à parte (o do repositório principal pode ser outro), e
@@ -59,7 +59,7 @@ if [ "${1:-}" != --sem-docker ]; then
   # Erro do git dentro do contêiner não muda o código de saída: "0 commits" seria um falso verde.
   if grep -q ' ERR ' "$saida" || ! grep -Eq ' [1-9][0-9]* commits scanned' "$saida"; then
     erro "o gitleaks não leu o histórico (linhas acima)"
-  elif [ "$rc" != 0 ]; then
+  elif [[ "$rc" != 0 ]]; then
     erro "o gitleaks achou segredo no histórico (acima, mascarado). Se for dado de teste, acrescente o valor a .gitleaks.toml"
   else
     echo "   ok"
@@ -67,5 +67,5 @@ if [ "${1:-}" != --sem-docker ]; then
   rm -f "$saida"
 fi
 
-[ "$falhou" = 0 ] || exit 1
+[[ "$falhou" = 0 ]] || exit 1
 echo "Sem segredo no repositório."

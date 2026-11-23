@@ -178,16 +178,30 @@ export interface ServiceQuery {
   limit?: number;
 }
 
+/** Tamanho máximo de um token guardado: o JWT de acesso tem algumas centenas de bytes. */
+const TOKEN_MAX = 4096;
+const TOKEN_SHAPE = /^[\w.-]+$/;
+
+/**
+ * Só vai para o armazenamento (e só volta dele) o que tem forma de token: caracteres de base64url
+ * e ponto (o JWT de acesso e o refresh da API), até 4 KB. Qualquer outra coisa, vinda de uma
+ * resposta adulterada ou de um armazenamento mexido, vale como "sem token" (Sonar S8475).
+ */
+function storableToken(value: string | null): string | null {
+  return value && value.length <= TOKEN_MAX && TOKEN_SHAPE.test(value) ? value : null;
+}
+
 function readStorage(key: string): string | null {
   try {
-    return localStorage.getItem(key);
+    return storableToken(localStorage.getItem(key));
   } catch {
     return null;
   }
 }
 function writeStorage(key: string, value: string | null): void {
   try {
-    if (value) localStorage.setItem(key, value);
+    const token = storableToken(value);
+    if (token) localStorage.setItem(key, token);
     else localStorage.removeItem(key);
   } catch {
     /* localStorage indisponível — segue com os tokens em memória */

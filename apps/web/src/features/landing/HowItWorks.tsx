@@ -113,17 +113,13 @@ export function HowItWorks({ barter, fee }: { barter: boolean; fee: number | nul
             Uma conta serve para os dois lados: você pode contratar e também oferecer serviços.
           </p>
         </div>
-        <div
-          className="lp-tabs"
-          role="tablist"
-          aria-label="Escolha o seu lado"
-          onKeyDown={onTablistKeyDown}
-        >
+        <div className="lp-tabs" role="tablist" aria-label="Escolha o seu lado">
           {tabs.map((t) => (
             <button
               key={t.key}
               type="button"
               role="tab"
+              onKeyDown={onTablistKeyDown}
               id={`${base}-tab-${t.key}`}
               aria-controls={`${base}-panel-${t.key}`}
               aria-selected={t.key === current.key}

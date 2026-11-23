@@ -12,6 +12,7 @@
  * Com --fundo (e --vus ou --taxa), roda até o processo pai mandar parar (fundo do teste de WS).
  */
 
+/* global AbortController */
 import { performance } from 'node:perf_hooks';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
@@ -234,16 +235,16 @@ function contexto({ api, estado, coletor, pares, semente }) {
  */
 function iniciarVus({ api, estado, cenario, vus, coletor, pares, semente }) {
   const ops = CENARIOS[cenario];
-  let parar = false;
+  const parada = new AbortController();
   const execucoes = Array.from({ length: vus }, async (_, i) => {
     const ctx = contexto({ api, estado, coletor, pares, semente: semente + i });
-    while (!parar) {
+    while (!parada.signal.aborted) {
       const op = sortearPonderado(ops, ctx.g.rnd);
       registrar(coletor, op.rota, await op.exec(ctx));
     }
   });
   return async () => {
-    parar = true;
+    parada.abort();
     await Promise.all(execucoes);
   };
 }
@@ -258,13 +259,13 @@ function iniciarTaxa({ api, estado, cenario, taxa, coletor, pares, semente }) {
   const ctx = contexto({ api, estado, coletor, pares, semente });
   const intervalo = 1000 / taxa;
   const emVoo = new Set();
-  let parar = false;
+  const parada = new AbortController();
   let descartadas = 0;
   const laco = (async () => {
     let proxima = performance.now();
-    while (!parar) {
+    while (!parada.signal.aborted) {
       const agora = performance.now();
-      while (proxima <= agora && !parar) {
+      while (proxima <= agora && !parada.signal.aborted) {
         proxima += intervalo;
         if (emVoo.size >= 2000) {
           descartadas++;
@@ -273,13 +274,15 @@ function iniciarTaxa({ api, estado, cenario, taxa, coletor, pares, semente }) {
         const op = sortearPonderado(ops, ctx.g.rnd);
         const p = Promise.resolve(op.exec(ctx)).then((out) => registrar(coletor, op.rota, out));
         emVoo.add(p);
-        p.finally(() => emVoo.delete(p));
+        // Sai do conjunto ao terminar, com sucesso ou erro; o erro em si é cobrado no Promise.all da parada.
+        const sair = () => emVoo.delete(p);
+        p.then(sair, sair);
       }
       await esperar(Math.max(1, Math.min(20, proxima - performance.now())));
     }
   })();
   return async () => {
-    parar = true;
+    parada.abort();
     await laco;
     await Promise.all([...emVoo]);
     return { descartadas };

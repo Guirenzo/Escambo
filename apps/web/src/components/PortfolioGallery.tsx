@@ -40,6 +40,8 @@ const TAP_MOVE = 10;
 /** Dois toques dentro desse tempo e dessa distância são um duplo toque. */
 const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_DISTANCE = 40;
+/** Centro da imagem: o zoom pelos botões e pelo teclado amplia a partir dele. */
+const ORIGIN: Readonly<Point> = { x: 0, y: 0 };
 
 type Work = PortfolioItem & { imageUrl: string };
 
@@ -187,7 +189,7 @@ export function PortfolioGallery({
     });
   }
 
-  function zoomTo(scale: number, point: Point = { x: 0, y: 0 }): void {
+  function zoomTo(scale: number, point: Point = ORIGIN): void {
     const f = frame();
     if (f) applyZoom(zoomAt(zoom, scale, point, f.content, f.box), f, true);
   }
@@ -408,9 +410,13 @@ export function PortfolioGallery({
         </div>
       </div>
 
+      {/* O palco é só a superfície dos gestos de ponteiro (arrastar, pinçar, roda, clique no fundo
+          para fechar), não um controle: tudo tem equivalente no teclado do diálogo (setas, + e −,
+          0, Esc) e nos botões. Por isso `presentation`, e fora do Tab. */}
       <div
         ref={stage}
         className="gallery-stage"
+        role="presentation"
         onClick={(e) => {
           if (e.target === e.currentTarget && downOnBackground.current && !moved.current) {
             onClose();

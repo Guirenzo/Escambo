@@ -284,7 +284,9 @@ export const gamificationService = {
   ): Promise<LeaderboardEntry[]> {
     const local = query.lat !== undefined && query.lng !== undefined;
     if (query.categoryId === undefined && !local) {
-      return (await gamificationRepository.leaderboard(limit)).map(toLeaderboardEntry);
+      return (await gamificationRepository.leaderboard(limit)).map((r, i) =>
+        toLeaderboardEntry(r, i),
+      );
     }
     const near = local
       ? {
@@ -300,7 +302,7 @@ export const gamificationService = {
       ...(near ? { near } : {}),
       limit,
     });
-    return rows.map(toLeaderboardEntry);
+    return rows.map((r, i) => toLeaderboardEntry(r, i));
   },
 
   /** As missões do período vigente (RF-066); abrir conta como o acesso do dia. */

@@ -61,14 +61,14 @@ validar_hora() {
 proximo_horario() {
   local alvo
   alvo="$(date -d "today $HORA" +%s)"
-  [ "$alvo" -gt "$(date +%s)" ] || alvo="$(date -d "tomorrow $HORA" +%s)"
+  [[ "$alvo" -gt "$(date +%s)" ]] || alvo="$(date -d "tomorrow $HORA" +%s)"
   echo "$alvo"
 }
 
 # `sleep` em segundo plano + `wait`: o SIGTERM do `docker stop` interrompe na hora.
 esperar_ate() {
   local falta=$(($1 - $(date +%s)))
-  if [ "$falta" -gt 0 ]; then
+  if [[ "$falta" -gt 0 ]]; then
     sleep "$falta" &
     wait $!
   fi
@@ -80,7 +80,7 @@ esperar_banco() {
   local i
   for i in $(seq 1 24); do
     ERRO_BANCO="$(mysql_root -e 'SELECT 1' 2>&1 >/dev/null)" && return 0
-    [ "$i" = 24 ] || {
+    [[ "$i" = 24 ]] || {
       sleep 5 &
       wait $!
     }
@@ -123,7 +123,7 @@ rodar() {
   echo "$(date +%s) $ok" >"$ESTADO/rodada"
   gravar_status "$inicio"
   publicar_metricas
-  if [ "$ok" = 1 ]; then
+  if [[ "$ok" = 1 ]]; then
     log "backup concluído em $(($(date +%s) - inicio)) s"
     return 0
   fi
@@ -134,11 +134,11 @@ rodar() {
 parte_json() { # tipo
   local tipo="$1" ep arquivo bytes sha rodada=null rep rok
   if read -r rep rok 2>/dev/null <"$ESTADO/$tipo.rodada"; then
-    rodada="{\"at\": \"$(iso "$rep")\", \"ok\": $([ "$rok" = 1 ] && echo true || echo false)}"
+    rodada="{\"at\": \"$(iso "$rep")\", \"ok\": $([[ "$rok" = 1 ]] && echo true || echo false)}"
   fi
   if read -r ep arquivo bytes sha 2>/dev/null <"$ESTADO/$tipo"; then
-    [ "$arquivo" = - ] && arquivo=null || arquivo="\"$arquivo\""
-    [ "$sha" = - ] && sha=null || sha="\"$sha\""
+    [[ "$arquivo" = - ]] && arquivo=null || arquivo="\"$arquivo\""
+    [[ "$sha" = - ]] && sha=null || sha="\"$sha\""
     printf '{"last_run": %s, "last_success_at": "%s", "last_success_epoch": %s, "file": %s, "bytes": %s, "sha256": %s}' \
       "$rodada" "$(iso "$ep")" "$ep" "$arquivo" "$bytes" "$sha"
   else
@@ -151,7 +151,7 @@ gravar_status() { # inicio
   read -r fim ok <"$ESTADO/rodada"
   {
     printf '{\n'
-    printf '  "status": "%s",\n' "$([ "$ok" = 1 ] && echo ok || echo falhou)"
+    printf '  "status": "%s",\n' "$([[ "$ok" = 1 ]] && echo ok || echo falhou)"
     printf '  "started_at": "%s",\n' "$(iso "$1")"
     printf '  "finished_at": "%s",\n' "$(iso "$fim")"
     printf '  "duration_seconds": %s,\n' "$((fim - $1))"
@@ -168,7 +168,7 @@ gravar_status() { # inicio
 # Textfile do node-exporter: arquivo novo inteiro e `mv` (o coletor nunca lê um pela metade); o
 # temporário não termina em .prom, então o coletor o ignora. Legível pelo node-exporter (nobody).
 publicar_metricas() {
-  [ -n "$METRICS_DIR" ] || return 0
+  [[ -n "$METRICS_DIR" ]] || return 0
   mkdir -p "$METRICS_DIR"
   local tmp="$METRICS_DIR/.escambo_backup.prom.$$" tipo ep arquivo bytes sha ok
   {
@@ -212,7 +212,7 @@ saude() {
   local tipo idade falhou=0
   for tipo in db uploads; do
     idade=$(($(date +%s) - $(ultimo_sucesso "$tipo")))
-    if [ "$idade" -gt $((MAX_AGE_HOURS * 3600)) ]; then
+    if [[ "$idade" -gt $((MAX_AGE_HOURS * 3600)) ]]; then
       echo "$tipo: ATRASADO (último sucesso há mais de $MAX_AGE_HOURS h; ver docker compose logs backup)"
       falhou=1
     else
@@ -226,14 +226,14 @@ laco() { # [--continua]
   trap 'log "parando (sinal recebido)"; exit 0' TERM INT
   local proximo tentativa agenda
   publicar_metricas
-  if [ "${1:-}" != --continua ] && [ $(($(date +%s) - $(ultimo_sucesso db))) -gt 86400 ]; then
+  if [[ "${1:-}" != --continua ]] && [[ $(($(date +%s) - $(ultimo_sucesso db))) -gt 86400 ]]; then
     log "último backup do banco com mais de 24 h (ou nenhum): rodando um agora"
     proximo="$(date +%s)"
   else
     proximo="$(proximo_horario)"
   fi
   while :; do
-    [ "$proximo" -le "$(date +%s)" ] || log "próximo backup: $(date -d "@$proximo" '+%Y-%m-%d %H:%M %Z')"
+    [[ "$proximo" -le "$(date +%s)" ]] || log "próximo backup: $(date -d "@$proximo" '+%Y-%m-%d %H:%M %Z')"
     esperar_ate "$proximo"
     if rodar; then
       exec bash "${BASH_SOURCE[0]}" laco --continua

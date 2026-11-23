@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
+import { trimEndChar } from '../../utils/text-scan';
 
 /**
  * Cliente OAuth 2.0 / OpenID Connect do Google (RF-002), sem SDK: o fluxo de servidor com código
@@ -51,12 +52,12 @@ export function googleEnabled(): boolean {
 
 /** O endereço de volta: GOOGLE_REDIRECT_URI, ou o da API no domínio do app (APP_URL). */
 export function googleRedirectUri(): string {
-  return env.GOOGLE_REDIRECT_URI || `${env.APP_URL.replace(/\/+$/, '')}/api/auth/google/callback`;
+  return env.GOOGLE_REDIRECT_URI || `${trimEndChar(env.APP_URL, '/')}/api/auth/google/callback`;
 }
 
 /** Os endereços do Google, ou os do Google falso dos testes (só na própria máquina, ver env). */
 function endpoints(): { auth: string; token: string } {
-  const testIdp = env.GOOGLE_TEST_IDP_URL.replace(/\/+$/, '');
+  const testIdp = trimEndChar(env.GOOGLE_TEST_IDP_URL, '/');
   return testIdp
     ? { auth: `${testIdp}/authorize`, token: `${testIdp}/token` }
     : { auth: GOOGLE_AUTH_URL, token: GOOGLE_TOKEN_URL };
@@ -123,8 +124,17 @@ function decodeSegment(segment: string | undefined): Record<string, unknown> | n
 
 /** O `sub` do Google: texto ASCII visível, de 1 a 255 caracteres (a coluna é ascii_bin). */
 const SUB_PATTERN = /^[\x21-\x7e]{1,255}$/;
-/** Um e-mail com a forma mínima (o Google já o confirmou; aqui só não deixa lixo entrar). */
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * Um e-mail com a forma mínima (o Google já o confirmou; aqui só não deixa lixo entrar): sem
+ * espaço, um só "@" com algo antes, e um "." no domínio com algo dos dois lados. É a leitura de
+ * /^[^\s@]+@[^\s@]+\.[^\s@]+$/ sem o retrocesso dessa regex (Sonar S8786).
+ */
+export function hasEmailShape(value: string): boolean {
+  if (/\s/.test(value)) return false;
+  const at = value.indexOf('@');
+  if (at < 1 || value.includes('@', at + 1)) return false;
+  return value.slice(at + 2, -1).includes('.');
+}
 
 /**
  * Confere o ID token que veio do token endpoint e devolve a identidade. Não confere a assinatura
@@ -174,7 +184,7 @@ export function validateIdToken(
   if (
     typeof claims.email !== 'string' ||
     claims.email.length > 255 ||
-    !EMAIL_PATTERN.test(claims.email)
+    !hasEmailShape(claims.email)
   ) {
     throw new GoogleAuthError('invalid_id_token');
   }

@@ -31,6 +31,33 @@ describe('aviso de negociação por fora ao digitar (ADR 45)', () => {
     expect(offPlatformSignals('')).toEqual([]);
   });
 
+  it('acha e-mail como a regex antiga, sem o tempo quadrático numa mensagem longa', () => {
+    const OLD = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
+    const cases = [
+      'ana@exemplo.com',
+      'escreve pra a.b+c-d@sub.exemplo.com.br',
+      'ana@exemplo',
+      'ana@.com',
+      '@exemplo.com',
+      'ana @exemplo.com',
+      'ana@exemplo..com',
+      'ana@exemplo.',
+      'ana@@exemplo.com',
+      'x@@y.z',
+      'a@b.c',
+      'fim com arroba@',
+      'dois: @ e ana@ex.co',
+      '_@-.-',
+      'ana@exemplo-.com!',
+    ];
+    for (const text of cases) {
+      expect(offPlatformSignals(text).includes('email'), text).toBe(OLD.test(text));
+    }
+    const long = `${'a'.repeat(200_000)}!`;
+    expect(offPlatformSignals(long)).toEqual([]);
+    expect(offPlatformSignals(`${'a'.repeat(200_000)}@x.io`)).toEqual(['email']);
+  });
+
   it('descreve os sinais em português', () => {
     expect(describeSignals(['pix', 'phone', 'whatsapp'])).toBe('Pix, telefone e WhatsApp');
     expect(describeSignals(['email'])).toBe('e-mail');
