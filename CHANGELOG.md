@@ -11,7 +11,7 @@ com as tags `latest`, o sha curto e a versão.
 
 - **Documentação:** a página Qualidade da Wiki e a RFC traziam a cobertura de uma versão anterior (99,1% na API e 99,5% no web). Passam a trazer a do CI da 1.57.0, como o README: 98,3% na API só com unidade, 99,3% somando a integração e 98,9% no web.
 
-## [1.57.1] — 2026-11-23
+## [1.57.1] — 2026-11-24
 
 Triagem dos 127 alertas de segurança e de confiabilidade do SonarCloud (`docs/triagem-sonar.md`, também na Wiki): 107 corrigidos no código e 20 que não procedem, registrados com o motivo em `sonar-project.properties`. Nenhuma regra de negócio muda.
 
