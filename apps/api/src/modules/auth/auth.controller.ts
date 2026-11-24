@@ -1,3 +1,11 @@
+/**
+ * Controller de autenticação (camada de controller). Cada função atende uma rota de
+ * `auth.routes.ts`: valida o corpo com o schema zod do auth.schema (erro vira 422), chama o
+ * service e escolhe o status da resposta (201 criado, 202 aceito, 204 sem corpo, 200 com dados).
+ * Quem chama: as rotas `/api/auth/*`. O que chama: authService (cadastro, login, tokens, senha),
+ * contactService (e-mail e telefone) e mfaService (verificação em duas etapas).
+ * O id de quem está logado vem sempre do token (req.user), posto pelo authenticate, nunca do corpo.
+ */
 import type { Request, Response } from 'express';
 import { optionalUserId } from '../../middlewares/authenticate';
 import {
@@ -20,16 +28,24 @@ import { authService } from './auth.service';
 import { contactService } from './contact.service';
 import { mfaService } from './mfa.service';
 
+// IP e navegador da requisição: vão para a sessão, a auditoria e o registro do consentimento.
 function context(req: Request) {
   return { ip: req.ip ?? null, userAgent: req.headers['user-agent'] ?? null };
 }
 
+/** POST /api/auth/register: cria a conta e responde 201 com o usuário público (sem tokens). */
 export async function register(req: Request, res: Response): Promise<void> {
+  // O schema confere e-mail, senha (ao menos 8 caracteres), papel, aceite dos Termos e, para
+  // empresa, a razão social, o nome fantasia e o CNPJ.
   const input = registerSchema.parse(req.body);
   const user = await authService.register(input, context(req));
   res.status(201).json(user);
 }
 
+/**
+ * POST /api/auth/login: responde 200 com a sessão (access token, refresh e usuário) ou, se a conta
+ * tem a verificação em duas etapas, com o passe para o POST /api/auth/login/mfa.
+ */
 export async function login(req: Request, res: Response): Promise<void> {
   const input = loginSchema.parse(req.body);
   const result = await authService.login(input, context(req));
@@ -42,12 +58,14 @@ export async function loginMfa(req: Request, res: Response): Promise<void> {
   res.json(await authService.loginMfa(input, context(req)));
 }
 
+/** POST /api/auth/refresh: troca o refresh token por um par novo (rotação); 401 se não vale. */
 export async function refresh(req: Request, res: Response): Promise<void> {
   const { refreshToken } = refreshSchema.parse(req.body);
   const tokens = await authService.refresh(refreshToken, context(req));
   res.json(tokens);
 }
 
+/** POST /api/auth/logout: revoga a sessão deste refresh token e responde 204. */
 export async function logout(req: Request, res: Response): Promise<void> {
   const { refreshToken } = refreshSchema.parse(req.body);
   await authService.logout(refreshToken);
@@ -56,6 +74,7 @@ export async function logout(req: Request, res: Response): Promise<void> {
 
 /** Rota protegida — encerra todas as sessões do usuário do token. */
 export async function logoutAll(req: Request, res: Response): Promise<void> {
+  // req.user.sub é o ULID da conta, que veio dentro do JWT; a resposta diz quantas sessões caíram.
   const revoked = await authService.logoutAll(req.user!.sub);
   res.json({ revoked });
 }
@@ -85,6 +104,7 @@ export async function forgotPassword(req: Request, res: Response): Promise<void>
   res.status(202).json({ sent: true });
 }
 
+/** POST /api/auth/reset-password: nova senha pelo token do link; encerra as sessões (204). */
 export async function resetPassword(req: Request, res: Response): Promise<void> {
   const { token, password } = resetPasswordSchema.parse(req.body);
   await authService.resetPassword(token, password);

@@ -1,8 +1,23 @@
+/**
+ * Configuração da API (camada de config): lê, valida e exporta as variáveis de ambiente.
+ *
+ * Variável de ambiente é um valor que o sistema ou o Docker entrega ao processo (process.env),
+ * fora do código: porta, senha do banco, segredo do JWT. Assim o mesmo código roda no dev, na demo
+ * e na produção, mudando só a configuração (RNF-034). No dev os valores ficam no arquivo
+ * apps/api/.env (modelo no .env.example), que o import 'dotenv/config' carrega no process.env; o
+ * .env nunca vai para o git, porque guarda segredos. Na produção, o compose passa ao contêiner o
+ * .env da VPS. Variável que já existe no processo vale mais que a do arquivo.
+ *
+ * Quem usa: quase todo arquivo importa o `env` daqui (db.ts, server.ts, app.ts, services). Dentro:
+ * validadores de chave e de URL, o envSchema (um campo zod por variável), as combinações
+ * proibidas (envChecked) e o safeParse que impede a subida se algo estiver errado.
+ */
 import 'dotenv/config';
 import { z } from 'zod';
 import { AUDIT_LOG_MIN_RETENTION_DAYS } from '../modules/audit/audit.retention';
 import { JOBS_INTERVAL_MAX_MS } from '../utils/human-hours';
 
+// Validadores usados pelos .refine do schema mais abaixo.
 /**
  * Chave AES-256 em base64 canônico: 32 bytes, com o "=" final, sem espaço nem o alfabeto do
  * base64url. O Buffer aceitaria quase qualquer texto (ignora o que não entende) e devolveria uma
@@ -53,17 +68,22 @@ function isHttpsUrl(value: string): boolean {
   }
 }
 
+// Toda variável chega como texto. z.coerce.number() converte em número; o enum de 'true'/'false'
+// com transform vira booleano; .default() é o valor quando a variável não existe.
 /**
  * Validação das variáveis de ambiente (RNF-034: configs externalizadas).
  * Se faltar/estiver inválida, a API não sobe — falha cedo e claro.
  */
 const envSchema = z.object({
+  // --- Servidor: ambiente (dev, teste ou produção), porta da API e nível do log ---
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3333),
   // Commit do build (o CI grava na imagem via build-arg); aparece no health e no log de subida.
   GIT_SHA: z.string().default('dev'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
+  // --- Banco (MySQL): o config/db.ts monta o pool com estes valores. Os padrões são os do dev
+  // (localhost:3306, usuário escambo); no Docker o host é o serviço 'db'.
   DB_HOST: z.string().default('localhost'),
   DB_PORT: z.coerce.number().int().positive().default(3306),
   DB_USER: z.string().default('escambo'),
@@ -71,6 +91,9 @@ const envSchema = z.object({
   DB_NAME: z.string().default('escambo'),
   DB_CONNECTION_LIMIT: z.coerce.number().int().positive().default(10),
 
+  // --- Autenticação (ADR 6): JWT_SECRET assina o token e é a única variável sem padrão; sem ela
+  // a API não sobe. O token de acesso vale JWT_EXPIRES_IN (1h), o refresh vale 7 dias e o
+  // BCRYPT_SALT_ROUNDS é o custo do hash da senha (mínimo 12).
   JWT_SECRET: z.string().min(16, 'JWT_SECRET deve ter ao menos 16 caracteres'),
   JWT_EXPIRES_IN: z.string().default('1h'),
   BCRYPT_SALT_ROUNDS: z.coerce.number().int().min(12).default(12),
@@ -316,12 +339,18 @@ const envChecked = envSchema.superRefine((e, ctx) => {
   }
 });
 
+// safeParse não lança erro: devolve success com os dados, ou a lista do que está errado. Roda uma
+// vez só, no primeiro import deste arquivo, antes de a API abrir a porta.
 const parsed = envChecked.safeParse(process.env);
 
+// Falha cedo e claro: mostra cada variável recusada e sai com código 1, em vez de subir errado e
+// quebrar no primeiro uso.
 if (!parsed.success) {
   console.error('❌ Variáveis de ambiente inválidas:');
   console.error(parsed.error.flatten().fieldErrors);
   process.exit(1);
 }
 
+// O resto do código lê env.PORT, env.DB_HOST etc. já no tipo certo (número, booleano) e com os
+// padrões aplicados; ninguém mais lê o process.env direto.
 export const env = parsed.data;

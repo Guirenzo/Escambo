@@ -1,3 +1,20 @@
+/**
+ * Cliente HTTP do web: o único lugar que fala com a API. Camada: acesso a dados do front.
+ * As telas não chamam este arquivo direto: usam os hooks de lib/hooks.ts (TanStack Query), e
+ * cada hook chama `api.<função>`. A função monta método, caminho e corpo e chama `request`.
+ * Caminho de uma chamada: tela, hook, api.x(), request(), fetch("/api/..."), o proxy (Vite no
+ * dev; Caddy e nginx na produção) e, por fim, a API Express na porta 3333.
+ * Os tipos de pedido e resposta vêm de @escambo/types, o mesmo pacote que a API usa (ADR 1).
+ */
+// Índice do arquivo:
+//   - BASE_URL, chaves do localStorage e eventos de sessão;
+//   - guarda dos tokens (storableToken, accessToken, refreshToken, setSession);
+//   - refreshSession: renova o access token depois de um 401, uma renovação só (single-flight);
+//   - ApiRequestError, mensagens de erro e send (falha de rede em português);
+//   - request: a função que toda chamada usa (cabeçalhos, 401, erros);
+//   - fetchBlob: download de arquivo com o token;
+//   - o objeto `api`: um método por endpoint, agrupado por módulo (auth, serviços,
+//     contratações, chat, carteira, notificações, favoritos, admin, perfis e avaliações).
 import type {
   SupportTicket,
   SupportTicketDetail,
@@ -133,12 +150,21 @@ import type {
   CreateWithdrawalRequest,
 } from '@escambo/types';
 
+/**
+ * BASE_URL relativo: o front chama a API no mesmo endereço em que foi aberto, sem domínio fixo
+ * nem variável de ambiente. No dev o Vite repassa /api para a 3333 (vite.config.ts); na produção
+ * o Caddy entrega ao nginx do web, que repassa /api para a API (apps/web/nginx.conf). Como é a
+ * mesma origem da página, o navegador não precisa de CORS.
+ */
 const BASE_URL = '/api';
 /**
  * Login com Google (RF-002): o botão é um link de navegação para a API, que leva ao Google. Nada
  * do Google roda no app (sem SDK nem script de terceiro: a CSP continua 'self').
  */
 export const GOOGLE_START_URL = `${BASE_URL}/auth/google/start`;
+// Onde os tokens ficam: no localStorage do navegador, com estas duas chaves (sobrevivem ao F5 e
+// valem para todas as abas do site). O código usa a cópia em memória (accessToken e
+// refreshToken, mais abaixo), lida daqui quando o app carrega.
 const TOKEN_KEY = 'escambo_token';
 const REFRESH_KEY = 'escambo_refresh';
 
@@ -215,6 +241,9 @@ function emit(name: string, detail?: unknown): void {
   }
 }
 
+// A cópia em memória dos dois tokens, que o request usa. Começa com o que estava guardado.
+// O access token (JWT de 1 h) vai no cabeçalho Authorization; o refresh token (7 dias) só serve
+// para pedir um par novo em /auth/refresh (ADR 6).
 let accessToken: string | null = readStorage(TOKEN_KEY);
 let refreshToken: string | null = readStorage(REFRESH_KEY);
 
@@ -222,6 +251,7 @@ export function getToken(): string | null {
   return accessToken;
 }
 
+/** Troca o access token: na memória, no localStorage e com um evento (AuthProvider e socket). */
 export function setToken(token: string | null): void {
   accessToken = token;
   writeStorage(TOKEN_KEY, token);
@@ -247,12 +277,15 @@ let refreshingToken: string | null = null;
  * ao mesmo tempo compartilham UMA renovação (single-flight). Devolve false se a sessão acabou.
  */
 async function refreshSession(): Promise<boolean> {
+  // Sem refresh token não há o que renovar: a sessão acabou.
   if (!refreshToken) return false;
+  // Abre uma renovação nova só se não há outra em andamento para este mesmo refresh token.
   if (!refreshing || refreshingToken !== refreshToken) {
     const renewingToken = refreshToken;
     refreshingToken = renewingToken;
     refreshing = (async () => {
       try {
+        // Manda o refresh token e recebe um par novo; a API revoga o antigo (rotação, ADR 6).
         const res = await fetch(`${BASE_URL}/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -260,6 +293,7 @@ async function refreshSession(): Promise<boolean> {
         });
         if (!res.ok) return false;
         const data = (await res.json()) as RefreshResponse;
+        // A sessão mudou enquanto esperava (logout, outro login): descarta o par que chegou.
         if (refreshToken !== renewingToken) return false;
         setSession({ accessToken: data.accessToken, refreshToken: data.refreshToken });
         return true;
@@ -273,9 +307,11 @@ async function refreshSession(): Promise<boolean> {
       }
     })();
   }
+  // Quem tomou 401 junto espera esta mesma promessa (single-flight): uma renovação só.
   return refreshing;
 }
 
+/** Fim da sessão: limpa os tokens e avisa o AuthProvider, que zera o usuário (abre o login). */
 function expireSession(): void {
   setSession(null);
   emit(SESSION_EXPIRED_EVENT);
@@ -403,17 +439,26 @@ function apiMessage(body: { message?: unknown }): string | undefined {
   return typeof body.message === 'string' && body.message.trim() ? body.message : undefined;
 }
 
+/**
+ * A função que toda chamada usa. Recebe o caminho (sem o /api), as opções do fetch e se ainda
+ * pode repetir. Devolve o JSON da resposta com o tipo T, ou lança ApiRequestError com a
+ * mensagem da API. Passos: monta a URL com BASE_URL, põe o JSON e o Bearer, lê o status da
+ * conta, renova a sessão uma vez num 401 e transforma resposta de erro em exceção.
+ */
 async function request<T>(path: string, options: RequestInit = {}, retry = true): Promise<T> {
+  // Guarda o token usado: se outra chamada renovar no meio, esta não decide com o token velho.
   const token = accessToken;
   const res = await send(`${BASE_URL}${path}`, {
     ...options,
     headers: {
       // FormData (upload): o navegador põe o Content-Type com o boundary do multipart.
       ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      // O JWT de acesso vai como Bearer; na API quem confere é o middleware authenticate.
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...(options.headers ?? {}),
     },
   });
+  // X-Account-Status da API: conta banida encerra a sessão; suspensa mostra o aviso na tela.
   accountStatusResponse(res, token);
   // Access token vencido: renova e repete a chamada uma vez; se não der, encerra a sessão.
   if (
@@ -427,10 +472,14 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
     if (await refreshSession()) return request<T>(path, options, false);
     if (refreshToken === renewingToken) expireSession();
   }
+  // 204 (sem conteúdo): não há corpo para ler.
   if (res.status === 204) return undefined as T;
+  // Resposta sem JSON (HTML de erro do proxy, corpo vazio) vira objeto vazio, sem quebrar aqui.
   const data: unknown = await res.json().catch(() => ({}));
+  // Fora de 2xx: avisa o app (conta, manutenção, fora do ar) e lança o erro com a mensagem.
   if (!res.ok) {
     const err = errorBody(data);
+    // 403 com código da conta: suspensa, e-mail não confirmado (RF-006) ou bloqueada.
     accountErrorResponse(res, token, err);
     const code = typeof err.error === 'string' ? err.error : undefined;
     // Com previsão de volta (RNF-010), o 503 traz a hora: a tela a mostra sem outra chamada.
@@ -447,6 +496,7 @@ async function request<T>(path: string, options: RequestInit = {}, retry = true)
       err.contractId,
     );
   }
+  // Deu certo: devolve os dados com o tipo que a função pediu.
   return data as T;
 }
 
@@ -536,6 +586,11 @@ export interface ContractListQuery {
   status?: ContractStatus[];
 }
 
+/**
+ * Todas as chamadas da API, uma por endpoint. Cada uma só monta método, caminho e corpo e chama
+ * request (ou fetchBlob, para arquivo). Os grupos seguem os módulos da API, cada um com o seu
+ * comentário de título (auth, dashboard, contratações, favoritos, admin...).
+ */
 export const api = {
   supportTickets: (query: SupportTicketQuery = {}) =>
     request<Paginated<SupportTicket>>(`/support/tickets${supportQuery(query)}`),
@@ -732,8 +787,14 @@ export const api = {
     if (query.status?.length) qs.set('status', query.status.join(','));
     return request<ContractList>(`/contracts${qs.size ? `?${qs}` : ''}`);
   },
+  /**
+   * Proposta de contratação (POST /contracts). Chamada pelo useCreateContract (hooks.ts), que o
+   * ContratarModal usa. Em dinheiro a API já reserva o valor na carteira; em créditos, retém no
+   * aceite. Devolve a contratação criada; o 409 active_contract_exists traz o id da que já existe.
+   */
   createContract: (body: CreateContractRequest) =>
     request<Contract>('/contracts', { method: 'POST', body: JSON.stringify(body) }),
+  /** A contratação com o histórico: é o que a Sala do contrato (/contratos/:id) mostra. */
   contractDetail: (id: number) => request<ContractWithHistory>(`/contracts/${id}`),
   requestExtension: (id: number, body: { deadlineAt: string; reason: string }) =>
     request<Contract>(`/contracts/${id}/extension`, { method: 'POST', body: JSON.stringify(body) }),
@@ -743,6 +804,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(seq === undefined ? {} : { seq }),
     }),
+  /**
+   * Transições da contratação: aceitar, recusar e aprovar (a API confere quem pode cada uma).
+   * O `seq`, quando vem, é a oferta que a tela mostrou.
+   */
   contractAction: (id: number, action: 'accept' | 'reject' | 'approve', seq?: number) =>
     request<Contract>(`/contracts/${id}/${action}`, {
       method: 'POST',
@@ -927,6 +992,11 @@ export const api = {
     request<BarterAgreement | void>(`/barters/${id}/${action}`, { method: 'POST' }),
 
   // favoritos (serviços e freelancers)
+  /**
+   * Favoritos: GET lista os da conta; POST favorita (targetType "service" ou "freelancer" e o
+   * id); DELETE desfaz. Quem escolhe entre POST e DELETE é o useToggleFavorite (hooks.ts), pelo
+   * estado atual do coração. Favoritar o que é seu a API recusa com 422.
+   */
   favorites: () => request<Favorite[]>('/favorites'),
   addFavorite: (body: CreateFavoriteRequest) =>
     request<void>('/favorites', { method: 'POST', body: JSON.stringify(body) }),

@@ -1,3 +1,11 @@
+/**
+ * Fachada do módulo de parâmetros (a porta de entrada para os outros módulos).
+ * Quem chama: contracts.service (prazos de proposta, contraproposta, carência e aprovação tácita),
+ * messaging/attachments.purge (retenção e trava do último expurgo), gamification.service (raio do
+ * ranking) e reports/moderation.health (estado do relatório diário).
+ * O que chama: só o settingsRepository, que fala com a tabela `platform_settings`.
+ * Dentro: getNumber, get e setJson.
+ */
 import { settingsRepository } from './settings.repository';
 
 /**
@@ -19,6 +27,7 @@ export const settingsFacade = {
 
   /** Grava (ou cria) a chave com um JSON: o estado de job que sobrevive a reinícios. */
   setJson(key: string, value: string): Promise<void> {
+    // Sem autor (updated_by fica nulo): quem grava é o job, não um admin.
     return settingsRepository.set(key, value, 'json');
   },
 };

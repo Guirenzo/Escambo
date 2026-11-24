@@ -2,13 +2,19 @@
 # DOMAIN e ACME_EMAIL vêm do .env (docker-compose.prod.yml). Com DOMAIN=localhost o Caddy
 # emite um certificado da própria CA interna (útil para testar a stack de produção na máquina).
 
+# Caminho: o navegador chega aqui (porta 443) e o Caddy repassa tudo para o web (nginx), que
+# serve o React e repassa /api e /socket.io para a API. O Caddy cuida só da borda: HTTPS e
+# cabeçalhos. Bloco global (chaves sem nome): o e-mail que o Let's Encrypt usa para avisos.
 {
 	email {$ACME_EMAIL}
 }
 
+# O site: o nome vem da variável DOMAIN do .env, e o certificado sai para esse nome.
 {$DOMAIN} {
+	# Comprime as respostas (zstd ou gzip, o que o navegador aceitar).
 	encode zstd gzip
 
+	# Cabeçalhos de segurança em toda resposta; "-Server" tira o que diria qual servidor é.
 	header {
 		# 1 ano de HSTS: o navegador nem tenta HTTP depois da primeira visita.
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -17,6 +23,7 @@
 	}
 
 	# SPA + /api + /socket.io (WebSocket) — o nginx do web resolve o resto.
+	# web:8080 é o serviço web do compose (nginx sem root), achado pelo nome na rede interna.
 	reverse_proxy web:8080
 
 	# Web fora do ar (RNF-010): o Caddy não alcançou o nginx. Só os erros do próprio Caddy caem

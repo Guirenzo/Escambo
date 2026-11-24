@@ -1,3 +1,13 @@
+/**
+ * Schemas zod do módulo de perfis (camada de validação). Dizem o formato aceito em cada entrada
+ * do perfil: tamanho de cada texto, faixa da latitude e da longitude, dias e períodos de
+ * atendimento, itens do portfólio, CNPJ, CPF e data de nascimento. O controller chama `.parse()`;
+ * entrada fora do formato vira 422 no error-handler, com o campo errado.
+ * Quem usa: profiles.controller, profiles.service e cpf.service (os tipos), e o auth.schema (o
+ * companySignupSchema no cadastro de empresa).
+ * O que chama: os validadores de documento (`utils/documents`) e a regra de URL de mídia.
+ * Dentro: perfil de freelancer, portfólio, perfil de cliente, documentos (CNPJ, empresa) e CPF.
+ */
 import { z } from 'zod';
 import {
   isValidCnpj,
@@ -14,6 +24,11 @@ const imageRef = z.union([
   z.string().regex(MEDIA_URL_RE, 'Imagem enviada inválida'),
 ]);
 
+/**
+ * Corpo do PUT do perfil de freelancer (cria ou atualiza, daí o "upsert"). Só o nome é
+ * obrigatório; o resto é opcional e aceita null para apagar. Os máximos de texto batem com o
+ * tamanho das colunas de profiles_freelancer; estado é a sigla de 2 letras.
+ */
 export const upsertFreelancerSchema = z.object({
   fullName: z.string().min(2).max(150),
   avatarUrl: imageRef.nullable().optional(),
@@ -21,6 +36,7 @@ export const upsertFreelancerSchema = z.object({
   headline: z.string().max(255).nullable().optional(),
   city: z.string().max(100).nullable().optional(),
   state: z.string().length(2).nullable().optional(),
+  // Coordenadas do mapa: a latitude vai de -90 a 90 e a longitude de -180 a 180 (limites da Terra).
   latitude: z.number().min(-90).max(90).nullable().optional(),
   longitude: z.number().min(-180).max(180).nullable().optional(),
   isAvailable: z.boolean().optional(),
@@ -35,9 +51,14 @@ export const upsertFreelancerSchema = z.object({
     .nullable()
     .optional(),
 });
+// O tipo TypeScript sai do schema (z.infer): a validação e o tipo nunca ficam diferentes.
 export type UpsertFreelancerInput = z.infer<typeof upsertFreelancerSchema>;
 
 const url = z.string().url().max(512);
+/**
+ * Um trabalho do portfólio: título de 3 a 150 letras e pelo menos uma imagem ou um link. O
+ * refine confere a regra que envolve dois campos e aponta o erro no campo da imagem.
+ */
 export const portfolioItemSchema = z
   .object({
     title: z.string().trim().min(3).max(150),
@@ -51,6 +72,7 @@ export const portfolioItemSchema = z
   });
 export type PortfolioItemInput = z.infer<typeof portfolioItemSchema>;
 
+// O id do trabalho na URL chega como texto; o coerce converte para número antes de conferir.
 export const portfolioIdSchema = z.object({ id: z.coerce.number().int().positive() });
 
 /** Limite de itens no portfólio (RF de perfil): o suficiente para mostrar o trabalho sem virar depósito. */
@@ -65,6 +87,7 @@ export const portfolioOrderSchema = z.object({
     .refine((ids) => new Set(ids).size === ids.length, { message: 'Trabalho repetido na ordem' }),
 });
 
+// Corpo do PUT do perfil de cliente: as mesmas regras do freelancer, sem os campos de atendimento.
 export const upsertClientSchema = z.object({
   fullName: z.string().min(2).max(150),
   avatarUrl: imageRef.nullable().optional(),
@@ -74,6 +97,8 @@ export const upsertClientSchema = z.object({
 });
 export type UpsertClientInput = z.infer<typeof upsertClientSchema>;
 
+// O perfil público é buscado pelo ULID (26 caracteres), não pelo id numérico: o id sequencial
+// deixaria qualquer um adivinhar e contar as contas.
 export const ulidParamSchema = z.object({ ulid: z.string().length(26) });
 
 // ---------- Documentos (RF-018, RF-020) ----------
@@ -90,8 +115,10 @@ export const cnpjSchema = z
   .string({ error: CNPJ_INVALID_MESSAGE })
   .max(30, CNPJ_INVALID_MESSAGE)
   .transform((value, ctx) => {
+    // Tira a máscara e confere os dígitos verificadores; se passar, o valor limpo segue adiante.
     const cnpj = normalizeCnpj(value);
     if (cnpj && isValidCnpj(cnpj)) return cnpj;
+    // Inválido: registra o erro com a mensagem em português; o z.NEVER encerra sem valor.
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: CNPJ_INVALID_MESSAGE });
     return z.NEVER;
   });
@@ -121,6 +148,7 @@ const website = z
   .optional()
   .transform((value, ctx) => {
     if (value == null || value === '') return null;
+    // O URL do Node interpreta o endereço; só http e https passam (barra javascript: e afins).
     try {
       const url = new URL(value);
       if (url.protocol === 'https:' || url.protocol === 'http:') return url.toString();
@@ -135,6 +163,7 @@ const website = z
   });
 
 /** PUT /profiles/company: os do cadastro continuam obrigatórios; logo, site e descrição curta. */
+// O extend reaproveita o schema do cadastro e acrescenta os campos novos, sem repetir as regras.
 export const upsertCompanySchema = companySignupSchema.extend({
   logoUrl: imageRef.nullable().optional(),
   bio: z

@@ -17,8 +17,14 @@
 #   DEPLOY_PORT        porta SSH (padrão 22)
 # Sem os segredos o job termina verde, avisando que o deploy está desligado. Depois de configurar,
 # crie a variável de repositório DELIVERY_ENFORCED=true: a falta de um segredo passa a ser erro.
+#
+# Passos, em ordem: confere a configuração; descobre o commit da imagem; checkout desse commit;
+# não volta no tempo; chave SSH; copia a configuração; puxa e sobe; confere o /api/health; e,
+# se a conferência falhar, volta à versão anterior.
 name: Deploy
 
+# Gatilhos: workflow_run = o CI terminou num push na main (o if do job exige sucesso);
+# workflow_dispatch = o botão "Run workflow", usado no rollback com uma tag.
 on:
   workflow_run:
     workflows: [CI]
@@ -49,6 +55,7 @@ jobs:
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Ambiente production do GitHub: é dele que vêm os segredos e as variáveis DEPLOY_*.
     environment:
       name: production
       url: ${{ vars.DEPLOY_URL }}
@@ -63,6 +70,7 @@ jobs:
       DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
 
     steps:
+      # Confere segredos e URL; sem eles termina verde e avisa (com DELIVERY_ENFORCED, falha).
       - name: Deploy configurado?
         id: cfg
         env:
@@ -122,6 +130,7 @@ jobs:
           echo "tag=${sha::7}" >> "$GITHUB_OUTPUT"
           echo "asked=$tag" >> "$GITHUB_OUTPUT"
 
+      # Pega o código do commit da imagem: é dele que saem o compose e a pasta deploy/.
       - name: Checkout do commit que vai ao ar
         if: steps.cfg.outputs.enabled == 'true'
         uses: actions/checkout@v4
@@ -144,6 +153,7 @@ jobs:
             echo "stale=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Acesso SSH à VPS só com a chave do deploy e o known_hosts conferido à mão.
       - name: Chave SSH
         if: steps.cfg.outputs.enabled == 'true' && steps.fresh.outputs.stale != 'true'
         env:
@@ -177,6 +187,8 @@ jobs:
           scp docker-compose.prod.yml "vps:$DEPLOY_PATH/.next/docker-compose.prod.yml"
           scp -r deploy/. "vps:$DEPLOY_PATH/.next/deploy/"
 
+      # Na VPS: puxa as imagens novas, guarda a configuração atual em .prev, põe a nova, grava a
+      # IMAGE_TAG no .env e sobe (o migrate roda antes da api). Falhou: a fail() volta tudo.
       - name: Puxar e subir
         if: steps.cfg.outputs.enabled == 'true' && steps.fresh.outputs.stale != 'true'
         id: up
@@ -259,6 +271,7 @@ jobs:
           dc ps
           EOF
 
+      # Pergunta ao /api/health, de 10 em 10 s por até 5 min, se o commit no ar é o esperado.
       - name: O commit certo está no ar?
         if: steps.cfg.outputs.enabled == 'true' && steps.fresh.outputs.stale != 'true'
         id: health

@@ -1,3 +1,12 @@
+# CI do Escambo: roda em todo push nas branches de trabalho e em todo PR para a main.
+# Jobs e o que cada um espera (needs):
+#   build-and-test, integration, segredos e backup começam juntos, sem esperar ninguém;
+#   e2e espera o build-and-test; coverage espera build-and-test e integration;
+#   sonar espera o coverage; publish (só push na main) espera todos menos o sonar.
+# Os 6 checks obrigatórios para entrar na main: Lint · Typecheck · Test · Build, Integração, E2E,
+# Cobertura, Segredos e Backup. O SonarCloud só informa: falhar não segura imagem nem deploy.
+# Job vermelho: o publish não roda, o CI termina em failure e o deploy não acontece.
+# CI verde num push na main: o publish manda as imagens ao GHCR e o Deploy (deploy.yml) põe no ar.
 name: CI
 
 on:
@@ -7,6 +16,9 @@ on:
     branches: [main]
 
 jobs:
+  # build-and-test: o check principal. Instala, audita dependências, lint, Prettier, typecheck,
+  # unitários com cobertura (API e Web), build e confere o compose de produção. Não espera
+  # ninguém; se falhar, e2e, coverage e publish não rodam.
   build-and-test:
     name: Lint · Typecheck · Test · Build
     runs-on: ubuntu-latest
@@ -21,6 +33,7 @@ jobs:
           node-version: 22
           cache: npm
 
+      # npm ci instala exatamente o package-lock; --ignore-scripts não roda script de pacote.
       - name: Instalar dependências
         run: npm ci --ignore-scripts
 
@@ -48,6 +61,7 @@ jobs:
       - name: Testes unitários + cobertura (Web)
         run: npm run -w @escambo/web test:cov
 
+      # Guarda a cobertura como artefato: o job coverage baixa e junta com a da integração.
       - name: Relatórios de cobertura (unitários)
         uses: actions/upload-artifact@v4
         with:
@@ -60,6 +74,7 @@ jobs:
       - name: Build (API + Web)
         run: npm run build
 
+      # Confere que o docker-compose.prod.yml é válido, com valores falsos só neste passo.
       - name: Compose de produção válido (interpolação + YAML)
         run: docker compose -f docker-compose.prod.yml config -q
         env:
@@ -71,10 +86,13 @@ jobs:
           ADMIN_EMAILS: admin@escambo.example
           MAIL_FROM: Escambo <nao-responda@escambo.example>
 
+  # integration: os testes de integração (Supertest) contra um MySQL 8 de verdade, que o
+  # GitHub sobe como serviço. Não espera ninguém; a cobertura dele vai para o job coverage.
   integration:
     name: Integração · Supertest + MySQL
     runs-on: ubuntu-latest
 
+    # services: contêineres que o GitHub sobe ao lado do job; o MySQL fica em 127.0.0.1:3306.
     services:
       mysql:
         image: mysql:8.0
@@ -186,6 +204,7 @@ jobs:
           DB_ROOT_PASSWORD: escambo_root
 
   # Meta do backend (75%, Playbook de Web Apps) sobre a união unitários + integração (ADR 59).
+  # Espera build-and-test e integration (needs): sem os dois relatórios não há o que unir.
   coverage:
     name: Cobertura · meta do backend
     runs-on: ubuntu-latest
@@ -238,6 +257,7 @@ jobs:
     name: SonarCloud
     runs-on: ubuntu-latest
     needs: [coverage]
+    # continue-on-error: se este job falhar, o CI continua verde (o Sonar só informa).
     continue-on-error: true
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -272,6 +292,8 @@ jobs:
         env:
           SONAR_HOST_URL: https://sonarcloud.io
 
+  # e2e: testes ponta a ponta com Playwright (desktop, mobile e acessibilidade) contra a API e o
+  # web de verdade, com MySQL. Espera o build-and-test.
   e2e:
     name: E2E · Playwright (Web + API + MySQL)
     runs-on: ubuntu-latest
@@ -293,6 +315,7 @@ jobs:
           --health-timeout=5s
           --health-retries=10
 
+    # Variáveis só de teste para a API do E2E (nenhuma é de produção).
     env:
       DB_HOST: 127.0.0.1
       DB_PORT: '3306'
@@ -377,6 +400,7 @@ jobs:
   publish:
     name: Publicar imagens (GHCR)
     runs-on: ubuntu-latest
+    # if: só em push na main (nunca em PR). needs: os seis jobs obrigatórios, sem o sonar.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [build-and-test, integration, e2e, coverage, backup, segredos]
     permissions:
@@ -406,6 +430,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Imagem da API com três tags; o rótulo revision guarda o commit, que o Deploy lê depois.
       - name: API → GHCR
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:

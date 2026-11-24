@@ -1,3 +1,12 @@
+/**
+ * Configuração do Vitest para os testes de integração da API (infraestrutura de teste). Quem usa:
+ * "npm run test:int" (e o test:int:cov, com cobertura), no dev com o MySQL no ar e no job
+ * integration do CI.
+ *
+ * Diferença dos unitários: aqui o SQL roda de verdade, então é a prova de que os repositories
+ * funcionam no MySQL (ADR 5). Esta cobertura não tem piso próprio: ela é somada à dos unitários
+ * pelo scripts/coverage-merge.mjs, que confere os 75% sobre a união.
+ */
 import { defineConfig } from 'vitest/config';
 
 /**
@@ -11,9 +20,12 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/integration/**/*.int.test.ts'],
+    // Roda uma vez antes da suíte: apaga e recria o escambo_test e aplica baseline, migrations e
+    // seed pelo mesmo migrate-core da produção. No fim, apaga o database de teste.
     globalSetup: ['test/integration/global-setup.ts'],
     environment: 'node',
     fileParallelism: false, // uma conexão/estado de banco por vez
+    // Tempo máximo dos hooks (beforeAll e afins, 60 s) e de cada teste (30 s), acima do padrão.
     hookTimeout: 60_000,
     testTimeout: 30_000,
     env: {

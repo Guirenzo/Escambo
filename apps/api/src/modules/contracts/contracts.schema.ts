@@ -1,3 +1,13 @@
+/**
+ * Schemas de validação das contratações (camada de schema, com a biblioteca zod).
+ * Pra que serve: descreve o formato aceito de cada corpo, parâmetro de URL e query do módulo e
+ * barra o que vier errado antes de chegar à regra de negócio.
+ * Com quem conversa: o controller chama `schema.parse(...)`; se falhar, o error-handler
+ * responde 422 com os campos errados. Os tipos (CreateContractInput etc.) vão para o service.
+ * O que tem dentro: a criação (createContractSchema, com marcos e pacote), a contraproposta,
+ * a entrega, a revisão, o pedido de prazo, o cancelamento e a lista com filtro de status.
+ * O schema confere formato e soma; quem pode fazer o quê e quanto custa fica no service.
+ */
 import { z } from 'zod';
 import { clock } from '../../utils/clock';
 
@@ -16,6 +26,7 @@ const MAX_AMOUNT_MESSAGE = 'O valor máximo é R$ 99.999.999,99';
  */
 const CENTS_MESSAGE = 'O valor vai até os centavos: no máximo duas casas decimais';
 
+/** Um marco na criação (RN-069): título, descrição opcional, valor e prazo opcional. */
 const milestoneSchema = z.object({
   title: z.string().min(3).max(150),
   description: z.string().max(1000).nullable().optional(),
@@ -27,6 +38,10 @@ const milestoneSchema = z.object({
   dueAt: z.string().datetime().nullable().optional(),
 });
 
+/**
+ * Corpo do POST /contracts. Preço de R$ 10,00 para cima (RN-027), até os centavos. A taxa
+ * da plataforma não vem do corpo: o service calcula e grava no contrato (RN-031).
+ */
 export const createContractSchema = z
   .object({
     freelancerId: z.number().int().positive(),
@@ -50,6 +65,7 @@ export const createContractSchema = z
       })
       .optional(),
   })
+  // superRefine: as conferências que olham mais de um campo ao mesmo tempo.
   .superRefine((d, ctx) => {
     if (d.packageTier && d.serviceId == null) {
       ctx.addIssue({
@@ -78,6 +94,7 @@ export const createContractSchema = z
         }
       });
     }
+    // A soma dos marcos fecha com o preço, com folga de meio centavo do ponto flutuante.
     const sum = d.milestones.reduce((acc, m) => acc + m.amount, 0);
     if (Math.abs(sum - d.price) > 0.005) {
       ctx.addIssue({
@@ -104,8 +121,10 @@ export const createContractSchema = z
       previous = t;
     });
   });
+// O tipo TypeScript tirado do schema: o service recebe o corpo já validado neste formato.
 export type CreateContractInput = z.infer<typeof createContractSchema>;
 
+/** Número da oferta na negociação: de 1 a 5 (RN-030, até 5 ofertas). */
 const offerSeqSchema = z.number().int().min(1).max(5);
 const counterMilestoneSchema = z
   .object({
@@ -155,6 +174,7 @@ export const counterOfferSchema = z
         message: 'Cada marco precisa aparecer uma única vez',
       });
     }
+    // Aqui a soma é feita em centavos inteiros, sem o erro do ponto flutuante.
     const sum = d.milestones.reduce((cents, m) => cents + Math.round(m.amount * 100), 0);
     if (sum !== Math.round(d.price * 100)) {
       ctx.addIssue({
@@ -195,6 +215,7 @@ export const milestoneParamsSchema = z.object({
   milestoneId: z.coerce.number().int().positive(),
 });
 
+/** Corpo da entrega em JSON: a mensagem (obrigatória) e até 20 links. */
 export const deliverSchema = z.object({
   message: z.string().min(1),
   files: z.array(z.string().url()).max(20).optional(),
@@ -236,6 +257,7 @@ export type NoteInput = z.infer<typeof noteSchema>;
 /** A liberação concede exatamente uma revisão; o limite nunca vem do corpo da requisição. */
 export const grantRevisionBodySchema = z.object({}).strict().default({});
 
+/** O :id da URL: coerce troca o texto por número, e zero, negativo ou letra viram 422. */
 export const contractIdSchema = z.object({ id: z.coerce.number().int().positive() });
 
 /** Pedido de extensão de prazo (RN-028): novo prazo e o motivo, que o cliente lê. */
@@ -245,6 +267,7 @@ export const extensionSchema = z.object({
 });
 export type ExtensionInput = z.infer<typeof extensionSchema>;
 
+/** O :decision da URL do pedido de prazo: só accept ou decline. */
 export const extensionDecisionSchema = z.object({
   id: z.coerce.number().int().positive(),
   decision: z.enum(['accept', 'decline']),
@@ -269,6 +292,7 @@ export const cancelBodySchema = z
   .default({});
 export type CancelBody = z.infer<typeof cancelBodySchema>;
 
+/** Os status da máquina de estados, os mesmos do ENUM da coluna status (db/schema.sql). */
 export const CONTRACT_STATUSES = [
   'pending',
   'accepted',
@@ -297,6 +321,7 @@ const statusFilterSchema = z.preprocess(
   z.array(z.enum(CONTRACT_STATUSES, { message: 'Status de contratação desconhecido' })).optional(),
 );
 
+/** Query da lista (RF-040): página, itens por página (até 100) e status. */
 export const listContractsSchema = z.object({
   page: z.coerce.number().int().positive().max(10_000).default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),

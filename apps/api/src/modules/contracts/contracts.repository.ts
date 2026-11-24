@@ -1,3 +1,25 @@
+/**
+ * Repository das contratações (camada de repository): o SQL da tabela contracts e das ligadas
+ * a ela (histórico de status, entregas, marcos e ofertas), escrito à mão com mysql2.
+ * Pra que serve: ler contratações e gravar cada mudança de forma atômica, junto com a carteira.
+ * Com quem conversa: é chamado pelo contracts.service.ts (os jobs passam pelo service ou leem
+ * daqui); usa o pool de config/db e, dentro das transações, os ajudantes da carteira
+ * (wallet.ledger.ts grava o saldo e o extrato; wallet.locks.ts trava contas e carteiras).
+ *
+ * Índice:
+ *  - ContractRow, DeliveryRow, HistoryRow: o formato das linhas lidas.
+ *  - CONTRACT_COLS: as colunas e os contadores que toda leitura traz.
+ *  - create: a proposta numa transação (trava, confere a RN-020, grava, reserva o saldo).
+ *  - findById, listForUser, countForUser, listDeliveries, listHistory: leituras.
+ *  - findApprovalDue, findProposalsDue, findOverdueUnnoticed, findGraceEnded,
+ *    findExtensionsToExpire: o que cada job precisa processar.
+ *  - markOverdueNotified, requestExtension, acceptExtension, settleExtension: prazos.
+ *  - transition: a troca de status genérica, com dinheiro, histórico e marcos juntos (ADR 2).
+ *  - deliver, grantRevision: a entrega e a revisão a mais, também em transação.
+ *
+ * Por que transação: ou tudo é gravado (status, histórico, carteira, extrato) ou nada é. Se
+ * uma parte falha no meio, o rollback desfaz as anteriores e o dinheiro nunca fica pela metade.
+ */
 import type { BrazilTimezone, OfferOutcome, PackageTier, ServicePackage } from '@escambo/types';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import type { PoolConnection } from 'mysql2/promise';
@@ -152,6 +174,11 @@ export const OVERDUE_DISPUTE_GUARD = `AND ${rn029Eligible('c')}
 const REQUESTS_USED = `GREATEST(c.extension_requests, c.extension_status IN ('pending', 'accepted', 'declined'))`;
 
 export const contractsRepository = {
+  /**
+   * Cria a proposta numa transação só (P13): trava as contas, confere a RN-020, grava o contrato
+   * e a primeira linha do histórico, reserva o preço na carteira do cliente (em dinheiro), grava
+   * os marcos e a oferta 1. Devolve o id novo, ou null se faltou saldo (aí nada fica gravado).
+   */
   async create(data: {
     ulid: string;
     clientId: number;
@@ -195,9 +222,11 @@ export const contractsRepository = {
       packageSnapshot,
       ...rest
     } = data;
+    // Pacote e cópia do pacote andam juntos: um sem o outro é erro de programação.
     if (Boolean(packageTier) !== Boolean(packageSnapshot)) {
       throw new Error('contracts.create: package_tier e package_snapshot andam juntos');
     }
+    // Os valores dos parâmetros nomeados do SQL (:ulid, :price...), já no formato da coluna.
     const row = {
       ...rest,
       feePercentage:
@@ -208,14 +237,21 @@ export const contractsRepository = {
       packageSnapshot: packageSnapshot ? JSON.stringify(packageSnapshot) : null,
       deadlineAt: deadlineAt ? new Date(deadlineAt) : null,
     };
+    // Uma conexão só, tirada do pool: a transação inteira roda nela (a mesma `conn` abaixo).
     const conn = await pool.getConnection();
     try {
+      // Abre a transação: daqui até o commit, ou tudo é gravado ou nada é (tudo ou nada).
       await conn.beginTransaction();
       // RN-020: a conta do cliente serializa novas propostas diretas. Mantenha a ordem
       // numérica das contas/FKs; a consulta abaixo é a primeira leitura consistente,
       // depois de qualquer espera. Não trave contratos existentes: suas transições
       // adquirem contrato antes de users, e inverter essa ordem formaria um ciclo.
+      // A trava: a conta do cliente fica exclusiva (outra proposta dele espera aqui até o commit)
+      // e a do freelancer compartilhada, sempre em ordem crescente de id, para duas transações
+      // nunca esperarem uma pela outra em ciclo (deadlock).
       await lockWalletUsers(conn, [data.clientId, data.freelancerId], [data.clientId]);
+      // RN-020: procura contratação aberta deste cliente com este freelancer; se achar, 409 com o
+      // id dela. Com a conta travada, duas propostas simultâneas não passam as duas.
       const [existing] = await conn.query<RowDataPacket[]>(
         `SELECT id FROM contracts
           WHERE client_id = :clientId AND freelancer_id = :freelancerId
@@ -232,6 +268,7 @@ export const contractsRepository = {
           { contractId: Number(existing[0].id) },
         );
       }
+      // Grava a linha do contrato. O status não vai no comando: a coluna começa em pending.
       const [res] = await conn.query<ResultSetHeader>(
         `INSERT INTO contracts
            (ulid, client_id, freelancer_id, service_id, title, description, price, platform_fee, freelancer_net, fee_percentage, revision_limit, payment_mode, deadline_at, proposal_expires_at, created_at, package_tier, package_snapshot)
@@ -246,8 +283,13 @@ export const contractsRepository = {
          VALUES (:id, :changedBy, NULL, 'pending', 'Proposta enviada', :source)`,
         { id, changedBy: data.clientId, source },
       );
+      // A reserva do escrow (só em dinheiro): o preço sai do saldo disponível (balance) do cliente
+      // e vai para o retido (balance_pending). Continua sendo dele, mas não dá para usar nem sacar.
+      // Ex.: com R$ 300 disponíveis e proposta de R$ 100, ficam 200 disponíveis e 100 retidos.
       if (hold) {
+        // Trava a linha da carteira do cliente até o commit: ninguém mexe no saldo no meio.
         await lockWalletRows(conn, [hold.userId]);
+        // applyWalletEffect só grava se nenhum saldo ficar negativo, e grava o extrato junto.
         const ok = await applyWalletEffect(conn, {
           userId: hold.userId,
           balanceDelta: -hold.amount,
@@ -255,11 +297,14 @@ export const contractsRepository = {
           reason: 'hold',
           contractId: id,
         });
+        // Sem saldo: o rollback desfaz o contrato e o histórico já gravados acima; o service
+        // recebe null e responde 402 insufficient_balance.
         if (!ok) {
           await conn.rollback();
           return null; // saldo insuficiente: nada é criado
         }
       }
+      // Os marcos (RN-069) nascem pending: só viram funded no aceite.
       if (milestones && milestones.length > 0) {
         await milestonesRepository.insertMany(conn, id, milestones, revisionLimit);
       }
@@ -272,6 +317,7 @@ export const contractsRepository = {
             dueAt: m.due_at ? new Date(m.due_at).toISOString() : null,
           }))
         : null;
+      // A oferta 1 da negociação (RN-030): os termos da proposta inicial.
       await offersRepository.insert(conn, {
         contractId: id,
         seq: 1,
@@ -284,18 +330,22 @@ export const contractsRepository = {
         milestones: offerMilestones,
         message: null,
       });
+      // Commit: só aqui tudo vira definitivo e visível para as outras conexões.
       await conn.commit();
       return id;
     } catch (err) {
+      // Qualquer erro (inclusive o 409 da RN-020): desfaz tudo e repassa o erro ao service.
       await conn.rollback();
       throw err;
     } finally {
+      // Com sucesso ou erro, a conexão volta ao pool (senão o pool se esgota).
       conn.release();
     }
   },
 
   /** Com `conn`, lê dentro da transação de quem chama (lembretes, ADR 58). */
   async findById(id: number, conn?: PoolConnection): Promise<ContractRow | undefined> {
+    // Sem filtro de dono aqui: o service confere depois quem pode ver ou agir (assertParty, P9).
     const [rows] = await (conn ?? pool).query<ContractRow[]>(
       `SELECT ${CONTRACT_COLS} FROM contracts c WHERE c.id = :id LIMIT 1`,
       { id },
@@ -311,6 +361,9 @@ export const contractsRepository = {
     statuses?: string[],
   ): Promise<ContractRow[]> {
     const filtered = statuses && statuses.length > 0;
+    // Filtro por usuário (P9): só as contratações em que userId é o cliente ou o freelancer, e
+    // o userId vem do token, nunca da URL. limit e offset entram no texto do SQL porque são
+    // inteiros já validados pelo schema da lista; o resto vai por parâmetro nomeado.
     const [rows] = await pool.query<ContractRow[]>(
       `SELECT ${CONTRACT_COLS} FROM contracts c
         WHERE (c.client_id = :userId OR c.freelancer_id = :userId)${filtered ? ' AND c.status IN (:statuses)' : ''}
@@ -324,6 +377,7 @@ export const contractsRepository = {
   /** O total da lista acima, com o mesmo filtro: o painel diz quantas há, não só a página. */
   async countForUser(userId: number, statuses?: string[]): Promise<number> {
     const filtered = statuses && statuses.length > 0;
+    // O mesmo filtro da lista (dono e status), para o total bater com as páginas.
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT COUNT(*) AS total FROM contracts c
         WHERE (c.client_id = :userId OR c.freelancer_id = :userId)${filtered ? ' AND c.status IN (:statuses)' : ''}`,
@@ -637,12 +691,16 @@ export const contractsRepository = {
       reason?: string;
     }[];
   }): Promise<boolean> {
+    // Exemplo: o aceite manda from pending, to accepted e dois walletEffects (o retido do
+    // cliente perde o preço, o retido do freelancer ganha o líquido).
     const conn = await pool.getConnection();
     try {
+      // Abre a transação: status, histórico, marcos e carteiras são gravados juntos ou nenhum.
       await conn.beginTransaction();
 
       let transitionNow = params.now ?? clock.now();
       let offerValidAt: ((at: Date) => boolean) | undefined;
+      // Quem terá a carteira movida: essas carteiras são travadas antes do primeiro efeito.
       const walletUserIds = [
         ...(params.walletEffects ?? []).map((effect) => effect.userId),
         ...(params.creditsEffects ?? []).map((effect) => effect.userId),
@@ -655,6 +713,7 @@ export const contractsRepository = {
           : []),
       ];
       let usersLocked = false;
+      // Desistência (RN-026): trava o contrato e confere de novo o status e a contagem.
       if (params.dropout) {
         const [contracts] = await conn.query<ContractRow[]>(
           'SELECT * FROM contracts WHERE id = :id FOR UPDATE',
@@ -689,6 +748,7 @@ export const contractsRepository = {
           return false;
         }
       }
+      // Negociação (RN-030): trava o contrato e confere que a oferta é a mesma que a pessoa viu.
       if (params.offerResolution) {
         const [rows] = await conn.query<ContractRow[]>(
           'SELECT * FROM contracts WHERE id = :id FOR UPDATE',
@@ -742,6 +802,7 @@ export const contractsRepository = {
           }
         }
       }
+      // Pedido de revisão (RN-023): trava o contrato e confere que ainda há revisão sem custo.
       if (params.countRevision) {
         const [rows] = await conn.query<ContractRow[]>(
           `SELECT * FROM contracts WHERE id = :id FOR UPDATE`,
@@ -759,6 +820,8 @@ export const contractsRepository = {
         }
         await recoverDeliveryRules(conn, row.id, row);
       }
+      // As colunas que mudam. Os nomes e as guardas vêm do código, nunca da requisição; os
+      // valores vão por parâmetro nomeado.
       const sets = ['c.status = :to'];
       if (params.countRevision) sets.push('c.revisions_used = c.revisions_used + 1');
       if (params.timestampColumn) sets.push(`c.${params.timestampColumn} = :now`);
@@ -772,6 +835,11 @@ export const contractsRepository = {
           'c.freelancer_net = :offerNet',
           'c.deadline_at = :offerDeadline',
         );
+      // A troca de status condicional (concorrência otimista, ADR 2): só muda a linha se o status
+      // AINDA for o `from` que o service leu, mais a guarda de quem chama. Duas requisições ao
+      // mesmo tempo (dois cliques em aprovar): a primeira muda o status; a segunda não acha mais
+      // a linha no status antigo, afeta 0 linhas e volta false. O service responde 409 e o
+      // dinheiro nunca é liberado duas vezes.
       const [res] = await conn.query<ResultSetHeader>(
         `UPDATE contracts c SET ${sets.join(', ')}
           WHERE c.id = :id AND c.status = :from ${params.countRevision ? 'AND (c.revision_limit IS NULL OR c.revisions_used < c.revision_limit) AND c.revisions_used < 4294967295' : ''} ${params.guard?.sql ?? ''}`,
@@ -789,11 +857,13 @@ export const contractsRepository = {
         },
       );
 
+      // 0 linhas afetadas: o status já mudou ou a guarda falhou; desfaz e devolve false.
       if (res.affectedRows === 0) {
         await conn.rollback();
         return false;
       }
 
+      // Trava as contas envolvidas (em ordem de id), se nenhum passo acima já travou.
       if (!usersLocked && walletUserIds.length > 0) {
         await lockWalletUsers(conn, relatedUserIds);
       }
@@ -819,6 +889,8 @@ export const contractsRepository = {
         return false;
       }
 
+      // Linha do histórico (RN-022): de qual status para qual, quem mudou e por quê, na mesma
+      // transação. Se o resto falhar, ela também some no rollback.
       await conn.query<ResultSetHeader>(
         `INSERT INTO contract_status_history (contract_id, changed_by, old_status, new_status, note, source)
          VALUES (:id, :changedBy, :from, :to, :note, :source)`,
@@ -832,6 +904,7 @@ export const contractsRepository = {
         },
       );
 
+      // Os marcos mudam junto (ex.: de pending para funded no aceite, ou para cancelled).
       if (params.milestonesTo) {
         await conn.query<ResultSetHeader>(
           `UPDATE contract_milestones SET status = :to
@@ -844,6 +917,7 @@ export const contractsRepository = {
       // extratos conservam a ordem de negócio recebida (cliente/freelancer).
       await lockWalletRows(conn, walletUserIds);
       // Guarda contra saldo negativo: se alguma carteira não existe ou ficaria negativa, aborta tudo.
+      // Um efeito sem saldo: o rollback desfaz também o status e o histórico gravados acima.
       for (const eff of params.walletEffects ?? []) {
         const ok = await applyWalletEffect(conn, { ...eff, contractId: params.id });
         if (!ok) {
@@ -887,6 +961,7 @@ export const contractsRepository = {
         }
       }
 
+      // A oferta aceita ainda vale agora (a espera pelas travas pode ter passado da validade).
       if (offerValidAt && !offerValidAt(clock.now())) {
         await conn.rollback();
         return false;
@@ -914,9 +989,11 @@ export const contractsRepository = {
           droppedAt,
         });
       }
+      // Commit: o status novo, o histórico, os marcos e o dinheiro passam a valer juntos.
       await conn.commit();
       return true;
     } catch (err) {
+      // Qualquer erro no meio desfaz tudo o que esta transação já tinha gravado.
       await conn.rollback();
       throw err;
     } finally {
@@ -944,6 +1021,7 @@ export const contractsRepository = {
     try {
       await conn.beginTransaction();
 
+      // Trava a linha do contrato até o commit e confere que o status ainda é o que o service leu.
       const [rows] = await conn.query<ContractRow[]>(
         `SELECT * FROM contracts WHERE id = :id FOR UPDATE`,
         { id: params.id },
@@ -960,6 +1038,7 @@ export const contractsRepository = {
         params.approvalDueAt,
         recovered.deliveryDisputeOpensAt,
       );
+      // Troca condicional para delivered, com a hora da aprovação tácita (RN-024).
       const [res] = await conn.query<ResultSetHeader>(
         `UPDATE contracts c
             SET c.status = 'delivered', c.approval_due_at = :approvalDueAt,
@@ -980,6 +1059,7 @@ export const contractsRepository = {
         return false;
       }
 
+      // Grava a entrega (mensagem e links) e, se houver, liga os arquivos a ela (RF-035).
       const [delivery] = await conn.query<ResultSetHeader>(
         `INSERT INTO deliveries (contract_id, message, files, delivered_at, created_at)
          VALUES (:id, :message, :files, :now, :now)`,
@@ -1048,6 +1128,7 @@ export const contractsRepository = {
         await conn.rollback();
         return false;
       }
+      // A mesma troca condicional: só soma 1 ao limite se nada mudou desde a leitura.
       const [updated] = await conn.query<ResultSetHeader>(
         `UPDATE contracts SET revision_limit = revision_limit + 1 WHERE id = :id
            AND status = 'delivered' AND revision_limit IS NOT NULL

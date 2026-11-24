@@ -1,3 +1,15 @@
+/**
+ * Configuração do Vitest para os testes de unidade da API (infraestrutura de teste). Quem usa:
+ * "npm test" e "npm run test:cov" (com cobertura), no dev e no job build-and-test do CI.
+ *
+ * Cobertura é a porcentagem do código que os testes executaram: linhas, instruções (statements),
+ * funções e branches (cada caminho de um if). O provider v8 mede direto no motor do Node, e o
+ * relatório sai em coverage/unit (o lcov-report/index.html abre no navegador).
+ *
+ * Meta da disciplina: 75% no backend e 25% no front, medida nos testes de unidade (ADR 59). O
+ * piso deste arquivo é 90% de linhas, instruções e funções e 85% de branches: abaixo de qualquer
+ * um, o vitest termina com erro e o CI fica vermelho.
+ */
 import { defineConfig } from 'vitest/config';
 
 /**
@@ -7,8 +19,11 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   test: {
+    // Arquivos de teste: todo *.test.ts dentro de src, ao lado do código que testa.
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    // Roda antes de cada arquivo de teste: troca a consulta da conta atual (a que o authenticate
+    // faz no banco) por uma versão falsa, sem MySQL.
     setupFiles: ['src/test-support/account-access.setup.ts'],
     // Suíte hermética: não depende de um .env local. O env.ts exige JWT_SECRET
     // (sem default) — injetamos um valor de teste para o parse não abortar.
@@ -36,6 +51,7 @@ export default defineConfig({
       exclude: ['src/**/*.test.ts', 'src/test-support/**'],
       reporter: ['text-summary', 'json', 'lcov'],
       reportsDirectory: 'coverage/unit',
+      // O piso: abaixo de um destes números a rodada com cobertura falha (meta da disciplina: 75%).
       thresholds: { lines: 90, statements: 90, functions: 90, branches: 85 },
     },
   },

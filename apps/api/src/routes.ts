@@ -1,3 +1,13 @@
+/**
+ * Roteador principal da API (camada de rotas): liga o router de cada módulo num caminho. O app.ts
+ * monta este router em /api, então "/contracts" aqui vira /api/contracts.
+ *
+ * Cada módulo (modules/<nome>/<nome>.routes.ts) declara as próprias rotas e os middlewares delas
+ * (authenticate, requireAdmin, requireVerifiedEmail). Cada rota chama o controller do módulo, que
+ * chama o service, que chama o repository, que fala com o MySQL pelo pool do config/db.ts.
+ * Exemplo: POST /api/contracts entra no contractsRoutes, passa pelo authenticate e pelo
+ * requireVerifiedEmail e chega no createContract do controller de contratações.
+ */
 import { Router } from 'express';
 import { adminRoutes } from './modules/admin/admin.routes';
 import { authRoutes } from './modules/auth/auth.routes';
@@ -30,6 +40,8 @@ import { clientErrorsRoutes } from './modules/client-errors/client-errors.routes
 /** Monta as rotas de cada módulo sob /api. */
 export const router = Router();
 
+// O health não pede token (o orquestrador consulta sem login) e o auth tem as rotas que geram o
+// token (login, cadastro, renovação). Quem exige login é decidido no routes.ts de cada módulo.
 router.use('/health', healthRoutes);
 router.use('/auth', authRoutes);
 router.use('/categories', categoriesRoutes);
@@ -52,6 +64,8 @@ router.use('/saved-searches', savedSearchesRoutes);
 router.use('/reports', reportsRoutes);
 router.use('/moderation', moderationRoutes);
 router.use('/disputes', disputesRoutes);
+// Suporte tem dois routers: o do titular (os próprios chamados) e o da equipe, em /admin, que
+// exige authenticate e requireAdmin (support.routes.ts).
 router.use('/support/tickets', supportRoutes);
 router.use('/admin/support/tickets', adminSupportRoutes);
 router.use('/admin', adminRoutes);

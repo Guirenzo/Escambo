@@ -1,3 +1,15 @@
+/**
+ * Núcleo do runner de migrations (infraestrutura do banco): as funções que o migrate.ts (linha de
+ * comando) e os testes chamam. Recebe uma conexão já aberta e não lê o env.
+ *
+ * Checksum é a "impressão digital" do arquivo: o SHA-256 do texto, 64 caracteres em hexadecimal,
+ * que muda se mudar uma letra. Ao aplicar, o runner grava o checksum em schema_migrations; nas
+ * próximas vezes, recalcula e compara. Se mudou, alguém editou uma migration já aplicada, e o
+ * runner recusa (ADR 4, desde a 1.54.1). Não existe desfazer (down): a correção é a próxima.
+ *
+ * Dentro: loadMigrations (lê os arquivos em ordem), ensureMigrationsTable, appliedChecksums,
+ * changedMigrations (acha as editadas), seedReferenceIfEmpty e migrate (aplica as pendentes).
+ */
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -30,6 +42,7 @@ export interface MigrateResult {
   skipped: string[];
 }
 
+// SHA-256 do texto do arquivo, em hexadecimal: é o checksum gravado em schema_migrations.
 const checksum = (sql: string): string => createHash('sha256').update(sql).digest('hex');
 
 /**
@@ -53,6 +66,8 @@ function loadSeed(): string {
   return readFileSync(join(DB_DIR, 'seed.sql'), 'utf8').replace(/USE\s+\w+\s*;/gi, '');
 }
 
+// Lista os passos em ordem: primeiro o baseline (schema.sql), depois cada arquivo de
+// db/migrations pela ordem do nome (0001, 0002...). O nome do passo é o do arquivo sem o .sql.
 export function loadMigrations(): MigrationStep[] {
   const steps: MigrationStep[] = [{ name: '0000_baseline', sql: loadBaseline() }];
   if (existsSync(MIGRATIONS_DIR)) {
@@ -69,6 +84,8 @@ export function loadMigrations(): MigrationStep[] {
   return steps;
 }
 
+// Cria a tabela schema_migrations quando ela ainda não existe (banco novo). Uma linha por
+// migration aplicada: o nome, o checksum e a hora em que foi aplicada.
 export async function ensureMigrationsTable(conn: Connection): Promise<void> {
   await conn.query(
     `CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -80,6 +97,7 @@ export async function ensureMigrationsTable(conn: Connection): Promise<void> {
   );
 }
 
+// Só os nomes das migrations já aplicadas.
 export async function appliedMigrations(conn: Connection): Promise<Set<string>> {
   const [rows] = await conn.query<RowDataPacket[]>('SELECT name FROM schema_migrations');
   return new Set(rows.map((r) => r.name as string));
@@ -113,6 +131,7 @@ async function baselinePresent(conn: Connection): Promise<boolean> {
   return rows.length > 0;
 }
 
+// Anota a migration como aplicada em schema_migrations, com o checksum do arquivo que rodou.
 async function record(conn: Connection, step: MigrationStep): Promise<void> {
   // Placeholder posicional (?): não depende de namedPlaceholders na conexão.
   await conn.query('INSERT INTO schema_migrations (name, checksum) VALUES (?, ?)', [
@@ -168,6 +187,7 @@ export async function migrate(conn: Connection): Promise<MigrateResult> {
   const applied = await appliedChecksums(conn);
   const steps = loadMigrations();
   const changed = changedMigrations(steps, applied);
+  // A conferência do checksum vem antes de qualquer mudança: com uma editada, nada é aplicado.
   if (changed.length > 0) {
     throw new Error(
       `Migration alterada depois de aplicada: ${changed.join(', ')}. Volte o arquivo ao que foi ` +
@@ -176,6 +196,7 @@ export async function migrate(conn: Connection): Promise<MigrateResult> {
   }
   const result: MigrateResult = { applied: [], skipped: [] };
 
+  // Em ordem: pula a já aplicada, só anota o baseline que já existe e roda as outras.
   for (const step of steps) {
     if (applied.has(step.name)) {
       result.skipped.push(step.name);
@@ -187,6 +208,9 @@ export async function migrate(conn: Connection): Promise<MigrateResult> {
       result.skipped.push(`${step.name} (já presente)`);
       continue;
     }
+    // Roda o arquivo inteiro e só anota depois que ele terminou sem erro. Mudança de estrutura no
+    // MySQL não volta com rollback; se cair no meio, na próxima vez o arquivo roda de novo do
+    // começo, e por isso a migration deve pular o que já existe (como faz a 0053).
     try {
       await conn.query(step.sql);
     } catch (err) {

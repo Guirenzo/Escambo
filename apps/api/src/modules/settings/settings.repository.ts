@@ -1,7 +1,17 @@
+/**
+ * Repository dos parâmetros da plataforma (camada de repository): o único arquivo do módulo que
+ * escreve SQL. Fala com a tabela `platform_settings`, que tem uma linha por chave (key_name único),
+ * o valor em texto, o tipo, quem mudou por último (updated_by) e quando (updated_at, que o próprio
+ * MySQL atualiza a cada mudança).
+ * Quem chama: o settingsService (com cache) e a settingsFacade (leitura na hora, para os jobs).
+ * Dentro: get (valor cru), getNumber (número com padrão), set (grava ou cria), setIf (grava só se
+ * o valor atual for o esperado, a trava dos jobs) e list (várias chaves com o e-mail do autor).
+ */
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 import { parseNumberSetting } from './settings.parse';
 
+// Uma linha de platform_settings, mais o e-mail do autor que vem do JOIN com users no list().
 export interface SettingRow extends RowDataPacket {
   key_name: string;
   value: string;
@@ -16,7 +26,9 @@ export interface SettingRow extends RowDataPacket {
  * Leitura simples com fallback — a plataforma nunca deve parar por falta de uma chave.
  */
 export const settingsRepository = {
+  /** Valor cru (texto) de uma chave, ou null se a linha não existe. Não converte nem usa cache. */
   async get(key: string): Promise<string | null> {
+    // Busca a linha pela chave (key_name é único, então no máximo uma).
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT value FROM platform_settings WHERE key_name = :key LIMIT 1`,
       { key },
@@ -24,6 +36,10 @@ export const settingsRepository = {
     return rows[0] ? String(rows[0].value) : null;
   },
 
+  /**
+   * Número de uma chave, ou o `fallback` de quem pergunta quando falta ou não é número. A conversão
+   * é a mesma do settingsService (settings.parse), para o job e a tela verem o mesmo valor.
+   */
   async getNumber(key: string, fallback: number): Promise<number> {
     return parseNumberSetting(await this.get(key), fallback, key);
   },
@@ -35,6 +51,8 @@ export const settingsRepository = {
     type: 'string' | 'integer' | 'decimal' | 'boolean' | 'json' = 'string',
     updatedBy: number | null = null,
   ): Promise<void> {
+    // Um comando só faz as duas coisas: cria a linha se a chave é nova e, se a chave já existe
+    // (chave única duplicada), só troca o valor e o autor. Também é o que o painel do admin usa.
     await pool.query(
       `INSERT INTO platform_settings (key_name, value, type, updated_by)
        VALUES (:key, :value, :type, :updatedBy)
@@ -68,6 +86,8 @@ export const settingsRepository = {
         throw err;
       }
     }
+    // Chave que já existe: troca o valor só se ele ainda for o esperado. Se outra instância mudou
+    // antes, o filtro não acha a linha, nada muda e affectedRows vem 0 (esta chamada perdeu).
     const [res] = await pool.query<ResultSetHeader>(
       `UPDATE platform_settings SET value = :value WHERE key_name = :key AND value = :expected`,
       { key, value, expected },
@@ -77,7 +97,10 @@ export const settingsRepository = {
 
   /** Linhas de várias chaves, com o e-mail de quem mudou por último (painel admin). */
   async list(keys: string[]): Promise<SettingRow[]> {
+    // Lista vazia não vai ao banco (o filtro de lista vazia seria SQL inválido).
     if (keys.length === 0) return [];
+    // Um `?` por chave no filtro, com as chaves passadas como parâmetros (nada colado no SQL).
+    // O LEFT JOIN traz o e-mail do admin que mudou; chave nunca mudada pelo painel vem com null.
     const [rows] = await pool.query<SettingRow[]>(
       `SELECT s.key_name, s.value, s.type, s.updated_at, u.email AS updated_by_email
          FROM platform_settings s

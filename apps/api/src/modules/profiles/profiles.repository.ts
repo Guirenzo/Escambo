@@ -1,6 +1,20 @@
+/**
+ * Repository dos perfis (camada de repository): todo o SQL dos perfis de freelancer, cliente e
+ * empresa, do portfólio, do CPF do freelancer e das badges do perfil público.
+ * Quem chama: profiles.service (perfil e portfólio), cpf.service (CPF) e profiles.facade (outros
+ * módulos). O que chama: o pool do mysql2 (`config/db.ts`), com parâmetros nomeados (`:userId`).
+ * Tabelas: profiles_freelancer, profiles_client, profiles_company, freelancer_portfolio_items,
+ * users, user_xp, user_badges e badges.
+ * Dentro: as interfaces das linhas (o formato que volta do banco, em snake_case) e o objeto
+ * profilesRepository: perfis, portfólio, tempo de resposta, CPF, saque, empresa e badges.
+ * Para um campo novo no perfil: coluna na migration, campo na FreelancerRow e nas consultas
+ * daqui, depois schema, service e tela.
+ */
 import type { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { pool } from '../../config/db';
 
+// Linha do perfil de freelancer como vem do banco. Números DECIMAL (latitude, nota média) chegam
+// como texto pelo mysql2; o service converte.
 export interface FreelancerRow extends RowDataPacket {
   full_name: string;
   avatar_url: string | null;
@@ -113,6 +127,11 @@ export interface PublicBadgeRow extends RowDataPacket {
 }
 
 export const profilesRepository = {
+  /**
+   * Cria ou atualiza o perfil de freelancer do usuário num comando só: user_id é chave única em
+   * profiles_freelancer, então a primeira vez cria a linha e as próximas trocam os campos. Os dias
+   * e os períodos de atendimento chegam já como texto JSON (o service serializa).
+   */
   async upsertFreelancer(
     userId: number,
     d: {
@@ -145,7 +164,9 @@ export const profilesRepository = {
 
   // ---------- Portfólio (freelancer_portfolio_items, FK para profiles_freelancer.id) ----------
 
+  /** Trabalhos do portfólio do usuário, na ordem que ele escolheu (sort_order); no empate, o id. */
   async listPortfolio(userId: number): Promise<PortfolioRow[]> {
+    // O JOIN com profiles_freelancer traduz o id do usuário no id do perfil, que é a FK do item.
     const [rows] = await pool.query<PortfolioRow[]>(
       `SELECT i.id, i.title, i.description, i.image_url, i.external_url, i.sort_order
          FROM freelancer_portfolio_items i
@@ -157,6 +178,7 @@ export const profilesRepository = {
     return rows;
   },
 
+  /** Quantos trabalhos o usuário tem; o service usa para barrar acima de PORTFOLIO_MAX_ITEMS. */
   async countPortfolio(userId: number): Promise<number> {
     const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT COUNT(*) AS n FROM freelancer_portfolio_items i
@@ -176,6 +198,8 @@ export const profilesRepository = {
       externalUrl: string | null;
     },
   ): Promise<number | null> {
+    // A gravação copia os dados a partir de uma consulta: acha o perfil pelo usuário (só de conta
+    // viva) e põe o item no fim da lista (maior sort_order mais 1). Sem perfil, grava zero linhas.
     const [res] = await pool.query<ResultSetHeader>(
       `INSERT INTO freelancer_portfolio_items (freelancer_id, title, description, image_url, external_url, sort_order)
        SELECT pf.id, :title, :description, :imageUrl, :externalUrl,
@@ -185,9 +209,14 @@ export const profilesRepository = {
         WHERE pf.user_id = :userId AND u.deleted_at IS NULL`,
       { userId, ...d },
     );
+    // Gravou: devolve o id novo (insertId). Não gravou: null, e o service responde com erro.
     return res.affectedRows > 0 ? res.insertId : null;
   },
 
+  /**
+   * Edita um trabalho do portfólio. O filtro pelo dono (pf.user_id) está no próprio SQL: quem
+   * tenta editar o item de outra pessoa muda zero linhas e recebe false.
+   */
   async updatePortfolioItem(
     userId: number,
     id: number,
@@ -208,6 +237,7 @@ export const profilesRepository = {
     return res.affectedRows > 0;
   },
 
+  /** Apaga um trabalho, com a mesma conferência de dono; false se não era dele ou não existia. */
   async deletePortfolioItem(userId: number, id: number): Promise<boolean> {
     const [res] = await pool.query<ResultSetHeader>(
       `DELETE i FROM freelancer_portfolio_items i
@@ -223,6 +253,7 @@ export const profilesRepository = {
    * sort_order (1, 2, 3…). Só mexe nos ids da lista que são do próprio dono.
    */
   async reorderPortfolio(userId: number, ids: number[]): Promise<number> {
+    // FIELD(id, lista) do MySQL devolve a posição do id na lista (1, 2, 3...), que vira a ordem.
     const [res] = await pool.query<ResultSetHeader>(
       `UPDATE freelancer_portfolio_items i
          JOIN profiles_freelancer pf ON pf.id = i.freelancer_id
@@ -238,6 +269,8 @@ export const profilesRepository = {
    * pesa 30%. Alimenta a dimensão "responsividade" do Escambo Score.
    */
   async blendResponseTime(userId: number, hours: number): Promise<void> {
+    // A conta fica no banco: sem média ainda, a primeira amostra vira a média; depois, 70% da média
+    // antiga mais 30% da amostra nova, com 2 casas.
     await pool.query<ResultSetHeader>(
       `UPDATE profiles_freelancer
           SET response_time_hours = CASE
@@ -249,6 +282,7 @@ export const profilesRepository = {
     );
   },
 
+  /** Cria ou atualiza o perfil de cliente, como o upsertFreelancer (user_id é chave única). */
   async upsertClient(
     userId: number,
     d: {
@@ -268,6 +302,10 @@ export const profilesRepository = {
     );
   },
 
+  /**
+   * O perfil de freelancer do próprio usuário (tela "meu perfil"), com o fuso da conta, que vem de
+   * users. Undefined se ele ainda não criou o perfil.
+   */
   async findFreelancerByUserId(userId: number): Promise<FreelancerRow | undefined> {
     const [rows] = await pool.query<FreelancerRow[]>(
       `SELECT pf.full_name, pf.avatar_url, pf.bio, pf.headline, pf.city, pf.state, pf.latitude, pf.longitude,
@@ -281,6 +319,7 @@ export const profilesRepository = {
     return rows[0];
   },
 
+  /** O perfil de cliente do usuário, ou undefined se não existe. */
   async findClientByUserId(userId: number): Promise<ClientRow | undefined> {
     const [rows] = await pool.query<ClientRow[]>(
       `SELECT full_name, avatar_url, bio, city, state FROM profiles_client WHERE user_id = :userId LIMIT 1`,
@@ -289,6 +328,11 @@ export const profilesRepository = {
     return rows[0];
   },
 
+  /**
+   * O perfil público de um freelancer, buscado pelo ULID da URL (não pelo id interno). Conta
+   * excluída não aparece. O nível e o XP vêm de user_xp por LEFT JOIN: quem ainda não tem linha
+   * lá aparece como nível 1, "Iniciante", com 0 de XP (os COALESCE).
+   */
   async findPublicFreelancerByUlid(ulid: string): Promise<PublicFreelancerRow | undefined> {
     const [rows] = await pool.query<PublicFreelancerRow[]>(
       `SELECT pf.full_name, pf.avatar_url, pf.bio, pf.headline, pf.city, pf.state,
@@ -307,6 +351,10 @@ export const profilesRepository = {
 
   // ---------- CPF do freelancer (RF-020, RN-009, RN-075) ----------
 
+  /**
+   * O estado do CPF do freelancer: se já foi validado, o CPF cifrado (só o cpf.service abre), a
+   * data de nascimento como texto AAAA-MM-DD e quando foi validado.
+   */
   async findCpf(userId: number): Promise<CpfRow | undefined> {
     const [rows] = await pool.query<CpfRow[]>(
       `SELECT cpf_verified, cpf_encrypted, DATE_FORMAT(birth_date, '%Y-%m-%d') AS birth_date,
@@ -318,6 +366,8 @@ export const profilesRepository = {
   },
 
   /** Algum dos índices (o da chave atual e os das antigas) já está em outra conta? */
+  // O banco não guarda o CPF aberto: guarda o cifrado e um índice (um hash com chave) para achar
+  // duplicado sem decifrar. A busca é pelo índice, nunca pelo CPF; a própria conta não conta.
   async cpfIndexTaken(indexes: string[], userId: number): Promise<boolean> {
     if (indexes.length === 0) return false;
     const [rows] = await pool.query<RowDataPacket[]>(
@@ -376,6 +426,7 @@ export const profilesRepository = {
 
   // ---------- Empresa (RF-018) ----------
 
+  /** Os dados da empresa do próprio usuário (as colunas da COMPANY_COLS), ou undefined. */
   async findCompanyByUserId(userId: number): Promise<CompanyRow | undefined> {
     const [rows] = await pool.query<CompanyRow[]>(
       `SELECT ${COMPANY_COLS} FROM profiles_company pco WHERE pco.user_id = :userId LIMIT 1`,
@@ -429,6 +480,7 @@ export const profilesRepository = {
         WHERE user_id = :userId`,
       { userId, ...d },
     );
+    // Achou a linha: pronto. Não achou (conta antiga sem perfil de empresa): cria a linha agora.
     if (res.affectedRows > 0) return;
     await pool.query<ResultSetHeader>(
       `INSERT INTO profiles_company

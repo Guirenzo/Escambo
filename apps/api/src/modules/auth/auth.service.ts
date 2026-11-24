@@ -1,3 +1,17 @@
+/**
+ * Service de autenticação (camada de service): as regras de cadastro, login, renovação do token,
+ * saída, confirmação de e-mail e troca de senha (ADR 6).
+ * Senha: nunca é guardada; vai para o banco só o hash do bcrypt, com custo BCRYPT_SALT_ROUNDS (12).
+ * Sessão: o login devolve um par de tokens. O access token é um JWT assinado com JWT_SECRET que
+ * vale 1 hora (JWT_EXPIRES_IN) e vai em toda requisição. O refresh token é um texto aleatório que
+ * vale 7 dias (REFRESH_TOKEN_EXPIRES_DAYS), serve só para pedir um par novo e é rotativo: a cada
+ * uso o antigo é revogado. Do refresh, a tabela user_sessions guarda só o hash SHA-256.
+ * Quem chama: o auth.controller (rotas /api/auth); google, mfa e contact service reaproveitam
+ * os helpers exportados (issueSession, openSession, appLink).
+ * O que chama: auth, session e tokens repository (SQL), as fachadas de perfis, LGPD e avisos, a
+ * auditoria e o e-mail.
+ * Dentro: helpers (signAccessToken, toPublic, issueSession, openSession) e o objeto authService.
+ */
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { ulid } from 'ulid';
@@ -33,6 +47,7 @@ import { enabledMfa, verifySecondFactor } from './mfa.verify';
 import type { ChangePasswordInput, LoginInput, LoginMfaInput, RegisterInput } from './auth.schema';
 import { userAgentOf } from '../../utils/user-agent';
 
+// IP e navegador de quem abre a sessão: ficam gravados na linha da sessão (user_sessions).
 export interface SessionContext {
   ip?: string | null;
   userAgent?: string | null;
@@ -45,12 +60,19 @@ function dummyHash(): Promise<string> {
   return dummy;
 }
 
+/**
+ * Assina o access token (JWT). Dentro vão só o ULID (sub), o id numérico (uid) e o papel (role),
+ * assinados com JWT_SECRET e com validade JWT_EXPIRES_IN (1 hora, RF-003). O status não vai no
+ * token: o authenticate lê a conta no banco a cada requisição, então banir vale na hora.
+ */
 function signAccessToken(user: { id: number; ulid: string; role: string }): string {
   return jwt.sign({ sub: user.ulid, uid: user.id, role: user.role }, env.JWT_SECRET, {
     expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
   });
 }
 
+// Converte a linha de users no PublicUser que a API devolve: sem o hash da senha e com os campos
+// em camelCase, como o front espera.
 function toPublic(user: UserRow): PublicUser {
   return {
     id: user.id,
@@ -109,9 +131,12 @@ async function sendVerification(user: { id: number; email: string }): Promise<vo
 
 /** Emite um novo par (access token JWT + refresh token opaco) e persiste a sessão. */
 export async function issueSession(user: UserRow, ctx: SessionContext): Promise<RefreshResponse> {
+  // O refresh é um texto aleatório de 48 bytes (não é JWT) e vence em 7 dias (RF-004).
   const refreshToken = generateRefreshToken();
   const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000);
 
+  // Grava a sessão com o hash SHA-256 do refresh, nunca o token em si: quem vazar a tabela não
+  // consegue usar nenhuma sessão. O token de verdade só vai para o cliente, na resposta.
   await sessionRepository.create({
     userId: user.id,
     tokenHash: hashToken(refreshToken),
@@ -181,6 +206,7 @@ const invalidMfaToken = (): HttpError =>
  * um endereço da lista: não vira caminho para cá.
  */
 export async function openSession(user: UserRow, ctx: SessionContext): Promise<AuthResponse> {
+  // E-mail na lista ADMIN_EMAILS e conta não suspensa: vira admin no banco antes de assinar.
   if (user.status !== 'suspended' && user.role !== 'admin' && isAdminEmail(user.email)) {
     await authRepository.updateRole(user.id, 'admin');
     user.role = 'admin';
@@ -224,12 +250,21 @@ export async function recordSignupConsents(userId: number, ctx: RequestContext):
 
 /** Regras de negócio de autenticação (RF-001 a RF-004, RNF-013). */
 export const authService = {
+  /**
+   * Cadastro com e-mail e senha (RF-001). Recebe o corpo já validado pelo auth.schema e o IP e o
+   * navegador. Cria a conta (e o perfil da empresa, se for empresa), grava o aceite dos Termos e
+   * manda o e-mail de confirmação. Devolve o usuário público; a conta nasce pending_verification.
+   */
   async register(input: RegisterInput, ctx: RequestContext): Promise<PublicUser> {
+    // E-mail já usado em outra conta: 409 email_taken.
     const existing = await authRepository.findByEmail(input.email);
     if (existing) {
       throw new HttpError(409, 'E-mail já cadastrado', 'email_taken'); // RN-001
     }
 
+    // A senha vira hash do bcrypt, que já embute um sal aleatório e é lento de propósito (custo
+    // 12): igual a senha não dá hash igual, e testar senhas em massa fica caro. O ULID é o id
+    // público da conta, o que aparece na URL.
     const passwordHash = await bcrypt.hash(input.password, env.BCRYPT_SALT_ROUNDS); // RNF-011
     const userUlid = ulid();
 
@@ -257,6 +292,7 @@ export const authService = {
       }
     }
 
+    // Registra o aceite dos Termos de Uso e da Política de Privacidade (LGPD), com IP e navegador.
     await recordSignupConsents(id, ctx);
 
     // Boas-vindas + confirmação de e-mail. Falha no e-mail não derruba o cadastro.
@@ -266,6 +302,7 @@ export const authService = {
       logger.warn({ err, userId: id }, 'e-mail de confirmação não enviado');
     }
 
+    // O cadastro não abre sessão: devolve os dados públicos, e o login vem depois.
     return {
       id,
       ulid: userUlid,
@@ -399,7 +436,10 @@ export const authService = {
    * excluída) valem antes; a promoção a admin por ADMIN_EMAILS só depois do segundo fator.
    */
   async login(input: LoginInput, ctx: SessionContext = {}): Promise<LoginResponse> {
+    // 1. Busca a conta pelo e-mail (pode não existir).
     const user = await authRepository.findByEmail(input.email);
+    // 2. Compara a senha digitada com o hash guardado; o bcrypt.compare refaz o hash com o sal
+    // que está dentro do hash guardado e confere se bate. Sem conta, compara com o hash falso.
     // Conta inexistente também paga um bcrypt: o tempo de resposta não diz se o e-mail existe.
     const ok = await bcrypt.compare(input.password, user?.password_hash || (await dummyHash()));
     if (!user || !user.password_hash || !ok) {
@@ -416,11 +456,14 @@ export const authService = {
         ip: ctx.ip ?? null,
         userAgent: ctx.userAgent ?? null,
       });
+      // A mesma mensagem para e-mail errado e senha errada: não diz qual dos dois falhou.
       throw new HttpError(401, 'Credenciais inválidas', 'invalid_credentials');
     }
 
+    // 3. Senha certa, mas conta excluída ou banida não entra (403).
     assertSessionAllowed(user);
 
+    // 4. Com a verificação em duas etapas ligada, devolve o passe do segundo passo, sem tokens.
     if (await mfaRepository.isEnabled(user.id)) {
       const challenge: MfaChallenge = {
         mfaRequired: true,
@@ -429,6 +472,7 @@ export const authService = {
       };
       return challenge;
     }
+    // 5. Sem segundo fator: abre a sessão e devolve o access token, o refresh e o usuário.
     return openSession(user, ctx);
   },
 
@@ -449,13 +493,18 @@ export const authService = {
   },
 
   /** Rotação de refresh token: valida, revoga o antigo e emite um novo par. */
+  // Quem chama: POST /api/auth/refresh. O web chama sozinho quando uma requisição toma 401 porque
+  // o access token de 1 hora venceu. Recebe o refresh e devolve um par novo (access + refresh).
   async refresh(refreshToken: string, ctx: SessionContext = {}): Promise<RefreshResponse> {
+    // O banco só tem o hash: calcula o SHA-256 do token recebido e procura a sessão por ele.
+    // Válida quer dizer não revogada e ainda dentro dos 7 dias.
     const tokenHash = hashToken(refreshToken);
     const session = await sessionRepository.findValidByHash(tokenHash);
     if (!session) {
       throw new HttpError(401, 'Refresh token inválido ou expirado', 'invalid_refresh');
     }
 
+    // A conta pode ter sido banida ou excluída depois do login: confere de novo antes de renovar.
     const user = await authRepository.findById(session.user_id);
     if (!user) {
       throw new HttpError(401, 'Refresh token inválido ou expirado', 'invalid_refresh');
@@ -467,9 +516,14 @@ export const authService = {
     if (!(await sessionRepository.revokeByHash(tokenHash))) {
       throw new HttpError(401, 'Refresh token inválido ou expirado', 'invalid_refresh');
     }
+    // Emite o par novo e grava a sessão nova; o refresh antigo não serve mais para nada.
     return issueSession(user, ctx);
   },
 
+  /**
+   * Sair deste aparelho: revoga a sessão do refresh recebido. Não dá erro se o token já não vale.
+   * Sem o refresh, a sessão não se renova: o access token que ficou com o cliente vence em 1 hora.
+   */
   async logout(refreshToken: string): Promise<void> {
     await sessionRepository.revokeByHash(hashToken(refreshToken));
   },
@@ -482,9 +536,11 @@ export const authService = {
     }
     // O aparelho perdido para de receber os avisos junto com a sessão.
     await notificationsFacade.removeAllPushSubscriptions(user.id);
+    // Revoga todas as sessões abertas da conta e devolve quantas foram encerradas.
     return sessionRepository.revokeAllForUser(user.id);
   },
 
+  // Os dados públicos da conta logada (GET /api/auth/me), buscados pelo ULID que está no token.
   async getByUlid(userUlid: string): Promise<PublicUser> {
     const user = await authRepository.findByUlid(userUlid);
     if (!user) {

@@ -1,4 +1,12 @@
 /// <reference types="vitest/config" />
+/**
+ * Configuração do Vite, a ferramenta que roda o web no desenvolvimento e gera o build.
+ * Camada: configuração de build e de testes do front (nada daqui vai para o navegador).
+ *   - plugins: o plugin do React (JSX e recarga rápida ao salvar);
+ *   - server: o servidor de desenvolvimento em http://localhost:5173, com o proxy para a API;
+ *   - test: o Vitest (jsdom, setup e a cobertura mínima que o CI cobra).
+ * No build (npm run build) o Vite gera a pasta dist, que a imagem do web copia para o nginx.
+ */
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
@@ -8,11 +16,15 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // O React chama sempre /api/... no endereço da própria página (BASE_URL em lib/api.ts).
+      // No dev o Vite repassa para a API na 3333; na produção quem repassa é o nginx (e o Caddy).
       '/api': 'http://localhost:3333',
+      // ws: true repassa também o WebSocket (upgrade da conexão), que o chat em tempo real usa.
       '/socket.io': { target: 'http://localhost:3333', ws: true },
     },
   },
   test: {
+    // jsdom imita o navegador (document, window) no Node: testa componente sem abrir browser.
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],

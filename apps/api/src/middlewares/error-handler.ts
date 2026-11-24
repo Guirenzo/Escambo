@@ -1,3 +1,13 @@
+/**
+ * Tratamento global de erros (camada de middleware, o último do app.ts): transforma qualquer erro
+ * lançado na rota, no controller, no service ou no repository numa resposta JSON padronizada,
+ * { error, message }. O controller não precisa de try/catch: o asyncHandler traz o erro até aqui.
+ *
+ * Quem chama: o Express, quando um handler lança ou chama next(err). O que chama: o logger
+ * (pino), o Sentry (só no 500) e o auditService (recusas de acesso, RNF-018).
+ * Dentro: AUDITED_DENIALS e auditDenied (gravam a recusa no audit_logs) e o errorHandler: zod vira
+ * 422, JSON inválido 400, corpo grande 413, HttpError o status dele e o resto 500, sem stack trace.
+ */
 import type { ErrorRequestHandler, Request } from 'express';
 import { ZodError } from 'zod';
 import { logger } from '../config/logger';
@@ -19,6 +29,7 @@ const AUDITED_DENIALS = new Set([
   'invalid_webhook_secret',
 ]);
 
+// O void não espera a gravação: a resposta sai sem depender do audit_logs.
 /** Registra a recusa sem a query string (pode levar token) e sem derrubar a resposta. */
 export function auditDenied(req: Request, err: HttpError): void {
   if (!err.code || !AUDITED_DENIALS.has(err.code)) return;
@@ -37,6 +48,8 @@ export function auditDenied(req: Request, err: HttpError): void {
  * Tratamento global de erros (RNF-039): nunca expõe stack trace; resposta sempre em JSON.
  */
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
+  // 1. Validação: o controller chamou schema.parse(req.body) e o zod recusou. Responde 422 com a
+  // mensagem de cada campo em details, que o web mostra na tela.
   if (err instanceof ZodError) {
     const { fieldErrors } = err.flatten();
     // Regra do objeto inteiro (refine sem path) não tem campo para apontar: a mensagem dela é que
@@ -55,6 +68,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     return;
   }
 
+  // 2. Corpo da requisição: 400 para JSON malformado e 413 acima do BODY_LIMIT.
   // Erros do body-parser (express.json): JSON malformado ou corpo grande demais.
   const parseErr = err as { type?: string; status?: number };
   if (err instanceof SyntaxError && 'body' in err) {
@@ -70,6 +84,8 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     return;
   }
 
+  // 3. Erro de domínio, lançado de propósito pelo código (ex.: 403 forbidden, 409 de conflito):
+  // responde o status e o código dele. Os 401 e 403 passam antes pela auditoria.
   if (err instanceof HttpError) {
     if (err.statusCode === 401 || err.statusCode === 403) auditDenied(req, err);
     const body: {
@@ -109,10 +125,12 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       )
         body.returnAt = returnAt;
     }
+    // Por padrão saem só error e message; os campos extras acima são liberados um a um.
     res.status(err.statusCode).json(body);
     return;
   }
 
+  // 4. Erro do cliente vindo da camada HTTP: 4xx genérico.
   // Erro do cliente levantado pela camada HTTP (URL mal codificada, charset ou encoding do corpo
   // que não existe, envio interrompido): responde o 4xx que ela indica. Não é falha do servidor.
   const fromHttpLayer = (err as { expose?: unknown }).expose === true || err instanceof URIError;
@@ -122,6 +140,8 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     return;
   }
 
+  // 5. O resto é falha do servidor (bug, banco fora): vai ao log e ao Sentry, e a resposta é um 500
+  // genérico, sem stack trace nem detalhe interno (RNF-039).
   logger.error({ err }, 'erro não tratado');
   captureError(err);
   res.status(500).json({ error: 'internal_error', message: 'Erro interno do servidor' });

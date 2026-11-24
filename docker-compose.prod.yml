@@ -13,9 +13,15 @@
 #   - schema, migrations e seed de referência entram pelo job `migrate` (a API só sobe depois dele);
 #   - backup diário do banco e dos arquivos da API pelo serviço `backup`, sem cron na VPS (RNF-009).
 # Guia completo (VPS, DNS, atualização, rollback, backup): DEPLOY.md
+#
+# Caminho de uma requisição: navegador → caddy (443, HTTPS) → web (nginx, 8080) → api (3333) →
+# db (3306). Só o caddy publica porta no host; o resto conversa pela rede interna do compose.
+# Senhas e segredos: só no .env da VPS (/opt/escambo/.env, chmod 600, fora do git), ao lado deste
+# arquivo. O compose lê esse .env e troca cada ${VAR} pelo valor; ${VAR:?msg} recusa subir sem ele.
 
 name: escambo
 
+# Imagem da API publicada pelo CI no GHCR; IMAGE_TAG (o deploy grava no .env) escolhe a versão.
 x-api-image: &api-image ${API_IMAGE:-ghcr.io/guirenzo/escambo-api}:${IMAGE_TAG:-latest}
 
 # Rotação do log dos contêineres (RNF-037). O json-file padrão não apaga nada e cresce até encher o
@@ -41,6 +47,7 @@ x-logging-small: &logging-small
     compress: 'true'
 
 services:
+  # db: o MySQL, sem porta no host (só a rede interna alcança). Os dados ficam no volume db_data.
   db:
     image: mysql:8.0
     restart: unless-stopped
@@ -51,6 +58,8 @@ services:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --log-bin-trust-function-creators=1
+    # As senhas vêm do .env. A imagem só as usa na primeira subida, com o volume vazio, para criar
+    # o root e o usuário da aplicação; depois, trocar a senha é por SQL dentro do MySQL.
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?defina DB_ROOT_PASSWORD no .env}
       MYSQL_DATABASE: ${DB_NAME:-escambo}
@@ -72,6 +81,7 @@ services:
     restart: 'no'
     logging: *logging-small
     command: ['node', 'dist/scripts/migrate.js']
+    # Espera o banco saudável; a api espera este job terminar com código 0.
     depends_on:
       db:
         condition: service_healthy
@@ -79,6 +89,8 @@ services:
       NODE_ENV: production
       PORT: 3333
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # A API acha o banco pelo nome do serviço (db). DB_PASSWORD é a mesma do serviço db: sem
+      # ela no .env, o compose para com "defina DB_PASSWORD no .env".
       DB_HOST: db
       DB_PORT: 3306
       DB_USER: ${DB_USER:-escambo}
@@ -143,6 +155,8 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
 
+  # api: a mesma imagem do migrate, agora servindo. Depende do db saudável e do migrate
+  # concluído; volta sozinha se cair (unless-stopped). O healthcheck vem do Dockerfile da API.
   api:
     image: *api-image
     restart: unless-stopped
@@ -157,6 +171,7 @@ services:
       - api_data:/repo/apps/api/data
     # Sem `ports`: só o web (nginx) fala com a API, pela rede interna do compose.
 
+  # web: o nginx com o build do React. Serve as páginas e repassa /api e /socket.io para a api.
   web:
     image: ${WEB_IMAGE:-ghcr.io/guirenzo/escambo-web}:${IMAGE_TAG:-latest}
     restart: unless-stopped
@@ -178,6 +193,7 @@ services:
     environment:
       DOMAIN: ${DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL:?defina ACME_EMAIL no .env (avisos do Let's Encrypt)}
+    # As únicas portas abertas da VPS: 80 (o Caddy manda para HTTPS), 443 e 443/udp (HTTP/3).
     ports:
       - '${HTTP_PORT:-80}:80'
       - '${HTTPS_PORT:-443}:443'
@@ -385,6 +401,7 @@ services:
     depends_on:
       - prometheus
 
+# Volumes nomeados: o que sobrevive a uma atualização (banco, arquivos, certificados, métricas).
 volumes:
   # Com o projeto `escambo`, vira `escambo_db_data` — o mesmo volume do docker-compose.yml,
   # então uma instância da demo pode ser promovida sem perder dados.

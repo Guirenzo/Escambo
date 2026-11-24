@@ -1,3 +1,13 @@
+/**
+ * Cartão de serviço e os pedaços que o detalhe do serviço também usa.
+ * Camada: componente de tela (features/services). Aparece na busca (ServicosView), no perfil
+ * público, em "Meus serviços" e no Início.
+ * Este arquivo só desenha. Lê dois hooks (parâmetros públicos e o usuário logado); favoritar,
+ * contratar, propor troca, editar e pausar chegam por props (onToggleFavorite, onContratar...),
+ * e é a tela que liga essas props aos hooks de lib/hooks.ts.
+ * O que tem dentro: servicePrice, modalityTag, viewsLabel, ServiceTags, Cover (a capa),
+ * Rating (a nota) e ServiceCard (o cartão inteiro, com o coração de favoritar).
+ */
 import { BusinessButton, BusinessIconButton } from '../../components/BusinessActions';
 import {
   ArrowLeftRight,
@@ -73,6 +83,7 @@ function Cover({
 }) {
   const [failed, setFailed] = useState<string | null>(null);
   const { Icon, tone } = categoryArt(categorySlug);
+  // A imagem do portfólio que falhou é lembrada pela URL, e a capa cai na foto da categoria.
   const src = url && failed !== url ? mediaVariant(url, MEDIA_THUMB.card) : null;
   const photo = src ? null : categoryPhoto(categorySlug, seed);
   return (
@@ -182,8 +193,13 @@ export function ServiceCard({
   /** Carrossel: capa e essencial, sem descrição, tags e ações. */
   compact?: boolean;
 }) {
+  // Parâmetro público do painel: com as trocas desligadas, somem o selo e o botão de troca.
   const barterEnabled = usePublicSettings().data?.barterEnabled ?? true;
   const viewerZone = useAuth().user?.timezone;
+  // Favoritar (o coração, classe fav-btn, mais abaixo): este cartão só mostra o estado e avisa
+  // o clique. `favorited` vem da tela, que lê useFavorites; o clique chama onToggleFavorite, e a
+  // tela usa o useToggleFavorite (POST ou DELETE em /favorites). O vermelho é CSS (.fav-btn.on).
+  // O rótulo muda junto, para o leitor de tela dizer o que o clique vai fazer.
   const favLabel = favorited ? 'Remover dos favoritos' : 'Favoritar';
   const owner = showOwner && s.ownerName ? s.ownerName : null;
   // Todo serviço no ar pode receber proposta de troca de outro freelancer (RN-013).
@@ -224,6 +240,7 @@ export function ServiceCard({
           {!s.isActive && <span className="pill status-pending">Pausado</span>}
         </div>
       )}
+      {/* Coração de favoritar: não aparece no serviço da própria pessoa (a API também recusa). */}
       {onToggleFavorite && !mine && (
         <BusinessIconButton
           type="button"

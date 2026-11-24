@@ -1,3 +1,37 @@
+/**
+ * Service das contratações (camada de service): o coração do Escambo, a contratação com escrow.
+ * Pra que serve: guarda as regras de negócio da contratação. Quem pode fazer cada ação, em que
+ * status, com que prazo, e quanto dinheiro sai e entra de cada carteira em cada passo.
+ * Com quem conversa: é chamado pelo controller (contracts.controller.ts) e pelos jobs (aprovação
+ * tácita, prazos, propostas vencidas). Chama o contractsRepository e o milestonesRepository,
+ * que falam com o MySQL, e os services e fachadas de outros módulos (carteira, disputas,
+ * avisos, perfis, serviços).
+ *
+ * O escrow em palavras simples (P13). Cada carteira tem dois saldos: o disponível (balance), que
+ * a pessoa pode usar ou sacar, e o retido (balance_pending), guardado e ainda não liberado.
+ *  - Proposta (create): o preço sai do disponível do cliente e vai para o retido dele (reserva).
+ *  - Aceite (accept): o retido do cliente perde o preço e o retido do freelancer ganha o
+ *    líquido (preço menos a taxa); a diferença é a taxa da plataforma (RN-031, padrão 15%).
+ *  - Aprovação (approve, ou a tácita do job, padrão 5 dias): o líquido sai do retido e entra
+ *    no disponível do freelancer (RN-033).
+ *  - Recusa, expiração ou cancelamento antes do aceite: a reserva volta inteira ao cliente.
+ *  - Cancelamento depois do aceite: o retido é repartido pela conta de cancel-policy.ts (RN-025).
+ * Exemplo com 15%: proposta de R$ 100,00. O cliente paga 100, o freelancer recebe 85 e a taxa
+ * é 15. Em créditos (time-bank) não há taxa e os créditos só saem do cliente no aceite.
+ * Toda mudança de status acontece na mesma transação que o dinheiro e o extrato (ADR 2).
+ *
+ * Índice:
+ *  - Leitura: toContract, toMilestone, toDelivery (a linha do banco vira o JSON da API).
+ *  - Arquivos da entrega: prepareDeliveryFiles, discardDeliveryFiles, announceDeliveryFiles.
+ *  - Conferências: assertParty, assertClient, assertFreelancer (403), assertStatus (409).
+ *  - Dinheiro: releaseHoldEffects (devolve a reserva), applyTransition (409 se o status mudou),
+ *    completeDelivered (conclui e libera o escrow), quote (a conta do cancelamento).
+ *  - contractsService: create, listMine, getById, counter, accept, acceptCounter, reject,
+ *    deliver, approve, approveTacitly, requestRevision, grantRevision, cancel.
+ *  - Prazos (RN-021, RN-028, RN-029): requestExtension, resolveExtension, expireExtension,
+ *    expireProposal, notifyOverdue, openOverdueDispute (a disputa automática por prazo).
+ *  - Marcos (RN-069): deliverMilestone, approveMilestone, approveMilestonesTacitly e revisões.
+ */
 import { ulid } from 'ulid';
 import type {
   BrazilTimezone,
@@ -167,11 +201,13 @@ import type { StatusChangeSource } from './status-history';
 
 export { cashSettlement } from './cancel-policy';
 
+// Unidades de tempo em milissegundos: uma hora e um dia.
 const H = 3_600_000;
 const DAY = 24 * H;
 /** A proposta precisa dar ao freelancer pelo menos isso para responder (ADR 57). */
 const MIN_PROPOSAL_WINDOW_MS = H;
 
+// Ajudantes de data: iso devolve o texto ISO (ou null); date devolve o Date (ou null).
 const iso = (d: Date | string | null | undefined): string | null =>
   d ? new Date(d).toISOString() : null;
 const date = (d: Date | string | null | undefined): Date | null => (d ? new Date(d) : null);
@@ -186,6 +222,10 @@ async function viewCtx(): Promise<ViewCtx> {
   return { now: clock.now(), graceHours: await settingsService.number('deadline_grace_hours') };
 }
 
+/**
+ * Converte a linha do banco (nomes em snake_case, DECIMAL que chega como texto) no Contract
+ * que a API devolve, com os campos calculados do prazo e da negociação.
+ */
 function toContract(row: ContractRow, ctx: ViewCtx): Contract {
   const d = deadlineView(row, { ...ctx, zone: freelancerZoneOf(row) });
   return {
@@ -491,6 +531,7 @@ const creditsOf = (row: ContractRow): number => Math.round(Number(row.freelancer
 const reviewUntil = (completedAt: Date): Date =>
   new Date(completedAt.getTime() + REVIEW_WINDOW_DAYS * DAY);
 
+/** Lê a contratação pelo id; se não existe, 404 contract_not_found. */
 async function loadOr404(id: number): Promise<ContractRow> {
   const row = await contractsRepository.findById(id);
   if (!row) throw new HttpError(404, 'Contratação não encontrada', 'contract_not_found');
@@ -502,11 +543,13 @@ async function load(id: number): Promise<Contract> {
   return toContract(await loadOr404(id), await viewCtx());
 }
 
+/** Conferência de dono (P9): só o cliente ou o freelancer desta contratação; senão 403. */
 function assertParty(row: ContractRow, uid: number): void {
   if (row.client_id !== uid && row.freelancer_id !== uid) {
     throw new HttpError(403, 'Você não participa desta contratação', 'forbidden');
   }
 }
+// Mais estritas: só o cliente (aprovar, pedir revisão) ou só o freelancer (aceitar, entregar).
 function assertClient(row: ContractRow, uid: number): void {
   if (row.client_id !== uid) throw new HttpError(403, 'Ação exclusiva do cliente', 'forbidden');
 }
@@ -514,6 +557,7 @@ function assertFreelancer(row: ContractRow, uid: number): void {
   if (row.freelancer_id !== uid)
     throw new HttpError(403, 'Ação exclusiva do freelancer', 'forbidden');
 }
+/** A máquina de estados: a ação só vale nos status listados; fora deles, 409. */
 function assertStatus(row: ContractRow, allowed: ContractStatus[]): void {
   if (!allowed.includes(row.status as ContractStatus)) {
     throw new HttpError(409, `Ação não permitida no status "${row.status}"`, 'invalid_transition');
@@ -524,9 +568,14 @@ function assertStatus(row: ContractRow, allowed: ContractStatus[]): void {
 function releaseHoldEffects(row: ContractRow): WalletEffect[] {
   if (row.payment_mode !== 'cash') return [];
   const price = Number(row.price);
+  // Um efeito só: o retido do cliente perde o preço e o disponível ganha o mesmo valor.
   return [{ userId: row.client_id, pendingDelta: -price, balanceDelta: price, reason: 'refund' }];
 }
 
+/**
+ * Chama a troca de status do repository. false quer dizer que outra requisição mudou a
+ * contratação antes (ou a guarda não bateu): vira 409, e nada foi gravado.
+ */
 async function applyTransition(
   params: Parameters<typeof contractsRepository.transition>[0],
 ): Promise<void> {
@@ -567,6 +616,8 @@ async function completeDelivered(
   const isCredits = row.payment_mode === 'credits';
   const net = Number(row.freelancer_net);
   const credits = creditsOf(row);
+  // A liberação: o líquido sai do retido do freelancer e entra no disponível dele (RN-033).
+  // Ex.: contrato de R$ 100 com 15%: o retido dele cai 85 e o disponível sobe 85.
   const releaseEffect = isBarter
     ? {}
     : isCredits
@@ -585,6 +636,7 @@ async function completeDelivered(
             },
           ],
         };
+  // Status, histórico e dinheiro numa transação só; XP e troca vêm depois, fora dela.
   await applyTransition({
     id: row.id,
     changedBy,
@@ -782,8 +834,16 @@ function packageDeadline(
   return requested;
 }
 
+/** As ações da contratação: cada uma confere quem pede e o status, e só então grava. */
 export const contractsService = {
+  /**
+   * Cria a proposta (P13). Recebe o id do cliente (do token) e o corpo validado; devolve a
+   * contratação em `pending`. Confere o freelancer e o serviço, calcula a taxa, o líquido e os
+   * prazos e manda o repository gravar tudo numa transação, já reservando o preço na carteira
+   * do cliente. Sem saldo: 402. Já existe contratação aberta com o mesmo freelancer: 409.
+   */
   async create(clientId: number, input: CreateContractInput): Promise<Contract> {
+    // Ninguém contrata a si mesmo (400 self_contract).
     if (input.freelancerId === clientId) {
       throw new HttpError(400, 'Você não pode contratar a si mesmo', 'self_contract');
     }
@@ -825,6 +885,7 @@ export const contractsService = {
     ) {
       throw notFound();
     }
+    // A hora vem do relógio da API (utils/clock.ts), o mesmo em todo o fluxo (ADR 57).
     const now = clock.now();
     // Contratos em créditos (time-bank) são P2P e não cobram taxa da plataforma.
     const isCredits = input.paymentMode === 'credits';
@@ -832,6 +893,10 @@ export const contractsService = {
     const feeRate = await settingsService.feeRate();
     if (isCredits && !Number.isInteger(input.price))
       throw new HttpError(422, 'Créditos devem ser inteiros.', 'invalid_offer');
+    // Cálculo da taxa (RN-031): taxa = preço x percentual do painel (padrão 15%), arredondada
+    // em centavos por money(); líquido = preço menos a taxa. Ex.: R$ 100,00 dá taxa de 15,00 e
+    // líquido de 85,00. Taxa, líquido e percentual são gravados no contrato: se o admin mudar o
+    // percentual depois, esta contratação continua com o dela.
     const platformFee = isCredits ? 0 : money(input.price * feeRate);
     const freelancerNet = money(input.price - platformFee);
 
@@ -843,6 +908,7 @@ export const contractsService = {
       'proposal_expiry_hours',
       DEFAULT_PROPOSAL_EXPIRY_HOURS,
     );
+    // Prazo de entrega: o enviado, cortado no segundo; com pacote, nunca antes do dele.
     let deadline = input.deadlineAt ? floorSecond(new Date(input.deadlineAt)) : null;
     if (pkg && !input.deadlineAt) {
       deadline = packageDeadline(pkg, null, fz, now);
@@ -860,12 +926,15 @@ export const contractsService = {
     } else if (pkg) {
       deadline = packageDeadline(pkg, deadline, fz, now);
     }
+    // Validade da proposta: agora mais as horas do painel, puxada para um horário de dia no
+    // fuso do freelancer, e nunca depois do prazo de entrega.
     let expiresAt = humanize(new Date(now.getTime() + expiryHours * H), fz);
     if (deadline) {
       const lastBefore = lastHumanAtOrBefore(deadline, fz);
       if (lastBefore.getTime() < expiresAt.getTime()) expiresAt = lastBefore;
     }
     expiresAt = floorSecond(expiresAt);
+    // Sobrou menos de 1 hora para o freelancer responder: 400 deadline_too_soon.
     if (deadline && expiresAt.getTime() - now.getTime() < MIN_PROPOSAL_WINDOW_MS) {
       throw new HttpError(
         400,
@@ -899,7 +968,9 @@ export const contractsService = {
       milestones = specs;
     }
 
+    // Garante que o cliente tem carteira antes de abrir a transação (a criação fica fora dela).
     if (!isCredits) await walletService.ensure(clientId);
+    // O repository grava contrato, histórico, reserva, marcos e oferta 1 numa transação só.
     const id = await contractsRepository.create({
       ulid: ulid(),
       clientId,
@@ -915,12 +986,14 @@ export const contractsService = {
       deadlineAt: deadline ? deadline.toISOString() : null,
       proposalExpiresAt: expiresAt,
       createdAt: now,
+      // hold: de quem e quanto reservar; em créditos não há reserva na proposta, só no aceite.
       hold: isCredits ? null : { userId: clientId, amount: input.price },
       milestones,
       source: 'user',
       // RN-023 com RF-086: as revisões do pacote, por entrega ou por marco, e a cópia dele.
       ...(pkg ? { revisionLimit: pkg.revisions, packageTier: pkg.tier, packageSnapshot: pkg } : {}),
     });
+    // null = faltou saldo para a reserva: a transação voltou atrás e nada foi criado.
     if (id === null) {
       throw new HttpError(
         402,
@@ -929,6 +1002,7 @@ export const contractsService = {
       );
     }
 
+    // Já gravado: relê a contratação e avisa o freelancer, fora da transação.
     const contract = await load(id);
     send(
       input.freelancerId,
@@ -946,6 +1020,8 @@ export const contractsService = {
 
   /** RF-040: a página pedida e o total de quem pede, os dois com o mesmo filtro de status. */
   async listMine(uid: number, input: ListContractsInput): Promise<ContractList> {
+    // Filtro por usuário (P9): o uid vem do token, e o repository só traz as contratações em
+    // que ele é o cliente ou o freelancer.
     const [rows, total] = await Promise.all([
       contractsRepository.listForUser(
         uid,
@@ -964,8 +1040,10 @@ export const contractsService = {
     };
   },
 
+  /** O detalhe: histórico, entregas, marcos, ofertas, avaliação e a conta do cancelamento. */
   async getById(id: number, uid: number): Promise<ContractWithHistory> {
     const row = await loadOr404(id);
+    // Só as partes veem: quem não é cliente nem freelancer recebe 403 (P9).
     assertParty(row, uid);
     const ctx = await viewCtx();
     const history = await contractsRepository.listHistory(id);
@@ -1225,6 +1303,12 @@ export const contractsService = {
     return this.getById(id, uid);
   },
 
+  /**
+   * O freelancer aceita a proposta (RF-032): `pending` vira `accepted` e o escrow se forma.
+   * Em dinheiro: o retido do cliente perde o preço e o retido do freelancer ganha o líquido; a
+   * diferença é a taxa. Em créditos: os créditos saem do disponível do cliente agora.
+   * Proposta vencida, prazo passado ou oferta trocada no meio: 409, e nada se move.
+   */
   async accept(id: number, uid: number, requestedSeq?: number): Promise<Contract> {
     const row = await loadOr404(id);
     assertFreelancer(row, uid); // RF-032
@@ -1248,6 +1332,7 @@ export const contractsService = {
       );
     }
     // A hora avisada é a cumprida: o aceite não passa depois da validade nem do prazo.
+    // A guarda vai no WHERE da troca de status: a validade é conferida de novo ao gravar.
     const guard = {
       sql: `AND (c.proposal_expires_at IS NULL OR c.proposal_expires_at > :now)
             AND (c.deadline_at IS NULL OR c.deadline_at > :now)
@@ -1347,6 +1432,8 @@ export const contractsService = {
       guard,
       offerResolution,
       milestonesTo: { from: ['pending'], to: 'funded' }, // marcos financiados no aceite
+      // Os dois efeitos, na mesma transação. Ex.: R$ 100 com 15% tiram 100 do retido do
+      // cliente e põem 85 no retido do freelancer; os 15 que sobram são a taxa.
       walletEffects: [
         {
           userId: row.client_id,
@@ -1569,6 +1656,7 @@ export const contractsService = {
     return this.getById(id, uid);
   },
 
+  /** O freelancer recusa: `rejected`, e a reserva volta inteira ao cliente. */
   async reject(id: number, uid: number, requestedSeq?: number): Promise<Contract> {
     const row = await loadOr404(id);
     assertFreelancer(row, uid);
@@ -1619,6 +1707,7 @@ export const contractsService = {
     const now = clock.now();
     const cz = clientZoneOf(row);
     const days = await settingsFacade.getNumber('tacit_approval_days', DEFAULT_TACIT_APPROVAL_DAYS);
+    // Hora da aprovação tácita (RN-024): agora mais os dias do painel, de dia no fuso do cliente.
     const approvalDueAt = floorSecond(humanize(new Date(now.getTime() + days * DAY), cz));
     // Os arquivos vão para o disco antes da transação e saem se a entrega não for gravada.
     const attachments = await prepareDeliveryFiles(row, uid, uploads);
@@ -1639,6 +1728,7 @@ export const contractsService = {
       await discardDeliveryFiles(attachments);
       throw err;
     }
+    // false: o status mudou no meio (outra requisição); apaga os arquivos e responde 409.
     if (!ok) {
       await discardDeliveryFiles(attachments);
       throw new HttpError(409, 'A contratação mudou de estado; recarregue', 'conflict');
@@ -1661,6 +1751,11 @@ export const contractsService = {
     return toContract(delivered, await viewCtx());
   },
 
+  /**
+   * O cliente aprova a entrega (RN-033): só ele, só em `delivered`. completeDelivered muda para
+   * `completed` e libera o escrow na mesma transação: o líquido sai do retido do freelancer e
+   * entra no disponível, de onde ele pode sacar. Duas aprovações juntas: só uma passa.
+   */
   async approve(id: number, uid: number): Promise<Contract> {
     const row = await loadOr404(id);
     assertClient(row, uid); // RF-036/037: só o cliente aprova
@@ -1794,6 +1889,7 @@ export const contractsService = {
     const pendingSeq = row.status === 'pending' ? assertOfferSeq(row, body.seq) : null;
     const now = clock.now();
     const { terms, price, net, credits } = await quote(row, by, now);
+    // quote usa a conta de cancel-policy.ts: diz se pode cancelar agora e quanto vai para cada um.
     if (!terms.allowed || !terms.stage) {
       throw new HttpError(
         409,
@@ -1801,6 +1897,7 @@ export const contractsService = {
         terms.code ?? 'invalid_transition',
       );
     }
+    // O valor que a pessoa viu na tela tem que ser o de agora (folga de meio centavo).
     if (
       body.expectedRefund !== undefined &&
       Math.abs(body.expectedRefund - terms.refundClient) > 0.005
@@ -1822,6 +1919,7 @@ export const contractsService = {
         'cancel_quote_changed',
       );
     }
+    // Os movimentos de carteira do cancelamento, pela etapa e pela unidade (R$ ou créditos).
     let refundEffect: Pick<
       Parameters<typeof contractsRepository.transition>[0],
       'walletEffects' | 'creditsEffects'
@@ -1843,6 +1941,8 @@ export const contractsService = {
       };
     } else if (terms.unit === 'BRL') {
       // Cash após o aceite: o escrow é liquidado na proporção da etapa (RN-025).
+      // O freelancer perde todo o líquido retido e recebe no disponível só a parte dele; o
+      // cliente recebe o reembolso no disponível. O que sobra é a parte proporcional da taxa.
       const walletEffects: WalletEffect[] = [
         {
           userId: row.freelancer_id,
@@ -1861,6 +1961,8 @@ export const contractsService = {
       }
       refundEffect = { walletEffects };
     }
+    // A guarda repete o que a leitura viu: prazo, aviso, extensão e, por marcos, o escrow.
+    // Se algo mudou entre a tela e o clique, a troca de status não acontece e volta 409.
     const guard: string[] = [
       'AND c.deadline_at <=> :gDeadline',
       'AND c.overdue_notified_at <=> :gNotice',
@@ -1876,6 +1978,7 @@ export const contractsService = {
              = :gEscrowCents`,
       );
     }
+    // Status, histórico, marcos, oferta e dinheiro numa transação só (ADR 2).
     await applyTransition({
       id,
       changedBy: uid,
@@ -1918,6 +2021,7 @@ export const contractsService = {
           : undefined,
       ...refundEffect,
     });
+    // Depois do commit: a desistência (RN-026) e a troca; se falharem, só registram aviso.
     let dropoutAgreementUntil: string | undefined;
     if (terms.dropout) {
       try {
@@ -2317,9 +2421,11 @@ export const contractsService = {
    * plataforma abre a disputa (congela o escrow). A gravação repete a leitura: uma entrega, um
    * pedido ou uma extensão aceita no meio impedem a disputa.
    */
+  // Com a disputa aberta o escrow fica parado: o dinheiro só sai quando o admin decidir (RN-038).
   async openOverdueDispute(row: ContractRow, now: Date = clock.now()): Promise<number | null> {
     const work = await workOf(row);
     const graceEndsAt = new Date(row.grace_ends_at!);
+    // Quem grava é o módulo de disputas, em nome do cliente, repetindo a guarda da RN-029.
     const disputeId = await disputesFacade.create(
       {
         ulid: ulid(),
@@ -2336,6 +2442,7 @@ export const contractsService = {
       },
       { guard: OVERDUE_DISPUTE_GUARD, now, source: 'system' },
     );
+    // null: houve entrega, pedido ou extensão aceita no meio, e nenhuma disputa foi aberta.
     if (disputeId === null) return null;
     for (const [userId, zone] of [
       [row.client_id, clientZoneOf(row)],
@@ -2456,6 +2563,7 @@ export const contractsService = {
     const row = await loadOr404(id);
     assertClient(row, uid);
     assertStatus(row, ['accepted', 'in_progress']);
+    // Libera só o líquido deste marco, na transação dele; o último marco conclui o contrato.
     const r = await milestonesRepository.approve({
       contractId: id,
       milestoneId,

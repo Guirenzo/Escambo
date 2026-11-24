@@ -1,3 +1,24 @@
+/**
+ * Hooks de dados do web: a ponte entre as telas e a API, feita com o TanStack Query (ADR 13).
+ * Camada: estado de servidor do front. A tela chama um hook; o hook chama `api.x()` (lib/api.ts).
+ * Como o TanStack Query funciona, em poucas palavras:
+ *   - useQuery({ queryKey, queryFn }): busca e guarda no cache com aquela chave. A tela recebe
+ *     data, isLoading e error; quem usa a mesma chave divide a mesma resposta.
+ *   - useMutation({ mutationFn, onSuccess }): uma ação que muda algo no servidor (POST, PUT,
+ *     DELETE). Depois, invalida as chaves afetadas: o cache marca o dado como velho, busca de
+ *     novo e a tela se redesenha com o valor do servidor. É assim que a tela atualiza.
+ *   - useInfiniteQuery: lista paginada ("Carregar mais"), que junta as páginas.
+ * O cache (QueryClient) nasce em lib/query.ts e chega a todos pelo main.tsx.
+ */
+// Índice do arquivo:
+//   - qk: as chaves do cache num lugar só (quem grava e quem lê usam a mesma);
+//   - Queries: suporte, carteira, ranking, missões, serviços, contratações, extratos e
+//     notificações (useNotifications);
+//   - Mutations: ações da contratação (aceite, oferta, cancelamento, prazo, entrega, marcos),
+//     serviços, chat, carteira, notificações, trocas e perfis;
+//   - Fase B: créditos, impulsionamento e useCreateContract; avaliações; perfil público;
+//   - Favoritos: useFavorites e useToggleFavorite;
+//   - disputas, denúncias, LGPD, portfólio e admin; buscas salvas; 2FA e atendimento.
 import {
   keepPreviousData,
   useInfiniteQuery,
@@ -43,6 +64,8 @@ import { api, type ServiceQuery } from './api';
 import { orderByIds } from './reorder';
 
 /** Chaves de cache — centralizadas para invalidação consistente. */
+// Uma chave é uma lista, ex.: ['contract', 12]. Invalidar ['contract'] alcança todas as que
+// começam assim (o detalhe de toda contratação no cache); qk.contract(12), só aquela.
 export const qk = {
   support: (admin: boolean) => ['support', admin ? 'admin' : 'own'] as const,
   supportTickets: (admin: boolean, query: SupportTicketQuery) =>
@@ -285,6 +308,11 @@ export const useDeposit = (id: number | null, poll: boolean) =>
     enabled: id != null,
     refetchInterval: poll ? 3000 : false,
   });
+/**
+ * Notificações da conta: o sino do topo (o Shell lê o `unreadCount`) e a tela Notificações.
+ * Busca de novo a cada 30 s como rede de segurança; o aviso na hora chega pelo socket
+ * (lib/realtime.ts), que invalida esta mesma chave (ADR 8).
+ */
 export const useNotifications = () =>
   useQuery({
     queryKey: qk.notifications,
@@ -296,6 +324,8 @@ export const useProfilesMe = () =>
   useQuery({ queryKey: qk.profiles, queryFn: () => api.profilesMe() });
 
 // ---------- Mutations (invalidam o que mudou) ----------
+// O padrão das mutations: chamam a API e, no onSuccess (ou no onSettled, que roda também no
+// erro, porque um 409 quer dizer que a tela está velha), invalidam as chaves do que mudou.
 type ContractAction = 'accept' | 'reject' | 'approve';
 
 export function useContractAction() {
@@ -766,12 +796,16 @@ export const useBoostPlans = () =>
 export const useMyBoosts = () => useQuery({ queryKey: qk.myBoosts, queryFn: () => api.myBoosts() });
 
 /** Cliente contrata um serviço (dinheiro ou créditos Escambo). */
+// Quem usa: o ContratarModal, com `create.mutateAsync(body)` (chama api.createContract).
+// No sucesso invalida as contratações, a carteira e os chats: as telas abertas buscam de novo.
 export function useCreateContract() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateContractRequest) => api.createContract(body),
     onSuccess: () => {
+      // A lista do painel passa a mostrar a proposta nova.
       void qc.invalidateQueries({ queryKey: qk.contracts });
+      // Em dinheiro o valor fica reservado: o saldo livre da carteira mudou.
       void qc.invalidateQueries({ queryKey: qk.wallet });
       // A proposta nova reabre a conversa do par (RF-062), aberta em outra Sala.
       void qc.invalidateQueries({ queryKey: ['chat'] });
@@ -840,10 +874,17 @@ export const usePublicFreelancer = (ulid: string | undefined) =>
   });
 
 // ---------- Favoritos ----------
+/**
+ * Favoritos da conta (GET /favorites). As telas (Serviços, Serviço e Freelancer) montam com
+ * isso o que já é favorito e passam `favorited` ao ServiceCard: é o que pinta o coração.
+ */
 export const useFavorites = () =>
   useQuery({ queryKey: qk.favorites, queryFn: () => api.favorites() });
 
 /** Liga/desliga favorito de um serviço ou freelancer. */
+// Recebe o alvo e se ele já é favorito: já é, chama removeFavorite (DELETE); não é, chama
+// addFavorite (POST). No sucesso invalida qk.favorites: a lista volta do servidor e o coração
+// muda. Este hook não trata o erro (não tem onError).
 export function useToggleFavorite() {
   const qc = useQueryClient();
   return useMutation({
@@ -859,6 +900,7 @@ export function useToggleFavorite() {
       favorited
         ? api.removeFavorite(targetType, targetId)
         : api.addFavorite({ targetType, targetId }),
+    // Sem atualização otimista: o coração muda quando a lista nova chega do servidor.
     onSuccess: () => void qc.invalidateQueries({ queryKey: qk.favorites }),
   });
 }

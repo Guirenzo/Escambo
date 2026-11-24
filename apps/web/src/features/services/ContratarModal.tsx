@@ -1,3 +1,15 @@
+/**
+ * Modal "Contratar": o formulário em que o cliente monta e envia a proposta de contratação.
+ * Camada: componente de tela (features/services). Abre pelo botão Contratar do detalhe do
+ * serviço (ServicoView), da busca (ServicosView) e do perfil do freelancer (FreelancerView).
+ * Caminho do envio: submit() chama o useCreateContract (lib/hooks.ts), que chama
+ * api.createContract (POST /api/contracts); a API valida de novo, grava e, em dinheiro, já
+ * reserva o valor (em créditos, a retenção é no aceite).
+ * Deu certo: toast, fecha o modal e vai para a Sala do contrato (/contratos/:id).
+ * O que tem dentro: pacote, valor, prazo (no fuso de quem entrega), forma de pagamento
+ * (dinheiro ou créditos), marcos opcionais, resumo com a taxa, depósito quando falta saldo e o
+ * aviso de contratação já aberta.
+ */
 import { BusinessForm, BusinessModal } from '../../components/BusinessActions';
 import { useEmailVerified, VerifyEmailModal } from '../../components/VerifyEmail';
 import { Coins, CreditCard, Flag, Plus, QrCode, Trash2 } from 'lucide-react';
@@ -123,6 +135,7 @@ export function ContratarModal({
   // A mesma conta da API (taxa arredondada ao centavo; o líquido é o resto).
   const fee = feePct != null ? money(priceNum * (feePct / 100)) : 0;
   const net = money(priceNum - fee);
+  // Em dinheiro com saldo menor que o valor: o envio trava e aparece o botão de depositar.
   const needsDeposit = mode === 'cash' && priceNum > 0 && missing > 0;
 
   const withMilestones = useMilestones;
@@ -171,10 +184,17 @@ export function ContratarModal({
     setMilestones((ms) => ms.map((m, i) => ({ ...m, dueAt: dates[i] ?? '' })));
   }
 
+  /**
+   * Envia a proposta. Monta o corpo com o que a tela mostra (valor do pacote ou digitado, forma
+   * de pagamento, prazo, pacote e marcos) e chama create.mutateAsync. O hook invalida o cache;
+   * aqui ficam o toast, o fechamento do modal, a navegação para a Sala e o tratamento do erro.
+   */
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
+    // Limpa o aviso de "já existe contratação" de uma tentativa anterior.
     setExistingContractId(null);
     try {
+      // mutateAsync devolve uma promessa: espera a API responder com a contratação criada.
       const c = await create.mutateAsync({
         freelancerId: service.ownerId,
         serviceId: service.id,
@@ -182,6 +202,7 @@ export function ContratarModal({
         description,
         price: priceNum,
         paymentMode: mode,
+        // O dia escolhido vira 23:59 daquele dia no fuso de quem entrega (ADR 58).
         deadlineAt: endOfDayIn(ownerZone, deadline),
         ...(pkg ? { packageTier: pkg.tier } : {}),
         milestones: withMilestones
@@ -201,9 +222,11 @@ export function ContratarModal({
             ? `Proposta enviada em ${milestones.length} marcos — valor reservado na sua carteira`
             : 'Proposta enviada — valor reservado na sua carteira',
       );
+      // Fecha o modal e abre a Sala do contrato que acabou de nascer.
       onClose();
       navigate(`/contratos/${c.id}`);
     } catch (er) {
+      // 409 active_contract_exists: já há proposta ou contratação aberta com este freelancer.
       if (
         er instanceof ApiRequestError &&
         er.status === 409 &&
@@ -216,6 +239,7 @@ export function ContratarModal({
       if (er instanceof ApiRequestError && er.code === 'package_changed') {
         void qc.invalidateQueries({ queryKey: ['services'] });
       }
+      // A mensagem vem da API (ApiRequestError), já em português; senão, um texto padrão.
       toast.error(er instanceof Error ? er.message : 'Erro ao contratar');
     }
   }
@@ -503,6 +527,7 @@ export function ContratarModal({
           </div>
         )}
 
+        {/* Trava o envio: enviando, abaixo de R$ 10, sem saldo ou com marcos que não fecham. */}
         <Button
           type="submit"
           disabled={create.isPending || priceNum < 10 || needsDeposit || !msValid}

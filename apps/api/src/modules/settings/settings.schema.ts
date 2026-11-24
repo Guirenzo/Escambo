@@ -1,3 +1,14 @@
+/**
+ * Registro dos parâmetros da plataforma (camada de schema/validação do módulo settings).
+ * Um parâmetro é um valor que muda o comportamento da API sem deploy: a taxa da plataforma, os
+ * prazos dos jobs, os mínimos de serviço e de saque, as trocas e o modo de manutenção. O valor
+ * fica numa linha da tabela `platform_settings` (key_name, value, type, updated_by, updated_at);
+ * este arquivo diz quais chaves o painel do admin pode editar e quais valores cada uma aceita.
+ * Quem usa: o settingsService (validação e leitura tipada), o settings.parse (faixas fechadas) e
+ * o admin.controller (valida a chave da URL e o corpo do PUT /api/admin/settings/:key).
+ * Dentro: SETTING_KEYS (a lista), SettingDef (o molde), SETTING_DEFS (rótulo, descrição, unidade,
+ * mínimo, máximo e padrão de cada chave) e os dois schemas zod do PUT.
+ */
 import { z } from 'zod';
 
 /**
@@ -27,9 +38,17 @@ export const SETTING_KEYS = [
   'maintenance_mode',
   'maintenance_return_minutes',
 ] as const;
+// O `as const` deixa a lista somente leitura, e o tipo SettingKey vira a união exata dessas
+// chaves: escrever uma chave que não existe (ou com erro de digitação) quebra a compilação.
 export type SettingKey = (typeof SETTING_KEYS)[number];
+// Os três tipos do painel: inteiro (dias, horas, %), decimal (dinheiro, 2 casas) e liga/desliga.
 export type SettingType = 'integer' | 'decimal' | 'boolean';
 
+/**
+ * O molde de cada parâmetro. label e description aparecem no painel; unit é a unidade mostrada
+ * ao lado do campo; min e max são os limites que o settingsService.validateSettingValue confere;
+ * defaultValue é o valor usado quando a chave não existe no banco ou está em branco.
+ */
 export interface SettingDef {
   type: SettingType;
   label: string;
@@ -40,7 +59,16 @@ export interface SettingDef {
   defaultValue: number | boolean;
 }
 
+/**
+ * A definição de cada chave. O `Record<SettingKey, SettingDef>` obriga a ter uma entrada para
+ * cada chave da lista: esquecer uma quebra a compilação. Exemplos de como ler uma entrada:
+ * a taxa da plataforma é inteira, de 0 a 50 %, padrão 15; a aprovação tácita vai de 1 a 30 dias,
+ * padrão 5; o saque mínimo é decimal, de R$ 1 a R$ 10.000, padrão R$ 20. A mudança vale na hora
+ * para quem lê, mas o que já foi criado não muda: a taxa fica gravada em cada contratação, e os
+ * prazos na proposta, na entrega ou no saque (a descrição de cada chave diz onde).
+ */
 export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
+  // Taxa da plataforma (RN-031): a porcentagem que a plataforma fica de cada contratação.
   platform_fee_percentage: {
     type: 'integer',
     label: 'Comissão da plataforma',
@@ -51,6 +79,8 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     max: 50,
     defaultValue: 15,
   },
+  // Prazos dos jobs de contratação: aprovação tácita, validade da proposta, resposta a uma
+  // contraproposta e a um pedido de extensão, e carência do prazo vencido.
   tacit_approval_days: {
     type: 'integer',
     label: 'Aprovação tácita',
@@ -101,6 +131,7 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     max: 168,
     defaultValue: 24,
   },
+  // Retenção dos anexos do chat e as regras da moderação (contestação, reincidência e meta).
   attachment_retention_days: {
     type: 'integer',
     label: 'Retenção dos anexos',
@@ -171,6 +202,8 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     max: 1,
     defaultValue: true,
   },
+  // Dinheiro: preço mínimo de serviço e saque mínimo são decimais (em reais); depois, os prazos
+  // do saque em dias úteis, um para PIX e outro para transferência.
   min_service_price: {
     type: 'decimal',
     label: 'Preço mínimo de serviço',
@@ -211,6 +244,8 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
     max: 10,
     defaultValue: 2,
   },
+  // Interruptores: trocas de serviço e modo de manutenção (liga/desliga, min 0 e max 1 só para
+  // preencher o molde), e a previsão de volta da manutenção em minutos.
   barter_enabled: {
     type: 'boolean',
     label: 'Trocas de serviço',
@@ -243,5 +278,9 @@ export const SETTING_DEFS: Record<SettingKey, SettingDef> = {
   },
 };
 
+// Valida a chave da URL do PUT /api/admin/settings/:key: só aceita uma das SETTING_KEYS, então
+// uma chave interna (como o estado de um job) não pode ser mudada pelo painel. Fora da lista: 422.
 export const settingKeyParamSchema = z.object({ key: z.enum(SETTING_KEYS) });
+// Valida o corpo do PUT: `value` tem que ser número ou true/false. O zod só confere o formato; o
+// tipo e os limites de cada chave (inteiro, 2 casas, min e max) quem confere é o settingsService.
 export const updateSettingSchema = z.object({ value: z.union([z.number(), z.boolean()]) });

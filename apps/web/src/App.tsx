@@ -1,3 +1,15 @@
+/**
+ * Mapa de URL para tela do web (React Router). Camada: roteamento do front.
+ * Cada <Route> liga um caminho do navegador (ex.: /servicos/12) a um componente de tela, quase
+ * todos em features/views. Quem chama: o main.tsx desenha <App />. O que chama: as telas, as
+ * guardas (AuthGate e as pequenas *Route abaixo) e o Shell, a moldura com menu e barra do topo.
+ * Blocos dentro de <Routes>:
+ *   - rotas públicas: login, cadastro, volta do Google, senha, e-mail, termos e privacidade;
+ *   - rotas logadas, dentro do AuthGate e do Shell: Início, Serviços, Carteira, Sala etc.;
+ *   - "*" no fim: endereço desconhecido cai na página 404.
+ * LoginRoute, AdminRoute, SalaContratoRoute e ServicoRoute leem a sessão ou a URL antes de abrir
+ * a tela. A guarda daqui só organiza a navegação: quem barra de verdade é a API.
+ */
 import {
   BrowserRouter,
   Navigate,
@@ -62,6 +74,7 @@ function LoginRoute({ mode = 'login' }: { mode?: AuthMode }) {
       </div>
     );
   if (user) return <Navigate to={backTo(location.state)} replace />;
+  // O "Eu sou" do cadastro vem da URL (?perfil=...); valor desconhecido abre como cliente.
   const role = perfil === 'freelancer' ? 'freelancer' : perfil === 'empresa' ? 'company' : 'client';
   return <LoginForm initialMode={mode} initialRole={role} />;
 }
@@ -78,6 +91,7 @@ function SalaContratoRoute() {
   const { id } = useParams();
   const navigate = useNavigate();
   const contractId = Number(id);
+  // Id que não é inteiro positivo (ex.: /contratos/abc) volta para o Início, sem chamar a API.
   if (!Number.isInteger(contractId) || contractId <= 0) return <Navigate to="/" replace />;
   return <SalaContratoView contractId={contractId} onBack={() => navigate(-1)} />;
 }
@@ -89,6 +103,12 @@ function ServicoRoute() {
   return <ServicoView serviceId={serviceId} />;
 }
 
+/**
+ * O roteador do app. O BrowserRouter usa a URL de verdade (sem #): na produção o nginx manda
+ * qualquer caminho para o index.html (try_files) e aqui o React Router escolhe a tela.
+ * RouteAnnouncer avisa o leitor de tela quando a rota troca (ADR 21), e o MaintenanceGate põe a
+ * tela de manutenção ou de fora do ar no lugar de tudo quando a API avisa (ADR 33, RNF-010).
+ */
 export function App() {
   return (
     <BrowserRouter>
@@ -107,6 +127,7 @@ export function App() {
           <Route path="/privacidade" element={<LegalView kind="privacidade" />} />
           {/* `/` sem sessão é a página pública; com sessão, o Início dentro do Shell. */}
           <Route element={<AuthGate home={<LandingView />} />}>
+            {/* Rota sem path: o Shell desenha a moldura e a tela entra no Outlet dele. */}
             <Route element={<Shell />}>
               <Route index element={<InicioView />} />
               <Route path="servicos" element={<ServicosView />} />
@@ -123,6 +144,7 @@ export function App() {
               <Route path="admin" element={<AdminRoute />} />
             </Route>
           </Route>
+          {/* Qualquer endereço que não casou acima: página 404 com saídas (ADR 21). */}
           <Route path="*" element={<NotFoundView />} />
         </Routes>
       </MaintenanceGate>

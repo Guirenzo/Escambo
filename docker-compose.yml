@@ -9,12 +9,21 @@
 # Ordem de subida: db (healthy) → migrate (job: aplica migrations pendentes e sai) → api (healthy) → web.
 # Variáveis opcionais (.env na raiz ou no shell): DB_PORT, API_PORT, WEB_PORT, JWT_SECRET, DB_*, CORS_ORIGINS.
 # Produção (imagens do GHCR + Caddy com HTTPS): docker-compose.prod.yml e DEPLOY.md.
+#
+# Como as peças conversam: o navegador abre o web (nginx, porta 8090 do host), que serve o React
+# e repassa /api e /socket.io para a api (3333); a api fala com o db (3306). Dentro do compose
+# cada serviço acha o outro pelo nome (api, db), pelo DNS da rede interna.
+# Senhas: ${DB_PASSWORD:-escambo} = o valor do .env da raiz (ou do shell); sem ele, "escambo".
+# Na demo os padrões servem; na produção não há senha padrão (docker-compose.prod.yml).
 
 name: escambo
 
+# Âncora YAML (&api-image): o nome da imagem da API, reaproveitado no migrate e na api.
 x-api-image: &api-image escambo-api:local
 
 services:
+  # db: o MySQL 8, com os dados no volume escambo_db_data. Não depende de ninguém; migrate, api
+  # e backup esperam o healthcheck dele ficar "healthy". A 3306 fica aberta no host para o dev.
   db:
     image: mysql:8.0
     container_name: escambo-mysql
@@ -25,6 +34,8 @@ services:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --log-bin-trust-function-creators=1
+    # A imagem do MySQL lê estas variáveis só na primeira subida (volume vazio), para criar o
+    # root, o banco e o usuário escambo. Depois disso, mudar a senha aqui não muda a do banco.
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-escambo_root}
       MYSQL_DATABASE: ${DB_NAME:-escambo}
@@ -37,6 +48,7 @@ services:
       # Só rodam com o volume vazio (primeira subida): baseline do schema + dados de referência.
       - ./apps/api/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./apps/api/db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    # Saudável = o mysqladmin ping responde. É esse estado que libera os outros serviços.
     healthcheck:
       test:
         [
@@ -65,13 +77,18 @@ services:
     container_name: escambo-migrate
     restart: 'no'
     command: ['node', 'dist/scripts/migrate.js']
+    # Só começa com o banco saudável; terminar com código 0 é o que libera a api.
     depends_on:
       db:
         condition: service_healthy
+    # &api-env: este bloco de variáveis é a âncora que a api reaproveita (environment: *api-env).
+    # A API lê e valida tudo no config/env.ts e não sobe se faltar algo obrigatório.
     environment: &api-env
       NODE_ENV: production
       PORT: 3333
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Como a API acha o banco: pelo nome do serviço (db) na rede do compose, porta 3306 interna.
+      # A senha é a mesma variável DB_PASSWORD que criou o usuário no serviço db.
       DB_HOST: db
       DB_PORT: 3306
       DB_USER: ${DB_USER:-escambo}
@@ -132,6 +149,9 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-demo}
 
+  # api: a API Node (Express + Socket.IO) na porta 3333. Depende do db saudável e do migrate
+  # concluído com sucesso: nunca serve com o schema velho. Anexos e cópias LGPD ficam no volume
+  # api_data. O healthcheck (que o web espera) vem do Dockerfile da API.
   api:
     image: *api-image
     build:
@@ -149,9 +169,12 @@ services:
     environment: *api-env
     volumes:
       - api_data:/repo/apps/api/data
+    # Porta no host só na demo e no dev; na produção a API não tem porta aberta.
     ports:
       - '${API_PORT:-3333}:3333'
 
+  # web: a imagem do apps/web/Dockerfile, que faz o build do Vite e serve com nginx (nginx.conf).
+  # O nginx entrega o React e repassa /api e /socket.io para a api. Só sobe com a api saudável.
   web:
     build:
       context: .
@@ -163,6 +186,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    # 8090 do host para a 8080 do nginx (sem root): o endereço da demo, http://localhost:8090.
     ports:
       - '${WEB_PORT:-8090}:8080'
 
@@ -187,6 +211,7 @@ services:
     image: mysql:8.0
     container_name: escambo-backup
     restart: unless-stopped
+    # Não roda um MySQL: usa só os programas da imagem (mysqldump) com o agendador.sh.
     entrypoint: ['bash', '/opt/escambo/deploy/backup/agendador.sh']
     depends_on:
       db:
@@ -241,6 +266,7 @@ services:
     depends_on:
       - api
 
+  # blackbox: a sonda que o Prometheus usa para pedir o /api/health como um usuário (uptime).
   blackbox:
     image: prom/blackbox-exporter:v0.27.0
     container_name: escambo-blackbox
@@ -263,6 +289,7 @@ services:
     volumes:
       - backup_metrics:/metricas:ro
 
+  # grafana: o painel e os alertas, lendo do Prometheus; só escuta no 127.0.0.1 do host.
   grafana:
     image: grafana/grafana-oss:12.1.1
     container_name: escambo-grafana
@@ -294,6 +321,7 @@ services:
     depends_on:
       - prometheus
 
+# Volumes nomeados: o que sobrevive a um down (sem -v). escambo_db_data é o banco.
 volumes:
   api_data:
   backup_metrics:

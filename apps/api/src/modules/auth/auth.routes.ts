@@ -1,3 +1,13 @@
+/**
+ * Rotas de autenticação (camada de rota). O routes.ts da API monta este Router em `/api/auth`.
+ * Liga cada URL ao controller: cadastro, login (com e sem segundo fator), renovação do token,
+ * saída, conta logada, confirmação de e-mail, senha, contato e verificação em duas etapas, além
+ * das rotas do login com Google.
+ * Middlewares usados: `loginRateLimiter` (limite de tentativas por IP, contra força bruta) e
+ * `authenticate` (exige o JWT de acesso). Rota sem authenticate é pública de propósito: quem
+ * chama ainda não tem sessão (cadastro, login, refresh) ou chega por um link de e-mail.
+ * O que chama: auth.controller e google.controller, que chamam os services do módulo.
+ */
 import { Router } from 'express';
 import { authenticate } from '../../middlewares/authenticate';
 import { loginRateLimiter } from '../../middlewares/rate-limit';
@@ -52,8 +62,11 @@ authRoutes.post('/login', loginRateLimiter, asyncHandler(login));
 // Segundo passo do login com a verificação em duas etapas (ADR 66): além do limite por IP, a
 // conta trava por 15 minutos depois de 5 códigos errados seguidos.
 authRoutes.post('/login/mfa', loginRateLimiter, asyncHandler(loginMfa));
+// Renovar e sair recebem o refresh token no corpo, sem authenticate: o access token de 1 hora
+// pode já ter vencido, e é justamente para isso que o refresh existe.
 authRoutes.post('/refresh', asyncHandler(refresh));
 authRoutes.post('/logout', asyncHandler(logout));
+// Sair de todos os aparelhos e "quem sou eu" exigem o JWT válido.
 authRoutes.post('/logout-all', authenticate, asyncHandler(logoutAll));
 authRoutes.get('/me', authenticate, asyncHandler(me));
 // Confirmação de e-mail e recuperação de senha (links de uso único, anti brute-force).
