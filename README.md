@@ -47,11 +47,11 @@ explicável**.
 
 ---
 
-## Situação atual: 1.57.0
+## Situação atual: 1.57.1
 
 **No ar:** https://escambo.68-183-49-126.sslip.io (VPS na DigitalOcean, HTTPS automático pelo Caddy, deploy pelo GitHub Actions a cada merge na `main`, monitoramento com Prometheus e Grafana, erros no Sentry). Os depósitos são pelo Mercado Pago em sandbox (credenciais de teste, sem dinheiro de verdade); o login com Google e os avisos push no navegador estão ligados; os e-mails saem de verdade, pelo SMTP do Brevo.
 
-A 1.57.0 traz a seção de segurança na página inicial, pedida na validação com usuários reais do PAC VIII. O relatório das sessões, das correções e da devolutiva está em [validação com a comunidade](./docs/validacao-pac-viii.md).
+A 1.57.0 traz a seção de segurança na página inicial, pedida na validação com usuários reais do PAC VIII. O relatório das sessões, das correções e da devolutiva está em [validação com a comunidade](./docs/validacao-pac-viii.md). A 1.57.1 faz a triagem dos 127 alertas de segurança e de confiabilidade do SonarCloud: 107 corrigidos no código e 20 que não procedem, cada um com o motivo ([triagem do SonarCloud](./docs/triagem-sonar.md)).
 
 **91 dos 92 requisitos funcionais estão implementados**; o que resta ficou fora do escopo por decisão registrada. Dos 42 não funcionais, 34 estão implementados, 5 são parciais e 3 ficaram fora do escopo, cada um com o que falta. A situação de cada requisito, com o código e o teste que provam, está em [rastreabilidade](./docs/rastreabilidade.md); o que mudou em cada versão, no [CHANGELOG](./CHANGELOG.md); e o porquê de cada escolha, nas [decisões de arquitetura](./docs/decisoes.md) (75 ADRs).
 
