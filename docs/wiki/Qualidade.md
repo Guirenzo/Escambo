@@ -31,9 +31,9 @@ flowchart LR
 ## Cobertura
 
 Meta do Playbook para Web Apps: **75% no backend e 25% no frontend**. Todo arquivo de `src` entra na conta,
-tenha teste ou não.
+tenha teste ou não. Os números abaixo são do CI da 1.57.0.
 
-- **Backend, testes de unidade (a meta do Playbook):** **99,1%** das linhas, sem banco. Os _services_
+- **Backend, testes de unidade (a meta do Playbook):** **98,3%** das linhas, sem banco. Os _services_
   (regra de negócio) são testados com os _repositories_ mockados; as rotas e os controllers, com o router de
   cada módulo, o `authenticate` e o tratamento de erros de verdade e o _service_ mockado (quem pode chamar, o que
   a validação recusa, o que chega ao _service_); os _repositories_, com um banco falso que guarda cada instrução
@@ -43,7 +43,7 @@ tenha teste ou não.
 - **Backend, integração:** o app inteiro contra o MySQL de verdade, que é onde se prova que o SQL roda. Unida
   aos unitários (`scripts/coverage-merge.mjs`), a cobertura é de **99,3%**, e o job "Cobertura" confere os 75%
   também sobre a união. O resumo de cada rodada mostra os três números: só unitários, só integração e a união.
-- **Frontend:** **99,5%** das linhas, em testes de componente (Testing Library) e das bibliotecas: o que a
+- **Frontend:** **98,9%** das linhas, em testes de componente (Testing Library) e das bibliotecas: o que a
   pessoa vê e faz, o que vai para a API e o erro que aparece. A meta do Playbook é 25%; o Vitest barra a rodada
   abaixo de 90% (`apps/web/vite.config.ts`).
 
